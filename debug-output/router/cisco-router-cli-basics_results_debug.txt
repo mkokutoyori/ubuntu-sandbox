@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-05-17T18:01:20.141Z
+Generated: 2026-05-17T18:13:57.358Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [4/482] r1 R1> show calendar
-  18:01:20 UTC Sun May 17 2026
+  18:13:57 UTC Sun May 17 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -641,6 +641,7 @@ Total steps: 482
     aaa             Display AAA state
     aliases         Display command aliases
     arp             Display ARP table
+    bgp             Display BGP
     standby         Display HSRP state
     vrrp            Display VRRP state
     glbp            Display GLBP state
@@ -652,7 +653,6 @@ Total steps: 482
     running-config  Display running configuration
     startup-config  Display saved configuration
     configuration   Display saved configuration
-    bgp             Display BGP table
     counters        Display traffic counters
     debug           Display debugging flags
     access-lists    Display all access lists
@@ -703,10 +703,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [81/482] r1 R1# show calendar
-  18:01:20 UTC Sun May 17 2026
+  18:13:57 UTC Sun May 17 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1323,7 +1323,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1332,7 +1332,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1341,7 +1341,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1350,7 +1350,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1359,150 +1359,114 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
 
 [171/482] r1 R1(config)# router eigrp 100
-  % Invalid input detected at '^' marker.
-  router eigrp 100
-         ^
-
-[172/482] r1 R1(config)# do show clock
-  *18:01:20.000 UTC Sun May 17 2026
-
-[173/482] r1 R1(config)# exit
 <empty>
 
-[174/482] r1 R1# router bgp 65000
-  % Invalid input detected at '^' marker.
-  router bgp 65000
-  ^
+[172/482] r1 R1(config-router)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
 
-[175/482] r1 R1# do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[176/482] r1 R1# exit
+[173/482] r1 R1(config-router)# exit
 <empty>
 
-[177/482] r1 R1> ip dhcp pool LAN
-  % Invalid input detected at '^' marker.
-  ip dhcp pool LAN
-  ^
-
-[178/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[179/482] r1 R1> exit
+[174/482] r1 R1(config)# router bgp 65000
 <empty>
 
-[180/482] r1 R1> line console 0
-  % Invalid input detected at '^' marker.
-  line console 0
-  ^
+[175/482] r1 R1(config-router)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
 
-[181/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[182/482] r1 R1> exit
+[176/482] r1 R1(config-router)# exit
 <empty>
 
-[183/482] r1 R1> line vty 0 4
-  % Invalid input detected at '^' marker.
-  line vty 0 4
-  ^
-
-[184/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[185/482] r1 R1> exit
+[177/482] r1 R1(config)# ip dhcp pool LAN
 <empty>
 
-[186/482] r1 R1> line aux 0
-  % Invalid input detected at '^' marker.
-  line aux 0
-  ^
+[178/482] r1 R1(dhcp-config)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
 
-[187/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[188/482] r1 R1> exit
+[179/482] r1 R1(dhcp-config)# exit
 <empty>
 
-[189/482] r1 R1> ip access-list standard STD1
-  % Invalid input detected at '^' marker.
-  ip access-list standard STD1
-  ^
-
-[190/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[191/482] r1 R1> exit
+[180/482] r1 R1(config)# line console 0
 <empty>
 
-[192/482] r1 R1> ip access-list extended EXT1
-  % Invalid input detected at '^' marker.
-  ip access-list extended EXT1
-  ^
+[181/482] r1 R1(config-line)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
 
-[193/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[194/482] r1 R1> exit
+[182/482] r1 R1(config-line)# exit
 <empty>
 
-[195/482] r1 R1> route-map RM1 permit 10
-  % Invalid input detected at '^' marker.
-  route-map RM1 permit 10
-  ^
-
-[196/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[197/482] r1 R1> exit
+[183/482] r1 R1(config)# line vty 0 4
 <empty>
 
-[198/482] r1 R1> class-map CM1
+[184/482] r1 R1(config-line)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[185/482] r1 R1(config-line)# exit
+<empty>
+
+[186/482] r1 R1(config)# line aux 0
+<empty>
+
+[187/482] r1 R1(config-line)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[188/482] r1 R1(config-line)# exit
+<empty>
+
+[189/482] r1 R1(config)# ip access-list standard STD1
+<empty>
+
+[190/482] r1 R1(config-std-nacl)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[191/482] r1 R1(config-std-nacl)# exit
+<empty>
+
+[192/482] r1 R1(config)# ip access-list extended EXT1
+<empty>
+
+[193/482] r1 R1(config-ext-nacl)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[194/482] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[195/482] r1 R1(config)# route-map RM1 permit 10
+<empty>
+
+[196/482] r1 R1(config-route-map)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[197/482] r1 R1(config-route-map)# exit
+<empty>
+
+[198/482] r1 R1(config)# class-map CM1
   % Invalid input detected at '^' marker.
   class-map CM1
   ^
 
-[199/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
+[199/482] r1 R1(config)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
 
-[200/482] r1 R1> exit
+[200/482] r1 R1(config)# exit
 <empty>
 
-[201/482] r1 R1> policy-map PM1
+[201/482] r1 R1# policy-map PM1
   % Invalid input detected at '^' marker.
   policy-map PM1
   ^
 
-[202/482] r1 R1> do show clock
+[202/482] r1 R1# do show clock
   % Invalid input detected at '^' marker.
   do show clock
   ^
 
-[203/482] r1 R1> exit
+[203/482] r1 R1# exit
 <empty>
 
 [204/482] r1 R1> crypto isakmp policy 10
@@ -1765,8 +1729,10 @@ Total steps: 482
     routing        Enable IP routing
 
 [257/482] r1 R1-EDGE(config)# router ?
-    rip   Enter RIP routing protocol configuration
-    ospf  Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
 
 [258/482] r1 R1-EDGE(config)# no ?
     hostname     Reset hostname
@@ -2001,6 +1967,7 @@ Total steps: 482
   Current configuration:
   hostname R1-EDGE
   service dhcp
+  ip dhcp pool LAN
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2053,6 +2020,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2086,6 +2055,8 @@ Total steps: 482
   hostname R1-EDGE
   !
   service dhcp
+  !
+  ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2148,6 +2119,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2182,6 +2155,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2215,6 +2190,8 @@ Total steps: 482
   hostname R1-EDGE
   !
   service dhcp
+  !
+  ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2355,6 +2332,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2446,6 +2425,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2517,6 +2498,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -2550,6 +2533,8 @@ Total steps: 482
   hostname R1-EDGE
   !
   service dhcp
+  !
+  ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2646,6 +2631,11 @@ Total steps: 482
     Advertised networks:
   
     RIP learned routes: 0
+  Routing Protocol is "eigrp 100"
+    Routing for Networks:
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 0
 
 [382/482] r1 R1-EDGE# show ip arp
   No ARP entries.
@@ -2670,16 +2660,22 @@ Total steps: 482
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
 
 [388/482] r1 R1-EDGE# show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+  EIGRP-IPv4 Neighbors for AS(100)
+  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  (no neighbours — no EIGRP peer in topology)
 
 [389/482] r1 R1-EDGE# show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+  EIGRP-IPv4 Topology Table for AS(100)
+  
 
 [390/482] r1 R1-EDGE# show ip bgp
-  % BGP not active
+  BGP table version is 1, local router ID is 0.0.0.0
+     Network          Next Hop            Metric LocPrf Weight Path
 
 [391/482] r1 R1-EDGE# show ip bgp summary
-  % BGP not active
+  BGP router identifier 0.0.0.0, local AS number 65000
+  
+  Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State
 
 [392/482] r1 R1-EDGE# show ip rip database
   RIP routing database is empty
@@ -2702,7 +2698,13 @@ Total steps: 482
                    Hardware address
 
 [396/482] r1 R1-EDGE# show ip dhcp pool
-<empty>
+  Pool LAN :
+    Network          : not configured/?
+    Default Router   : not configured
+    DNS Server(s)    : not configured
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 0
 
 [397/482] r1 R1-EDGE# show access-lists
 <empty>
@@ -2766,7 +2768,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2920,6 +2922,8 @@ Total steps: 482
   hostname R1-EDGE
   !
   service dhcp
+  !
+  ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -3096,6 +3100,8 @@ Total steps: 482
   !
   service dhcp
   !
+  ip dhcp pool LAN
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -3130,6 +3136,7 @@ Total steps: 482
   Current configuration:
   hostname R1-EDGE
   service dhcp
+  ip dhcp pool LAN
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
@@ -3255,6 +3262,11 @@ Total steps: 482
     Advertised networks:
   
     RIP learned routes: 0
+  Routing Protocol is "eigrp 100"
+    Routing for Networks:
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 0
 
 [470/482] r1 R1-EDGE(config-router)# exit
 <empty>
@@ -3294,8 +3306,10 @@ Total steps: 482
     routing        Enable IP routing
 
 [477/482] r1 R1-EDGE(config)# router ?
-    rip   Enter RIP routing protocol configuration
-    ospf  Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
 
 [478/482] r1 R1-EDGE(config)# crypto ?
     isakmp       isakmp
@@ -3333,6 +3347,8 @@ Total steps: 482
   hostname R1-EDGE
   !
   service dhcp
+  !
+  ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0

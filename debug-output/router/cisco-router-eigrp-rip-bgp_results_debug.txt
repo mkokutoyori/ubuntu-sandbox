@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-05-17T18:01:21.854Z
+Generated: 2026-05-17T18:13:57.887Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -53,9 +53,7 @@ Total steps: 355
 <empty>
 
 [15/355] r1 R1(config-router)# no auto-summary
-  % Invalid input detected at '^' marker.
-  no auto-summary
-     ^
+<empty>
 
 [16/355] r1 R1(config-router)# network 10.1.0.0
 <empty>
@@ -82,89 +80,55 @@ Total steps: 355
 <empty>
 
 [24/355] r1 R1(config-router)# passive-interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  passive-interface GigabitEthernet0/0
-  ^
+<empty>
 
 [25/355] r1 R1(config-router)# passive-interface default
-  % Invalid input detected at '^' marker.
-  passive-interface default
-  ^
+<empty>
 
 [26/355] r1 R1(config-router)# no passive-interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  no passive-interface GigabitEthernet0/1
-     ^
+<empty>
 
 [27/355] r1 R1(config-router)# neighbor 10.0.0.2
-  % Invalid input detected at '^' marker.
-  neighbor 10.0.0.2
-  ^
+<empty>
 
 [28/355] r1 R1(config-router)# timers basic 30 180 180 240
-  % Invalid input detected at '^' marker.
-  timers basic 30 180 180 240
-  ^
+<empty>
 
 [29/355] r1 R1(config-router)# distance 120
-  % Invalid input detected at '^' marker.
-  distance 120
-  ^
+<empty>
 
 [30/355] r1 R1(config-router)# offset-list 1 in 5 GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  offset-list 1 in 5 GigabitEthernet0/1
-  ^
+<empty>
 
 [31/355] r1 R1(config-router)# offset-list 1 out 5 GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  offset-list 1 out 5 GigabitEthernet0/1
-  ^
+<empty>
 
 [32/355] r1 R1(config-router)# redistribute connected
-  % Invalid input detected at '^' marker.
-  redistribute connected
-  ^
+<empty>
 
 [33/355] r1 R1(config-router)# redistribute static metric 3
-  % Invalid input detected at '^' marker.
-  redistribute static metric 3
-  ^
+<empty>
 
 [34/355] r1 R1(config-router)# redistribute ospf 1 metric 5
-  % Invalid input detected at '^' marker.
-  redistribute ospf 1 metric 5
-  ^
+<empty>
 
 [35/355] r1 R1(config-router)# default-information originate
-  % Invalid input detected at '^' marker.
-  default-information originate
-  ^
+<empty>
 
 [36/355] r1 R1(config-router)# default-metric 4
-  % Invalid input detected at '^' marker.
-  default-metric 4
-  ^
+<empty>
 
 [37/355] r1 R1(config-router)# maximum-paths 6
-  % Invalid input detected at '^' marker.
-  maximum-paths 6
-  ^
+<empty>
 
 [38/355] r1 R1(config-router)# output-delay 50
-  % Invalid input detected at '^' marker.
-  output-delay 50
-  ^
+<empty>
 
 [39/355] r1 R1(config-router)# flash-update-threshold 10
-  % Invalid input detected at '^' marker.
-  flash-update-threshold 10
-  ^
+<empty>
 
 [40/355] r1 R1(config-router)# validate-update-source
-  % Invalid input detected at '^' marker.
-  validate-update-source
-  ^
+<empty>
 
 [41/355] r1 R1(config-router)# exit
 <empty>
@@ -287,6 +251,13 @@ Total steps: 355
       10.0.0.0/8
   
     RIP learned routes: 0
+    Automatic network summarization is not in effect
+    Passive Interface(s):
+      GigabitEthernet0/0
+    redistribute connected
+    redistribute static metric 3
+    redistribute ospf 1 metric 5
+    Distance: 120
 
 [60/355] r1 R1> show ip route rip
   % Network not in table
@@ -506,10 +477,14 @@ Total steps: 355
   % EIGRP not running (no autonomous-system configured)
 
 [107/355] r1 R1> show ip eigrp traffic
-  % EIGRP not running (no autonomous-system configured)
+  % Invalid input detected at '^' marker.
+  show ip eigrp traffic
+                ^
 
 [108/355] r1 R1> show ip eigrp accounting
-  % EIGRP not running (no autonomous-system configured)
+  % Invalid input detected at '^' marker.
+  show ip eigrp accounting
+                ^
 
 [109/355] r1 R1> show ip route eigrp
   % Network not in table
@@ -534,6 +509,13 @@ Total steps: 355
       10.0.0.0/8
   
     RIP learned routes: 0
+    Automatic network summarization is not in effect
+    Passive Interface(s):
+      GigabitEthernet0/0
+    redistribute connected
+    redistribute static metric 3
+    redistribute ospf 1 metric 5
+    Distance: 120
 
 [111/355] r1 R1> clear ip eigrp neighbors
   % Invalid input detected at '^' marker.
@@ -1153,6 +1135,13 @@ Total steps: 355
       10.0.0.0/8
   
     RIP learned routes: 0
+    Automatic network summarization is not in effect
+    Passive Interface(s):
+      GigabitEthernet0/0
+    redistribute connected
+    redistribute static metric 3
+    redistribute ospf 1 metric 5
+    Distance: 120
 
 [238/355] r1 R1> show bgp all summary
   % BGP not active
@@ -1325,6 +1314,13 @@ Total steps: 355
       10.0.0.0/8
   
     RIP learned routes: 0
+    Automatic network summarization is not in effect
+    Passive Interface(s):
+      GigabitEthernet0/0
+    redistribute connected
+    redistribute static metric 3
+    redistribute ospf 1 metric 5
+    Distance: 120
 
 [255/355] r1 R1# show ip arp
   No ARP entries.
@@ -1464,7 +1460,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *18:01:21.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1969,6 +1965,13 @@ Total steps: 355
       10.0.0.0/8
   
     RIP learned routes: 0
+    Automatic network summarization is not in effect
+    Passive Interface(s):
+      GigabitEthernet0/0
+    redistribute connected
+    redistribute static metric 3
+    redistribute ospf 1 metric 5
+    Distance: 120
 
 [343/355] r1 R1(config-router)# exit
 <empty>
@@ -2008,8 +2011,10 @@ Total steps: 355
     routing        Enable IP routing
 
 [350/355] r1 R1(config)# router ?
-    rip   Enter RIP routing protocol configuration
-    ospf  Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
 
 [351/355] r1 R1(config)# crypto ?
     isakmp       isakmp

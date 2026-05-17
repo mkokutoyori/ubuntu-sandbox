@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-05-17T18:01:20.140Z
+Generated: 2026-05-17T18:13:57.367Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1389,7 +1389,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *18:01:20.000 UTC Sun May 17 2026
+  *18:13:57.000 UTC Sun May 17 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1946,8 +1946,10 @@ Total steps: 370
     routing        Enable IP routing
 
 [365/370] r1 R1(config)# router ?
-    rip   Enter RIP routing protocol configuration
-    ospf  Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
 
 [366/370] r1 R1(config)# crypto ?
     isakmp       isakmp

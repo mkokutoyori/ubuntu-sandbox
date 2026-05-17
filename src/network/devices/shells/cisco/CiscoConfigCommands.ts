@@ -40,6 +40,9 @@ export interface CiscoShellContext {
   getSelectedDHCPPool(): string | null;
   /** Set currently selected DHCP pool name */
   setSelectedDHCPPool(pool: string | null): void;
+  /** Routing process currently being configured (config-router) */
+  getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null;
+  setSelectedRoutingProto(v: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null): void;
   /** Resolve interface name abbreviation to full name */
   resolveInterfaceName(input: string): string | null;
   // IPSec context
@@ -132,6 +135,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
     if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP();
+    ctx.setSelectedRoutingProto({ proto: 'rip' });
     ctx.setMode('config-router');
     return '';
   });

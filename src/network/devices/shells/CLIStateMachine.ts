@@ -108,7 +108,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },
   'config-dhcp':               { parent: 'config', clearOnExit: ['selectedDHCPPool'] },
-  'config-router':             { parent: 'config' },
+  'config-router':             { parent: 'config', clearOnExit: ['selectedRoutingProto'] },
   'config-track':              { parent: 'config', clearOnExit: ['selectedTrack'] },
   'config-ipsla':              { parent: 'config', clearOnExit: ['selectedIpSla'] },
   'config-route-map':          { parent: 'config', clearOnExit: ['selectedRouteMap'] },

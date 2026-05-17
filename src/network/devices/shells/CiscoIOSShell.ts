@@ -54,7 +54,10 @@ import {
   registerDhcpShowCommands,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
-import { buildConfigRouterCommands } from './cisco/CiscoRipCommands';
+import {
+  buildRoutingProtoConfig, registerRoutingProtoShow,
+} from './cisco/CiscoRoutingProtoCommands';
+import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
   type CiscoACLShellContext,
   buildACLConfigCommands, buildACLInterfaceCommands,
@@ -93,6 +96,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private readonly track = new TrackRepository();
   private readonly ipsla = new IpSlaRepository();
   private readonly policy = new PolicyRepository();
+  private readonly routingCfg = new RoutingConfigRepository();
+  private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
+  getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {
+    return this.selectedRoutingProto;
+  }
+  setSelectedRoutingProto(v: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null): void {
+    this.selectedRoutingProto = v;
+  }
   private selectedTrack: number | null = null;
   private selectedIpSla: number | null = null;
   private selectedRouteMap: { name: string; seq: number } | null = null;
@@ -268,6 +279,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedTrack') this.selectedTrack = null;
       if (f === 'selectedIpSla') this.selectedIpSla = null;
       if (f === 'selectedRouteMap') this.selectedRouteMap = null;
+      if (f === 'selectedRoutingProto') this.selectedRoutingProto = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
       if (f === 'selectedACLType') this.selectedACLType = null;
       if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
@@ -321,7 +333,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
-    buildConfigRouterCommands(this.configRouterTrie, this);
+    buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
     buildIPv6ACLGlobalCommands(this.configTrie, this);
@@ -350,6 +362,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     const getRouter = () => this.d();
+    registerRoutingProtoShow(trie, this, this.routingCfg);
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerTrackSlaShow(trie, this, this.track, this.ipsla);
@@ -384,12 +397,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       this.startupConfig ?? '% startup-config is not present');
     trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
     trie.registerGreedy('show ip cef', 'Display CEF FIB', () => Show.showIpCef(getRouter()));
-    trie.registerGreedy('show ip bgp', 'Display BGP table', () => Show.showBgpNotActive());
-    trie.registerGreedy('show bgp', 'Display BGP table', () => Show.showBgpNotActive());
-    trie.registerGreedy('show ip eigrp', 'Display EIGRP state', () => Show.showEigrpNotRunning());
+    // BGP/EIGRP/RIP-extras + show ip protocols come from the
+    // RoutingConfigRepository (registerRoutingProtoShow), so they
+    // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));
-    trie.register('show ip protocols', 'Display routing protocol status', () => Show.showIpProtocols(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
 
     // DHCP show commands
