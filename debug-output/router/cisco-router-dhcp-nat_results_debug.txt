@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-05-17T17:51:33.380Z
+Generated: 2026-05-17T17:56:39.242Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1633,9 +1633,15 @@ Total steps: 369
        ^
 
 [295/369] r1 R1# show logging
-  % Invalid input detected at '^' marker.
-  show logging
-       ^
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
 
 [296/369] r1 R1# show snmp
   SNMP agent not enabled
@@ -1651,7 +1657,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *17:51:33.000 UTC Sun May 17 2026
+  *17:56:39.000 UTC Sun May 17 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1777,9 +1783,173 @@ Total steps: 369
     0 carrier transitions
 
 [312/369] r1 R1# show tech-support
-  % Invalid input detected at '^' marker.
-  show tech-support
-       ^
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  ip dhcp pool VLAN10
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan10.lab
+  !
+  ip dhcp pool VLAN20
+   network 192.168.2.0 255.255.255.0
+   default-router 192.168.2.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan20.lab
+   lease 2
+  !
+  ip dhcp pool VLAN30
+   network 192.168.3.0 255.255.255.0
+   default-router 192.168.3.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan30.lab
+   lease 3
+  !
+  ip dhcp pool VLAN40
+   network 192.168.4.0 255.255.255.0
+   default-router 192.168.4.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan40.lab
+   lease 4
+  !
+  ip dhcp pool VLAN50
+   network 192.168.5.0 255.255.255.0
+   default-router 192.168.5.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan50.lab
+   lease 5
+  !
+  ip dhcp pool VLAN60
+   network 192.168.6.0 255.255.255.0
+   default-router 192.168.6.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan60.lab
+   lease 6
+  !
+  ip dhcp pool VLAN70
+   network 192.168.7.0 255.255.255.0
+   default-router 192.168.7.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan70.lab
+   lease 7
+  !
+  ip dhcp pool VLAN80
+   network 192.168.8.0 255.255.255.0
+   default-router 192.168.8.1
+   dns-server 8.8.8.8 8.8.4.4
+   domain-name vlan80.lab
+   lease 8
+  !
+  ip dhcp pool RESERVED
+  !
+  ip dhcp pool INFINITE
+   network 172.16.0.0 255.255.0.0
+  ip dhcp excluded-address 192.168.1.1 192.168.1.20
+  ip dhcp excluded-address 192.168.1.250 192.168.1.254
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  
+  ------------------ show ip protocols ------------------
+  No routing protocol is configured.
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
 
 [313/369] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco Catalyst Switch"
@@ -2163,6 +2333,7 @@ Total steps: 369
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    logging      Disable logging
     service      Disable a service
     arp          Remove ARP entry
     router       router

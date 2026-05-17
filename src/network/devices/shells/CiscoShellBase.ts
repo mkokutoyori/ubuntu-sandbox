@@ -33,6 +33,7 @@ import {
 } from './cisco/CiscoCommonShow';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
+import { LoggingConfig } from '../inspection/config/LoggingConfig';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -49,6 +50,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Config-driven CLI aliases — real, working, projected by show. */
   protected readonly aliases = new AliasRepository();
+
+  /** Config-driven syslog/logging state, projected by `show logging`. */
+  protected readonly logging = new LoggingConfig();
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
@@ -435,7 +439,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
     this.configTrie.registerGreedy('banner', 'Set a banner', () => '');
-    this.configTrie.registerGreedy('logging', 'Logging configuration', () => '');
+    this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
+      this.logging.apply(args, false);
+      return '';
+    });
+    this.configTrie.registerGreedy('no logging', 'Disable logging', (args) => {
+      this.logging.apply(args, true);
+      return '';
+    });
     this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
 

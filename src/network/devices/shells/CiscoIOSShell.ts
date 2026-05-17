@@ -342,6 +342,26 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerTrackSlaShow(trie, this, this.track, this.ipsla);
 
+    // `show logging` — projects the real LoggingConfig (router).
+    trie.registerGreedy('show logging', 'Display syslog state', () =>
+      this.logging.render());
+
+    // `show tech-support` — real aggregation of the key show outputs.
+    trie.register('show tech-support', 'Aggregate diagnostic output', () => {
+      const r = this.d();
+      const section = (title: string, body: string) =>
+        `------------------ ${title} ------------------\n${body}`;
+      return [
+        section('show version', Show.showVersion(r)),
+        section('show running-config', Show.showRunningConfig(r)),
+        section('show ip interface brief', Show.showIpIntBrief(r)),
+        section('show ip route', Show.showIpRoute(r)),
+        section('show interfaces', Show.showInterfacesAll(r)),
+        section('show ip protocols', Show.showIpProtocols(r)),
+        section('show logging', this.logging.render()),
+      ].join('\n\n');
+    });
+
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
