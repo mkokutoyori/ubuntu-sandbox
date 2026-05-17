@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-interface
-Generated: 2026-05-17T05:21:35.216Z
+Generated: 2026-05-17T05:23:52.253Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
 Total steps: 74
@@ -86,36 +86,45 @@ Total steps: 74
 <empty>
 
 [10/74] sw [SW-INT-GigabitEthernet0/0/1] speed 1000
-  Error: Unrecognized command "speed 1000"
+<empty>
 
 [11/74] sw [SW-INT-GigabitEthernet0/0/1] duplex full
-  Error: Unrecognized command "duplex full"
+<empty>
 
 [12/74] sw [SW-INT-GigabitEthernet0/0/1] negotiation auto
-  Error: Unrecognized command "negotiation auto"
+<empty>
 
 [13/74] sw [SW-INT-GigabitEthernet0/0/1] flow-control
-  Error: Unrecognized command "flow-control"
+<empty>
 
 [14/74] sw [SW-INT-GigabitEthernet0/0/1] mtu 9216
-  Error: Unrecognized command "mtu 9216"
+<empty>
 
 [15/74] sw [SW-INT-GigabitEthernet0/0/1] jumboframe enable 9216
-  Error: Unrecognized command "jumboframe enable 9216"
+<empty>
 
 [16/74] sw [SW-INT-GigabitEthernet0/0/1] port-security enable
-  Error: Unrecognized command "port-security enable"
+<empty>
 
 [17/74] sw [SW-INT-GigabitEthernet0/0/1] port-security max-mac-num 5
-  Error: Unrecognized command "port-security max-mac-num 5"
+<empty>
 
 [18/74] sw [SW-INT-GigabitEthernet0/0/1] loopback-detect enable
-  Error: Unrecognized command "loopback-detect enable"
+<empty>
 
 [19/74] sw [SW-INT-GigabitEthernet0/0/1] display this
   interface GigabitEthernet0/0/1
    description >> uplink to L1 <<
    port link-type access
+   speed 1000
+   duplex full
+   negotiation auto
+   flow-control
+   mtu 9216
+   jumboframe enable 9216
+   port-security enable
+   port-security max-mac-num 5
+   loopback-detect enable
   #
 
 [20/74] sw [SW-INT-GigabitEthernet0/0/1] quit

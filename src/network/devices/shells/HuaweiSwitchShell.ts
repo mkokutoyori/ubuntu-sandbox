@@ -58,6 +58,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Per-interface STP config lines (rendered verbatim in `display this`). */
   private ifStp = new Map<string, string[]>();
 
+  /** Per-interface physical/security config lines (rendered in `display this`). */
+  private ifCfg = new Map<string, string[]>();
+
   constructor() {
     this.buildUserCommands();
     this.buildSystemCommands();
@@ -289,6 +292,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display commands
     this.registerDisplayCommands(this.interfaceTrie);
     this.registerStpInterfaceCommands(this.interfaceTrie);
+    this.registerInterfacePhysicalCommands(this.interfaceTrie);
 
     // shutdown
     this.interfaceTrie.register('shutdown', 'Shut down interface', () => {
@@ -572,6 +576,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
   }
 
+  /**
+   * Interface-view physical / security config commands. Most are
+   * "accept, validate loosely, persist for `display this`" — the L2
+   * sim does not model PHY rate negotiation, so storing the intent is
+   * the faithful behaviour.
+   */
+  private registerInterfacePhysicalCommands(trie: CommandTrie): void {
+    const record = (line: string) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(line);
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    };
+    // Simple keyword commands that take the rest of the line verbatim.
+    // L2/physical interface keywords only — an L2 switch port must NOT
+    // accept L3 (ip/arp) config, so those are deliberately excluded.
+    for (const kw of [
+      'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
+      'loopback-detect', 'port-security', 'storm-control',
+      'broadcast-suppression', 'port-isolate', 'port-mirroring',
+      'trust', 'qos', 'traffic-policy', 'traffic-filter', 'am',
+      'mac-limit', 'lldp',
+    ]) {
+      trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
+        record(`${kw} ${args.join(' ')}`.trim()));
+    }
+  }
+
   /** MST region sub-view command tree ([host-mst-region]). */
   private buildMstRegionCommands(): void {
     const t = this.mstRegionTrie;
@@ -851,6 +884,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (cfg.accessVlan !== 1) {
         lines.push(` port default vlan ${cfg.accessVlan}`);
       }
+    }
+    for (const cfgLine of this.ifCfg.get(portName) ?? []) {
+      lines.push(` ${cfgLine}`);
     }
     for (const stpLine of this.ifStp.get(portName) ?? []) {
       lines.push(` ${stpLine}`);

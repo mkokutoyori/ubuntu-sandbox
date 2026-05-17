@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T05:21:35.195Z
+Generated: 2026-05-17T05:23:52.737Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
@@ -143,16 +143,16 @@ Total steps: 90
 <empty>
 
 [30/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security enable
-  Error: Unrecognized command "port-security enable"
+<empty>
 
 [31/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security mac-address sticky
-  Error: Unrecognized command "port-security mac-address sticky"
+<empty>
 
 [32/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security max-mac-num 2
-  Error: Unrecognized command "port-security max-mac-num 2"
+<empty>
 
 [33/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security protect-action shutdown
-  Error: Unrecognized command "port-security protect-action shutdown"
+<empty>
 
 [34/90] sw [SW-SEC-GigabitEthernet0/0/2] quit
 <empty>
