@@ -9,10 +9,11 @@ import type { RmanOperation } from '../core/types';
 let _jobCounter = 1;
 
 export const JobBuilder = {
-  backupDatabase(opts: { tag?: string; format?: string } = {}): RmanJob {
+  backupDatabase(opts: { tag?: string; format?: string; compressed?: boolean } = {}): RmanJob {
     const params: Record<string, string> = {};
-    if (opts.tag)    params.tag    = opts.tag;
-    if (opts.format) params.format = opts.format;
+    if (opts.tag)        params.tag        = opts.tag;
+    if (opts.format)     params.format     = opts.format;
+    if (opts.compressed) params.compressed = 'true';
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },
@@ -20,11 +21,12 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupArchivelog(opts: { deleteInput?: boolean; tag?: string; format?: string } = {}): RmanJob {
+  backupArchivelog(opts: { deleteInput?: boolean; tag?: string; format?: string; fromScn?: number } = {}): RmanJob {
     const params: Record<string, string> = {};
-    if (opts.deleteInput) params.deleteInput = 'true';
-    if (opts.tag) params.tag = opts.tag;
-    if (opts.format) params.format = opts.format;
+    if (opts.deleteInput)        params.deleteInput = 'true';
+    if (opts.tag)                params.tag         = opts.tag;
+    if (opts.format)             params.format      = opts.format;
+    if (opts.fromScn !== undefined) params.fromScn  = String(opts.fromScn);
     return _make('BACKUP_ARCHIVELOG', [
       { name: 'start_archivelog', pct: 10, message: 'channel ORA_DISK_1: starting archived log backup set' },
       { name: 'specify_archivelogs', pct: 30, message: 'channel ORA_DISK_1: specifying archived log(s) in backup set' },
@@ -59,6 +61,27 @@ export const JobBuilder = {
       { name: 'start_validate', pct: 10, message: 'channel ORA_DISK_1: starting validation of datafile backup set' },
       { name: 'validate_files', pct: 60, message: 'channel ORA_DISK_1: validating files in backup set' },
     ], { validate: 'true' });
+  },
+
+  backupDatafile(fileNo: number, opts: { tag?: string; format?: string; compressed?: boolean } = {}): RmanJob {
+    const params: Record<string, string> = { fileNo: String(fileNo) };
+    if (opts.tag)        params.tag        = opts.tag;
+    if (opts.format)     params.format     = opts.format;
+    if (opts.compressed) params.compressed = 'true';
+    return _make('BACKUP_DATABASE', [
+      { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting datafile ${fileNo} backup set` },
+      { name: 'specify_file',  pct: 20, message: `channel ORA_DISK_1: specifying datafile ${fileNo}` },
+    ], params);
+  },
+
+  backupSpfile(opts: { tag?: string; format?: string } = {}): RmanJob {
+    const params: Record<string, string> = { what: 'spfile' };
+    if (opts.tag)    params.tag    = opts.tag;
+    if (opts.format) params.format = opts.format;
+    return _make('BACKUP_DATABASE', [
+      { name: 'start_backup', pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
+      { name: 'spfile',       pct: 50, message: 'including current SPFILE in backup set' },
+    ], params);
   },
 
   backupTablespace(tsName: string, opts: { tag?: string; format?: string } = {}): RmanJob {
@@ -125,10 +148,13 @@ export const JobBuilder = {
     ], params);
   },
 
-  crosscheck(): RmanJob {
+  crosscheck(scope: 'BACKUP' | 'ARCHIVELOG' = 'BACKUP'): RmanJob {
+    const msg = scope === 'ARCHIVELOG'
+      ? "crosschecked archived log: found to be 'AVAILABLE'"
+      : "crosschecked backup piece: found to be 'AVAILABLE'";
     return _make('CROSSCHECK', [
-      { name: 'crosscheck', pct: 80, message: "crosschecked backup piece: found to be 'AVAILABLE'" },
-    ]);
+      { name: 'crosscheck', pct: 80, message: msg },
+    ], { scope });
   },
 
   deleteExpired(): RmanJob {

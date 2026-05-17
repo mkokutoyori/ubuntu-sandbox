@@ -20,18 +20,27 @@ import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import { JobBuilder } from '../job/JobBuilder';
 
-export type BackupMode = 'database' | 'archivelog' | 'tablespace' | 'incremental' | 'controlfile' | 'validate';
+export type BackupMode =
+  | 'database' | 'archivelog' | 'tablespace' | 'incremental'
+  | 'controlfile' | 'validate' | 'datafile' | 'spfile';
 
 export class BackupCommand implements IRmanCommand<void> {
   readonly name = 'BACKUP';
 
-  constructor(private readonly mode: BackupMode) {}
+  constructor(
+    private readonly mode: BackupMode,
+    private readonly forceCompressed = false,
+  ) {}
 
   execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
-    const captured = args[0] ?? '';
-    const opts = parseBackupOptions(captured);
+    // Parse options against every captured fragment so trailing TAG / FORMAT /
+    // DELETE INPUT / COMPRESSED / FROM SCN clauses are picked up regardless of
+    // where the dispatcher pattern slotted them.
+    const all = args.join(' ');
+    const opts = parseBackupOptions(all);
+    if (this.forceCompressed) opts.compressed = true;
 
-    const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(captured);
+    const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
     switch (this.mode) {
       case 'database': {
@@ -56,19 +65,32 @@ export class BackupCommand implements IRmanCommand<void> {
         return engine.run(JobBuilder.backupControlfile(opts));
       case 'validate':
         return engine.run(JobBuilder.backupValidate());
+      case 'datafile': {
+        const n = Number(args[0]);
+        return engine.run(JobBuilder.backupDatafile(Number.isFinite(n) ? n : 1, opts));
+      }
+      case 'spfile':
+        return engine.run(JobBuilder.backupSpfile(opts));
     }
   }
 }
 
-/** Parse the optional TAG / FORMAT / DELETE INPUT clauses from the trailing text. */
+/** Parse optional clauses from the trailing text of a BACKUP command. */
 export function parseBackupOptions(text: string): {
   tag?: string; format?: string; deleteInput?: boolean;
+  compressed?: boolean; fromScn?: number;
 } {
-  const out: { tag?: string; format?: string; deleteInput?: boolean } = {};
+  const out: {
+    tag?: string; format?: string; deleteInput?: boolean;
+    compressed?: boolean; fromScn?: number;
+  } = {};
   const tagMatch = text.match(/\bTAG\s+'([^']+)'/i);
   if (tagMatch) out.tag = tagMatch[1].toUpperCase();
   const fmtMatch = text.match(/\bFORMAT\s+'([^']+)'/i);
   if (fmtMatch) out.format = fmtMatch[1];
   if (/\bDELETE\s+INPUT\b/i.test(text)) out.deleteInput = true;
+  if (/\bCOMPRESSED\b/i.test(text))     out.compressed = true;
+  const scnMatch = text.match(/\bFROM\s+SCN\s+(\d+)/i);
+  if (scnMatch) out.fromScn = Number(scnMatch[1]);
   return out;
 }

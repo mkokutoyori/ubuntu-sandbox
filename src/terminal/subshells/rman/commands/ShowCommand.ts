@@ -6,11 +6,29 @@ import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 
+export type ShowScope = 'ALL' | 'RETENTION_POLICY' | 'DEFAULT_DEVICE_TYPE' | 'CONTROLFILE_AUTOBACKUP';
+
 export class ShowCommand implements IRmanCommand<string[]> {
   readonly name = 'SHOW';
 
+  constructor(private readonly scope: ShowScope = 'ALL') {}
+
   execute(_args: string[], { policy, ctx, config }: RmanCommandContext): Result<string[], RmanError> {
     const c = config?.snapshot();
+
+    if (this.scope === 'RETENTION_POLICY') {
+      const retention = c?.retentionPolicy.describe() ?? policy.describe();
+      return ok(['', `CONFIGURE RETENTION POLICY TO ${retention};`, '']);
+    }
+    if (this.scope === 'DEFAULT_DEVICE_TYPE') {
+      const defDev = c?.defaultDeviceType ?? 'DISK';
+      return ok(['', `CONFIGURE DEFAULT DEVICE TYPE TO ${defDev};`, '']);
+    }
+    if (this.scope === 'CONTROLFILE_AUTOBACKUP') {
+      const cfAuto = c?.controlfileAutobackup === false ? 'OFF' : 'ON';
+      return ok(['', `CONFIGURE CONTROLFILE AUTOBACKUP ${cfAuto};`, '']);
+    }
+
     // Pull from live config when available; otherwise fall back to the
     // legacy hardcoded defaults the design doc flagged as DEF-RMAN-02.
     const retention   = c?.retentionPolicy.describe() ?? policy.describe();

@@ -103,7 +103,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
-      case 'CROSSCHECK':         return this._doCrosscheck();
+      case 'CROSSCHECK':         return this._doCrosscheck(job);
       case 'DELETE_EXPIRED':     return this._doDeleteExpired();
       case 'DELETE_OBSOLETE':    return this._doDeleteObsolete(job);
       default:                   return ok(undefined);
@@ -114,18 +114,26 @@ export class RmanJobEngine implements IRmanJobEngine {
     const params = job.params ?? {};
     const validate = params.validate === 'true';
     const deleteInput = params.deleteInput === 'true';
+    const compressed = params.compressed === 'true';
     const tag = params.tag ? RmanTag.of(params.tag) : RmanTag.generate();
     const path = this._resolvePath(params.format, tag);
     const isControlfile = params.what === 'controlfile';
+    const isSpfile      = params.what === 'spfile';
     const isArchivelog  = job.operation === 'BACKUP_ARCHIVELOG';
     const incLevel = params.incrementalLevel === '0' || params.incrementalLevel === '1'
       ? (Number(params.incrementalLevel) as 0 | 1)
       : undefined;
 
-    const datafiles = this._ctx.getDatafiles();
+    const allDatafiles = this._ctx.getDatafiles();
+    const fileFilter = params.fileNo ? Number(params.fileNo) : undefined;
+    const datafiles = fileFilter !== undefined
+      ? allDatafiles.filter(df => df.fileNo === fileFilter)
+      : allDatafiles;
     const size = isControlfile
       ? 9_650_176
-      : (datafiles.reduce((acc, df) => acc + df.sizeBytes, 0) || 1_000_000);
+      : isSpfile
+        ? 4_096
+        : (datafiles.reduce((acc, df) => acc + df.sizeBytes, 0) || 1_000_000);
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
 
@@ -138,7 +146,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0));
     if (!writeResult.ok) return writeResult;
 
-    const dfEntries: DatafileEntry[] = isControlfile ? [] : datafiles.map(df => {
+    const dfEntries: DatafileEntry[] = (isControlfile || isSpfile) ? [] : datafiles.map(df => {
       const ckp = Scn.of(1_892_354);
       return Object.freeze({
         fileNo: df.fileNo, level: incLevel ?? (0 as 0 | 1),
@@ -155,7 +163,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     const level = incLevel ?? 0;
 
     const set = BackupSetFactory.createBackupSet({
-      type, level, path, sizeBytes: size, tag, datafiles: dfEntries,
+      type, level, path, sizeBytes: size, tag, datafiles: dfEntries, compressed,
     });
 
     this._bus.emit({
@@ -311,11 +319,15 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
-  private _doCrosscheck(): Result<void, RmanError> {
+  private _doCrosscheck(job?: RmanJob): Result<void, RmanError> {
+    const scope = (job?.params?.scope ?? 'BACKUP').toUpperCase();
     const snap = this._catalog.listAll();
     if (!snap.ok) return snap;
     let available = 0, expired = 0;
     for (const p of snap.value.pieces) {
+      const set = snap.value.sets.find(s => s.bsKey === p.bsKey);
+      if (scope === 'ARCHIVELOG' && set?.type !== 'ARCHIVELOG') continue;
+      if (scope === 'BACKUP'     && set?.type === 'ARCHIVELOG') continue;
       if (this._ctx.vfs.fileExists(p.path)) available++;
       else { this._catalog.expirePiece(p.key); expired++; }
     }

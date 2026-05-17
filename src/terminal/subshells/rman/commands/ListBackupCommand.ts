@@ -111,7 +111,8 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       const typeLabel = typeOf(s).padEnd(7);
       lines.push(`${String(s.bsKey).padEnd(7)} ${typeLabel} ${size.padEnd(10)} DISK        ${elapsed}     ${ts}`);
       for (const p of s.pieces) {
-        lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: NO  Tag: ${p.tag.label}`);
+        const comp = p.compressed ? 'YES' : 'NO';
+        lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: ${comp}  Tag: ${p.tag.label}`);
         lines.push(`          Piece Name: ${p.path}`);
       }
       if (s.type === 'CONTROLFILE') {
