@@ -199,7 +199,22 @@ export class ReactiveRmanSubShell implements ISubShell {
     }
   }
 
-  private _opLabel(op: string): string { return op.toLowerCase().replace(/_/g, ' '); }
+  /** Map an internal RmanOperation onto the Oracle-canonical verb that
+   *  Oracle's "Starting X at <date>" / "Finished X at <date>" lines use. */
+  private _opLabel(op: string): string {
+    switch (op) {
+      case 'BACKUP_DATABASE':
+      case 'BACKUP_ARCHIVELOG':
+      case 'BACKUP_TABLESPACE':    return 'backup';
+      case 'RESTORE_DATABASE':     return 'restore';
+      case 'RECOVER_DATABASE':     return 'recover';
+      case 'DUPLICATE_DATABASE':   return 'Duplicate Db';
+      case 'CROSSCHECK':           return 'crosscheck';
+      case 'DELETE_EXPIRED':
+      case 'DELETE_OBSOLETE':      return 'delete';
+      default:                     return op.toLowerCase().replace(/_/g, ' ');
+    }
+  }
   private _push(line: string): void { this._outputBuffer.push(line); }
 
   private _formatRmanError(_e: RmanError): string[] {
