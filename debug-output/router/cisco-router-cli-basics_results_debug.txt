@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-05-17T17:16:31.374Z
+Generated: 2026-05-17T17:21:39.302Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [4/482] r1 R1> show calendar
-  17:16:31 UTC Sun May 17 2026
+  17:21:39 UTC Sun May 17 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -538,6 +538,7 @@ Total steps: 482
     stacks          Display process stacks
     reload          Display reload schedule
     aaa             Display AAA state
+    aliases         Display command aliases
     arp             Display ARP table
     running-config  Display running configuration
     startup-config  Display saved configuration
@@ -594,10 +595,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [81/482] r1 R1# show calendar
-  17:16:31 UTC Sun May 17 2026
+  17:21:39 UTC Sun May 17 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1113,7 +1114,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1122,7 +1123,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1131,7 +1132,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1140,7 +1141,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1149,7 +1150,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1160,7 +1161,7 @@ Total steps: 482
          ^
 
 [172/482] r1 R1(config)# do show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [173/482] r1 R1(config)# exit
 <empty>
@@ -1558,6 +1559,7 @@ Total steps: 482
 
 [258/482] r1 R1-EDGE(config)# no ?
     hostname     Reset hostname
+    alias        Remove a command alias
     cdp          cdp
     lldp         lldp
     ip           ip
@@ -2103,14 +2105,10 @@ Total steps: 482
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [350/482] r1 R1-EDGE(config)# alias exec sr show running-config
-  % Invalid input detected at '^' marker.
-  alias exec sr show running-config
-  ^
+<empty>
 
 [351/482] r1 R1-EDGE(config)# alias exec sib show ip interface brief
-  % Invalid input detected at '^' marker.
-  alias exec sib show ip interface brief
-  ^
+<empty>
 
 [352/482] r1 R1-EDGE(config)# privilege exec level 5 show running-config
   % Invalid input detected at '^' marker.
@@ -2136,19 +2134,60 @@ Total steps: 482
 <empty>
 
 [359/482] r1 R1-EDGE# sr
-  % Invalid input detected at '^' marker.
-  sr
-  ^
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
 
 [360/482] r1 R1-EDGE# sib
-  % Invalid input detected at '^' marker.
-  sib
-  ^
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  unassigned      YES manual administratively down down
+  Tunnel0                    unassigned      YES manual administratively down down
 
 [361/482] r1 R1-EDGE# show aliases
-  % Invalid input detected at '^' marker.
-  show aliases
-       ^
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+    sr                  show running-config
+    sib                 show ip interface brief
 
 
 --- [362] § save / reload / copy ---
@@ -2514,7 +2553,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *17:16:31.000 UTC Sun May 17 2026
+  *17:21:39.000 UTC Sun May 17 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2693,9 +2732,17 @@ Total steps: 482
   History is enabled, history size is 20.
 
 [435/482] r1 R1-EDGE# show aliases
-  % Invalid input detected at '^' marker.
-  show aliases
-       ^
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+    sr                  show running-config
+    sib                 show ip interface brief
 
 
 --- [436] § regression: pipe filters ---
@@ -2920,6 +2967,7 @@ Total steps: 482
 
 [479/482] r1 R1-EDGE(config)# no ?
     hostname     Reset hostname
+    alias        Remove a command alias
     cdp          cdp
     lldp         lldp
     ip           ip

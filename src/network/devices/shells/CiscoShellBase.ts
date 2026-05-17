@@ -32,6 +32,7 @@ import {
   type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
+import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -45,6 +46,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Repository the CLI mutates and `show` projects (no silent no-ops).
    */
   protected readonly configState = new CiscoConfigState();
+
+  /** Config-driven CLI aliases — real, working, projected by show. */
+  protected readonly aliases = new AliasRepository();
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
@@ -115,7 +119,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!trimmed) return '';
     if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
 
-    const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
+    const parsed = parsePipeFilter(trimmed);
+    let cmdPart = parsed.cmd;
+    const pipeFilter = parsed.filter;
 
     // Context-sensitive help
     if (cmdPart.endsWith('?')) {
@@ -123,6 +129,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const helpResult = this.getHelp(cmdPart.slice(0, -1));
       this.deviceRef = null;
       return helpResult;
+    }
+
+    // Exec alias expansion (real AliasRepository state): in
+    // user/privileged mode, an alias head expands to its command.
+    if (!this.isConfigMode()) {
+      const sp = cmdPart.indexOf(' ');
+      const head = sp === -1 ? cmdPart : cmdPart.slice(0, sp);
+      const expansion = this.aliases.resolve('exec', head);
+      if (expansion) cmdPart = expansion + (sp === -1 ? '' : cmdPart.slice(sp));
     }
 
     // Global shortcuts (no device ref needed)
@@ -306,6 +321,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showReload());
     trie.registerGreedy('show aaa', 'Display AAA state', (a) =>
       showAaa(a.join(' ')));
+    trie.register('show aliases', 'Display command aliases', () =>
+      this.aliases.render());
+  }
+
+  /** Map a CLI alias mode keyword to the repository's AliasMode. */
+  private aliasMode(token: string): AliasMode {
+    switch (token) {
+      case 'configure': return 'configure';
+      case 'interface': return 'interface';
+      case 'router': return 'router';
+      default: return 'exec';
+    }
   }
 
   private registerCommonUserCommands(): void {
@@ -358,6 +385,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.register('no hostname', 'Reset hostname', () => '');
+
+    // `alias <mode> <name> <command…>` — real, working aliases.
+    this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
+      if (args.length < 3) return '% Incomplete command.';
+      const [modeTok, name, ...rest] = args;
+      this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
+      return '';
+    });
+    this.configTrie.registerGreedy('no alias', 'Remove a command alias', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      this.aliases.remove(this.aliasMode(args[0]), args[1]);
+      return '';
+    });
 
     // Global feature toggles — mutate the real CiscoConfigState
     // Repository (shared switch + router, DRY). `show cdp`/`show lldp`

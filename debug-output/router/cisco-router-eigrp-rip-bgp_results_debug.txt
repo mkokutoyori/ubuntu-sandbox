@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-05-17T17:16:32.826Z
+Generated: 2026-05-17T17:21:41.393Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -1464,7 +1464,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *17:16:32.000 UTC Sun May 17 2026
+  *17:21:41.000 UTC Sun May 17 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1640,9 +1640,15 @@ Total steps: 355
   History is enabled, history size is 20.
 
 [308/355] r1 R1# show aliases
-  % Invalid input detected at '^' marker.
-  show aliases
-       ^
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
 
 
 --- [309] § regression: pipe filters ---
@@ -1882,6 +1888,7 @@ Total steps: 355
 
 [352/355] r1 R1(config)# no ?
     hostname     Reset hostname
+    alias        Remove a command alias
     cdp          cdp
     lldp         lldp
     ip           ip

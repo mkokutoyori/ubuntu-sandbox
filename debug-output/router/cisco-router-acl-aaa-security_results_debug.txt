@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-05-17T17:16:32.351Z
+Generated: 2026-05-17T17:21:40.793Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -1694,7 +1694,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *17:16:32.000 UTC Sun May 17 2026
+  *17:21:40.000 UTC Sun May 17 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1870,9 +1870,15 @@ Total steps: 388
   History is enabled, history size is 20.
 
 [341/388] r1 R1# show aliases
-  % Invalid input detected at '^' marker.
-  show aliases
-       ^
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
 
 
 --- [342] § regression: pipe filters ---
@@ -2224,6 +2230,7 @@ Total steps: 388
 
 [385/388] r1 R1(config)# no ?
     hostname     Reset hostname
+    alias        Remove a command alias
     cdp          cdp
     lldp         lldp
     ip           ip

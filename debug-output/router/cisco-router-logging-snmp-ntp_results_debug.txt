@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-17T17:16:32.348Z
+Generated: 2026-05-17T17:21:40.840Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -551,7 +551,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *17:16:32.000 UTC Sun May 17 2026
+  *17:21:40.000 UTC Sun May 17 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -559,7 +559,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  17:16:32 UTC Sun May 17 2026
+  17:21:40 UTC Sun May 17 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1300,7 +1300,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *17:16:32.000 UTC Sun May 17 2026
+  *17:21:40.000 UTC Sun May 17 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1479,9 +1479,15 @@ Total steps: 322
   History is enabled, history size is 20.
 
 [275/322] r1 R1# show aliases
-  % Invalid input detected at '^' marker.
-  show aliases
-       ^
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
 
 
 --- [276] § regression: pipe filters ---
@@ -1688,6 +1694,7 @@ Total steps: 322
 
 [319/322] r1 R1(config)# no ?
     hostname     Reset hostname
+    alias        Remove a command alias
     cdp          cdp
     lldp         lldp
     ip           ip
