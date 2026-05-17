@@ -18,8 +18,10 @@ export { DbId } from './values/DbId';
 
 // Reactive primitives
 export { RmanSubject, type RmanObservable, type RmanOperator } from './reactive/RmanSubject';
+export { RmanBehaviorSubject } from './reactive/RmanBehaviorSubject';
 export { Operators } from './reactive/operators';
 export { RmanEventBus } from './reactive/RmanEventBus';
+export { createAggregations, EMPTY_METRICS, type SessionMetrics, type ReactiveAggregations } from './reactive/aggregations';
 
 // Policy
 export type { IRetentionPolicy, RetentionKind } from './policy/IRetentionPolicy';

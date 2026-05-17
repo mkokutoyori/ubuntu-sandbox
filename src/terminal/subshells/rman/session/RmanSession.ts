@@ -13,6 +13,7 @@
  */
 
 import { RmanEventBus } from '../reactive/RmanEventBus';
+import { createAggregations, type ReactiveAggregations, type SessionMetrics } from '../reactive/aggregations';
 import { ReactiveChannelPool } from '../channel/ReactiveChannelPool';
 import { InMemoryRmanCatalog } from '../catalog/InMemoryRmanCatalog';
 import { RmanJobEngine } from '../job/RmanJobEngine';
@@ -44,7 +45,11 @@ export class RmanSession implements IRmanSession {
   private readonly _unsubs: Array<() => void> = [];
   private _disposed = false;
 
-  readonly events$: RmanObservable<RmanEvent>;
+  readonly events$:        RmanObservable<RmanEvent>;
+  readonly metrics$:        RmanObservable<SessionMetrics>;
+  readonly activeJob$:      RmanObservable<string | null>;
+  readonly activeChannels$: RmanObservable<ReadonlySet<string>>;
+  private readonly _aggregations: ReactiveAggregations;
 
   constructor(
     private readonly _options: RmanSessionOptions,
@@ -58,6 +63,12 @@ export class RmanSession implements IRmanSession {
     this._config     = new RmanConfig(_options.retentionPolicy, _options.autobackupCf);
     this.events$     = this._bus.events$;
     this._wireReactiveStreams();
+    // Derived state — must subscribe after _wireReactiveStreams so that
+    // channel/catalog forwards are already feeding events$.
+    this._aggregations    = createAggregations(this.events$);
+    this.metrics$         = this._aggregations.metrics$;
+    this.activeJob$       = this._aggregations.activeJob$;
+    this.activeChannels$  = this._aggregations.activeChannels$;
   }
 
   get state(): RmanSessionState { return this._state; }
@@ -174,6 +185,7 @@ export class RmanSession implements IRmanSession {
     if (this._state !== 'DISCONNECTED') this._transition('DISCONNECTED');
     this._bus.emit({ type: 'DISCONNECTED' });
     for (const u of this._unsubs) u();
+    this._aggregations.dispose();
     this._pool.dispose();
     this._catalog.dispose();
     this._bus.dispose();
