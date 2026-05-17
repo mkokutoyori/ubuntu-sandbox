@@ -23,6 +23,8 @@ import { AllocateChannelCommand } from './AllocateChannelCommand';
 import { ReleaseChannelCommand } from './ReleaseChannelCommand';
 import { CatalogCommand } from './CatalogCommand';
 import { DuplicateCommand } from './DuplicateCommand';
+import { ChangeCommand } from './ChangeCommand';
+import { SetCommand } from './SetCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -110,6 +112,12 @@ export class RmanCommandDispatcher {
       // DUPLICATE DATABASE (DEF-RMAN-17)
       { pattern: /^DUPLICATE TARGET DATABASE TO (\S+)$/i, command: new DuplicateCommand() },
       { pattern: /^DUPLICATE DATABASE TO (\S+)$/i,        command: new DuplicateCommand() },
+      // CHANGE (UN)AVAILABLE + tag-scoped delete
+      { pattern: /^CHANGE BACKUPSET (\d+) UNAVAILABLE$/i,           command: new ChangeCommand('UNAVAILABLE')  },
+      { pattern: /^CHANGE BACKUPSET (\d+) AVAILABLE$/i,             command: new ChangeCommand('AVAILABLE')    },
+      { pattern: /^CHANGE BACKUP TAG '([^']+)' DELETE$/i,           command: new ChangeCommand('DELETE_BY_TAG') },
+      // SET NEWNAME (RUN-block binding consumed by RESTORE / DUPLICATE)
+      { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand() },
     );
   }
 }

@@ -9,11 +9,16 @@ import type { RmanOperation } from '../core/types';
 let _jobCounter = 1;
 
 export const JobBuilder = {
-  backupDatabase(opts: { tag?: string; format?: string; compressed?: boolean } = {}): RmanJob {
+  backupDatabase(opts: {
+    tag?: string; format?: string; compressed?: boolean;
+    keepForever?: boolean; keepUntilTime?: string;
+  } = {}): RmanJob {
     const params: Record<string, string> = {};
-    if (opts.tag)        params.tag        = opts.tag;
-    if (opts.format)     params.format     = opts.format;
-    if (opts.compressed) params.compressed = 'true';
+    if (opts.tag)           params.tag           = opts.tag;
+    if (opts.format)        params.format        = opts.format;
+    if (opts.compressed)    params.compressed    = 'true';
+    if (opts.keepForever)   params.keepForever   = 'true';
+    if (opts.keepUntilTime) params.keepUntilTime = opts.keepUntilTime;
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },

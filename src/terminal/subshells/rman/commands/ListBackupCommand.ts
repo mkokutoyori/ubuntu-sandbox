@@ -110,6 +110,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       const size = formatSize(s.sizeBytes);
       const typeLabel = typeOf(s).padEnd(7);
       lines.push(`${String(s.bsKey).padEnd(7)} ${typeLabel} ${size.padEnd(10)} DISK        ${elapsed}     ${ts}`);
+      if (s.keepNote) lines.push(`  Keep: ${s.keepNote}`);
       for (const p of s.pieces) {
         const comp = p.compressed ? 'YES' : 'NO';
         lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: ${comp}  Tag: ${p.tag.label}`);

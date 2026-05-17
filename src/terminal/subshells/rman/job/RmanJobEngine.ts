@@ -162,8 +162,13 @@ export class RmanJobEngine implements IRmanJobEngine {
               :                   'FULL';
     const level = incLevel ?? 0;
 
+    const keepNote = params.keepForever === 'true'
+      ? 'KEEP FOREVER'
+      : params.keepUntilTime
+        ? `KEEP UNTIL TIME ${params.keepUntilTime}`
+        : undefined;
     const set = BackupSetFactory.createBackupSet({
-      type, level, path, sizeBytes: size, tag, datafiles: dfEntries, compressed,
+      type, level, path, sizeBytes: size, tag, datafiles: dfEntries, compressed, keepNote,
     });
 
     this._bus.emit({

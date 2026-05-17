@@ -24,6 +24,8 @@ export interface RmanCommandContext {
   readonly pool?:        IChannelPool;
   /** Optional map keeping explicit channel handles, keyed by user alias. */
   readonly userChannels?: Map<string, ChannelHandle>;
+  /** Optional rename map populated by SET NEWNAME FOR DATAFILE n TO '<path>'. */
+  readonly setNewname?:  Map<number, string>;
 }
 
 export interface IRmanCommand<T = void> {

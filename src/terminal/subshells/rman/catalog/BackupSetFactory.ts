@@ -21,6 +21,7 @@ export interface BackupSetSpec {
   readonly datafiles:   ReadonlyArray<DatafileEntry>;
   readonly compressed?: boolean;
   readonly deviceType?: DeviceType;
+  readonly keepNote?:   string;
 }
 
 export const BackupSetFactory = {
@@ -56,6 +57,7 @@ export const BackupSetFactory = {
       completionTime: now,
       sizeBytes:      spec.sizeBytes,
       datafiles:      Object.freeze([...spec.datafiles]),
+      keepNote:       spec.keepNote,
     });
   },
 };

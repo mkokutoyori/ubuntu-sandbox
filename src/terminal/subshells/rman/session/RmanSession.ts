@@ -42,6 +42,8 @@ export class RmanSession implements IRmanSession {
   private _inBlock = false;
   /** User-aliased channels held by ALLOCATE CHANNEL. */
   private readonly _userChannels = new Map<string, import('../channel/types').ChannelHandle>();
+  /** Rename map populated by SET NEWNAME FOR DATAFILE inside a RUN block. */
+  private readonly _setNewname = new Map<number, string>();
   private _state: RmanSessionState = 'IDLE';
   private readonly _unsubs: Array<() => void> = [];
   private _disposed = false;
@@ -106,6 +108,16 @@ export class RmanSession implements IRmanSession {
 
     const upper = trimmed.toUpperCase();
 
+    // Inline RUN { stmt1; stmt2; } — Oracle's canonical single-line form.
+    const inline = trimmed.match(/^RUN\s*\{(.*)\}\s*;?\s*$/i);
+    if (inline) {
+      if (this._state !== 'CONNECTED' && this._state !== 'RUNNING_JOB') {
+        return err({ code: 'RMAN_03002', message: 'target database is not connected' });
+      }
+      const body = inline[1].split(';').map(s => s.trim()).filter(Boolean);
+      return this._runBlock(body);
+    }
+
     // Block control — recognised in any state, before the connection check.
     if (upper === 'RUN' || upper === 'RUN {' || trimmed === '{') {
       this._inBlock = true;
@@ -161,6 +173,7 @@ export class RmanSession implements IRmanSession {
       config:  this._config,
       pool:    this._pool,
       userChannels: this._userChannels,
+      setNewname:   this._setNewname,
     };
   }
 

@@ -79,10 +79,12 @@ export class BackupCommand implements IRmanCommand<void> {
 export function parseBackupOptions(text: string): {
   tag?: string; format?: string; deleteInput?: boolean;
   compressed?: boolean; fromScn?: number;
+  keepForever?: boolean; keepUntilTime?: string;
 } {
   const out: {
     tag?: string; format?: string; deleteInput?: boolean;
     compressed?: boolean; fromScn?: number;
+    keepForever?: boolean; keepUntilTime?: string;
   } = {};
   const tagMatch = text.match(/\bTAG\s+'([^']+)'/i);
   if (tagMatch) out.tag = tagMatch[1].toUpperCase();
@@ -92,5 +94,8 @@ export function parseBackupOptions(text: string): {
   if (/\bCOMPRESSED\b/i.test(text))     out.compressed = true;
   const scnMatch = text.match(/\bFROM\s+SCN\s+(\d+)/i);
   if (scnMatch) out.fromScn = Number(scnMatch[1]);
+  if (/\bKEEP\s+FOREVER\b/i.test(text)) out.keepForever = true;
+  const keepUntil = text.match(/\bKEEP\s+UNTIL\s+TIME\s+'([^']+)'/i);
+  if (keepUntil) out.keepUntilTime = keepUntil[1];
   return out;
 }
