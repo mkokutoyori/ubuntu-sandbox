@@ -154,6 +154,12 @@ export class GetChildItemCmdlet implements ICmdlet {
       const out: PSValue[] = entries.map(e => ({
         Name: e.name,
         FullName: `${dir}\\${e.name}`,
+        // FileInfo.Extension includes the leading dot; directories and
+        // extension-less files report an empty string (matches real PS).
+        Extension: e.isDirectory ? '' : (e.name.includes('.') ? e.name.slice(e.name.lastIndexOf('.')) : ''),
+        BaseName: e.isDirectory
+          ? e.name
+          : (e.name.includes('.') ? e.name.slice(0, e.name.lastIndexOf('.')) : e.name),
         // Real PowerShell's DirectoryInfo has no `Length` — Format-Table
         // renders an empty cell.  Setting it to null reproduces that
         // visually; downstream `Where-Object { $_.Length -gt 0 }` keeps
@@ -237,10 +243,17 @@ export class SetContentCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
-    const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '');
+    const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    fs.writeFile(path, value);
+    // PowerShell Set-Content treats each input value as its own line; an
+    // array/pipeline writes one value per line (NOT space-joined).
+    const lines = Array.isArray(raw) ? raw.map(v => psValueToString(v)) : [psValueToString(raw)];
+    const noNewline = ctx.named['nonewline'] === true || ctx.named['nonewline'] === 'true';
+    fs.writeFile(path, lines.join('\n') + (noNewline ? '' : '\n'));
+    if (ctx.named['passthru'] === true || ctx.named['passthru'] === 'true') {
+      return lines.length === 1 ? lines[0] : (lines as unknown as PSValue);
+    }
     return null;
   }
 }
@@ -300,6 +313,11 @@ export class NewItemCmdlet implements ICmdlet {
         ctx.emitError(`New-Item : The file '${path}' already exists.`);
         return null;
       }
+      // -Force creates any missing parent directories (matches real PS).
+      if (force) {
+        const parent = path.replace(/[\\/][^\\/]*$/, '');
+        if (parent && parent !== path && !fs.exists(parent)) fs.createDir(parent);
+      }
       fs.createFile(path);
       if (value !== null) fs.writeFile(path, value);
     }
@@ -315,26 +333,53 @@ export class RemoveItemCmdlet implements ICmdlet {
   readonly aliases = ['rm', 'del', 'ri', 'rmdir', 'erase', 'rd'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path    = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const recurse = ctx.named['recurse'] === true;
 
-    // Env:VAR — clear the variable on the environment provider.
-    const envMatch = /^env:(.+)$/i.exec(path);
-    if (envMatch) {
-      ctx.providers.environment?.remove(envMatch[1]);
-      return null;
+    // Build the target list. An explicit -Path/positional wins; otherwise
+    // accept pipeline input (strings or FileInfo objects from Get-ChildItem).
+    const explicit = ctx.named['path'] ?? ctx.positional[0];
+    let targets: string[];
+    if (explicit !== undefined && explicit !== null) {
+      targets = (Array.isArray(explicit) ? explicit : [explicit]).map(pathOf);
+    } else {
+      const raw = ctx.pipeInput;
+      const items = raw === undefined || raw === null ? [] : Array.isArray(raw) ? raw : [raw];
+      targets = items.map(pathOf).filter(p => p.length > 0);
     }
+    if (targets.length === 0) return null;
 
-    if (isRegistryPath(path)) {
-      if (!ctx.providers.registry) requireRegistryProvider(path);
-      return ctx.providers.registry.removeItem(path, recurse);
+    for (const path of targets) {
+      // Env:VAR — clear the variable on the environment provider.
+      const envMatch = /^env:(.+)$/i.exec(path);
+      if (envMatch) {
+        ctx.providers.environment?.remove(envMatch[1]);
+        continue;
+      }
+      if (isRegistryPath(path)) {
+        if (!ctx.providers.registry) requireRegistryProvider(path);
+        ctx.providers.registry.removeItem(path, recurse);
+        continue;
+      }
+      const fs = ctx.providers.filesystem;
+      if (!fs) return null;
+      try { fs.remove(path, recurse); }
+      catch (e) { ctx.emitError(e instanceof Error ? e.message : String(e)); }
     }
-
-    const fs = ctx.providers.filesystem;
-    if (!fs) return null;
-    fs.remove(path, recurse);
     return null;
   }
+}
+
+/** Resolve a pipeline item to a filesystem path: a string, or an object's
+ *  FullName / PSPath / Path / Name property (Get-ChildItem output). */
+function pathOf(v: PSValue): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const o = v as Record<string, PSValue>;
+    const k = ['FullName', 'PSPath', 'Path', 'Name'].find(
+      n => o[n] !== undefined && o[n] !== null);
+    return k ? psValueToString(o[k]) : '';
+  }
+  return psValueToString(v);
 }
 
 // ─── Copy-Item ────────────────────────────────────────────────────────────
@@ -347,9 +392,30 @@ export class CopyItemCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const src  = psValueToString(ctx.named['path']        ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
     const dest = psValueToString(ctx.named['destination'] ?? ctx.positional[1] ?? '');
+    const recurse = ctx.named['recurse'] === true;
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    fs.copy(src, dest);
+
+    // Directory copy: the provider's copy() only handles files, so walk the
+    // tree ourselves when -Recurse is given (matches real Copy-Item).
+    if (fs.isDirectory(src)) {
+      if (!recurse) return null;
+      const walk = (s: string, d: string) => {
+        if (!fs.exists(d)) fs.createDir(d);
+        for (const e of fs.listDir(s)) {
+          const sp = `${s}\\${e.name}`;
+          const dp = `${d}\\${e.name}`;
+          if (e.isDirectory) walk(sp, dp);
+          else fs.writeFile(dp, fs.readFile(sp));
+        }
+      };
+      try { walk(src, dest); }
+      catch (e) { ctx.emitError(e instanceof Error ? e.message : String(e)); }
+      return null;
+    }
+
+    try { fs.copy(src, dest); }
+    catch (e) { ctx.emitError(e instanceof Error ? e.message : String(e)); }
     return null;
   }
 }

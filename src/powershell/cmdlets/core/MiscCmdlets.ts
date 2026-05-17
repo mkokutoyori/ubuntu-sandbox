@@ -45,6 +45,12 @@ export class NewObjectCmdlet implements ICmdlet {
       const user = psValueToString(Array.isArray(args) ? args[0] : args ?? '');
       return { UserName: user, Password: null } as Record<string, PSValue>;
     }
+    // psobject / pscustomobject (and the generic fallback) honour -Property,
+    // which seeds the new object's NoteProperties from a hashtable.
+    const prop = ctx.named['property'];
+    if (prop !== null && typeof prop === 'object' && !Array.isArray(prop)) {
+      return { ...(prop as Record<string, PSValue>) };
+    }
     return {} as Record<string, PSValue>;
   }
 }
@@ -57,10 +63,53 @@ export class GetRandomCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const max = ctx.named['maximum'] ?? ctx.positional[0] ?? null;
+    // -SetSeed → deterministic mulberry32 sequence (same seed ⇒ same
+    // value), matching PowerShell's reseed semantics and keeping
+    // seeded debug transcripts reproducible. No seed ⇒ Math.random.
+    let rng: () => number;
+    if (ctx.named['setseed'] !== undefined) {
+      let a = (Number(ctx.named['setseed']) >>> 0) || 1;
+      rng = () => {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    } else {
+      rng = Math.random;
+    }
+    const count = ctx.named['count'] !== undefined ? Number(ctx.named['count']) : undefined;
+
+    // Selection mode: -InputObject or pipeline input → pick element(s).
+    const inputObj = ctx.named['inputobject'];
+    const pool: PSValue[] | null =
+      inputObj !== undefined && inputObj !== null
+        ? (Array.isArray(inputObj) ? inputObj : [inputObj])
+        : (ctx.pipeInput !== undefined && ctx.pipeInput !== null
+            ? (Array.isArray(ctx.pipeInput) ? ctx.pipeInput : [ctx.pipeInput])
+            : null);
+
+    if (pool && pool.length > 0) {
+      if (count === undefined) return pool[Math.floor(rng() * pool.length)];
+      // Sample `count` WITHOUT replacement (shuffle, take N).
+      const arr = [...pool];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr.slice(0, Math.min(count, arr.length));
+    }
+
+    // Numeric mode.
+    const max = ctx.named['maximum'] ?? ctx.positional[0];
     const min = Number(ctx.named['minimum'] ?? 0);
-    if (max !== null) return Math.floor(Math.random() * (Number(max) - min)) + min;
-    return Math.random();
+    const draw = () => max !== undefined && max !== null
+      ? Math.floor(rng() * (Number(max) - min)) + min
+      : Math.floor(rng() * 2147483647);
+    if (count !== undefined) {
+      return Array.from({ length: Math.max(0, count) }, draw);
+    }
+    return draw();
   }
 }
 

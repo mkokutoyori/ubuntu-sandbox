@@ -15,19 +15,38 @@ export class GetDateCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const fmt    = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
-    const dateArg = ctx.named['date'] ?? ctx.named['year'] ?? ctx.positional[0] ?? null;
+    const fmt     = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
+    const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
+    const now = new Date();
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {
       d = new Date(psValueToString(dateArg));
       if (isNaN(d.getTime())) d = new Date();
+    } else if (['year', 'month', 'day', 'hour', 'minute', 'second']
+        .some(k => ctx.named[k] !== undefined)) {
+      // -Year/-Month/-Day/... build a date; unspecified parts inherit "now".
+      const num = (k: string, def: number) =>
+        ctx.named[k] !== undefined ? Number(ctx.named[k]) : def;
+      d = new Date(
+        num('year',  now.getFullYear()),
+        num('month', now.getMonth() + 1) - 1,
+        num('day',   now.getDate()),
+        num('hour',   now.getHours()),
+        num('minute', now.getMinutes()),
+        num('second', now.getSeconds()),
+      );
     } else {
-      d = new Date();
+      d = now;
     }
     if (fmt !== null) return formatDate(d, fmt);
     return makePSDate(d);
   }
 }
+
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+  'Friday', 'Saturday'];
 
 // ─── Set-Date ─────────────────────────────────────────────────────────────
 
@@ -54,15 +73,45 @@ export function makePSDate(d: Date): PSValue {
 function formatDate(d: Date, fmt: string): string {
   const pad2 = (n: number) => String(n).padStart(2, '0');
   const pad3 = (n: number) => String(n).padStart(3, '0');
-  return fmt
-    .replace(/yyyy/g, String(d.getFullYear()))
-    .replace(/yy/g,   String(d.getFullYear()).slice(-2))
-    .replace(/MM/g,   pad2(d.getMonth() + 1))
-    .replace(/dd/g,   pad2(d.getDate()))
-    .replace(/HH/g,   pad2(d.getHours()))
-    .replace(/mm/g,   pad2(d.getMinutes()))
-    .replace(/ss/g,   pad2(d.getSeconds()))
-    .replace(/fff/g,  pad3(d.getMilliseconds()));
+  const h12 = d.getHours() % 12 || 12;
+  // Single-pass token scan (longest-match-first) so `dddd` is not chewed up
+  // by the `dd` rule, etc.
+  const tokens: Array<[RegExp, () => string]> = [
+    [/^yyyy/, () => String(d.getFullYear())],
+    [/^yy/,   () => String(d.getFullYear()).slice(-2)],
+    [/^MMMM/, () => MONTHS_FULL[d.getMonth()]],
+    [/^MMM/,  () => MONTHS_FULL[d.getMonth()].slice(0, 3)],
+    [/^MM/,   () => pad2(d.getMonth() + 1)],
+    [/^M/,    () => String(d.getMonth() + 1)],
+    [/^dddd/, () => DAYS_FULL[d.getDay()]],
+    [/^ddd/,  () => DAYS_FULL[d.getDay()].slice(0, 3)],
+    [/^dd/,   () => pad2(d.getDate())],
+    [/^d/,    () => String(d.getDate())],
+    [/^HH/,   () => pad2(d.getHours())],
+    [/^H/,    () => String(d.getHours())],
+    [/^hh/,   () => pad2(h12)],
+    [/^h/,    () => String(h12)],
+    [/^mm/,   () => pad2(d.getMinutes())],
+    [/^m/,    () => String(d.getMinutes())],
+    [/^ss/,   () => pad2(d.getSeconds())],
+    [/^s/,    () => String(d.getSeconds())],
+    [/^fff/,  () => pad3(d.getMilliseconds())],
+    [/^tt/,   () => (d.getHours() < 12 ? 'AM' : 'PM')],
+  ];
+  let out = '';
+  for (let i = 0; i < fmt.length; ) {
+    const rest = fmt.slice(i);
+    const hit = tokens.find(([re]) => re.test(rest));
+    if (hit) {
+      const m = rest.match(hit[0])![0];
+      out += hit[1]();
+      i += m.length;
+    } else {
+      out += fmt[i];
+      i++;
+    }
+  }
+  return out;
 }
 
 // ─── New-TimeSpan ─────────────────────────────────────────────────────────

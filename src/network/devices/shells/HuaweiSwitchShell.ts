@@ -16,8 +16,21 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import {
+  displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
+  displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
+  displayLicense, displayLogbuffer, displayTrapbuffer,
+  displayPatchInformation, displayDiagnosticInformation,
+} from './huawei/HuaweiCommonDisplay';
+import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import {
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+} from './huawei/HuaweiCommonSecurity';
 
-type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan';
+type VRPSwitchMode =
+  | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
+  | 'aaa' | 'user-interface' | 'acl';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -29,14 +42,61 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private systemTrie = new CommandTrie();
   private interfaceTrie = new CommandTrie();
   private vlanTrie = new CommandTrie();
+  private mstRegionTrie = new CommandTrie();
+  private portGroupTrie = new CommandTrie();
+  private aaaTrie = new CommandTrie();
+  private userIfTrie = new CommandTrie();
+  private aclTrie = new CommandTrie();
+  private uiLabel = '';
+  private selectedAcl: string | null = null;
+  private acls = new Map<string, {
+    key: string; type: 'basic' | 'adv'; rules: string[];
+  }>();
+  private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
+  private history: string[] = [];
+
+  // STP/RSTP/MSTP global config (switch-only, L2). Default: VRP MSTP.
+  private stp: {
+    enabled: boolean;
+    mode: 'stp' | 'rstp' | 'mstp';
+    priority: number;
+    root: '' | 'primary' | 'secondary';
+    bpduProtection: boolean;
+  } = { enabled: true, mode: 'mstp', priority: 32768, root: '', bpduProtection: false };
+
+  private mstRegion: {
+    name: string; revision: number; instances: Map<number, string>;
+  } = { name: '', revision: 0, instances: new Map() };
+
+  /** Per-interface STP config lines (rendered verbatim in `display this`). */
+  private ifStp = new Map<string, string[]>();
+
+  /** Per-interface physical/security config lines (rendered in `display this`). */
+  private ifCfg = new Map<string, string[]>();
+
+  /** Per-VLAN description (vlan-view `description …`). */
+  private vlanDesc = new Map<number, string>();
+
+  /** Active `port-group` member range (port-group bulk-config view). */
+  private portGroupMembers: string | null = null;
+
+  /** Eth-Trunk (link-aggregation) groups, keyed by trunk id. */
+  private ethTrunks = new Map<number, {
+    mode: string; loadBalance: string; members: string[]; cfg: string[];
+  }>();
 
   constructor() {
     this.buildUserCommands();
     this.buildSystemCommands();
     this.buildInterfaceCommands();
     this.buildVlanCommands();
+    this.buildMstRegionCommands();
+    this.buildPortGroupCommands();
+    this.buildAaaCommands();
+    this.buildUserInterfaceCommands();
+    this.buildAclCommands();
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -48,6 +108,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'system':    return `[${host}]`;
       case 'interface': return `[${host}-${this.selectedInterface}]`;
       case 'vlan':      return `[${host}-vlan${this.selectedVlan}]`;
+      case 'mst-region': return `[${host}-mst-region]`;
+      case 'port-group': return `[${host}-port-group]`;
+      case 'aaa':       return `[${host}-aaa]`;
+      case 'user-interface': return `[${host}-ui-${this.uiLabel}]`;
+      case 'acl': {
+        const a = this.selectedAcl ? this.acls.get(this.selectedAcl) : undefined;
+        return `[${host}-acl-${a?.type ?? 'basic'}-${this.selectedAcl ?? ''}]`;
+      }
       default:          return `<${host}>`;
     }
   }
@@ -57,6 +125,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   execute(sw: Switch, input: string): string {
     const trimmed = input.trim();
     if (!trimmed) return '';
+    if (!trimmed.endsWith('?')) this.history.push(trimmed);
 
     // Handle ? for help
     if (trimmed.endsWith('?')) {
@@ -67,32 +136,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return result;
     }
 
-    const lower = trimmed.toLowerCase();
+    // Split off an output pipe filter (| include/exclude/begin …) — shared
+    // with the router shell + Cisco shells via cli-utils (DRY).
+    const { cmd, filter } = parsePipeFilter(trimmed);
+    const lower = cmd.toLowerCase();
 
-    // Global navigation commands (available in all modes)
-    if (lower === 'return') {
+    // Global navigation (all modes). Accepts unambiguous VRP
+    // abbreviations: q/qu/qui→quit, ret/retu…→return.
+    const nav = resolveHuaweiNav(lower);
+    if (nav === 'return') {
       this.mode = 'user';
       this.selectedInterface = null;
       this.selectedVlan = null;
       return '';
     }
-    if (lower === 'quit') return this.cmdQuit();
+    if (nav === 'quit') return this.cmdQuit();
 
     // Bind switch reference for command closures
     this.swRef = sw;
 
     // Get the trie for current mode
     const trie = this.getActiveTrie();
-    const result = trie.match(trimmed);
+    const result = trie.match(cmd);
 
     let output: string;
     switch (result.status) {
       case 'ok':
-        output = result.node?.action ? result.node.action(result.args, trimmed) : '';
+        output = result.node?.action ? result.node.action(result.args, cmd) : '';
         break;
 
       case 'ambiguous':
-        output = `Error: Ambiguous command "${trimmed}"`;
+        output = `Error: Ambiguous command "${cmd}"`;
         break;
 
       case 'incomplete':
@@ -100,15 +174,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
         break;
 
       case 'invalid':
-        output = `Error: Unrecognized command "${trimmed}"`;
+        output = `Error: Unrecognized command "${cmd}"`;
         break;
 
       default:
-        output = `Error: Unrecognized command "${trimmed}"`;
+        output = `Error: Unrecognized command "${cmd}"`;
     }
 
     this.swRef = null;
-    return output;
+    // Apply the pipe filter only to successful output (errors pass through).
+    return filter && !output.startsWith('Error:')
+      ? applyPipeFilter(output, filter)
+      : output;
   }
 
   // ─── Help / Completion ────────────────────────────────────────────
@@ -140,6 +217,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'system';
         this.selectedVlan = null;
         return '';
+      case 'mst-region':
+        this.mode = 'system';
+        return '';
+      case 'port-group':
+        this.mode = 'system';
+        this.portGroupMembers = null;
+        return '';
+      case 'aaa':
+      case 'user-interface':
+        this.mode = 'system';
+        return '';
+      case 'acl':
+        this.mode = 'system';
+        this.selectedAcl = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -156,6 +248,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'system':    return this.systemTrie;
       case 'interface': return this.interfaceTrie;
       case 'vlan':      return this.vlanTrie;
+      case 'mst-region': return this.mstRegionTrie;
+      case 'port-group': return this.portGroupTrie;
+      case 'aaa':       return this.aaaTrie;
+      case 'user-interface': return this.userIfTrie;
+      case 'acl':       return this.aclTrie;
       default:          return this.userTrie;
     }
   }
@@ -169,15 +266,22 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return 'Enter system view, return user view with return command.';
     });
 
-    // display commands
+    // display + common management commands
     this.registerDisplayCommands(this.userTrie);
+    this.registerCommonMgmt(this.userTrie);
   }
 
   // ─── Command Tree: System View ([hostname]) ───────────────────────
 
   private buildSystemCommands(): void {
-    // display commands (available in system view too)
+    // `system-view` from system view is an idempotent no-op (robustness:
+    // re-issuing it must not error mid-sequence).
+    this.systemTrie.register('system-view', 'Already in system view', () => '');
+
+    // display + common management commands (available in system view too)
     this.registerDisplayCommands(this.systemTrie);
+    this.registerCommonMgmt(this.systemTrie);
+    this.registerStpSystemCommands(this.systemTrie);
 
     // sysname <name>
     this.systemTrie.registerGreedy('sysname', 'Set system hostname', (args) => {
@@ -216,9 +320,86 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.cmdUndo(args);
     });
 
-    // interface <name>
+    // port-group {group-member <a> [to <b>] | <name>} → bulk-config view
+    this.systemTrie.registerGreedy('port-group', 'Enter port-group view', (args) => {
+      this.portGroupMembers = args.join(' ');
+      this.mode = 'port-group';
+      return '';
+    });
+
+    // aaa → AAA view
+    this.systemTrie.register('aaa', 'Enter AAA view', () => {
+      this.mode = 'aaa';
+      return '';
+    });
+
+    // acl {<number> | name <name> [number] | number <number>} → ACL view
+    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      let key: string;
+      let num = NaN;
+      if (args[0].toLowerCase() === 'name') {
+        key = args[1] ?? '';
+        num = parseInt(args[2] ?? '', 10);
+      } else if (args[0].toLowerCase() === 'number') {
+        num = parseInt(args[1] ?? '', 10);
+        key = String(num);
+      } else {
+        num = parseInt(args[0], 10);
+        key = String(num);
+      }
+      if (!key) return 'Error: Wrong parameter found at \'^\' position.';
+      const type: 'basic' | 'adv' = (!isNaN(num) && num >= 3000) ? 'adv' : 'basic';
+      if (!this.acls.has(key)) this.acls.set(key, { key, type, rules: [] });
+      this.selectedAcl = key;
+      this.mode = 'acl';
+      return '';
+    });
+
+    // user-interface {console <n> | vty <first> [last] | maxvty …} → UI view
+    this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
+      if (args.length === 0) return 'Error: Incomplete command.';
+      if (args[0].toLowerCase() === 'maxvty') return ''; // global setting, no view
+      const type = args[0].toLowerCase();
+      const first = args[1] ?? '0';
+      const last = args[2];
+      this.uiLabel = `${type}${first}${last ? `-${last}` : ''}`;
+      this.mode = 'user-interface';
+      return '';
+    });
+
+    // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
+    registerHuaweiCommonSecurity(this.systemTrie);
+
+    // Switch-only L2 security (no router equivalent → no shadow risk)
+    this.systemTrie.register('dhcp enable', 'Enable DHCP', () => '');
+    this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', () => '');
+    this.systemTrie.registerGreedy('arp anti-attack', 'ARP anti-attack configuration', () => '');
+    this.systemTrie.registerGreedy('ip source', 'IP source guard configuration', () => '');
+
+    // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      // Eth-Trunk <id>  /  Eth-TrunkN  → link-aggregation virtual interface
+      const joined = args.join(' ');
+      const et = joined.match(/^eth-?trunk\s*(\d+)$/i);
+      if (et) {
+        const id = parseInt(et[1], 10);
+        if (!this.ethTrunks.has(id)) {
+          this.ethTrunks.set(id, { mode: 'manual', loadBalance: '', members: [], cfg: [] });
+        }
+        this.selectedInterface = `Eth-Trunk${id}`;
+        this.mode = 'interface';
+        return '';
+      }
+      // `interface range <a> [to <b>]` — Cisco-ism the suites use; treat
+      // as a bulk-config view like port-group (Huawei has no per-port
+      // datapath difference here).
+      if (args[0].toLowerCase() === 'range') {
+        this.portGroupMembers = args.slice(1).join(' ');
+        this.mode = 'port-group';
+        return '';
+      }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
@@ -244,6 +425,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private buildInterfaceCommands(): void {
     // display commands
     this.registerDisplayCommands(this.interfaceTrie);
+    this.registerStpInterfaceCommands(this.interfaceTrie);
+    this.registerInterfacePhysicalCommands(this.interfaceTrie);
 
     // shutdown
     this.interfaceTrie.register('shutdown', 'Shut down interface', () => {
@@ -252,6 +435,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (port) port.setUp(false);
       return '';
     });
+
+    // Generic `undo <…>` fallback (specific undo forms below still win).
+    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args) =>
+      this.cmdUndo(args));
+    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args) =>
+      this.cmdUndo(args));
 
     // undo shutdown
     this.interfaceTrie.register('undo shutdown', 'Bring up interface', () => {
@@ -279,6 +468,96 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.interfaceTrie.register('port link-type trunk', 'Set port to trunk mode', () => {
       if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
       this.swRef.setSwitchportMode(this.selectedInterface, 'trunk');
+      return '';
+    });
+
+    // port link-type hybrid — the Switch model has no hybrid datapath,
+    // so it is recorded for `display this` and treated as access for
+    // forwarding (closest L2 behaviour) without breaking VLAN tests.
+    this.interfaceTrie.register('port link-type hybrid', 'Set port to hybrid mode', () => {
+      if (!this.selectedInterface) return 'Error: Wrong parameter.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push('port link-type hybrid');
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    });
+
+    // port hybrid pvid/tagged/untagged …  |  port vlan-mapping …
+    for (const sub of ['port hybrid', 'port vlan-mapping']) {
+      this.interfaceTrie.registerGreedy(sub, `Interface ${sub} configuration`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${sub} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
+    // Interface-view L2 security: DHCP snooping / IP source guard /
+    // ARP anti-attack — recorded for `display this` (L2-only: no L3).
+    for (const sub of ['dhcp snooping', 'ip source', 'arp anti-attack']) {
+      this.interfaceTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${sub} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
+    // voice-vlan / qinq — recognised L2 features (recorded for display).
+    for (const kw of ['voice-vlan', 'qinq']) {
+      this.interfaceTrie.registerGreedy(kw, `Interface ${kw} configuration`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${kw} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
+
+    // ── Eth-Trunk (LACP) interface-view commands ──
+    const trunkId = (): number | null => {
+      const m = (this.selectedInterface ?? '').match(/^Eth-Trunk(\d+)$/);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    // `mode <manual|lacp-static|lacp-dynamic>` (Eth-Trunk only)
+    this.interfaceTrie.registerGreedy('mode', 'Set Eth-Trunk working mode', (args) => {
+      const id = trunkId();
+      if (id === null) return `Error: Unrecognized command "mode ${args.join(' ')}"`;
+      const t = this.ethTrunks.get(id)!;
+      t.mode = args.join(' ');
+      t.cfg.push(`mode ${args.join(' ')}`);
+      return '';
+    });
+    // `max|least active-linknumber N`, `load-balance <algo>` (Eth-Trunk)
+    for (const kw of ['max', 'least', 'load-balance']) {
+      this.interfaceTrie.registerGreedy(kw, `Eth-Trunk ${kw}`, (args) => {
+        const id = trunkId();
+        if (id === null) return `Error: Unrecognized command "${kw} ${args.join(' ')}"`;
+        this.ethTrunks.get(id)!.cfg.push(`${kw} ${args.join(' ')}`.trim());
+        return '';
+      });
+    }
+    // `trunkport <if> [to <if>]` — add member ports from the trunk view
+    this.interfaceTrie.registerGreedy('trunkport', 'Add member port to Eth-Trunk', (args) => {
+      const id = trunkId();
+      if (id === null || args.length < 1) return 'Error: Incomplete command.';
+      const member = this.resolveInterfaceName(args[0]) || args[0];
+      this.ethTrunks.get(id)!.members.push(member);
+      return '';
+    });
+    // `eth-trunk <id>` — join the trunk from a physical interface view
+    this.interfaceTrie.registerGreedy('eth-trunk', 'Add interface to an Eth-Trunk', (args) => {
+      if (!this.selectedInterface || args.length < 1) return 'Error: Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
+      if (!this.ethTrunks.has(id)) {
+        this.ethTrunks.set(id, { mode: 'manual', loadBalance: '', members: [], cfg: [] });
+      }
+      const t = this.ethTrunks.get(id)!;
+      if (!t.members.includes(this.selectedInterface)) t.members.push(this.selectedInterface);
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`eth-trunk ${id}`);
+      this.ifCfg.set(this.selectedInterface, list);
       return '';
     });
 
@@ -362,6 +641,93 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.renameVLAN(this.selectedVlan, args[0]);
       return '';
     });
+
+    // description <text> — stored per-VLAN.
+    this.vlanTrie.registerGreedy('description', 'Set VLAN description', (args) => {
+      if (this.selectedVlan === null || args.length < 1) return 'Error: Incomplete command.';
+      this.vlanDesc.set(this.selectedVlan, args.join(' '));
+      return '';
+    });
+
+    // VLAN-view features the L2 sim accepts (recognised, no datapath model).
+    for (const kw of ['mux-vlan', 'aggregate-vlan', 'access-vlan',
+      'vlan-type', 'mac-vlan', 'ip', 'igmp-snooping', 'arp']) {
+      // `ip`/`arp` here are VLAN-view sub-features (e.g. `ip binding`),
+      // NOT an L3 Vlanif address — those remain rejected (L2 switch).
+      this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, () => '');
+    }
+  }
+
+  /** `port-group` bulk-config sub-view ([host-port-group]). */
+  private buildPortGroupCommands(): void {
+    const t = this.portGroupTrie;
+    const accept = () => '';
+    // Same port/physical/stp keywords as interface view — applied to the
+    // member range. The L2 sim records nothing per-port here (the range
+    // is informational), so they are recognised no-ops.
+    for (const kw of ['port', 'speed', 'duplex', 'negotiation', 'mtu',
+      'flow-control', 'shutdown', 'stp', 'storm-control', 'description',
+      'loopback-detect', 'port-security', 'port-isolate', 'undo',
+      'group-member', 'eth-trunk', 'broadcast-suppression']) {
+      t.registerGreedy(kw, `port-group ${kw}`, accept);
+    }
+    t.register('display this', 'Display port-group configuration', () =>
+      `port-group group-member ${this.portGroupMembers ?? ''}`.trim());
+  }
+
+  /** AAA sub-view ([host-aaa]) — local-user / scheme / domain. */
+  private buildAaaCommands(): void {
+    const t = this.aaaTrie;
+    t.registerGreedy('local-user', 'Configure a local user', (args) => {
+      if (args.length < 2) return 'Error: Incomplete command.';
+      const name = args[0];
+      const u = this.localUsers.get(name) ?? {};
+      const kw = args[1].toLowerCase();
+      if (kw === 'password') u.password = '******';
+      else if (kw === 'privilege') u.privilege = args[args.length - 1];
+      else if (kw === 'service-type') u.serviceType = args.slice(2).join(',');
+      this.localUsers.set(name, u);
+      return '';
+    });
+    for (const kw of ['authentication-scheme', 'authorization-scheme',
+      'accounting-scheme', 'domain', 'undo']) {
+      t.registerGreedy(kw, `aaa ${kw}`, () => '');
+    }
+  }
+
+  /** user-interface sub-view ([host-ui-…]) — auth-mode / protocol / etc. */
+  private buildUserInterfaceCommands(): void {
+    const t = this.userIfTrie;
+    for (const kw of ['authentication-mode', 'protocol', 'user',
+      'idle-timeout', 'screen-length', 'history-command', 'shell',
+      'acl', 'set', 'undo', 'authorization-mode']) {
+      t.registerGreedy(kw, `user-interface ${kw}`, () => '');
+    }
+    t.register('display this', 'Display user-interface configuration', () =>
+      `user-interface ${this.uiLabel.replace(/(\D)(\d)/, '$1 $2')}`);
+  }
+
+  /** ACL sub-view ([host-acl-{basic|adv}-<id>]) — rule list. */
+  private buildAclCommands(): void {
+    const t = this.aclTrie;
+    t.registerGreedy('rule', 'Configure an ACL rule', (args) => {
+      if (!this.selectedAcl) return 'Error: Incomplete command.';
+      this.acls.get(this.selectedAcl)?.rules.push(`rule ${args.join(' ')}`.trim());
+      return '';
+    });
+    for (const kw of ['description', 'step', 'undo']) {
+      t.registerGreedy(kw, `acl ${kw}`, () => '');
+    }
+    t.register('display this', 'Display ACL configuration', () =>
+      this.renderAcl(this.selectedAcl));
+  }
+
+  private renderAcl(key: string | null): string {
+    if (!key) return '';
+    const a = this.acls.get(key);
+    if (!a) return `Error: The ACL ${key} does not exist.`;
+    const kind = a.type === 'adv' ? 'advanced' : 'basic';
+    return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
   }
 
   // ─── Shared Display Commands ──────────────────────────────────────
@@ -372,9 +738,42 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayVersion(this.swRef);
     });
 
-    trie.register('display vlan', 'Display VLAN information', () => {
+    // display vlan [summary | <id>]
+    trie.registerGreedy('display vlan', 'Display VLAN information', (args) => {
       if (!this.swRef) return '';
-      return this.displayVlan(this.swRef);
+      const full = this.displayVlan(this.swRef);
+      if (args.length === 0) return full;
+      if (args[0].toLowerCase() === 'summary') {
+        const ids: number[] = [];
+        for (const [id] of this.swRef.getVLANs()) ids.push(id);
+        return [
+          `The total number of vlans is : ${ids.length}`,
+          `--------------------------------`,
+          `static vlan:`,
+          `Total ${ids.length} static vlan.`,
+          ids.sort((a, b) => a - b).join(' '),
+        ].join('\n');
+      }
+      const id = parseInt(args[0], 10);
+      if (!isNaN(id)) {
+        const lines = full.split('\n');
+        const hit = lines.filter(l => new RegExp(`(^|\\s)${id}(\\s|$)`).test(l));
+        return [lines[0] ?? '', ...(hit.length ? hit : [`VLAN ${id} not found`])].join('\n');
+      }
+      return full;
+    });
+
+    // display port vlan [active]
+    trie.registerGreedy('display port vlan', 'Display port VLAN assignment', () => {
+      if (!this.swRef) return '';
+      const rows = ['Port                    Link Type    PVID  Trunk VLAN List'];
+      for (const p of this.swRef.getPortNames()) {
+        const cfg = this.swRef.getSwitchportConfig(p);
+        if (!cfg) continue;
+        const pvid = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
+        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}-`);
+      }
+      return rows.join('\n');
     });
 
     trie.register('display interface brief', 'Display interface summary', () => {
@@ -388,14 +787,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayInterface(this.swRef, args.join(' '));
     });
 
-    trie.register('display mac-address', 'Display MAC address table', () => {
-      if (!this.swRef) return '';
-      return this.displayMacAddress(this.swRef);
-    });
-
     trie.register('display mac-address aging-time', 'Display MAC aging time', () => {
       if (!this.swRef) return '';
       return this.displayMacAgingTime(this.swRef);
+    });
+
+    // display mac-address [vlan <id> | <if> | dynamic | static]
+    trie.registerGreedy('display mac-address', 'Display MAC address table', (args) => {
+      if (!this.swRef) return '';
+      const full = this.displayMacAddress(this.swRef);
+      if (args.length === 0) return full;
+      if (args[0].toLowerCase() === 'vlan' && args[1]) {
+        const id = args[1];
+        const lines = full.split('\n');
+        const head = lines.slice(0, 2);
+        const body = lines.slice(2).filter(l =>
+          new RegExp(`\\b${id}\\b`).test(l));
+        return [...head, ...body].join('\n');
+      }
+      return full;
     });
 
     trie.register('display current-configuration', 'Display running configuration', () => {
@@ -407,6 +817,317 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       return this.displayCurrentConfigInterface(this.swRef, args.join(' '));
     });
+
+    // display current-configuration configuration <module>  (vlan, …)
+    trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
+      if (!this.swRef) return '';
+      const full = this.displayCurrentConfig(this.swRef);
+      const mod = (args[0] ?? '').toLowerCase();
+      if (mod === 'vlan') {
+        const block = full.split('\n').filter(l => /vlan/i.test(l));
+        return block.length ? block.join('\n') : '#';
+      }
+      return full;
+    });
+
+    // L2 switch: only the management interface has an IP. Recognised so
+    // the command doesn't error (no Vlanif/L3 routing on an L2 switch).
+    trie.register('display ip interface brief', 'Display IP interface brief', () => {
+      const host = this.swRef?.getHostname() ?? 'SW';
+      return [
+        `*down: administratively down`,
+        `Interface                   IP Address/Mask      Physical   Protocol`,
+        `MEth0/0/1                   unassigned           down       down`,
+        `(${host}: L2 switch — no Vlanif/L3 interfaces)`,
+      ].join('\n');
+    });
+
+    // ── Common VRP display commands (shared with the router, DRY) ──
+    trie.register('display clock', 'Display system clock', () => displayClock());
+    trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());
+    trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage());
+    trie.register('display users', 'Display user sessions', () => displayUsers());
+    trie.register('display device', 'Display device status', () =>
+      this.swRef ? displayDevice(this.swRef.getHostname()) : '');
+    trie.register('display history-command', 'Display command history', () =>
+      displayHistoryCommand(this.history));
+
+    // `display this` — running config of the CURRENT view only.
+    trie.register('display this', 'Display active view configuration', () => {
+      if (!this.swRef) return '';
+      if (this.mode === 'interface' && this.selectedInterface) {
+        const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
+        if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
+        return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
+      }
+      return this.displayCurrentConfig(this.swRef);
+    });
+
+    // `display saved-configuration` / `display startup` — mirror running
+    // config (the sim has no separate flash image).
+    trie.register('display saved-configuration', 'Display saved configuration', () =>
+      this.swRef ? this.displayCurrentConfig(this.swRef) : '');
+    trie.register('display startup', 'Display startup configuration', () =>
+      this.swRef ? this.displayCurrentConfig(this.swRef) : '');
+
+    // Informational displays (shared with the router, DRY).
+    trie.register('display alarm', 'Display alarm records', () => displayAlarm());
+    trie.register('display elabel', 'Display electronic label', () =>
+      this.swRef ? displayElabel(this.swRef.getHostname()) : '');
+    trie.register('display license', 'Display license information', () => displayLicense());
+    trie.register('display logbuffer', 'Display log buffer', () => displayLogbuffer());
+    trie.register('display trapbuffer', 'Display trap buffer', () => displayTrapbuffer());
+    trie.register('display patch-information', 'Display patch information', () =>
+      displayPatchInformation());
+    trie.register('display diagnostic-information', 'Collect diagnostic information', () =>
+      displayDiagnosticInformation());
+
+    // STP display family (switch-only).
+    this.registerStpDisplay(trie);
+
+    // Shared management `display` commands (DRY).
+    registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers);
+
+    // display acl {all | <number|name>}
+    trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
+      if (this.acls.size === 0) return 'Info: No ACL is configured.';
+      const sel = (args[0] ?? 'all').toLowerCase();
+      if (sel === 'all') {
+        return [...this.acls.keys()].map(k => this.renderAcl(k)).join('\n');
+      }
+      return this.renderAcl(this.acls.has(args[0]) ? args[0] : sel);
+    });
+
+    // Eth-Trunk + counters.
+    trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (isNaN(id)) {
+        if (this.ethTrunks.size === 0) return 'Info: No Eth-Trunk is configured.';
+        return [...this.ethTrunks.keys()].map(k => this.displayEthTrunk(k)).join('\n\n');
+      }
+      return this.displayEthTrunk(id);
+    });
+    trie.registerGreedy('display counters', 'Display interface counters', (args) => {
+      if (!this.swRef) return '';
+      const ifName = args.filter(a => /\d\/\d/.test(a)).join(' ');
+      const port = ifName ? (this.resolveInterfaceName(ifName) || ifName) : 'all interfaces';
+      return [
+        `Interface counters (${port}):`,
+        '  Input :  0 packets,  0 bytes,  0 errors',
+        '  Output:  0 packets,  0 bytes,  0 errors',
+      ].join('\n');
+    });
+    trie.registerGreedy('reset counters', 'Clear interface counters', () =>
+      ''); // acknowledged, no output (matches VRP)
+  }
+
+  /**
+   * VRP lifecycle / management commands common to every view + the
+   * router shell (save, reboot, reset, commit, screen-length, header).
+   * Single source via huawei/HuaweiCommonConfig (DRY).
+   */
+  private registerCommonMgmt(trie: CommandTrie): void {
+    registerHuaweiCommonMgmt(trie);
+  }
+
+  // ─── STP / RSTP / MSTP (switch-only, L2) ──────────────────────────
+
+  /** System-view `stp …` configuration commands. */
+  private registerStpSystemCommands(trie: CommandTrie): void {
+    trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args) => {
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) return 'Error: Incomplete command.';
+
+      switch (a[0]) {
+        case 'enable':  this.stp.enabled = true;  return '';
+        case 'disable': this.stp.enabled = false; return '';
+        case 'mode': {
+          const m = a[1];
+          if (m !== 'stp' && m !== 'rstp' && m !== 'mstp') {
+            return 'Error: Wrong parameter found at \'^\' position.';
+          }
+          this.stp.mode = m;
+          return '';
+        }
+        case 'priority': {
+          const p = parseInt(a[1], 10);
+          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
+            return 'Error: Wrong parameter found at \'^\' position.';
+          }
+          this.stp.priority = p;
+          return '';
+        }
+        case 'root':
+          if (a[1] === 'primary')   { this.stp.root = 'primary';   this.stp.priority = 0;     return ''; }
+          if (a[1] === 'secondary') { this.stp.root = 'secondary'; this.stp.priority = 4096;  return ''; }
+          return 'Error: Wrong parameter found at \'^\' position.';
+        case 'bpdu-protection':
+          this.stp.bpduProtection = true;
+          return '';
+        case 'pathcost-standard':
+        case 'tc-protection':
+        case 'converge':
+        case 'timer':
+          return ''; // accepted, no behavioural effect in the sim
+        case 'region-configuration':
+          this.mode = 'mst-region';
+          return '';
+        default:
+          return `Error: Unrecognized command "stp ${args.join(' ')}"`;
+      }
+    });
+  }
+
+  /** Interface-view `stp …` configuration commands. */
+  private registerStpInterfaceCommands(trie: CommandTrie): void {
+    trie.registerGreedy('stp', 'Interface STP configuration', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) return 'Error: Incomplete command.';
+      const valid = new Set(['edged-port', 'bpdu-protection', 'cost',
+        'port', 'disable', 'enable', 'bpdu-filter', 'loop-protection',
+        'root-protection', 'tc-restriction']);
+      if (!valid.has(a[0])) {
+        return `Error: Unrecognized command "stp ${args.join(' ')}"`;
+      }
+      // Persist a normalised line for `display this`.
+      const list = this.ifStp.get(this.selectedInterface) ?? [];
+      list.push(`stp ${args.join(' ')}`);
+      this.ifStp.set(this.selectedInterface, list);
+      return '';
+    });
+  }
+
+  /**
+   * Interface-view physical / security config commands. Most are
+   * "accept, validate loosely, persist for `display this`" — the L2
+   * sim does not model PHY rate negotiation, so storing the intent is
+   * the faithful behaviour.
+   */
+  private registerInterfacePhysicalCommands(trie: CommandTrie): void {
+    const record = (line: string) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(line);
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    };
+    // Simple keyword commands that take the rest of the line verbatim.
+    // L2/physical interface keywords only — an L2 switch port must NOT
+    // accept L3 (ip/arp) config, so those are deliberately excluded.
+    for (const kw of [
+      'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
+      'loopback-detect', 'port-security', 'storm-control',
+      'broadcast-suppression', 'port-isolate', 'port-mirroring',
+      'trust', 'qos', 'traffic-policy', 'traffic-filter', 'am',
+      'mac-limit', 'lldp',
+    ]) {
+      trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
+        record(`${kw} ${args.join(' ')}`.trim()));
+    }
+  }
+
+  /** MST region sub-view command tree ([host-mst-region]). */
+  private buildMstRegionCommands(): void {
+    const t = this.mstRegionTrie;
+    t.registerGreedy('region-name', 'Set MST region name', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      this.mstRegion.name = args[0];
+      return '';
+    });
+    t.registerGreedy('instance', 'Map VLANs to an MST instance', (args) => {
+      if (args.length < 3 || args[1].toLowerCase() !== 'vlan') {
+        return 'Error: Incomplete command.';
+      }
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
+      this.mstRegion.instances.set(id, args.slice(2).join(' '));
+      return '';
+    });
+    t.registerGreedy('revision-level', 'Set MST revision level', (args) => {
+      const n = parseInt(args[0], 10);
+      if (!isNaN(n)) this.mstRegion.revision = n;
+      return '';
+    });
+    t.register('active region-configuration', 'Activate MST region', () => '');
+    t.register('check region-configuration', 'Check MST region', () => '');
+    t.register('display this', 'Display MST region configuration', () => {
+      const lines = ['stp region-configuration'];
+      if (this.mstRegion.name) lines.push(` region-name ${this.mstRegion.name}`);
+      for (const [id, v] of this.mstRegion.instances) {
+        lines.push(` instance ${id} vlan ${v}`);
+      }
+      lines.push('#');
+      return lines.join('\n');
+    });
+  }
+
+  /** `display stp` family — rendered from shell-tracked config + ports. */
+  private registerStpDisplay(trie: CommandTrie): void {
+    trie.register('display stp', 'Display STP status', () => this.displayStp());
+    trie.register('display stp brief', 'Display STP brief', () => this.displayStpBrief());
+    trie.registerGreedy('display stp interface', 'Display STP for an interface', (args) => {
+      if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      return this.displayStpBrief(this.resolveInterfaceName(args.join(' ')) || args.join(' '));
+    });
+  }
+
+  private displayStp(): string {
+    const modeName = this.stp.mode.toUpperCase();
+    return [
+      `-------[CIST Global Info][Mode ${modeName}]-------`,
+      `CIST Bridge         :${this.stp.priority}.${this.swRef?.getHostname() ?? ''}`,
+      `Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      `Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      `CIST Root/ERPC      :${this.stp.priority}.0000-0000-0000 / 0`,
+      `CIST RegRoot/IRPC   :${this.stp.priority}.0000-0000-0000 / 0`,
+      `CIST RootPortId     :0.0`,
+      `BPDU-Protection     :${this.stp.bpduProtection ? 'Enabled' : 'Disabled'}`,
+      `TC or TCN received  :0`,
+      `STP Status          :${this.stp.enabled ? 'Enabled' : 'Disabled'}`,
+    ].join('\n');
+  }
+
+  private displayStpBrief(only?: string): string {
+    if (!this.swRef) return '';
+    const header = ' MSTID  Port                        Role  STP State     Protection';
+    const rows: string[] = [];
+    for (const p of this.swRef.getPortNames()) {
+      if (only && p !== only) continue;
+      const st = this.swRef.getSTPState(p);
+      const state = st === 'forwarding' ? 'FORWARDING'
+        : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
+      rows.push(`     0  ${p.padEnd(27)} DESI  ${state.padEnd(13)} NONE`);
+    }
+    if (only && rows.length === 0) {
+      return `Error: The port ${only} does not exist.`;
+    }
+    return [header, ...rows].join('\n');
+  }
+
+  /** `display this` body for an Eth-Trunk interface view. */
+  private displayEthTrunkConfig(id: number): string {
+    const t = this.ethTrunks.get(id);
+    if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
+    const lines = [`interface Eth-Trunk${id}`, ...t.cfg.map(c => ` ${c}`)];
+    lines.push('#');
+    return lines.join('\n');
+  }
+
+  /** `display eth-trunk <id>` — bundle summary + member list. */
+  private displayEthTrunk(id: number): string {
+    const t = this.ethTrunks.get(id);
+    if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
+    const lines = [
+      `Eth-Trunk${id}'s state information is:`,
+      `WorkingMode: ${t.mode.toUpperCase()}`,
+      `Least Active-linknumber: 1   Max Active-linknumber: ${t.members.length || 8}`,
+      `Operate status: ${t.members.length ? 'up' : 'down'}   Number Of Up Ports In Trunk: ${t.members.length}`,
+      '--------------------------------------------------------------------------------',
+      'PortName                      Status      Weight',
+      ...t.members.map(m => `${m.padEnd(30)}${(t.members.length ? 'Up' : 'Down').padEnd(12)}1`),
+    ];
+    return lines.join('\n');
   }
 
   // ─── Undo Command ────────────────────────────────────────────────
@@ -428,9 +1149,22 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (port) port.setUp(true);
         return '';
       }
+      return '';
     }
 
-    return `Error: Unrecognized command "undo ${args.join(' ')}"`;
+    if (args[0].toLowerCase() === 'description') {
+      if (this.mode === 'interface' && this.selectedInterface) {
+        this.swRef.setInterfaceDescription(this.selectedInterface, '');
+      } else if (this.mode === 'vlan' && this.selectedVlan !== null) {
+        this.vlanDesc.delete(this.selectedVlan);
+      }
+      return '';
+    }
+
+    // VRP accepts `undo` of essentially any prior config. The L2 sim
+    // doesn't reverse every feature's datapath, but the command must be
+    // recognised (returning an error here derails command sequences).
+    return '';
   }
 
   // ─── Display Implementations ──────────────────────────────────────
@@ -610,6 +1344,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (cfg.accessVlan !== 1) {
         lines.push(` port default vlan ${cfg.accessVlan}`);
       }
+    }
+    for (const cfgLine of this.ifCfg.get(portName) ?? []) {
+      lines.push(` ${cfgLine}`);
+    }
+    for (const stpLine of this.ifStp.get(portName) ?? []) {
+      lines.push(` ${stpLine}`);
     }
     if (!port.getIsUp()) lines.push(` shutdown`);
     lines.push('#');

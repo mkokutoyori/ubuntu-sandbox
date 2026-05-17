@@ -31,6 +31,13 @@ function toPSObject(p: ProcessInfo): Record<string, PSValue> {
     'WS(K)':        Math.floor(p.wsK),
     'CPU(s)':       p.cpuSec,
     CPU:            p.cpuSec,
+    // Real Get-Process exposes WS / PM / NPM / VM as byte aliases —
+    // needed so `Select-Object WS` / `Sort-Object WS` aren't blank.
+    WS:             Math.floor(p.wsK) * 1024,
+    PM:             p.pmK,
+    NPM:            p.npmK * 1024,
+    VM:             p.pmK * 4,
+    WorkingSet:     Math.floor(p.wsK) * 1024,
     Id:             p.pid,
     SI:             p.sessionId,
     ProcessName:    baseName,

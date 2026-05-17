@@ -54,6 +54,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'privileged':                '{host}#',
   'config':                    '{host}(config)#',
   'config-if':                 '{host}(config-if)#',
+  'config-line':               '{host}(config-line)#',
   'config-dhcp':               '{host}(dhcp-config)#',
   'config-router':             '{host}(config-router)#',
   'config-router-ospf':        '{host}(config-router)#',
@@ -80,6 +81,9 @@ export const CISCO_SWITCH_PROMPTS: PromptMap = {
   'config':      '{host}(config)#',
   'config-if':   '{host}(config-if)#',
   'config-vlan': '{host}(config-vlan)#',
+  'config-mst':  '{host}(config-mst)#',
+  'config-line': '{host}(config-line)#',
+  'config-acl':  '{host}(config-ext-nacl)#',
 };
 
 // ─── Huawei VRP Prompt Map ────────────────────────────────────────
