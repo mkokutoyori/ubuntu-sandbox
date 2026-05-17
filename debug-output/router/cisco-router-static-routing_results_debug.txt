@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-05-17T11:01:31.558Z
+Generated: 2026-05-17T17:12:28.915Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -269,17 +269,13 @@ Total steps: 325
 <empty>
 
 [71/325] r1 R1(config)# no ip routing
-  % Invalid input detected at '^' marker.
-  no ip routing
-        ^
+<empty>
 
 [72/325] r1 R1(config)# ip routing
 <empty>
 
 [73/325] r1 R1(config)# ip cef
-  % Invalid input detected at '^' marker.
-  ip cef
-     ^
+<empty>
 
 [74/325] r1 R1(config)# ip route 192.168.99.0 255.255.255.0 10.0.0.2 permanent
 <empty>
@@ -378,9 +374,7 @@ Total steps: 325
 <empty>
 
 [87/325] r1 R1(config)# no ipv6 unicast-routing
-  % Invalid input detected at '^' marker.
-  no ipv6 unicast-routing
-     ^
+<empty>
 
 [88/325] r1 R1(config)# ipv6 unicast-routing
 <empty>
@@ -1356,7 +1350,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *11:01:31.000 UTC Sun May 17 2026
+  *17:12:28.000 UTC Sun May 17 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1374,10 +1368,8 @@ Total steps: 325
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
-  L1                  Gig 0/0        120        Host            eth0
-  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 2
+  Total entries displayed: 0
 
 [258/325] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1737,42 +1729,28 @@ Total steps: 325
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [286/325] r1 R1(config)# no ip routing
-  % Invalid input detected at '^' marker.
-  no ip routing
-        ^
+<empty>
 
 [287/325] r1 R1(config)# ip routing
 <empty>
 
 [288/325] r1 R1(config)# no ip cef
-  % Invalid input detected at '^' marker.
-  no ip cef
-        ^
+<empty>
 
 [289/325] r1 R1(config)# ip cef
-  % Invalid input detected at '^' marker.
-  ip cef
-     ^
+<empty>
 
 [290/325] r1 R1(config)# no cdp run
-  % Invalid input detected at '^' marker.
-  no cdp run
-     ^
+<empty>
 
 [291/325] r1 R1(config)# cdp run
-  % Invalid input detected at '^' marker.
-  cdp run
-  ^
+<empty>
 
 [292/325] r1 R1(config)# no lldp run
-  % Invalid input detected at '^' marker.
-  no lldp run
-     ^
+<empty>
 
 [293/325] r1 R1(config)# lldp run
-  % Invalid input detected at '^' marker.
-  lldp run
-  ^
+<empty>
 
 [294/325] r1 R1(config)# no ip domain-lookup
 <empty>
@@ -1781,24 +1759,16 @@ Total steps: 325
 <empty>
 
 [296/325] r1 R1(config)# no ip http server
-  % Invalid input detected at '^' marker.
-  no ip http server
-        ^
+<empty>
 
 [297/325] r1 R1(config)# ip http server
-  % Invalid input detected at '^' marker.
-  ip http server
-     ^
+<empty>
 
 [298/325] r1 R1(config)# no ip source-route
-  % Invalid input detected at '^' marker.
-  no ip source-route
-        ^
+<empty>
 
 [299/325] r1 R1(config)# ip source-route
-  % Invalid input detected at '^' marker.
-  ip source-route
-     ^
+<empty>
 
 [300/325] r1 R1(config)# no service pad
 <empty>
@@ -1807,9 +1777,7 @@ Total steps: 325
 <empty>
 
 [302/325] r1 R1(config)# no ipv6 unicast-routing
-  % Invalid input detected at '^' marker.
-  no ipv6 unicast-routing
-     ^
+<empty>
 
 [303/325] r1 R1(config)# ipv6 unicast-routing
 <empty>
@@ -1867,6 +1835,9 @@ Total steps: 325
     <cr>  
 
 [319/325] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
@@ -1891,7 +1862,10 @@ Total steps: 325
 
 [322/325] r1 R1(config)# no ?
     hostname     Reset hostname
+    cdp          cdp
+    lldp         lldp
     ip           ip
+    ipv6         ipv6
     service      Disable a service
     arp          Remove ARP entry
     router       router

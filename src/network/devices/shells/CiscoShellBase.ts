@@ -31,6 +31,7 @@ import {
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
+import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -38,6 +39,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Recent commands for `show history` (shared switch + router). */
   protected cmdHistory: string[] = [];
   protected deviceRef: TDevice | null = null;
+
+  /**
+   * Config-driven global feature state (cdp/lldp/ip routing…) — a real
+   * Repository the CLI mutates and `show` projects (no silent no-ops).
+   */
+  protected readonly configState = new CiscoConfigState();
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
@@ -260,9 +267,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show ntp', 'Display NTP associations', () =>
       showNtpAssociations());
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
-      showCdp(this.cs(), a.join(' ')));
+      showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
-      showLldp(this.cs(), a.join(' ')));
+      showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')));
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp());
     trie.registerGreedy('show controllers', 'Display controller status', (a) =>
       showControllers(this.cs(), a.join(' ')));
@@ -350,11 +357,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    // Common global-config no-ops (recognised; the sim has no datapath
-    // for these). Shared by switch + router.
     this.configTrie.register('no hostname', 'Reset hostname', () => '');
-    this.configTrie.registerGreedy('ip domain-lookup', 'DNS lookup', () => '');
-    this.configTrie.registerGreedy('no ip domain-lookup', 'Disable DNS lookup', () => '');
+
+    // Global feature toggles — mutate the real CiscoConfigState
+    // Repository (shared switch + router, DRY). `show cdp`/`show lldp`
+    // and `show running-config` project this real state.
+    const flag = (feature: string, enableCmd: string, desc: string) => {
+      this.configTrie.registerGreedy(enableCmd, desc, () => {
+        this.configState.set(feature, true);
+        return '';
+      });
+      this.configTrie.registerGreedy(`no ${enableCmd}`, `Disable ${desc}`, () => {
+        this.configState.set(feature, false);
+        return '';
+      });
+    };
+    flag('cdp', 'cdp run', 'CDP');
+    flag('lldp', 'lldp run', 'LLDP');
+    flag('ip cef', 'ip cef', 'CEF');
+    flag('ip http server', 'ip http server', 'HTTP server');
+    flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');
+    flag('ip source-route', 'ip source-route', 'IP source-route');
+    flag('ip domain-lookup', 'ip domain-lookup', 'DNS lookup');
+    // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
+    // the router (CiscoOspfCommands, device-specific); only record the
+    // negation here so it's recognised on both vendors without
+    // shadowing that specific handler.
+    this.configTrie.registerGreedy('no ip routing', 'Disable IP routing', () => {
+      this.configState.set('ip routing', false);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ipv6 unicast-routing', 'Disable IPv6 routing', () => {
+      this.configState.set('ipv6 unicast-routing', false);
+      return '';
+    });
+
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
     this.configTrie.registerGreedy('banner', 'Set a banner', () => '');

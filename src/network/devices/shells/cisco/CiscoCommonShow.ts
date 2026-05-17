@@ -108,8 +108,20 @@ export function showPrivilege(level: number): string {
  * `show cdp [neighbors [detail] | interface]` — built from the device's
  * REAL cabled topology (Equipment registry + Port/Cable graph).
  */
-export function showCdp(dev: ShowStateDevice, arg = ''): string {
+export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
   const a = arg.toLowerCase();
+  if (!enabled) {
+    // Real disabled state: no protocol info, no neighbours.
+    if (a.includes('neighbor')) {
+      return a.includes('detail')
+        ? 'Total cdp entries displayed : 0'
+        : 'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n' +
+          '                  S - Switch, H - Host, I - IGMP, r - Repeater\n\n' +
+          'Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\n\n' +
+          'Total cdp entries displayed : 0';
+    }
+    return '% CDP is not enabled';
+  }
   if (a.includes('interface')) {
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
@@ -157,7 +169,17 @@ export function showCdp(dev: ShowStateDevice, arg = ''): string {
 }
 
 /** `show lldp [neighbors [detail]]` — from the REAL cabled topology. */
-export function showLldp(dev: ShowStateDevice, arg = ''): string {
+export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string {
+  if (!enabled) {
+    if (arg.toLowerCase().includes('neighbor')) {
+      return 'Capability codes:\n' +
+        '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n' +
+        '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\n' +
+        'Device ID           Local Intf     Hold-time  Capability      Port ID\n\n' +
+        'Total entries displayed: 0';
+    }
+    return '% LLDP is not enabled';
+  }
   if (arg.toLowerCase().includes('neighbor')) {
     const ns = neighbours(dev);
     const hdr = [

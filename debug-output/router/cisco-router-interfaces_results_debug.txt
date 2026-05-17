@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-05-17T11:01:32.010Z
+Generated: 2026-05-17T17:12:29.415Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1499,7 +1499,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *11:01:32.000 UTC Sun May 17 2026
+  *17:12:29.000 UTC Sun May 17 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1517,10 +1517,8 @@ Total steps: 343
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
-  L1                  Gig 0/0        120        Host            eth0
-  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 2
+  Total entries displayed: 0
 
 [276/343] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1872,42 +1870,28 @@ Total steps: 343
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [304/343] r1 R1(config)# no ip routing
-  % Invalid input detected at '^' marker.
-  no ip routing
-        ^
+<empty>
 
 [305/343] r1 R1(config)# ip routing
 <empty>
 
 [306/343] r1 R1(config)# no ip cef
-  % Invalid input detected at '^' marker.
-  no ip cef
-        ^
+<empty>
 
 [307/343] r1 R1(config)# ip cef
-  % Invalid input detected at '^' marker.
-  ip cef
-     ^
+<empty>
 
 [308/343] r1 R1(config)# no cdp run
-  % Invalid input detected at '^' marker.
-  no cdp run
-     ^
+<empty>
 
 [309/343] r1 R1(config)# cdp run
-  % Invalid input detected at '^' marker.
-  cdp run
-  ^
+<empty>
 
 [310/343] r1 R1(config)# no lldp run
-  % Invalid input detected at '^' marker.
-  no lldp run
-     ^
+<empty>
 
 [311/343] r1 R1(config)# lldp run
-  % Invalid input detected at '^' marker.
-  lldp run
-  ^
+<empty>
 
 [312/343] r1 R1(config)# no ip domain-lookup
 <empty>
@@ -1916,24 +1900,16 @@ Total steps: 343
 <empty>
 
 [314/343] r1 R1(config)# no ip http server
-  % Invalid input detected at '^' marker.
-  no ip http server
-        ^
+<empty>
 
 [315/343] r1 R1(config)# ip http server
-  % Invalid input detected at '^' marker.
-  ip http server
-     ^
+<empty>
 
 [316/343] r1 R1(config)# no ip source-route
-  % Invalid input detected at '^' marker.
-  no ip source-route
-        ^
+<empty>
 
 [317/343] r1 R1(config)# ip source-route
-  % Invalid input detected at '^' marker.
-  ip source-route
-     ^
+<empty>
 
 [318/343] r1 R1(config)# no service pad
 <empty>
@@ -1942,9 +1918,7 @@ Total steps: 343
 <empty>
 
 [320/343] r1 R1(config)# no ipv6 unicast-routing
-  % Invalid input detected at '^' marker.
-  no ipv6 unicast-routing
-     ^
+<empty>
 
 [321/343] r1 R1(config)# ipv6 unicast-routing
 <empty>
@@ -2011,6 +1985,9 @@ Total steps: 343
     <cr>  
 
 [337/343] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
@@ -2035,7 +2012,10 @@ Total steps: 343
 
 [340/343] r1 R1(config)# no ?
     hostname     Reset hostname
+    cdp          cdp
+    lldp         lldp
     ip           ip
+    ipv6         ipv6
     service      Disable a service
     arp          Remove ARP entry
     router       router

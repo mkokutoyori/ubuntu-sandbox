@@ -86,6 +86,10 @@ describe('Cisco common show family (router & switch, DRY)', () => {
     expect(cdpDetail).toContain('R2');
     expect(cdpDetail).toMatch(/Port ID \(outgoing port\): GigabitEthernet0\/1/);
 
+    // LLDP is disabled by default on Cisco — enabling it is real state.
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('lldp run');
+    await r1.executeCommand('end');
     const lldp = await r1.executeCommand('show lldp neighbors');
     expect(lldp).toContain('R2');
     expect(lldp).toMatch(/Total entries displayed: 2/);

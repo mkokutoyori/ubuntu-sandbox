@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-17T11:01:33.096Z
+Generated: 2026-05-17T17:12:29.976Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -551,7 +551,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *11:01:33.000 UTC Sun May 17 2026
+  *17:12:29.000 UTC Sun May 17 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -559,7 +559,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  11:01:33 UTC Sun May 17 2026
+  17:12:29 UTC Sun May 17 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -952,11 +952,7 @@ Total steps: 322
           Sending CDPv2 advertisements is  enabled
 
 [204/322] r1 R1> show lldp
-  Global LLDP Information:
-      Status: ACTIVE
-      LLDP advertisements are sent every 30 seconds
-      LLDP hold time advertised is 120 seconds
-      LLDP interface reinitialisation delay is 2 seconds
+  % LLDP is not enabled
 
 [205/322] r1 R1> show lldp neighbors
   Capability codes:
@@ -964,10 +960,8 @@ Total steps: 322
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
-  L1                  Gig 0/0        120        Host            eth0
-  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 2
+  Total entries displayed: 0
 
 [206/322] r1 R1> show lldp neighbors detail
   Capability codes:
@@ -975,17 +969,11 @@ Total steps: 322
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
-  L1                  Gig 0/0        120        Host            eth0
-  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 2
+  Total entries displayed: 0
 
 [207/322] r1 R1> show lldp traffic
-  Global LLDP Information:
-      Status: ACTIVE
-      LLDP advertisements are sent every 30 seconds
-      LLDP hold time advertised is 120 seconds
-      LLDP interface reinitialisation delay is 2 seconds
+  % LLDP is not enabled
 
 [208/322] r1 R1> show running-config | section logging
   Building configuration...
@@ -1324,7 +1312,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *11:01:33.000 UTC Sun May 17 2026
+  *17:12:29.000 UTC Sun May 17 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1342,10 +1330,8 @@ Total steps: 322
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
-  L1                  Gig 0/0        120        Host            eth0
-  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 2
+  Total entries displayed: 0
 
 [255/322] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1579,42 +1565,28 @@ Total steps: 322
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [283/322] r1 R1(config)# no ip routing
-  % Invalid input detected at '^' marker.
-  no ip routing
-        ^
+<empty>
 
 [284/322] r1 R1(config)# ip routing
 <empty>
 
 [285/322] r1 R1(config)# no ip cef
-  % Invalid input detected at '^' marker.
-  no ip cef
-        ^
+<empty>
 
 [286/322] r1 R1(config)# ip cef
-  % Invalid input detected at '^' marker.
-  ip cef
-     ^
+<empty>
 
 [287/322] r1 R1(config)# no cdp run
-  % Invalid input detected at '^' marker.
-  no cdp run
-     ^
+<empty>
 
 [288/322] r1 R1(config)# cdp run
-  % Invalid input detected at '^' marker.
-  cdp run
-  ^
+<empty>
 
 [289/322] r1 R1(config)# no lldp run
-  % Invalid input detected at '^' marker.
-  no lldp run
-     ^
+<empty>
 
 [290/322] r1 R1(config)# lldp run
-  % Invalid input detected at '^' marker.
-  lldp run
-  ^
+<empty>
 
 [291/322] r1 R1(config)# no ip domain-lookup
 <empty>
@@ -1623,24 +1595,16 @@ Total steps: 322
 <empty>
 
 [293/322] r1 R1(config)# no ip http server
-  % Invalid input detected at '^' marker.
-  no ip http server
-        ^
+<empty>
 
 [294/322] r1 R1(config)# ip http server
-  % Invalid input detected at '^' marker.
-  ip http server
-     ^
+<empty>
 
 [295/322] r1 R1(config)# no ip source-route
-  % Invalid input detected at '^' marker.
-  no ip source-route
-        ^
+<empty>
 
 [296/322] r1 R1(config)# ip source-route
-  % Invalid input detected at '^' marker.
-  ip source-route
-     ^
+<empty>
 
 [297/322] r1 R1(config)# no service pad
 <empty>
@@ -1649,9 +1613,7 @@ Total steps: 322
 <empty>
 
 [299/322] r1 R1(config)# no ipv6 unicast-routing
-  % Invalid input detected at '^' marker.
-  no ipv6 unicast-routing
-     ^
+<empty>
 
 [300/322] r1 R1(config)# ipv6 unicast-routing
 <empty>
@@ -1710,6 +1672,9 @@ Total steps: 322
     <cr>  
 
 [316/322] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
@@ -1734,7 +1699,10 @@ Total steps: 322
 
 [319/322] r1 R1(config)# no ?
     hostname     Reset hostname
+    cdp          cdp
+    lldp         lldp
     ip           ip
+    ipv6         ipv6
     service      Disable a service
     arp          Remove ARP entry
     router       router
