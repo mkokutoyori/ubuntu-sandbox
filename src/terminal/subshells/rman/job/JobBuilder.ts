@@ -13,6 +13,7 @@ export const JobBuilder = {
     tag?: string; format?: string; compressed?: boolean;
     keepForever?: boolean; keepUntilTime?: string;
     maxPieceSize?: number; encrypted?: boolean;
+    notBackedUpNTimes?: number;
   } = {}): RmanJob {
     const params: Record<string, string> = {};
     if (opts.tag)              params.tag           = opts.tag;
@@ -22,6 +23,7 @@ export const JobBuilder = {
     if (opts.keepUntilTime)    params.keepUntilTime = opts.keepUntilTime;
     if (opts.maxPieceSize !== undefined) params.maxPieceSize = String(opts.maxPieceSize);
     if (opts.encrypted)        params.encrypted     = 'true';
+    if (opts.notBackedUpNTimes !== undefined) params.notBackedUpNTimes = String(opts.notBackedUpNTimes);
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },

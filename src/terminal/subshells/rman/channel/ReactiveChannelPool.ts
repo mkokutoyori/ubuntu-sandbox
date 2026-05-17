@@ -70,6 +70,8 @@ export class ReactiveChannelPool implements IChannelPool {
 
   getStats(): ChannelStats { return this._stats; }
 
+  getConfigs(): ReadonlyArray<ChannelConfig> { return this._configs; }
+
   dispose(): void {
     this._alloc$.complete();
     this._rel$.complete();

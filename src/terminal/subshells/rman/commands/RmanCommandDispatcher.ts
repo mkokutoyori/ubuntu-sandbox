@@ -67,6 +67,7 @@ export class RmanCommandDispatcher {
       { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
       { pattern: /^BACKUP INCREMENTAL LEVEL (\d)(?:\s+(CUMULATIVE))? DATABASE(.*)$/i, command: new BackupCommand('incremental') },
       { pattern: /^BACKUP COMPRESSED BACKUPSET DATABASE(.*)$/i,    command: new BackupCommand('database', true) },
+      { pattern: /^BACKUP NOT BACKED UP (\d+) TIMES DATABASE(.*)$/i, command: new BackupCommand('database', false, true) },
       { pattern: /^BACKUP DATABASE(.*)$/i,                         command: new BackupCommand('database') },
       { pattern: /^BACKUP ARCHIVELOG ALL(.*)$/i,                   command: new BackupCommand('archivelog') },
       { pattern: /^BACKUP ARCHIVELOG (FROM SCN \d+.*)$/i,          command: new BackupCommand('archivelog') },
@@ -99,6 +100,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SHOW RETENTION POLICY$/i,          command: new ShowCommand('RETENTION_POLICY') },
       { pattern: /^SHOW DEFAULT DEVICE TYPE$/i,       command: new ShowCommand('DEFAULT_DEVICE_TYPE') },
       { pattern: /^SHOW CONTROLFILE AUTOBACKUP$/i,    command: new ShowCommand('CONTROLFILE_AUTOBACKUP') },
+      { pattern: /^SHOW CHANNEL(?:\s+FOR DEVICE TYPE (DISK|SBT))?$/i, command: new ShowCommand('CHANNEL') },
       { pattern: /^CROSSCHECK ARCHIVELOG ALL$/i,      command: new CrosscheckCommand('ARCHIVELOG') },
       { pattern: /^HELP$/i,                      command: new HelpCommand() },
       // CONFIGURE — capture the everything after the keyword in args[0]
