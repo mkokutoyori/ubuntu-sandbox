@@ -9,7 +9,7 @@ import type { RmanTag }   from '../values/RmanTag';
 import type { Scn }       from '../values/Scn';
 import type { DbId }      from '../values/DbId';
 
-export type BackupType  = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1';
+export type BackupType  = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1' | 'ARCHIVELOG' | 'CONTROLFILE';
 export type DeviceType  = 'DISK' | 'SBT';
 export type PieceStatus = 'AVAILABLE' | 'EXPIRED' | 'DELETED';
 

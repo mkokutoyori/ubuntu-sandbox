@@ -14,6 +14,8 @@ export type RmanError =
   | { code: 'RMAN_03002'; message: string }   // target db not connected
   | { code: 'RMAN_06004'; message: string }   // backup piece not found
   | { code: 'RMAN_06023'; message: string }   // no backup found to restore
+  | { code: 'RMAN_06403'; message: string }   // database must be mounted (not open)
+  | { code: 'RMAN_04014'; message: string }   // oracle instance is not started
   // Catalog
   | { code: 'CATALOG_READ_ERROR';   message: string }
   | { code: 'CATALOG_WRITE_ERROR';  message: string }

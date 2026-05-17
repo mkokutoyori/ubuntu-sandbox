@@ -7,8 +7,12 @@ export class DeleteCommand implements IRmanCommand<void> {
   readonly name = 'DELETE';
   constructor(private readonly mode: 'EXPIRED' | 'OBSOLETE') {}
 
-  execute(_args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
-    const job = this.mode === 'EXPIRED' ? JobBuilder.deleteExpired() : JobBuilder.deleteObsolete();
-    return engine.run(job);
+  execute(_args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
+    if (this.mode === 'EXPIRED') return cmdCtx.engine.run(JobBuilder.deleteExpired());
+    // OBSOLETE — apply the live retention policy ourselves
+    const snap = cmdCtx.catalog.listAll();
+    if (!snap.ok) return snap;
+    const obsolete = cmdCtx.policy.findObsolete(snap.value.sets).map(s => s.bsKey);
+    return cmdCtx.engine.run(JobBuilder.deleteObsolete(obsolete));
   }
 }

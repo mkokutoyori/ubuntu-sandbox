@@ -18,6 +18,9 @@ import { ReportCommand } from './ReportCommand';
 import { ShowCommand } from './ShowCommand';
 import { ConnectCommand } from './ConnectCommand';
 import { HelpCommand } from './HelpCommand';
+import { ConfigureCommand } from './ConfigureCommand';
+import { AllocateChannelCommand } from './AllocateChannelCommand';
+import { ReleaseChannelCommand } from './ReleaseChannelCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -54,12 +57,16 @@ export class RmanCommandDispatcher {
 
   private _registerDefaults(): void {
     this._entries.push(
-      { pattern: /^CONNECT TARGET(.*)$/i,        command: new ConnectCommand() },
-      { pattern: /^BACKUP DATABASE$/i,           command: new BackupCommand('database') },
-      { pattern: /^BACKUP ARCHIVELOG ALL$/i,     command: new BackupCommand('archivelog') },
-      { pattern: /^BACKUP TABLESPACE (\S+)$/i,   command: new BackupCommand('tablespace') },
+      { pattern: /^CONNECT TARGET(.*)$/i,                          command: new ConnectCommand() },
+      // VALIDATE / CONTROLFILE / INCREMENTAL — match before plain "BACKUP DATABASE"
+      { pattern: /^BACKUP VALIDATE DATABASE$/i,                    command: new BackupCommand('validate') },
+      { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
+      { pattern: /^BACKUP INCREMENTAL LEVEL (\d) DATABASE(.*)$/i,  command: new BackupCommand('incremental') },
+      { pattern: /^BACKUP DATABASE(.*)$/i,                         command: new BackupCommand('database') },
+      { pattern: /^BACKUP ARCHIVELOG ALL(.*)$/i,                   command: new BackupCommand('archivelog') },
+      { pattern: /^BACKUP TABLESPACE (\S+)(.*)$/i,                 command: new BackupCommand('tablespace') },
       { pattern: /^RESTORE DATABASE$/i,          command: new RestoreCommand() },
-      { pattern: /^RECOVER DATABASE$/i,          command: new RecoverCommand() },
+      { pattern: /^RECOVER DATABASE(.*)$/i,      command: new RecoverCommand() },
       { pattern: /^LIST BACKUP SUMMARY$/i,       command: new ListBackupCommand('SUMMARY') },
       { pattern: /^LIST BACKUP$/i,               command: new ListBackupCommand('DETAIL') },
       { pattern: /^REPORT SCHEMA$/i,             command: new ReportCommand('SCHEMA') },
@@ -69,6 +76,11 @@ export class RmanCommandDispatcher {
       { pattern: /^DELETE OBSOLETE$/i,           command: new DeleteCommand('OBSOLETE') },
       { pattern: /^SHOW ALL$/i,                  command: new ShowCommand() },
       { pattern: /^HELP$/i,                      command: new HelpCommand() },
+      // CONFIGURE — capture the everything after the keyword in args[0]
+      { pattern: /^CONFIGURE (.+)$/i,            command: new ConfigureCommand() },
+      // Explicit channels (inside RUN blocks)
+      { pattern: /^ALLOCATE CHANNEL (\S+) DEVICE TYPE (DISK|SBT)$/i, command: new AllocateChannelCommand() },
+      { pattern: /^RELEASE CHANNEL (\S+)$/i,                          command: new ReleaseChannelCommand() },
     );
   }
 }

@@ -299,7 +299,8 @@ describe('RmanJobEngine — DELETE EXPIRED / OBSOLETE', () => {
     catalog.recordBackupSet(oldSet);
     catalog.recordBackupSet(newSet);
 
-    engine.run(JobBuilder.deleteObsolete());
+    // Engine now expects pre-resolved obsolete bsKeys (policy lives outside the engine).
+    engine.run(JobBuilder.deleteObsolete([oldSet.bsKey]));
     const snap = catalog.listAll();
     if (snap.ok) {
       expect(snap.value.sets.length).toBe(1);

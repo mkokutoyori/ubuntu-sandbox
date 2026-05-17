@@ -104,33 +104,57 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'CROSSCHECK':         return this._doCrosscheck();
       case 'DELETE_EXPIRED':     return this._doDeleteExpired();
-      case 'DELETE_OBSOLETE':    return this._doDeleteObsolete();
+      case 'DELETE_OBSOLETE':    return this._doDeleteObsolete(job);
       default:                   return ok(undefined);
     }
   }
 
   private _doBackup(job: RmanJob, channelId: string, what: string): Result<void, RmanError> {
-    const tag  = RmanTag.generate();
-    const path = generatePieceName(this._ctx.dbName, tag);
+    const params = job.params ?? {};
+    const validate = params.validate === 'true';
+    const deleteInput = params.deleteInput === 'true';
+    const tag = params.tag ? RmanTag.of(params.tag) : RmanTag.generate();
+    const path = this._resolvePath(params.format, tag);
+    const isControlfile = params.what === 'controlfile';
+    const isArchivelog  = job.operation === 'BACKUP_ARCHIVELOG';
+    const incLevel = params.incrementalLevel === '0' || params.incrementalLevel === '1'
+      ? (Number(params.incrementalLevel) as 0 | 1)
+      : undefined;
+
     const datafiles = this._ctx.getDatafiles();
-    const size = datafiles.reduce((acc, df) => acc + df.sizeBytes, 0) || 1_000_000;
+    const size = isControlfile
+      ? 9_650_176
+      : (datafiles.reduce((acc, df) => acc + df.sizeBytes, 0) || 1_000_000);
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
+
+    // VALIDATE — skip the VFS write and the catalog persistence.
+    if (validate) {
+      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
+      return ok(undefined);
+    }
 
     const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0));
     if (!writeResult.ok) return writeResult;
 
-    const dfEntries: DatafileEntry[] = datafiles.map(df => {
+    const dfEntries: DatafileEntry[] = isControlfile ? [] : datafiles.map(df => {
       const ckp = Scn.of(1_892_354);
       return Object.freeze({
-        fileNo: df.fileNo, level: 0 as const,
+        fileNo: df.fileNo, level: incLevel ?? (0 as 0 | 1),
         ckpScn: ckp.ok ? ckp.value : Scn.ZERO,
         ckpTime: Date.now(), path: df.path,
       });
     });
 
+    const type = isControlfile  ? 'CONTROLFILE'
+              : isArchivelog    ? 'ARCHIVELOG'
+              : incLevel === 0  ? 'INCREMENTAL_0'
+              : incLevel === 1  ? 'INCREMENTAL_1'
+              :                   'FULL';
+    const level = incLevel ?? 0;
+
     const set = BackupSetFactory.createBackupSet({
-      type: 'FULL', level: 0, path, sizeBytes: size, tag, datafiles: dfEntries,
+      type, level, path, sizeBytes: size, tag, datafiles: dfEntries,
     });
 
     this._bus.emit({
@@ -142,10 +166,36 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (!recR.ok) return recR;
 
     this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
+
+    // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog
+    if (isArchivelog && deleteInput) {
+      const paths = this._ctx.getArchivelogPaths?.() ?? [];
+      for (const p of paths) {
+        this._ctx.vfs.deleteFile(p);
+        this._bus.emit({ type: 'ARCHIVELOG_DELETED', jobId: job.id, path: p });
+      }
+    }
+
     return ok(undefined);
   }
 
+  /** Resolve a piece file path from an optional FORMAT template + tag. */
+  private _resolvePath(format: string | undefined, tag: RmanTag): string {
+    if (!format) return generatePieceName(this._ctx.dbName, tag);
+    // Minimal Oracle %-substitution: %U → unique-ish suffix, %s → 1, %p → 1.
+    const unique = `${this._ctx.dbName}_${Math.random().toString(36).slice(2, 10)}`;
+    return format
+      .replace(/%U/g, unique)
+      .replace(/%s/g, '1')
+      .replace(/%p/g, '1')
+      .replace(/%T/g, tag.label);
+  }
+
   private _doRestore(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const inst = this._ctx.getInstanceState?.();
+    if (inst === 'OPEN' || inst === 'SHUTDOWN') {
+      return err({ code: 'RMAN_06403', message: 'database must be mounted (not open)' });
+    }
     const snap = this._catalog.listAll();
     if (!snap.ok) return snap;
     if (snap.value.sets.length === 0) {
@@ -165,8 +215,30 @@ export class RmanJobEngine implements IRmanJobEngine {
   }
 
   private _doRecover(job: RmanJob): Result<void, RmanError> {
-    const from = Scn.of(1_892_354);
-    const to   = Scn.of(1_892_500);
+    const inst = this._ctx.getInstanceState?.();
+    if (inst === 'SHUTDOWN' || inst === 'NOMOUNT') {
+      return err({ code: 'RMAN_06403', message: 'database must be mounted or open' });
+    }
+    const params = job.params ?? {};
+    // UNTIL SCN — explicit target supplied
+    let fromValue = 1_892_354;
+    let toValue = 1_892_500;
+    if (params.untilScn !== undefined) {
+      const r = Scn.of(params.untilScn);
+      if (!r.ok) return r;
+      fromValue = r.value.value;
+      toValue   = r.value.value;
+    }
+    if (params.untilTime !== undefined) {
+      // Time-based PITR: treat the string as already-validated; emit a
+      // dedicated PROGRESS line so the SubShell renders the target.
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'until_time',
+        pct: 10, message: `recovering until time ${params.untilTime}`,
+      });
+    }
+    const from = Scn.of(fromValue);
+    const to   = Scn.of(toValue);
     this._bus.emit({ type: 'RECOVER_STARTED',   jobId: job.id, fromScn: from.ok ? from.value : Scn.ZERO });
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     return ok(undefined);
@@ -198,12 +270,21 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
-  private _doDeleteObsolete(): Result<void, RmanError> {
-    const obs = this._catalog.listObsolete(1);
-    if (!obs.ok) return obs;
-    for (const set of obs.value) {
-      for (const p of set.pieces) this._ctx.vfs.deleteFile(p.path);
-      this._catalog.deleteBackupSet(set.bsKey);
+  private _doDeleteObsolete(job: RmanJob): Result<void, RmanError> {
+    const explicitKeys = (job.params?.setKeys ?? '').split(',').filter(Boolean).map(Number);
+    if (explicitKeys.length === 0) return ok(undefined);
+    for (const bsKey of explicitKeys) {
+      const set = this._catalog.findByKey({ _tag: 'BackupKey', bsKey, bpKey: bsKey, copy: 1 });
+      // Best effort: even if findByKey can't resolve via piece key, attempt delete.
+      const all = this._catalog.listAll();
+      if (all.ok) {
+        const found = all.value.sets.find(s => s.bsKey === bsKey);
+        if (found) {
+          for (const p of found.pieces) this._ctx.vfs.deleteFile(p.path);
+        }
+      }
+      void set;
+      this._catalog.deleteBackupSet(bsKey);
     }
     return ok(undefined);
   }

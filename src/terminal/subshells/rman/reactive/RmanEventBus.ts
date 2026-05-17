@@ -70,6 +70,11 @@ export class RmanEventBus {
       e.type === 'CROSSCHECK_DONE'),
   );
 
+  readonly configChanged$ = this._events$.pipe(
+    Operators.ofType((e): e is Extract<RmanEvent, { type: 'CONFIG_CHANGED' }> =>
+      e.type === 'CONFIG_CHANGED'),
+  );
+
   emit(event: RmanEvent): void { this._events$.next(event); }
 
   dispose(): void { this._events$.complete(); }

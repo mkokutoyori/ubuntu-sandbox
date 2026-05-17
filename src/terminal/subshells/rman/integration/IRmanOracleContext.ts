@@ -28,4 +28,11 @@ export interface IRmanOracleContext {
   readonly vfs:     VfsAdapter;
   getDatafiles():   ReadonlyArray<DatafileInfo>;
   getSpfileParam(name: string): string | undefined;
+  /** Optional: archivelog file paths the engine may delete after a
+   *  `BACKUP ARCHIVELOG ALL DELETE INPUT`. Empty by default. */
+  getArchivelogPaths?(): ReadonlyArray<string>;
+  /** Optional: a virtual control-file path (used by BACKUP CURRENT CONTROLFILE). */
+  getControlFilePath?(): string;
+  /** Optional: instance lifecycle state used to gate CONNECT/RESTORE/RECOVER. */
+  getInstanceState?(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 }
