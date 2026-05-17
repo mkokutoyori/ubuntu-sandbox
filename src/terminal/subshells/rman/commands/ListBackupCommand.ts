@@ -19,6 +19,7 @@ function lvCode(s: BackupSet): string {
     case 'INCREMENTAL_1':  return '1';
     case 'ARCHIVELOG':     return 'A';
     case 'CONTROLFILE':    return 'F';
+    case 'DATAFILECOPY':   return 'F';
   }
 }
 
@@ -30,6 +31,7 @@ function typeOf(s: BackupSet): string {
     case 'INCREMENTAL_1':  return 'Incr-1';
     case 'ARCHIVELOG':     return 'ArchLog';
     case 'CONTROLFILE':    return 'Ctrl';
+    case 'DATAFILECOPY':   return 'DFCopy';
   }
 }
 

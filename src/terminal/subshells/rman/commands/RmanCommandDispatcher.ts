@@ -21,6 +21,7 @@ import { HelpCommand } from './HelpCommand';
 import { ConfigureCommand } from './ConfigureCommand';
 import { AllocateChannelCommand } from './AllocateChannelCommand';
 import { ReleaseChannelCommand } from './ReleaseChannelCommand';
+import { CatalogCommand } from './CatalogCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -81,6 +82,9 @@ export class RmanCommandDispatcher {
       // Explicit channels (inside RUN blocks)
       { pattern: /^ALLOCATE CHANNEL (\S+) DEVICE TYPE (DISK|SBT)$/i, command: new AllocateChannelCommand() },
       { pattern: /^RELEASE CHANNEL (\S+)$/i,                          command: new ReleaseChannelCommand() },
+      // Manual catalog registration (DEF-RMAN-16)
+      { pattern: /^CATALOG DATAFILECOPY (.+)$/i, command: new CatalogCommand('DATAFILECOPY') },
+      { pattern: /^CATALOG BACKUPPIECE (.+)$/i,  command: new CatalogCommand('BACKUPPIECE')  },
     );
   }
 }
