@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-05-17T17:21:39.805Z
+Generated: 2026-05-17T17:26:53.648Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1346,9 +1346,9 @@ Total steps: 370
   Crypto Map "CMAP" 100 ipsec-isakmp dynamic DMAP
 
 [291/370] r1 R1(config)# show standby brief
-  % Invalid input detected at '^' marker.
-  show standby brief
-       ^
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
 [292/370] r1 R1(config)# show vrrp brief
   % Invalid input detected at '^' marker.
@@ -1389,7 +1389,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:53.000 UTC Sun May 17 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

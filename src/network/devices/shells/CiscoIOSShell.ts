@@ -26,6 +26,10 @@ import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
 import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
+import {
+  buildHsrpInterfaceCommands, registerHsrpShowCommands,
+} from './cisco/CiscoHsrpCommands';
+import { FhrpRepository } from '../inspection/config/FhrpRepository';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -71,6 +75,8 @@ import {
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
+  /** Real config-driven HSRP state (router-only; switches are L2). */
+  private readonly fhrp = new FhrpRepository();
   private selectedDHCPPool: string | null = null;
   private selectedACL: string | null = null;
   private selectedACLType: 'standard' | 'extended' | null = null;
@@ -270,6 +276,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
+    buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
@@ -305,6 +312,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     const getRouter = () => this.d();
+    registerHsrpShowCommands(trie, this, this.fhrp);
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));

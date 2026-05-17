@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-05-17T17:21:39.302Z
+Generated: 2026-05-17T17:26:51.701Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [4/482] r1 R1> show calendar
-  17:21:39 UTC Sun May 17 2026
+  17:26:51 UTC Sun May 17 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -540,6 +540,7 @@ Total steps: 482
     aaa             Display AAA state
     aliases         Display command aliases
     arp             Display ARP table
+    standby         Display HSRP state
     running-config  Display running configuration
     startup-config  Display saved configuration
     configuration   Display saved configuration
@@ -595,10 +596,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [81/482] r1 R1# show calendar
-  17:21:39 UTC Sun May 17 2026
+  17:26:51 UTC Sun May 17 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1114,7 +1115,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1123,7 +1124,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1132,7 +1133,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1141,7 +1142,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1150,7 +1151,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1161,7 +1162,7 @@ Total steps: 482
          ^
 
 [172/482] r1 R1(config)# do show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [173/482] r1 R1(config)# exit
 <empty>
@@ -1651,7 +1652,8 @@ Total steps: 482
     transmit-delay       Set OSPF transmit delay
 
 [275/482] r1 R1-EDGE(config-if)# standby ?
-  % Unrecognized command
+    WORD  HSRP configuration
+    <cr>  
 
 [276/482] r1 R1-EDGE(config-if)# exit
 <empty>
@@ -2510,9 +2512,9 @@ Total steps: 482
   IPSec not configured.
 
 [403/482] r1 R1-EDGE# show standby brief
-  % Invalid input detected at '^' marker.
-  show standby brief
-       ^
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
 [404/482] r1 R1-EDGE# show vrrp brief
   % Invalid input detected at '^' marker.
@@ -2553,7 +2555,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *17:21:39.000 UTC Sun May 17 2026
+  *17:26:51.000 UTC Sun May 17 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

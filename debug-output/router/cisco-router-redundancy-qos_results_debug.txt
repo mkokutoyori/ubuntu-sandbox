@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-05-17T17:21:41.341Z
+Generated: 2026-05-17T17:26:52.667Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -50,259 +50,157 @@ Total steps: 413
 <empty>
 
 [14/413] r1 R1(config-if)# standby 1 ip 192.168.1.1
-  % Invalid input detected at '^' marker.
-  standby 1 ip 192.168.1.1
-  ^
+<empty>
 
 [15/413] r1 R1(config-if)# standby 1 ip 192.168.1.101 secondary
-  % Invalid input detected at '^' marker.
-  standby 1 ip 192.168.1.101 secondary
-  ^
+<empty>
 
 [16/413] r1 R1(config-if)# standby 1 priority 110
-  % Invalid input detected at '^' marker.
-  standby 1 priority 110
-  ^
+<empty>
 
 [17/413] r1 R1(config-if)# standby 1 preempt delay minimum 30 reload 60
-  % Invalid input detected at '^' marker.
-  standby 1 preempt delay minimum 30 reload 60
-  ^
+<empty>
 
 [18/413] r1 R1(config-if)# standby 1 timers 1 3
-  % Invalid input detected at '^' marker.
-  standby 1 timers 1 3
-  ^
+<empty>
 
 [19/413] r1 R1(config-if)# standby 1 timers msec 200 msec 750
-  % Invalid input detected at '^' marker.
-  standby 1 timers msec 200 msec 750
-  ^
+<empty>
 
 [20/413] r1 R1(config-if)# standby 1 authentication md5 key-string HsrpKey1
-  % Invalid input detected at '^' marker.
-  standby 1 authentication md5 key-string HsrpKey1
-  ^
+<empty>
 
 [21/413] r1 R1(config-if)# standby 1 track GigabitEthernet0/1 30
-  % Invalid input detected at '^' marker.
-  standby 1 track GigabitEthernet0/1 30
-  ^
+<empty>
 
 [22/413] r1 R1(config-if)# standby 1 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  standby 1 track 1 decrement 20
-  ^
+<empty>
 
 [23/413] r1 R1(config-if)# standby 1 name HSRP-GRP-1
-  % Invalid input detected at '^' marker.
-  standby 1 name HSRP-GRP-1
-  ^
+<empty>
 
 [24/413] r1 R1(config-if)# standby 1 mac-address 0000.0c07.ac01
-  % Invalid input detected at '^' marker.
-  standby 1 mac-address 0000.0c07.ac01
-  ^
+<empty>
 
 [25/413] r1 R1(config-if)# standby 1 follow HSRP-GRP-1
-  % Invalid input detected at '^' marker.
-  standby 1 follow HSRP-GRP-1
-  ^
+<empty>
 
 [26/413] r1 R1(config-if)# standby 2 ip 192.168.1.2
-  % Invalid input detected at '^' marker.
-  standby 2 ip 192.168.1.2
-  ^
+<empty>
 
 [27/413] r1 R1(config-if)# standby 2 ip 192.168.1.102 secondary
-  % Invalid input detected at '^' marker.
-  standby 2 ip 192.168.1.102 secondary
-  ^
+<empty>
 
 [28/413] r1 R1(config-if)# standby 2 priority 120
-  % Invalid input detected at '^' marker.
-  standby 2 priority 120
-  ^
+<empty>
 
 [29/413] r1 R1(config-if)# standby 2 preempt delay minimum 30 reload 60
-  % Invalid input detected at '^' marker.
-  standby 2 preempt delay minimum 30 reload 60
-  ^
+<empty>
 
 [30/413] r1 R1(config-if)# standby 2 timers 1 3
-  % Invalid input detected at '^' marker.
-  standby 2 timers 1 3
-  ^
+<empty>
 
 [31/413] r1 R1(config-if)# standby 2 timers msec 200 msec 750
-  % Invalid input detected at '^' marker.
-  standby 2 timers msec 200 msec 750
-  ^
+<empty>
 
 [32/413] r1 R1(config-if)# standby 2 authentication md5 key-string HsrpKey2
-  % Invalid input detected at '^' marker.
-  standby 2 authentication md5 key-string HsrpKey2
-  ^
+<empty>
 
 [33/413] r1 R1(config-if)# standby 2 track GigabitEthernet0/1 30
-  % Invalid input detected at '^' marker.
-  standby 2 track GigabitEthernet0/1 30
-  ^
+<empty>
 
 [34/413] r1 R1(config-if)# standby 2 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  standby 2 track 1 decrement 20
-  ^
+<empty>
 
 [35/413] r1 R1(config-if)# standby 2 name HSRP-GRP-2
-  % Invalid input detected at '^' marker.
-  standby 2 name HSRP-GRP-2
-  ^
+<empty>
 
 [36/413] r1 R1(config-if)# standby 2 mac-address 0000.0c07.ac02
-  % Invalid input detected at '^' marker.
-  standby 2 mac-address 0000.0c07.ac02
-  ^
+<empty>
 
 [37/413] r1 R1(config-if)# standby 2 follow HSRP-GRP-1
-  % Invalid input detected at '^' marker.
-  standby 2 follow HSRP-GRP-1
-  ^
+<empty>
 
 [38/413] r1 R1(config-if)# standby 3 ip 192.168.1.3
-  % Invalid input detected at '^' marker.
-  standby 3 ip 192.168.1.3
-  ^
+<empty>
 
 [39/413] r1 R1(config-if)# standby 3 ip 192.168.1.103 secondary
-  % Invalid input detected at '^' marker.
-  standby 3 ip 192.168.1.103 secondary
-  ^
+<empty>
 
 [40/413] r1 R1(config-if)# standby 3 priority 130
-  % Invalid input detected at '^' marker.
-  standby 3 priority 130
-  ^
+<empty>
 
 [41/413] r1 R1(config-if)# standby 3 preempt delay minimum 30 reload 60
-  % Invalid input detected at '^' marker.
-  standby 3 preempt delay minimum 30 reload 60
-  ^
+<empty>
 
 [42/413] r1 R1(config-if)# standby 3 timers 1 3
-  % Invalid input detected at '^' marker.
-  standby 3 timers 1 3
-  ^
+<empty>
 
 [43/413] r1 R1(config-if)# standby 3 timers msec 200 msec 750
-  % Invalid input detected at '^' marker.
-  standby 3 timers msec 200 msec 750
-  ^
+<empty>
 
 [44/413] r1 R1(config-if)# standby 3 authentication md5 key-string HsrpKey3
-  % Invalid input detected at '^' marker.
-  standby 3 authentication md5 key-string HsrpKey3
-  ^
+<empty>
 
 [45/413] r1 R1(config-if)# standby 3 track GigabitEthernet0/1 30
-  % Invalid input detected at '^' marker.
-  standby 3 track GigabitEthernet0/1 30
-  ^
+<empty>
 
 [46/413] r1 R1(config-if)# standby 3 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  standby 3 track 1 decrement 20
-  ^
+<empty>
 
 [47/413] r1 R1(config-if)# standby 3 name HSRP-GRP-3
-  % Invalid input detected at '^' marker.
-  standby 3 name HSRP-GRP-3
-  ^
+<empty>
 
 [48/413] r1 R1(config-if)# standby 3 mac-address 0000.0c07.ac03
-  % Invalid input detected at '^' marker.
-  standby 3 mac-address 0000.0c07.ac03
-  ^
+<empty>
 
 [49/413] r1 R1(config-if)# standby 3 follow HSRP-GRP-1
-  % Invalid input detected at '^' marker.
-  standby 3 follow HSRP-GRP-1
-  ^
+<empty>
 
 [50/413] r1 R1(config-if)# standby 4 ip 192.168.1.4
-  % Invalid input detected at '^' marker.
-  standby 4 ip 192.168.1.4
-  ^
+<empty>
 
 [51/413] r1 R1(config-if)# standby 4 ip 192.168.1.104 secondary
-  % Invalid input detected at '^' marker.
-  standby 4 ip 192.168.1.104 secondary
-  ^
+<empty>
 
 [52/413] r1 R1(config-if)# standby 4 priority 140
-  % Invalid input detected at '^' marker.
-  standby 4 priority 140
-  ^
+<empty>
 
 [53/413] r1 R1(config-if)# standby 4 preempt delay minimum 30 reload 60
-  % Invalid input detected at '^' marker.
-  standby 4 preempt delay minimum 30 reload 60
-  ^
+<empty>
 
 [54/413] r1 R1(config-if)# standby 4 timers 1 3
-  % Invalid input detected at '^' marker.
-  standby 4 timers 1 3
-  ^
+<empty>
 
 [55/413] r1 R1(config-if)# standby 4 timers msec 200 msec 750
-  % Invalid input detected at '^' marker.
-  standby 4 timers msec 200 msec 750
-  ^
+<empty>
 
 [56/413] r1 R1(config-if)# standby 4 authentication md5 key-string HsrpKey4
-  % Invalid input detected at '^' marker.
-  standby 4 authentication md5 key-string HsrpKey4
-  ^
+<empty>
 
 [57/413] r1 R1(config-if)# standby 4 track GigabitEthernet0/1 30
-  % Invalid input detected at '^' marker.
-  standby 4 track GigabitEthernet0/1 30
-  ^
+<empty>
 
 [58/413] r1 R1(config-if)# standby 4 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  standby 4 track 1 decrement 20
-  ^
+<empty>
 
 [59/413] r1 R1(config-if)# standby 4 name HSRP-GRP-4
-  % Invalid input detected at '^' marker.
-  standby 4 name HSRP-GRP-4
-  ^
+<empty>
 
 [60/413] r1 R1(config-if)# standby 4 mac-address 0000.0c07.ac04
-  % Invalid input detected at '^' marker.
-  standby 4 mac-address 0000.0c07.ac04
-  ^
+<empty>
 
 [61/413] r1 R1(config-if)# standby 4 follow HSRP-GRP-1
-  % Invalid input detected at '^' marker.
-  standby 4 follow HSRP-GRP-1
-  ^
+<empty>
 
 [62/413] r1 R1(config-if)# standby version 2
-  % Invalid input detected at '^' marker.
-  standby version 2
-  ^
+<empty>
 
 [63/413] r1 R1(config-if)# standby use-bia
-  % Invalid input detected at '^' marker.
-  standby use-bia
-  ^
+<empty>
 
 [64/413] r1 R1(config-if)# standby delay minimum 30 reload 60
-  % Invalid input detected at '^' marker.
-  standby delay minimum 30 reload 60
-  ^
+<empty>
 
 [65/413] r1 R1(config-if)# exit
 <empty>
@@ -311,29 +209,229 @@ Total steps: 413
 <empty>
 
 [67/413] r1 R1# show standby
-  % Invalid input detected at '^' marker.
-  show standby
-       ^
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
 
 [68/413] r1 R1# show standby brief
-  % Invalid input detected at '^' marker.
-  show standby brief
-       ^
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+  GigabitEthe 1    110 P Active   local           unknown         192.168.1.1
+  GigabitEthe 2    120 P Active   local           unknown         192.168.1.2
+  GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
+  GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
 
 [69/413] r1 R1# show standby GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  show standby GigabitEthernet0/0
-       ^
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
 
 [70/413] r1 R1# show standby GigabitEthernet0/0 1
-  % Invalid input detected at '^' marker.
-  show standby GigabitEthernet0/0 1
-       ^
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
 
 [71/413] r1 R1# show standby all
-  % Invalid input detected at '^' marker.
-  show standby all
-       ^
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
 
 [72/413] r1 R1# debug standby
   % Invalid input detected at '^' marker.
@@ -1590,9 +1688,13 @@ Total steps: 413
   IPSec not configured.
 
 [334/413] r1 R1# show standby brief
-  % Invalid input detected at '^' marker.
-  show standby brief
-       ^
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+  GigabitEthe 1    110 P Active   local           unknown         192.168.1.1
+  GigabitEthe 2    120 P Active   local           unknown         192.168.1.2
+  GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
+  GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
 
 [335/413] r1 R1# show vrrp brief
   % Invalid input detected at '^' marker.
@@ -1633,7 +1735,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *17:21:41.000 UTC Sun May 17 2026
+  *17:26:52.000 UTC Sun May 17 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
