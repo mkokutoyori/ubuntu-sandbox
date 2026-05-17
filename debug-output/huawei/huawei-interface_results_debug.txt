@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-interface
-Generated: 2026-05-17T05:31:19.554Z
+Generated: 2026-05-17T05:34:54.317Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
 Total steps: 74
@@ -333,7 +333,7 @@ Total steps: 74
 <empty>
 
 [50/74] sw <SW-INT> display eth-trunk 1
-  Error: Unrecognized command "display eth-trunk 1"
+  Error: The Eth-Trunk 1 does not exist.
 
 [51/74] sw <SW-INT> display interface Eth-Trunk 1
   Error: Wrong parameter found at '^' position.
@@ -413,10 +413,12 @@ Total steps: 74
 <empty>
 
 [72/74] sw <SW-INT> reset counters interface GigabitEthernet0/0/1
-  Error: Unrecognized command "reset counters interface GigabitEthernet0/0/1"
+<empty>
 
 [73/74] sw <SW-INT> display counters inbound interface GigabitEthernet0/0/1
-  Error: Unrecognized command "display counters inbound interface GigabitEthernet0/0/1"
+  Interface counters (GigabitEthernet0/0/1):
+    Input :  0 packets,  0 bytes,  0 errors
+    Output:  0 packets,  0 bytes,  0 errors
 
 [74/74] sw <SW-INT> display interface brief | include up
   GigabitEthernet0/0/1          up      up        0%     0%

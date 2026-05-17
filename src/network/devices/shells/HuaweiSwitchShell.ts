@@ -69,6 +69,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Active `port-group` member range (port-group bulk-config view). */
   private portGroupMembers: string | null = null;
 
+  /** Eth-Trunk (link-aggregation) groups, keyed by trunk id. */
+  private ethTrunks = new Map<number, {
+    mode: string; loadBalance: string; members: string[]; cfg: string[];
+  }>();
+
   constructor() {
     this.buildUserCommands();
     this.buildSystemCommands();
@@ -285,9 +290,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    // interface <name>
+    // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      // Eth-Trunk <id>  /  Eth-TrunkN  → link-aggregation virtual interface
+      const joined = args.join(' ');
+      const et = joined.match(/^eth-?trunk\s*(\d+)$/i);
+      if (et) {
+        const id = parseInt(et[1], 10);
+        if (!this.ethTrunks.has(id)) {
+          this.ethTrunks.set(id, { mode: 'manual', loadBalance: '', members: [], cfg: [] });
+        }
+        this.selectedInterface = `Eth-Trunk${id}`;
+        this.mode = 'interface';
+        return '';
+      }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
@@ -384,6 +401,53 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       });
     }
+
+    // ── Eth-Trunk (LACP) interface-view commands ──
+    const trunkId = (): number | null => {
+      const m = (this.selectedInterface ?? '').match(/^Eth-Trunk(\d+)$/);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    // `mode <manual|lacp-static|lacp-dynamic>` (Eth-Trunk only)
+    this.interfaceTrie.registerGreedy('mode', 'Set Eth-Trunk working mode', (args) => {
+      const id = trunkId();
+      if (id === null) return `Error: Unrecognized command "mode ${args.join(' ')}"`;
+      const t = this.ethTrunks.get(id)!;
+      t.mode = args.join(' ');
+      t.cfg.push(`mode ${args.join(' ')}`);
+      return '';
+    });
+    // `max|least active-linknumber N`, `load-balance <algo>` (Eth-Trunk)
+    for (const kw of ['max', 'least', 'load-balance']) {
+      this.interfaceTrie.registerGreedy(kw, `Eth-Trunk ${kw}`, (args) => {
+        const id = trunkId();
+        if (id === null) return `Error: Unrecognized command "${kw} ${args.join(' ')}"`;
+        this.ethTrunks.get(id)!.cfg.push(`${kw} ${args.join(' ')}`.trim());
+        return '';
+      });
+    }
+    // `trunkport <if> [to <if>]` — add member ports from the trunk view
+    this.interfaceTrie.registerGreedy('trunkport', 'Add member port to Eth-Trunk', (args) => {
+      const id = trunkId();
+      if (id === null || args.length < 1) return 'Error: Incomplete command.';
+      const member = this.resolveInterfaceName(args[0]) || args[0];
+      this.ethTrunks.get(id)!.members.push(member);
+      return '';
+    });
+    // `eth-trunk <id>` — join the trunk from a physical interface view
+    this.interfaceTrie.registerGreedy('eth-trunk', 'Add interface to an Eth-Trunk', (args) => {
+      if (!this.selectedInterface || args.length < 1) return 'Error: Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
+      if (!this.ethTrunks.has(id)) {
+        this.ethTrunks.set(id, { mode: 'manual', loadBalance: '', members: [], cfg: [] });
+      }
+      const t = this.ethTrunks.get(id)!;
+      if (!t.members.includes(this.selectedInterface)) t.members.push(this.selectedInterface);
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`eth-trunk ${id}`);
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    });
 
     // port default vlan <id>
     this.interfaceTrie.registerGreedy('port default vlan', 'Set default VLAN for access port', (args) => {
@@ -613,6 +677,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.register('display this', 'Display active view configuration', () => {
       if (!this.swRef) return '';
       if (this.mode === 'interface' && this.selectedInterface) {
+        const etm = this.selectedInterface.match(/^Eth-Trunk(\d+)$/);
+        if (etm) return this.displayEthTrunkConfig(parseInt(etm[1], 10));
         return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
       }
       return this.displayCurrentConfig(this.swRef);
@@ -639,6 +705,28 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // STP display family (switch-only).
     this.registerStpDisplay(trie);
+
+    // Eth-Trunk + counters.
+    trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (isNaN(id)) {
+        if (this.ethTrunks.size === 0) return 'Info: No Eth-Trunk is configured.';
+        return [...this.ethTrunks.keys()].map(k => this.displayEthTrunk(k)).join('\n\n');
+      }
+      return this.displayEthTrunk(id);
+    });
+    trie.registerGreedy('display counters', 'Display interface counters', (args) => {
+      if (!this.swRef) return '';
+      const ifName = args.filter(a => /\d\/\d/.test(a)).join(' ');
+      const port = ifName ? (this.resolveInterfaceName(ifName) || ifName) : 'all interfaces';
+      return [
+        `Interface counters (${port}):`,
+        '  Input :  0 packets,  0 bytes,  0 errors',
+        '  Output:  0 packets,  0 bytes,  0 errors',
+      ].join('\n');
+    });
+    trie.registerGreedy('reset counters', 'Clear interface counters', () =>
+      ''); // acknowledged, no output (matches VRP)
   }
 
   /**
@@ -823,6 +911,31 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return `Error: The port ${only} does not exist.`;
     }
     return [header, ...rows].join('\n');
+  }
+
+  /** `display this` body for an Eth-Trunk interface view. */
+  private displayEthTrunkConfig(id: number): string {
+    const t = this.ethTrunks.get(id);
+    if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
+    const lines = [`interface Eth-Trunk${id}`, ...t.cfg.map(c => ` ${c}`)];
+    lines.push('#');
+    return lines.join('\n');
+  }
+
+  /** `display eth-trunk <id>` — bundle summary + member list. */
+  private displayEthTrunk(id: number): string {
+    const t = this.ethTrunks.get(id);
+    if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
+    const lines = [
+      `Eth-Trunk${id}'s state information is:`,
+      `WorkingMode: ${t.mode.toUpperCase()}`,
+      `Least Active-linknumber: 1   Max Active-linknumber: ${t.members.length || 8}`,
+      `Operate status: ${t.members.length ? 'up' : 'down'}   Number Of Up Ports In Trunk: ${t.members.length}`,
+      '--------------------------------------------------------------------------------',
+      'PortName                      Status      Weight',
+      ...t.members.map(m => `${m.padEnd(30)}${(t.members.length ? 'Up' : 'Down').padEnd(12)}1`),
+    ];
+    return lines.join('\n');
   }
 
   // ─── Undo Command ────────────────────────────────────────────────
