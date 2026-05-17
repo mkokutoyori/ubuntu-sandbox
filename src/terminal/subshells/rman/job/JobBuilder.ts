@@ -110,10 +110,16 @@ export const JobBuilder = {
     ], { auxiliary: targetDbName });
   },
 
-  recoverDatabase(opts: { untilScn?: number; untilTime?: string } = {}): RmanJob {
+  recoverDatabase(opts: {
+    untilScn?: number; untilTime?: string; untilCancel?: boolean;
+    tablespace?: string; fileNo?: number;
+  } = {}): RmanJob {
     const params: Record<string, string> = {};
-    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
-    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
+    if (opts.untilScn !== undefined)  params.untilScn   = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime  = opts.untilTime;
+    if (opts.untilCancel)             params.untilCancel = 'true';
+    if (opts.tablespace !== undefined) params.tablespace = opts.tablespace.toUpperCase();
+    if (opts.fileNo     !== undefined) params.fileNo     = String(opts.fileNo);
     return _make('RECOVER_DATABASE', [
       { name: 'start_recover', pct: 20, message: 'starting media recovery' },
     ], params);

@@ -272,7 +272,6 @@ export class RmanJobEngine implements IRmanJobEngine {
       return err({ code: 'RMAN_06403', message: 'database must be mounted or open' });
     }
     const params = job.params ?? {};
-    // UNTIL SCN — explicit target supplied
     let fromValue = 1_892_354;
     let toValue = 1_892_500;
     if (params.untilScn !== undefined) {
@@ -282,11 +281,27 @@ export class RmanJobEngine implements IRmanJobEngine {
       toValue   = r.value.value;
     }
     if (params.untilTime !== undefined) {
-      // Time-based PITR: treat the string as already-validated; emit a
-      // dedicated PROGRESS line so the SubShell renders the target.
       this._bus.emit({
         type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'until_time',
         pct: 10, message: `recovering until time ${params.untilTime}`,
+      });
+    }
+    if (params.untilCancel === 'true') {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'until_cancel',
+        pct: 30, message: 'recovery cancelled by operator',
+      });
+    }
+    if (params.tablespace !== undefined) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'recover_tablespace',
+        pct: 40, message: `recovering tablespace ${params.tablespace}`,
+      });
+    }
+    if (params.fileNo !== undefined) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'recover_datafile',
+        pct: 40, message: `recovering datafile ${params.fileNo}`,
       });
     }
     const from = Scn.of(fromValue);
