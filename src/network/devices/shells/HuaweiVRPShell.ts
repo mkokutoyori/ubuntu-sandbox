@@ -22,6 +22,7 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import { IPAddress } from '../../core/types';
 
 // Extracted command modules
@@ -422,6 +423,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // Display commands
     registerDisplayCommands(t, getRouter, getState);
 
+    // VRP lifecycle/management commands (shared with the switch, DRY)
+    registerHuaweiCommonMgmt(t);
+
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
 
@@ -499,6 +503,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Display commands (available in all modes)
     registerDisplayCommands(t, getRouter, getState);
+
+    // VRP lifecycle/management commands (shared with the switch, DRY)
+    registerHuaweiCommonMgmt(t);
 
     // System-mode config commands
     buildSystemCommands(t, this);

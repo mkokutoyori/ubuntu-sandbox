@@ -118,3 +118,44 @@ describe('Huawei CLI — common display commands (switch & router, DRY)', () => 
     expect(out).toContain('LINKTEST');
   });
 });
+
+describe('Huawei CLI — VRP lifecycle/management commands (switch & router, DRY)', () => {
+  it('switch: save reports success (non-interactive sim)', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    const out = await sw.executeCommand('save');
+    expect(out).not.toMatch(/Unrecognized command/);
+    expect(out.toLowerCase()).toContain('successfully');
+  });
+
+  it('switch: save force / reset saved-configuration / reboot are recognized', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    for (const c of ['save force', 'reset saved-configuration', 'reboot', 'commit']) {
+      expect(await sw.executeCommand(c)).not.toMatch(/Unrecognized command/);
+    }
+  });
+
+  it('switch: screen-length 0 temporary and header are no-ops, not errors', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    await sw.executeCommand('system-view');
+    expect(await sw.executeCommand('header shell information "Authorized only"'))
+      .not.toMatch(/Unrecognized command/);
+    await sw.executeCommand('return');
+    expect(await sw.executeCommand('screen-length 0 temporary'))
+      .not.toMatch(/Unrecognized command/);
+  });
+
+  it('switch: informational displays are recognized', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    for (const c of ['display alarm', 'display elabel', 'display license',
+      'display logbuffer', 'display trapbuffer', 'display patch-information']) {
+      expect(await sw.executeCommand(c)).not.toMatch(/Unrecognized command/);
+    }
+  });
+
+  it('router: save / reboot / display elabel work the same (DRY)', async () => {
+    const r = new HuaweiRouter('R1');
+    expect((await r.executeCommand('save')).toLowerCase()).toContain('successfully');
+    expect(await r.executeCommand('reboot')).not.toMatch(/Unrecognized command/);
+    expect(await r.executeCommand('display elabel')).not.toMatch(/Unrecognized command/);
+  });
+});

@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-cli-basics
-Generated: 2026-05-17T00:30:14.491Z
+Generated: 2026-05-17T05:16:22.191Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=VRP user/system-view navigation, help, abbreviations, undo
 Total steps: 70
@@ -19,7 +19,7 @@ Total steps: 70
   SW1 uptime is 0 days, 0 hours, 0 minutes
 
 [2/70] sw <SW1> display clock
-  2026-05-17 00:30:14
+  2026-05-17 05:16:22
   Sunday
   Time Zone(UTC) : UTC
 
@@ -47,13 +47,13 @@ Total steps: 70
 [6/70] sw <SW1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-17 00:30:14
+  CPU Usage Stat. Time : 2026-05-17 05:16:22
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [7/70] sw <SW1> display memory-usage
-  Memory utilization statistics at 2026-05-17 00:30:14
+  Memory utilization statistics at 2026-05-17 05:16:22
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -301,7 +301,7 @@ Total steps: 70
   return
 
 [13/70] sw [SW-CORE] header shell information "Authorized access only"
-  Error: Unrecognized command "header shell information "Authorized access only""
+<empty>
 
 [14/70] sw [SW-CORE] interface GigabitEthernet0/0/1
 <empty>
@@ -522,31 +522,44 @@ Total steps: 70
   SW-EDGE uptime is 0 days, 0 hours, 0 minutes
 
 [31/70] sw <SW-EDGE> dis clock
-  2026-05-17 00:30:14
+  2026-05-17 05:16:22
   Sunday
   Time Zone(UTC) : UTC
 
 
 --- [32] § context help (?) ---
 [32/70] sw <SW-EDGE> display ?
-    version                Display VRP version information
-    vlan                   Display VLAN information
-    interface              Display interface details
-    mac-address            Display MAC address table
-    current-configuration  Display running configuration
-    clock                  Display system clock
-    cpu-usage              Display CPU usage
-    memory-usage           Display memory usage
-    users                  Display user sessions
-    device                 Display device status
-    history-command        Display command history
-    this                   Display active view configuration
-    saved-configuration    Display saved configuration
-    startup                Display startup configuration
+    version                 Display VRP version information
+    vlan                    Display VLAN information
+    interface               Display interface details
+    mac-address             Display MAC address table
+    current-configuration   Display running configuration
+    clock                   Display system clock
+    cpu-usage               Display CPU usage
+    memory-usage            Display memory usage
+    users                   Display user sessions
+    device                  Display device status
+    history-command         Display command history
+    this                    Display active view configuration
+    saved-configuration     Display saved configuration
+    startup                 Display startup configuration
+    alarm                   Display alarm records
+    elabel                  Display electronic label
+    license                 Display license information
+    logbuffer               Display log buffer
+    trapbuffer              Display trap buffer
+    patch-information       Display patch information
+    diagnostic-information  Collect diagnostic information
 
 [33/70] sw <SW-EDGE> ?
-    system-view  Enter system view
-    display      display
+    system-view    Enter system view
+    display        display
+    save           Save current configuration
+    reboot         Reboot the device
+    reset          reset
+    commit         Commit candidate configuration
+    screen-length  Set terminal screen length
+    header         Configure login/shell banner
 
 [34/70] sw <SW-EDGE> system-view
   Enter system view, return user view with return command.
@@ -697,7 +710,7 @@ Total steps: 70
   GigabitEthernet0/0/10         up      up        0%     0%
 
 [55/70] sw <TEMP> screen-length 0 temporary
-  Error: Unrecognized command "screen-length 0 temporary"
+<empty>
 
 [56/70] sw <TEMP> display version | include VRP
   VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)
@@ -705,45 +718,72 @@ Total steps: 70
 
 --- [57] § diagnostics ---
 [57/70] sw <TEMP> display diagnostic-information
-  Error: Unrecognized command "display diagnostic-information"
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
 
 [58/70] sw <TEMP> display alarm
-  Error: Unrecognized command "display alarm"
+  Info: There is no alarm record.
 
 [59/70] sw <TEMP> display logbuffer
-  Error: Unrecognized command "display logbuffer"
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-17 05:16:22 %01SRM/4/PORT_STATE: Port state changed.
 
 [60/70] sw <TEMP> display trapbuffer
-  Error: Unrecognized command "display trapbuffer"
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
 
 [61/70] sw <TEMP> display elabel
-  Error: Unrecognized command "display elabel"
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235TEMP;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
 
 [62/70] sw <TEMP> display patch-information
-  Error: Unrecognized command "display patch-information"
+  Info: No patch exists.
 
 [63/70] sw <TEMP> display license
-  Error: Unrecognized command "display license"
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
 
 
 --- [64] § save / reboot lifecycle ---
 [64/70] sw <TEMP> save
-  Error: Unrecognized command "save"
+  Info: The current configuration was saved to the device successfully.
 
 [65/70] sw <TEMP> save force
-  Error: Unrecognized command "save force"
+  Info: The current configuration was saved to the device successfully.
 
 [66/70] sw <TEMP> system-view
   Enter system view, return user view with return command.
 
 [67/70] sw [TEMP] commit
-  Error: Unrecognized command "commit"
+<empty>
 
 [68/70] sw [TEMP] return
 <empty>
 
 [69/70] sw <TEMP> reset saved-configuration
-  Error: Unrecognized command "reset saved-configuration"
+  Info: Succeeded in clearing the configuration in the device.
 
 [70/70] sw <TEMP> reboot
-  Error: Unrecognized command "reboot"
+  Info: The system is now comparing the configuration, please wait.
+  Info: System will reboot.

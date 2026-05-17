@@ -17,6 +17,13 @@ import {
   displayMemoryUsage as commonDisplayMemoryUsage,
   displayUsers as commonDisplayUsers,
   displayDevice as commonDisplayDevice,
+  displayAlarm as commonDisplayAlarm,
+  displayElabel as commonDisplayElabel,
+  displayLicense as commonDisplayLicense,
+  displayLogbuffer as commonDisplayLogbuffer,
+  displayTrapbuffer as commonDisplayTrapbuffer,
+  displayPatchInformation as commonDisplayPatchInformation,
+  displayDiagnosticInformation as commonDisplayDiagnosticInformation,
 } from './HuaweiCommonDisplay';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
@@ -607,6 +614,16 @@ export function registerDisplayCommands(
   trie.register('display users', 'Display user sessions', () => commonDisplayUsers());
   trie.register('display device', 'Display device status', () =>
     commonDisplayDevice(getRouter().getHostname()));
+  trie.register('display alarm', 'Display alarm records', () => commonDisplayAlarm());
+  trie.register('display elabel', 'Display electronic label', () =>
+    commonDisplayElabel(getRouter().getHostname()));
+  trie.register('display license', 'Display license information', () => commonDisplayLicense());
+  trie.register('display logbuffer', 'Display log buffer', () => commonDisplayLogbuffer());
+  trie.register('display trapbuffer', 'Display trap buffer', () => commonDisplayTrapbuffer());
+  trie.register('display patch-information', 'Display patch information', () =>
+    commonDisplayPatchInformation());
+  trie.register('display diagnostic-information', 'Collect diagnostic information', () =>
+    commonDisplayDiagnosticInformation());
 }
 
 // ─── Interface Name Resolution (Huawei format) ──────────────────────

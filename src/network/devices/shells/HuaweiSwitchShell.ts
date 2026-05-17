@@ -19,8 +19,11 @@ import type { Switch } from '../Switch';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
-  displayDevice, displayHistoryCommand,
+  displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
+  displayLicense, displayLogbuffer, displayTrapbuffer,
+  displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
+import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 
 type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan';
 
@@ -184,15 +187,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return 'Enter system view, return user view with return command.';
     });
 
-    // display commands
+    // display + common management commands
     this.registerDisplayCommands(this.userTrie);
+    this.registerCommonMgmt(this.userTrie);
   }
 
   // ─── Command Tree: System View ([hostname]) ───────────────────────
 
   private buildSystemCommands(): void {
-    // display commands (available in system view too)
+    // display + common management commands (available in system view too)
     this.registerDisplayCommands(this.systemTrie);
+    this.registerCommonMgmt(this.systemTrie);
 
     // sysname <name>
     this.systemTrie.registerGreedy('sysname', 'Set system hostname', (args) => {
@@ -448,6 +453,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef ? this.displayCurrentConfig(this.swRef) : '');
     trie.register('display startup', 'Display startup configuration', () =>
       this.swRef ? this.displayCurrentConfig(this.swRef) : '');
+
+    // Informational displays (shared with the router, DRY).
+    trie.register('display alarm', 'Display alarm records', () => displayAlarm());
+    trie.register('display elabel', 'Display electronic label', () =>
+      this.swRef ? displayElabel(this.swRef.getHostname()) : '');
+    trie.register('display license', 'Display license information', () => displayLicense());
+    trie.register('display logbuffer', 'Display log buffer', () => displayLogbuffer());
+    trie.register('display trapbuffer', 'Display trap buffer', () => displayTrapbuffer());
+    trie.register('display patch-information', 'Display patch information', () =>
+      displayPatchInformation());
+    trie.register('display diagnostic-information', 'Collect diagnostic information', () =>
+      displayDiagnosticInformation());
+  }
+
+  /**
+   * VRP lifecycle / management commands common to every view + the
+   * router shell (save, reboot, reset, commit, screen-length, header).
+   * Single source via huawei/HuaweiCommonConfig (DRY).
+   */
+  private registerCommonMgmt(trie: CommandTrie): void {
+    registerHuaweiCommonMgmt(trie);
   }
 
   // ─── Undo Command ────────────────────────────────────────────────

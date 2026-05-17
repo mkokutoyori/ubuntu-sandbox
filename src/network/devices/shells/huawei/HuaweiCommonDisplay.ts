@@ -83,3 +83,77 @@ export function displayHistoryCommand(history: readonly string[]): string {
   if (history.length === 0) return '';
   return history.slice(-20).join('\n');
 }
+
+/** `display alarm` — active alarms (none in the sim). */
+export function displayAlarm(): string {
+  return 'Info: There is no alarm record.';
+}
+
+/** `display elabel` — electronic label / manufacturing info. */
+export function displayElabel(hostname: string): string {
+  return [
+    '/$[ARCHIVES INFO VERSION]',
+    '/$ArchivesInfoVersion=3.0;',
+    '',
+    '[Slot_1]',
+    '/$[Board Integrated Component]',
+    '/$BoardType=S5720-28X-LI-AC;',
+    `/$BarCode=210235${hostname.toUpperCase().slice(0, 8)};`,
+    '/$Item=02359556;',
+    '/$Description=Huawei S5720-28X-LI-AC Switch;',
+    '/$Manufactured=2024-01-01;',
+    '/$VendorName=Huawei;',
+  ].join('\n');
+}
+
+/** `display license` — license state (default trial). */
+export function displayLicense(): string {
+  return [
+    ' Active License : default',
+    ' License State  : Trial',
+    ' Trial Days Left: 60',
+  ].join('\n');
+}
+
+/** `display logbuffer` — informational log ring buffer. */
+export function displayLogbuffer(now: Date = new Date()): string {
+  const stamp =
+    `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}` +
+    ` ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+  return [
+    'Logging buffer configuration and contents: enabled',
+    'Allowed max buffer size : 512',
+    'Actual buffer size : 512',
+    'Channel number : 4 , Channel name : logbuffer',
+    'Dropped messages : 0',
+    'Overwritten messages : 0',
+    'Current messages : 1',
+    `${stamp} %01SRM/4/PORT_STATE: Port state changed.`,
+  ].join('\n');
+}
+
+/** `display trapbuffer` — informational trap ring buffer. */
+export function displayTrapbuffer(): string {
+  return [
+    'Trapping buffer configuration and contents: enabled',
+    'Allowed max buffer size : 256',
+    'Actual buffer size : 256',
+    'Channel number : 3 , Channel name : trapbuffer',
+    'Dropped messages : 0',
+    'Current messages : 0',
+  ].join('\n');
+}
+
+/** `display patch-information` — installed patches (none). */
+export function displayPatchInformation(): string {
+  return 'Info: No patch exists.';
+}
+
+/** `display diagnostic-information` — collection acknowledgement (stub). */
+export function displayDiagnosticInformation(): string {
+  return [
+    'Info: It will take several minutes to save diagnostic information,',
+    'please wait.....................',
+    'Info: Diagnostic information collected.',
+  ].join('\n');
+}

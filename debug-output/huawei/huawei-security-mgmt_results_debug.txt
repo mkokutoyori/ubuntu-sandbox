@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T00:30:14.990Z
+Generated: 2026-05-17T05:16:22.718Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
@@ -281,7 +281,7 @@ Total steps: 90
 
 --- [87] § save / backup ---
 [87/90] sw <SW-SEC> save
-  Error: Unrecognized command "save"
+  Info: The current configuration was saved to the device successfully.
 
 [88/90] sw <SW-SEC> display saved-configuration
   #
@@ -365,4 +365,4 @@ Total steps: 90
 <empty>
 
 [90/90] sw <SW-SEC> reset saved-configuration
-  Error: Unrecognized command "reset saved-configuration"
+  Info: Succeeded in clearing the configuration in the device.
