@@ -238,4 +238,35 @@ transcripts régénérés, commit + push.
 
 ---
 
+## 11. Fondation moteurs de routage (BGP/EIGRP)
+
+Pour que tout le projet soit cohérent, les protocoles sans moteur
+(BGP, EIGRP) reçoivent un vrai moteur — mais **toujours real
+config-driven** : une adjacence ne se forme que si un pair réel,
+câblé dans la topologie, exécute le même protocole avec une config
+compatible. Un équipement isolé n'a donc aucun voisin (état vrai).
+
+`src/network/routing/` (SRP, classes légères) :
+
+| Fichier | Rôle | Pattern |
+|---|---|---|
+| `types.ts` | `RibRoute`, `ProtocolNeighborView`, `RoutingPeer`, `NeighborFsmState` | Value Objects |
+| `RoutingPeerLocator.ts` | Découverte des pairs réels (graphe Port/Cable) | Dependency Inversion |
+| `RoutingNeighborTable.ts` | Table de voisins + FSM + notification | SRP / Observer |
+| `observables.ts` | `RoutingSignalStore` + read-models Signals | Reactive / read-model |
+| `IRoutingProtocolEngine.ts` | Contrat commun (sur `IProtocolEngine`) | Interface Segregation |
+| `AbstractRoutingProtocolEngine.ts` | Cycle de vie, locator, projection réactive | Template Method |
+
+Le moteur concret n'implémente que trois hooks courts :
+`defaultConfig()`, `computeNeighbors(peers)`, `computeRoutes(peers)`.
+Réactivité : chaque `converge()` re-projette les Signals ; un
+`IEventBus` optionnel publie les évènements de cycle de vie. Le
+`RouterXxxEngine` adapte le moteur au RIB du Router via `pushRoute`
+(comme RIP/OSPF), et un `RoutingPeerLocator` concret lit la topologie.
+
+Lots : (1) fondation **[fait]** → (2) `EIGRPEngine` → (3) `BGPEngine`,
+chacun TDD, branché Router + CLI, transcripts régénérés, push.
+
+---
+
 *Fin du document.*
