@@ -44,6 +44,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private mstRegion: { name: string; revision: number; instances: Map<number, string> } =
     { name: '', revision: 0, instances: new Map() };
   private ifStp = new Map<string, string[]>();
+  private ifExtra = new Map<string, string[]>();
 
   constructor() {
     super();
@@ -233,8 +234,52 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── Privileged Commands ──────────────────────────────────────────
 
   private registerPrivilegedCommands(): void {
-    this.privilegedTrie.register('show mac address-table', 'Display MAC address table', () => {
-      return this.showMACAddressTable(this.d());
+    this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
+      const full = this.showMACAddressTable(this.d());
+      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
+        const lines = full.split('\n');
+        return [lines[0] ?? '', ...lines.filter(l =>
+          new RegExp(`\\b${args[1]}\\b`).test(l))].join('\n');
+      }
+      return full;
+    });
+
+    this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
+      const rows = ['Port      Mode  Encapsulation  Status   Native vlan'];
+      for (const p of this.d().getPortNames()) {
+        const c = this.d().getSwitchportConfig(p);
+        if (c && c.mode === 'trunk') {
+          rows.push(`${p.padEnd(10)}on    802.1q         trunking ${c.trunkNativeVlan}`);
+        }
+      }
+      return rows.join('\n');
+    });
+
+    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', () =>
+      ['Flags:  D - down        P - bundled in port-channel',
+       'Number of channel-groups in use: 0',
+       'Group  Port-channel  Protocol    Ports',
+       '------+-------------+-----------+-----------------------------------------'].join('\n'));
+
+    // `show interfaces <if> switchport`
+    this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
+      if (args.length >= 2 && args[args.length - 1].toLowerCase() === 'switchport') {
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '))
+          ?? args.slice(0, -1).join(' ');
+        const c = this.d().getSwitchportConfig(name);
+        return [
+          `Name: ${name}`,
+          `Switchport: Enabled`,
+          `Administrative Mode: ${c?.mode === 'trunk' ? 'trunk' : 'static access'}`,
+          `Operational Mode: ${c?.mode ?? 'access'}`,
+          `Access Mode VLAN: ${c?.accessVlan ?? 1}`,
+          `Trunking Native Mode VLAN: ${c?.trunkNativeVlan ?? 1}`,
+        ].join('\n');
+      }
+      if (args[0]?.toLowerCase() === 'status' || args.length === 0) {
+        return this.showInterfacesStatus(this.d());
+      }
+      return this.showInterfacesStatus(this.d());
     });
 
     this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
@@ -251,6 +296,23 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.privilegedTrie.register('show interfaces', 'Display interface information', () => {
       return this.showInterfacesStatus(this.d());
+    });
+
+    this.privilegedTrie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
+      const name = this.resolveInterfaceName(args.join(' '))
+        ?? this.virtualInterfaceName(args.join(' ')) ?? args.join(' ');
+      const cfg = this.d().getSwitchportConfig(name);
+      const out = [`interface ${name}`];
+      if (cfg) {
+        out.push(cfg.mode === 'trunk' ? ' switchport mode trunk' : ' switchport mode access');
+        if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
+          out.push(` switchport access vlan ${cfg.accessVlan}`);
+        }
+      }
+      for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
+      for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
+      out.push('end');
+      return out.join('\n');
     });
 
     this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
@@ -301,13 +363,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
       if (args.length < 1) return '% Incomplete command.';
-      const id = parseInt(args[0], 10);
-      if (isNaN(id) || id < 1 || id > 4094) return '% Invalid VLAN ID';
-      if (!this.d().getVLAN(id)) {
-        this.d().createVLAN(id);
+      // Accept a single id, a comma list (100,200,300) and ranges
+      // (30-35) — IOS creates them all; only a single id enters
+      // config-vlan.
+      const spec = args.join('');
+      const ids: number[] = [];
+      for (const part of spec.split(',')) {
+        const m = part.match(/^(\d+)-(\d+)$/);
+        if (m) {
+          for (let i = +m[1]; i <= +m[2]; i++) ids.push(i);
+        } else {
+          const n = parseInt(part, 10);
+          if (!isNaN(n)) ids.push(n);
+        }
       }
-      this.selectedVlan = id;
-      this.mode = 'config-vlan';
+      if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
+        return '% Invalid VLAN ID';
+      }
+      for (const id of ids) if (!this.d().getVLAN(id)) this.d().createVLAN(id);
+      if (ids.length === 1) {
+        this.selectedVlan = ids[0];
+        this.mode = 'config-vlan';
+      }
       return '';
     });
 
@@ -324,6 +401,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
+      }
+
+      const virt = this.virtualInterfaceName(args.join(' '));
+      if (virt) {
+        this.selectedInterface = virt;
+        this.selectedInterfaceRange = [virt];
+        this.mode = 'config-if';
+        return '';
       }
 
       const portName = this.resolveInterfaceName(args[0]);
@@ -389,6 +474,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (args.length < 1) return '% Incomplete command.';
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
+      }
+      const virt = this.virtualInterfaceName(args.join(' '));
+      if (virt) {
+        this.selectedInterface = virt;
+        this.selectedInterfaceRange = [virt];
+        return '';
       }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName || !this.d().getPort(portName)) {
@@ -475,6 +566,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         this.d().setTrunkAllowedVlans(portName, vlans) ? '' : '% Error'
       );
     });
+
+    // ── switchport extras / EtherChannel (recorded for show run) ──
+    const recordIf = (line: string) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const l = this.ifExtra.get(i) ?? [];
+        l.push(line);
+        this.ifExtra.set(i, l);
+      }
+      return '';
+    };
+    for (const sub of [
+      'switchport trunk encapsulation', 'switchport nonegotiate',
+      'switchport voice', 'switchport port-security', 'switchport priority',
+      'channel-group', 'channel-protocol', 'storm-control', 'mls qos',
+      'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
+    ]) {
+      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) =>
+        recordIf(`${sub} ${args.join(' ')}`.trim()));
+    }
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => {
@@ -577,6 +689,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           lines.push(` switchport access vlan ${cfg.accessVlan}`);
         }
       }
+      for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
+      for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
@@ -776,6 +890,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   }
 
   // ─── Interface Resolution ─────────────────────────────────────────
+
+  /**
+   * Virtual (non-physical) L2 interfaces this switch accepts:
+   * Port-channel only. `Vlan<n>` is an L3 SVI and stays rejected on an
+   * L2-only switch (returns null → "% Invalid interface name").
+   */
+  private virtualInterfaceName(input: string): string | null {
+    const m = input.replace(/\s+/g, '').match(/^(?:po|port-?channel)(\d+)$/i);
+    return m ? `Port-channel${m[1]}` : null;
+  }
 
   private resolveInterfaceName(input: string): string | null {
     const lower = input.toLowerCase();

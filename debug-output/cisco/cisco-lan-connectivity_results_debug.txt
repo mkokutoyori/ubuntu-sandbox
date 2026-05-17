@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-lan-connectivity
-Generated: 2026-05-17T06:11:51.184Z
+Generated: 2026-05-17T06:16:49.885Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=L2 VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation
 Total steps: 57
@@ -157,12 +157,12 @@ Total steps: 57
 --- [34] § intra-VLAN ping (expect OK) ---
 [34/57] linux1 linux1$ ping -c 2 192.168.10.21
   PING 192.168.10.21 (192.168.10.21) 56(84) bytes of data.
-  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.626 ms
-  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.395 ms
+  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.753 ms
+  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.463 ms
   
   --- 192.168.10.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.395/1.010/1.626/0.615 ms
+  rtt min/avg/max/mdev = 0.463/1.108/1.753/0.645 ms
 
 [35/57] win1 win1$ ping -n 2 192.168.10.11
   
@@ -177,12 +177,12 @@ Total steps: 57
 
 [36/57] linux2 linux2$ ping -c 2 192.168.20.22
   PING 192.168.20.22 (192.168.20.22) 56(84) bytes of data.
-  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.414 ms
-  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.180 ms
+  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.461 ms
+  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.174 ms
   
   --- 192.168.20.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.180/0.297/0.414/0.117 ms
+  rtt min/avg/max/mdev = 0.174/0.317/0.461/0.143 ms
 
 [37/57] win2 win2$ ping -n 2 192.168.20.12
   
@@ -193,7 +193,7 @@ Total steps: 57
   Ping statistics for 192.168.20.12:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 
 --- [38] § inter-VLAN ping (expect FAIL — L2 switch never routes) ---
@@ -229,14 +229,15 @@ Total steps: 57
   Total Mac Addresses for this criterion: 4
 
 [41/57] sw SW-LAB# show mac address-table vlan 10
-  % Invalid input detected at '^' marker.
-  show mac address-table vlan 10
-                         ^
+  Mac Address Table
+  10      02:00:00:00:00:1b DYNAMIC     FastEthernet0/1
+  10      02:00:00:00:00:1f DYNAMIC     FastEthernet0/2
+  20      02:00:00:00:00:27 DYNAMIC     FastEthernet0/10
 
 [42/57] sw SW-LAB# show mac address-table vlan 20
-  % Invalid input detected at '^' marker.
-  show mac address-table vlan 20
-                         ^
+  Mac Address Table
+  20      02:00:00:00:00:23 DYNAMIC     FastEthernet0/3
+  20      02:00:00:00:00:27 DYNAMIC     FastEthernet0/10
 
 [43/57] sw SW-LAB# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
