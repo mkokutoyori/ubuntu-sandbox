@@ -1,0 +1,1889 @@
+============================================================
+Router (L3) debug transcript — cisco-router-interfaces
+Generated: 2026-05-17T10:30:08.677Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
+Total steps: 343
+============================================================
+
+
+--- [1] § physical interface battery ---
+[1/343] r1 R1> enable
+<empty>
+
+[2/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/343] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[4/343] r1 R1(config-if)# ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[5/343] r1 R1(config-if)# ip address 192.168.100.1 255.255.255.0 secondary
+<empty>
+
+[6/343] r1 R1(config-if)# ipv6 address 2001:db8:1::1/64
+<empty>
+
+[7/343] r1 R1(config-if)# ipv6 address fe80::1 link-local
+  % Invalid IPv6 address format (expected addr/prefix)
+
+[8/343] r1 R1(config-if)# ipv6 enable
+  % Invalid input detected at '^' marker.
+  ipv6 enable
+       ^
+
+[9/343] r1 R1(config-if)# description ## LAN to L1 ##
+<empty>
+
+[10/343] r1 R1(config-if)# bandwidth 100000
+  % Invalid input detected at '^' marker.
+  bandwidth 100000
+  ^
+
+[11/343] r1 R1(config-if)# delay 100
+  % Invalid input detected at '^' marker.
+  delay 100
+  ^
+
+[12/343] r1 R1(config-if)# mtu 1500
+  % Invalid input detected at '^' marker.
+  mtu 1500
+  ^
+
+[13/343] r1 R1(config-if)# ip mtu 1400
+  % Invalid input detected at '^' marker.
+  ip mtu 1400
+     ^
+
+[14/343] r1 R1(config-if)# ipv6 mtu 1280
+  % Invalid input detected at '^' marker.
+  ipv6 mtu 1280
+       ^
+
+[15/343] r1 R1(config-if)# duplex full
+  % Invalid input detected at '^' marker.
+  duplex full
+  ^
+
+[16/343] r1 R1(config-if)# speed 1000
+  % Invalid input detected at '^' marker.
+  speed 1000
+  ^
+
+[17/343] r1 R1(config-if)# speed auto
+  % Invalid input detected at '^' marker.
+  speed auto
+  ^
+
+[18/343] r1 R1(config-if)# negotiation auto
+  % Invalid input detected at '^' marker.
+  negotiation auto
+  ^
+
+[19/343] r1 R1(config-if)# no keepalive
+  % Invalid input detected at '^' marker.
+  no keepalive
+     ^
+
+[20/343] r1 R1(config-if)# keepalive 10
+  % Invalid input detected at '^' marker.
+  keepalive 10
+  ^
+
+[21/343] r1 R1(config-if)# load-interval 30
+  % Invalid input detected at '^' marker.
+  load-interval 30
+  ^
+
+[22/343] r1 R1(config-if)# ip redirects
+  % Invalid input detected at '^' marker.
+  ip redirects
+     ^
+
+[23/343] r1 R1(config-if)# no ip redirects
+  % Invalid input detected at '^' marker.
+  no ip redirects
+        ^
+
+[24/343] r1 R1(config-if)# no ip proxy-arp
+  % Invalid input detected at '^' marker.
+  no ip proxy-arp
+        ^
+
+[25/343] r1 R1(config-if)# ip proxy-arp
+  % Invalid input detected at '^' marker.
+  ip proxy-arp
+     ^
+
+[26/343] r1 R1(config-if)# no ip unreachables
+  % Invalid input detected at '^' marker.
+  no ip unreachables
+        ^
+
+[27/343] r1 R1(config-if)# ip directed-broadcast
+  % Invalid input detected at '^' marker.
+  ip directed-broadcast
+     ^
+
+[28/343] r1 R1(config-if)# no ip directed-broadcast
+  % Invalid input detected at '^' marker.
+  no ip directed-broadcast
+        ^
+
+[29/343] r1 R1(config-if)# arp timeout 600
+  % Invalid input detected at '^' marker.
+  arp timeout 600
+  ^
+
+[30/343] r1 R1(config-if)# ip accounting
+  % Invalid input detected at '^' marker.
+  ip accounting
+     ^
+
+[31/343] r1 R1(config-if)# cdp enable
+  % Invalid input detected at '^' marker.
+  cdp enable
+  ^
+
+[32/343] r1 R1(config-if)# no cdp enable
+  % Invalid input detected at '^' marker.
+  no cdp enable
+     ^
+
+[33/343] r1 R1(config-if)# lldp transmit
+  % Invalid input detected at '^' marker.
+  lldp transmit
+  ^
+
+[34/343] r1 R1(config-if)# lldp receive
+  % Invalid input detected at '^' marker.
+  lldp receive
+  ^
+
+[35/343] r1 R1(config-if)# ip flow ingress
+  % Invalid input detected at '^' marker.
+  ip flow ingress
+     ^
+
+[36/343] r1 R1(config-if)# ip flow egress
+  % Invalid input detected at '^' marker.
+  ip flow egress
+     ^
+
+[37/343] r1 R1(config-if)# service-policy input PM1
+  % Invalid input detected at '^' marker.
+  service-policy input PM1
+  ^
+
+[38/343] r1 R1(config-if)# no shutdown
+<empty>
+
+[39/343] r1 R1(config-if)# exit
+<empty>
+
+
+--- [40] § loopbacks ---
+[40/343] r1 R1(config)# configure terminal
+<empty>
+
+[41/343] r1 R1(config)# interface Loopback1
+<empty>
+
+[42/343] r1 R1(config-if)# ip address 10.255.255.1 255.255.255.255
+<empty>
+
+[43/343] r1 R1(config-if)# description LOOP-1
+<empty>
+
+[44/343] r1 R1(config-if)# exit
+<empty>
+
+[45/343] r1 R1(config)# interface Loopback2
+<empty>
+
+[46/343] r1 R1(config-if)# ip address 10.255.255.2 255.255.255.255
+<empty>
+
+[47/343] r1 R1(config-if)# description LOOP-2
+<empty>
+
+[48/343] r1 R1(config-if)# exit
+<empty>
+
+[49/343] r1 R1(config)# interface Loopback3
+<empty>
+
+[50/343] r1 R1(config-if)# ip address 10.255.255.3 255.255.255.255
+<empty>
+
+[51/343] r1 R1(config-if)# description LOOP-3
+<empty>
+
+[52/343] r1 R1(config-if)# exit
+<empty>
+
+[53/343] r1 R1(config)# interface Loopback4
+<empty>
+
+[54/343] r1 R1(config-if)# ip address 10.255.255.4 255.255.255.255
+<empty>
+
+[55/343] r1 R1(config-if)# description LOOP-4
+<empty>
+
+[56/343] r1 R1(config-if)# exit
+<empty>
+
+[57/343] r1 R1(config)# interface Loopback5
+<empty>
+
+[58/343] r1 R1(config-if)# ip address 10.255.255.5 255.255.255.255
+<empty>
+
+[59/343] r1 R1(config-if)# description LOOP-5
+<empty>
+
+[60/343] r1 R1(config-if)# exit
+<empty>
+
+[61/343] r1 R1(config)# interface Loopback6
+<empty>
+
+[62/343] r1 R1(config-if)# ip address 10.255.255.6 255.255.255.255
+<empty>
+
+[63/343] r1 R1(config-if)# description LOOP-6
+<empty>
+
+[64/343] r1 R1(config-if)# exit
+<empty>
+
+[65/343] r1 R1(config)# interface Loopback7
+<empty>
+
+[66/343] r1 R1(config-if)# ip address 10.255.255.7 255.255.255.255
+<empty>
+
+[67/343] r1 R1(config-if)# description LOOP-7
+<empty>
+
+[68/343] r1 R1(config-if)# exit
+<empty>
+
+[69/343] r1 R1(config)# interface Loopback8
+<empty>
+
+[70/343] r1 R1(config-if)# ip address 10.255.255.8 255.255.255.255
+<empty>
+
+[71/343] r1 R1(config-if)# description LOOP-8
+<empty>
+
+[72/343] r1 R1(config-if)# exit
+<empty>
+
+[73/343] r1 R1(config)# end
+<empty>
+
+[74/343] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+
+
+--- [75] § unnumbered / dhcp / negotiated ---
+[75/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[76/343] r1 R1(config)# interface Loopback100
+<empty>
+
+[77/343] r1 R1(config-if)# ip address 172.31.0.1 255.255.255.255
+<empty>
+
+[78/343] r1 R1(config-if)# exit
+<empty>
+
+[79/343] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[80/343] r1 R1(config-if)# ip unnumbered Loopback100
+  % Invalid input detected at '^' marker.
+  ip unnumbered Loopback100
+     ^
+
+[81/343] r1 R1(config-if)# no ip unnumbered
+  % Invalid input detected at '^' marker.
+  no ip unnumbered
+        ^
+
+[82/343] r1 R1(config-if)# ip address dhcp
+  % Incomplete command.
+
+[83/343] r1 R1(config-if)# ip address negotiated
+  % Incomplete command.
+
+[84/343] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[85/343] r1 R1(config-if)# no shutdown
+<empty>
+
+[86/343] r1 R1(config-if)# exit
+<empty>
+
+[87/343] r1 R1(config)# end
+<empty>
+
+
+--- [88] § 802.1Q subinterfaces ---
+[88/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[89/343] r1 R1(config)# interface GigabitEthernet0/0.10
+  % Invalid interface "GigabitEthernet0/0.10"
+
+[90/343] r1 R1(config)# encapsulation dot1Q 10
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 10
+  ^
+
+[91/343] r1 R1(config)# ip address 192.168.1.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.1.1 255.255.255.0
+     ^
+
+[92/343] r1 R1(config)# encapsulation dot1Q 10 native
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 10 native
+  ^
+
+[93/343] r1 R1(config)# exit
+<empty>
+
+[94/343] r1 R1# interface GigabitEthernet0/0.20
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.20
+  ^
+
+[95/343] r1 R1# encapsulation dot1Q 20
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 20
+  ^
+
+[96/343] r1 R1# ip address 192.168.2.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.2.1 255.255.255.0
+  ^
+
+[97/343] r1 R1# description VLAN20
+  % Invalid input detected at '^' marker.
+  description VLAN20
+  ^
+
+[98/343] r1 R1# exit
+<empty>
+
+[99/343] r1 R1> interface GigabitEthernet0/0.30
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.30
+  ^
+
+[100/343] r1 R1> encapsulation dot1Q 30
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 30
+  ^
+
+[101/343] r1 R1> ip address 192.168.3.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.3.1 255.255.255.0
+  ^
+
+[102/343] r1 R1> description VLAN30
+  % Invalid input detected at '^' marker.
+  description VLAN30
+  ^
+
+[103/343] r1 R1> exit
+<empty>
+
+[104/343] r1 R1> interface GigabitEthernet0/0.40
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.40
+  ^
+
+[105/343] r1 R1> encapsulation dot1Q 40
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 40
+  ^
+
+[106/343] r1 R1> ip address 192.168.4.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.4.1 255.255.255.0
+  ^
+
+[107/343] r1 R1> description VLAN40
+  % Invalid input detected at '^' marker.
+  description VLAN40
+  ^
+
+[108/343] r1 R1> exit
+<empty>
+
+[109/343] r1 R1> interface GigabitEthernet0/0.50
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.50
+  ^
+
+[110/343] r1 R1> encapsulation dot1Q 50
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 50
+  ^
+
+[111/343] r1 R1> ip address 192.168.5.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.5.1 255.255.255.0
+  ^
+
+[112/343] r1 R1> description VLAN50
+  % Invalid input detected at '^' marker.
+  description VLAN50
+  ^
+
+[113/343] r1 R1> exit
+<empty>
+
+[114/343] r1 R1> interface GigabitEthernet0/0.60
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.60
+  ^
+
+[115/343] r1 R1> encapsulation dot1Q 60
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 60
+  ^
+
+[116/343] r1 R1> ip address 192.168.6.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.6.1 255.255.255.0
+  ^
+
+[117/343] r1 R1> description VLAN60
+  % Invalid input detected at '^' marker.
+  description VLAN60
+  ^
+
+[118/343] r1 R1> exit
+<empty>
+
+[119/343] r1 R1> interface GigabitEthernet0/0.70
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.70
+  ^
+
+[120/343] r1 R1> encapsulation dot1Q 70
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 70
+  ^
+
+[121/343] r1 R1> ip address 192.168.7.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.7.1 255.255.255.0
+  ^
+
+[122/343] r1 R1> description VLAN70
+  % Invalid input detected at '^' marker.
+  description VLAN70
+  ^
+
+[123/343] r1 R1> exit
+<empty>
+
+[124/343] r1 R1> interface GigabitEthernet0/0.80
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.80
+  ^
+
+[125/343] r1 R1> encapsulation dot1Q 80
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 80
+  ^
+
+[126/343] r1 R1> ip address 192.168.8.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.8.1 255.255.255.0
+  ^
+
+[127/343] r1 R1> description VLAN80
+  % Invalid input detected at '^' marker.
+  description VLAN80
+  ^
+
+[128/343] r1 R1> exit
+<empty>
+
+[129/343] r1 R1> interface GigabitEthernet0/0.90
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.90
+  ^
+
+[130/343] r1 R1> encapsulation dot1Q 90
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 90
+  ^
+
+[131/343] r1 R1> ip address 192.168.9.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.9.1 255.255.255.0
+  ^
+
+[132/343] r1 R1> description VLAN90
+  % Invalid input detected at '^' marker.
+  description VLAN90
+  ^
+
+[133/343] r1 R1> exit
+<empty>
+
+[134/343] r1 R1> interface GigabitEthernet0/0.100
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.100
+  ^
+
+[135/343] r1 R1> encapsulation dot1Q 100
+  % Invalid input detected at '^' marker.
+  encapsulation dot1Q 100
+  ^
+
+[136/343] r1 R1> ip address 192.168.10.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.10.1 255.255.255.0
+  ^
+
+[137/343] r1 R1> description VLAN100
+  % Invalid input detected at '^' marker.
+  description VLAN100
+  ^
+
+[138/343] r1 R1> exit
+<empty>
+
+[139/343] r1 R1> interface GigabitEthernet0/0.999
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0.999
+  ^
+
+[140/343] r1 R1> encapsulation isl 999
+  % Invalid input detected at '^' marker.
+  encapsulation isl 999
+  ^
+
+[141/343] r1 R1> ip address 192.168.99.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.99.1 255.255.255.0
+  ^
+
+[142/343] r1 R1> exit
+<empty>
+
+[143/343] r1 R1> end
+<empty>
+
+[144/343] r1 R1> show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+  Loopback100                172.31.0.1      YES manual administratively down down
+
+[145/343] r1 R1> show interfaces GigabitEthernet0/0.10
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0.10
+       ^
+
+[146/343] r1 R1> show vlans
+  % Invalid input detected at '^' marker.
+  show vlans
+       ^
+
+
+--- [147] § tunnels ---
+[147/343] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[148/343] r1 R1> interface Tunnel0
+  % Invalid input detected at '^' marker.
+  interface Tunnel0
+  ^
+
+[149/343] r1 R1> ip address 172.16.0.1 255.255.255.252
+  % Invalid input detected at '^' marker.
+  ip address 172.16.0.1 255.255.255.252
+  ^
+
+[150/343] r1 R1> tunnel source GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  tunnel source GigabitEthernet0/1
+  ^
+
+[151/343] r1 R1> tunnel destination 10.0.0.2
+  % Invalid input detected at '^' marker.
+  tunnel destination 10.0.0.2
+  ^
+
+[152/343] r1 R1> tunnel mode gre ip
+  % Invalid input detected at '^' marker.
+  tunnel mode gre ip
+  ^
+
+[153/343] r1 R1> tunnel key 1234
+  % Invalid input detected at '^' marker.
+  tunnel key 1234
+  ^
+
+[154/343] r1 R1> keepalive 5 3
+  % Invalid input detected at '^' marker.
+  keepalive 5 3
+  ^
+
+[155/343] r1 R1> exit
+<empty>
+
+[156/343] r1 R1> interface Tunnel1
+  % Invalid input detected at '^' marker.
+  interface Tunnel1
+  ^
+
+[157/343] r1 R1> ip address 172.16.0.5 255.255.255.252
+  % Invalid input detected at '^' marker.
+  ip address 172.16.0.5 255.255.255.252
+  ^
+
+[158/343] r1 R1> tunnel source Loopback0
+  % Invalid input detected at '^' marker.
+  tunnel source Loopback0
+  ^
+
+[159/343] r1 R1> tunnel destination 10.0.0.2
+  % Invalid input detected at '^' marker.
+  tunnel destination 10.0.0.2
+  ^
+
+[160/343] r1 R1> tunnel mode ipip
+  % Invalid input detected at '^' marker.
+  tunnel mode ipip
+  ^
+
+[161/343] r1 R1> tunnel protection ipsec profile IPSEC-PROF
+  % Invalid input detected at '^' marker.
+  tunnel protection ipsec profile IPSEC-PROF
+  ^
+
+[162/343] r1 R1> exit
+<empty>
+
+[163/343] r1 R1> interface Tunnel2
+  % Invalid input detected at '^' marker.
+  interface Tunnel2
+  ^
+
+[164/343] r1 R1> ipv6 address 2001:db8:ffff::1/64
+  % Invalid input detected at '^' marker.
+  ipv6 address 2001:db8:ffff::1/64
+  ^
+
+[165/343] r1 R1> tunnel mode ipv6ip
+  % Invalid input detected at '^' marker.
+  tunnel mode ipv6ip
+  ^
+
+[166/343] r1 R1> exit
+<empty>
+
+[167/343] r1 R1> end
+<empty>
+
+[168/343] r1 R1> show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+  Loopback100                172.31.0.1      YES manual administratively down down
+
+[169/343] r1 R1> show interfaces Tunnel0
+  % Invalid input detected at '^' marker.
+  show interfaces Tunnel0
+       ^
+
+
+--- [170] § DHCP relay / helper ---
+[170/343] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[171/343] r1 R1> interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0
+  ^
+
+[172/343] r1 R1> ip helper-address 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ip helper-address 10.0.0.2
+  ^
+
+[173/343] r1 R1> ip helper-address 10.0.0.3
+  % Invalid input detected at '^' marker.
+  ip helper-address 10.0.0.3
+  ^
+
+[174/343] r1 R1> no ip helper-address 10.0.0.3
+  % Invalid input detected at '^' marker.
+  no ip helper-address 10.0.0.3
+  ^
+
+[175/343] r1 R1> ip dhcp relay information trusted
+  % Invalid input detected at '^' marker.
+  ip dhcp relay information trusted
+  ^
+
+[176/343] r1 R1> exit
+<empty>
+
+[177/343] r1 R1> end
+<empty>
+
+
+--- [178] § shutdown / error / clear ---
+[178/343] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[179/343] r1 R1> interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0
+  ^
+
+[180/343] r1 R1> shutdown
+  % Invalid input detected at '^' marker.
+  shutdown
+  ^
+
+[181/343] r1 R1> do show ip interface brief
+  % Invalid input detected at '^' marker.
+  do show ip interface brief
+  ^
+
+[182/343] r1 R1> no shutdown
+  % Invalid input detected at '^' marker.
+  no shutdown
+  ^
+
+[183/343] r1 R1> exit
+<empty>
+
+[184/343] r1 R1> interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/1
+  ^
+
+[185/343] r1 R1> shutdown
+  % Invalid input detected at '^' marker.
+  shutdown
+  ^
+
+[186/343] r1 R1> do show ip interface brief
+  % Invalid input detected at '^' marker.
+  do show ip interface brief
+  ^
+
+[187/343] r1 R1> no shutdown
+  % Invalid input detected at '^' marker.
+  no shutdown
+  ^
+
+[188/343] r1 R1> exit
+<empty>
+
+[189/343] r1 R1> end
+<empty>
+
+[190/343] r1 R1> clear counters GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  clear counters GigabitEthernet0/0
+  ^
+
+[191/343] r1 R1> clear ip route *
+  % Invalid input detected at '^' marker.
+  clear ip route *
+  ^
+
+[192/343] r1 R1> clear arp-cache
+  % Invalid input detected at '^' marker.
+  clear arp-cache
+  ^
+
+[193/343] r1 R1> clear ip arp 192.168.1.10
+  % Invalid input detected at '^' marker.
+  clear ip arp 192.168.1.10
+  ^
+
+
+--- [194] § per-interface show family ---
+[194/343] r1 R1> show interfaces
+  % Invalid input detected at '^' marker.
+  show interfaces
+       ^
+
+[195/343] r1 R1> show interfaces GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0
+       ^
+
+[196/343] r1 R1> show ip interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show ip interface GigabitEthernet0/0
+                    ^
+
+[197/343] r1 R1> show ipv6 interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show ipv6 interface GigabitEthernet0/0
+            ^
+
+[198/343] r1 R1> show interfaces GigabitEthernet0/0 accounting
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0 accounting
+       ^
+
+[199/343] r1 R1> show interfaces GigabitEthernet0/0 switchport
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0 switchport
+       ^
+
+[200/343] r1 R1> show interfaces GigabitEthernet0/0 stats
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0 stats
+       ^
+
+[201/343] r1 R1> show controllers GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show controllers GigabitEthernet0/0
+       ^
+
+[202/343] r1 R1> show running-config interface GigabitEthernet0/0
+  Building configuration...
+  
+  Current configuration : interface GigabitEthernet0/0
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.100.1 255.255.255.0
+   no shutdown
+  end
+
+[203/343] r1 R1> show interfaces GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1
+       ^
+
+[204/343] r1 R1> show ip interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show ip interface GigabitEthernet0/1
+                    ^
+
+[205/343] r1 R1> show ipv6 interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show ipv6 interface GigabitEthernet0/1
+            ^
+
+[206/343] r1 R1> show interfaces GigabitEthernet0/1 accounting
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1 accounting
+       ^
+
+[207/343] r1 R1> show interfaces GigabitEthernet0/1 switchport
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1 switchport
+       ^
+
+[208/343] r1 R1> show interfaces GigabitEthernet0/1 stats
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1 stats
+       ^
+
+[209/343] r1 R1> show controllers GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show controllers GigabitEthernet0/1
+       ^
+
+[210/343] r1 R1> show running-config interface GigabitEthernet0/1
+  Building configuration...
+  
+  Current configuration : interface GigabitEthernet0/1
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  end
+
+[211/343] r1 R1> show interfaces Loopback0
+  % Invalid input detected at '^' marker.
+  show interfaces Loopback0
+       ^
+
+[212/343] r1 R1> show ip interface Loopback0
+  % Invalid input detected at '^' marker.
+  show ip interface Loopback0
+                    ^
+
+[213/343] r1 R1> show ipv6 interface Loopback0
+  % Invalid input detected at '^' marker.
+  show ipv6 interface Loopback0
+            ^
+
+[214/343] r1 R1> show interfaces Loopback0 accounting
+  % Invalid input detected at '^' marker.
+  show interfaces Loopback0 accounting
+       ^
+
+[215/343] r1 R1> show interfaces Loopback0 switchport
+  % Invalid input detected at '^' marker.
+  show interfaces Loopback0 switchport
+       ^
+
+[216/343] r1 R1> show interfaces Loopback0 stats
+  % Invalid input detected at '^' marker.
+  show interfaces Loopback0 stats
+       ^
+
+[217/343] r1 R1> show controllers Loopback0
+  % Invalid input detected at '^' marker.
+  show controllers Loopback0
+       ^
+
+[218/343] r1 R1> show running-config interface Loopback0
+  % Invalid interface
+
+[219/343] r1 R1> show interfaces Tunnel0
+  % Invalid input detected at '^' marker.
+  show interfaces Tunnel0
+       ^
+
+[220/343] r1 R1> show ip interface Tunnel0
+  % Invalid input detected at '^' marker.
+  show ip interface Tunnel0
+                    ^
+
+[221/343] r1 R1> show ipv6 interface Tunnel0
+  % Invalid input detected at '^' marker.
+  show ipv6 interface Tunnel0
+            ^
+
+[222/343] r1 R1> show interfaces Tunnel0 accounting
+  % Invalid input detected at '^' marker.
+  show interfaces Tunnel0 accounting
+       ^
+
+[223/343] r1 R1> show interfaces Tunnel0 switchport
+  % Invalid input detected at '^' marker.
+  show interfaces Tunnel0 switchport
+       ^
+
+[224/343] r1 R1> show interfaces Tunnel0 stats
+  % Invalid input detected at '^' marker.
+  show interfaces Tunnel0 stats
+       ^
+
+[225/343] r1 R1> show controllers Tunnel0
+  % Invalid input detected at '^' marker.
+  show controllers Tunnel0
+       ^
+
+[226/343] r1 R1> show running-config interface Tunnel0
+  % Invalid interface
+
+[227/343] r1 R1> show interfaces description
+  % Invalid input detected at '^' marker.
+  show interfaces description
+       ^
+
+[228/343] r1 R1> show interfaces status
+  % Invalid input detected at '^' marker.
+  show interfaces status
+       ^
+
+[229/343] r1 R1> show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+  Loopback100                172.31.0.1      YES manual administratively down down
+
+[230/343] r1 R1> show ipv6 interface brief
+  % Invalid input detected at '^' marker.
+  show ipv6 interface brief
+            ^
+
+[231/343] r1 R1> show interfaces trunk
+  % Invalid input detected at '^' marker.
+  show interfaces trunk
+       ^
+
+[232/343] r1 R1> show ip interface brief | include up
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+
+[233/343] r1 R1> end
+<empty>
+
+
+--- [234] § regression: show family ---
+[234/343] r1 R1> enable
+<empty>
+
+[235/343] r1 R1# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[236/343] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   description ## LAN to L1 ##
+   ip address 192.168.100.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback1
+   description LOOP-1
+   ip address 10.255.255.1 255.255.255.255
+   no shutdown
+  !
+  interface Loopback2
+   description LOOP-2
+   ip address 10.255.255.2 255.255.255.255
+   no shutdown
+  !
+  interface Loopback3
+   description LOOP-3
+   ip address 10.255.255.3 255.255.255.255
+   no shutdown
+  !
+  interface Loopback4
+   description LOOP-4
+   ip address 10.255.255.4 255.255.255.255
+   no shutdown
+  !
+  interface Loopback5
+   description LOOP-5
+   ip address 10.255.255.5 255.255.255.255
+   no shutdown
+  !
+  interface Loopback6
+   description LOOP-6
+   ip address 10.255.255.6 255.255.255.255
+   no shutdown
+  !
+  interface Loopback7
+   description LOOP-7
+   ip address 10.255.255.7 255.255.255.255
+   no shutdown
+  !
+  interface Loopback8
+   description LOOP-8
+   ip address 10.255.255.8 255.255.255.255
+   no shutdown
+  !
+  interface Loopback100
+   ip address 172.31.0.1 255.255.255.255
+   no shutdown
+  !
+  !
+  end
+
+[237/343] r1 R1# show startup-config
+  % Invalid input detected at '^' marker.
+  show startup-config
+       ^
+
+[238/343] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+  Loopback100                172.31.0.1      YES manual administratively down down
+
+[239/343] r1 R1# show interfaces
+  % Invalid input detected at '^' marker.
+  show interfaces
+       ^
+
+[240/343] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
+  C    10.255.255.1/32 is directly connected, Loopback1
+  C    10.255.255.2/32 is directly connected, Loopback2
+  C    10.255.255.3/32 is directly connected, Loopback3
+  C    10.255.255.4/32 is directly connected, Loopback4
+  C    10.255.255.5/32 is directly connected, Loopback5
+  C    10.255.255.6/32 is directly connected, Loopback6
+  C    10.255.255.7/32 is directly connected, Loopback7
+  C    10.255.255.8/32 is directly connected, Loopback8
+  C    172.31.0.1/32 is directly connected, Loopback100
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+
+[241/343] r1 R1# show ip route summary
+  % Network not in table
+
+[242/343] r1 R1# show ip protocols
+  No routing protocol is configured.
+
+[243/343] r1 R1# show ip arp
+  No ARP entries.
+
+[244/343] r1 R1# show arp
+  No ARP entries.
+
+[245/343] r1 R1# show ip ospf
+  % OSPF is not configured
+
+[246/343] r1 R1# show ip ospf neighbor
+  % OSPF is not configured
+
+[247/343] r1 R1# show ip ospf database
+  % OSPF is not configured
+
+[248/343] r1 R1# show ip ospf interface brief
+  % OSPF is not configured
+
+[249/343] r1 R1# show ip eigrp neighbors
+  % Invalid input detected at '^' marker.
+  show ip eigrp neighbors
+          ^
+
+[250/343] r1 R1# show ip eigrp topology
+  % Invalid input detected at '^' marker.
+  show ip eigrp topology
+          ^
+
+[251/343] r1 R1# show ip bgp
+  % Invalid input detected at '^' marker.
+  show ip bgp
+          ^
+
+[252/343] r1 R1# show ip bgp summary
+  % Invalid input detected at '^' marker.
+  show ip bgp summary
+          ^
+
+[253/343] r1 R1# show ip rip database
+  % Invalid input detected at '^' marker.
+  show ip rip database
+              ^
+
+[254/343] r1 R1# show ip nat translations
+  No NAT translations.
+
+[255/343] r1 R1# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[256/343] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[257/343] r1 R1# show ip dhcp pool
+<empty>
+
+[258/343] r1 R1# show access-lists
+<empty>
+
+[259/343] r1 R1# show ip access-lists
+<empty>
+
+[260/343] r1 R1# show crypto isakmp sa
+  IPSec not configured.
+
+[261/343] r1 R1# show crypto ipsec sa
+  IPSec not configured.
+
+[262/343] r1 R1# show crypto session
+  IPSec not configured.
+
+[263/343] r1 R1# show crypto map
+  IPSec not configured.
+
+[264/343] r1 R1# show standby brief
+  % Invalid input detected at '^' marker.
+  show standby brief
+       ^
+
+[265/343] r1 R1# show vrrp brief
+  % Invalid input detected at '^' marker.
+  show vrrp brief
+       ^
+
+[266/343] r1 R1# show track
+  % Invalid input detected at '^' marker.
+  show track
+       ^
+
+[267/343] r1 R1# show ip sla statistics
+  % Invalid input detected at '^' marker.
+  show ip sla statistics
+          ^
+
+[268/343] r1 R1# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[269/343] r1 R1# show logging
+  % Invalid input detected at '^' marker.
+  show logging
+       ^
+
+[270/343] r1 R1# show snmp
+  % Invalid input detected at '^' marker.
+  show snmp
+       ^
+
+[271/343] r1 R1# show ntp status
+  % Invalid input detected at '^' marker.
+  show ntp status
+       ^
+
+[272/343] r1 R1# show ntp associations
+  % Invalid input detected at '^' marker.
+  show ntp associations
+       ^
+
+[273/343] r1 R1# show clock
+  *10:30:08.000 UTC Sun May 17 2026
+
+[274/343] r1 R1# show cdp neighbors
+  % Invalid input detected at '^' marker.
+  show cdp neighbors
+       ^
+
+[275/343] r1 R1# show lldp neighbors
+  % Invalid input detected at '^' marker.
+  show lldp neighbors
+       ^
+
+[276/343] r1 R1# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[277/343] r1 R1# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[278/343] r1 R1# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[279/343] r1 R1# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[280/343] r1 R1# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[281/343] r1 R1# show ip cef
+  % Invalid input detected at '^' marker.
+  show ip cef
+          ^
+
+[282/343] r1 R1# show interfaces GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0
+       ^
+
+[283/343] r1 R1# show interfaces GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1
+       ^
+
+[284/343] r1 R1# show ip interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show ip interface GigabitEthernet0/1
+                    ^
+
+[285/343] r1 R1# show controllers
+  % Invalid input detected at '^' marker.
+  show controllers
+       ^
+
+[286/343] r1 R1# show tech-support
+  % Invalid input detected at '^' marker.
+  show tech-support
+       ^
+
+[287/343] r1 R1# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[288/343] r1 R1# show environment
+  % Invalid input detected at '^' marker.
+  show environment
+       ^
+
+[289/343] r1 R1# show redundancy
+  % Invalid input detected at '^' marker.
+  show redundancy
+       ^
+
+[290/343] r1 R1# show ip vrf
+  % Invalid input detected at '^' marker.
+  show ip vrf
+          ^
+
+[291/343] r1 R1# show vrf
+  % Invalid input detected at '^' marker.
+  show vrf
+       ^
+
+[292/343] r1 R1# show hosts
+  % Invalid input detected at '^' marker.
+  show hosts
+       ^
+
+[293/343] r1 R1# show ip ssh
+  % Invalid input detected at '^' marker.
+  show ip ssh
+          ^
+
+[294/343] r1 R1# show line
+  % Invalid input detected at '^' marker.
+  show line
+       ^
+
+[295/343] r1 R1# show terminal
+  % Invalid input detected at '^' marker.
+  show terminal
+       ^
+
+[296/343] r1 R1# show aliases
+  % Invalid input detected at '^' marker.
+  show aliases
+       ^
+
+
+--- [297] § regression: pipe filters ---
+[297/343] r1 R1# show running-config | include router
+<empty>
+
+[298/343] r1 R1# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   description ## LAN to L1 ##
+   ip address 192.168.100.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback1
+   description LOOP-1
+   ip address 10.255.255.1 255.255.255.255
+   no shutdown
+  !
+  interface Loopback2
+   description LOOP-2
+   ip address 10.255.255.2 255.255.255.255
+   no shutdown
+  !
+  interface Loopback3
+   description LOOP-3
+   ip address 10.255.255.3 255.255.255.255
+   no shutdown
+  !
+  interface Loopback4
+   description LOOP-4
+   ip address 10.255.255.4 255.255.255.255
+   no shutdown
+  !
+  interface Loopback5
+   description LOOP-5
+   ip address 10.255.255.5 255.255.255.255
+   no shutdown
+  !
+  interface Loopback6
+   description LOOP-6
+   ip address 10.255.255.6 255.255.255.255
+   no shutdown
+  !
+  interface Loopback7
+   description LOOP-7
+   ip address 10.255.255.7 255.255.255.255
+   no shutdown
+  !
+  interface Loopback8
+   description LOOP-8
+   ip address 10.255.255.8 255.255.255.255
+   no shutdown
+  !
+  interface Loopback100
+   ip address 172.31.0.1 255.255.255.255
+   no shutdown
+  !
+  !
+  end
+
+[299/343] r1 R1# show running-config | begin line
+<empty>
+
+[300/343] r1 R1# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  interface GigabitEthernet0/0
+   description ## LAN to L1 ##
+   ip address 192.168.100.1 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  interface Loopback1
+   description LOOP-1
+   ip address 10.255.255.1 255.255.255.255
+   no shutdown
+  interface Loopback2
+   description LOOP-2
+   ip address 10.255.255.2 255.255.255.255
+   no shutdown
+  interface Loopback3
+   description LOOP-3
+   ip address 10.255.255.3 255.255.255.255
+   no shutdown
+  interface Loopback4
+   description LOOP-4
+   ip address 10.255.255.4 255.255.255.255
+   no shutdown
+  interface Loopback5
+   description LOOP-5
+   ip address 10.255.255.5 255.255.255.255
+   no shutdown
+  interface Loopback6
+   description LOOP-6
+   ip address 10.255.255.6 255.255.255.255
+   no shutdown
+  interface Loopback7
+   description LOOP-7
+   ip address 10.255.255.7 255.255.255.255
+   no shutdown
+  interface Loopback8
+   description LOOP-8
+   ip address 10.255.255.8 255.255.255.255
+   no shutdown
+  interface Loopback100
+   ip address 172.31.0.1 255.255.255.255
+   no shutdown
+  end
+
+[301/343] r1 R1# show ip route | include via
+<empty>
+
+[302/343] r1 R1# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+  Loopback100                172.31.0.1      YES manual administratively down down
+
+
+--- [303] § regression: mode nav + negation ---
+[303/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[304/343] r1 R1(config)# no ip routing
+  % Invalid input detected at '^' marker.
+  no ip routing
+        ^
+
+[305/343] r1 R1(config)# ip routing
+<empty>
+
+[306/343] r1 R1(config)# no ip cef
+  % Invalid input detected at '^' marker.
+  no ip cef
+        ^
+
+[307/343] r1 R1(config)# ip cef
+  % Invalid input detected at '^' marker.
+  ip cef
+     ^
+
+[308/343] r1 R1(config)# no cdp run
+  % Invalid input detected at '^' marker.
+  no cdp run
+     ^
+
+[309/343] r1 R1(config)# cdp run
+  % Invalid input detected at '^' marker.
+  cdp run
+  ^
+
+[310/343] r1 R1(config)# no lldp run
+  % Invalid input detected at '^' marker.
+  no lldp run
+     ^
+
+[311/343] r1 R1(config)# lldp run
+  % Invalid input detected at '^' marker.
+  lldp run
+  ^
+
+[312/343] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[313/343] r1 R1(config)# ip domain-lookup
+<empty>
+
+[314/343] r1 R1(config)# no ip http server
+  % Invalid input detected at '^' marker.
+  no ip http server
+        ^
+
+[315/343] r1 R1(config)# ip http server
+  % Invalid input detected at '^' marker.
+  ip http server
+     ^
+
+[316/343] r1 R1(config)# no ip source-route
+  % Invalid input detected at '^' marker.
+  no ip source-route
+        ^
+
+[317/343] r1 R1(config)# ip source-route
+  % Invalid input detected at '^' marker.
+  ip source-route
+     ^
+
+[318/343] r1 R1(config)# no service pad
+<empty>
+
+[319/343] r1 R1(config)# service pad
+<empty>
+
+[320/343] r1 R1(config)# no ipv6 unicast-routing
+  % Invalid input detected at '^' marker.
+  no ipv6 unicast-routing
+     ^
+
+[321/343] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[322/343] r1 R1(config)# no service password-encryption
+<empty>
+
+[323/343] r1 R1(config)# service password-encryption
+<empty>
+
+[324/343] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[325/343] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual administratively down down
+  Loopback2                  10.255.255.2    YES manual administratively down down
+  Loopback3                  10.255.255.3    YES manual administratively down down
+  Loopback4                  10.255.255.4    YES manual administratively down down
+  Loopback5                  10.255.255.5    YES manual administratively down down
+  Loopback6                  10.255.255.6    YES manual administratively down down
+  Loopback7                  10.255.255.7    YES manual administratively down down
+  Loopback8                  10.255.255.8    YES manual administratively down down
+  Loopback100                172.31.0.1      YES manual administratively down down
+
+[326/343] r1 R1(config-if)# shutdown
+<empty>
+
+[327/343] r1 R1(config-if)# no shutdown
+<empty>
+
+[328/343] r1 R1(config-if)# exit
+<empty>
+
+[329/343] r1 R1(config)# router ospf 1
+<empty>
+
+[330/343] r1 R1(config-router)# do show ip protocols
+  No routing protocol is configured.
+
+[331/343] r1 R1(config-router)# exit
+<empty>
+
+[332/343] r1 R1(config)# line vty 0 4
+<empty>
+
+[333/343] r1 R1(config-line)# exit
+<empty>
+
+[334/343] r1 R1(config)# end
+<empty>
+
+
+--- [335] § regression: context help ---
+[335/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[336/343] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[337/343] r1 R1(config)# ip ?
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[338/343] r1 R1(config)# router ?
+    rip   Enter RIP routing protocol configuration
+    ospf  Enter OSPF routing protocol configuration
+
+[339/343] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[340/343] r1 R1(config)# no ?
+    hostname     Reset hostname
+    ip           ip
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    access-list  Remove an access list
+    crypto       crypto
+
+[341/343] r1 R1(config)# end
+<empty>
+
+[342/343] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   description ## LAN to L1 ##
+   ip address 192.168.100.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback1
+   description LOOP-1
+   ip address 10.255.255.1 255.255.255.255
+   no shutdown
+  !
+  interface Loopback2
+   description LOOP-2
+   ip address 10.255.255.2 255.255.255.255
+   no shutdown
+  !
+  interface Loopback3
+   description LOOP-3
+   ip address 10.255.255.3 255.255.255.255
+   no shutdown
+  !
+  interface Loopback4
+   description LOOP-4
+   ip address 10.255.255.4 255.255.255.255
+   no shutdown
+  !
+  interface Loopback5
+   description LOOP-5
+   ip address 10.255.255.5 255.255.255.255
+   no shutdown
+  !
+  interface Loopback6
+   description LOOP-6
+   ip address 10.255.255.6 255.255.255.255
+   no shutdown
+  !
+  interface Loopback7
+   description LOOP-7
+   ip address 10.255.255.7 255.255.255.255
+   no shutdown
+  !
+  interface Loopback8
+   description LOOP-8
+   ip address 10.255.255.8 255.255.255.255
+   no shutdown
+  !
+  interface Loopback100
+   ip address 172.31.0.1 255.255.255.255
+   no shutdown
+  !
+  !
+  end
+
+[343/343] r1 R1# write memory
+  Building configuration...
+  [OK]

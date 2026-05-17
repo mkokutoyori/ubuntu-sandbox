@@ -1,0 +1,1906 @@
+============================================================
+Router (L3) debug transcript — cisco-router-static-routing
+Generated: 2026-05-17T10:30:07.278Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
+Total steps: 325
+============================================================
+
+
+--- [1] § base addressing ---
+[1/325] r1 R1> enable
+<empty>
+
+[2/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/325] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[4/325] r1 R1(config-if)# ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[5/325] r1 R1(config-if)# no shutdown
+<empty>
+
+[6/325] r1 R1(config-if)# exit
+<empty>
+
+[7/325] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[8/325] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[9/325] r1 R1(config-if)# no shutdown
+<empty>
+
+[10/325] r1 R1(config-if)# exit
+<empty>
+
+[11/325] r1 R1(config)# end
+<empty>
+
+
+--- [12] § static route sweep ---
+[12/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[13/325] r1 R1(config)# ip route 172.17.1.0 255.255.255.0 10.0.0.2
+<empty>
+
+[14/325] r1 R1(config)# ip route 172.18.2.0 255.255.255.0 10.0.0.2
+<empty>
+
+[15/325] r1 R1(config)# ip route 172.19.3.0 255.255.255.0 10.0.0.2
+<empty>
+
+[16/325] r1 R1(config)# ip route 172.20.4.0 255.255.255.0 10.0.0.2
+<empty>
+
+[17/325] r1 R1(config)# ip route 172.21.5.0 255.255.255.0 10.0.0.2
+<empty>
+
+[18/325] r1 R1(config)# ip route 172.22.6.0 255.255.255.0 10.0.0.2
+<empty>
+
+[19/325] r1 R1(config)# ip route 172.23.7.0 255.255.255.0 10.0.0.2
+<empty>
+
+[20/325] r1 R1(config)# ip route 172.24.8.0 255.255.255.0 10.0.0.2
+<empty>
+
+[21/325] r1 R1(config)# ip route 172.25.9.0 255.255.255.0 10.0.0.2
+<empty>
+
+[22/325] r1 R1(config)# ip route 172.26.10.0 255.255.255.0 10.0.0.2
+<empty>
+
+[23/325] r1 R1(config)# ip route 172.27.11.0 255.255.255.0 10.0.0.2
+<empty>
+
+[24/325] r1 R1(config)# ip route 172.28.12.0 255.255.255.0 10.0.0.2
+<empty>
+
+[25/325] r1 R1(config)# ip route 172.29.13.0 255.255.255.0 10.0.0.2
+<empty>
+
+[26/325] r1 R1(config)# ip route 172.30.14.0 255.255.255.0 10.0.0.2
+<empty>
+
+[27/325] r1 R1(config)# ip route 172.31.15.0 255.255.255.0 10.0.0.2
+<empty>
+
+[28/325] r1 R1(config)# ip route 172.16.16.0 255.255.255.0 10.0.0.2
+<empty>
+
+[29/325] r1 R1(config)# ip route 172.17.17.0 255.255.255.0 10.0.0.2
+<empty>
+
+[30/325] r1 R1(config)# ip route 172.18.18.0 255.255.255.0 10.0.0.2
+<empty>
+
+[31/325] r1 R1(config)# ip route 172.19.19.0 255.255.255.0 10.0.0.2
+<empty>
+
+[32/325] r1 R1(config)# ip route 172.20.20.0 255.255.255.0 10.0.0.2
+<empty>
+
+[33/325] r1 R1(config)# ip route 172.21.21.0 255.255.255.0 10.0.0.2
+<empty>
+
+[34/325] r1 R1(config)# ip route 172.22.22.0 255.255.255.0 10.0.0.2
+<empty>
+
+[35/325] r1 R1(config)# ip route 172.23.23.0 255.255.255.0 10.0.0.2
+<empty>
+
+[36/325] r1 R1(config)# ip route 172.24.24.0 255.255.255.0 10.0.0.2
+<empty>
+
+[37/325] r1 R1(config)# ip route 172.25.25.0 255.255.255.0 10.0.0.2
+<empty>
+
+[38/325] r1 R1(config)# ip route 172.26.26.0 255.255.255.0 10.0.0.2
+<empty>
+
+[39/325] r1 R1(config)# ip route 172.27.27.0 255.255.255.0 10.0.0.2
+<empty>
+
+[40/325] r1 R1(config)# ip route 172.28.28.0 255.255.255.0 10.0.0.2
+<empty>
+
+[41/325] r1 R1(config)# ip route 172.29.29.0 255.255.255.0 10.0.0.2
+<empty>
+
+[42/325] r1 R1(config)# ip route 172.30.30.0 255.255.255.0 10.0.0.2
+<empty>
+
+[43/325] r1 R1(config)# ip route 172.31.31.0 255.255.255.0 10.0.0.2
+<empty>
+
+[44/325] r1 R1(config)# ip route 172.16.32.0 255.255.255.0 10.0.0.2
+<empty>
+
+[45/325] r1 R1(config)# ip route 172.17.33.0 255.255.255.0 10.0.0.2
+<empty>
+
+[46/325] r1 R1(config)# ip route 172.18.34.0 255.255.255.0 10.0.0.2
+<empty>
+
+[47/325] r1 R1(config)# ip route 172.19.35.0 255.255.255.0 10.0.0.2
+<empty>
+
+[48/325] r1 R1(config)# ip route 172.20.36.0 255.255.255.0 10.0.0.2
+<empty>
+
+[49/325] r1 R1(config)# ip route 172.21.37.0 255.255.255.0 10.0.0.2
+<empty>
+
+[50/325] r1 R1(config)# ip route 172.22.38.0 255.255.255.0 10.0.0.2
+<empty>
+
+[51/325] r1 R1(config)# ip route 172.23.39.0 255.255.255.0 10.0.0.2
+<empty>
+
+[52/325] r1 R1(config)# ip route 172.24.40.0 255.255.255.0 10.0.0.2
+<empty>
+
+[53/325] r1 R1(config)# end
+<empty>
+
+[54/325] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+
+[55/325] r1 R1# show ip route static
+  % Network not in table
+
+[56/325] r1 R1# show ip route 172.16.1.0
+  % Network not in table
+
+[57/325] r1 R1# show ip route 172.16.1.0 255.255.255.0
+  % Network not in table
+
+[58/325] r1 R1# show ip route summary
+  % Network not in table
+
+
+--- [59] § default / floating / recursive ---
+[59/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[60/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.2
+<empty>
+
+[61/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.6 200
+<empty>
+
+[62/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1
+  % Invalid input: Invalid IP address: GigabitEthernet0/1
+
+[63/325] r1 R1(config)# ip default-network 172.16.0.0
+  % Invalid input detected at '^' marker.
+  ip default-network 172.16.0.0
+     ^
+
+[64/325] r1 R1(config)# ip route 192.168.50.0 255.255.255.0 10.0.0.2 name BRANCH-A
+<empty>
+
+[65/325] r1 R1(config)# ip route 192.168.51.0 255.255.255.0 10.0.0.2 250 name BACKUP
+<empty>
+
+[66/325] r1 R1(config)# ip route 192.168.52.0 255.255.255.0 Null0
+  % Invalid input: Invalid IP address: Null0
+
+[67/325] r1 R1(config)# ip route 192.168.53.0 255.255.255.0 GigabitEthernet0/1 10.0.0.2
+  % Invalid input: Invalid IP address: GigabitEthernet0/1
+
+[68/325] r1 R1(config)# ip route 8.8.8.0 255.255.255.0 10.0.0.2 track 1
+<empty>
+
+[69/325] r1 R1(config)# ip route vrf CUST 192.168.60.0 255.255.255.0 10.0.0.2
+  % Invalid input: Invalid IP address: vrf
+
+[70/325] r1 R1(config)# ip routing
+<empty>
+
+[71/325] r1 R1(config)# no ip routing
+  % Invalid input detected at '^' marker.
+  no ip routing
+        ^
+
+[72/325] r1 R1(config)# ip routing
+<empty>
+
+[73/325] r1 R1(config)# ip cef
+  % Invalid input detected at '^' marker.
+  ip cef
+     ^
+
+[74/325] r1 R1(config)# ip route 192.168.99.0 255.255.255.0 10.0.0.2 permanent
+<empty>
+
+[75/325] r1 R1(config)# end
+<empty>
+
+[76/325] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[77/325] r1 R1# show ip cef
+  % Invalid input detected at '^' marker.
+  show ip cef
+          ^
+
+[78/325] r1 R1# show ip cef 0.0.0.0
+  % Invalid input detected at '^' marker.
+  show ip cef 0.0.0.0
+          ^
+
+[79/325] r1 R1# show ip route 0.0.0.0
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+
+--- [80] § IPv6 static ---
+[80/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[81/325] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[82/325] r1 R1(config)# ipv6 route 2001:db8:2::/64 2001:db8:1::2
+<empty>
+
+[83/325] r1 R1(config)# ipv6 route ::/0 2001:db8:1::2
+<empty>
+
+[84/325] r1 R1(config)# ipv6 route 2001:db8:3::/64 GigabitEthernet0/1
+<empty>
+
+[85/325] r1 R1(config)# ipv6 route 2001:db8:4::/64 GigabitEthernet0/1 fe80::2
+<empty>
+
+[86/325] r1 R1(config)# ipv6 route 2001:db8:5::/64 Null0 250
+<empty>
+
+[87/325] r1 R1(config)# no ipv6 unicast-routing
+  % Invalid input detected at '^' marker.
+  no ipv6 unicast-routing
+     ^
+
+[88/325] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[89/325] r1 R1(config)# end
+<empty>
+
+[90/325] r1 R1# show ipv6 route
+  IPv6 Routing Table
+
+[91/325] r1 R1# show ipv6 route static
+  % Route to static
+
+[92/325] r1 R1# show ipv6 route summary
+  % Route to summary
+
+
+--- [93] § prefix-lists ---
+[93/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[94/325] r1 R1(config)# ip prefix-list PL-IN seq 5 permit 10.1.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 5 permit 10.1.0.0/16 le 24
+     ^
+
+[95/325] r1 R1(config)# ip prefix-list PL-IN seq 10 permit 10.2.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 10 permit 10.2.0.0/16 le 24
+     ^
+
+[96/325] r1 R1(config)# ip prefix-list PL-IN seq 15 permit 10.3.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 15 permit 10.3.0.0/16 le 24
+     ^
+
+[97/325] r1 R1(config)# ip prefix-list PL-IN seq 20 permit 10.4.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 20 permit 10.4.0.0/16 le 24
+     ^
+
+[98/325] r1 R1(config)# ip prefix-list PL-IN seq 25 permit 10.5.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 25 permit 10.5.0.0/16 le 24
+     ^
+
+[99/325] r1 R1(config)# ip prefix-list PL-IN seq 30 permit 10.6.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 30 permit 10.6.0.0/16 le 24
+     ^
+
+[100/325] r1 R1(config)# ip prefix-list PL-IN seq 35 permit 10.7.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 35 permit 10.7.0.0/16 le 24
+     ^
+
+[101/325] r1 R1(config)# ip prefix-list PL-IN seq 40 permit 10.8.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 40 permit 10.8.0.0/16 le 24
+     ^
+
+[102/325] r1 R1(config)# ip prefix-list PL-IN seq 45 permit 10.9.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 45 permit 10.9.0.0/16 le 24
+     ^
+
+[103/325] r1 R1(config)# ip prefix-list PL-IN seq 50 permit 10.10.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 50 permit 10.10.0.0/16 le 24
+     ^
+
+[104/325] r1 R1(config)# ip prefix-list PL-IN seq 55 permit 10.11.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 55 permit 10.11.0.0/16 le 24
+     ^
+
+[105/325] r1 R1(config)# ip prefix-list PL-IN seq 60 permit 10.12.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 60 permit 10.12.0.0/16 le 24
+     ^
+
+[106/325] r1 R1(config)# ip prefix-list PL-IN seq 65 permit 10.13.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 65 permit 10.13.0.0/16 le 24
+     ^
+
+[107/325] r1 R1(config)# ip prefix-list PL-IN seq 70 permit 10.14.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 70 permit 10.14.0.0/16 le 24
+     ^
+
+[108/325] r1 R1(config)# ip prefix-list PL-IN seq 75 permit 10.15.0.0/16 le 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 75 permit 10.15.0.0/16 le 24
+     ^
+
+[109/325] r1 R1(config)# ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
+     ^
+
+[110/325] r1 R1(config)# ip prefix-list PL-OUT permit 192.168.0.0/16 ge 24
+  % Invalid input detected at '^' marker.
+  ip prefix-list PL-OUT permit 192.168.0.0/16 ge 24
+     ^
+
+[111/325] r1 R1(config)# ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
+  % Invalid input detected at '^' marker.
+  ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
+       ^
+
+[112/325] r1 R1(config)# no ip prefix-list PL-IN seq 5
+  % Invalid input detected at '^' marker.
+  no ip prefix-list PL-IN seq 5
+        ^
+
+[113/325] r1 R1(config)# end
+<empty>
+
+[114/325] r1 R1# show ip prefix-list
+  % Invalid input detected at '^' marker.
+  show ip prefix-list
+          ^
+
+[115/325] r1 R1# show ip prefix-list PL-IN
+  % Invalid input detected at '^' marker.
+  show ip prefix-list PL-IN
+          ^
+
+[116/325] r1 R1# show ipv6 prefix-list
+  % Invalid input detected at '^' marker.
+  show ipv6 prefix-list
+            ^
+
+
+--- [117] § route-maps ---
+[117/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[118/325] r1 R1(config)# route-map RM-PBR permit 10
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR permit 10
+  ^
+
+[119/325] r1 R1(config)# match ip address 101
+  % Invalid input detected at '^' marker.
+  match ip address 101
+  ^
+
+[120/325] r1 R1(config)# match interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  match interface GigabitEthernet0/0
+  ^
+
+[121/325] r1 R1(config)# set ip next-hop 10.0.0.2
+  % Invalid input detected at '^' marker.
+  set ip next-hop 10.0.0.2
+  ^
+
+[122/325] r1 R1(config)# set interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  set interface GigabitEthernet0/1
+  ^
+
+[123/325] r1 R1(config)# set ip default next-hop 10.0.0.254
+  % Invalid input detected at '^' marker.
+  set ip default next-hop 10.0.0.254
+  ^
+
+[124/325] r1 R1(config)# set ip precedence priority
+  % Invalid input detected at '^' marker.
+  set ip precedence priority
+  ^
+
+[125/325] r1 R1(config)# exit
+<empty>
+
+[126/325] r1 R1# route-map RM-PBR permit 20
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR permit 20
+  ^
+
+[127/325] r1 R1# match ip address 102
+  % Invalid input detected at '^' marker.
+  match ip address 102
+  ^
+
+[128/325] r1 R1# match interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  match interface GigabitEthernet0/0
+  ^
+
+[129/325] r1 R1# set ip next-hop 10.0.0.3
+  % Invalid input detected at '^' marker.
+  set ip next-hop 10.0.0.3
+  ^
+
+[130/325] r1 R1# set interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  set interface GigabitEthernet0/1
+  ^
+
+[131/325] r1 R1# set ip default next-hop 10.0.0.254
+  % Invalid input detected at '^' marker.
+  set ip default next-hop 10.0.0.254
+  ^
+
+[132/325] r1 R1# set ip dscp af21
+  % Invalid input detected at '^' marker.
+  set ip dscp af21
+  ^
+
+[133/325] r1 R1# exit
+<empty>
+
+[134/325] r1 R1> route-map RM-PBR permit 30
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR permit 30
+  ^
+
+[135/325] r1 R1> match ip address 103
+  % Invalid input detected at '^' marker.
+  match ip address 103
+  ^
+
+[136/325] r1 R1> match interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  match interface GigabitEthernet0/0
+  ^
+
+[137/325] r1 R1> set ip next-hop 10.0.0.4
+  % Invalid input detected at '^' marker.
+  set ip next-hop 10.0.0.4
+  ^
+
+[138/325] r1 R1> set interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  set interface GigabitEthernet0/1
+  ^
+
+[139/325] r1 R1> set ip default next-hop 10.0.0.254
+  % Invalid input detected at '^' marker.
+  set ip default next-hop 10.0.0.254
+  ^
+
+[140/325] r1 R1> set ip dscp af21
+  % Invalid input detected at '^' marker.
+  set ip dscp af21
+  ^
+
+[141/325] r1 R1> exit
+<empty>
+
+[142/325] r1 R1> route-map RM-PBR permit 40
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR permit 40
+  ^
+
+[143/325] r1 R1> match ip address 104
+  % Invalid input detected at '^' marker.
+  match ip address 104
+  ^
+
+[144/325] r1 R1> match interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  match interface GigabitEthernet0/0
+  ^
+
+[145/325] r1 R1> set ip next-hop 10.0.0.5
+  % Invalid input detected at '^' marker.
+  set ip next-hop 10.0.0.5
+  ^
+
+[146/325] r1 R1> set interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  set interface GigabitEthernet0/1
+  ^
+
+[147/325] r1 R1> set ip default next-hop 10.0.0.254
+  % Invalid input detected at '^' marker.
+  set ip default next-hop 10.0.0.254
+  ^
+
+[148/325] r1 R1> set ip dscp af21
+  % Invalid input detected at '^' marker.
+  set ip dscp af21
+  ^
+
+[149/325] r1 R1> exit
+<empty>
+
+[150/325] r1 R1> route-map RM-PBR permit 50
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR permit 50
+  ^
+
+[151/325] r1 R1> match ip address 105
+  % Invalid input detected at '^' marker.
+  match ip address 105
+  ^
+
+[152/325] r1 R1> match interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  match interface GigabitEthernet0/0
+  ^
+
+[153/325] r1 R1> set ip next-hop 10.0.0.6
+  % Invalid input detected at '^' marker.
+  set ip next-hop 10.0.0.6
+  ^
+
+[154/325] r1 R1> set interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  set interface GigabitEthernet0/1
+  ^
+
+[155/325] r1 R1> set ip default next-hop 10.0.0.254
+  % Invalid input detected at '^' marker.
+  set ip default next-hop 10.0.0.254
+  ^
+
+[156/325] r1 R1> set ip dscp af21
+  % Invalid input detected at '^' marker.
+  set ip dscp af21
+  ^
+
+[157/325] r1 R1> exit
+<empty>
+
+[158/325] r1 R1> route-map RM-PBR permit 60
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR permit 60
+  ^
+
+[159/325] r1 R1> match ip address 106
+  % Invalid input detected at '^' marker.
+  match ip address 106
+  ^
+
+[160/325] r1 R1> match interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  match interface GigabitEthernet0/0
+  ^
+
+[161/325] r1 R1> set ip next-hop 10.0.0.7
+  % Invalid input detected at '^' marker.
+  set ip next-hop 10.0.0.7
+  ^
+
+[162/325] r1 R1> set interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  set interface GigabitEthernet0/1
+  ^
+
+[163/325] r1 R1> set ip default next-hop 10.0.0.254
+  % Invalid input detected at '^' marker.
+  set ip default next-hop 10.0.0.254
+  ^
+
+[164/325] r1 R1> set ip dscp af21
+  % Invalid input detected at '^' marker.
+  set ip dscp af21
+  ^
+
+[165/325] r1 R1> exit
+<empty>
+
+[166/325] r1 R1> route-map RM-PBR deny 100
+  % Invalid input detected at '^' marker.
+  route-map RM-PBR deny 100
+  ^
+
+[167/325] r1 R1> exit
+<empty>
+
+[168/325] r1 R1> access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  % Invalid input detected at '^' marker.
+  access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  ^
+
+[169/325] r1 R1> access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  % Invalid input detected at '^' marker.
+  access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  ^
+
+[170/325] r1 R1> end
+<empty>
+
+[171/325] r1 R1> show route-map
+  % Invalid input detected at '^' marker.
+  show route-map
+       ^
+
+[172/325] r1 R1> show route-map RM-PBR
+  % Invalid input detected at '^' marker.
+  show route-map RM-PBR
+       ^
+
+
+--- [173] § policy-based routing ---
+[173/325] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[174/325] r1 R1> interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0
+  ^
+
+[175/325] r1 R1> ip policy route-map RM-PBR
+  % Invalid input detected at '^' marker.
+  ip policy route-map RM-PBR
+  ^
+
+[176/325] r1 R1> exit
+<empty>
+
+[177/325] r1 R1> ip local policy route-map RM-PBR
+  % Invalid input detected at '^' marker.
+  ip local policy route-map RM-PBR
+  ^
+
+[178/325] r1 R1> end
+<empty>
+
+[179/325] r1 R1> show ip policy
+  % Invalid input detected at '^' marker.
+  show ip policy
+          ^
+
+[180/325] r1 R1> show route-map RM-PBR
+  % Invalid input detected at '^' marker.
+  show route-map RM-PBR
+       ^
+
+[181/325] r1 R1> debug ip policy
+  % Invalid input detected at '^' marker.
+  debug ip policy
+  ^
+
+[182/325] r1 R1> undebug all
+  % Invalid input detected at '^' marker.
+  undebug all
+  ^
+
+
+--- [183] § tracking / IP SLA ---
+[183/325] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[184/325] r1 R1> ip sla 1
+  % Invalid input detected at '^' marker.
+  ip sla 1
+  ^
+
+[185/325] r1 R1> icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+  ^
+
+[186/325] r1 R1> frequency 10
+  % Invalid input detected at '^' marker.
+  frequency 10
+  ^
+
+[187/325] r1 R1> threshold 500
+  % Invalid input detected at '^' marker.
+  threshold 500
+  ^
+
+[188/325] r1 R1> timeout 1000
+  % Invalid input detected at '^' marker.
+  timeout 1000
+  ^
+
+[189/325] r1 R1> exit
+<empty>
+
+[190/325] r1 R1> ip sla schedule 1 life forever start-time now
+  % Invalid input detected at '^' marker.
+  ip sla schedule 1 life forever start-time now
+  ^
+
+[191/325] r1 R1> track 1 ip sla 1 reachability
+  % Invalid input detected at '^' marker.
+  track 1 ip sla 1 reachability
+  ^
+
+[192/325] r1 R1> track 2 interface GigabitEthernet0/1 line-protocol
+  % Invalid input detected at '^' marker.
+  track 2 interface GigabitEthernet0/1 line-protocol
+  ^
+
+[193/325] r1 R1> track 3 list boolean and
+  % Invalid input detected at '^' marker.
+  track 3 list boolean and
+  ^
+
+[194/325] r1 R1> exit
+<empty>
+
+[195/325] r1 R1> end
+<empty>
+
+[196/325] r1 R1> show ip sla configuration
+  % Invalid input detected at '^' marker.
+  show ip sla configuration
+          ^
+
+[197/325] r1 R1> show ip sla statistics
+  % Invalid input detected at '^' marker.
+  show ip sla statistics
+          ^
+
+[198/325] r1 R1> show track
+  % Invalid input detected at '^' marker.
+  show track
+       ^
+
+[199/325] r1 R1> show track 1
+  % Invalid input detected at '^' marker.
+  show track 1
+       ^
+
+
+--- [200] § admin distance / metrics ---
+[200/325] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[201/325] r1 R1> router ospf 1
+  % Invalid input detected at '^' marker.
+  router ospf 1
+  ^
+
+[202/325] r1 R1> distance 110
+  % Invalid input detected at '^' marker.
+  distance 110
+  ^
+
+[203/325] r1 R1> distance ospf intra-area 90 inter-area 100 external 120
+  % Invalid input detected at '^' marker.
+  distance ospf intra-area 90 inter-area 100 external 120
+  ^
+
+[204/325] r1 R1> exit
+<empty>
+
+[205/325] r1 R1> end
+<empty>
+
+[206/325] r1 R1> show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[207/325] r1 R1> show ip route static
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[208/325] r1 R1> show ip route ospf
+<empty>
+
+[209/325] r1 R1> show ip route connected
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[210/325] r1 R1> show ip route 10.0.0.0
+  Routing entry for 10.0.0.0/30
+    Known via "connected", distance 0, metric 0
+    Directly connected, GigabitEthernet0/1
+  Connected via GigabitEthernet0/1
+
+[211/325] r1 R1> show ip route profile
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[212/325] r1 R1> show ip route vrf CUST
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[213/325] r1 R1> show ip protocols
+  No routing protocol is configured.
+
+[214/325] r1 R1> show ip cef summary
+  % Invalid input detected at '^' marker.
+  show ip cef summary
+          ^
+
+[215/325] r1 R1> show ip static route
+  % Invalid input detected at '^' marker.
+  show ip static route
+          ^
+
+
+--- [216] § regression: show family ---
+[216/325] r1 R1> enable
+<empty>
+
+[217/325] r1 R1# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[218/325] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[219/325] r1 R1# show startup-config
+  % Invalid input detected at '^' marker.
+  show startup-config
+       ^
+
+[220/325] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[221/325] r1 R1# show interfaces
+  % Invalid input detected at '^' marker.
+  show interfaces
+       ^
+
+[222/325] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[223/325] r1 R1# show ip route summary
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[224/325] r1 R1# show ip protocols
+  No routing protocol is configured.
+
+[225/325] r1 R1# show ip arp
+  No ARP entries.
+
+[226/325] r1 R1# show arp
+  No ARP entries.
+
+[227/325] r1 R1# show ip ospf
+  % OSPF is not configured
+
+[228/325] r1 R1# show ip ospf neighbor
+  % OSPF is not configured
+
+[229/325] r1 R1# show ip ospf database
+  % OSPF is not configured
+
+[230/325] r1 R1# show ip ospf interface brief
+  % OSPF is not configured
+
+[231/325] r1 R1# show ip eigrp neighbors
+  % Invalid input detected at '^' marker.
+  show ip eigrp neighbors
+          ^
+
+[232/325] r1 R1# show ip eigrp topology
+  % Invalid input detected at '^' marker.
+  show ip eigrp topology
+          ^
+
+[233/325] r1 R1# show ip bgp
+  % Invalid input detected at '^' marker.
+  show ip bgp
+          ^
+
+[234/325] r1 R1# show ip bgp summary
+  % Invalid input detected at '^' marker.
+  show ip bgp summary
+          ^
+
+[235/325] r1 R1# show ip rip database
+  % Invalid input detected at '^' marker.
+  show ip rip database
+              ^
+
+[236/325] r1 R1# show ip nat translations
+  No NAT translations.
+
+[237/325] r1 R1# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[238/325] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[239/325] r1 R1# show ip dhcp pool
+<empty>
+
+[240/325] r1 R1# show access-lists
+<empty>
+
+[241/325] r1 R1# show ip access-lists
+<empty>
+
+[242/325] r1 R1# show crypto isakmp sa
+  IPSec not configured.
+
+[243/325] r1 R1# show crypto ipsec sa
+  IPSec not configured.
+
+[244/325] r1 R1# show crypto session
+  IPSec not configured.
+
+[245/325] r1 R1# show crypto map
+  IPSec not configured.
+
+[246/325] r1 R1# show standby brief
+  % Invalid input detected at '^' marker.
+  show standby brief
+       ^
+
+[247/325] r1 R1# show vrrp brief
+  % Invalid input detected at '^' marker.
+  show vrrp brief
+       ^
+
+[248/325] r1 R1# show track
+  % Invalid input detected at '^' marker.
+  show track
+       ^
+
+[249/325] r1 R1# show ip sla statistics
+  % Invalid input detected at '^' marker.
+  show ip sla statistics
+          ^
+
+[250/325] r1 R1# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[251/325] r1 R1# show logging
+  % Invalid input detected at '^' marker.
+  show logging
+       ^
+
+[252/325] r1 R1# show snmp
+  % Invalid input detected at '^' marker.
+  show snmp
+       ^
+
+[253/325] r1 R1# show ntp status
+  % Invalid input detected at '^' marker.
+  show ntp status
+       ^
+
+[254/325] r1 R1# show ntp associations
+  % Invalid input detected at '^' marker.
+  show ntp associations
+       ^
+
+[255/325] r1 R1# show clock
+  *10:30:07.000 UTC Sun May 17 2026
+
+[256/325] r1 R1# show cdp neighbors
+  % Invalid input detected at '^' marker.
+  show cdp neighbors
+       ^
+
+[257/325] r1 R1# show lldp neighbors
+  % Invalid input detected at '^' marker.
+  show lldp neighbors
+       ^
+
+[258/325] r1 R1# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[259/325] r1 R1# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[260/325] r1 R1# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[261/325] r1 R1# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[262/325] r1 R1# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[263/325] r1 R1# show ip cef
+  % Invalid input detected at '^' marker.
+  show ip cef
+          ^
+
+[264/325] r1 R1# show interfaces GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0
+       ^
+
+[265/325] r1 R1# show interfaces GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1
+       ^
+
+[266/325] r1 R1# show ip interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show ip interface GigabitEthernet0/1
+                    ^
+
+[267/325] r1 R1# show controllers
+  % Invalid input detected at '^' marker.
+  show controllers
+       ^
+
+[268/325] r1 R1# show tech-support
+  % Invalid input detected at '^' marker.
+  show tech-support
+       ^
+
+[269/325] r1 R1# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[270/325] r1 R1# show environment
+  % Invalid input detected at '^' marker.
+  show environment
+       ^
+
+[271/325] r1 R1# show redundancy
+  % Invalid input detected at '^' marker.
+  show redundancy
+       ^
+
+[272/325] r1 R1# show ip vrf
+  % Invalid input detected at '^' marker.
+  show ip vrf
+          ^
+
+[273/325] r1 R1# show vrf
+  % Invalid input detected at '^' marker.
+  show vrf
+       ^
+
+[274/325] r1 R1# show hosts
+  % Invalid input detected at '^' marker.
+  show hosts
+       ^
+
+[275/325] r1 R1# show ip ssh
+  % Invalid input detected at '^' marker.
+  show ip ssh
+          ^
+
+[276/325] r1 R1# show line
+  % Invalid input detected at '^' marker.
+  show line
+       ^
+
+[277/325] r1 R1# show terminal
+  % Invalid input detected at '^' marker.
+  show terminal
+       ^
+
+[278/325] r1 R1# show aliases
+  % Invalid input detected at '^' marker.
+  show aliases
+       ^
+
+
+--- [279] § regression: pipe filters ---
+[279/325] r1 R1(config)# show running-config | include router
+<empty>
+
+[280/325] r1 R1(config)# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[281/325] r1 R1(config)# show running-config | begin line
+<empty>
+
+[282/325] r1 R1(config)# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  end
+
+[283/325] r1 R1(config)# show ip route | include via
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[284/325] r1 R1(config)# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+
+
+--- [285] § regression: mode nav + negation ---
+[285/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[286/325] r1 R1(config)# no ip routing
+  % Invalid input detected at '^' marker.
+  no ip routing
+        ^
+
+[287/325] r1 R1(config)# ip routing
+<empty>
+
+[288/325] r1 R1(config)# no ip cef
+  % Invalid input detected at '^' marker.
+  no ip cef
+        ^
+
+[289/325] r1 R1(config)# ip cef
+  % Invalid input detected at '^' marker.
+  ip cef
+     ^
+
+[290/325] r1 R1(config)# no cdp run
+  % Invalid input detected at '^' marker.
+  no cdp run
+     ^
+
+[291/325] r1 R1(config)# cdp run
+  % Invalid input detected at '^' marker.
+  cdp run
+  ^
+
+[292/325] r1 R1(config)# no lldp run
+  % Invalid input detected at '^' marker.
+  no lldp run
+     ^
+
+[293/325] r1 R1(config)# lldp run
+  % Invalid input detected at '^' marker.
+  lldp run
+  ^
+
+[294/325] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[295/325] r1 R1(config)# ip domain-lookup
+<empty>
+
+[296/325] r1 R1(config)# no ip http server
+  % Invalid input detected at '^' marker.
+  no ip http server
+        ^
+
+[297/325] r1 R1(config)# ip http server
+  % Invalid input detected at '^' marker.
+  ip http server
+     ^
+
+[298/325] r1 R1(config)# no ip source-route
+  % Invalid input detected at '^' marker.
+  no ip source-route
+        ^
+
+[299/325] r1 R1(config)# ip source-route
+  % Invalid input detected at '^' marker.
+  ip source-route
+     ^
+
+[300/325] r1 R1(config)# no service pad
+<empty>
+
+[301/325] r1 R1(config)# service pad
+<empty>
+
+[302/325] r1 R1(config)# no ipv6 unicast-routing
+  % Invalid input detected at '^' marker.
+  no ipv6 unicast-routing
+     ^
+
+[303/325] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[304/325] r1 R1(config)# no service password-encryption
+<empty>
+
+[305/325] r1 R1(config)# service password-encryption
+<empty>
+
+[306/325] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[307/325] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[308/325] r1 R1(config-if)# shutdown
+<empty>
+
+[309/325] r1 R1(config-if)# no shutdown
+<empty>
+
+[310/325] r1 R1(config-if)# exit
+<empty>
+
+[311/325] r1 R1(config)# router ospf 1
+<empty>
+
+[312/325] r1 R1(config-router)# do show ip protocols
+  No routing protocol is configured.
+
+[313/325] r1 R1(config-router)# exit
+<empty>
+
+[314/325] r1 R1(config)# line vty 0 4
+<empty>
+
+[315/325] r1 R1(config-line)# exit
+<empty>
+
+[316/325] r1 R1(config)# end
+<empty>
+
+
+--- [317] § regression: context help ---
+[317/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[318/325] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[319/325] r1 R1(config)# ip ?
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[320/325] r1 R1(config)# router ?
+    rip   Enter RIP routing protocol configuration
+    ospf  Enter OSPF routing protocol configuration
+
+[321/325] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[322/325] r1 R1(config)# no ?
+    hostname     Reset hostname
+    ip           ip
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    access-list  Remove an access list
+    crypto       crypto
+
+[323/325] r1 R1(config)# end
+<empty>
+
+[324/325] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[325/325] r1 R1# write memory
+  Building configuration...
+  [OK]

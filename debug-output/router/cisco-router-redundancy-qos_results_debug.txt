@@ -1,0 +1,2016 @@
+============================================================
+Router (L3) debug transcript — cisco-router-redundancy-qos
+Generated: 2026-05-17T10:30:09.076Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
+Total steps: 413
+============================================================
+
+
+--- [1] § base addressing ---
+[1/413] r1 R1> enable
+<empty>
+
+[2/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[4/413] r1 R1(config-if)# ip address 192.168.1.2 255.255.255.0
+<empty>
+
+[5/413] r1 R1(config-if)# no shutdown
+<empty>
+
+[6/413] r1 R1(config-if)# exit
+<empty>
+
+[7/413] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[8/413] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[9/413] r1 R1(config-if)# no shutdown
+<empty>
+
+[10/413] r1 R1(config-if)# exit
+<empty>
+
+[11/413] r1 R1(config)# end
+<empty>
+
+
+--- [12] § HSRP ---
+[12/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[13/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[14/413] r1 R1(config-if)# standby 1 ip 192.168.1.1
+  % Invalid input detected at '^' marker.
+  standby 1 ip 192.168.1.1
+  ^
+
+[15/413] r1 R1(config-if)# standby 1 ip 192.168.1.101 secondary
+  % Invalid input detected at '^' marker.
+  standby 1 ip 192.168.1.101 secondary
+  ^
+
+[16/413] r1 R1(config-if)# standby 1 priority 110
+  % Invalid input detected at '^' marker.
+  standby 1 priority 110
+  ^
+
+[17/413] r1 R1(config-if)# standby 1 preempt delay minimum 30 reload 60
+  % Invalid input detected at '^' marker.
+  standby 1 preempt delay minimum 30 reload 60
+  ^
+
+[18/413] r1 R1(config-if)# standby 1 timers 1 3
+  % Invalid input detected at '^' marker.
+  standby 1 timers 1 3
+  ^
+
+[19/413] r1 R1(config-if)# standby 1 timers msec 200 msec 750
+  % Invalid input detected at '^' marker.
+  standby 1 timers msec 200 msec 750
+  ^
+
+[20/413] r1 R1(config-if)# standby 1 authentication md5 key-string HsrpKey1
+  % Invalid input detected at '^' marker.
+  standby 1 authentication md5 key-string HsrpKey1
+  ^
+
+[21/413] r1 R1(config-if)# standby 1 track GigabitEthernet0/1 30
+  % Invalid input detected at '^' marker.
+  standby 1 track GigabitEthernet0/1 30
+  ^
+
+[22/413] r1 R1(config-if)# standby 1 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  standby 1 track 1 decrement 20
+  ^
+
+[23/413] r1 R1(config-if)# standby 1 name HSRP-GRP-1
+  % Invalid input detected at '^' marker.
+  standby 1 name HSRP-GRP-1
+  ^
+
+[24/413] r1 R1(config-if)# standby 1 mac-address 0000.0c07.ac01
+  % Invalid input detected at '^' marker.
+  standby 1 mac-address 0000.0c07.ac01
+  ^
+
+[25/413] r1 R1(config-if)# standby 1 follow HSRP-GRP-1
+  % Invalid input detected at '^' marker.
+  standby 1 follow HSRP-GRP-1
+  ^
+
+[26/413] r1 R1(config-if)# standby 2 ip 192.168.1.2
+  % Invalid input detected at '^' marker.
+  standby 2 ip 192.168.1.2
+  ^
+
+[27/413] r1 R1(config-if)# standby 2 ip 192.168.1.102 secondary
+  % Invalid input detected at '^' marker.
+  standby 2 ip 192.168.1.102 secondary
+  ^
+
+[28/413] r1 R1(config-if)# standby 2 priority 120
+  % Invalid input detected at '^' marker.
+  standby 2 priority 120
+  ^
+
+[29/413] r1 R1(config-if)# standby 2 preempt delay minimum 30 reload 60
+  % Invalid input detected at '^' marker.
+  standby 2 preempt delay minimum 30 reload 60
+  ^
+
+[30/413] r1 R1(config-if)# standby 2 timers 1 3
+  % Invalid input detected at '^' marker.
+  standby 2 timers 1 3
+  ^
+
+[31/413] r1 R1(config-if)# standby 2 timers msec 200 msec 750
+  % Invalid input detected at '^' marker.
+  standby 2 timers msec 200 msec 750
+  ^
+
+[32/413] r1 R1(config-if)# standby 2 authentication md5 key-string HsrpKey2
+  % Invalid input detected at '^' marker.
+  standby 2 authentication md5 key-string HsrpKey2
+  ^
+
+[33/413] r1 R1(config-if)# standby 2 track GigabitEthernet0/1 30
+  % Invalid input detected at '^' marker.
+  standby 2 track GigabitEthernet0/1 30
+  ^
+
+[34/413] r1 R1(config-if)# standby 2 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  standby 2 track 1 decrement 20
+  ^
+
+[35/413] r1 R1(config-if)# standby 2 name HSRP-GRP-2
+  % Invalid input detected at '^' marker.
+  standby 2 name HSRP-GRP-2
+  ^
+
+[36/413] r1 R1(config-if)# standby 2 mac-address 0000.0c07.ac02
+  % Invalid input detected at '^' marker.
+  standby 2 mac-address 0000.0c07.ac02
+  ^
+
+[37/413] r1 R1(config-if)# standby 2 follow HSRP-GRP-1
+  % Invalid input detected at '^' marker.
+  standby 2 follow HSRP-GRP-1
+  ^
+
+[38/413] r1 R1(config-if)# standby 3 ip 192.168.1.3
+  % Invalid input detected at '^' marker.
+  standby 3 ip 192.168.1.3
+  ^
+
+[39/413] r1 R1(config-if)# standby 3 ip 192.168.1.103 secondary
+  % Invalid input detected at '^' marker.
+  standby 3 ip 192.168.1.103 secondary
+  ^
+
+[40/413] r1 R1(config-if)# standby 3 priority 130
+  % Invalid input detected at '^' marker.
+  standby 3 priority 130
+  ^
+
+[41/413] r1 R1(config-if)# standby 3 preempt delay minimum 30 reload 60
+  % Invalid input detected at '^' marker.
+  standby 3 preempt delay minimum 30 reload 60
+  ^
+
+[42/413] r1 R1(config-if)# standby 3 timers 1 3
+  % Invalid input detected at '^' marker.
+  standby 3 timers 1 3
+  ^
+
+[43/413] r1 R1(config-if)# standby 3 timers msec 200 msec 750
+  % Invalid input detected at '^' marker.
+  standby 3 timers msec 200 msec 750
+  ^
+
+[44/413] r1 R1(config-if)# standby 3 authentication md5 key-string HsrpKey3
+  % Invalid input detected at '^' marker.
+  standby 3 authentication md5 key-string HsrpKey3
+  ^
+
+[45/413] r1 R1(config-if)# standby 3 track GigabitEthernet0/1 30
+  % Invalid input detected at '^' marker.
+  standby 3 track GigabitEthernet0/1 30
+  ^
+
+[46/413] r1 R1(config-if)# standby 3 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  standby 3 track 1 decrement 20
+  ^
+
+[47/413] r1 R1(config-if)# standby 3 name HSRP-GRP-3
+  % Invalid input detected at '^' marker.
+  standby 3 name HSRP-GRP-3
+  ^
+
+[48/413] r1 R1(config-if)# standby 3 mac-address 0000.0c07.ac03
+  % Invalid input detected at '^' marker.
+  standby 3 mac-address 0000.0c07.ac03
+  ^
+
+[49/413] r1 R1(config-if)# standby 3 follow HSRP-GRP-1
+  % Invalid input detected at '^' marker.
+  standby 3 follow HSRP-GRP-1
+  ^
+
+[50/413] r1 R1(config-if)# standby 4 ip 192.168.1.4
+  % Invalid input detected at '^' marker.
+  standby 4 ip 192.168.1.4
+  ^
+
+[51/413] r1 R1(config-if)# standby 4 ip 192.168.1.104 secondary
+  % Invalid input detected at '^' marker.
+  standby 4 ip 192.168.1.104 secondary
+  ^
+
+[52/413] r1 R1(config-if)# standby 4 priority 140
+  % Invalid input detected at '^' marker.
+  standby 4 priority 140
+  ^
+
+[53/413] r1 R1(config-if)# standby 4 preempt delay minimum 30 reload 60
+  % Invalid input detected at '^' marker.
+  standby 4 preempt delay minimum 30 reload 60
+  ^
+
+[54/413] r1 R1(config-if)# standby 4 timers 1 3
+  % Invalid input detected at '^' marker.
+  standby 4 timers 1 3
+  ^
+
+[55/413] r1 R1(config-if)# standby 4 timers msec 200 msec 750
+  % Invalid input detected at '^' marker.
+  standby 4 timers msec 200 msec 750
+  ^
+
+[56/413] r1 R1(config-if)# standby 4 authentication md5 key-string HsrpKey4
+  % Invalid input detected at '^' marker.
+  standby 4 authentication md5 key-string HsrpKey4
+  ^
+
+[57/413] r1 R1(config-if)# standby 4 track GigabitEthernet0/1 30
+  % Invalid input detected at '^' marker.
+  standby 4 track GigabitEthernet0/1 30
+  ^
+
+[58/413] r1 R1(config-if)# standby 4 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  standby 4 track 1 decrement 20
+  ^
+
+[59/413] r1 R1(config-if)# standby 4 name HSRP-GRP-4
+  % Invalid input detected at '^' marker.
+  standby 4 name HSRP-GRP-4
+  ^
+
+[60/413] r1 R1(config-if)# standby 4 mac-address 0000.0c07.ac04
+  % Invalid input detected at '^' marker.
+  standby 4 mac-address 0000.0c07.ac04
+  ^
+
+[61/413] r1 R1(config-if)# standby 4 follow HSRP-GRP-1
+  % Invalid input detected at '^' marker.
+  standby 4 follow HSRP-GRP-1
+  ^
+
+[62/413] r1 R1(config-if)# standby version 2
+  % Invalid input detected at '^' marker.
+  standby version 2
+  ^
+
+[63/413] r1 R1(config-if)# standby use-bia
+  % Invalid input detected at '^' marker.
+  standby use-bia
+  ^
+
+[64/413] r1 R1(config-if)# standby delay minimum 30 reload 60
+  % Invalid input detected at '^' marker.
+  standby delay minimum 30 reload 60
+  ^
+
+[65/413] r1 R1(config-if)# exit
+<empty>
+
+[66/413] r1 R1(config)# end
+<empty>
+
+[67/413] r1 R1# show standby
+  % Invalid input detected at '^' marker.
+  show standby
+       ^
+
+[68/413] r1 R1# show standby brief
+  % Invalid input detected at '^' marker.
+  show standby brief
+       ^
+
+[69/413] r1 R1# show standby GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show standby GigabitEthernet0/0
+       ^
+
+[70/413] r1 R1# show standby GigabitEthernet0/0 1
+  % Invalid input detected at '^' marker.
+  show standby GigabitEthernet0/0 1
+       ^
+
+[71/413] r1 R1# show standby all
+  % Invalid input detected at '^' marker.
+  show standby all
+       ^
+
+[72/413] r1 R1# debug standby
+  % Invalid input detected at '^' marker.
+  debug standby
+        ^
+
+[73/413] r1 R1# debug standby events
+  % Invalid input detected at '^' marker.
+  debug standby events
+        ^
+
+[74/413] r1 R1# undebug all
+  All possible debugging has been turned off
+
+
+--- [75] § VRRP ---
+[75/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[76/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[77/413] r1 R1(config-if)# vrrp 1 ip 192.168.1.201
+  % Invalid input detected at '^' marker.
+  vrrp 1 ip 192.168.1.201
+  ^
+
+[78/413] r1 R1(config-if)# vrrp 1 priority 120
+  % Invalid input detected at '^' marker.
+  vrrp 1 priority 120
+  ^
+
+[79/413] r1 R1(config-if)# vrrp 1 preempt delay minimum 15
+  % Invalid input detected at '^' marker.
+  vrrp 1 preempt delay minimum 15
+  ^
+
+[80/413] r1 R1(config-if)# vrrp 1 timers advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp 1 timers advertise 1
+  ^
+
+[81/413] r1 R1(config-if)# vrrp 1 timers learn
+  % Invalid input detected at '^' marker.
+  vrrp 1 timers learn
+  ^
+
+[82/413] r1 R1(config-if)# vrrp 1 authentication md5 key-string VrrpKey1
+  % Invalid input detected at '^' marker.
+  vrrp 1 authentication md5 key-string VrrpKey1
+  ^
+
+[83/413] r1 R1(config-if)# vrrp 1 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  vrrp 1 track 1 decrement 20
+  ^
+
+[84/413] r1 R1(config-if)# vrrp 1 description VRRP-GRP-1
+  % Invalid input detected at '^' marker.
+  vrrp 1 description VRRP-GRP-1
+  ^
+
+[85/413] r1 R1(config-if)# vrrp 2 ip 192.168.1.202
+  % Invalid input detected at '^' marker.
+  vrrp 2 ip 192.168.1.202
+  ^
+
+[86/413] r1 R1(config-if)# vrrp 2 priority 130
+  % Invalid input detected at '^' marker.
+  vrrp 2 priority 130
+  ^
+
+[87/413] r1 R1(config-if)# vrrp 2 preempt delay minimum 15
+  % Invalid input detected at '^' marker.
+  vrrp 2 preempt delay minimum 15
+  ^
+
+[88/413] r1 R1(config-if)# vrrp 2 timers advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp 2 timers advertise 1
+  ^
+
+[89/413] r1 R1(config-if)# vrrp 2 timers learn
+  % Invalid input detected at '^' marker.
+  vrrp 2 timers learn
+  ^
+
+[90/413] r1 R1(config-if)# vrrp 2 authentication md5 key-string VrrpKey2
+  % Invalid input detected at '^' marker.
+  vrrp 2 authentication md5 key-string VrrpKey2
+  ^
+
+[91/413] r1 R1(config-if)# vrrp 2 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  vrrp 2 track 1 decrement 20
+  ^
+
+[92/413] r1 R1(config-if)# vrrp 2 description VRRP-GRP-2
+  % Invalid input detected at '^' marker.
+  vrrp 2 description VRRP-GRP-2
+  ^
+
+[93/413] r1 R1(config-if)# vrrp 3 ip 192.168.1.203
+  % Invalid input detected at '^' marker.
+  vrrp 3 ip 192.168.1.203
+  ^
+
+[94/413] r1 R1(config-if)# vrrp 3 priority 140
+  % Invalid input detected at '^' marker.
+  vrrp 3 priority 140
+  ^
+
+[95/413] r1 R1(config-if)# vrrp 3 preempt delay minimum 15
+  % Invalid input detected at '^' marker.
+  vrrp 3 preempt delay minimum 15
+  ^
+
+[96/413] r1 R1(config-if)# vrrp 3 timers advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp 3 timers advertise 1
+  ^
+
+[97/413] r1 R1(config-if)# vrrp 3 timers learn
+  % Invalid input detected at '^' marker.
+  vrrp 3 timers learn
+  ^
+
+[98/413] r1 R1(config-if)# vrrp 3 authentication md5 key-string VrrpKey3
+  % Invalid input detected at '^' marker.
+  vrrp 3 authentication md5 key-string VrrpKey3
+  ^
+
+[99/413] r1 R1(config-if)# vrrp 3 track 1 decrement 20
+  % Invalid input detected at '^' marker.
+  vrrp 3 track 1 decrement 20
+  ^
+
+[100/413] r1 R1(config-if)# vrrp 3 description VRRP-GRP-3
+  % Invalid input detected at '^' marker.
+  vrrp 3 description VRRP-GRP-3
+  ^
+
+[101/413] r1 R1(config-if)# vrrp 1 address-family ipv4
+  % Invalid input detected at '^' marker.
+  vrrp 1 address-family ipv4
+  ^
+
+[102/413] r1 R1(config-if)# exit
+<empty>
+
+[103/413] r1 R1(config)# end
+<empty>
+
+[104/413] r1 R1# show vrrp
+  % Invalid input detected at '^' marker.
+  show vrrp
+       ^
+
+[105/413] r1 R1# show vrrp brief
+  % Invalid input detected at '^' marker.
+  show vrrp brief
+       ^
+
+[106/413] r1 R1# show vrrp interface GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show vrrp interface GigabitEthernet0/0
+       ^
+
+
+--- [107] § GLBP ---
+[107/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[108/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[109/413] r1 R1(config-if)# glbp 1 ip 192.168.1.250
+  % Invalid input detected at '^' marker.
+  glbp 1 ip 192.168.1.250
+  ^
+
+[110/413] r1 R1(config-if)# glbp 1 priority 150
+  % Invalid input detected at '^' marker.
+  glbp 1 priority 150
+  ^
+
+[111/413] r1 R1(config-if)# glbp 1 preempt delay minimum 30
+  % Invalid input detected at '^' marker.
+  glbp 1 preempt delay minimum 30
+  ^
+
+[112/413] r1 R1(config-if)# glbp 1 load-balancing host-dependent
+  % Invalid input detected at '^' marker.
+  glbp 1 load-balancing host-dependent
+  ^
+
+[113/413] r1 R1(config-if)# glbp 1 load-balancing round-robin
+  % Invalid input detected at '^' marker.
+  glbp 1 load-balancing round-robin
+  ^
+
+[114/413] r1 R1(config-if)# glbp 1 weighting 100 lower 90 upper 95
+  % Invalid input detected at '^' marker.
+  glbp 1 weighting 100 lower 90 upper 95
+  ^
+
+[115/413] r1 R1(config-if)# glbp 1 weighting track 1 decrement 10
+  % Invalid input detected at '^' marker.
+  glbp 1 weighting track 1 decrement 10
+  ^
+
+[116/413] r1 R1(config-if)# glbp 1 timers 3 10
+  % Invalid input detected at '^' marker.
+  glbp 1 timers 3 10
+  ^
+
+[117/413] r1 R1(config-if)# glbp 1 timers redirect 600 7200
+  % Invalid input detected at '^' marker.
+  glbp 1 timers redirect 600 7200
+  ^
+
+[118/413] r1 R1(config-if)# glbp 1 authentication md5 key-string GlbpKey
+  % Invalid input detected at '^' marker.
+  glbp 1 authentication md5 key-string GlbpKey
+  ^
+
+[119/413] r1 R1(config-if)# glbp 1 name GLBP-GRP-1
+  % Invalid input detected at '^' marker.
+  glbp 1 name GLBP-GRP-1
+  ^
+
+[120/413] r1 R1(config-if)# glbp 1 forwarder preempt delay minimum 30
+  % Invalid input detected at '^' marker.
+  glbp 1 forwarder preempt delay minimum 30
+  ^
+
+[121/413] r1 R1(config-if)# exit
+<empty>
+
+[122/413] r1 R1(config)# end
+<empty>
+
+[123/413] r1 R1# show glbp
+  % Invalid input detected at '^' marker.
+  show glbp
+       ^
+
+[124/413] r1 R1# show glbp brief
+  % Invalid input detected at '^' marker.
+  show glbp brief
+       ^
+
+
+--- [125] § object tracking ---
+[125/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[126/413] r1 R1(config)# track 1 interface GigabitEthernet0/1 line-protocol
+  % Invalid input detected at '^' marker.
+  track 1 interface GigabitEthernet0/1 line-protocol
+  ^
+
+[127/413] r1 R1(config)# delay up 10 down 20
+  % Invalid input detected at '^' marker.
+  delay up 10 down 20
+  ^
+
+[128/413] r1 R1(config)# exit
+<empty>
+
+[129/413] r1 R1# track 2 interface GigabitEthernet0/0 line-protocol
+  % Invalid input detected at '^' marker.
+  track 2 interface GigabitEthernet0/0 line-protocol
+  ^
+
+[130/413] r1 R1# delay up 10 down 20
+  % Invalid input detected at '^' marker.
+  delay up 10 down 20
+  ^
+
+[131/413] r1 R1# exit
+<empty>
+
+[132/413] r1 R1> track 3 interface GigabitEthernet0/1 line-protocol
+  % Invalid input detected at '^' marker.
+  track 3 interface GigabitEthernet0/1 line-protocol
+  ^
+
+[133/413] r1 R1> delay up 10 down 20
+  % Invalid input detected at '^' marker.
+  delay up 10 down 20
+  ^
+
+[134/413] r1 R1> exit
+<empty>
+
+[135/413] r1 R1> track 4 interface GigabitEthernet0/0 line-protocol
+  % Invalid input detected at '^' marker.
+  track 4 interface GigabitEthernet0/0 line-protocol
+  ^
+
+[136/413] r1 R1> delay up 10 down 20
+  % Invalid input detected at '^' marker.
+  delay up 10 down 20
+  ^
+
+[137/413] r1 R1> exit
+<empty>
+
+[138/413] r1 R1> track 5 interface GigabitEthernet0/1 line-protocol
+  % Invalid input detected at '^' marker.
+  track 5 interface GigabitEthernet0/1 line-protocol
+  ^
+
+[139/413] r1 R1> delay up 10 down 20
+  % Invalid input detected at '^' marker.
+  delay up 10 down 20
+  ^
+
+[140/413] r1 R1> exit
+<empty>
+
+[141/413] r1 R1> track 10 ip route 10.0.0.0 255.0.0.0 reachability
+  % Invalid input detected at '^' marker.
+  track 10 ip route 10.0.0.0 255.0.0.0 reachability
+  ^
+
+[142/413] r1 R1> track 11 ip sla 1 reachability
+  % Invalid input detected at '^' marker.
+  track 11 ip sla 1 reachability
+  ^
+
+[143/413] r1 R1> track 12 ip sla 1 state
+  % Invalid input detected at '^' marker.
+  track 12 ip sla 1 state
+  ^
+
+[144/413] r1 R1> track 20 list boolean and
+  % Invalid input detected at '^' marker.
+  track 20 list boolean and
+  ^
+
+[145/413] r1 R1> object 1
+  % Invalid input detected at '^' marker.
+  object 1
+  ^
+
+[146/413] r1 R1> object 10
+  % Invalid input detected at '^' marker.
+  object 10
+  ^
+
+[147/413] r1 R1> exit
+<empty>
+
+[148/413] r1 R1> track 21 list threshold weight
+  % Invalid input detected at '^' marker.
+  track 21 list threshold weight
+  ^
+
+[149/413] r1 R1> object 1 weight 10
+  % Invalid input detected at '^' marker.
+  object 1 weight 10
+  ^
+
+[150/413] r1 R1> object 10 weight 20
+  % Invalid input detected at '^' marker.
+  object 10 weight 20
+  ^
+
+[151/413] r1 R1> threshold weight up 25 down 10
+  % Invalid input detected at '^' marker.
+  threshold weight up 25 down 10
+  ^
+
+[152/413] r1 R1> exit
+<empty>
+
+[153/413] r1 R1> track 22 stub-object
+  % Invalid input detected at '^' marker.
+  track 22 stub-object
+  ^
+
+[154/413] r1 R1> exit
+<empty>
+
+[155/413] r1 R1> end
+<empty>
+
+[156/413] r1 R1> show track
+  % Invalid input detected at '^' marker.
+  show track
+       ^
+
+[157/413] r1 R1> show track brief
+  % Invalid input detected at '^' marker.
+  show track brief
+       ^
+
+[158/413] r1 R1> show track 1
+  % Invalid input detected at '^' marker.
+  show track 1
+       ^
+
+
+--- [159] § IP SLA + responder ---
+[159/413] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[160/413] r1 R1> ip sla 1
+  % Invalid input detected at '^' marker.
+  ip sla 1
+  ^
+
+[161/413] r1 R1> icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+  ^
+
+[162/413] r1 R1> frequency 5
+  % Invalid input detected at '^' marker.
+  frequency 5
+  ^
+
+[163/413] r1 R1> threshold 200
+  % Invalid input detected at '^' marker.
+  threshold 200
+  ^
+
+[164/413] r1 R1> timeout 1000
+  % Invalid input detected at '^' marker.
+  timeout 1000
+  ^
+
+[165/413] r1 R1> tag WAN-PROBE
+  % Invalid input detected at '^' marker.
+  tag WAN-PROBE
+  ^
+
+[166/413] r1 R1> history enhanced interval 900 buckets 4
+  % Invalid input detected at '^' marker.
+  history enhanced interval 900 buckets 4
+  ^
+
+[167/413] r1 R1> exit
+<empty>
+
+[168/413] r1 R1> ip sla 2
+  % Invalid input detected at '^' marker.
+  ip sla 2
+  ^
+
+[169/413] r1 R1> udp-jitter 10.0.0.2 16384 codec g711alaw
+  % Invalid input detected at '^' marker.
+  udp-jitter 10.0.0.2 16384 codec g711alaw
+  ^
+
+[170/413] r1 R1> frequency 10
+  % Invalid input detected at '^' marker.
+  frequency 10
+  ^
+
+[171/413] r1 R1> exit
+<empty>
+
+[172/413] r1 R1> ip sla 3
+  % Invalid input detected at '^' marker.
+  ip sla 3
+  ^
+
+[173/413] r1 R1> tcp-connect 10.0.0.2 80
+  % Invalid input detected at '^' marker.
+  tcp-connect 10.0.0.2 80
+  ^
+
+[174/413] r1 R1> exit
+<empty>
+
+[175/413] r1 R1> ip sla 4
+  % Invalid input detected at '^' marker.
+  ip sla 4
+  ^
+
+[176/413] r1 R1> http get http://10.0.0.2
+  % Invalid input detected at '^' marker.
+  http get http://10.0.0.2
+  ^
+
+[177/413] r1 R1> exit
+<empty>
+
+[178/413] r1 R1> ip sla 5
+  % Invalid input detected at '^' marker.
+  ip sla 5
+  ^
+
+[179/413] r1 R1> dns lab.local name-server 8.8.8.8
+  % Invalid input detected at '^' marker.
+  dns lab.local name-server 8.8.8.8
+  ^
+
+[180/413] r1 R1> exit
+<empty>
+
+[181/413] r1 R1> ip sla schedule 1 life forever start-time now
+  % Invalid input detected at '^' marker.
+  ip sla schedule 1 life forever start-time now
+  ^
+
+[182/413] r1 R1> ip sla schedule 2 life 3600 start-time after 00:01:00
+  % Invalid input detected at '^' marker.
+  ip sla schedule 2 life 3600 start-time after 00:01:00
+  ^
+
+[183/413] r1 R1> ip sla group schedule 10 1,2,3 schedule-period 60 frequency 30 start-time now
+  % Invalid input detected at '^' marker.
+  ip sla group schedule 10 1,2,3 schedule-period 60 frequency 30 start-time now
+  ^
+
+[184/413] r1 R1> ip sla responder
+  % Invalid input detected at '^' marker.
+  ip sla responder
+  ^
+
+[185/413] r1 R1> ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+  % Invalid input detected at '^' marker.
+  ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+  ^
+
+[186/413] r1 R1> ip sla enable reaction-alerts
+  % Invalid input detected at '^' marker.
+  ip sla enable reaction-alerts
+  ^
+
+[187/413] r1 R1> ip sla reaction-configuration 1 react timeout threshold-type immediate action-type trapAndTrigger
+  % Invalid input detected at '^' marker.
+  ip sla reaction-configuration 1 react timeout threshold-type immediate action-type trapAndTrigger
+  ^
+
+[188/413] r1 R1> ip sla logging traps
+  % Invalid input detected at '^' marker.
+  ip sla logging traps
+  ^
+
+[189/413] r1 R1> end
+<empty>
+
+[190/413] r1 R1> show ip sla configuration
+  % Invalid input detected at '^' marker.
+  show ip sla configuration
+          ^
+
+[191/413] r1 R1> show ip sla statistics
+  % Invalid input detected at '^' marker.
+  show ip sla statistics
+          ^
+
+[192/413] r1 R1> show ip sla statistics aggregated
+  % Invalid input detected at '^' marker.
+  show ip sla statistics aggregated
+          ^
+
+[193/413] r1 R1> show ip sla responder
+  % Invalid input detected at '^' marker.
+  show ip sla responder
+          ^
+
+[194/413] r1 R1> show ip sla application
+  % Invalid input detected at '^' marker.
+  show ip sla application
+          ^
+
+
+--- [195] § BFD ---
+[195/413] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[196/413] r1 R1> interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/1
+  ^
+
+[197/413] r1 R1> bfd interval 100 min_rx 100 multiplier 3
+  % Invalid input detected at '^' marker.
+  bfd interval 100 min_rx 100 multiplier 3
+  ^
+
+[198/413] r1 R1> bfd echo
+  % Invalid input detected at '^' marker.
+  bfd echo
+  ^
+
+[199/413] r1 R1> no bfd echo
+  % Invalid input detected at '^' marker.
+  no bfd echo
+  ^
+
+[200/413] r1 R1> exit
+<empty>
+
+[201/413] r1 R1> router ospf 1
+  % Invalid input detected at '^' marker.
+  router ospf 1
+  ^
+
+[202/413] r1 R1> bfd all-interfaces
+  % Invalid input detected at '^' marker.
+  bfd all-interfaces
+  ^
+
+[203/413] r1 R1> exit
+<empty>
+
+[204/413] r1 R1> ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+  % Invalid input detected at '^' marker.
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+  ^
+
+[205/413] r1 R1> end
+<empty>
+
+[206/413] r1 R1> show bfd neighbors
+  % Invalid input detected at '^' marker.
+  show bfd neighbors
+       ^
+
+[207/413] r1 R1> show bfd neighbors details
+  % Invalid input detected at '^' marker.
+  show bfd neighbors details
+       ^
+
+[208/413] r1 R1> show bfd summary
+  % Invalid input detected at '^' marker.
+  show bfd summary
+       ^
+
+
+--- [209] § QoS — MQC class/policy ---
+[209/413] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[210/413] r1 R1> ip access-list extended VOICE
+  % Invalid input detected at '^' marker.
+  ip access-list extended VOICE
+  ^
+
+[211/413] r1 R1> permit udp any any range 16384 32767
+  % Invalid input detected at '^' marker.
+  permit udp any any range 16384 32767
+  ^
+
+[212/413] r1 R1> exit
+<empty>
+
+[213/413] r1 R1> ip access-list extended VIDEO
+  % Invalid input detected at '^' marker.
+  ip access-list extended VIDEO
+  ^
+
+[214/413] r1 R1> permit tcp any any eq 1720
+  % Invalid input detected at '^' marker.
+  permit tcp any any eq 1720
+  ^
+
+[215/413] r1 R1> exit
+<empty>
+
+[216/413] r1 R1> class-map match-any CM-VOICE
+  % Invalid input detected at '^' marker.
+  class-map match-any CM-VOICE
+  ^
+
+[217/413] r1 R1> match ip dscp ef
+  % Invalid input detected at '^' marker.
+  match ip dscp ef
+  ^
+
+[218/413] r1 R1> match access-group name VOICE
+  % Invalid input detected at '^' marker.
+  match access-group name VOICE
+  ^
+
+[219/413] r1 R1> match protocol rtp
+  % Invalid input detected at '^' marker.
+  match protocol rtp
+  ^
+
+[220/413] r1 R1> exit
+<empty>
+
+[221/413] r1 R1> class-map match-all CM-VIDEO
+  % Invalid input detected at '^' marker.
+  class-map match-all CM-VIDEO
+  ^
+
+[222/413] r1 R1> match ip dscp af41
+  % Invalid input detected at '^' marker.
+  match ip dscp af41
+  ^
+
+[223/413] r1 R1> match access-group name VIDEO
+  % Invalid input detected at '^' marker.
+  match access-group name VIDEO
+  ^
+
+[224/413] r1 R1> exit
+<empty>
+
+[225/413] r1 R1> class-map match-any CM-CRITICAL
+  % Invalid input detected at '^' marker.
+  class-map match-any CM-CRITICAL
+  ^
+
+[226/413] r1 R1> match protocol bgp
+  % Invalid input detected at '^' marker.
+  match protocol bgp
+  ^
+
+[227/413] r1 R1> match protocol ospf
+  % Invalid input detected at '^' marker.
+  match protocol ospf
+  ^
+
+[228/413] r1 R1> match ip precedence 6
+  % Invalid input detected at '^' marker.
+  match ip precedence 6
+  ^
+
+[229/413] r1 R1> exit
+<empty>
+
+[230/413] r1 R1> class-map match-any CM-SCAVENGER
+  % Invalid input detected at '^' marker.
+  class-map match-any CM-SCAVENGER
+  ^
+
+[231/413] r1 R1> match protocol bittorrent
+  % Invalid input detected at '^' marker.
+  match protocol bittorrent
+  ^
+
+[232/413] r1 R1> match protocol napster
+  % Invalid input detected at '^' marker.
+  match protocol napster
+  ^
+
+[233/413] r1 R1> exit
+<empty>
+
+[234/413] r1 R1> policy-map PM-WAN-OUT
+  % Invalid input detected at '^' marker.
+  policy-map PM-WAN-OUT
+  ^
+
+[235/413] r1 R1> class CM-VOICE
+  % Invalid input detected at '^' marker.
+  class CM-VOICE
+  ^
+
+[236/413] r1 R1> priority percent 20
+  % Invalid input detected at '^' marker.
+  priority percent 20
+  ^
+
+[237/413] r1 R1> set dscp ef
+  % Invalid input detected at '^' marker.
+  set dscp ef
+  ^
+
+[238/413] r1 R1> exit
+<empty>
+
+[239/413] r1 R1> class CM-VIDEO
+  % Invalid input detected at '^' marker.
+  class CM-VIDEO
+  ^
+
+[240/413] r1 R1> bandwidth percent 25
+  % Invalid input detected at '^' marker.
+  bandwidth percent 25
+  ^
+
+[241/413] r1 R1> random-detect dscp-based
+  % Invalid input detected at '^' marker.
+  random-detect dscp-based
+  ^
+
+[242/413] r1 R1> set dscp af41
+  % Invalid input detected at '^' marker.
+  set dscp af41
+  ^
+
+[243/413] r1 R1> exit
+<empty>
+
+[244/413] r1 R1> class CM-CRITICAL
+  % Invalid input detected at '^' marker.
+  class CM-CRITICAL
+  ^
+
+[245/413] r1 R1> bandwidth percent 15
+  % Invalid input detected at '^' marker.
+  bandwidth percent 15
+  ^
+
+[246/413] r1 R1> exit
+<empty>
+
+[247/413] r1 R1> class CM-SCAVENGER
+  % Invalid input detected at '^' marker.
+  class CM-SCAVENGER
+  ^
+
+[248/413] r1 R1> bandwidth percent 1
+  % Invalid input detected at '^' marker.
+  bandwidth percent 1
+  ^
+
+[249/413] r1 R1> set dscp cs1
+  % Invalid input detected at '^' marker.
+  set dscp cs1
+  ^
+
+[250/413] r1 R1> exit
+<empty>
+
+[251/413] r1 R1> class class-default
+  % Invalid input detected at '^' marker.
+  class class-default
+  ^
+
+[252/413] r1 R1> fair-queue
+  % Invalid input detected at '^' marker.
+  fair-queue
+  ^
+
+[253/413] r1 R1> random-detect
+  % Invalid input detected at '^' marker.
+  random-detect
+  ^
+
+[254/413] r1 R1> shape average 50000000
+  % Invalid input detected at '^' marker.
+  shape average 50000000
+  ^
+
+[255/413] r1 R1> exit
+<empty>
+
+[256/413] r1 R1> exit
+<empty>
+
+[257/413] r1 R1> policy-map PM-SHAPER
+  % Invalid input detected at '^' marker.
+  policy-map PM-SHAPER
+  ^
+
+[258/413] r1 R1> class class-default
+  % Invalid input detected at '^' marker.
+  class class-default
+  ^
+
+[259/413] r1 R1> shape average 100000000 1000000
+  % Invalid input detected at '^' marker.
+  shape average 100000000 1000000
+  ^
+
+[260/413] r1 R1> service-policy PM-WAN-OUT
+  % Invalid input detected at '^' marker.
+  service-policy PM-WAN-OUT
+  ^
+
+[261/413] r1 R1> exit
+<empty>
+
+[262/413] r1 R1> exit
+<empty>
+
+[263/413] r1 R1> policy-map PM-POLICE-IN
+  % Invalid input detected at '^' marker.
+  policy-map PM-POLICE-IN
+  ^
+
+[264/413] r1 R1> class CM-SCAVENGER
+  % Invalid input detected at '^' marker.
+  class CM-SCAVENGER
+  ^
+
+[265/413] r1 R1> police 1000000 conform-action transmit exceed-action drop
+  % Invalid input detected at '^' marker.
+  police 1000000 conform-action transmit exceed-action drop
+  ^
+
+[266/413] r1 R1> exit
+<empty>
+
+[267/413] r1 R1> class class-default
+  % Invalid input detected at '^' marker.
+  class class-default
+  ^
+
+[268/413] r1 R1> police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+  % Invalid input detected at '^' marker.
+  police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+  ^
+
+[269/413] r1 R1> exit
+<empty>
+
+[270/413] r1 R1> exit
+<empty>
+
+[271/413] r1 R1> interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/1
+  ^
+
+[272/413] r1 R1> service-policy output PM-SHAPER
+  % Invalid input detected at '^' marker.
+  service-policy output PM-SHAPER
+  ^
+
+[273/413] r1 R1> service-policy input PM-POLICE-IN
+  % Invalid input detected at '^' marker.
+  service-policy input PM-POLICE-IN
+  ^
+
+[274/413] r1 R1> bandwidth 100000
+  % Invalid input detected at '^' marker.
+  bandwidth 100000
+  ^
+
+[275/413] r1 R1> max-reserved-bandwidth 90
+  % Invalid input detected at '^' marker.
+  max-reserved-bandwidth 90
+  ^
+
+[276/413] r1 R1> exit
+<empty>
+
+[277/413] r1 R1> end
+<empty>
+
+[278/413] r1 R1> show policy-map
+  % Invalid input detected at '^' marker.
+  show policy-map
+       ^
+
+[279/413] r1 R1> show policy-map PM-WAN-OUT
+  % Invalid input detected at '^' marker.
+  show policy-map PM-WAN-OUT
+       ^
+
+[280/413] r1 R1> show policy-map interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show policy-map interface GigabitEthernet0/1
+       ^
+
+[281/413] r1 R1> show class-map
+  % Invalid input detected at '^' marker.
+  show class-map
+       ^
+
+[282/413] r1 R1> show class-map CM-VOICE
+  % Invalid input detected at '^' marker.
+  show class-map CM-VOICE
+       ^
+
+[283/413] r1 R1> show table-map
+  % Invalid input detected at '^' marker.
+  show table-map
+       ^
+
+[284/413] r1 R1> show mls qos
+  % Invalid input detected at '^' marker.
+  show mls qos
+       ^
+
+
+--- [285] § legacy QoS / NBAR ---
+[285/413] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[286/413] r1 R1> interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/1
+  ^
+
+[287/413] r1 R1> rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+  % Invalid input detected at '^' marker.
+  rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+  ^
+
+[288/413] r1 R1> ip nbar protocol-discovery
+  % Invalid input detected at '^' marker.
+  ip nbar protocol-discovery
+  ^
+
+[289/413] r1 R1> priority-group 1
+  % Invalid input detected at '^' marker.
+  priority-group 1
+  ^
+
+[290/413] r1 R1> custom-queue-list 1
+  % Invalid input detected at '^' marker.
+  custom-queue-list 1
+  ^
+
+[291/413] r1 R1> fair-queue 64 256 8
+  % Invalid input detected at '^' marker.
+  fair-queue 64 256 8
+  ^
+
+[292/413] r1 R1> random-detect
+  % Invalid input detected at '^' marker.
+  random-detect
+  ^
+
+[293/413] r1 R1> tx-ring-limit 3
+  % Invalid input detected at '^' marker.
+  tx-ring-limit 3
+  ^
+
+[294/413] r1 R1> exit
+<empty>
+
+[295/413] r1 R1> priority-list 1 protocol ip high tcp telnet
+  % Invalid input detected at '^' marker.
+  priority-list 1 protocol ip high tcp telnet
+  ^
+
+[296/413] r1 R1> queue-list 1 protocol ip 1 tcp www
+  % Invalid input detected at '^' marker.
+  queue-list 1 protocol ip 1 tcp www
+  ^
+
+[297/413] r1 R1> access-list rate-limit 10 5
+  % Invalid input detected at '^' marker.
+  access-list rate-limit 10 5
+  ^
+
+[298/413] r1 R1> end
+<empty>
+
+[299/413] r1 R1> show ip nbar protocol-discovery
+  % Invalid input detected at '^' marker.
+  show ip nbar protocol-discovery
+          ^
+
+[300/413] r1 R1> show queueing interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show queueing interface GigabitEthernet0/1
+       ^
+
+[301/413] r1 R1> show interfaces GigabitEthernet0/1 rate-limit
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1 rate-limit
+       ^
+
+[302/413] r1 R1> show traffic-shape
+  % Invalid input detected at '^' marker.
+  show traffic-shape
+       ^
+
+[303/413] r1 R1> show traffic-shape statistics
+  % Invalid input detected at '^' marker.
+  show traffic-shape statistics
+       ^
+
+
+--- [304] § regression: show family ---
+[304/413] r1 R1> enable
+<empty>
+
+[305/413] r1 R1# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[306/413] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+
+[307/413] r1 R1# show startup-config
+  % Invalid input detected at '^' marker.
+  show startup-config
+       ^
+
+[308/413] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[309/413] r1 R1# show interfaces
+  % Invalid input detected at '^' marker.
+  show interfaces
+       ^
+
+[310/413] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+
+[311/413] r1 R1# show ip route summary
+  % Network not in table
+
+[312/413] r1 R1# show ip protocols
+  No routing protocol is configured.
+
+[313/413] r1 R1# show ip arp
+  No ARP entries.
+
+[314/413] r1 R1# show arp
+  No ARP entries.
+
+[315/413] r1 R1# show ip ospf
+  % OSPF is not configured
+
+[316/413] r1 R1# show ip ospf neighbor
+  % OSPF is not configured
+
+[317/413] r1 R1# show ip ospf database
+  % OSPF is not configured
+
+[318/413] r1 R1# show ip ospf interface brief
+  % OSPF is not configured
+
+[319/413] r1 R1# show ip eigrp neighbors
+  % Invalid input detected at '^' marker.
+  show ip eigrp neighbors
+          ^
+
+[320/413] r1 R1# show ip eigrp topology
+  % Invalid input detected at '^' marker.
+  show ip eigrp topology
+          ^
+
+[321/413] r1 R1# show ip bgp
+  % Invalid input detected at '^' marker.
+  show ip bgp
+          ^
+
+[322/413] r1 R1# show ip bgp summary
+  % Invalid input detected at '^' marker.
+  show ip bgp summary
+          ^
+
+[323/413] r1 R1# show ip rip database
+  % Invalid input detected at '^' marker.
+  show ip rip database
+              ^
+
+[324/413] r1 R1# show ip nat translations
+  No NAT translations.
+
+[325/413] r1 R1# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[326/413] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[327/413] r1 R1# show ip dhcp pool
+<empty>
+
+[328/413] r1 R1# show access-lists
+<empty>
+
+[329/413] r1 R1# show ip access-lists
+<empty>
+
+[330/413] r1 R1# show crypto isakmp sa
+  IPSec not configured.
+
+[331/413] r1 R1# show crypto ipsec sa
+  IPSec not configured.
+
+[332/413] r1 R1# show crypto session
+  IPSec not configured.
+
+[333/413] r1 R1# show crypto map
+  IPSec not configured.
+
+[334/413] r1 R1# show standby brief
+  % Invalid input detected at '^' marker.
+  show standby brief
+       ^
+
+[335/413] r1 R1# show vrrp brief
+  % Invalid input detected at '^' marker.
+  show vrrp brief
+       ^
+
+[336/413] r1 R1# show track
+  % Invalid input detected at '^' marker.
+  show track
+       ^
+
+[337/413] r1 R1# show ip sla statistics
+  % Invalid input detected at '^' marker.
+  show ip sla statistics
+          ^
+
+[338/413] r1 R1# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[339/413] r1 R1# show logging
+  % Invalid input detected at '^' marker.
+  show logging
+       ^
+
+[340/413] r1 R1# show snmp
+  % Invalid input detected at '^' marker.
+  show snmp
+       ^
+
+[341/413] r1 R1# show ntp status
+  % Invalid input detected at '^' marker.
+  show ntp status
+       ^
+
+[342/413] r1 R1# show ntp associations
+  % Invalid input detected at '^' marker.
+  show ntp associations
+       ^
+
+[343/413] r1 R1# show clock
+  *10:30:09.000 UTC Sun May 17 2026
+
+[344/413] r1 R1# show cdp neighbors
+  % Invalid input detected at '^' marker.
+  show cdp neighbors
+       ^
+
+[345/413] r1 R1# show lldp neighbors
+  % Invalid input detected at '^' marker.
+  show lldp neighbors
+       ^
+
+[346/413] r1 R1# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[347/413] r1 R1# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[348/413] r1 R1# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[349/413] r1 R1# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[350/413] r1 R1# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[351/413] r1 R1# show ip cef
+  % Invalid input detected at '^' marker.
+  show ip cef
+          ^
+
+[352/413] r1 R1# show interfaces GigabitEthernet0/0
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/0
+       ^
+
+[353/413] r1 R1# show interfaces GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show interfaces GigabitEthernet0/1
+       ^
+
+[354/413] r1 R1# show ip interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show ip interface GigabitEthernet0/1
+                    ^
+
+[355/413] r1 R1# show controllers
+  % Invalid input detected at '^' marker.
+  show controllers
+       ^
+
+[356/413] r1 R1# show tech-support
+  % Invalid input detected at '^' marker.
+  show tech-support
+       ^
+
+[357/413] r1 R1# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[358/413] r1 R1# show environment
+  % Invalid input detected at '^' marker.
+  show environment
+       ^
+
+[359/413] r1 R1# show redundancy
+  % Invalid input detected at '^' marker.
+  show redundancy
+       ^
+
+[360/413] r1 R1# show ip vrf
+  % Invalid input detected at '^' marker.
+  show ip vrf
+          ^
+
+[361/413] r1 R1# show vrf
+  % Invalid input detected at '^' marker.
+  show vrf
+       ^
+
+[362/413] r1 R1# show hosts
+  % Invalid input detected at '^' marker.
+  show hosts
+       ^
+
+[363/413] r1 R1# show ip ssh
+  % Invalid input detected at '^' marker.
+  show ip ssh
+          ^
+
+[364/413] r1 R1# show line
+  % Invalid input detected at '^' marker.
+  show line
+       ^
+
+[365/413] r1 R1# show terminal
+  % Invalid input detected at '^' marker.
+  show terminal
+       ^
+
+[366/413] r1 R1# show aliases
+  % Invalid input detected at '^' marker.
+  show aliases
+       ^
+
+
+--- [367] § regression: pipe filters ---
+[367/413] r1 R1(config)# show running-config | include router
+<empty>
+
+[368/413] r1 R1(config)# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+
+[369/413] r1 R1(config)# show running-config | begin line
+<empty>
+
+[370/413] r1 R1(config)# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  end
+
+[371/413] r1 R1(config)# show ip route | include via
+<empty>
+
+[372/413] r1 R1(config)# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+
+
+--- [373] § regression: mode nav + negation ---
+[373/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[374/413] r1 R1(config)# no ip routing
+  % Invalid input detected at '^' marker.
+  no ip routing
+        ^
+
+[375/413] r1 R1(config)# ip routing
+<empty>
+
+[376/413] r1 R1(config)# no ip cef
+  % Invalid input detected at '^' marker.
+  no ip cef
+        ^
+
+[377/413] r1 R1(config)# ip cef
+  % Invalid input detected at '^' marker.
+  ip cef
+     ^
+
+[378/413] r1 R1(config)# no cdp run
+  % Invalid input detected at '^' marker.
+  no cdp run
+     ^
+
+[379/413] r1 R1(config)# cdp run
+  % Invalid input detected at '^' marker.
+  cdp run
+  ^
+
+[380/413] r1 R1(config)# no lldp run
+  % Invalid input detected at '^' marker.
+  no lldp run
+     ^
+
+[381/413] r1 R1(config)# lldp run
+  % Invalid input detected at '^' marker.
+  lldp run
+  ^
+
+[382/413] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[383/413] r1 R1(config)# ip domain-lookup
+<empty>
+
+[384/413] r1 R1(config)# no ip http server
+  % Invalid input detected at '^' marker.
+  no ip http server
+        ^
+
+[385/413] r1 R1(config)# ip http server
+  % Invalid input detected at '^' marker.
+  ip http server
+     ^
+
+[386/413] r1 R1(config)# no ip source-route
+  % Invalid input detected at '^' marker.
+  no ip source-route
+        ^
+
+[387/413] r1 R1(config)# ip source-route
+  % Invalid input detected at '^' marker.
+  ip source-route
+     ^
+
+[388/413] r1 R1(config)# no service pad
+<empty>
+
+[389/413] r1 R1(config)# service pad
+<empty>
+
+[390/413] r1 R1(config)# no ipv6 unicast-routing
+  % Invalid input detected at '^' marker.
+  no ipv6 unicast-routing
+     ^
+
+[391/413] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[392/413] r1 R1(config)# no service password-encryption
+<empty>
+
+[393/413] r1 R1(config)# service password-encryption
+<empty>
+
+[394/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[395/413] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[396/413] r1 R1(config-if)# shutdown
+<empty>
+
+[397/413] r1 R1(config-if)# no shutdown
+<empty>
+
+[398/413] r1 R1(config-if)# exit
+<empty>
+
+[399/413] r1 R1(config)# router ospf 1
+<empty>
+
+[400/413] r1 R1(config-router)# do show ip protocols
+  No routing protocol is configured.
+
+[401/413] r1 R1(config-router)# exit
+<empty>
+
+[402/413] r1 R1(config)# line vty 0 4
+<empty>
+
+[403/413] r1 R1(config-line)# exit
+<empty>
+
+[404/413] r1 R1(config)# end
+<empty>
+
+
+--- [405] § regression: context help ---
+[405/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[406/413] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[407/413] r1 R1(config)# ip ?
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[408/413] r1 R1(config)# router ?
+    rip   Enter RIP routing protocol configuration
+    ospf  Enter OSPF routing protocol configuration
+
+[409/413] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[410/413] r1 R1(config)# no ?
+    hostname     Reset hostname
+    ip           ip
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    access-list  Remove an access list
+    crypto       crypto
+
+[411/413] r1 R1(config)# end
+<empty>
+
+[412/413] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+
+[413/413] r1 R1# write memory
+  Building configuration...
+  [OK]
