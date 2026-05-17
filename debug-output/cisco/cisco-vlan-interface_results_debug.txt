@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-vlan-interface
-Generated: 2026-05-17T06:16:49.890Z
+Generated: 2026-05-17T06:21:43.182Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=L2 VLAN lifecycle, access/trunk, voice, port-security, etherchannel
 Total steps: 64
@@ -14,9 +14,7 @@ Total steps: 64
   1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
 
 [2/64] sw SW1(config)# enable
-  % Invalid input detected at '^' marker.
-  enable
-  ^
+  % Incomplete command.
 
 [3/64] sw SW1(config)# show vlan
   VLAN Name                             Status    Ports

@@ -1,6 +1,6 @@
 ============================================================
 Cisco switch debug transcript — cisco-stp-security
-Generated: 2026-05-17T06:16:50.380Z
+Generated: 2026-05-17T06:21:43.676Z
 Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
 focus=STP/MST, port-security, DHCP snooping, ACL, AAA/SSH, SNMP
 Total steps: 74
@@ -44,9 +44,7 @@ Total steps: 74
   Gi0/1            Desg  FWD  19        128.01    P2p
 
 [2/74] sw SW1(config)# enable
-  % Invalid input detected at '^' marker.
-  enable
-  ^
+  % Incomplete command.
 
 [3/74] sw SW1(config)# show spanning-tree summary
   Switch is in pvst mode
@@ -233,14 +231,15 @@ Total steps: 74
 <empty>
 
 [42/74] sw SW-SEC(config)# do show port-security
-  % Invalid input detected at '^' marker.
-  show port-security
-       ^
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+  ------------------------------------------------------------------------------
 
 [43/74] sw SW-SEC(config)# do show port-security interface FastEthernet0/2
-  % Invalid input detected at '^' marker.
-  show port-security interface FastEthernet0/2
-       ^
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Shutdown
+  Maximum MAC Addresses      : 1
+  Total MAC Addresses        : 0
 
 
 --- [44] § DHCP snooping / DAI / storm ---
@@ -257,9 +256,7 @@ Total steps: 74
 <empty>
 
 [48/74] sw SW-SEC(config-if)# ip arp inspection trust
-  % Invalid input detected at '^' marker.
-  ip arp inspection trust
-     ^
+<empty>
 
 [49/74] sw SW-SEC(config-if)# storm-control broadcast level 10.00
 <empty>
@@ -274,9 +271,7 @@ Total steps: 74
 <empty>
 
 [53/74] sw SW-SEC(config)# ip arp inspection vlan 10
-  % Invalid input detected at '^' marker.
-  ip arp inspection vlan 10
-     ^
+<empty>
 
 [54/74] sw SW-SEC(config)# do show ip dhcp snooping
   Switch DHCP snooping is enabled
@@ -287,92 +282,66 @@ Total steps: 74
 
 --- [55] § ACL ---
 [55/74] sw SW-SEC(config)# access-list 10 permit 10.0.0.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  access-list 10 permit 10.0.0.0 0.0.0.255
-  ^
-
-[56/74] sw SW-SEC(config)# ip access-list extended BLOCK
-  % Invalid input detected at '^' marker.
-  ip access-list extended BLOCK
-     ^
-
-[57/74] sw SW-SEC(config)# permit ip 192.168.10.0 0.0.0.255 any
-  % Invalid input detected at '^' marker.
-  permit ip 192.168.10.0 0.0.0.255 any
-  ^
-
-[58/74] sw SW-SEC(config)# deny ip any any
-  % Invalid input detected at '^' marker.
-  deny ip any any
-  ^
-
-[59/74] sw SW-SEC(config)# exit
 <empty>
 
-[60/74] sw SW-SEC# do show access-lists
-  % Invalid input detected at '^' marker.
-  do show access-lists
-  ^
+[56/74] sw SW-SEC(config)# ip access-list extended BLOCK
+<empty>
+
+[57/74] sw SW-SEC(config-ext-nacl)# permit ip 192.168.10.0 0.0.0.255 any
+<empty>
+
+[58/74] sw SW-SEC(config-ext-nacl)# deny ip any any
+<empty>
+
+[59/74] sw SW-SEC(config-ext-nacl)# exit
+<empty>
+
+[60/74] sw SW-SEC(config)# do show access-lists
+  Standard IP access list 10
+      access-list 10 permit 10.0.0.0 0.0.0.255
+  Extended IP access list BLOCK
+      permit ip 192.168.10.0 0.0.0.255 any
+      deny ip any any
 
 
 --- [61] § AAA / SSH / SNMP ---
 [61/74] sw SW-SEC(config)# username admin privilege 15 secret cisco
-  % Invalid input detected at '^' marker.
-  username admin privilege 15 secret cisco
-  ^
+<empty>
 
 [62/74] sw SW-SEC(config)# enable secret cisco
-  % Invalid input detected at '^' marker.
-  enable secret cisco
-  ^
+<empty>
 
 [63/74] sw SW-SEC(config)# aaa new-model
-  % Invalid input detected at '^' marker.
-  aaa new-model
-  ^
+<empty>
 
 [64/74] sw SW-SEC(config)# ip domain-name lab.local
 <empty>
 
 [65/74] sw SW-SEC(config)# crypto key generate rsa modulus 2048
-  % Invalid input detected at '^' marker.
-  crypto key generate rsa modulus 2048
-  ^
-
-[66/74] sw SW-SEC(config)# line vty 0 4
-  % Invalid input detected at '^' marker.
-  line vty 0 4
-  ^
-
-[67/74] sw SW-SEC(config)# transport input ssh
-  % Invalid input detected at '^' marker.
-  transport input ssh
-  ^
-
-[68/74] sw SW-SEC(config)# login local
-  % Invalid input detected at '^' marker.
-  login local
-  ^
-
-[69/74] sw SW-SEC(config)# exit
 <empty>
 
-[70/74] sw SW-SEC# snmp-server community public RO
-  % Invalid input detected at '^' marker.
-  snmp-server community public RO
-  ^
+[66/74] sw SW-SEC(config)# line vty 0 4
+<empty>
 
-[71/74] sw SW-SEC# ntp server 10.0.0.1
-  % Invalid input detected at '^' marker.
-  ntp server 10.0.0.1
-  ^
+[67/74] sw SW-SEC(config-line)# transport input ssh
+<empty>
 
-[72/74] sw SW-SEC# logging host 10.0.0.251
-  % Invalid input detected at '^' marker.
-  logging host 10.0.0.251
-  ^
+[68/74] sw SW-SEC(config-line)# login local
+<empty>
 
-[73/74] sw SW-SEC# end
+[69/74] sw SW-SEC(config-line)# exit
+<empty>
+
+[70/74] sw SW-SEC(config)# snmp-server community public RO
+<empty>
+
+[71/74] sw SW-SEC(config)# ntp server 10.0.0.1
+<empty>
+
+[72/74] sw SW-SEC(config)# logging host 10.0.0.251
+<empty>
+
+[73/74] sw SW-SEC(config)# end
 <empty>
 
 [74/74] sw SW-SEC# show running-config

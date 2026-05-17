@@ -42,6 +42,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected privilegedTrie = new CommandTrie();
   protected configTrie = new CommandTrie();
   protected configIfTrie = new CommandTrie();
+  /** Shared `line …` sub-mode trie (switch + router). */
+  protected configLineTrie = new CommandTrie();
 
   // ─── Abstract hooks (Template Method) ───────────────────────────
 
@@ -293,6 +295,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('logging', 'Logging configuration', () => '');
     this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
+
+    // Management commands missing on BOTH switch & router → shared here
+    // (DRY). Recognised; the sim has no AAA/crypto datapath.
+    this.configTrie.registerGreedy('aaa', 'AAA configuration', () => '');
+    this.configTrie.registerGreedy('enable secret', 'Set enable secret', () => '');
+    this.configTrie.registerGreedy('enable password', 'Set enable password', () => '');
+    this.configTrie.registerGreedy('username', 'Configure a local user', () => '');
+    this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');
+    this.configTrie.registerGreedy('service', 'Service configuration', () => '');
+    this.configTrie.registerGreedy('no service', 'Disable a service', () => '');
+    this.configTrie.registerGreedy('login', 'Login configuration', () => '');
+    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
+
+    // `line {console|vty|aux} …` → shared config-line sub-mode.
+    this.configTrie.registerGreedy('line', 'Enter line configuration', () => {
+      this.mode = 'config-line';
+      return '';
+    });
+    for (const kw of ['transport', 'login', 'password', 'exec-timeout',
+      'logging', 'access-class', 'privilege', 'no', 'speed', 'stopbits',
+      'session-timeout', 'history', 'length', 'width', 'authorization',
+      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
+      this.configLineTrie.registerGreedy(kw, `line ${kw}`, () => '');
+    }
 
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());

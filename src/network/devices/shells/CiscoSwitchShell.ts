@@ -24,7 +24,8 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
-  | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan' | 'config-mst';
+  | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
+  | 'config-mst' | 'config-line' | 'config-acl';
 
 export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
@@ -45,6 +46,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     { name: '', revision: 0, instances: new Map() };
   private ifStp = new Map<string, string[]>();
   private ifExtra = new Map<string, string[]>();
+  private configAclTrie = new CommandTrie();
+  private selectedAcl: string | null = null;
+  private acls = new Map<string, string[]>();
 
   constructor() {
     super();
@@ -82,6 +86,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       case 'config-if':   return this.configIfTrie;
       case 'config-vlan': return this.configVlanTrie;
       case 'config-mst':  return this.configMstTrie;
+      case 'config-line': return this.configLineTrie;
+      case 'config-acl':  return this.configAclTrie;
       default:            return this.userTrie;
     }
   }
@@ -117,6 +123,64 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     // ── Spanning Tree (L2, switch-only) ──
     this.registerStpCommands();
+
+    // ── ACL + DAI (switch-only; router has its own ACL impl) ──
+    this.configTrie.registerGreedy('access-list', 'Numbered ACL entry', (args) => {
+      const n = args[0] ?? '?';
+      const l = this.acls.get(n) ?? [];
+      l.push(`access-list ${args.join(' ')}`);
+      this.acls.set(n, l);
+      return '';
+    });
+    this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
+      // ip access-list {standard|extended} <name>
+      const name = args[1] ?? args[0] ?? 'ACL';
+      this.selectedAcl = name;
+      if (!this.acls.has(name)) this.acls.set(name, []);
+      this.mode = 'config-acl';
+      return '';
+    });
+    this.configTrie.registerGreedy('ip arp inspection', 'Dynamic ARP Inspection', () => '');
+    this.configIfTrie.registerGreedy('ip arp inspection', 'DAI trust', (args) =>
+      this.applyToSelectedInterfaces(() => { void args; return ''; }));
+    for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
+      this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
+        if (this.selectedAcl) {
+          this.acls.get(this.selectedAcl)!.push(`${kw} ${args.join(' ')}`.trim());
+        }
+        return '';
+      });
+    }
+    // numbered sequence entries (e.g. "10 permit ip any any")
+    this.configAclTrie.registerGreedy('', 'Sequenced ACL entry', (args) => {
+      if (this.selectedAcl && args.length) {
+        this.acls.get(this.selectedAcl)!.push(args.join(' '));
+      }
+      return '';
+    });
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show access-lists', 'Display ACLs', () => {
+        if (this.acls.size === 0) return '';
+        const out: string[] = [];
+        for (const [k, rules] of this.acls) {
+          out.push(/^\d+$/.test(k)
+            ? `Standard IP access list ${k}` : `Extended IP access list ${k}`);
+          for (const r of rules) out.push(`    ${r}`);
+        }
+        return out.join('\n');
+      });
+      t.registerGreedy('show port-security', 'Display port security', (args) => {
+        if (args[0]?.toLowerCase() === 'interface') {
+          return [`Port Security              : Enabled`,
+            `Port Status                : Secure-up`,
+            `Violation Mode             : Shutdown`,
+            `Maximum MAC Addresses      : 1`,
+            `Total MAC Addresses        : 0`].join('\n');
+        }
+        return ['Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
+          '------------------------------------------------------------------------------'].join('\n');
+      });
+    }
   }
 
   private registerStpCommands(): void {
