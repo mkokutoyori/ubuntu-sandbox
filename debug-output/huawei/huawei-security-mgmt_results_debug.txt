@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T05:34:54.849Z
+Generated: 2026-05-17T05:41:03.575Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
@@ -161,7 +161,8 @@ Total steps: 90
 <empty>
 
 [36/90] sw <SW-SEC> display port-security
-  Error: Unrecognized command "display port-security"
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
 
 
 --- [37] § DHCP snooping / IPSG / DAI ---
@@ -169,10 +170,10 @@ Total steps: 90
   Enter system view, return user view with return command.
 
 [38/90] sw [SW-SEC] dhcp enable
-  Error: Unrecognized command "dhcp enable"
+<empty>
 
 [39/90] sw [SW-SEC] dhcp snooping enable
-  Error: Unrecognized command "dhcp snooping enable"
+<empty>
 
 [40/90] sw [SW-SEC] interface GigabitEthernet0/0/1
 <empty>
@@ -196,7 +197,11 @@ Total steps: 90
 <empty>
 
 [47/90] sw <SW-SEC> display dhcp snooping
-  Error: Unrecognized command "display dhcp snooping"
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
 
 
 --- [48] § ACL ---
@@ -239,49 +244,59 @@ Total steps: 90
   Enter system view, return user view with return command.
 
 [60/90] sw [SW-SEC] aaa
-  Error: Unrecognized command "aaa"
-
-[61/90] sw [SW-SEC] local-user admin password irreversible-cipher Huawei@123
-  Error: Unrecognized command "local-user admin password irreversible-cipher Huawei@123"
-
-[62/90] sw [SW-SEC] local-user admin privilege level 15
-  Error: Unrecognized command "local-user admin privilege level 15"
-
-[63/90] sw [SW-SEC] local-user admin service-type ssh telnet terminal
-  Error: Unrecognized command "local-user admin service-type ssh telnet terminal"
-
-[64/90] sw [SW-SEC] quit
 <empty>
 
-[65/90] sw <SW-SEC> stelnet server enable
-  Error: Unrecognized command "stelnet server enable"
-
-[66/90] sw <SW-SEC> ssh user admin authentication-type password
-  Error: Unrecognized command "ssh user admin authentication-type password"
-
-[67/90] sw <SW-SEC> user-interface vty 0 4
-  Error: Unrecognized command "user-interface vty 0 4"
-
-[68/90] sw <SW-SEC> authentication-mode aaa
-  Error: Unrecognized command "authentication-mode aaa"
-
-[69/90] sw <SW-SEC> protocol inbound ssh
-  Error: Unrecognized command "protocol inbound ssh"
-
-[70/90] sw <SW-SEC> quit
+[61/90] sw [SW-SEC-aaa] local-user admin password irreversible-cipher Huawei@123
 <empty>
 
-[71/90] sw <SW-SEC> telnet server enable
-  Error: Unrecognized command "telnet server enable"
+[62/90] sw [SW-SEC-aaa] local-user admin privilege level 15
+<empty>
 
-[72/90] sw <SW-SEC> return
+[63/90] sw [SW-SEC-aaa] local-user admin service-type ssh telnet terminal
+<empty>
+
+[64/90] sw [SW-SEC-aaa] quit
+<empty>
+
+[65/90] sw [SW-SEC] stelnet server enable
+<empty>
+
+[66/90] sw [SW-SEC] ssh user admin authentication-type password
+<empty>
+
+[67/90] sw [SW-SEC] user-interface vty 0 4
+<empty>
+
+[68/90] sw [SW-SEC-ui-vty0-4] authentication-mode aaa
+<empty>
+
+[69/90] sw [SW-SEC-ui-vty0-4] protocol inbound ssh
+<empty>
+
+[70/90] sw [SW-SEC-ui-vty0-4] quit
+<empty>
+
+[71/90] sw [SW-SEC] telnet server enable
+<empty>
+
+[72/90] sw [SW-SEC] return
 <empty>
 
 [73/90] sw <SW-SEC> display ssh server status
-  Error: Unrecognized command "display ssh server status"
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
 
 [74/90] sw <SW-SEC> display local-user
-  Error: Unrecognized command "display local-user"
+    ----------------------------------------------------------------------
+    User-name                State  AuthMask  AdminLevel
+    ----------------------------------------------------------------------
+    admin                   A      ssh,telnet,terminal 15
+    ----------------------------------------------------------------------
+    Total 1 user(s)
 
 
 --- [75] § SNMP / NTP / syslog / sFlow ---
@@ -289,37 +304,45 @@ Total steps: 90
   Enter system view, return user view with return command.
 
 [76/90] sw [SW-SEC] snmp-agent sys-info version v2c v3
-  Error: Unrecognized command "snmp-agent sys-info version v2c v3"
+<empty>
 
 [77/90] sw [SW-SEC] snmp-agent community read cipher public
-  Error: Unrecognized command "snmp-agent community read cipher public"
+<empty>
 
 [78/90] sw [SW-SEC] snmp-agent target-host trap address udp-domain 10.0.0.250 params securityname public
-  Error: Unrecognized command "snmp-agent target-host trap address udp-domain 10.0.0.250 params securityname public"
+<empty>
 
 [79/90] sw [SW-SEC] ntp-service unicast-server 10.0.0.1
-  Error: Unrecognized command "ntp-service unicast-server 10.0.0.1"
+<empty>
 
 [80/90] sw [SW-SEC] clock timezone UTC add 00:00
-  Error: Unrecognized command "clock timezone UTC add 00:00"
+<empty>
 
 [81/90] sw [SW-SEC] info-center enable
-  Error: Unrecognized command "info-center enable"
+<empty>
 
 [82/90] sw [SW-SEC] info-center loghost 10.0.0.251
-  Error: Unrecognized command "info-center loghost 10.0.0.251"
+<empty>
 
 [83/90] sw [SW-SEC] sflow collector 1 ip 10.0.0.252
-  Error: Unrecognized command "sflow collector 1 ip 10.0.0.252"
+<empty>
 
 [84/90] sw [SW-SEC] return
 <empty>
 
 [85/90] sw <SW-SEC> display snmp-agent sys-info
-  Error: Unrecognized command "display snmp-agent sys-info"
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
 
 [86/90] sw <SW-SEC> display ntp-service status
-  Error: Unrecognized command "display ntp-service status"
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
 
 
 --- [87] § save / backup ---

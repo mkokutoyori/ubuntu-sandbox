@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-cli-basics
-Generated: 2026-05-17T05:34:54.318Z
+Generated: 2026-05-17T05:41:03.103Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=VRP user/system-view navigation, help, abbreviations, undo
 Total steps: 70
@@ -19,7 +19,7 @@ Total steps: 70
   SW1 uptime is 0 days, 0 hours, 0 minutes
 
 [2/70] sw <SW1> display clock
-  2026-05-17 05:34:54
+  2026-05-17 05:41:03
   Sunday
   Time Zone(UTC) : UTC
 
@@ -47,13 +47,13 @@ Total steps: 70
 [6/70] sw <SW1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-17 05:34:54
+  CPU Usage Stat. Time : 2026-05-17 05:41:03
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [7/70] sw <SW1> display memory-usage
-  Memory utilization statistics at 2026-05-17 05:34:54
+  Memory utilization statistics at 2026-05-17 05:41:03
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -321,18 +321,18 @@ Total steps: 70
 <empty>
 
 [19/70] sw [SW-CORE] user-interface console 0
-  Error: Unrecognized command "user-interface console 0"
-
-[20/70] sw [SW-CORE] quit
 <empty>
 
-[21/70] sw <SW-CORE> aaa
-  Error: Unrecognized command "aaa"
-
-[22/70] sw <SW-CORE> quit
+[20/70] sw [SW-CORE-ui-console0] quit
 <empty>
 
-[23/70] sw <SW-CORE> return
+[21/70] sw [SW-CORE] aaa
+<empty>
+
+[22/70] sw [SW-CORE-aaa] quit
+<empty>
+
+[23/70] sw [SW-CORE] return
 <empty>
 
 [24/70] sw <SW-CORE> display current-configuration
@@ -522,7 +522,7 @@ Total steps: 70
   SW-EDGE uptime is 0 days, 0 hours, 0 minutes
 
 [31/70] sw <SW-EDGE> dis clock
-  2026-05-17 05:34:54
+  2026-05-17 05:41:03
   Sunday
   Time Zone(UTC) : UTC
 
@@ -553,6 +553,12 @@ Total steps: 70
     patch-information       Display patch information
     diagnostic-information  Collect diagnostic information
     stp                     Display STP status
+    local-user              Display local users
+    ssh                     Display SSH server status
+    snmp-agent              Display SNMP agent info
+    ntp-service             Display NTP status
+    dhcp                    Display DHCP snooping
+    port-security           Display port security
     eth-trunk               Display Eth-Trunk information
     counters                Display interface counters
 
@@ -600,7 +606,7 @@ Total steps: 70
   Error: Unrecognized command "undo sysname"
 
 [43/70] sw [TEMP] info-center enable
-  Error: Unrecognized command "info-center enable"
+<empty>
 
 [44/70] sw [TEMP] undo info-center enable
   Error: Unrecognized command "undo info-center enable"
@@ -739,7 +745,7 @@ Total steps: 70
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-17 05:34:54 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-17 05:41:03 %01SRM/4/PORT_STATE: Port state changed.
 
 [60/70] sw <TEMP> display trapbuffer
   Trapping buffer configuration and contents: enabled

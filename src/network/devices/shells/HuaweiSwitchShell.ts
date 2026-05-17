@@ -24,9 +24,13 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import {
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+} from './huawei/HuaweiCommonSecurity';
 
 type VRPSwitchMode =
-  | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group';
+  | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
+  | 'aaa' | 'user-interface';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -40,6 +44,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private vlanTrie = new CommandTrie();
   private mstRegionTrie = new CommandTrie();
   private portGroupTrie = new CommandTrie();
+  private aaaTrie = new CommandTrie();
+  private userIfTrie = new CommandTrie();
+  private uiLabel = '';
+  private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
   private history: string[] = [];
@@ -81,6 +89,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildVlanCommands();
     this.buildMstRegionCommands();
     this.buildPortGroupCommands();
+    this.buildAaaCommands();
+    this.buildUserInterfaceCommands();
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -94,6 +104,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'vlan':      return `[${host}-vlan${this.selectedVlan}]`;
       case 'mst-region': return `[${host}-mst-region]`;
       case 'port-group': return `[${host}-port-group]`;
+      case 'aaa':       return `[${host}-aaa]`;
+      case 'user-interface': return `[${host}-ui-${this.uiLabel}]`;
       default:          return `<${host}>`;
     }
   }
@@ -202,6 +214,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'system';
         this.portGroupMembers = null;
         return '';
+      case 'aaa':
+      case 'user-interface':
+        this.mode = 'system';
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -220,6 +236,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'vlan':      return this.vlanTrie;
       case 'mst-region': return this.mstRegionTrie;
       case 'port-group': return this.portGroupTrie;
+      case 'aaa':       return this.aaaTrie;
+      case 'user-interface': return this.userIfTrie;
       default:          return this.userTrie;
     }
   }
@@ -289,6 +307,33 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.mode = 'port-group';
       return '';
     });
+
+    // aaa → AAA view
+    this.systemTrie.register('aaa', 'Enter AAA view', () => {
+      this.mode = 'aaa';
+      return '';
+    });
+
+    // user-interface {console <n> | vty <first> [last] | maxvty …} → UI view
+    this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
+      if (args.length === 0) return 'Error: Incomplete command.';
+      if (args[0].toLowerCase() === 'maxvty') return ''; // global setting, no view
+      const type = args[0].toLowerCase();
+      const first = args[1] ?? '0';
+      const last = args[2];
+      this.uiLabel = `${type}${first}${last ? `-${last}` : ''}`;
+      this.mode = 'user-interface';
+      return '';
+    });
+
+    // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
+    registerHuaweiCommonSecurity(this.systemTrie);
+
+    // Switch-only L2 security (no router equivalent → no shadow risk)
+    this.systemTrie.register('dhcp enable', 'Enable DHCP', () => '');
+    this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', () => '');
+    this.systemTrie.registerGreedy('arp anti-attack', 'ARP anti-attack configuration', () => '');
+    this.systemTrie.registerGreedy('ip source', 'IP source guard configuration', () => '');
 
     // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
@@ -562,6 +607,38 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `port-group group-member ${this.portGroupMembers ?? ''}`.trim());
   }
 
+  /** AAA sub-view ([host-aaa]) — local-user / scheme / domain. */
+  private buildAaaCommands(): void {
+    const t = this.aaaTrie;
+    t.registerGreedy('local-user', 'Configure a local user', (args) => {
+      if (args.length < 2) return 'Error: Incomplete command.';
+      const name = args[0];
+      const u = this.localUsers.get(name) ?? {};
+      const kw = args[1].toLowerCase();
+      if (kw === 'password') u.password = '******';
+      else if (kw === 'privilege') u.privilege = args[args.length - 1];
+      else if (kw === 'service-type') u.serviceType = args.slice(2).join(',');
+      this.localUsers.set(name, u);
+      return '';
+    });
+    for (const kw of ['authentication-scheme', 'authorization-scheme',
+      'accounting-scheme', 'domain', 'undo']) {
+      t.registerGreedy(kw, `aaa ${kw}`, () => '');
+    }
+  }
+
+  /** user-interface sub-view ([host-ui-…]) — auth-mode / protocol / etc. */
+  private buildUserInterfaceCommands(): void {
+    const t = this.userIfTrie;
+    for (const kw of ['authentication-mode', 'protocol', 'user',
+      'idle-timeout', 'screen-length', 'history-command', 'shell',
+      'acl', 'set', 'undo', 'authorization-mode']) {
+      t.registerGreedy(kw, `user-interface ${kw}`, () => '');
+    }
+    t.register('display this', 'Display user-interface configuration', () =>
+      `user-interface ${this.uiLabel.replace(/(\D)(\d)/, '$1 $2')}`);
+  }
+
   // ─── Shared Display Commands ──────────────────────────────────────
 
   private registerDisplayCommands(trie: CommandTrie): void {
@@ -705,6 +782,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // STP display family (switch-only).
     this.registerStpDisplay(trie);
+
+    // Shared management `display` commands (DRY).
+    registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers);
 
     // Eth-Trunk + counters.
     trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
