@@ -1,0 +1,405 @@
+============================================================
+Cisco switch debug transcript — cisco-vlan-interface
+Generated: 2026-05-17T06:02:23.597Z
+Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
+focus=L2 VLAN lifecycle, access/trunk, voice, port-security, etherchannel
+Total steps: 64
+============================================================
+
+
+--- [1] § baseline ---
+[1/64] sw SW1(config)# show vlan brief
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+
+[2/64] sw SW1(config)# enable
+  % Invalid input detected at '^' marker.
+  enable
+  ^
+
+[3/64] sw SW1(config)# show vlan
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+
+[4/64] sw SW1(config)# configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[5/64] sw SW1(config)# hostname SW-VLAN
+<empty>
+
+
+--- [6] § VLAN lifecycle ---
+[6/64] sw SW-VLAN(config)# vlan 10
+<empty>
+
+[7/64] sw SW-VLAN(config-vlan)# name SALES
+<empty>
+
+[8/64] sw SW-VLAN(config-vlan)# exit
+<empty>
+
+[9/64] sw SW-VLAN(config)# vlan 20
+<empty>
+
+[10/64] sw SW-VLAN(config-vlan)# name ENG
+<empty>
+
+[11/64] sw SW-VLAN(config-vlan)# exit
+<empty>
+
+[12/64] sw SW-VLAN(config)# do show vlan brief
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  10   SALES                            active    
+  20   ENG                              active    
+
+[13/64] sw SW-VLAN(config)# no vlan 20
+<empty>
+
+[14/64] sw SW-VLAN(config)# do show vlan brief
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  10   SALES                            active    
+
+[15/64] sw SW-VLAN(config)# vlan 100,200,300
+<empty>
+
+[16/64] sw SW-VLAN(config-vlan)# vlan 30-35
+  % Invalid input detected at '^' marker.
+  vlan 30-35
+  ^
+
+[17/64] sw SW-VLAN(config-vlan)# do show vlan brief
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  10   SALES                            active    
+  100  VLAN0100                         active    
+
+
+--- [18] § access ports ---
+[18/64] sw SW-VLAN(config)# interface FastEthernet0/1
+<empty>
+
+[19/64] sw SW-VLAN(config-if)# switchport mode access
+<empty>
+
+[20/64] sw SW-VLAN(config-if)# switchport access vlan 10
+<empty>
+
+[21/64] sw SW-VLAN(config-if)# do show running-config interface FastEthernet0/1
+  % Invalid input detected at '^' marker.
+  show running-config interface FastEthernet0/1
+                      ^
+
+[22/64] sw SW-VLAN(config-if)# exit
+<empty>
+
+[23/64] sw SW-VLAN(config)# interface range FastEthernet0/3 - 8
+<empty>
+
+[24/64] sw SW-VLAN(config-if)# switchport mode access
+<empty>
+
+[25/64] sw SW-VLAN(config-if)# switchport access vlan 10
+<empty>
+
+[26/64] sw SW-VLAN(config-if)# exit
+<empty>
+
+
+--- [27] § trunk ports ---
+[27/64] sw SW-VLAN(config)# interface GigabitEthernet0/1
+<empty>
+
+[28/64] sw SW-VLAN(config-if)# switchport trunk encapsulation dot1q
+  % Invalid input detected at '^' marker.
+  switchport trunk encapsulation dot1q
+                   ^
+
+[29/64] sw SW-VLAN(config-if)# switchport mode trunk
+<empty>
+
+[30/64] sw SW-VLAN(config-if)# switchport trunk allowed vlan 10,20,100
+<empty>
+
+[31/64] sw SW-VLAN(config-if)# switchport trunk allowed vlan add 200
+<empty>
+
+[32/64] sw SW-VLAN(config-if)# switchport trunk native vlan 99
+<empty>
+
+[33/64] sw SW-VLAN(config-if)# switchport nonegotiate
+  % Invalid input detected at '^' marker.
+  switchport nonegotiate
+             ^
+
+[34/64] sw SW-VLAN(config-if)# do show interfaces trunk
+  % Invalid input detected at '^' marker.
+  show interfaces trunk
+                  ^
+
+[35/64] sw SW-VLAN(config-if)# exit
+<empty>
+
+
+--- [36] § voice / portfast / port-security ---
+[36/64] sw SW-VLAN(config)# interface FastEthernet0/2
+<empty>
+
+[37/64] sw SW-VLAN(config-if)# switchport mode access
+<empty>
+
+[38/64] sw SW-VLAN(config-if)# switchport access vlan 10
+<empty>
+
+[39/64] sw SW-VLAN(config-if)# switchport voice vlan 50
+  % Invalid input detected at '^' marker.
+  switchport voice vlan 50
+             ^
+
+[40/64] sw SW-VLAN(config-if)# spanning-tree portfast
+  % Invalid input detected at '^' marker.
+  spanning-tree portfast
+  ^
+
+[41/64] sw SW-VLAN(config-if)# switchport port-security
+  % Invalid input detected at '^' marker.
+  switchport port-security
+             ^
+
+[42/64] sw SW-VLAN(config-if)# switchport port-security maximum 2
+  % Invalid input detected at '^' marker.
+  switchport port-security maximum 2
+             ^
+
+[43/64] sw SW-VLAN(config-if)# switchport port-security violation shutdown
+  % Invalid input detected at '^' marker.
+  switchport port-security violation shutdown
+             ^
+
+[44/64] sw SW-VLAN(config-if)# switchport port-security mac-address sticky
+  % Invalid input detected at '^' marker.
+  switchport port-security mac-address sticky
+             ^
+
+[45/64] sw SW-VLAN(config-if)# exit
+<empty>
+
+
+--- [46] § etherchannel ---
+[46/64] sw SW-VLAN(config)# interface range FastEthernet0/21 - 22
+<empty>
+
+[47/64] sw SW-VLAN(config-if)# channel-group 1 mode active
+  % Invalid input detected at '^' marker.
+  channel-group 1 mode active
+  ^
+
+[48/64] sw SW-VLAN(config-if)# exit
+<empty>
+
+[49/64] sw SW-VLAN(config)# interface Port-channel1
+  % Invalid interface name "Port-channel1"
+
+[50/64] sw SW-VLAN(config)# switchport mode trunk
+  % Invalid input detected at '^' marker.
+  switchport mode trunk
+  ^
+
+[51/64] sw SW-VLAN(config)# exit
+<empty>
+
+[52/64] sw SW-VLAN# do show etherchannel summary
+  % Invalid input detected at '^' marker.
+  do show etherchannel summary
+  ^
+
+
+--- [53] § L3 on L2 switch (expect rejected) ---
+[53/64] sw SW-VLAN(config)# interface Vlan10
+  % Invalid interface name "Vlan10"
+
+[54/64] sw SW-VLAN(config)# ip address 192.168.10.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 192.168.10.1 255.255.255.0
+     ^
+
+[55/64] sw SW-VLAN(config)# exit
+<empty>
+
+[56/64] sw SW-VLAN# ip routing
+  % Invalid input detected at '^' marker.
+  ip routing
+  ^
+
+[57/64] sw SW-VLAN# do show ip route
+  % Invalid input detected at '^' marker.
+  do show ip route
+  ^
+
+[58/64] sw SW-VLAN# end
+<empty>
+
+
+--- [59] § inspection ---
+[59/64] sw SW-VLAN(config)# show vlan
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    Fa0/0, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
+  10   SALES                            active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8
+  100  VLAN0100                         active    
+
+[60/64] sw SW-VLAN(config)# show interfaces status
+  Port        Name               Status       Vlan       Duplex  Speed Type
+  ----------  -----------------  -----------  ---------  ------  ----- ----
+  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/1                          connected    10         a-full  a-100 10/100BaseTX
+  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
+  Fa0/3                          connected    10         a-full  a-100 10/100BaseTX
+  Fa0/4                          notconnect   10         a-full  a-100 10/100BaseTX
+  Fa0/5                          notconnect   10         a-full  a-100 10/100BaseTX
+  Fa0/6                          notconnect   10         a-full  a-100 10/100BaseTX
+  Fa0/7                          notconnect   10         a-full  a-100 10/100BaseTX
+  Fa0/8                          notconnect   10         a-full  a-100 10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/10                         connected    1          a-full  a-100 10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
+  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
+  Gi0/1                          notconnect   trunk      a-full  a-10001000BASE-T
+
+[61/64] sw SW-VLAN(config)# show interfaces FastEthernet0/1 switchport
+  % Invalid input detected at '^' marker.
+  show interfaces FastEthernet0/1 switchport
+                  ^
+
+[62/64] sw SW-VLAN(config)# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  No entries.
+
+[63/64] sw SW-VLAN(config)# show mac address-table vlan 10
+  % Invalid input detected at '^' marker.
+  show mac address-table vlan 10
+                         ^
+
+[64/64] sw SW-VLAN(config)# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname SW-VLAN
+  !
+  vlan 10
+   name SALES
+  !
+  vlan 100
+   name VLAN0100
+  !
+  interface FastEthernet0/0
+   switchport mode access
+  !
+  interface FastEthernet0/1
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/2
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/3
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/4
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/5
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/6
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/7
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/8
+   switchport mode access
+   switchport access vlan 10
+  !
+  interface FastEthernet0/9
+   switchport mode access
+  !
+  interface FastEthernet0/10
+   switchport mode access
+  !
+  interface FastEthernet0/11
+   switchport mode access
+  !
+  interface FastEthernet0/12
+   switchport mode access
+  !
+  interface FastEthernet0/13
+   switchport mode access
+  !
+  interface FastEthernet0/14
+   switchport mode access
+  !
+  interface FastEthernet0/15
+   switchport mode access
+  !
+  interface FastEthernet0/16
+   switchport mode access
+  !
+  interface FastEthernet0/17
+   switchport mode access
+  !
+  interface FastEthernet0/18
+   switchport mode access
+  !
+  interface FastEthernet0/19
+   switchport mode access
+  !
+  interface FastEthernet0/20
+   switchport mode access
+  !
+  interface FastEthernet0/21
+   switchport mode access
+  !
+  interface FastEthernet0/22
+   switchport mode access
+  !
+  interface FastEthernet0/23
+   switchport mode access
+  !
+  interface GigabitEthernet0/0
+   switchport mode access
+  !
+  interface GigabitEthernet0/1
+   switchport mode trunk
+   switchport trunk native vlan 99
+   switchport trunk allowed vlan 10,20,100,200
+  !
+  end

@@ -1,0 +1,506 @@
+============================================================
+Cisco switch debug transcript — cisco-stp-security
+Generated: 2026-05-17T06:02:23.598Z
+Topology: SW1 (Cisco Catalyst, 26 ports) — L1(Linux) Fa0/1, W1(Windows) Fa0/2, L2(Linux) Fa0/3, W2(Windows) Fa0/10
+focus=STP/MST, port-security, DHCP snooping, ACL, AAA/SSH, SNMP
+Total steps: 74
+============================================================
+
+
+--- [1] § STP baseline ---
+[1/74] sw SW1(config)# show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     02:00:00:00:00:01
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Desg  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Desg  FWD  19        128.06    P2p
+  Fa0/7            Desg  FWD  19        128.07    P2p
+  Fa0/8            Desg  FWD  19        128.08    P2p
+  Fa0/9            Desg  FWD  19        128.09    P2p
+  Fa0/10           Desg  FWD  19        128.010   P2p
+  Fa0/11           Desg  FWD  19        128.011   P2p
+  Fa0/12           Desg  FWD  19        128.012   P2p
+  Fa0/13           Desg  FWD  19        128.013   P2p
+  Fa0/14           Desg  FWD  19        128.014   P2p
+  Fa0/15           Desg  FWD  19        128.015   P2p
+  Fa0/16           Desg  FWD  19        128.016   P2p
+  Fa0/17           Desg  FWD  19        128.017   P2p
+  Fa0/18           Desg  FWD  19        128.018   P2p
+  Fa0/19           Desg  FWD  19        128.019   P2p
+  Fa0/20           Desg  FWD  19        128.020   P2p
+  Fa0/21           Desg  FWD  19        128.021   P2p
+  Fa0/22           Desg  FWD  19        128.022   P2p
+  Fa0/23           Desg  FWD  19        128.023   P2p
+  Gi0/0            Desg  FWD  19        128.00    P2p
+  Gi0/1            Desg  FWD  19        128.01    P2p
+
+[2/74] sw SW1(config)# enable
+  % Invalid input detected at '^' marker.
+  enable
+  ^
+
+[3/74] sw SW1(config)# show spanning-tree summary
+  % Invalid input detected at '^' marker.
+  show spanning-tree summary
+                     ^
+
+[4/74] sw SW1(config)# configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[5/74] sw SW1(config)# hostname SW-SEC
+<empty>
+
+
+--- [6] § STP mode / priority / root ---
+[6/74] sw SW-SEC(config)# spanning-tree mode rapid-pvst
+  % Invalid input detected at '^' marker.
+  spanning-tree mode rapid-pvst
+  ^
+
+[7/74] sw SW-SEC(config)# spanning-tree mode mst
+  % Invalid input detected at '^' marker.
+  spanning-tree mode mst
+  ^
+
+[8/74] sw SW-SEC(config)# spanning-tree mode pvst
+  % Invalid input detected at '^' marker.
+  spanning-tree mode pvst
+  ^
+
+[9/74] sw SW-SEC(config)# spanning-tree vlan 10 priority 4096
+  % Invalid input detected at '^' marker.
+  spanning-tree vlan 10 priority 4096
+  ^
+
+[10/74] sw SW-SEC(config)# spanning-tree vlan 10 root primary
+  % Invalid input detected at '^' marker.
+  spanning-tree vlan 10 root primary
+  ^
+
+[11/74] sw SW-SEC(config)# spanning-tree vlan 20 root secondary
+  % Invalid input detected at '^' marker.
+  spanning-tree vlan 20 root secondary
+  ^
+
+[12/74] sw SW-SEC(config)# spanning-tree extend system-id
+  % Invalid input detected at '^' marker.
+  spanning-tree extend system-id
+  ^
+
+[13/74] sw SW-SEC(config)# spanning-tree portfast default
+  % Invalid input detected at '^' marker.
+  spanning-tree portfast default
+  ^
+
+[14/74] sw SW-SEC(config)# spanning-tree portfast bpduguard default
+  % Invalid input detected at '^' marker.
+  spanning-tree portfast bpduguard default
+  ^
+
+[15/74] sw SW-SEC(config)# spanning-tree loopguard default
+  % Invalid input detected at '^' marker.
+  spanning-tree loopguard default
+  ^
+
+[16/74] sw SW-SEC(config)# do show spanning-tree
+  VLAN0001
+    Spanning tree enabled protocol ieee
+    Root ID    Priority    32769
+               Address     02:00:00:00:00:01
+  
+  Interface        Role  Sts  Cost      Prio.Nbr  Type
+  ---------------- ----  ---  --------  --------  ----
+  Fa0/0            Desg  FWD  19        128.00    P2p
+  Fa0/1            Desg  FWD  19        128.01    P2p
+  Fa0/2            Desg  FWD  19        128.02    P2p
+  Fa0/3            Desg  FWD  19        128.03    P2p
+  Fa0/4            Desg  FWD  19        128.04    P2p
+  Fa0/5            Desg  FWD  19        128.05    P2p
+  Fa0/6            Desg  FWD  19        128.06    P2p
+  Fa0/7            Desg  FWD  19        128.07    P2p
+  Fa0/8            Desg  FWD  19        128.08    P2p
+  Fa0/9            Desg  FWD  19        128.09    P2p
+  Fa0/10           Desg  FWD  19        128.010   P2p
+  Fa0/11           Desg  FWD  19        128.011   P2p
+  Fa0/12           Desg  FWD  19        128.012   P2p
+  Fa0/13           Desg  FWD  19        128.013   P2p
+  Fa0/14           Desg  FWD  19        128.014   P2p
+  Fa0/15           Desg  FWD  19        128.015   P2p
+  Fa0/16           Desg  FWD  19        128.016   P2p
+  Fa0/17           Desg  FWD  19        128.017   P2p
+  Fa0/18           Desg  FWD  19        128.018   P2p
+  Fa0/19           Desg  FWD  19        128.019   P2p
+  Fa0/20           Desg  FWD  19        128.020   P2p
+  Fa0/21           Desg  FWD  19        128.021   P2p
+  Fa0/22           Desg  FWD  19        128.022   P2p
+  Fa0/23           Desg  FWD  19        128.023   P2p
+  Gi0/0            Desg  FWD  19        128.00    P2p
+  Gi0/1            Desg  FWD  19        128.01    P2p
+
+
+--- [17] § MST region ---
+[17/74] sw SW-SEC(config)# spanning-tree mst configuration
+  % Invalid input detected at '^' marker.
+  spanning-tree mst configuration
+  ^
+
+[18/74] sw SW-SEC(config)# name LAB
+  % Invalid input detected at '^' marker.
+  name LAB
+  ^
+
+[19/74] sw SW-SEC(config)# revision 1
+  % Invalid input detected at '^' marker.
+  revision 1
+  ^
+
+[20/74] sw SW-SEC(config)# instance 1 vlan 10
+  % Invalid input detected at '^' marker.
+  instance 1 vlan 10
+  ^
+
+[21/74] sw SW-SEC(config)# instance 2 vlan 20
+  % Invalid input detected at '^' marker.
+  instance 2 vlan 20
+  ^
+
+[22/74] sw SW-SEC(config)# show current
+  % Invalid input detected at '^' marker.
+  show current
+       ^
+
+[23/74] sw SW-SEC(config)# exit
+<empty>
+
+[24/74] sw SW-SEC# do show spanning-tree mst configuration
+  % Invalid input detected at '^' marker.
+  do show spanning-tree mst configuration
+  ^
+
+
+--- [25] § STP per-interface ---
+[25/74] sw SW-SEC(config)# interface FastEthernet0/1
+<empty>
+
+[26/74] sw SW-SEC(config-if)# spanning-tree portfast
+  % Invalid input detected at '^' marker.
+  spanning-tree portfast
+  ^
+
+[27/74] sw SW-SEC(config-if)# spanning-tree bpduguard enable
+  % Invalid input detected at '^' marker.
+  spanning-tree bpduguard enable
+  ^
+
+[28/74] sw SW-SEC(config-if)# spanning-tree bpdufilter enable
+  % Invalid input detected at '^' marker.
+  spanning-tree bpdufilter enable
+  ^
+
+[29/74] sw SW-SEC(config-if)# spanning-tree cost 19
+  % Invalid input detected at '^' marker.
+  spanning-tree cost 19
+  ^
+
+[30/74] sw SW-SEC(config-if)# spanning-tree port-priority 64
+  % Invalid input detected at '^' marker.
+  spanning-tree port-priority 64
+  ^
+
+[31/74] sw SW-SEC(config-if)# spanning-tree guard root
+  % Invalid input detected at '^' marker.
+  spanning-tree guard root
+  ^
+
+[32/74] sw SW-SEC(config-if)# exit
+<empty>
+
+[33/74] sw SW-SEC(config)# do show spanning-tree interface FastEthernet0/1
+  % Invalid input detected at '^' marker.
+  show spanning-tree interface FastEthernet0/1
+                     ^
+
+
+--- [34] § port-security ---
+[34/74] sw SW-SEC(config)# interface FastEthernet0/2
+<empty>
+
+[35/74] sw SW-SEC(config-if)# switchport mode access
+<empty>
+
+[36/74] sw SW-SEC(config-if)# switchport port-security
+  % Invalid input detected at '^' marker.
+  switchport port-security
+             ^
+
+[37/74] sw SW-SEC(config-if)# switchport port-security maximum 3
+  % Invalid input detected at '^' marker.
+  switchport port-security maximum 3
+             ^
+
+[38/74] sw SW-SEC(config-if)# switchport port-security violation restrict
+  % Invalid input detected at '^' marker.
+  switchport port-security violation restrict
+             ^
+
+[39/74] sw SW-SEC(config-if)# switchport port-security mac-address sticky
+  % Invalid input detected at '^' marker.
+  switchport port-security mac-address sticky
+             ^
+
+[40/74] sw SW-SEC(config-if)# switchport port-security aging time 5
+  % Invalid input detected at '^' marker.
+  switchport port-security aging time 5
+             ^
+
+[41/74] sw SW-SEC(config-if)# exit
+<empty>
+
+[42/74] sw SW-SEC(config)# do show port-security
+  % Invalid input detected at '^' marker.
+  show port-security
+       ^
+
+[43/74] sw SW-SEC(config)# do show port-security interface FastEthernet0/2
+  % Invalid input detected at '^' marker.
+  show port-security interface FastEthernet0/2
+       ^
+
+
+--- [44] § DHCP snooping / DAI / storm ---
+[44/74] sw SW-SEC(config)# ip dhcp snooping
+<empty>
+
+[45/74] sw SW-SEC(config)# ip dhcp snooping vlan 10,20
+<empty>
+
+[46/74] sw SW-SEC(config)# interface GigabitEthernet0/1
+<empty>
+
+[47/74] sw SW-SEC(config-if)# ip dhcp snooping trust
+<empty>
+
+[48/74] sw SW-SEC(config-if)# ip arp inspection trust
+  % Invalid input detected at '^' marker.
+  ip arp inspection trust
+     ^
+
+[49/74] sw SW-SEC(config-if)# storm-control broadcast level 10.00
+  % Invalid input detected at '^' marker.
+  storm-control broadcast level 10.00
+  ^
+
+[50/74] sw SW-SEC(config-if)# storm-control multicast level 5.00
+  % Invalid input detected at '^' marker.
+  storm-control multicast level 5.00
+  ^
+
+[51/74] sw SW-SEC(config-if)# storm-control action shutdown
+  % Invalid input detected at '^' marker.
+  storm-control action shutdown
+  ^
+
+[52/74] sw SW-SEC(config-if)# exit
+<empty>
+
+[53/74] sw SW-SEC(config)# ip arp inspection vlan 10
+  % Invalid input detected at '^' marker.
+  ip arp inspection vlan 10
+     ^
+
+[54/74] sw SW-SEC(config)# do show ip dhcp snooping
+  Switch DHCP snooping is enabled
+  DHCP snooping is configured on following VLANs:
+  10,20
+  Trusted ports: Gi0/1
+
+
+--- [55] § ACL ---
+[55/74] sw SW-SEC(config)# access-list 10 permit 10.0.0.0 0.0.0.255
+  % Invalid input detected at '^' marker.
+  access-list 10 permit 10.0.0.0 0.0.0.255
+  ^
+
+[56/74] sw SW-SEC(config)# ip access-list extended BLOCK
+  % Invalid input detected at '^' marker.
+  ip access-list extended BLOCK
+     ^
+
+[57/74] sw SW-SEC(config)# permit ip 192.168.10.0 0.0.0.255 any
+  % Invalid input detected at '^' marker.
+  permit ip 192.168.10.0 0.0.0.255 any
+  ^
+
+[58/74] sw SW-SEC(config)# deny ip any any
+  % Invalid input detected at '^' marker.
+  deny ip any any
+  ^
+
+[59/74] sw SW-SEC(config)# exit
+<empty>
+
+[60/74] sw SW-SEC# do show access-lists
+  % Invalid input detected at '^' marker.
+  do show access-lists
+  ^
+
+
+--- [61] § AAA / SSH / SNMP ---
+[61/74] sw SW-SEC(config)# username admin privilege 15 secret cisco
+  % Invalid input detected at '^' marker.
+  username admin privilege 15 secret cisco
+  ^
+
+[62/74] sw SW-SEC(config)# enable secret cisco
+  % Invalid input detected at '^' marker.
+  enable secret cisco
+  ^
+
+[63/74] sw SW-SEC(config)# aaa new-model
+  % Invalid input detected at '^' marker.
+  aaa new-model
+  ^
+
+[64/74] sw SW-SEC(config)# ip domain-name lab.local
+  % Invalid input detected at '^' marker.
+  ip domain-name lab.local
+     ^
+
+[65/74] sw SW-SEC(config)# crypto key generate rsa modulus 2048
+  % Invalid input detected at '^' marker.
+  crypto key generate rsa modulus 2048
+  ^
+
+[66/74] sw SW-SEC(config)# line vty 0 4
+  % Invalid input detected at '^' marker.
+  line vty 0 4
+  ^
+
+[67/74] sw SW-SEC(config)# transport input ssh
+  % Invalid input detected at '^' marker.
+  transport input ssh
+  ^
+
+[68/74] sw SW-SEC(config)# login local
+  % Invalid input detected at '^' marker.
+  login local
+  ^
+
+[69/74] sw SW-SEC(config)# exit
+<empty>
+
+[70/74] sw SW-SEC# snmp-server community public RO
+  % Invalid input detected at '^' marker.
+  snmp-server community public RO
+  ^
+
+[71/74] sw SW-SEC# ntp server 10.0.0.1
+  % Invalid input detected at '^' marker.
+  ntp server 10.0.0.1
+  ^
+
+[72/74] sw SW-SEC# logging host 10.0.0.251
+  % Invalid input detected at '^' marker.
+  logging host 10.0.0.251
+  ^
+
+[73/74] sw SW-SEC# end
+<empty>
+
+[74/74] sw SW-SEC# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname SW-SEC
+  !
+  interface FastEthernet0/0
+   switchport mode access
+  !
+  interface FastEthernet0/1
+   switchport mode access
+  !
+  interface FastEthernet0/2
+   switchport mode access
+  !
+  interface FastEthernet0/3
+   switchport mode access
+  !
+  interface FastEthernet0/4
+   switchport mode access
+  !
+  interface FastEthernet0/5
+   switchport mode access
+  !
+  interface FastEthernet0/6
+   switchport mode access
+  !
+  interface FastEthernet0/7
+   switchport mode access
+  !
+  interface FastEthernet0/8
+   switchport mode access
+  !
+  interface FastEthernet0/9
+   switchport mode access
+  !
+  interface FastEthernet0/10
+   switchport mode access
+  !
+  interface FastEthernet0/11
+   switchport mode access
+  !
+  interface FastEthernet0/12
+   switchport mode access
+  !
+  interface FastEthernet0/13
+   switchport mode access
+  !
+  interface FastEthernet0/14
+   switchport mode access
+  !
+  interface FastEthernet0/15
+   switchport mode access
+  !
+  interface FastEthernet0/16
+   switchport mode access
+  !
+  interface FastEthernet0/17
+   switchport mode access
+  !
+  interface FastEthernet0/18
+   switchport mode access
+  !
+  interface FastEthernet0/19
+   switchport mode access
+  !
+  interface FastEthernet0/20
+   switchport mode access
+  !
+  interface FastEthernet0/21
+   switchport mode access
+  !
+  interface FastEthernet0/22
+   switchport mode access
+  !
+  interface FastEthernet0/23
+   switchport mode access
+  !
+  interface GigabitEthernet0/0
+   switchport mode access
+  !
+  interface GigabitEthernet0/1
+   switchport mode access
+  !
+  end
