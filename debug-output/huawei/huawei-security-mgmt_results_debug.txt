@@ -1,0 +1,434 @@
+============================================================
+Huawei switch debug transcript — huawei-security-mgmt
+Generated: 2026-05-17T05:41:03.575Z
+Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
+focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
+Total steps: 90
+============================================================
+
+
+--- [1] § STP baseline ---
+[1/90] sw <SW1> display stp
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.SW1
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[2/90] sw <SW1> display stp brief
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/11       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DESI  LISTENING     NONE
+
+[3/90] sw <SW1> system-view
+  Enter system view, return user view with return command.
+
+[4/90] sw [SW1] sysname SW-SEC
+<empty>
+
+
+--- [5] § STP / RSTP / MSTP ---
+[5/90] sw [SW-SEC] stp mode rstp
+<empty>
+
+[6/90] sw [SW-SEC] stp enable
+<empty>
+
+[7/90] sw [SW-SEC] stp priority 4096
+<empty>
+
+[8/90] sw [SW-SEC] stp root primary
+<empty>
+
+[9/90] sw [SW-SEC] stp mode mstp
+<empty>
+
+[10/90] sw [SW-SEC] stp region-configuration
+<empty>
+
+[11/90] sw [SW-SEC-mst-region] region-name LAB
+<empty>
+
+[12/90] sw [SW-SEC-mst-region] instance 1 vlan 10
+<empty>
+
+[13/90] sw [SW-SEC-mst-region] instance 2 vlan 20
+<empty>
+
+[14/90] sw [SW-SEC-mst-region] active region-configuration
+<empty>
+
+[15/90] sw [SW-SEC-mst-region] quit
+<empty>
+
+[16/90] sw [SW-SEC] interface GigabitEthernet0/0/1
+<empty>
+
+[17/90] sw [SW-SEC-GigabitEthernet0/0/1] stp edged-port enable
+<empty>
+
+[18/90] sw [SW-SEC-GigabitEthernet0/0/1] stp bpdu-protection
+<empty>
+
+[19/90] sw [SW-SEC-GigabitEthernet0/0/1] quit
+<empty>
+
+[20/90] sw [SW-SEC] stp bpdu-protection
+<empty>
+
+[21/90] sw [SW-SEC] interface GigabitEthernet0/0/23
+<empty>
+
+[22/90] sw [SW-SEC-GigabitEthernet0/0/23] stp cost 20000
+<empty>
+
+[23/90] sw [SW-SEC-GigabitEthernet0/0/23] stp port priority 64
+<empty>
+
+[24/90] sw [SW-SEC-GigabitEthernet0/0/23] quit
+<empty>
+
+[25/90] sw [SW-SEC] return
+<empty>
+
+[26/90] sw <SW-SEC> display stp
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :0.SW-SEC
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :0.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Enabled
+  TC or TCN received  :0
+  STP Status          :Enabled
+
+[27/90] sw <SW-SEC> display stp interface GigabitEthernet0/0/1
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+
+
+--- [28] § port-security sticky MAC ---
+[28/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[29/90] sw [SW-SEC] interface GigabitEthernet0/0/2
+<empty>
+
+[30/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security enable
+<empty>
+
+[31/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security mac-address sticky
+<empty>
+
+[32/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security max-mac-num 2
+<empty>
+
+[33/90] sw [SW-SEC-GigabitEthernet0/0/2] port-security protect-action shutdown
+<empty>
+
+[34/90] sw [SW-SEC-GigabitEthernet0/0/2] quit
+<empty>
+
+[35/90] sw [SW-SEC] return
+<empty>
+
+[36/90] sw <SW-SEC> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [37] § DHCP snooping / IPSG / DAI ---
+[37/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[38/90] sw [SW-SEC] dhcp enable
+<empty>
+
+[39/90] sw [SW-SEC] dhcp snooping enable
+<empty>
+
+[40/90] sw [SW-SEC] interface GigabitEthernet0/0/1
+<empty>
+
+[41/90] sw [SW-SEC-GigabitEthernet0/0/1] dhcp snooping enable
+  Error: Unrecognized command "dhcp snooping enable"
+
+[42/90] sw [SW-SEC-GigabitEthernet0/0/1] dhcp snooping trusted
+  Error: Unrecognized command "dhcp snooping trusted"
+
+[43/90] sw [SW-SEC-GigabitEthernet0/0/1] ip source check user-bind enable
+  Error: Unrecognized command "ip source check user-bind enable"
+
+[44/90] sw [SW-SEC-GigabitEthernet0/0/1] arp anti-attack check user-bind enable
+  Error: Unrecognized command "arp anti-attack check user-bind enable"
+
+[45/90] sw [SW-SEC-GigabitEthernet0/0/1] quit
+<empty>
+
+[46/90] sw [SW-SEC] return
+<empty>
+
+[47/90] sw <SW-SEC> display dhcp snooping
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+
+--- [48] § ACL ---
+[48/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[49/90] sw [SW-SEC] acl 3001
+  Error: Unrecognized command "acl 3001"
+
+[50/90] sw [SW-SEC] rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255
+  Error: Unrecognized command "rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255"
+
+[51/90] sw [SW-SEC] rule 10 deny ip
+  Error: Unrecognized command "rule 10 deny ip"
+
+[52/90] sw [SW-SEC] quit
+<empty>
+
+[53/90] sw <SW-SEC> acl name MGMT 2999
+  Error: Unrecognized command "acl name MGMT 2999"
+
+[54/90] sw <SW-SEC> rule permit source 10.0.0.0 0.0.0.255
+  Error: Unrecognized command "rule permit source 10.0.0.0 0.0.0.255"
+
+[55/90] sw <SW-SEC> quit
+<empty>
+
+[56/90] sw <SW-SEC> return
+<empty>
+
+[57/90] sw <SW-SEC> display acl all
+  Error: Unrecognized command "display acl all"
+
+[58/90] sw <SW-SEC> display acl 3001
+  Error: Unrecognized command "display acl 3001"
+
+
+--- [59] § AAA local users + SSH/Telnet ---
+[59/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[60/90] sw [SW-SEC] aaa
+<empty>
+
+[61/90] sw [SW-SEC-aaa] local-user admin password irreversible-cipher Huawei@123
+<empty>
+
+[62/90] sw [SW-SEC-aaa] local-user admin privilege level 15
+<empty>
+
+[63/90] sw [SW-SEC-aaa] local-user admin service-type ssh telnet terminal
+<empty>
+
+[64/90] sw [SW-SEC-aaa] quit
+<empty>
+
+[65/90] sw [SW-SEC] stelnet server enable
+<empty>
+
+[66/90] sw [SW-SEC] ssh user admin authentication-type password
+<empty>
+
+[67/90] sw [SW-SEC] user-interface vty 0 4
+<empty>
+
+[68/90] sw [SW-SEC-ui-vty0-4] authentication-mode aaa
+<empty>
+
+[69/90] sw [SW-SEC-ui-vty0-4] protocol inbound ssh
+<empty>
+
+[70/90] sw [SW-SEC-ui-vty0-4] quit
+<empty>
+
+[71/90] sw [SW-SEC] telnet server enable
+<empty>
+
+[72/90] sw [SW-SEC] return
+<empty>
+
+[73/90] sw <SW-SEC> display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[74/90] sw <SW-SEC> display local-user
+    ----------------------------------------------------------------------
+    User-name                State  AuthMask  AdminLevel
+    ----------------------------------------------------------------------
+    admin                   A      ssh,telnet,terminal 15
+    ----------------------------------------------------------------------
+    Total 1 user(s)
+
+
+--- [75] § SNMP / NTP / syslog / sFlow ---
+[75/90] sw <SW-SEC> system-view
+  Enter system view, return user view with return command.
+
+[76/90] sw [SW-SEC] snmp-agent sys-info version v2c v3
+<empty>
+
+[77/90] sw [SW-SEC] snmp-agent community read cipher public
+<empty>
+
+[78/90] sw [SW-SEC] snmp-agent target-host trap address udp-domain 10.0.0.250 params securityname public
+<empty>
+
+[79/90] sw [SW-SEC] ntp-service unicast-server 10.0.0.1
+<empty>
+
+[80/90] sw [SW-SEC] clock timezone UTC add 00:00
+<empty>
+
+[81/90] sw [SW-SEC] info-center enable
+<empty>
+
+[82/90] sw [SW-SEC] info-center loghost 10.0.0.251
+<empty>
+
+[83/90] sw [SW-SEC] sflow collector 1 ip 10.0.0.252
+<empty>
+
+[84/90] sw [SW-SEC] return
+<empty>
+
+[85/90] sw <SW-SEC> display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[86/90] sw <SW-SEC> display ntp-service status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+
+--- [87] § save / backup ---
+[87/90] sw <SW-SEC> save
+  Info: The current configuration was saved to the device successfully.
+
+[88/90] sw <SW-SEC> display saved-configuration
+  #
+  sysname SW-SEC
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+[89/90] sw <SW-SEC> display current-configuration | include snmp
+<empty>
+
+[90/90] sw <SW-SEC> reset saved-configuration
+  Info: Succeeded in clearing the configuration in the device.

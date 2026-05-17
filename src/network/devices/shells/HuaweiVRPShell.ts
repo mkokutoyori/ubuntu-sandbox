@@ -21,7 +21,11 @@
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
-import { HUAWEI_ERRORS } from './cli-utils';
+import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import {
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+} from './huawei/HuaweiCommonSecurity';
 import { IPAddress } from '../../core/types';
 
 // Extracted command modules
@@ -214,16 +218,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
 
-    const lower = trimmed.toLowerCase();
-
     // Handle ? for help (preserve trailing space for "display ?" vs "display?")
     if (trimmed.endsWith('?')) {
       const helpInput = trimmed.slice(0, -1);
       return this.getHelp(helpInput);
     }
 
-    // Global navigation
-    if (lower === 'return') {
+    // Split off an output pipe filter (| include/exclude/begin …) — shared
+    // with the switch shell + Cisco shells via cli-utils (DRY).
+    const { cmd, filter } = parsePipeFilter(trimmed);
+    const lower = cmd.toLowerCase();
+
+    // Global navigation — accepts unambiguous VRP abbreviations.
+    const nav = resolveHuaweiNav(lower);
+    if (nav === 'return') {
       this.mode = 'user';
       this.selectedInterface = null;
       this.selectedPool = null;
@@ -237,12 +245,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.selectedACLName = null;
       return '';
     }
-    if (lower === 'quit') return this.cmdQuit();
+    if (nav === 'quit') return this.cmdQuit();
 
     // Bind router reference
     this.routerRef = router;
 
-    const output = this.executeOnTrie(trimmed);
+    const output = this.executeOnTrie(cmd);
 
     // Async escape hatch (e.g. tracert sets _pendingAsync)
     if (this._pendingAsync) {
@@ -253,7 +261,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
 
     this.routerRef = null;
-    return output;
+    return filter && !output.startsWith('Error:')
+      ? applyPipeFilter(output, filter)
+      : output;
   }
 
   private executeOnTrie(cmdPart: string): string {
@@ -416,6 +426,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // Display commands
     registerDisplayCommands(t, getRouter, getState);
 
+    // VRP lifecycle/management commands (shared with the switch, DRY)
+    registerHuaweiCommonMgmt(t);
+    registerHuaweiCommonSecurityDisplay(t, () => new Map());
+
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
 
@@ -493,6 +507,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Display commands (available in all modes)
     registerDisplayCommands(t, getRouter, getState);
+
+    // VRP lifecycle/management commands (shared with the switch, DRY)
+    registerHuaweiCommonMgmt(t);
+    registerHuaweiCommonSecurity(t);
+    registerHuaweiCommonSecurityDisplay(t, () => new Map());
 
     // System-mode config commands
     buildSystemCommands(t, this);

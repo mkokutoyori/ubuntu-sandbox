@@ -1,0 +1,801 @@
+============================================================
+Huawei switch debug transcript — huawei-cli-basics
+Generated: 2026-05-17T05:41:03.103Z
+Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
+focus=VRP user/system-view navigation, help, abbreviations, undo
+Total steps: 70
+============================================================
+
+
+--- [1] § user view / version / clock ---
+[1/70] sw <SW1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          S5720-28X-LI-AC
+  CPLD Version:        1.0
+  BootROM Version:     1.0
+  SW1 uptime is 0 days, 0 hours, 0 minutes
+
+[2/70] sw <SW1> display clock
+  2026-05-17 05:41:03
+  Sunday
+  Time Zone(UTC) : UTC
+
+[3/70] sw <SW1> display device
+  SW1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[4/70] sw <SW1> display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[5/70] sw <SW1> display history-command
+  display version
+  display clock
+  display device
+  display users
+  display history-command
+
+[6/70] sw <SW1> display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-17 05:41:03
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[7/70] sw <SW1> display memory-usage
+  Memory utilization statistics at 2026-05-17 05:41:03
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[8/70] sw <SW1> display saved-configuration
+  #
+  sysname SW1
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+[9/70] sw <SW1> display startup
+  #
+  sysname SW1
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+
+--- [10] § mode navigation ---
+[10/70] sw <SW1> system-view
+  Enter system view, return user view with return command.
+
+[11/70] sw [SW1] sysname SW-CORE
+<empty>
+
+[12/70] sw [SW-CORE] display this
+  #
+  sysname SW-CORE
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+[13/70] sw [SW-CORE] header shell information "Authorized access only"
+<empty>
+
+[14/70] sw [SW-CORE] interface GigabitEthernet0/0/1
+<empty>
+
+[15/70] sw [SW-CORE-GigabitEthernet0/0/1] display this
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+
+[16/70] sw [SW-CORE-GigabitEthernet0/0/1] quit
+<empty>
+
+[17/70] sw [SW-CORE] vlan 10
+<empty>
+
+[18/70] sw [SW-CORE-vlan10] quit
+<empty>
+
+[19/70] sw [SW-CORE] user-interface console 0
+<empty>
+
+[20/70] sw [SW-CORE-ui-console0] quit
+<empty>
+
+[21/70] sw [SW-CORE] aaa
+<empty>
+
+[22/70] sw [SW-CORE-aaa] quit
+<empty>
+
+[23/70] sw [SW-CORE] return
+<empty>
+
+[24/70] sw <SW-CORE> display current-configuration
+  #
+  sysname SW-CORE
+  #
+  vlan 10
+   name VLAN0010
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+
+--- [25] § abbreviations (Huawei allows unambiguous prefixes) ---
+[25/70] sw <SW-CORE> sys
+  Enter system view, return user view with return command.
+
+[26/70] sw [SW-CORE] sysn SW-EDGE
+<empty>
+
+[27/70] sw [SW-EDGE] dis cu
+  #
+  sysname SW-EDGE
+  #
+  vlan 10
+   name VLAN0010
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+[28/70] sw [SW-EDGE] q
+<empty>
+
+[29/70] sw <SW-EDGE> ret
+<empty>
+
+[30/70] sw <SW-EDGE> disp version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          S5720-28X-LI-AC
+  CPLD Version:        1.0
+  BootROM Version:     1.0
+  SW-EDGE uptime is 0 days, 0 hours, 0 minutes
+
+[31/70] sw <SW-EDGE> dis clock
+  2026-05-17 05:41:03
+  Sunday
+  Time Zone(UTC) : UTC
+
+
+--- [32] § context help (?) ---
+[32/70] sw <SW-EDGE> display ?
+    version                 Display VRP version information
+    vlan                    Display VLAN information
+    port                    port
+    interface               Display interface details
+    mac-address             Display MAC address table
+    current-configuration   Display running configuration
+    ip                      ip
+    clock                   Display system clock
+    cpu-usage               Display CPU usage
+    memory-usage            Display memory usage
+    users                   Display user sessions
+    device                  Display device status
+    history-command         Display command history
+    this                    Display active view configuration
+    saved-configuration     Display saved configuration
+    startup                 Display startup configuration
+    alarm                   Display alarm records
+    elabel                  Display electronic label
+    license                 Display license information
+    logbuffer               Display log buffer
+    trapbuffer              Display trap buffer
+    patch-information       Display patch information
+    diagnostic-information  Collect diagnostic information
+    stp                     Display STP status
+    local-user              Display local users
+    ssh                     Display SSH server status
+    snmp-agent              Display SNMP agent info
+    ntp-service             Display NTP status
+    dhcp                    Display DHCP snooping
+    port-security           Display port security
+    eth-trunk               Display Eth-Trunk information
+    counters                Display interface counters
+
+[33/70] sw <SW-EDGE> ?
+    system-view    Enter system view
+    display        display
+    reset          reset
+    save           Save current configuration
+    reboot         Reboot the device
+    commit         Commit candidate configuration
+    screen-length  Set terminal screen length
+    header         Configure login/shell banner
+
+[34/70] sw <SW-EDGE> system-view
+  Enter system view, return user view with return command.
+
+[35/70] sw [SW-EDGE] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[36/70] sw [SW-EDGE] vlan ?
+    WORD  VLAN configuration
+    <cr>  
+
+[37/70] sw [SW-EDGE] stp ?
+    WORD  Spanning Tree Protocol configuration
+    <cr>  
+
+[38/70] sw [SW-EDGE] undo ?
+    WORD  Undo configuration
+    <cr>  
+
+[39/70] sw [SW-EDGE] return
+<empty>
+
+
+--- [40] § undo / negation ---
+[40/70] sw <SW-EDGE> system-view
+  Enter system view, return user view with return command.
+
+[41/70] sw [SW-EDGE] sysname TEMP
+<empty>
+
+[42/70] sw [TEMP] undo sysname
+  Error: Unrecognized command "undo sysname"
+
+[43/70] sw [TEMP] info-center enable
+<empty>
+
+[44/70] sw [TEMP] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[45/70] sw [TEMP] interface GigabitEthernet0/0/5
+<empty>
+
+[46/70] sw [TEMP-GigabitEthernet0/0/5] description test-port
+<empty>
+
+[47/70] sw [TEMP-GigabitEthernet0/0/5] undo description
+  Error: Unrecognized command "undo description"
+
+[48/70] sw [TEMP-GigabitEthernet0/0/5] shutdown
+<empty>
+
+[49/70] sw [TEMP-GigabitEthernet0/0/5] undo shutdown
+<empty>
+
+[50/70] sw [TEMP-GigabitEthernet0/0/5] quit
+<empty>
+
+[51/70] sw [TEMP] return
+<empty>
+
+
+--- [52] § display filtering / paging ---
+[52/70] sw <TEMP> display current-configuration | include vlan
+  vlan 10
+   name VLAN0010
+
+[53/70] sw <TEMP> display current-configuration | begin interface
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   description test-port
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
+
+[54/70] sw <TEMP> display interface brief | exclude down
+  Interface                     PHY     Protocol  InUti  OutUti
+  GigabitEthernet0/0/1          up      up        0%     0%
+  GigabitEthernet0/0/2          up      up        0%     0%
+  GigabitEthernet0/0/3          up      up        0%     0%
+  GigabitEthernet0/0/10         up      up        0%     0%
+
+[55/70] sw <TEMP> screen-length 0 temporary
+<empty>
+
+[56/70] sw <TEMP> display version | include VRP
+  VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)
+
+
+--- [57] § diagnostics ---
+[57/70] sw <TEMP> display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[58/70] sw <TEMP> display alarm
+  Info: There is no alarm record.
+
+[59/70] sw <TEMP> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-17 05:41:03 %01SRM/4/PORT_STATE: Port state changed.
+
+[60/70] sw <TEMP> display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[61/70] sw <TEMP> display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235TEMP;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[62/70] sw <TEMP> display patch-information
+  Info: No patch exists.
+
+[63/70] sw <TEMP> display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+
+--- [64] § save / reboot lifecycle ---
+[64/70] sw <TEMP> save
+  Info: The current configuration was saved to the device successfully.
+
+[65/70] sw <TEMP> save force
+  Info: The current configuration was saved to the device successfully.
+
+[66/70] sw <TEMP> system-view
+  Enter system view, return user view with return command.
+
+[67/70] sw [TEMP] commit
+<empty>
+
+[68/70] sw [TEMP] return
+<empty>
+
+[69/70] sw <TEMP> reset saved-configuration
+  Info: Succeeded in clearing the configuration in the device.
+
+[70/70] sw <TEMP> reboot
+  Info: The system is now comparing the configuration, please wait.
+  Info: System will reboot.

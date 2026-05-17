@@ -11,6 +11,20 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
+import {
+  displayClock as commonDisplayClock,
+  displayCpuUsage as commonDisplayCpuUsage,
+  displayMemoryUsage as commonDisplayMemoryUsage,
+  displayUsers as commonDisplayUsers,
+  displayDevice as commonDisplayDevice,
+  displayAlarm as commonDisplayAlarm,
+  displayElabel as commonDisplayElabel,
+  displayLicense as commonDisplayLicense,
+  displayLogbuffer as commonDisplayLogbuffer,
+  displayTrapbuffer as commonDisplayTrapbuffer,
+  displayPatchInformation as commonDisplayPatchInformation,
+  displayDiagnosticInformation as commonDisplayDiagnosticInformation,
+} from './HuaweiCommonDisplay';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -592,6 +606,24 @@ export function registerDisplayCommands(
 
   trie.register('display ip pool', 'Display all DHCP pools', () =>
     displayIpPoolAll(getRouter()));
+
+  // ── Common VRP display commands (shared with the switch, DRY) ──
+  trie.register('display clock', 'Display system clock', () => commonDisplayClock());
+  trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
+  trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
+  trie.register('display users', 'Display user sessions', () => commonDisplayUsers());
+  trie.register('display device', 'Display device status', () =>
+    commonDisplayDevice(getRouter().getHostname()));
+  trie.register('display alarm', 'Display alarm records', () => commonDisplayAlarm());
+  trie.register('display elabel', 'Display electronic label', () =>
+    commonDisplayElabel(getRouter().getHostname()));
+  trie.register('display license', 'Display license information', () => commonDisplayLicense());
+  trie.register('display logbuffer', 'Display log buffer', () => commonDisplayLogbuffer());
+  trie.register('display trapbuffer', 'Display trap buffer', () => commonDisplayTrapbuffer());
+  trie.register('display patch-information', 'Display patch information', () =>
+    commonDisplayPatchInformation());
+  trie.register('display diagnostic-information', 'Collect diagnostic information', () =>
+    commonDisplayDiagnosticInformation());
 }
 
 // ─── Interface Name Resolution (Huawei format) ──────────────────────
