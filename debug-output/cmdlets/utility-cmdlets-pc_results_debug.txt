@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — utility-cmdlets-pc
-Generated: 2026-05-16T23:22:37.861Z
+Generated: 2026-05-16T23:59:20.434Z
 Engine: powershell
 host=WIN-UTILITY-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 66
@@ -9,7 +9,11 @@ Total commands: 66
 
 --- [1] § New-Object / pscustomobject ---
 PS [1/66]> New-Object psobject -Property @{ Name="x"; Val=1 }
-<empty>
+  
+  Name  Val
+  ----  ---
+  x       1
+  
 
 PS [2/66]> New-Object -TypeName System.Collections.ArrayList
 <empty>
@@ -25,7 +29,12 @@ PS [4/66]> [pscustomobject]@{ A=1; B=2; C=3 }
   
 
 PS [5/66]> [pscustomobject]@{ A=1; B=2 } | Get-Member -MemberType NoteProperty | Select-Object Name
-<empty>
+  
+  Name
+  ----
+  A   
+  B   
+  
 
 PS [6/66]> 1..3 | ForEach-Object { [pscustomobject]@{ Idx=$_; Square=$_*$_ } } | Format-Table -AutoSize
   Idx             Square         
@@ -38,7 +47,9 @@ PS [7/66]> $o = [pscustomobject]@{ X=10; Y=20 }; $o.X + $o.Y
   30
 
 PS [8/66]> New-Object psobject -Property @{ a=1 } | ConvertTo-Json
-  {}
+  {
+    "a": 1
+  }
 
 
 --- [9] § Get-Date ---
@@ -46,10 +57,10 @@ PS [9/66]> Get-Date -Format "yyyy-MM-dd"
   2026-05-16
 
 PS [10/66]> Get-Date -Format "HH:mm"
-  23:22
+  23:59
 
 PS [11/66]> Get-Date -Format "dddd"
-  1616
+  Saturday
 
 PS [12/66]> (Get-Date).Year -gt 2000
   True
@@ -58,7 +69,7 @@ PS [13/66]> (Get-Date).GetType().Name
 <empty>
 
 PS [14/66]> (Get-Date -Year 2020 -Month 6 -Day 15).Month
-  1
+  6
 
 PS [15/66]> (Get-Date).AddDays(7) -gt (Get-Date)
   True
@@ -84,12 +95,12 @@ PS [21/66]> (Get-Random -Minimum 0 -Maximum 1) -in 0,1
   True
 
 PS [22/66]> Get-Random -SetSeed 42 -Minimum 1 -Maximum 100; Get-Random -SetSeed 42 -Minimum 1 -Maximum 100
-  28
-  26
+  60
+  60
 
 PS [23/66]> 1..10 | Get-Random -Count 3 | Measure-Object
   
-  Count    : 1
+  Count    : 3
   Sum      : 
   Average  : 
   Minimum  : 
@@ -98,16 +109,20 @@ PS [23/66]> 1..10 | Get-Random -Count 3 | Measure-Object
   
 
 PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
-  False
+  True
 
 PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
-  0.11772781670767296
+  8
+  30
+  39
+  41
+  52
 
 PS [26/66]> Get-Random -InputObject 'a','b','c'
-  0.648560587870223
+  b
 
 PS [27/66]> (1..1000 | Get-Random -Count 10 | Where-Object { $_ -ge 1 -and $_ -le 1000 } | Measure-Object).Count
-  0
+  10
 
 
 --- [28] § Set/Get/New/Clear-Variable ---
@@ -219,13 +234,13 @@ PS [44/66]> Get-Command -Verb Set -CommandType Cmdlet | Sort-Object Name | Selec
 
 PS [45/66]> Get-Command *Service* | Select-Object -First 5 Name
   
-  Name         
-  -------------
-  Clear-Host   
-  Copy-Item    
-  Get-ChildItem
-  Get-Command  
-  Get-Content  
+  Name           
+  ---------------
+  Get-Service    
+  New-Service    
+  Remove-Service 
+  Restart-Service
+  Resume-Service 
   
 
 
@@ -235,19 +250,20 @@ PS [46/66]> (Get-Date) | Get-Member -MemberType Method | Select-Object -First 5 
 
 PS [47/66]> "text" | Get-Member -Name Substring
   
-  Name  MemberType  Definition
-  ----  ----------  ----------
-  0     Property    string 0  
-  1     Property    string 1  
-  2     Property    string 2  
-  3     Property    string 3  
+  Name       MemberType  Definition        
+  ---------  ----------  ------------------
+  Substring  Method      string Substring()
   
 
 PS [48/66]> @(1,2,3) | Get-Member -MemberType Property | Select-Object -First 3 Name
 <empty>
 
 PS [49/66]> [pscustomobject]@{ q=1 } | Get-Member | Where-Object MemberType -EQ NoteProperty
-<empty>
+  
+  Name  MemberType    Definition
+  ----  ------------  ----------
+  q     NoteProperty  number q  
+  
 
 
 --- [50] § Write-Output / Out-Null ---
@@ -286,26 +302,41 @@ PS [56/66]> 1..5 | ForEach-Object { [pscustomobject]@{ N=$_; R=(Get-Random -SetS
   
   N  R
   -  -
-  3  0
-  4  2
-  1  3
-  5  4
+  1  6
+  5  6
   2  7
+  3  7
+  4  9
   
 
 PS [57/66]> Get-Command -Verb Get -CommandType Cmdlet | Group-Object { $_.Name.Split("-")[1].Length } | Sort-Object Name | Select-Object Name, Count
   
   Name  Count
   ----  -----
-           37
+  3         1
+  4         4
+  5         1
+  6         5
+  7         5
+  8         5
+  9         2
+  10        3
+  11        1
+  12        2
+  13        2
+  15        1
+  16        2
+  18        1
+  20        1
+  22        1
   
 
 PS [58/66]> 1..3 | ForEach-Object { New-Object psobject -Property @{ Index=$_; Stamp=(Get-Date -Format "yyyy") } } | Format-Table -AutoSize
-  
-  
-  
-  
-  
+  Index           Stamp          
+  --------------- ---------------
+  1               2026           
+  2               2026           
+  3               2026           
 
 PS [59/66]> Set-Variable -Name nums -Value (1..20); ($nums | Where-Object { $_ % 3 -eq 0 } | Measure-Object -Sum).Sum
   63
@@ -320,7 +351,7 @@ PS [60/66]> (Get-Command -CommandType Cmdlet | Select-Object -ExpandProperty Nam
 PS [61/66]> [pscustomobject]@{ when=(Get-Date -Format "yyyy-MM-dd"); rand=(Get-Random -SetSeed 1 -Maximum 100) } | ConvertTo-Json
   {
     "when": "2026-05-16",
-    "rand": 80
+    "rand": 62
   }
 
 PS [62/66]> Get-Alias | Group-Object Definition | Sort-Object Count -Descending | Select-Object -First 5 Name, Count
@@ -338,10 +369,11 @@ PS [63/66]> 1..10 | ForEach-Object { Get-Random -SetSeed $_ -Minimum 1 -Maximum 
   
   Name  Count
   ----  -----
-  1         1
+  1         2
   2         1
-  4         4
-  6         4
+  4         3
+  5         3
+  6         1
   
 
 PS [64/66]> Get-Command -Noun Object | Sort-Object Name | ForEach-Object { $_.Name } | Select-String "Object$"
@@ -363,4 +395,13 @@ PS [65/66]> $total=0; 1..50 | ForEach-Object { Set-Variable -Name total -Value (
   0
 
 PS [66/66]> New-Object psobject -Property @{ A=(1..5); B=(Get-Service|Measure-Object).Count } | ConvertTo-Json -Depth 2
-  {}
+  {
+    "A": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "B": 22
+  }

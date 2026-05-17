@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — foreach-object-pc
-Generated: 2026-05-16T23:22:36.609Z
+Generated: 2026-05-16T23:59:21.079Z
 Engine: powershell
 host=WIN-FOREACH-OBJECT (windows-pc) — cmdlet attribute suite
 Total commands: 55
@@ -80,16 +80,7 @@ PS [9/55]> 1..5 | ForEach-Object { if ($_ % 2) { "odd:$_" } else { "even:$_" } }
   odd:5
 
 PS [10/55]> (1..10 | ForEach-Object { $_ }) -join ","
-  1
-  2
-  3
-  4
-  5
-  6
-  7
-  8
-  9
-  10
+  1,2,3,4,5,6,7,8,9,10
 
 
 --- [11] § % alias ---
@@ -128,33 +119,19 @@ PS [14/55]> 1..20 | ? { $_ % 2 -eq 0 } | % { $_ / 2 }
 
 --- [15] § -Begin / -End ---
 PS [15/55]> 1..10 | ForEach-Object -Begin { $s=0 } -Process { $s+=$_ } -End { $s }
-<empty>
+  55
 
 PS [16/55]> 1..5 | ForEach-Object -Begin { $p=1 } -Process { $p*=$_ } -End { "product=$p" }
-  product=
+  product=120
 
 PS [17/55]> 1..10 | ForEach-Object -Begin { $acc=@() } -Process { $acc+=$_*$_ } -End { $acc -join '+' }
-<empty>
+  1+4+9+16+25+36+49+64+81+100
 
 PS [18/55]> 1..100 | ForEach-Object -Begin { $c=0 } -Process { if ($_ % 7 -eq 0) { $c++ } } -End { "multiples of 7: $c" }
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  1
-  multiples of 7: 
+  multiples of 7: 14
 
 PS [19/55]> 'a','bb','ccc' | ForEach-Object -Begin { $t=0 } -Process { $t+=$_.Length } -End { $t }
-<empty>
+  6
 
 
 --- [20] § -MemberName ---
@@ -270,11 +247,11 @@ PS [37/55]> 1..100 | ForEach-Object { $_ * $_ } | Measure-Object -Sum -Average
 
 PS [38/55]> Get-Process | ForEach-Object { $_.WS } | Measure-Object -Sum -Maximum
   
-  Count    : 0
-  Sum      : 0
+  Count    : 26
+  Sum      : 612065280
   Average  : 
   Minimum  : 
-  Maximum  : 
+  Maximum  : 148480000
   Property : 
   
 
@@ -302,25 +279,6 @@ PS [41/55]> 'apple','banana','cherry' | ForEach-Object { [pscustomobject]@{ Frui
   
 
 PS [42/55]> 1..10 | ForEach-Object { $_ } | Where-Object { $_ -gt 5 } | ForEach-Object { -$_ }
-  -Line : The term '-Line' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -Line
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (-Line:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  ----- : The term '-----' is not recognized as the name of a cmdlet, function, script file, or operable
-  program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
-  At line:1 char:1
-  + -----
-  + ~~~~~
-      + CategoryInfo          : ObjectNotFound: (-----:String) [], CommandNotFoundException
-      + FullyQualifiedErrorId : CommandNotFoundException
-  -1
-  -2
-  -3
-  -4
-  -5
   -6
   -7
   -8
@@ -331,7 +289,7 @@ PS [43/55]> Get-Service | Where-Object Status -EQ Running | ForEach-Object Name 
 <empty>
 
 PS [44/55]> 1..5 | ForEach-Object { $_ * $_ } | ForEach-Object -Begin { $sum=0 } -Process { $sum+=$_ } -End { "sum of squares=$sum" }
-  sum of squares=
+  sum of squares=55
 
 PS [45/55]> 1..3 | ForEach-Object { Get-Random -Minimum 0 -Maximum 1 }
   0
@@ -351,11 +309,7 @@ PS [47/55]> 1..6 | ForEach-Object { [math]::Pow(2,$_) }
   64
 
 PS [48/55]> (1..10 | ForEach-Object { if ($_ -band 1) { $_ } }) -join ','
-  1
-  3
-  5
-  7
-  9
+  1,3,5,7,9
 
 PS [49/55]> Get-ChildItem C:\ | ForEach-Object { $_.Name } | Where-Object { $_ -match "^[A-P]" } | Sort-Object
   numbers.txt
@@ -386,32 +340,17 @@ PS [52/55]> Get-Process | Select-Object -First 8 | ForEach-Object { $_.Name } | 
   
   Name  Count
   ----  -----
-            8
+  4         1
+  5         2
+  6         1
+  7         1
+  8         2
+  19        1
   
 
 PS [53/55]> 1..20 | ForEach-Object -Begin { $even=@(); $odd=@() } -Process { if ($_ % 2) { $odd+=$_ } else { $even+=$_ } } -End { "even=$($even -join ","); odd=$($odd -join ",")" }
-  1
-  2
-  3
-  4
-  5
-  6
-  7
-  8
-  9
-  10
-  11
-  12
-  13
-  14
-  15
-  16
-  17
-  18
-  19
-  20
-  even=
-  ); odd=
+  even=2468101214161820
+  ); odd=135791113151719
   )
 
 PS [54/55]> 'a','bb','ccc','dddd' | ForEach-Object { $_ * 2 }
@@ -421,6 +360,6 @@ PS [54/55]> 'a','bb','ccc','dddd' | ForEach-Object { $_ * 2 }
   dddddddd
 
 PS [55/55]> 1..3 | ForEach-Object { New-Object psobject -Property @{ V = $_ } } | Select-Object -ExpandProperty V
-  
-  
-  
+  1
+  2
+  3

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-pc
-Generated: 2026-05-16T23:22:43.161Z
+Generated: 2026-05-16T23:59:19.085Z
 Engine: powershell
 host=WIN-SCR-DBG (windows-pc)
 Total commands: 77
@@ -32,6 +32,7 @@ PS [5/77]> Test-Path C:\Scripts\hello.ps1
 PS [6/77]> Get-Content C:\Scripts\hello.ps1
   $name = if ($args.Count -gt 0) { $args[0] } else { "world" }
   Write-Output "Hello, $name!"
+  
 
 PS [7/77]> . C:\Scripts\hello.ps1
   Hello, world!
@@ -52,6 +53,7 @@ PS [11/77]> Get-Content C:\Scripts\sum.ps1
   $total = 0
   foreach ($n in $Numbers) { $total += $n }
   "Total = $total"
+  
 
 PS [12/77]> & C:\Scripts\sum.ps1
   Total = 55
@@ -74,6 +76,7 @@ PS [16/77]> Get-Content C:\Scripts\users.ps1
     New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
     Write-Output "created $u"
   }
+  
 
 PS [17/77]> & C:\Scripts\users.ps1 -Prefix dbg
   created dbg-user1
@@ -118,6 +121,7 @@ PS [23/77]> Get-Content C:\Scripts\files.ps1
     Set-Content -Path (Join-Path $Dir "item$_.txt") -Value "row $_"
   }
   Get-ChildItem $Dir | Measure-Object | Select-Object -ExpandProperty Count
+  
 
 PS [24/77]> & C:\Scripts\files.ps1
   5
@@ -126,17 +130,17 @@ PS [25/77]> Get-ChildItem C:\BulkOut
   
   Mode    LastWriteTime       Length  Name     
   ------  ------------------  ------  ---------
-  -a----  5/16/2026 11:22 PM       5  item1.txt
-  -a----  5/16/2026 11:22 PM       5  item2.txt
-  -a----  5/16/2026 11:22 PM       5  item3.txt
-  -a----  5/16/2026 11:22 PM       5  item4.txt
-  -a----  5/16/2026 11:22 PM       5  item5.txt
+  -a----  5/16/2026 11:59 PM       6  item1.txt
+  -a----  5/16/2026 11:59 PM       6  item2.txt
+  -a----  5/16/2026 11:59 PM       6  item3.txt
+  -a----  5/16/2026 11:59 PM       6  item4.txt
+  -a----  5/16/2026 11:59 PM       6  item5.txt
   
 
 PS [26/77]> Get-ChildItem C:\BulkOut | Measure-Object Length -Sum
   
   Count    : 5
-  Sum      : 25
+  Sum      : 30
   Average  : 
   Minimum  : 
   Maximum  : 
@@ -150,16 +154,16 @@ PS [28/77]> Get-ChildItem C:\BulkOut2 | Sort-Object Name
   
   Mode    LastWriteTime       Length  Name      
   ------  ------------------  ------  ----------
-  -a----  5/16/2026 11:22 PM       5  item1.txt 
-  -a----  5/16/2026 11:22 PM       6  item10.txt
-  -a----  5/16/2026 11:22 PM       5  item2.txt 
-  -a----  5/16/2026 11:22 PM       5  item3.txt 
-  -a----  5/16/2026 11:22 PM       5  item4.txt 
-  -a----  5/16/2026 11:22 PM       5  item5.txt 
-  -a----  5/16/2026 11:22 PM       5  item6.txt 
-  -a----  5/16/2026 11:22 PM       5  item7.txt 
-  -a----  5/16/2026 11:22 PM       5  item8.txt 
-  -a----  5/16/2026 11:22 PM       5  item9.txt 
+  -a----  5/16/2026 11:59 PM       6  item1.txt 
+  -a----  5/16/2026 11:59 PM       7  item10.txt
+  -a----  5/16/2026 11:59 PM       6  item2.txt 
+  -a----  5/16/2026 11:59 PM       6  item3.txt 
+  -a----  5/16/2026 11:59 PM       6  item4.txt 
+  -a----  5/16/2026 11:59 PM       6  item5.txt 
+  -a----  5/16/2026 11:59 PM       6  item6.txt 
+  -a----  5/16/2026 11:59 PM       6  item7.txt 
+  -a----  5/16/2026 11:59 PM       6  item8.txt 
+  -a----  5/16/2026 11:59 PM       6  item9.txt 
   
 
 PS [29/77]> (Get-ChildItem C:\BulkOut2).Count
@@ -182,6 +186,7 @@ PS [31/77]> Get-Content C:\Scripts\fn.ps1
   Get-Greeting -Who Alice -Lang fr
   Get-Greeting -Who Bob -Lang es
   Get-Greeting -Who Carol
+  
 
 PS [32/77]> . C:\Scripts\fn.ps1
   Bonjour, Alice!
@@ -208,23 +213,24 @@ PS [37/77]> Get-Content C:\Scripts\pipeline.ps1
     Where-Object { -not $_.PSIsContainer } |
     Sort-Object Length -Descending |
     Select-Object -First 3 -Property Name, Length
+  
 
 PS [38/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut2
   
   Name        Length
   ----------  ------
-  item10.txt       6
-  item1.txt        5
-  item2.txt        5
+  item10.txt       7
+  item1.txt        6
+  item2.txt        6
   
 
 PS [39/77]> & C:\Scripts\pipeline.ps1 -Path C:\BulkOut
   
   Name       Length
   ---------  ------
-  item1.txt       5
-  item2.txt       5
-  item3.txt       5
+  item1.txt       6
+  item2.txt       6
+  item3.txt       6
   
 
 
@@ -240,6 +246,7 @@ PS [41/77]> Get-Content C:\Scripts\try.ps1
   } finally {
     "done"
   }
+  
 
 PS [42/77]> & C:\Scripts\try.ps1
   ERROR: Cannot find path 'C:\ghost-file' because it does not exist.
@@ -308,13 +315,13 @@ PS [52/77]> & C:\Scripts\sum.ps1 -Numbers ((1..10) | Where-Object { $_ % 2 -eq 0
 PS [53/77]> Get-ChildItem C:\Scripts | Format-Table Name, Length -AutoSize
   Name            Length         
   --------------- ---------------
-  files.ps1       281            
-  fn.ps1          279            
-  hello.ps1       90             
-  pipeline.ps1    214            
-  sum.ps1         103            
-  try.ps1         118            
-  users.ps1       188            
+  files.ps1       282            
+  fn.ps1          280            
+  hello.ps1       91             
+  pipeline.ps1    215            
+  sum.ps1         104            
+  try.ps1         119            
+  users.ps1       189            
 
 PS [54/77]> (Get-ChildItem C:\Scripts).Count
   7
@@ -329,21 +336,21 @@ PS [55/77]> Get-ChildItem C:\Scripts | Sort-Object Name | Select-Object -ExpandP
   users.ps1
 
 PS [56/77]> Get-ChildItem C:\Scripts | ForEach-Object { "$($_.Name) -> $($_.Length) bytes" }
-  files.ps1 -> 281 bytes
-  fn.ps1 -> 279 bytes
-  hello.ps1 -> 90 bytes
-  pipeline.ps1 -> 214 bytes
-  sum.ps1 -> 103 bytes
-  try.ps1 -> 118 bytes
-  users.ps1 -> 188 bytes
+  files.ps1 -> 282 bytes
+  fn.ps1 -> 280 bytes
+  hello.ps1 -> 91 bytes
+  pipeline.ps1 -> 215 bytes
+  sum.ps1 -> 104 bytes
+  try.ps1 -> 119 bytes
+  users.ps1 -> 189 bytes
 
 PS [57/77]> Get-ChildItem C:\BulkOut2 | Measure-Object Length -Sum -Average -Max -Min
   
   Count    : 10
-  Sum      : 51
-  Average  : 5.1
-  Minimum  : 5
-  Maximum  : 6
+  Sum      : 61
+  Average  : 6.1
+  Minimum  : 6
+  Maximum  : 7
   Property : Length
   
 

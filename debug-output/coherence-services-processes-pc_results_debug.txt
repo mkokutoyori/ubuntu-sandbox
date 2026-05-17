@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-services-processes-pc
-Generated: 2026-05-16T23:22:41.096Z
+Generated: 2026-05-16T23:59:18.389Z
 host=WIN-SP-DBG (windows-pc)
 Total commands: 102
 ============================================================
@@ -1118,7 +1118,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 9:22 PM
+  TimeCreated  : 5/16/2026 9:59 PM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -1126,7 +1126,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 5:22 PM
+  TimeCreated  : 5/16/2026 5:59 PM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -1134,7 +1134,7 @@ PS  [79/102]> Get-WinEvent -LogName System -MaxEvents 3 -ErrorAction SilentlyCon
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/16/2026 11:22 AM
+  TimeCreated  : 5/16/2026 11:59 AM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -1216,7 +1216,15 @@ PS  [90/102]> Get-Help Get-Service -ErrorAction SilentlyContinue
       Displays help for the Get-Service cmdlet.
 
 PS  [91/102]> Get-Member -InputObject (Get-Service | Select-Object -First 1) -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType
-<empty>
+  
+  Name         MemberType
+  -----------  ----------
+  Status       Property  
+  Name         Property  
+  DisplayName  Property  
+  Description  Property  
+  ServiceType  Property  
+  
 
 CMD [92/102]> help sc
   This command is not supported by the help utility.  Try "sc /?".
@@ -1263,11 +1271,11 @@ CMD [100/102]> sc query | findstr STATE | find /c "RUNNING"
 
 PS  [101/102]> Get-Process | Sort-Object WS -Descending | Select-Object -First 3 Name, Id, WS
   
-  Name                 Id   WS
-  -------------------  ---  --
-  System Idle Process    0    
-  System                 4    
-  Registry             108    
+  Name           Id    WS       
+  -------------  ----  ---------
+  explorer       2848  148480000
+  dwm            1024  135168000
+  RuntimeBroker  1560   28672000
   
 
 CMD [102/102]> tasklist /fo csv /nh | find /c ","

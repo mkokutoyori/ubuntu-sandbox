@@ -119,7 +119,40 @@ export class OutStringCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    return psValueToString(ctx.pipeInput ?? ctx.positional[0] ?? null);
+    const raw = ctx.pipeInput ?? ctx.positional[0] ?? null;
+    const items = raw === null || raw === undefined
+      ? []
+      : Array.isArray(raw) ? raw : [raw];
+
+    const allObjects = items.length > 0
+      && items.every(v => v !== null && typeof v === 'object' && !Array.isArray(v));
+
+    let text: string;
+    if (allObjects) {
+      // Same shape as default Format-Table rendering — NOT the inline
+      // "Key=Value;" dump psValueToString produces.
+      const keys = Object.keys(items[0] as Record<string, PSValue>);
+      const w = 15;
+      const header = keys.map(k => k.padEnd(w)).join(' ');
+      const sep    = keys.map(() => '-'.repeat(w)).join(' ');
+      const rows = items.map(it => {
+        const rec = it as Record<string, PSValue>;
+        return keys.map(k => {
+          const kk = Object.keys(rec).find(x => x.toLowerCase() === k.toLowerCase()) ?? k;
+          return psValueToString(rec[kk] ?? '').padEnd(w);
+        }).join(' ');
+      });
+      text = ['', header, sep, ...rows, ''].join('\n');
+    } else {
+      text = items.map(v => psValueToString(v)).join('\n');
+    }
+    // PS terminates Out-String with a trailing newline.
+    if (!text.endsWith('\n')) text += '\n';
+
+    if (ctx.named['stream'] === true) {
+      return text.split('\n');
+    }
+    return text;
   }
 }
 

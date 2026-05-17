@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-network-server
-Generated: 2026-05-16T23:22:38.577Z
+Generated: 2026-05-16T23:59:17.759Z
 Engine: powershell
 host=SRV-NET-DBG (windows-server)
 Total commands: 101
@@ -53,9 +53,12 @@ PS [6/101]> (Get-NetAdapter).Count
   4
 
 PS [7/101]> Get-NetAdapter | Select-Object -First 1 | Format-List *
-  
-  * : 
-  
+  Name : eth0
+  InterfaceDescription : eth0
+  ifIndex : 1
+  Status : Up
+  MacAddress : 02:00:00:00:00:05
+  LinkSpeed : 1 Gbps
 
 PS [8/101]> Get-NetIPAddress
   
@@ -672,7 +675,16 @@ PS [79/101]> Get-Help Test-Connection -ErrorAction SilentlyContinue
       Displays help for the Test-Connection cmdlet.
 
 PS [80/101]> Get-Member -InputObject (Get-NetAdapter | Select-Object -First 1) -ErrorAction SilentlyContinue
-<empty>
+  
+  Name                  MemberType  Definition                 
+  --------------------  ----------  ---------------------------
+  Name                  Property    string Name                
+  InterfaceDescription  Property    string InterfaceDescription
+  ifIndex               Property    number ifIndex             
+  Status                Property    string Status              
+  MacAddress            Property    string MacAddress          
+  LinkSpeed             Property    string LinkSpeed           
+  
 
 PS [81/101]> Get-NetAdapter | Get-Member -ErrorAction SilentlyContinue | Select-Object -First 5 Name, MemberType
   
@@ -797,11 +809,11 @@ PS [100/101]> Get-Date
   Month       : 5
   Day         : 16
   Hour        : 23
-  Minute      : 22
-  Second      : 38
-  Millisecond : 594
+  Minute      : 59
+  Second      : 17
+  Millisecond : 769
   DayOfWeek   : 6
-  Ticks       : 1778973758594
+  Ticks       : 1778975957769
   
 
 PS [101/101]> Get-TimeZone -ErrorAction SilentlyContinue

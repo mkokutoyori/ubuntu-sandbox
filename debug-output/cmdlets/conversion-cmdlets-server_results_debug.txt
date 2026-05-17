@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — conversion-cmdlets-server
-Generated: 2026-05-16T23:22:51.182Z
+Generated: 2026-05-16T23:59:21.103Z
 Engine: powershell
 host=SRV-CONVERSION-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 62
@@ -146,7 +146,7 @@ PS [20/62]> (1..10 | ConvertTo-Json | ConvertFrom-Json | Measure-Object -Sum).Su
 
 --- [21] § ConvertTo-Csv ---
 PS [21/62]> Get-Process | Select-Object -First 3 Name, Id | ConvertTo-Csv
-  #TYPE Hashtable
+  #TYPE System.Management.Automation.PSCustomObject
   "Name","Id"
   "System Idle Process","0"
   "System","4"
@@ -171,20 +171,29 @@ PS [24/62]> 1..3 | ForEach-Object { [pscustomobject]@{ N=$_; Sq=$_*$_ } } | Conv
   "3","9"
 
 PS [25/62]> [pscustomobject]@{ a='x'; b='y' } | ConvertTo-Csv -NoTypeInformation -Delimiter ';'
-  "a","b"
-  "x","y"
+  "a";"b"
+  "x";"y"
 
 
 --- [26] § ConvertFrom-Csv ---
 PS [26/62]> "Name,Age`nAlice,30`nBob,25" | ConvertFrom-Csv
-<empty>
+  
+  Name   Age
+  -----  ---
+  Alice  30 
+  Bob    25 
+  
 
 PS [27/62]> "Name,Age`nAlice,30`nBob,25" | ConvertFrom-Csv | Where-Object { [int]$_.Age -gt 26 }
-<empty>
+  
+  Name   Age
+  -----  ---
+  Alice  30 
+  
 
 PS [28/62]> "a;b`n1;2`n3;4" | ConvertFrom-Csv -Delimiter ';' | Measure-Object
   
-  Count    : 0
+  Count    : 2
   Sum      : 
   Average  : 
   Minimum  : 
@@ -400,7 +409,15 @@ PS [53/62]> Get-Process | ForEach-Object { $_.SI } | Sort-Object | Get-Unique
 
 --- [54] § creative combos ---
 PS [54/62]> Get-Service | Select-Object -First 5 Name, Status | ConvertTo-Json -Compress | ConvertFrom-Json | Where-Object Status -EQ Running
-<empty>
+  
+  Name      Status 
+  --------  -------
+  Tcpip     Running
+  Afd       Running
+  Dhcp      Running
+  Dnscache  Running
+  NetBT     Running
+  
 
 PS [55/62]> Get-Process | Select-Object -First 5 Name, Id | ConvertTo-Csv -NoTypeInformation | ConvertFrom-Csv | Sort-Object { [int]$_.Id } | Select-Object -First 3
   
@@ -452,16 +469,17 @@ PS [60/62]> '{ "nums": [5,3,8,1,9] }' | ConvertFrom-Json | ForEach-Object { $_.n
   5
 
 PS [61/62]> Get-Process | Select-Object -First 4 Name, WS | ConvertTo-Csv -NoTypeInformation -Delimiter "|"
-  "Name","WS"
-  "System Idle Process",""
-  "System",""
-  "Registry",""
-  "smss",""
+  "Name"|"WS"
+  "System Idle Process"|"16384"
+  "System"|"294912"
+  "Registry"|"8388608"
+  "smss"|"2097152"
 
 PS [62/62]> 'red,1','green,2','blue,3' | ForEach-Object { $_ } | ConvertFrom-Csv -Header Color,Rank | Sort-Object { [int]$_.Rank } -Descending
   
-  1  red  
-  -  -----
-  2  green
-  3  blue 
+  Color  Rank
+  -----  ----
+  blue   3   
+  green  2   
+  red    1   
   

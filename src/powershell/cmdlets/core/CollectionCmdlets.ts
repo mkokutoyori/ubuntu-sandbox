@@ -37,6 +37,54 @@ function flattenProps(items: PSValue[]): PSValue[] {
   return out;
 }
 
+/** A resolved display column: a header name + a per-item value getter. */
+type ColSpec = { name: string; get: (item: PSValue) => PSValue };
+
+function pickProp(item: PSValue, name: string): PSValue {
+  if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+    const rec = item as Record<string, PSValue>;
+    const k = Object.keys(rec).find(x => x.toLowerCase() === name.toLowerCase());
+    return k !== undefined ? (rec[k] ?? '') : '';
+  }
+  return name.toLowerCase() === 'value' ? item : '';
+}
+
+/**
+ * Resolve Format-* / Select-style column args into ordered ColSpecs.
+ * Handles plain names, `*` (expand to the sample's keys) and calculated
+ * properties `@{ Name/N/Label/L = …; Expression/E = {scriptblock|name} }`.
+ */
+function resolveColumns(raw: PSValue[], sample: PSValue, ctx: CmdletContext): ColSpec[] {
+  const sampleKeys = sample !== null && typeof sample === 'object' && !Array.isArray(sample)
+    ? Object.keys(sample as Record<string, PSValue>)
+    : [];
+  const cols: ColSpec[] = [];
+  for (const p of raw) {
+    if (typeof p === 'string' || typeof p === 'number') {
+      const s = String(p);
+      if (s === '*') {
+        for (const k of sampleKeys) cols.push({ name: k, get: it => pickProp(it, k) });
+      } else {
+        cols.push({ name: s, get: it => pickProp(it, s) });
+      }
+    } else if (p !== null && typeof p === 'object' && !Array.isArray(p)) {
+      const h = p as Record<string, PSValue>;
+      const name = psValueToString(
+        h['Name'] ?? h['name'] ?? h['N'] ?? h['n'] ??
+        h['Label'] ?? h['label'] ?? h['L'] ?? h['l'] ?? '');
+      const expr = h['Expression'] ?? h['expression'] ?? h['E'] ?? h['e'];
+      if (!name) continue;
+      if (isScriptBlockVal(expr)) {
+        cols.push({ name, get: it => ctx.invokeBlock(expr as PSScriptBlock, it) });
+      } else {
+        const pn = psValueToString(expr);
+        cols.push({ name, get: it => pickProp(it, pn) });
+      }
+    }
+  }
+  return cols;
+}
+
 function stringArgs(pos: PSValue[], named: Record<string, PSValue>, key: string): string[] {
   const src = named[key] ?? (pos.length > 0 ? pos : null);
   if (!src) return [];
@@ -57,14 +105,117 @@ export class WhereObjectCmdlet implements ICmdlet {
   readonly aliases = ['where', '?'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const input  = toArray(ctx.pipeInput);
-    const filter = (ctx.named['filterscript'] ?? ctx.positional[0]) as PSScriptBlock;
-    if (!filter) return input;
-    return input.filter(item => {
-      const result = ctx.invokeBlock(filter, item);
-      return isTruthy(result);
-    });
+    const input = toArray(ctx.pipeInput);
+
+    // Form 1 — scriptblock: `Where-Object { $_.X -gt 3 }` /
+    // `Where-Object -FilterScript { ... }`.
+    const sb = (ctx.named['filterscript'] ?? ctx.positional[0]) as PSValue;
+    if (isScriptBlockVal(sb)) {
+      return input.filter(item => isTruthy(ctx.invokeBlock(sb as PSScriptBlock, item)));
+    }
+
+    // Form 2 — comparison parameters:
+    //   `Where-Object Status -EQ Running`
+    //   `Where-Object -Property WS -GT 0`
+    //   `Where-Object Name -Like "*o*"`   /   `Where-Object Enabled` (-Not)
+    // `-EQ`/`-GT`/… are in PS_OPERATOR_PARAMS so the parser treats them
+    // as VALUELESS operator params and pushes the comparison value into
+    // the positional list. Layout:
+    //   `Where-Object Status -EQ Running`   → pos = [Status, Running]
+    //   `Where-Object -Property WS -GT 0`   → named.property=WS, pos=[0]
+    const propNamed = ctx.named['property'] !== undefined;
+    const prop = psValueToString(
+      propNamed ? ctx.named['property'] : (ctx.positional[0] ?? ''));
+    if (!prop) return input;
+
+    const OPS = ['eq','ne','gt','ge','lt','le','like','notlike','match',
+      'notmatch','contains','notcontains','in','notin','is','isnot'] as const;
+    let op: string | null = null;
+    let rhs: PSValue = undefined;
+    for (const o of OPS) {
+      if (ctx.named[o] === undefined) continue;
+      op = o;
+      const v = ctx.named[o];
+      // If the parser actually attached a value, use it; otherwise the
+      // value is the first positional that isn't the property name.
+      rhs = (v === true || v === null || v === undefined)
+        ? (propNamed ? ctx.positional[0] : ctx.positional[1])
+        : v;
+      break;
+    }
+    // `-Not` switch, or a bare property name → truthiness test.
+    const notSwitch = ctx.named['not'] === true;
+
+    const lp = prop.toLowerCase();
+    const pick = (item: PSValue): PSValue => {
+      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+        const rec = item as Record<string, PSValue>;
+        const k = Object.keys(rec).find(x => x.toLowerCase() === lp);
+        return k !== undefined ? rec[k] : undefined;
+      }
+      // Intrinsic members on primitives/arrays (`Where-Object Length -GE 2`).
+      if (typeof item === 'string') {
+        if (lp === 'length') return item.length;
+      }
+      if (Array.isArray(item)) {
+        if (lp === 'length' || lp === 'count') return (item as PSValue[]).length;
+      }
+      return undefined;
+    };
+
+    if (!op) {
+      return input.filter(item => {
+        const v = pick(item);
+        return notSwitch ? !isTruthy(v) : isTruthy(v);
+      });
+    }
+
+    return input.filter(item => compare(pick(item), op!, rhs));
   }
+}
+
+/** Loose, PowerShell-style comparison for the Where-Object/-operator form. */
+function compare(actual: PSValue, op: string, expected: PSValue): boolean {
+  const aNum = Number(actual);
+  const eNum = Number(expected);
+  const bothNum = !Number.isNaN(aNum) && !Number.isNaN(eNum)
+    && actual !== null && actual !== '' && expected !== null && expected !== '';
+  const aStr = actual === null || actual === undefined ? '' : String(actual);
+  const eStr = expected === null || expected === undefined ? '' : String(expected);
+  const ci = (s: string) => s.toLowerCase();
+  const wild = (pat: string) =>
+    new RegExp('^' + pat.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+
+  switch (op) {
+    case 'eq':   return bothNum ? aNum === eNum : ci(aStr) === ci(eStr);
+    case 'ne':   return bothNum ? aNum !== eNum : ci(aStr) !== ci(eStr);
+    case 'gt':   return bothNum ? aNum >  eNum : aStr >  eStr;
+    case 'ge':   return bothNum ? aNum >= eNum : aStr >= eStr;
+    case 'lt':   return bothNum ? aNum <  eNum : aStr <  eStr;
+    case 'le':   return bothNum ? aNum <= eNum : aStr <= eStr;
+    case 'like':     return wild(eStr).test(aStr);
+    case 'notlike':  return !wild(eStr).test(aStr);
+    case 'match':    return new RegExp(eStr, 'i').test(aStr);
+    case 'notmatch': return !new RegExp(eStr, 'i').test(aStr);
+    case 'contains':    return Array.isArray(actual)
+      ? (actual as PSValue[]).some(x => ci(String(x)) === ci(eStr)) : ci(aStr) === ci(eStr);
+    case 'notcontains': return !(Array.isArray(actual)
+      ? (actual as PSValue[]).some(x => ci(String(x)) === ci(eStr)) : ci(aStr) === ci(eStr));
+    case 'in':   return Array.isArray(expected)
+      ? (expected as PSValue[]).some(x => ci(String(x)) === ci(aStr)) : ci(aStr) === ci(eStr);
+    case 'notin':return !(Array.isArray(expected)
+      ? (expected as PSValue[]).some(x => ci(String(x)) === ci(aStr)) : ci(aStr) === ci(eStr));
+    case 'is':   return typeof actual === eStr.toLowerCase()
+      || (eStr.toLowerCase().includes('int') && bothNum);
+    case 'isnot':return !(typeof actual === eStr.toLowerCase());
+    default:     return false;
+  }
+}
+
+function isScriptBlockVal(v: PSValue): boolean {
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+    && (v as Record<string, unknown>).type === 'ScriptBlock';
 }
 
 function isTruthy(val: PSValue): boolean {
@@ -96,11 +247,15 @@ export class ForEachObjectCmdlet implements ICmdlet {
       else out.push(val);
     };
 
-    if (begin)  collect(ctx.invokeBlock(begin,  null));
+    // -Begin/-Process/-End (and every -Process iteration) share ONE scope so
+    // accumulators like `-Begin { $s=0 } -Process { $s+=$_ } -End { $s }`
+    // work, as they do in real PowerShell.
+    const scope = ctx.runtime.makeChildScope(ctx.env);
+    if (begin)  collect(ctx.runtime.invokeBlockInScope(begin,  scope, null));
     if (script) {
-      for (const item of input) collect(ctx.invokeBlock(script, item));
+      for (const item of input) collect(ctx.runtime.invokeBlockInScope(script, scope, item));
     }
-    if (end)    collect(ctx.invokeBlock(end,    null));
+    if (end)    collect(ctx.runtime.invokeBlockInScope(end,    scope, null));
 
     if (out.length === 0) return null;
     return out.length === 1 ? out[0] : out;
@@ -122,13 +277,26 @@ export class SelectObjectCmdlet implements ICmdlet {
     const first      = ctx.named['first']  !== undefined ? Number(ctx.named['first'])  : undefined;
     const last       = ctx.named['last']   !== undefined ? Number(ctx.named['last'])   : undefined;
     const skip       = ctx.named['skip']   !== undefined ? Number(ctx.named['skip'])   : 0;
+    const skipLast   = ctx.named['skiplast'] !== undefined ? Number(ctx.named['skiplast']) : 0;
     const unique     = ctx.named['unique'] === true;
+    const indexRaw   = ctx.named['index'];
     const expandProp = ctx.named['expandproperty'] !== undefined
       ? psValueToString(ctx.named['expandproperty']) : null;
 
-    let items = input.slice(skip);
-    if (first !== undefined) items = items.slice(0, first);
-    if (last  !== undefined) items = items.slice(-last);
+    let items: PSValue[];
+    if (indexRaw !== undefined && indexRaw !== null) {
+      // -Index selects ONLY the elements at the given positions, in the
+      // order requested, ignoring out-of-range indices (and -First/-Last).
+      const idxs = (Array.isArray(indexRaw) ? indexRaw : [indexRaw]).map(Number);
+      items = idxs
+        .filter(i => Number.isInteger(i) && i >= 0 && i < input.length)
+        .map(i => input[i]);
+    } else {
+      items = input.slice(skip);
+      if (skipLast > 0) items = items.slice(0, Math.max(0, items.length - skipLast));
+      if (first !== undefined) items = items.slice(0, Math.max(0, first));
+      if (last  !== undefined) items = last <= 0 ? [] : items.slice(-last);
+    }
 
     if (unique) {
       const seen = new Set<string>();
@@ -150,30 +318,41 @@ export class SelectObjectCmdlet implements ICmdlet {
 
     if (rawProps.length === 0) return items;
 
-    // Separate string props from calculated props (hashtable with Name+Expression)
-    const stringProps: string[] = [];
-    const calcProps: Array<{ name: string; expr: PSScriptBlock }> = [];
-
+    // Build a column plan in the ORDER the user listed them — string
+    // props and calculated props interleaved (real PowerShell keeps
+    // `Select-Object @{...}, Status` as Svc-then-Status, not regrouped).
+    type Col =
+      | { kind: 'prop'; name: string }
+      | { kind: 'calc'; name: string; expr: PSScriptBlock };
+    const sampleKeys = items[0] !== null && typeof items[0] === 'object' && !Array.isArray(items[0])
+      ? Object.keys(items[0] as Record<string, PSValue>)
+      : [];
+    const cols: Col[] = [];
     for (const p of rawProps) {
       if (typeof p === 'string') {
-        stringProps.push(p);
+        if (p === '*') {
+          for (const k of sampleKeys) cols.push({ kind: 'prop', name: k });
+        } else {
+          cols.push({ kind: 'prop', name: p });
+        }
       } else if (p && typeof p === 'object' && !Array.isArray(p)) {
         const h = p as Record<string, PSValue>;
         const name = psValueToString(h['Name'] ?? h['name'] ?? h['N'] ?? h['n'] ?? '');
         const expr = (h['Expression'] ?? h['expression'] ?? h['E'] ?? h['e']) as PSScriptBlock;
-        if (name && expr) calcProps.push({ name, expr });
+        if (name && expr) cols.push({ kind: 'calc', name, expr });
       }
     }
 
     return items.map(item => {
       const src = item as Record<string, PSValue>;
       const out: Record<string, PSValue> = {};
-      for (const p of stringProps) {
-        const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
-        out[key] = src[key] ?? null;
-      }
-      for (const { name, expr } of calcProps) {
-        out[name] = ctx.invokeBlock(expr, item);
+      for (const col of cols) {
+        if (col.kind === 'prop') {
+          const key = Object.keys(src).find(k => k.toLowerCase() === col.name.toLowerCase()) ?? col.name;
+          out[key] = src[key] ?? null;
+        } else {
+          out[col.name] = ctx.invokeBlock(col.expr, item);
+        }
       }
       return out;
     });
@@ -191,36 +370,68 @@ export class SortObjectCmdlet implements ICmdlet {
     const input   = toArray(ctx.pipeInput);
     const desc    = isTruthy(ctx.named['descending'] ?? false);
     const uniq    = isTruthy(ctx.named['unique'] ?? false);
-    const keyArg  = ctx.named['property'] ?? ctx.positional[0] ?? null;
+    const ci      = !isTruthy(ctx.named['casesensitive'] ?? false);
+    const top     = ctx.named['top']    !== undefined ? Number(ctx.named['top'])    : undefined;
+    const bottom  = ctx.named['bottom'] !== undefined ? Number(ctx.named['bottom']) : undefined;
 
-    const getKey = (item: PSValue): PSValue => {
-      if (!keyArg) return item;
-      if (keyArg && typeof keyArg === 'object' && (keyArg as Record<string, unknown>).type === 'ScriptBlock') {
+    // Support multi-property sort: `Sort-Object Status, Name`.
+    const keysRaw = ctx.named['property'] !== undefined
+      ? toArray(ctx.named['property'])
+      : (ctx.positional.length ? flattenProps(ctx.positional) : []);
+    const keyArgs: PSValue[] = keysRaw.length ? keysRaw : [null];
+
+    const keyVal = (item: PSValue, keyArg: PSValue): PSValue => {
+      if (keyArg === null || keyArg === undefined) return item;
+      if (typeof keyArg === 'object' && (keyArg as Record<string, unknown>).type === 'ScriptBlock') {
         return ctx.invokeBlock(keyArg as PSScriptBlock, item);
       }
       const prop = psValueToString(keyArg);
-      return (item as Record<string, PSValue>)[prop] ?? item;
+      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+        const rec = item as Record<string, PSValue>;
+        const k = Object.keys(rec).find(x => x.toLowerCase() === prop.toLowerCase());
+        return k !== undefined ? rec[k] : null;
+      }
+      if (typeof item === 'string' && prop.toLowerCase() === 'length') return item.length;
+      if (Array.isArray(item) && (prop.toLowerCase() === 'length' || prop.toLowerCase() === 'count'))
+        return (item as PSValue[]).length;
+      return item;
     };
 
-    const sorted = [...input].sort((a, b) => {
-      const av = getKey(a);
-      const bv = getKey(b);
-      const an = Number(av);
-      const bn = Number(bv);
-      let cmp: number;
-      if (!isNaN(an) && !isNaN(bn)) cmp = an - bn;
-      else cmp = String(av).localeCompare(String(bv));
-      return desc ? -cmp : cmp;
-    });
+    const cmp1 = (av: PSValue, bv: PSValue): number => {
+      const an = Number(av), bn = Number(bv);
+      const bothNum = !isNaN(an) && !isNaN(bn)
+        && av !== null && av !== '' && bv !== null && bv !== '';
+      if (bothNum) return an - bn;
+      const as = String(av ?? ''), bs = String(bv ?? '');
+      return ci ? as.toLowerCase().localeCompare(bs.toLowerCase())
+                : as.localeCompare(bs);
+    };
 
-    if (!uniq) return sorted;
-    const seen = new Set<string>();
-    return sorted.filter(item => {
-      const key = psValueToString(getKey(item));
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // Stable multi-key sort (PowerShell's Sort-Object is stable).
+    const sorted = input
+      .map((v, i) => [v, i] as [PSValue, number])
+      .sort(([a, ia], [b, ib]) => {
+        for (const ka of keyArgs) {
+          const c = cmp1(keyVal(a, ka), keyVal(b, ka));
+          if (c !== 0) return desc ? -c : c;
+        }
+        return ia - ib; // stable
+      })
+      .map(([v]) => v);
+
+    let result: PSValue[] = sorted;
+    if (uniq) {
+      const seen = new Set<string>();
+      result = sorted.filter(item => {
+        const key = keyArgs.map(k => psValueToString(keyVal(item, k))).join('');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    if (top    !== undefined) return result.slice(0, Math.max(0, top));
+    if (bottom !== undefined) return bottom <= 0 ? [] : result.slice(-bottom);
+    return result;
   }
 }
 
@@ -268,14 +479,26 @@ export class GroupObjectCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const input = toArray(ctx.pipeInput);
-    const props = stringArgs(ctx.positional, ctx.named, 'property');
     const noElement = isTruthy(ctx.named['noelement'] ?? false);
+
+    const keyArg = ctx.named['property'] ?? ctx.positional[0];
+    const sb = isScriptBlockVal(keyArg) ? (keyArg as PSScriptBlock) : null;
+    const props = sb ? [] : stringArgs(ctx.positional, ctx.named, 'property');
+
+    const keyOf = (item: PSValue): string => {
+      if (sb) return psValueToString(ctx.invokeBlock(sb, item));
+      if (props.length === 0) return psValueToString(item);
+      // Multi-property keys join with ", " (matches real Group-Object).
+      const rec = item as Record<string, PSValue>;
+      return props.map(p => {
+        const k = Object.keys(rec).find(x => x.toLowerCase() === p.toLowerCase());
+        return psValueToString(k ? rec[k] : null);
+      }).join(', ');
+    };
 
     const groups: Record<string, PSValue[]> = {};
     for (const item of input) {
-      const key = props.length
-        ? psValueToString((item as Record<string, PSValue>)[props[0]] ?? null)
-        : psValueToString(item);
+      const key = keyOf(item);
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     }
@@ -387,26 +610,24 @@ export class FormatTableCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
     if (items.length === 0) return '';
-    const rawProps = stringArgs(ctx.positional, ctx.named, 'property');
-    const props = rawProps.length ? rawProps : null;
     const sample = items[0];
-    const keys = props ?? (
-      sample && typeof sample === 'object' && !Array.isArray(sample)
+    const rawProps = flattenProps(ctx.named['property'] !== undefined
+      ? toArray(ctx.named['property'])
+      : ctx.positional);
+    let cols = resolveColumns(rawProps, sample, ctx);
+    if (cols.length === 0) {
+      const keys = sample !== null && typeof sample === 'object' && !Array.isArray(sample)
         ? Object.keys(sample as Record<string, PSValue>)
-        : ['Value']
-    );
+        : ['Value'];
+      cols = keys.map(k => ({ name: k, get: (it: PSValue) => pickProp(it, k) }));
+    }
+    const hideHeaders = ctx.named['hidetableheaders'] === true;
     const colWidth = 15;
-    const header = keys.map(k => k.padEnd(colWidth)).join(' ');
-    const sep    = keys.map(() => '-'.repeat(colWidth)).join(' ');
-    const rows   = items.map(item => {
-      const src = item && typeof item === 'object' && !Array.isArray(item)
-        ? item as Record<string, PSValue> : { Value: item };
-      return keys.map(k => {
-        const val = src[Object.keys(src).find(x => x.toLowerCase() === k.toLowerCase()) ?? k] ?? '';
-        return psValueToString(val).padEnd(colWidth);
-      }).join(' ');
-    });
-    return [header, sep, ...rows].join('\n');
+    const header = cols.map(c => c.name.padEnd(colWidth)).join(' ');
+    const sep    = cols.map(() => '-'.repeat(colWidth)).join(' ');
+    const rows   = items.map(item =>
+      cols.map(c => psValueToString(c.get(item) ?? '').padEnd(colWidth)).join(' '));
+    return (hideHeaders ? rows : [header, sep, ...rows]).join('\n');
   }
 }
 
@@ -417,16 +638,17 @@ export class FormatListCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
-    const propFilter = stringArgs(ctx.positional, ctx.named, 'property');
+    const rawProps = flattenProps(ctx.named['property'] !== undefined
+      ? toArray(ctx.named['property'])
+      : ctx.positional);
     return items.map(item => {
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
+      if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
         const src = item as Record<string, PSValue>;
-        const keys = Object.keys(src);
-        const lcMap = new Map(keys.map(k => [k.toLowerCase(), k]));
-        const picked = propFilter.length
-          ? propFilter.map(p => [p, src[lcMap.get(p.toLowerCase()) ?? p] ?? ''] as [string, PSValue])
-          : keys.map(k => [k, src[k]] as [string, PSValue]);
-        return picked.map(([k, v]) => `${k} : ${psValueToString(v)}`).join('\n');
+        let cols = resolveColumns(rawProps, item, ctx);
+        if (cols.length === 0) {
+          cols = Object.keys(src).map(k => ({ name: k, get: (it: PSValue) => pickProp(it, k) }));
+        }
+        return cols.map(c => `${c.name} : ${psValueToString(c.get(item) ?? '')}`).join('\n');
       }
       return psValueToString(item);
     }).join('\n\n');
@@ -439,10 +661,31 @@ export class FormatWideCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);
-    const cols  = Number(ctx.named['column'] ?? ctx.named['columns'] ?? 4);
+    const cols  = Number(ctx.named['column'] ?? ctx.named['columns'] ?? 4) || 4;
+    // -Property (positional or named): the single column to display.
+    // Default for objects is the canonical display prop (Name) or first
+    // key — NOT the whole "Key=Value;" object dump.
+    const propArg = stringArgs(ctx.positional, ctx.named, 'property');
+    const prop = propArg.length ? propArg[0] : null;
+
+    const cellOf = (v: PSValue): string => {
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        const rec = v as Record<string, PSValue>;
+        if (prop) {
+          const k = Object.keys(rec).find(x => x.toLowerCase() === prop.toLowerCase());
+          return psValueToString(k !== undefined ? rec[k] : '');
+        }
+        const nameK = Object.keys(rec).find(x => x.toLowerCase() === 'name');
+        return psValueToString(nameK !== undefined ? rec[nameK] : (Object.values(rec)[0] ?? ''));
+      }
+      return psValueToString(v);
+    };
+
+    const cells = items.map(cellOf);
+    const width = Math.max(1, ...cells.map(c => c.length)) + 2;
     const lines: string[] = [];
-    for (let i = 0; i < items.length; i += cols) {
-      lines.push(items.slice(i, i + cols).map(v => psValueToString(v).padEnd(18)).join(' '));
+    for (let i = 0; i < cells.length; i += cols) {
+      lines.push(cells.slice(i, i + cols).map(c => c.padEnd(width)).join('').replace(/\s+$/, ''));
     }
     return lines.join('\n');
   }
@@ -466,15 +709,48 @@ export class GetMemberCmdlet implements ICmdlet {
   readonly aliases = ['gm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const input = toArray(ctx.pipeInput);
+    const input = toArray(ctx.named['inputobject'] ?? ctx.pipeInput);
     if (input.length === 0) return [];
-    const sample = input[0] as Record<string, PSValue>;
+    const sample = input[0];
     const filter = ctx.named['membertype'] ? psValueToString(ctx.named['membertype']).toLowerCase() : null;
+    const nameF  = ctx.named['name'] ? psValueToString(ctx.named['name']).toLowerCase() : null;
 
-    return Object.keys(sample).map(key => {
-      const type = typeof sample[key] === 'function' ? 'Method' : 'Property';
-      if (filter && type.toLowerCase() !== filter) return null;
-      return { Name: key, MemberType: type, Definition: `${typeof sample[key]} ${key}` } as Record<string, PSValue>;
-    }).filter(Boolean) as PSValue[];
+    type Mem = { Name: string; MemberType: string; Definition: string };
+    let members: Mem[];
+
+    if (typeof sample === 'string') {
+      // .NET System.String surface — enough that `"x" | Get-Member -Name
+      // Substring` resolves (was dumping per-char index "properties").
+      members = [
+        { Name: 'Length', MemberType: 'Property', Definition: 'int Length {get;}' },
+        ...['Contains', 'EndsWith', 'IndexOf', 'Insert', 'PadLeft', 'PadRight',
+            'Remove', 'Replace', 'Split', 'StartsWith', 'Substring', 'ToCharArray',
+            'ToLower', 'ToUpper', 'Trim', 'TrimEnd', 'TrimStart']
+          .map(m => ({ Name: m, MemberType: 'Method', Definition: `string ${m}()` })),
+      ];
+    } else if (typeof sample === 'number' || typeof sample === 'boolean') {
+      members = ['CompareTo', 'Equals', 'GetHashCode', 'GetType', 'ToString']
+        .map(m => ({ Name: m, MemberType: 'Method', Definition: `${typeof sample} ${m}()` }));
+    } else if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) {
+      const rec = sample as Record<string, PSValue>;
+      // A [pscustomobject] exposes NoteProperty members; a plain hashtable
+      // exposes Property members (psCast tags the former).
+      const propKind = (rec as Record<string, unknown>).__pscustomobject__
+        ? 'NoteProperty' : 'Property';
+      members = Object.keys(rec)
+        .filter(k => !k.startsWith('__'))
+        .map(k => typeof rec[k] === 'function'
+          ? { Name: k, MemberType: 'Method',   Definition: `System.Object ${k}()` }
+          : { Name: k, MemberType: propKind,   Definition: `${typeof rec[k]} ${k}` });
+    } else {
+      members = [];
+    }
+
+    const matchType = (mt: string) => !filter || mt.toLowerCase() === filter;
+
+    return members
+      .filter(m => matchType(m.MemberType))
+      .filter(m => !nameF || m.Name.toLowerCase() === nameF)
+      .map(m => ({ ...m })) as PSValue[];
   }
 }

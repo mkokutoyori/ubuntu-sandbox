@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-scripts-server-extras
-Generated: 2026-05-16T23:22:43.220Z
+Generated: 2026-05-16T23:59:19.138Z
 Engine: powershell
 host=SRV-SCR-DBG (windows-server)
 Total commands: 23
@@ -25,16 +25,17 @@ PS [4/23]> Get-Content C:\ServerScripts\role.ps1
   "Hostname = $env:COMPUTERNAME"
   "User = $env:USERNAME"
   "Date = $(Get-Date)"
+  
 
 PS [5/23]> & C:\ServerScripts\role.ps1
   Hostname = SRV-SCR-DBG
   User = Administrator
-  Date = 5/16/2026 11:22 PM
+  Date = 5/16/2026 11:59 PM
 
 PS [6/23]> . C:\ServerScripts\role.ps1
   Hostname = SRV-SCR-DBG
   User = Administrator
-  Date = 5/16/2026 11:22 PM
+  Date = 5/16/2026 11:59 PM
 
 PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service | Group-Object Status | ForEach-Object { `"`$(`$_.Name): `$(`$_.Count)`" }`nGet-Service | Where-Object { `$_.Status -eq `"Running`" } | Select-Object -First 5 Name, Status`n"
 <empty>
@@ -42,6 +43,7 @@ PS [7/23]> Set-Content -Path C:\ServerScripts\svcaudit.ps1 -Value "Get-Service |
 PS [8/23]> Get-Content C:\ServerScripts\svcaudit.ps1
   Get-Service | Group-Object Status | ForEach-Object { "$($_.Name): $($_.Count)" }
   Get-Service | Where-Object { $_.Status -eq "Running" } | Select-Object -First 5 Name, Status
+  
 
 PS [9/23]> & C:\ServerScripts\svcaudit.ps1
   Running: 20
@@ -62,6 +64,7 @@ PS [11/23]> Get-Content C:\ServerScripts\users.ps1
     New-LocalUser -Name $u -NoPassword -ErrorAction SilentlyContinue | Out-Null
     Write-Output "created $u"
   }
+  
 
 PS [12/23]> & C:\ServerScripts\users.ps1 -Prefix srv
   created srv-acct1
@@ -87,6 +90,7 @@ PS [16/23]> Get-Content C:\ServerScripts\report.ps1
   "User: $env:USERNAME"
   "Services running: $((Get-Service | Where-Object { $_.Status -eq 'Running' }).Count)"
   "Processes: $((Get-Process).Count)"
+  
 
 PS [17/23]> & C:\ServerScripts\report.ps1
   == System report ==
@@ -108,11 +112,11 @@ PS [19/23]> & C:\ServerScripts\inline.ps1
 PS [20/23]> Get-ChildItem C:\ServerScripts | Format-Table Name, Length -AutoSize
   Name            Length         
   --------------- ---------------
-  inline.ps1      39             
-  report.ps1      196            
-  role.ps1        75             
-  svcaudit.ps1    174            
-  users.ps1       187            
+  inline.ps1      40             
+  report.ps1      197            
+  role.ps1        76             
+  svcaudit.ps1    175            
+  users.ps1       188            
 
 PS [21/23]> (Get-ChildItem C:\ServerScripts).Count
   5

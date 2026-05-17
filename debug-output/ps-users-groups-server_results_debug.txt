@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-users-groups-server
-Generated: 2026-05-16T23:22:40.333Z
+Generated: 2026-05-16T23:59:19.799Z
 Engine: powershell
 host=SRV-USR-DBG (windows-server)
 Total commands: 102
@@ -234,11 +234,13 @@ PS [29/102]> Get-LocalUser -Name alice
   
 
 PS [30/102]> Get-LocalUser -Name bob | Format-List *
-  
-  * : 
-  
-  * : 
-  
+  Name : bob
+  FullName : Bob Builder
+  Description : 
+  SID : S-1-5-21-3623811015-3361044348-30300820-1003
+  Enabled : True
+  PasswordRequired : True
+  LastLogon : 
 
 PS [31/102]> (Get-LocalUser -Name carol).Description
   QA tester

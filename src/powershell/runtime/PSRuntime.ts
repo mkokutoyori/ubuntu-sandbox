@@ -550,19 +550,20 @@ export class PSRuntime {
   // ── Statement dispatcher ───────────────────────────────────────────────────
 
   execStatement(node: PSStatement, env: PSEnvironment): PSValue {
+    let result: PSValue;
     switch (node.type) {
-      case 'PipelineStatement':   return this.execPipelineStmt(node as PSPipelineStatement, env);
-      case 'AssignmentStatement': return this.execAssignment(node as PSAssignmentStatement, env);
-      case 'IfStatement':         return this.execIf(node as PSIfStatement, env);
-      case 'WhileStatement':      return this.execWhile(node as PSWhileStatement, env);
-      case 'DoWhileStatement':    return this.execDoWhile(node as PSDoWhileStatement, env);
-      case 'DoUntilStatement':    return this.execDoUntil(node as PSDoUntilStatement, env);
-      case 'ForStatement':        return this.execFor(node as PSForStatement, env);
-      case 'ForeachStatement':    return this.execForeach(node as PSForeachStatement, env);
-      case 'SwitchStatement':     return this.execSwitch(node as PSSwitchStatement, env);
-      case 'TryStatement':        return this.execTry(node as PSTryStatement, env);
-      case 'FunctionDefinition':  return this.execFunctionDef(node as PSFunctionDefinition, env);
-      case 'ClassDefinition':     return this.execClassDef(node as PSClassDefinition, env);
+      case 'PipelineStatement':   result = this.execPipelineStmt(node as PSPipelineStatement, env); break;
+      case 'AssignmentStatement': result = this.execAssignment(node as PSAssignmentStatement, env); break;
+      case 'IfStatement':         result = this.execIf(node as PSIfStatement, env); break;
+      case 'WhileStatement':      result = this.execWhile(node as PSWhileStatement, env); break;
+      case 'DoWhileStatement':    result = this.execDoWhile(node as PSDoWhileStatement, env); break;
+      case 'DoUntilStatement':    result = this.execDoUntil(node as PSDoUntilStatement, env); break;
+      case 'ForStatement':        result = this.execFor(node as PSForStatement, env); break;
+      case 'ForeachStatement':    result = this.execForeach(node as PSForeachStatement, env); break;
+      case 'SwitchStatement':     result = this.execSwitch(node as PSSwitchStatement, env); break;
+      case 'TryStatement':        result = this.execTry(node as PSTryStatement, env); break;
+      case 'FunctionDefinition':  result = this.execFunctionDef(node as PSFunctionDefinition, env); break;
+      case 'ClassDefinition':     result = this.execClassDef(node as PSClassDefinition, env); break;
       case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
       case 'BreakStatement':      throw new BreakSignal((node as PSBreakStatement).label ?? undefined);
       case 'ContinueStatement':   throw new ContinueSignal((node as PSContinueStatement).label ?? undefined);
@@ -570,7 +571,34 @@ export class PSRuntime {
       case 'TrapStatement':       return null; // collected by execStatementList
       default:                    return null;
     }
+    // Track pipeline voidability for runBlockCapture. Assignments and
+    // `$x++`/`$x+=1` are voidable in PowerShell; an if/loop/switch/try is
+    // voidable iff the last inner statement it ran was — so for those we
+    // PRESERVE the flag the recursive execStatement already set.
+    switch (node.type) {
+      case 'AssignmentStatement':
+        this.lastStmtVoid = true; break;
+      case 'PipelineStatement': {
+        const p = node as PSPipelineStatement;
+        this.lastStmtVoid = p.pipeline.commands.length === 1
+          && p.pipeline.commands[0].parameters.length === 0
+          && p.pipeline.commands[0].arguments.length === 0
+          && (p.pipeline.commands[0].name as { type?: string })?.type === 'AssignmentStatement';
+        break;
+      }
+      case 'IfStatement':      case 'WhileStatement':   case 'DoWhileStatement':
+      case 'DoUntilStatement': case 'ForStatement':     case 'ForeachStatement':
+      case 'SwitchStatement':  case 'TryStatement':
+        break; // preserve inner statement's voidability
+      default:
+        this.lastStmtVoid = false;
+    }
+    return result;
   }
+
+  /** Set by execStatement: was the last executed statement voidable
+   *  (assignment / `$x++`)? Consumed only at the runBlockCapture boundary. */
+  private lastStmtVoid = false;
 
   // ── Assignment ─────────────────────────────────────────────────────────────
 
@@ -738,6 +766,38 @@ export class PSRuntime {
     if (block.endBlock)     this.execStatementList(block.endBlock,     env);
     if (!block.body) return null;
     return this.aggregateCaptured(this.runBlockCapture(block.body, env));
+  }
+
+  /**
+   * Run a script block's body directly in `scopeEnv` (no fresh child scope)
+   * with `$_`/`$PSItem` bound. ForEach-Object uses this so its
+   * -Begin/-Process/-End blocks (and every -Process iteration) share one
+   * scope — `$acc=0; … $acc+=$_` accumulates as it does in real PowerShell.
+   * The previous `$_`/`$PSItem` are saved and restored so the binding does
+   * not leak past the loop.
+   */
+  invokeBlockInScope(
+    block: PSScriptBlock,
+    scopeEnv: PSEnvironment,
+    dollarUnderscore: PSValue,
+  ): PSValue {
+    const prevU = scopeEnv.has('_') ? scopeEnv.get('_') : undefined;
+    const prevI = scopeEnv.has('PSItem') ? scopeEnv.get('PSItem') : undefined;
+    scopeEnv.set('_', dollarUnderscore);
+    scopeEnv.set('PSItem', dollarUnderscore);
+    try {
+      if (block.beginBlock)   this.execStatementList(block.beginBlock,   scopeEnv);
+      if (block.processBlock) this.execStatementList(block.processBlock, scopeEnv);
+      if (block.endBlock)     this.execStatementList(block.endBlock,     scopeEnv);
+      if (!block.body) return null;
+      return this.aggregateCaptured(this.runBlockCapture(block.body, scopeEnv));
+    } catch (e) {
+      if (e instanceof ReturnSignal) return e.value;
+      throw e;
+    } finally {
+      if (prevU === undefined) scopeEnv.delete('_');     else scopeEnv.set('_', prevU);
+      if (prevI === undefined) scopeEnv.delete('PSItem'); else scopeEnv.set('PSItem', prevI);
+    }
   }
 
   /**
@@ -1715,8 +1775,13 @@ export class PSRuntime {
       const linesBefore = this.outputLines.length;
       const result = this.execStatement(stmt, env);
       const didEmit = this.outputLines.length > linesBefore;
+      // `$c++` / `$c += 1` (even nested in an if/loop whose taken branch
+      // ends in one) are voidable in PowerShell — they must not feed the
+      // pipeline. execStatement tracks this via lastStmtVoid.
+      const isVoidAssign = this.lastStmtVoid;
       // Non-assignment, non-definition statements that didn't emit via cmdlet → collect value
       if (!didEmit && result !== null && result !== undefined
+          && !isVoidAssign
           && stmt.type !== 'AssignmentStatement'
           && stmt.type !== 'FunctionDefinition') {
         if (Array.isArray(result)) captured.push(...result);
@@ -2027,6 +2092,9 @@ export class PSRuntime {
       setVariable:        (name, val) => self.global.set(name, val),
       invokeScriptBlock:  (block, namedV, posV, env2, $under) =>
         self.invokeScriptBlock(block, namedV, posV, env2, $under),
+      invokeBlockInScope: (block, scopeEnv, $under) =>
+        self.invokeBlockInScope(block, scopeEnv, $under),
+      makeChildScope:     (env2) => env2.createChild(),
       callCmdlet: (name, pos, namedP, pipe, env2) =>
         self.dispatchCmdlet(name, pos, namedP, pipe, env2),
       listCmdlets: () =>
@@ -2117,6 +2185,17 @@ export class PSRuntime {
       case 'version': case 'system.version': {
         const parts = String(val).split('.').map(Number);
         return { Major: parts[0]??0, Minor: parts[1]??0, Build: parts[2]??-1, Revision: parts[3]??-1, ToString: () => String(val) } as unknown as PSValue;
+      }
+      case 'pscustomobject': case 'psobject':
+      case 'system.management.automation.pscustomobject': {
+        // Tag the object so Get-Member can report its members as
+        // NoteProperty (a plain hashtable reports Property). Non-enumerable
+        // so Object.keys / JSON.stringify / toEqual are unaffected.
+        if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+          Object.defineProperty(val, '__pscustomobject__',
+            { value: true, enumerable: false, configurable: true });
+        }
+        return val;
       }
       default:        return val;
     }
