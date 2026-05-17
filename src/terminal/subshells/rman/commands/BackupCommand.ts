@@ -30,6 +30,7 @@ export class BackupCommand implements IRmanCommand<void> {
   constructor(
     private readonly mode: BackupMode,
     private readonly forceCompressed = false,
+    private readonly notBackedUpFromArg0 = false,
   ) {}
 
   execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
@@ -39,6 +40,10 @@ export class BackupCommand implements IRmanCommand<void> {
     const all = args.join(' ');
     const opts = parseBackupOptions(all);
     if (this.forceCompressed) opts.compressed = true;
+    if (this.notBackedUpFromArg0) {
+      const n = Number(args[0]);
+      if (Number.isFinite(n)) opts.notBackedUpNTimes = n;
+    }
 
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
@@ -83,14 +88,14 @@ export function parseBackupOptions(text: string): {
   compressed?: boolean; fromScn?: number;
   keepForever?: boolean; keepUntilTime?: string;
   cumulative?: boolean; maxPieceSize?: number;
-  encrypted?: boolean;
+  encrypted?: boolean; notBackedUpNTimes?: number;
 } {
   const out: {
     tag?: string; format?: string; deleteInput?: boolean;
     compressed?: boolean; fromScn?: number;
     keepForever?: boolean; keepUntilTime?: string;
     cumulative?: boolean; maxPieceSize?: number;
-    encrypted?: boolean;
+    encrypted?: boolean; notBackedUpNTimes?: number;
   } = {};
   const tagMatch = text.match(/\bTAG\s+'([^']+)'/i);
   if (tagMatch) out.tag = tagMatch[1].toUpperCase();
@@ -105,6 +110,8 @@ export function parseBackupOptions(text: string): {
   if (keepUntil) out.keepUntilTime = keepUntil[1];
   if (/\bCUMULATIVE\b/i.test(text)) out.cumulative = true;
   if (/\bENCRYPTED\b/i.test(text))  out.encrypted = true;
+  const notBackedUp = text.match(/\bNOT\s+BACKED\s+UP\s+(\d+)\s+TIMES\b/i);
+  if (notBackedUp) out.notBackedUpNTimes = Number(notBackedUp[1]);
   const mps = text.match(/\bMAXPIECESIZE\s+(\d+)\s*([KMG])?/i);
   if (mps) {
     const mult = mps[2]?.toUpperCase() === 'G' ? 1_073_741_824

@@ -199,17 +199,40 @@ export class ReactiveRmanSubShell implements ISubShell {
     }
   }
 
-  private _opLabel(op: string): string { return op.toLowerCase().replace(/_/g, ' '); }
+  /** Map an internal RmanOperation onto the Oracle-canonical verb that
+   *  Oracle's "Starting X at <date>" / "Finished X at <date>" lines use. */
+  private _opLabel(op: string): string {
+    switch (op) {
+      case 'BACKUP_DATABASE':
+      case 'BACKUP_ARCHIVELOG':
+      case 'BACKUP_TABLESPACE':    return 'backup';
+      case 'RESTORE_DATABASE':     return 'restore';
+      case 'RECOVER_DATABASE':     return 'recover';
+      case 'DUPLICATE_DATABASE':   return 'Duplicate Db';
+      case 'CROSSCHECK':           return 'crosscheck';
+      case 'DELETE_EXPIRED':
+      case 'DELETE_OBSOLETE':      return 'delete';
+      default:                     return op.toLowerCase().replace(/_/g, ' ');
+    }
+  }
   private _push(line: string): void { this._outputBuffer.push(line); }
 
-  private _formatRmanError(_e: RmanError): string[] {
-    return [
+  private _formatRmanError(e: RmanError): string[] {
+    const banner = [
       'RMAN-00571: ===========================================================',
       'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
       'RMAN-00571: ===========================================================',
-      'RMAN-00558: error encountered while parsing input command',
-      'RMAN-01009: syntax error: found: unknown command',
-      'RMAN-01007: at line 1 column 1 file: standard input',
     ];
+    // Match the canonical "RMAN-NNNNN: <message>" rendering for every
+    // typed error. Parse errors get the classic 03002/01007 trailer the
+    // real RMAN client emits for syntax failures.
+    if (e.code === 'RMAN_01009' || e.code === 'RMAN_00558') {
+      banner.push('RMAN-00558: error encountered while parsing input command');
+      banner.push(`RMAN-01009: ${e.message}`);
+      banner.push('RMAN-01007: at line 1 column 1 file: standard input');
+      return banner;
+    }
+    banner.push(rmanErrorMessage(e));
+    return banner;
   }
 }

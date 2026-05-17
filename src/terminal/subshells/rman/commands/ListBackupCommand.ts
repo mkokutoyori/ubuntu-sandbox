@@ -35,13 +35,27 @@ function typeOf(s: BackupSet): string {
   }
 }
 
-export type ListVariant = 'SUMMARY' | 'DETAIL' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY';
+export type ListVariant = 'SUMMARY' | 'DETAIL' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
 
 export class ListBackupCommand implements IRmanCommand<string[]> {
   readonly name = 'LIST BACKUP';
   constructor(private readonly variant: ListVariant = 'DETAIL') {}
 
-  execute(_args: string[], { catalog, policy }: RmanCommandContext): Result<string[], RmanError> {
+  execute(_args: string[], { catalog, policy, ctx }: RmanCommandContext): Result<string[], RmanError> {
+    if (this.variant === 'INCARNATION') {
+      const dbName = ctx.dbName;
+      const dbId   = String(ctx.dbId.value);
+      return ok([
+        '',
+        'List of Database Incarnations',
+        '=============================',
+        'DB Key  Inc Key DB Name  DB ID            STATUS  Reset SCN  Reset Time',
+        '------- ------- -------- ---------------- ------- ---------- ----------',
+        `1       1       ${dbName.padEnd(8)} ${dbId.padEnd(16)} PARENT  1          ${new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}`,
+        `1       2       ${dbName.padEnd(8)} ${dbId.padEnd(16)} CURRENT 1892354    ${new Date().toISOString().slice(0, 10)}`,
+        '',
+      ]);
+    }
     const snap = catalog.listAll();
     if (!snap.ok) return snap;
 

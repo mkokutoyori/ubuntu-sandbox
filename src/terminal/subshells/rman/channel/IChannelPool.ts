@@ -17,6 +17,8 @@ export interface IChannelPool {
   allocate(alias?: string): Result<ChannelHandle, RmanError>;
   release(handle: ChannelHandle): Result<void, RmanError>;
   getStats(): ChannelStats;
+  /** Read-only view of the persistent channel configuration. */
+  getConfigs(): ReadonlyArray<import('./types').ChannelConfig>;
   readonly allocations$: RmanObservable<Extract<RmanEvent, { type: 'CHANNEL_ALLOCATED' }>>;
   readonly releases$:    RmanObservable<Extract<RmanEvent, { type: 'CHANNEL_RELEASED' }>>;
   dispose(): void;

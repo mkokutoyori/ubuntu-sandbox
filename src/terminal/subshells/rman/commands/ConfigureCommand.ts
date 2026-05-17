@@ -59,13 +59,39 @@ export class ConfigureCommand implements IRmanCommand<string[]> {
     // CONTROLFILE AUTOBACKUP ────────────────────────────────────────
     if (upper === 'CONTROLFILE AUTOBACKUP ON')  delta = cfg.setControlfileAutobackup(true);
     if (upper === 'CONTROLFILE AUTOBACKUP OFF') delta = cfg.setControlfileAutobackup(false);
+    const mCfFmt = text.match(/^CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE (DISK|SBT) TO '([^']+)'$/i);
+    if (mCfFmt) delta = cfg.setControlfileAutobackupFormat(mCfFmt[2]);
     // DEVICE TYPE PARALLELISM ───────────────────────────────────────
-    const mPar = upper.match(/^DEVICE TYPE DISK PARALLELISM (\d+)$/);
+    const mPar = upper.match(/^DEVICE TYPE (DISK|SBT) PARALLELISM (\d+)(?: BACKUP TYPE TO (BACKUPSET|COMPRESSED BACKUPSET|COPY))?$/);
     if (mPar) {
-      const n = parseInt(mPar[1], 10);
+      const n = parseInt(mPar[2], 10);
       if (n < 1) return err({ code: 'RMAN_00558', message: `invalid PARALLELISM ${n}` });
       delta = cfg.setDeviceParallelism(n);
+      if (mPar[3]) cfg.setDefaultBackupType(mPar[3] as 'BACKUPSET' | 'COMPRESSED BACKUPSET' | 'COPY');
     }
+    // CHANNEL DEVICE TYPE … FORMAT '…' ──────────────────────────────
+    const mChFmt = text.match(/^CHANNEL(?:\s+\d+)?\s+DEVICE TYPE (DISK|SBT).*\bFORMAT\s+'([^']+)'/i);
+    if (mChFmt) delta = cfg.setChannelFormat(mChFmt[2]);
+    // CONFIGURE CHANNEL <n> DEVICE TYPE … (no FORMAT) — accepted no-op
+    // so MAXOPENFILES / RATE / MAXPIECESIZE-only forms don't 01009.
+    if (!delta && /^CHANNEL(?:\s+\d+)?\s+DEVICE TYPE (DISK|SBT)\b/i.test(text)) {
+      delta = { key: 'channelOpts', oldValue: '<unset>', newValue: text };
+    }
+    // BACKUP COPIES ────────────────────────────────────────────────
+    const mDfC = upper.match(/^DATAFILE BACKUP COPIES FOR DEVICE TYPE (DISK|SBT) TO (\d+)$/);
+    if (mDfC) delta = cfg.setDatafileBackupCopies(parseInt(mDfC[2], 10));
+    const mArC = upper.match(/^ARCHIVELOG BACKUP COPIES FOR DEVICE TYPE (DISK|SBT) TO (\d+)$/);
+    if (mArC) delta = cfg.setArchivelogBackupCopies(parseInt(mArC[2], 10));
+    // ARCHIVELOG DELETION POLICY ────────────────────────────────────
+    if (upper === 'ARCHIVELOG DELETION POLICY TO NONE')
+      delta = cfg.setArchivelogDeletionPolicy('NONE');
+    if (upper === 'ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY')
+      delta = cfg.setArchivelogDeletionPolicy('APPLIED_ON_ALL_STANDBY');
+    const mArDP = upper.match(/^ARCHIVELOG DELETION POLICY TO BACKED UP (\d+) TIMES TO DEVICE TYPE (DISK|SBT)$/);
+    if (mArDP) delta = cfg.setArchivelogDeletionPolicy('BACKED_UP');
+    // ENCRYPTION ALGORITHM ──────────────────────────────────────────
+    const mEncAlg = upper.match(/^ENCRYPTION ALGORITHM '(AES128|AES192|AES256)'$/);
+    if (mEncAlg) delta = cfg.setEncryptionAlgorithm(mEncAlg[1] as 'AES128' | 'AES192' | 'AES256');
     // DEFAULT DEVICE TYPE ───────────────────────────────────────────
     if (upper === 'DEFAULT DEVICE TYPE TO DISK') delta = cfg.setDefaultDeviceType('DISK');
     if (upper === 'DEFAULT DEVICE TYPE TO SBT')  delta = cfg.setDefaultDeviceType('SBT');

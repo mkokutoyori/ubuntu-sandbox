@@ -35,6 +35,39 @@ export type RmanError =
   // Policy
   | { code: 'RETENTION_EVAL_ERROR'; message: string };
 
+/** Map every error code to the Oracle-canonical "RMAN-NNNNN" prefix
+ *  the real RMAN client emits. Internal sandbox categories
+ *  (CATALOG_*, VFS_*, CHANNEL_*, JOB_*, POLICY_*) are normalised onto
+ *  the closest Oracle code so transcripts paste cleanly against real
+ *  Oracle docs / KB articles. */
+const ORACLE_CODE_MAP: Record<string, string> = {
+  // Catalog
+  CATALOG_READ_ERROR:    'RMAN-06026',  // unable to find datafile from catalog
+  CATALOG_WRITE_ERROR:   'RMAN-06091',  // no channel allocated for catalog op
+  BACKUP_KEY_NOT_FOUND:  'RMAN-06024',  // no backup or copy of <…> found
+  SCN_INVALID:           'RMAN-06026',
+  // Channel
+  NO_CHANNEL_AVAILABLE:  'RMAN-06403',  // (re-using existing 06403 for "no channel")
+  CHANNEL_TIMEOUT:       'RMAN-03009',
+  CHANNEL_IO_ERROR:      'RMAN-03002',
+  // VFS
+  VFS_WRITE_ERROR:       'RMAN-19625',  // (similar to ORA-19625)
+  VFS_READ_ERROR:        'RMAN-19625',
+  VFS_NO_SPACE:          'RMAN-19811',  // out of space in the FRA
+  // Job
+  JOB_CANCELLED:         'RMAN-03014',
+  JOB_TIMEOUT:           'RMAN-03009',
+  // Policy
+  RETENTION_EVAL_ERROR:  'RMAN-08137',
+};
+
 export function rmanErrorMessage(e: RmanError): string {
-  return `${e.code}: ${e.message}`;
+  // Oracle prints "RMAN-NNNNN" (hyphen). Our discriminant union uses
+  // underscores so TypeScript can narrow; rewrite to hyphens for any
+  // RMAN_NNNNN code, fall back to the ORACLE_CODE_MAP for internal
+  // categories so the transcript stays Oracle-shaped.
+  const code = /^RMAN_\d+$/.test(e.code)
+    ? e.code.replace('_', '-')
+    : (ORACLE_CODE_MAP[e.code] ?? e.code);
+  return `${code}: ${e.message}`;
 }

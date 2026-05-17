@@ -141,8 +141,30 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     // VALIDATE — skip the VFS write and the catalog persistence.
     if (validate) {
-      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
+      const scope = params.validateScope;
+      const label = scope === 'TABLESPACE' && params.tablespace ? `tablespace ${params.tablespace}`
+                  : scope === 'DATAFILE'   && params.fileNo     ? `datafile ${params.fileNo}`
+                  : scope === 'BACKUPSET'  && params.bsKey      ? `backupset ${params.bsKey}`
+                  :                                                what;
+      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what: label });
       return ok(undefined);
+    }
+
+    // BACKUP NOT BACKED UP n TIMES — count existing FULL/INCREMENTAL sets;
+    // if the file is already covered enough times, skip it (no piece, no
+    // catalog write) just like Oracle's backup optimization does.
+    const nbTimes = params.notBackedUpNTimes ? Number(params.notBackedUpNTimes) : undefined;
+    if (nbTimes !== undefined && !isControlfile && !isSpfile && !isArchivelog) {
+      const snap = this._catalog.listAll();
+      if (snap.ok) {
+        const coverCount = snap.value.sets.filter(s =>
+          s.type === 'FULL' || s.type === 'INCREMENTAL_0' || s.type === 'INCREMENTAL_1'
+        ).length;
+        if (coverCount >= nbTimes) {
+          this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what: `${what} (already backed up ${coverCount} times)` });
+          return ok(undefined);
+        }
+      }
     }
 
     const dfEntries: DatafileEntry[] = (isControlfile || isSpfile) ? [] : datafiles.map(df => {

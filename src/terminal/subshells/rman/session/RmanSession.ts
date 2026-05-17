@@ -44,6 +44,8 @@ export class RmanSession implements IRmanSession {
   private readonly _userChannels = new Map<string, import('../channel/types').ChannelHandle>();
   /** Rename map populated by SET NEWNAME FOR DATAFILE inside a RUN block. */
   private readonly _setNewname = new Map<number, string>();
+  /** UNTIL TIME / UNTIL SCN binding set inside a RUN block — cleared on block close. */
+  private readonly _setUntil: { untilTime?: string; untilScn?: number } = {};
   private _state: RmanSessionState = 'IDLE';
   private readonly _unsubs: Array<() => void> = [];
   private _disposed = false;
@@ -174,6 +176,7 @@ export class RmanSession implements IRmanSession {
       pool:    this._pool,
       userChannels: this._userChannels,
       setNewname:   this._setNewname,
+      setUntil:     this._setUntil,
     };
   }
 
@@ -183,12 +186,19 @@ export class RmanSession implements IRmanSession {
       return err({ code: 'RMAN_03002', message: 'target database is not connected' });
     }
     const output: string[] = [];
-    for (const cmd of lines) {
-      const r = this._dispatcher.dispatch(cmd, this._cmdCtx());
-      if (!r.ok) return r;
-      output.push(...r.value);
+    try {
+      for (const cmd of lines) {
+        const r = this._dispatcher.dispatch(cmd, this._cmdCtx());
+        if (!r.ok) return r;
+        output.push(...r.value);
+      }
+      return ok(output);
+    } finally {
+      // RUN-block-scoped bindings die with the block, like Oracle's RMAN.
+      this._setNewname.clear();
+      this._setUntil.untilTime = undefined;
+      this._setUntil.untilScn  = undefined;
     }
-    return ok(output);
   }
 
   getBanner(): string[] {

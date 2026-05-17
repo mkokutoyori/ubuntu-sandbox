@@ -6,14 +6,17 @@ import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 
-export type ShowScope = 'ALL' | 'RETENTION_POLICY' | 'DEFAULT_DEVICE_TYPE' | 'CONTROLFILE_AUTOBACKUP';
+export type ShowScope =
+  | 'ALL' | 'RETENTION_POLICY' | 'DEFAULT_DEVICE_TYPE'
+  | 'CONTROLFILE_AUTOBACKUP' | 'CHANNEL';
 
 export class ShowCommand implements IRmanCommand<string[]> {
   readonly name = 'SHOW';
 
   constructor(private readonly scope: ShowScope = 'ALL') {}
 
-  execute(_args: string[], { policy, ctx, config }: RmanCommandContext): Result<string[], RmanError> {
+  execute(_args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    const { policy, ctx, config, pool, userChannels } = cmdCtx;
     const c = config?.snapshot();
 
     if (this.scope === 'RETENTION_POLICY') {
@@ -27,6 +30,23 @@ export class ShowCommand implements IRmanCommand<string[]> {
     if (this.scope === 'CONTROLFILE_AUTOBACKUP') {
       const cfAuto = c?.controlfileAutobackup === false ? 'OFF' : 'ON';
       return ok(['', `CONFIGURE CONTROLFILE AUTOBACKUP ${cfAuto};`, '']);
+    }
+    if (this.scope === 'CHANNEL') {
+      const lines: string[] = [''];
+      const cfgs = pool?.getConfigs() ?? [];
+      for (const cfg of cfgs) {
+        lines.push(
+          `CONFIGURE CHANNEL ${cfg.id} DEVICE TYPE ${cfg.deviceType} ` +
+          `PARALLELISM ${cfg.parallelism} MAXOPENFILES ${cfg.maxOpenFiles};`,
+        );
+      }
+      if (userChannels && userChannels.size > 0) {
+        for (const [alias, h] of userChannels.entries()) {
+          lines.push(`allocated channel: ${alias} (SID=${h.sid}, type=${h.deviceType})`);
+        }
+      }
+      lines.push('');
+      return ok(lines);
     }
 
     // Pull from live config when available; otherwise fall back to the
@@ -43,7 +63,10 @@ export class ShowCommand implements IRmanCommand<string[]> {
     const encDb       = c?.encryptionForDatabase ? 'ON' : 'OFF';
     const encAlg      = c?.encryptionAlgorithm ?? 'AES128';
     const compAlg     = c?.compressionAlgorithm ?? 'BASIC';
-    const arDelPol    = c?.archivelogDeletionPolicy ?? 'NONE';
+    const arDelPolRaw = c?.archivelogDeletionPolicy ?? 'NONE';
+    const arDelPol    = arDelPolRaw === 'APPLIED_ON_ALL_STANDBY' ? 'APPLIED ON ALL STANDBY'
+                     :  arDelPolRaw === 'BACKED_UP'             ? 'BACKED UP'
+                     :                                            'NONE';
 
     return ok([
       '',

@@ -32,8 +32,10 @@ describe('Result<T,E>', () => {
 
 describe('RmanError', () => {
   it('formats with rmanErrorMessage(e)', () => {
+    // Oracle convention: hyphen in the printed code, even though the
+    // discriminant union uses underscores so TypeScript can narrow.
     const e: RmanError = { code: 'RMAN_01009', message: 'unknown command' };
-    expect(rmanErrorMessage(e)).toBe('RMAN_01009: unknown command');
+    expect(rmanErrorMessage(e)).toBe('RMAN-01009: unknown command');
   });
 
   it('extra fields are preserved on the value', () => {

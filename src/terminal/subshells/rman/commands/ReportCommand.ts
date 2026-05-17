@@ -7,20 +7,36 @@
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
+import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
+import { RedundancyPolicy } from '../policy/RedundancyPolicy';
+import { RecoveryWindowPolicy } from '../policy/RecoveryWindowPolicy';
+
+/** Parse an optional REDUNDANCY n / RECOVERY WINDOW OF n DAYS suffix into a policy. */
+function parsePolicySuffix(text: string, fallback: IRetentionPolicy): IRetentionPolicy {
+  const r = text.match(/^REDUNDANCY\s+(\d+)$/i);
+  if (r) return new RedundancyPolicy(parseInt(r[1], 10));
+  const w = text.match(/^RECOVERY\s+WINDOW\s+OF\s+(\d+)\s+DAYS?$/i);
+  if (w) return new RecoveryWindowPolicy(parseInt(w[1], 10));
+  const d = text.match(/^DAYS\s+(\d+)$/i);
+  if (d) return new RecoveryWindowPolicy(parseInt(d[1], 10));
+  return fallback;
+}
 
 export class ReportCommand implements IRmanCommand<string[]> {
   readonly name = 'REPORT';
   constructor(private readonly mode: 'SCHEMA' | 'NEED_BACKUP' | 'OBSOLETE' | 'UNRECOVERABLE') {}
 
-  execute(_args: string[], { ctx, catalog, policy }: RmanCommandContext): Result<string[], RmanError> {
+  execute(args: string[], { ctx, catalog, policy }: RmanCommandContext): Result<string[], RmanError> {
+    const suffix = (args[0] ?? '').trim();
+    const activePolicy = suffix ? parsePolicySuffix(suffix, policy) : policy;
     if (this.mode === 'OBSOLETE') {
       const snap = catalog.listAll();
       if (!snap.ok) return snap;
-      const obsolete = policy.findObsolete(snap.value.sets);
+      const obsolete = activePolicy.findObsolete(snap.value.sets);
       const lines = [
         '',
         'RMAN retention policy will be applied to the command',
-        `RMAN retention policy is set to ${policy.describe().toLowerCase()}`,
+        `RMAN retention policy is set to ${activePolicy.describe().toLowerCase()}`,
         'Report of obsolete backups and copies',
         'Type                 Key    Completion Time    Filename/Handle',
         '-------------------- ------ ------------------ --------------------',
@@ -80,7 +96,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
     const lines = [
       '',
       'RMAN retention policy will be applied to the command',
-      `RMAN retention policy is set to ${policy.describe().toLowerCase()}`,
+      `RMAN retention policy is set to ${activePolicy.describe().toLowerCase()}`,
       'Report of files with 0 redundant backups',
       'File #backs Name',
       '----- ------ ---------------------------------------------------',

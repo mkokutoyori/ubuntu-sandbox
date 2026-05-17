@@ -14,14 +14,17 @@ import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import { JobBuilder } from '../job/JobBuilder';
+import { RedundancyPolicy } from '../policy/RedundancyPolicy';
+import { RecoveryWindowPolicy } from '../policy/RecoveryWindowPolicy';
+import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 
 export type DeleteMode = 'EXPIRED' | 'OBSOLETE' | 'BY_TAG' | 'BY_BSKEY' | 'ARCHIVELOG';
 
-export class DeleteCommand implements IRmanCommand<void> {
+export class DeleteCommand implements IRmanCommand<string[] | void> {
   readonly name = 'DELETE';
   constructor(private readonly mode: DeleteMode) {}
 
-  execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[] | void, RmanError> {
     const { catalog, ctx, policy, engine } = cmdCtx;
 
     switch (this.mode) {
@@ -29,9 +32,18 @@ export class DeleteCommand implements IRmanCommand<void> {
         return engine.run(JobBuilder.deleteExpired());
 
       case 'OBSOLETE': {
+        // Optional policy suffix: REDUNDANCY n / RECOVERY WINDOW OF n DAYS
+        const suffix = (args[0] ?? '').trim();
+        const activePolicy: IRetentionPolicy = (() => {
+          const r = suffix.match(/^REDUNDANCY\s+(\d+)$/i);
+          if (r) return new RedundancyPolicy(parseInt(r[1], 10));
+          const w = suffix.match(/^RECOVERY\s+WINDOW\s+OF\s+(\d+)\s+DAYS?$/i);
+          if (w) return new RecoveryWindowPolicy(parseInt(w[1], 10));
+          return policy;
+        })();
         const snap = catalog.listAll();
         if (!snap.ok) return snap;
-        const obsolete = policy.findObsolete(snap.value.sets).map(s => s.bsKey);
+        const obsolete = activePolicy.findObsolete(snap.value.sets).map(s => s.bsKey);
         return engine.run(JobBuilder.deleteObsolete(obsolete));
       }
 
@@ -55,7 +67,15 @@ export class DeleteCommand implements IRmanCommand<void> {
       case 'ARCHIVELOG': {
         const paths = ctx.getArchivelogPaths?.() ?? [];
         for (const p of paths) ctx.vfs.deleteFile(p);
-        return ok(undefined);
+        if (paths.length === 0) {
+          return ok(['specification matches no archived logs in the recovery catalog']);
+        }
+        return ok([
+          'allocated channel: ORA_DISK_1',
+          `channel ORA_DISK_1: deleting archived log(s) — ${paths.length} file(s)`,
+          ...paths.map(p => `archived log file name=${p}`),
+          `Deleted ${paths.length} objects`,
+        ]);
       }
     }
   }
