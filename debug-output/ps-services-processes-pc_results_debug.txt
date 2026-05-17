@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — ps-services-processes-pc
-Generated: 2026-05-16T23:22:38.653Z
+Generated: 2026-05-17T05:39:13.188Z
 Engine: powershell
 host=WIN-SVC-DBG (windows-pc)
 Total commands: 104
@@ -759,7 +759,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 6005
   Level        : Information
   ProviderName : EventLog
-  TimeCreated  : 5/16/2026 9:22 PM
+  TimeCreated  : 5/17/2026 3:39 AM
   Message      : The Event log service was started.
   RecordId     : 1009
   
@@ -767,7 +767,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Warning
   ProviderName : Microsoft-Windows-Power-Troubleshooter
-  TimeCreated  : 5/16/2026 5:22 PM
+  TimeCreated  : 5/16/2026 11:39 PM
   Message      : The system has returned from a low power state.
   RecordId     : 1008
   
@@ -775,7 +775,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 1
   Level        : Information
   ProviderName : Microsoft-Windows-Kernel-General
-  TimeCreated  : 5/16/2026 11:22 AM
+  TimeCreated  : 5/16/2026 5:39 PM
   Message      : The system uptime is 86400 seconds.
   RecordId     : 1007
   
@@ -783,7 +783,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7001
   Level        : Information
   ProviderName : Microsoft-Windows-Winlogon
-  TimeCreated  : 5/15/2026 11:22 PM
+  TimeCreated  : 5/16/2026 5:39 AM
   Message      : User Logon Notification for Customer Experience Improvement Program.
   RecordId     : 1006
   
@@ -791,7 +791,7 @@ PS [83/104]> Get-WinEvent -LogName System -MaxEvents 5 -ErrorAction SilentlyCont
   Id           : 7
   Level        : Error
   ProviderName : Disk
-  TimeCreated  : 5/14/2026 11:22 PM
+  TimeCreated  : 5/15/2026 5:39 AM
   Message      : The device, \Device\Harddisk0\DR0, has a bad block.
   RecordId     : 1005
   
@@ -802,7 +802,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1026
   Level        : Information
   ProviderName : .NET Runtime
-  TimeCreated  : 5/15/2026 11:22 PM
+  TimeCreated  : 5/16/2026 5:39 AM
   Message      : .NET Runtime version 4.0.30319 — Application crashed.
   RecordId     : 1015
   
@@ -810,7 +810,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1002
   Level        : Error
   ProviderName : Application Hang
-  TimeCreated  : 5/13/2026 11:22 PM
+  TimeCreated  : 5/14/2026 5:39 AM
   Message      : The program svchost.exe stopped interacting with Windows.
   RecordId     : 1014
   
@@ -818,7 +818,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1
   Level        : Information
   ProviderName : SecurityCenter
-  TimeCreated  : 5/11/2026 11:22 PM
+  TimeCreated  : 5/12/2026 5:39 AM
   Message      : The Windows Security Center Service has started.
   RecordId     : 1013
   
@@ -826,7 +826,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 1000
   Level        : Warning
   ProviderName : Application Error
-  TimeCreated  : 5/9/2026 11:22 PM
+  TimeCreated  : 5/10/2026 5:39 AM
   Message      : Faulting application name: explorer.exe.
   RecordId     : 1012
   
@@ -834,7 +834,7 @@ PS [84/104]> Get-WinEvent -LogName Application -MaxEvents 5 -ErrorAction Silentl
   Id           : 11707
   Level        : Information
   ProviderName : MsiInstaller
-  TimeCreated  : 5/6/2026 11:22 PM
+  TimeCreated  : 5/7/2026 5:39 AM
   Message      : Product: Microsoft Visual C++ Redistributable — Installation completed successfully.
   RecordId     : 1011
   

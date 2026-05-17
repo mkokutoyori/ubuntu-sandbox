@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — format-cmdlets-pc
-Generated: 2026-05-16T23:22:44.831Z
+Generated: 2026-05-17T05:39:14.612Z
 Engine: powershell
 host=WIN-FORMAT-CMDLETS (windows-pc) — cmdlet attribute suite
 Total commands: 56
@@ -287,9 +287,9 @@ PS [26/56]> 1..20 | Format-Wide -Column 5
   16                 17                 18                 19                 20                
 
 PS [27/56]> Get-ChildItem C:\ | Format-Wide Name -Column 4
-  Name=$Recycle.Bin; FullName=C:\\$Recycle.Bin; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM Name=PerfLogs; FullName=C:\\PerfLogs; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM Name=Program Files; FullName=C:\\Program Files; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM Name=Program Files (x86); FullName=C:\\Program Files (x86); Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM
-  Name=ProgramData; FullName=C:\\ProgramData; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM Name=System Volume Information; FullName=C:\\System Volume Information; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM Name=Users; FullName=C:\\Users; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM Name=Windows; FullName=C:\\Windows; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/16/2026 11:22 PM
-  Name=numbers.txt; FullName=C:\\numbers.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime=5/16/2026 11:22 PM Name=nums.txt; FullName=C:\\nums.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime=5/16/2026 11:22 PM
+  Name=$Recycle.Bin; FullName=C:\\$Recycle.Bin; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM Name=PerfLogs; FullName=C:\\PerfLogs; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM Name=Program Files; FullName=C:\\Program Files; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM Name=Program Files (x86); FullName=C:\\Program Files (x86); Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM
+  Name=ProgramData; FullName=C:\\ProgramData; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM Name=System Volume Information; FullName=C:\\System Volume Information; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM Name=Users; FullName=C:\\Users; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM Name=Windows; FullName=C:\\Windows; Length=; Mode=d-----; PSIsContainer=True; LastWriteTime=5/17/2026 5:39 AM
+  Name=numbers.txt; FullName=C:\\numbers.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime=5/17/2026 5:39 AM Name=nums.txt; FullName=C:\\nums.txt; Length=9; Mode=-a----; PSIsContainer=False; LastWriteTime=5/17/2026 5:39 AM
 
 
 --- [28] § Out-String ---

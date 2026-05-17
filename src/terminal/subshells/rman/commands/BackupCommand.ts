@@ -31,9 +31,17 @@ export class BackupCommand implements IRmanCommand<void> {
     const captured = args[0] ?? '';
     const opts = parseBackupOptions(captured);
 
+    const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(captured);
+
     switch (this.mode) {
-      case 'database':
-        return engine.run(JobBuilder.backupDatabase(opts));
+      case 'database': {
+        const r = engine.run(JobBuilder.backupDatabase(opts));
+        if (!r.ok) return r;
+        if (plusArchivelog) {
+          return engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
+        }
+        return r;
+      }
       case 'archivelog':
         return engine.run(JobBuilder.backupArchivelog(opts));
       case 'tablespace':

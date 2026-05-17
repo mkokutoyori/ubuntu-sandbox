@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — utility-cmdlets-server
-Generated: 2026-05-16T23:22:37.928Z
+Generated: 2026-05-17T05:39:11.653Z
 Engine: powershell
 host=SRV-UTILITY-CMDLETS (windows-server) — cmdlet attribute suite
 Total commands: 66
@@ -43,13 +43,13 @@ PS [8/66]> New-Object psobject -Property @{ a=1 } | ConvertTo-Json
 
 --- [9] § Get-Date ---
 PS [9/66]> Get-Date -Format "yyyy-MM-dd"
-  2026-05-16
+  2026-05-17
 
 PS [10/66]> Get-Date -Format "HH:mm"
-  23:22
+  05:39
 
 PS [11/66]> Get-Date -Format "dddd"
-  1616
+  1717
 
 PS [12/66]> (Get-Date).Year -gt 2000
   True
@@ -64,7 +64,7 @@ PS [15/66]> (Get-Date).AddDays(7) -gt (Get-Date)
   True
 
 PS [16/66]> (Get-Date).DayOfWeek
-  6
+  0
 
 PS [17/66]> Get-Date -Date '2024-01-15' -Format 'MM/dd/yyyy'
   01/15/2024
@@ -84,8 +84,8 @@ PS [21/66]> (Get-Random -Minimum 0 -Maximum 1) -in 0,1
   True
 
 PS [22/66]> Get-Random -SetSeed 42 -Minimum 1 -Maximum 100; Get-Random -SetSeed 42 -Minimum 1 -Maximum 100
-  21
-  34
+  47
+  73
 
 PS [23/66]> 1..10 | Get-Random -Count 3 | Measure-Object
   
@@ -101,10 +101,10 @@ PS [24/66]> (Get-Random -InputObject @(1,2,3,4,5)) -in 1..5
   False
 
 PS [25/66]> 1..100 | Get-Random -Count 5 | Sort-Object
-  0.36001236153756766
+  0.8978800866858723
 
 PS [26/66]> Get-Random -InputObject 'a','b','c'
-  0.5500224225429777
+  0.05804288961759485
 
 PS [27/66]> (1..1000 | Get-Random -Count 10 | Where-Object { $_ -ge 1 -and $_ -le 1000 } | Measure-Object).Count
   0
@@ -286,11 +286,11 @@ PS [56/66]> 1..5 | ForEach-Object { [pscustomobject]@{ N=$_; R=(Get-Random -SetS
   
   N  R
   -  -
-  1  3
-  3  3
-  2  7
-  4  9
-  5  9
+  4  0
+  1  4
+  2  8
+  3  8
+  5  8
   
 
 PS [57/66]> Get-Command -Verb Get -CommandType Cmdlet | Group-Object { $_.Name.Split("-")[1].Length } | Sort-Object Name | Select-Object Name, Count
@@ -319,8 +319,8 @@ PS [60/66]> (Get-Command -CommandType Cmdlet | Select-Object -ExpandProperty Nam
 
 PS [61/66]> [pscustomobject]@{ when=(Get-Date -Format "yyyy-MM-dd"); rand=(Get-Random -SetSeed 1 -Maximum 100) } | ConvertTo-Json
   {
-    "when": "2026-05-16",
-    "rand": 38
+    "when": "2026-05-17",
+    "rand": 3
   }
 
 PS [62/66]> Get-Alias | Group-Object Definition | Sort-Object Count -Descending | Select-Object -First 5 Name, Count
@@ -338,9 +338,9 @@ PS [63/66]> 1..10 | ForEach-Object { Get-Random -SetSeed $_ -Minimum 1 -Maximum 
   
   Name  Count
   ----  -----
-  1         3
   2         1
-  4         3
+  4         2
+  5         4
   6         3
   
 

@@ -1,6 +1,6 @@
 ============================================================
 Coherence debug transcript — coherence-users-groups-pc
-Generated: 2026-05-16T23:22:47.161Z
+Generated: 2026-05-17T05:39:17.676Z
 host=WIN-USR-COH (windows-pc)
 Total commands: 105
 ============================================================
@@ -84,9 +84,9 @@ CMD [11/105]> net user Administrator
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/16/2026
+  Password last set            5/17/2026
   Password expires             Never
-  Password changeable          5/16/2026
+  Password changeable          5/17/2026
   Password required            Yes
   User may change password     Yes
   
@@ -147,9 +147,9 @@ CMD [18/105]> net user alice
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/16/2026
+  Password last set            5/17/2026
   Password expires             Never
-  Password changeable          5/16/2026
+  Password changeable          5/17/2026
   Password required            Yes
   User may change password     Yes
   
@@ -205,9 +205,9 @@ CMD [26/105]> net user dave
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/16/2026
+  Password last set            5/17/2026
   Password expires             Never
-  Password changeable          5/16/2026
+  Password changeable          5/17/2026
   Password required            Yes
   User may change password     Yes
   
@@ -242,9 +242,9 @@ CMD [29/105]> net user erin
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/16/2026
+  Password last set            5/17/2026
   Password expires             Never
-  Password changeable          5/16/2026
+  Password changeable          5/17/2026
   Password required            Yes
   User may change password     Yes
   
@@ -276,9 +276,9 @@ CMD [31/105]> net user frank
   Account active               Yes
   Account expires              Never
   
-  Password last set            5/16/2026
+  Password last set            5/17/2026
   Password expires             Never
-  Password changeable          5/16/2026
+  Password changeable          5/17/2026
   Password required            Yes
   User may change password     Yes
   
