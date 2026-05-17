@@ -197,12 +197,42 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (inst === 'OPEN' || inst === 'SHUTDOWN') {
       return err({ code: 'RMAN_06403', message: 'database must be mounted (not open)' });
     }
+    const params = job.params ?? {};
     const snap = this._catalog.listAll();
     if (!snap.ok) return snap;
-    if (snap.value.sets.length === 0) {
+    let sets = [...snap.value.sets];
+    if (params.tag) {
+      sets = sets.filter(s => s.tag.label.toUpperCase() === params.tag);
+      if (sets.length === 0) {
+        return err({ code: 'RMAN_06023', message: `No backup with tag ${params.tag}` });
+      }
+    }
+    if (sets.length === 0) {
       return err({ code: 'RMAN_06023', message: 'No backup found to restore' });
     }
-    for (const df of this._ctx.getDatafiles()) {
+
+    // PREVIEW / VALIDATE — emit a progress line and skip the actual restore.
+    if (params.preview === 'true' || params.validate === 'true') {
+      const kind = params.preview === 'true' ? 'preview' : 'validate';
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: kind, pct: 60,
+        message: `restore ${kind}: ${sets.length} backup set(s) examined`,
+      });
+      return ok(undefined);
+    }
+
+    const tsFilter   = params.tablespace ? params.tablespace.toUpperCase() : undefined;
+    const fileFilter = params.fileNo     ? Number(params.fileNo) : undefined;
+    const datafiles  = this._ctx.getDatafiles().filter(df => {
+      if (fileFilter !== undefined) return df.fileNo === fileFilter;
+      if (tsFilter   !== undefined) return df.tablespace.toUpperCase() === tsFilter;
+      return true;
+    });
+    if (datafiles.length === 0 && (tsFilter || fileFilter !== undefined)) {
+      return err({ code: 'RMAN_06023', message: `No datafiles match the restore scope` });
+    }
+
+    for (const df of datafiles) {
       this._bus.emit({
         type: 'RESTORE_DATAFILE_STARTED', jobId: job.id, channelId,
         fileNo: df.fileNo, to: df.path,

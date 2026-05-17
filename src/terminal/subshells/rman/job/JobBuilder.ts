@@ -71,10 +71,34 @@ export const JobBuilder = {
     ], params);
   },
 
-  restoreDatabase(): RmanJob {
+  restoreDatabase(opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+    const params: Record<string, string> = {};
+    if (opts.tag)      params.tag      = opts.tag;
+    if (opts.preview)  params.preview  = 'true';
+    if (opts.validate) params.validate = 'true';
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: 'channel ORA_DISK_1: starting datafile backup set restore' },
-    ]);
+    ], Object.keys(params).length ? params : undefined);
+  },
+
+  restoreTablespace(ts: string, opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+    const params: Record<string, string> = { tablespace: ts.toUpperCase() };
+    if (opts.tag)      params.tag      = opts.tag;
+    if (opts.preview)  params.preview  = 'true';
+    if (opts.validate) params.validate = 'true';
+    return _make('RESTORE_DATABASE', [
+      { name: 'start_restore', pct: 10, message: `channel ORA_DISK_1: starting tablespace ${ts.toUpperCase()} restore` },
+    ], params);
+  },
+
+  restoreDatafile(fileNo: number, opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+    const params: Record<string, string> = { fileNo: String(fileNo) };
+    if (opts.tag)      params.tag      = opts.tag;
+    if (opts.preview)  params.preview  = 'true';
+    if (opts.validate) params.validate = 'true';
+    return _make('RESTORE_DATABASE', [
+      { name: 'start_restore', pct: 10, message: `channel ORA_DISK_1: starting datafile ${fileNo} restore` },
+    ], params);
   },
 
   duplicateDatabase(targetDbName: string): RmanJob {
