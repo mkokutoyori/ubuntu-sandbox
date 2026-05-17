@@ -16,18 +16,27 @@ import type { IRmanSession } from './session/IRmanSession';
 import type { RmanEvent } from './core/types';
 import type { IRmanOracleContext } from './integration/IRmanOracleContext';
 import { RmanSession } from './session/RmanSession';
+import { RmanSessionOptionsBuilder } from './session/RmanSessionOptionsBuilder';
 import { rmanErrorMessage, type RmanError } from './core/RmanError';
 import { formatOracleDate } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
+import { RmanLoggerActor } from './actors/RmanLoggerActor';
+import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
 export class ReactiveRmanSubShell implements ISubShell {
   private readonly _outputBuffer: string[] = [];
   private readonly _unsubs: Array<() => void> = [];
+  private readonly _loggerActor: RmanLoggerActor | null;
   private _shouldExit = false;
   private _disposed   = false;
 
-  private constructor(private readonly _session: IRmanSession) {
+  private constructor(
+    private readonly _session: IRmanSession,
+    loggerActor: RmanLoggerActor | null = null,
+  ) {
+    this._loggerActor = loggerActor;
+    this._loggerActor?.start();
     this._wireEvents();
   }
 
@@ -42,13 +51,42 @@ export class ReactiveRmanSubShell implements ISubShell {
     return { subShell: new ReactiveRmanSubShell(session), banner };
   }
 
-  /** Production entry point: wraps the active Equipment into a Linux context. */
+  /**
+   * Production entry point — wraps the active Equipment into a Linux
+   * context and wires the session into the project-wide IEventBus:
+   *   - every internal RmanEvent is re-published as a `rman.*` topic
+   *     (via RmanBusBridge);
+   *   - a RmanLoggerActor projects those topics into the shared `log`
+   *     topic so the network log panel records RMAN activity.
+   *
+   * Cross-session scoping is automatic — the sessionId is derived from
+   * the device id and a wall-clock suffix.
+   */
   static create(
     device: Equipment,
     args: string[],
   ): { subShell: ReactiveRmanSubShell; banner: string[] } {
     const ctx = LinuxRmanContext.forDevice(device);
-    return ReactiveRmanSubShell.fromContext(args, ctx);
+    const bus = getDefaultEventBus();
+    const sessionId = `${(device as { id?: string }).id ?? 'device'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const builder = new RmanSessionOptionsBuilder()
+      .withDbId(ctx.dbId)
+      .withSharedBus(bus, sessionId);
+    const session = new RmanSession(builder.build(), ctx);
+    const banner  = session.getBanner();
+    const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
+    if (targetIdx !== -1) {
+      session.connect(args[targetIdx + 1] ?? '/');
+      banner.push(`connected to target database: ${ctx.dbName} (DBID=${ctx.dbId.value})`);
+      banner.push('');
+    }
+
+    const loggerActor = new RmanLoggerActor(bus, sessionId);
+    return {
+      subShell: new ReactiveRmanSubShell(session, loggerActor),
+      banner,
+    };
   }
 
   // ── ISubShell ────────────────────────────────────────────────────
@@ -90,6 +128,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     if (this._disposed) return;
     this._disposed = true;
     for (const u of this._unsubs) u();
+    this._loggerActor?.stop();
     this._session.dispose();
   }
 
