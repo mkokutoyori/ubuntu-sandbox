@@ -232,8 +232,7 @@ export class ReactiveRmanSubShell implements ISubShell {
       banner.push('RMAN-01007: at line 1 column 1 file: standard input');
       return banner;
     }
-    const numeric = e.code.replace(/^RMAN_/, 'RMAN-');
-    banner.push(`${numeric}: ${e.message}`);
+    banner.push(rmanErrorMessage(e));
     return banner;
   }
 }
