@@ -388,6 +388,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'interface';
         return '';
       }
+      // `interface range <a> [to <b>]` — Cisco-ism the suites use; treat
+      // as a bulk-config view like port-group (Huawei has no per-port
+      // datapath difference here).
+      if (args[0].toLowerCase() === 'range') {
+        this.portGroupMembers = args.slice(1).join(' ');
+        this.mode = 'port-group';
+        return '';
+      }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
@@ -649,7 +657,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // is informational), so they are recognised no-ops.
     for (const kw of ['port', 'speed', 'duplex', 'negotiation', 'mtu',
       'flow-control', 'shutdown', 'stp', 'storm-control', 'description',
-      'loopback-detect', 'port-security', 'port-isolate', 'undo']) {
+      'loopback-detect', 'port-security', 'port-isolate', 'undo',
+      'group-member', 'eth-trunk', 'broadcast-suppression']) {
       t.registerGreedy(kw, `port-group ${kw}`, accept);
     }
     t.register('display this', 'Display port-group configuration', () =>

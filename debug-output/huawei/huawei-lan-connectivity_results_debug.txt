@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-lan-connectivity
-Generated: 2026-05-17T05:43:51.464Z
+Generated: 2026-05-17T05:45:59.197Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=L2 switch: VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation (no routing)
 Total steps: 68
@@ -260,12 +260,12 @@ Total steps: 68
 --- [39] § intra-VLAN ping (expect OK) ---
 [39/68] linux1 linux1$ ping -c 2 192.168.10.21
   PING 192.168.10.21 (192.168.10.21) 56(84) bytes of data.
-  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.563 ms
-  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.441 ms
+  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.605 ms
+  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.419 ms
   
   --- 192.168.10.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.441/1.002/1.563/0.561 ms
+  rtt min/avg/max/mdev = 0.419/1.012/1.605/0.593 ms
 
 [40/68] win1 win1$ ping -n 2 192.168.10.11
   
@@ -280,12 +280,12 @@ Total steps: 68
 
 [41/68] linux2 linux2$ ping -c 2 192.168.20.22
   PING 192.168.20.22 (192.168.20.22) 56(84) bytes of data.
-  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.405 ms
-  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.168 ms
+  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.435 ms
+  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.176 ms
   
   --- 192.168.20.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.168/0.286/0.405/0.118 ms
+  rtt min/avg/max/mdev = 0.176/0.306/0.435/0.130 ms
 
 [42/68] win2 win2$ ping -n 2 192.168.20.12
   

@@ -76,6 +76,32 @@ describe('Huawei Eth-Trunk — creation & LACP config', () => {
   });
 });
 
+describe('Huawei port-group / interface range (bulk config, no derail)', () => {
+  it('port-group <name> then group-member … to … is recognized', async () => {
+    const sw = await sysSwitch();
+    expect(await sw.executeCommand('port-group pg1')).not.toMatch(/Unrecognized/);
+    expect(sw.getPrompt()).toBe('[SW1-port-group]');
+    expect(await sw.executeCommand(
+      'group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9'))
+      .not.toMatch(/Unrecognized command/);
+    await sw.executeCommand('quit');
+    expect(sw.getPrompt()).toBe('[SW1]');
+  });
+
+  it('interface range … to … enters a bulk view and does not derail', async () => {
+    const sw = await sysSwitch();
+    expect(await sw.executeCommand(
+      'interface range GigabitEthernet0/0/6 to GigabitEthernet0/0/9'))
+      .not.toMatch(/Unrecognized command/);
+    expect(await sw.executeCommand('shutdown')).not.toMatch(/Unrecognized command/);
+    await sw.executeCommand('quit');
+    // back in system view → a normal interface command must still work
+    expect(await sw.executeCommand('interface GigabitEthernet0/0/1'))
+      .not.toMatch(/Unrecognized command/);
+    expect(sw.getPrompt()).toBe('[SW1-GigabitEthernet0/0/1]');
+  });
+});
+
 describe('Huawei interface — counters maintenance', () => {
   it('reset / display counters are recognized', async () => {
     const sw = await sysSwitch();
