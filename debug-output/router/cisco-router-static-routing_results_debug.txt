@@ -1,0 +1,2395 @@
+============================================================
+Router (L3) debug transcript — cisco-router-static-routing
+Generated: 2026-05-17T18:13:56.815Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
+Total steps: 325
+============================================================
+
+
+--- [1] § base addressing ---
+[1/325] r1 R1> enable
+<empty>
+
+[2/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/325] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[4/325] r1 R1(config-if)# ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[5/325] r1 R1(config-if)# no shutdown
+<empty>
+
+[6/325] r1 R1(config-if)# exit
+<empty>
+
+[7/325] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[8/325] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[9/325] r1 R1(config-if)# no shutdown
+<empty>
+
+[10/325] r1 R1(config-if)# exit
+<empty>
+
+[11/325] r1 R1(config)# end
+<empty>
+
+
+--- [12] § static route sweep ---
+[12/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[13/325] r1 R1(config)# ip route 172.17.1.0 255.255.255.0 10.0.0.2
+<empty>
+
+[14/325] r1 R1(config)# ip route 172.18.2.0 255.255.255.0 10.0.0.2
+<empty>
+
+[15/325] r1 R1(config)# ip route 172.19.3.0 255.255.255.0 10.0.0.2
+<empty>
+
+[16/325] r1 R1(config)# ip route 172.20.4.0 255.255.255.0 10.0.0.2
+<empty>
+
+[17/325] r1 R1(config)# ip route 172.21.5.0 255.255.255.0 10.0.0.2
+<empty>
+
+[18/325] r1 R1(config)# ip route 172.22.6.0 255.255.255.0 10.0.0.2
+<empty>
+
+[19/325] r1 R1(config)# ip route 172.23.7.0 255.255.255.0 10.0.0.2
+<empty>
+
+[20/325] r1 R1(config)# ip route 172.24.8.0 255.255.255.0 10.0.0.2
+<empty>
+
+[21/325] r1 R1(config)# ip route 172.25.9.0 255.255.255.0 10.0.0.2
+<empty>
+
+[22/325] r1 R1(config)# ip route 172.26.10.0 255.255.255.0 10.0.0.2
+<empty>
+
+[23/325] r1 R1(config)# ip route 172.27.11.0 255.255.255.0 10.0.0.2
+<empty>
+
+[24/325] r1 R1(config)# ip route 172.28.12.0 255.255.255.0 10.0.0.2
+<empty>
+
+[25/325] r1 R1(config)# ip route 172.29.13.0 255.255.255.0 10.0.0.2
+<empty>
+
+[26/325] r1 R1(config)# ip route 172.30.14.0 255.255.255.0 10.0.0.2
+<empty>
+
+[27/325] r1 R1(config)# ip route 172.31.15.0 255.255.255.0 10.0.0.2
+<empty>
+
+[28/325] r1 R1(config)# ip route 172.16.16.0 255.255.255.0 10.0.0.2
+<empty>
+
+[29/325] r1 R1(config)# ip route 172.17.17.0 255.255.255.0 10.0.0.2
+<empty>
+
+[30/325] r1 R1(config)# ip route 172.18.18.0 255.255.255.0 10.0.0.2
+<empty>
+
+[31/325] r1 R1(config)# ip route 172.19.19.0 255.255.255.0 10.0.0.2
+<empty>
+
+[32/325] r1 R1(config)# ip route 172.20.20.0 255.255.255.0 10.0.0.2
+<empty>
+
+[33/325] r1 R1(config)# ip route 172.21.21.0 255.255.255.0 10.0.0.2
+<empty>
+
+[34/325] r1 R1(config)# ip route 172.22.22.0 255.255.255.0 10.0.0.2
+<empty>
+
+[35/325] r1 R1(config)# ip route 172.23.23.0 255.255.255.0 10.0.0.2
+<empty>
+
+[36/325] r1 R1(config)# ip route 172.24.24.0 255.255.255.0 10.0.0.2
+<empty>
+
+[37/325] r1 R1(config)# ip route 172.25.25.0 255.255.255.0 10.0.0.2
+<empty>
+
+[38/325] r1 R1(config)# ip route 172.26.26.0 255.255.255.0 10.0.0.2
+<empty>
+
+[39/325] r1 R1(config)# ip route 172.27.27.0 255.255.255.0 10.0.0.2
+<empty>
+
+[40/325] r1 R1(config)# ip route 172.28.28.0 255.255.255.0 10.0.0.2
+<empty>
+
+[41/325] r1 R1(config)# ip route 172.29.29.0 255.255.255.0 10.0.0.2
+<empty>
+
+[42/325] r1 R1(config)# ip route 172.30.30.0 255.255.255.0 10.0.0.2
+<empty>
+
+[43/325] r1 R1(config)# ip route 172.31.31.0 255.255.255.0 10.0.0.2
+<empty>
+
+[44/325] r1 R1(config)# ip route 172.16.32.0 255.255.255.0 10.0.0.2
+<empty>
+
+[45/325] r1 R1(config)# ip route 172.17.33.0 255.255.255.0 10.0.0.2
+<empty>
+
+[46/325] r1 R1(config)# ip route 172.18.34.0 255.255.255.0 10.0.0.2
+<empty>
+
+[47/325] r1 R1(config)# ip route 172.19.35.0 255.255.255.0 10.0.0.2
+<empty>
+
+[48/325] r1 R1(config)# ip route 172.20.36.0 255.255.255.0 10.0.0.2
+<empty>
+
+[49/325] r1 R1(config)# ip route 172.21.37.0 255.255.255.0 10.0.0.2
+<empty>
+
+[50/325] r1 R1(config)# ip route 172.22.38.0 255.255.255.0 10.0.0.2
+<empty>
+
+[51/325] r1 R1(config)# ip route 172.23.39.0 255.255.255.0 10.0.0.2
+<empty>
+
+[52/325] r1 R1(config)# ip route 172.24.40.0 255.255.255.0 10.0.0.2
+<empty>
+
+[53/325] r1 R1(config)# end
+<empty>
+
+[54/325] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+
+[55/325] r1 R1# show ip route static
+  % Network not in table
+
+[56/325] r1 R1# show ip route 172.16.1.0
+  % Network not in table
+
+[57/325] r1 R1# show ip route 172.16.1.0 255.255.255.0
+  % Network not in table
+
+[58/325] r1 R1# show ip route summary
+  % Network not in table
+
+
+--- [59] § default / floating / recursive ---
+[59/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[60/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.2
+<empty>
+
+[61/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.6 200
+<empty>
+
+[62/325] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1
+  % Invalid input: Invalid IP address: GigabitEthernet0/1
+
+[63/325] r1 R1(config)# ip default-network 172.16.0.0
+  % Invalid input detected at '^' marker.
+  ip default-network 172.16.0.0
+     ^
+
+[64/325] r1 R1(config)# ip route 192.168.50.0 255.255.255.0 10.0.0.2 name BRANCH-A
+<empty>
+
+[65/325] r1 R1(config)# ip route 192.168.51.0 255.255.255.0 10.0.0.2 250 name BACKUP
+<empty>
+
+[66/325] r1 R1(config)# ip route 192.168.52.0 255.255.255.0 Null0
+  % Invalid input: Invalid IP address: Null0
+
+[67/325] r1 R1(config)# ip route 192.168.53.0 255.255.255.0 GigabitEthernet0/1 10.0.0.2
+  % Invalid input: Invalid IP address: GigabitEthernet0/1
+
+[68/325] r1 R1(config)# ip route 8.8.8.0 255.255.255.0 10.0.0.2 track 1
+<empty>
+
+[69/325] r1 R1(config)# ip route vrf CUST 192.168.60.0 255.255.255.0 10.0.0.2
+  % Invalid input: Invalid IP address: vrf
+
+[70/325] r1 R1(config)# ip routing
+<empty>
+
+[71/325] r1 R1(config)# no ip routing
+<empty>
+
+[72/325] r1 R1(config)# ip routing
+<empty>
+
+[73/325] r1 R1(config)# ip cef
+<empty>
+
+[74/325] r1 R1(config)# ip route 192.168.99.0 255.255.255.0 10.0.0.2 permanent
+<empty>
+
+[75/325] r1 R1(config)# end
+<empty>
+
+[76/325] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[77/325] r1 R1# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  172.17.1.0/24        10.0.0.2             GigabitEthernet0/1
+  172.18.2.0/24        10.0.0.2             GigabitEthernet0/1
+  172.19.3.0/24        10.0.0.2             GigabitEthernet0/1
+  172.20.4.0/24        10.0.0.2             GigabitEthernet0/1
+  172.21.5.0/24        10.0.0.2             GigabitEthernet0/1
+  172.22.6.0/24        10.0.0.2             GigabitEthernet0/1
+  172.23.7.0/24        10.0.0.2             GigabitEthernet0/1
+  172.24.8.0/24        10.0.0.2             GigabitEthernet0/1
+  172.25.9.0/24        10.0.0.2             GigabitEthernet0/1
+  172.26.10.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.11.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.12.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.13.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.14.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.15.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.16.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.17.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.18.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.19.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.20.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.21.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.22.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.23.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.24.0/24       10.0.0.2             GigabitEthernet0/1
+  172.25.25.0/24       10.0.0.2             GigabitEthernet0/1
+  172.26.26.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.27.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.28.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.29.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.30.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.31.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.32.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.33.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.34.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.35.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.36.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.37.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.6             
+  192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
+  192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
+
+[78/325] r1 R1# show ip cef 0.0.0.0
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  172.17.1.0/24        10.0.0.2             GigabitEthernet0/1
+  172.18.2.0/24        10.0.0.2             GigabitEthernet0/1
+  172.19.3.0/24        10.0.0.2             GigabitEthernet0/1
+  172.20.4.0/24        10.0.0.2             GigabitEthernet0/1
+  172.21.5.0/24        10.0.0.2             GigabitEthernet0/1
+  172.22.6.0/24        10.0.0.2             GigabitEthernet0/1
+  172.23.7.0/24        10.0.0.2             GigabitEthernet0/1
+  172.24.8.0/24        10.0.0.2             GigabitEthernet0/1
+  172.25.9.0/24        10.0.0.2             GigabitEthernet0/1
+  172.26.10.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.11.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.12.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.13.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.14.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.15.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.16.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.17.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.18.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.19.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.20.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.21.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.22.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.23.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.24.0/24       10.0.0.2             GigabitEthernet0/1
+  172.25.25.0/24       10.0.0.2             GigabitEthernet0/1
+  172.26.26.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.27.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.28.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.29.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.30.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.31.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.32.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.33.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.34.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.35.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.36.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.37.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.6             
+  192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
+  192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
+
+[79/325] r1 R1# show ip route 0.0.0.0
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+
+--- [80] § IPv6 static ---
+[80/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[81/325] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[82/325] r1 R1(config)# ipv6 route 2001:db8:2::/64 2001:db8:1::2
+<empty>
+
+[83/325] r1 R1(config)# ipv6 route ::/0 2001:db8:1::2
+<empty>
+
+[84/325] r1 R1(config)# ipv6 route 2001:db8:3::/64 GigabitEthernet0/1
+<empty>
+
+[85/325] r1 R1(config)# ipv6 route 2001:db8:4::/64 GigabitEthernet0/1 fe80::2
+<empty>
+
+[86/325] r1 R1(config)# ipv6 route 2001:db8:5::/64 Null0 250
+<empty>
+
+[87/325] r1 R1(config)# no ipv6 unicast-routing
+<empty>
+
+[88/325] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[89/325] r1 R1(config)# end
+<empty>
+
+[90/325] r1 R1# show ipv6 route
+  IPv6 Routing Table
+
+[91/325] r1 R1# show ipv6 route static
+  % Route to static
+
+[92/325] r1 R1# show ipv6 route summary
+  % Route to summary
+
+
+--- [93] § prefix-lists ---
+[93/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[94/325] r1 R1(config)# ip prefix-list PL-IN seq 5 permit 10.1.0.0/16 le 24
+<empty>
+
+[95/325] r1 R1(config)# ip prefix-list PL-IN seq 10 permit 10.2.0.0/16 le 24
+<empty>
+
+[96/325] r1 R1(config)# ip prefix-list PL-IN seq 15 permit 10.3.0.0/16 le 24
+<empty>
+
+[97/325] r1 R1(config)# ip prefix-list PL-IN seq 20 permit 10.4.0.0/16 le 24
+<empty>
+
+[98/325] r1 R1(config)# ip prefix-list PL-IN seq 25 permit 10.5.0.0/16 le 24
+<empty>
+
+[99/325] r1 R1(config)# ip prefix-list PL-IN seq 30 permit 10.6.0.0/16 le 24
+<empty>
+
+[100/325] r1 R1(config)# ip prefix-list PL-IN seq 35 permit 10.7.0.0/16 le 24
+<empty>
+
+[101/325] r1 R1(config)# ip prefix-list PL-IN seq 40 permit 10.8.0.0/16 le 24
+<empty>
+
+[102/325] r1 R1(config)# ip prefix-list PL-IN seq 45 permit 10.9.0.0/16 le 24
+<empty>
+
+[103/325] r1 R1(config)# ip prefix-list PL-IN seq 50 permit 10.10.0.0/16 le 24
+<empty>
+
+[104/325] r1 R1(config)# ip prefix-list PL-IN seq 55 permit 10.11.0.0/16 le 24
+<empty>
+
+[105/325] r1 R1(config)# ip prefix-list PL-IN seq 60 permit 10.12.0.0/16 le 24
+<empty>
+
+[106/325] r1 R1(config)# ip prefix-list PL-IN seq 65 permit 10.13.0.0/16 le 24
+<empty>
+
+[107/325] r1 R1(config)# ip prefix-list PL-IN seq 70 permit 10.14.0.0/16 le 24
+<empty>
+
+[108/325] r1 R1(config)# ip prefix-list PL-IN seq 75 permit 10.15.0.0/16 le 24
+<empty>
+
+[109/325] r1 R1(config)# ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
+<empty>
+
+[110/325] r1 R1(config)# ip prefix-list PL-OUT permit 192.168.0.0/16 ge 24
+<empty>
+
+[111/325] r1 R1(config)# ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
+<empty>
+
+[112/325] r1 R1(config)# no ip prefix-list PL-IN seq 5
+<empty>
+
+[113/325] r1 R1(config)# end
+<empty>
+
+[114/325] r1 R1# show ip prefix-list
+  ip prefix-list PL-IN: 15 entries
+     seq 10 permit 10.2.0.0/16 le 24
+     seq 15 permit 10.3.0.0/16 le 24
+     seq 20 permit 10.4.0.0/16 le 24
+     seq 25 permit 10.5.0.0/16 le 24
+     seq 30 permit 10.6.0.0/16 le 24
+     seq 35 permit 10.7.0.0/16 le 24
+     seq 40 permit 10.8.0.0/16 le 24
+     seq 45 permit 10.9.0.0/16 le 24
+     seq 50 permit 10.10.0.0/16 le 24
+     seq 55 permit 10.11.0.0/16 le 24
+     seq 60 permit 10.12.0.0/16 le 24
+     seq 65 permit 10.13.0.0/16 le 24
+     seq 70 permit 10.14.0.0/16 le 24
+     seq 75 permit 10.15.0.0/16 le 24
+     seq 100 deny 0.0.0.0/0
+  ip prefix-list PL-OUT: 1 entries
+     seq 5 permit 192.168.0.0/16 ge 24
+
+[115/325] r1 R1# show ip prefix-list PL-IN
+  ip prefix-list PL-IN: 15 entries
+     seq 10 permit 10.2.0.0/16 le 24
+     seq 15 permit 10.3.0.0/16 le 24
+     seq 20 permit 10.4.0.0/16 le 24
+     seq 25 permit 10.5.0.0/16 le 24
+     seq 30 permit 10.6.0.0/16 le 24
+     seq 35 permit 10.7.0.0/16 le 24
+     seq 40 permit 10.8.0.0/16 le 24
+     seq 45 permit 10.9.0.0/16 le 24
+     seq 50 permit 10.10.0.0/16 le 24
+     seq 55 permit 10.11.0.0/16 le 24
+     seq 60 permit 10.12.0.0/16 le 24
+     seq 65 permit 10.13.0.0/16 le 24
+     seq 70 permit 10.14.0.0/16 le 24
+     seq 75 permit 10.15.0.0/16 le 24
+     seq 100 deny 0.0.0.0/0
+
+[116/325] r1 R1# show ipv6 prefix-list
+  ipv6 prefix-list V6-PL: 1 entries
+     seq 5 permit 2001:db8::/32 le 64
+
+
+--- [117] § route-maps ---
+[117/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[118/325] r1 R1(config)# route-map RM-PBR permit 10
+<empty>
+
+[119/325] r1 R1(config-route-map)# match ip address 101
+<empty>
+
+[120/325] r1 R1(config-route-map)# match interface GigabitEthernet0/0
+<empty>
+
+[121/325] r1 R1(config-route-map)# set ip next-hop 10.0.0.2
+<empty>
+
+[122/325] r1 R1(config-route-map)# set interface GigabitEthernet0/1
+<empty>
+
+[123/325] r1 R1(config-route-map)# set ip default next-hop 10.0.0.254
+<empty>
+
+[124/325] r1 R1(config-route-map)# set ip precedence priority
+<empty>
+
+[125/325] r1 R1(config-route-map)# exit
+<empty>
+
+[126/325] r1 R1(config)# route-map RM-PBR permit 20
+<empty>
+
+[127/325] r1 R1(config-route-map)# match ip address 102
+<empty>
+
+[128/325] r1 R1(config-route-map)# match interface GigabitEthernet0/0
+<empty>
+
+[129/325] r1 R1(config-route-map)# set ip next-hop 10.0.0.3
+<empty>
+
+[130/325] r1 R1(config-route-map)# set interface GigabitEthernet0/1
+<empty>
+
+[131/325] r1 R1(config-route-map)# set ip default next-hop 10.0.0.254
+<empty>
+
+[132/325] r1 R1(config-route-map)# set ip dscp af21
+<empty>
+
+[133/325] r1 R1(config-route-map)# exit
+<empty>
+
+[134/325] r1 R1(config)# route-map RM-PBR permit 30
+<empty>
+
+[135/325] r1 R1(config-route-map)# match ip address 103
+<empty>
+
+[136/325] r1 R1(config-route-map)# match interface GigabitEthernet0/0
+<empty>
+
+[137/325] r1 R1(config-route-map)# set ip next-hop 10.0.0.4
+<empty>
+
+[138/325] r1 R1(config-route-map)# set interface GigabitEthernet0/1
+<empty>
+
+[139/325] r1 R1(config-route-map)# set ip default next-hop 10.0.0.254
+<empty>
+
+[140/325] r1 R1(config-route-map)# set ip dscp af21
+<empty>
+
+[141/325] r1 R1(config-route-map)# exit
+<empty>
+
+[142/325] r1 R1(config)# route-map RM-PBR permit 40
+<empty>
+
+[143/325] r1 R1(config-route-map)# match ip address 104
+<empty>
+
+[144/325] r1 R1(config-route-map)# match interface GigabitEthernet0/0
+<empty>
+
+[145/325] r1 R1(config-route-map)# set ip next-hop 10.0.0.5
+<empty>
+
+[146/325] r1 R1(config-route-map)# set interface GigabitEthernet0/1
+<empty>
+
+[147/325] r1 R1(config-route-map)# set ip default next-hop 10.0.0.254
+<empty>
+
+[148/325] r1 R1(config-route-map)# set ip dscp af21
+<empty>
+
+[149/325] r1 R1(config-route-map)# exit
+<empty>
+
+[150/325] r1 R1(config)# route-map RM-PBR permit 50
+<empty>
+
+[151/325] r1 R1(config-route-map)# match ip address 105
+<empty>
+
+[152/325] r1 R1(config-route-map)# match interface GigabitEthernet0/0
+<empty>
+
+[153/325] r1 R1(config-route-map)# set ip next-hop 10.0.0.6
+<empty>
+
+[154/325] r1 R1(config-route-map)# set interface GigabitEthernet0/1
+<empty>
+
+[155/325] r1 R1(config-route-map)# set ip default next-hop 10.0.0.254
+<empty>
+
+[156/325] r1 R1(config-route-map)# set ip dscp af21
+<empty>
+
+[157/325] r1 R1(config-route-map)# exit
+<empty>
+
+[158/325] r1 R1(config)# route-map RM-PBR permit 60
+<empty>
+
+[159/325] r1 R1(config-route-map)# match ip address 106
+<empty>
+
+[160/325] r1 R1(config-route-map)# match interface GigabitEthernet0/0
+<empty>
+
+[161/325] r1 R1(config-route-map)# set ip next-hop 10.0.0.7
+<empty>
+
+[162/325] r1 R1(config-route-map)# set interface GigabitEthernet0/1
+<empty>
+
+[163/325] r1 R1(config-route-map)# set ip default next-hop 10.0.0.254
+<empty>
+
+[164/325] r1 R1(config-route-map)# set ip dscp af21
+<empty>
+
+[165/325] r1 R1(config-route-map)# exit
+<empty>
+
+[166/325] r1 R1(config)# route-map RM-PBR deny 100
+<empty>
+
+[167/325] r1 R1(config-route-map)# exit
+<empty>
+
+[168/325] r1 R1(config)# access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+<empty>
+
+[169/325] r1 R1(config)# access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+<empty>
+
+[170/325] r1 R1(config)# end
+<empty>
+
+[171/325] r1 R1# show route-map
+  route-map RM-PBR, permit sequence 10
+    Match clauses:
+      match ip address 101
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.2
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip precedence priority
+  route-map RM-PBR, permit sequence 20
+    Match clauses:
+      match ip address 102
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.3
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 30
+    Match clauses:
+      match ip address 103
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.4
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 40
+    Match clauses:
+      match ip address 104
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.5
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 50
+    Match clauses:
+      match ip address 105
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.6
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 60
+    Match clauses:
+      match ip address 106
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.7
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, deny sequence 100
+    Match clauses:
+    Set clauses:
+
+[172/325] r1 R1# show route-map RM-PBR
+  route-map RM-PBR, permit sequence 10
+    Match clauses:
+      match ip address 101
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.2
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip precedence priority
+  route-map RM-PBR, permit sequence 20
+    Match clauses:
+      match ip address 102
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.3
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 30
+    Match clauses:
+      match ip address 103
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.4
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 40
+    Match clauses:
+      match ip address 104
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.5
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 50
+    Match clauses:
+      match ip address 105
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.6
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 60
+    Match clauses:
+      match ip address 106
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.7
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, deny sequence 100
+    Match clauses:
+    Set clauses:
+
+
+--- [173] § policy-based routing ---
+[173/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[174/325] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[175/325] r1 R1(config-if)# ip policy route-map RM-PBR
+  % Invalid input detected at '^' marker.
+  ip policy route-map RM-PBR
+     ^
+
+[176/325] r1 R1(config-if)# exit
+<empty>
+
+[177/325] r1 R1(config)# ip local policy route-map RM-PBR
+  % Invalid input detected at '^' marker.
+  ip local policy route-map RM-PBR
+     ^
+
+[178/325] r1 R1(config)# end
+<empty>
+
+[179/325] r1 R1# show ip policy
+  % Invalid input detected at '^' marker.
+  show ip policy
+          ^
+
+[180/325] r1 R1# show route-map RM-PBR
+  route-map RM-PBR, permit sequence 10
+    Match clauses:
+      match ip address 101
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.2
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip precedence priority
+  route-map RM-PBR, permit sequence 20
+    Match clauses:
+      match ip address 102
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.3
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 30
+    Match clauses:
+      match ip address 103
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.4
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 40
+    Match clauses:
+      match ip address 104
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.5
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 50
+    Match clauses:
+      match ip address 105
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.6
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, permit sequence 60
+    Match clauses:
+      match ip address 106
+      match interface GigabitEthernet0/0
+    Set clauses:
+      set ip next-hop 10.0.0.7
+      set interface GigabitEthernet0/1
+      set ip default next-hop 10.0.0.254
+      set ip dscp af21
+  route-map RM-PBR, deny sequence 100
+    Match clauses:
+    Set clauses:
+
+[181/325] r1 R1# debug ip policy
+  % Invalid input detected at '^' marker.
+  debug ip policy
+           ^
+
+[182/325] r1 R1# undebug all
+  All possible debugging has been turned off
+
+
+--- [183] § tracking / IP SLA ---
+[183/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[184/325] r1 R1(config)# ip sla 1
+<empty>
+
+[185/325] r1 R1(config-ip-sla)# icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+<empty>
+
+[186/325] r1 R1(config-ip-sla)# frequency 10
+<empty>
+
+[187/325] r1 R1(config-ip-sla)# threshold 500
+<empty>
+
+[188/325] r1 R1(config-ip-sla)# timeout 1000
+<empty>
+
+[189/325] r1 R1(config-ip-sla)# exit
+<empty>
+
+[190/325] r1 R1(config)# ip sla schedule 1 life forever start-time now
+<empty>
+
+[191/325] r1 R1(config)# track 1 ip sla 1 reachability
+<empty>
+
+[192/325] r1 R1(config-track)# track 2 interface GigabitEthernet0/1 line-protocol
+  % Invalid input detected at '^' marker.
+  track 2 interface GigabitEthernet0/1 line-protocol
+  ^
+
+[193/325] r1 R1(config-track)# track 3 list boolean and
+  % Invalid input detected at '^' marker.
+  track 3 list boolean and
+  ^
+
+[194/325] r1 R1(config-track)# exit
+<empty>
+
+[195/325] r1 R1(config)# end
+<empty>
+
+[196/325] r1 R1# show ip sla configuration
+  IP SLA Operation 1
+    Type of operation: icmp-echo
+    Target: 10.0.0.2
+    Frequency: 10 sec
+    Schedule: Active
+
+[197/325] r1 R1# show ip sla statistics
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+
+[198/325] r1 R1# show track
+  Track 1
+    IP SLA 1 reachability
+    State is Up
+
+[199/325] r1 R1# show track 1
+  Track 1
+    IP SLA 1 reachability
+    State is Up
+
+
+--- [200] § admin distance / metrics ---
+[200/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[201/325] r1 R1(config)# router ospf 1
+<empty>
+
+[202/325] r1 R1(config-router)# distance 110
+  % Invalid input detected at '^' marker.
+  distance 110
+  ^
+
+[203/325] r1 R1(config-router)# distance ospf intra-area 90 inter-area 100 external 120
+  % Invalid input detected at '^' marker.
+  distance ospf intra-area 90 inter-area 100 external 120
+  ^
+
+[204/325] r1 R1(config-router)# exit
+<empty>
+
+[205/325] r1 R1(config)# end
+<empty>
+
+[206/325] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[207/325] r1 R1# show ip route static
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[208/325] r1 R1# show ip route ospf
+<empty>
+
+[209/325] r1 R1# show ip route connected
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[210/325] r1 R1# show ip route 10.0.0.0
+  Routing entry for 10.0.0.0/30
+    Known via "connected", distance 0, metric 0
+    Directly connected, GigabitEthernet0/1
+  Connected via GigabitEthernet0/1
+
+[211/325] r1 R1# show ip route profile
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[212/325] r1 R1# show ip route vrf CUST
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[213/325] r1 R1# show ip protocols
+  No routing protocol is configured.
+
+[214/325] r1 R1# show ip cef summary
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  172.17.1.0/24        10.0.0.2             GigabitEthernet0/1
+  172.18.2.0/24        10.0.0.2             GigabitEthernet0/1
+  172.19.3.0/24        10.0.0.2             GigabitEthernet0/1
+  172.20.4.0/24        10.0.0.2             GigabitEthernet0/1
+  172.21.5.0/24        10.0.0.2             GigabitEthernet0/1
+  172.22.6.0/24        10.0.0.2             GigabitEthernet0/1
+  172.23.7.0/24        10.0.0.2             GigabitEthernet0/1
+  172.24.8.0/24        10.0.0.2             GigabitEthernet0/1
+  172.25.9.0/24        10.0.0.2             GigabitEthernet0/1
+  172.26.10.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.11.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.12.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.13.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.14.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.15.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.16.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.17.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.18.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.19.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.20.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.21.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.22.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.23.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.24.0/24       10.0.0.2             GigabitEthernet0/1
+  172.25.25.0/24       10.0.0.2             GigabitEthernet0/1
+  172.26.26.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.27.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.28.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.29.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.30.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.31.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.32.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.33.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.34.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.35.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.36.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.37.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.6             
+  192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
+  192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
+
+[215/325] r1 R1# show ip static route
+  % Invalid input detected at '^' marker.
+  show ip static route
+          ^
+
+
+--- [216] § regression: show family ---
+[216/325] r1 R1(config)# enable
+  % Incomplete command.
+
+[217/325] r1 R1(config)# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[218/325] r1 R1(config)# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[219/325] r1 R1(config)# show startup-config
+  % startup-config is not present
+
+[220/325] r1 R1(config)# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[221/325] r1 R1(config)# show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[222/325] r1 R1(config)# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[223/325] r1 R1(config)# show ip route summary
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.6
+
+[224/325] r1 R1(config)# show ip protocols
+  No routing protocol is configured.
+
+[225/325] r1 R1(config)# show ip arp
+  No ARP entries.
+
+[226/325] r1 R1(config)# show arp
+  No ARP entries.
+
+[227/325] r1 R1(config)# show ip ospf
+  Routing Process "ospf 1" with ID 192.168.1.1
+   Number of areas in this router is 0
+   Reference bandwidth unit is 100 mbps
+  
+
+[228/325] r1 R1(config)# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+
+[229/325] r1 R1(config)# show ip ospf database
+              OSPF Router with ID (192.168.1.1) (Process ID 1)
+  
+
+[230/325] r1 R1(config)# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+
+[231/325] r1 R1(config)# show ip eigrp neighbors
+  % EIGRP not running (no autonomous-system configured)
+
+[232/325] r1 R1(config)# show ip eigrp topology
+  % EIGRP not running (no autonomous-system configured)
+
+[233/325] r1 R1(config)# show ip bgp
+  % BGP not active
+
+[234/325] r1 R1(config)# show ip bgp summary
+  % BGP not active
+
+[235/325] r1 R1(config)# show ip rip database
+<empty>
+
+[236/325] r1 R1(config)# show ip nat translations
+  No NAT translations.
+
+[237/325] r1 R1(config)# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[238/325] r1 R1(config)# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[239/325] r1 R1(config)# show ip dhcp pool
+<empty>
+
+[240/325] r1 R1(config)# show access-lists
+  Extended IP access list 101
+      permit ip 192.168.1.0 0.0.0.255 any (0 matches)
+  Extended IP access list 102
+      permit ip 192.168.2.0 0.0.0.255 any (0 matches)
+
+[241/325] r1 R1(config)# show ip access-lists
+  Extended IP access list 101
+      permit ip 192.168.1.0 0.0.0.255 any (0 matches)
+  Extended IP access list 102
+      permit ip 192.168.2.0 0.0.0.255 any (0 matches)
+
+[242/325] r1 R1(config)# show crypto isakmp sa
+  IPSec not configured.
+
+[243/325] r1 R1(config)# show crypto ipsec sa
+  IPSec not configured.
+
+[244/325] r1 R1(config)# show crypto session
+  IPSec not configured.
+
+[245/325] r1 R1(config)# show crypto map
+  IPSec not configured.
+
+[246/325] r1 R1(config)# show standby brief
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+
+[247/325] r1 R1(config)# show vrrp brief
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+
+[248/325] r1 R1(config)# show track
+  Track 1
+    IP SLA 1 reachability
+    State is Up
+
+[249/325] r1 R1(config)# show ip sla statistics
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+
+[250/325] r1 R1(config)# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[251/325] r1 R1(config)# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[252/325] r1 R1(config)# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[253/325] r1 R1(config)# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[254/325] r1 R1(config)# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[255/325] r1 R1(config)# show clock
+  *18:13:56.000 UTC Sun May 17 2026
+
+[256/325] r1 R1(config)# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[257/325] r1 R1(config)# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[258/325] r1 R1(config)# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[259/325] r1 R1(config)# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[260/325] r1 R1(config)# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[261/325] r1 R1(config)# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[262/325] r1 R1(config)# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[263/325] r1 R1(config)# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  172.17.1.0/24        10.0.0.2             GigabitEthernet0/1
+  172.18.2.0/24        10.0.0.2             GigabitEthernet0/1
+  172.19.3.0/24        10.0.0.2             GigabitEthernet0/1
+  172.20.4.0/24        10.0.0.2             GigabitEthernet0/1
+  172.21.5.0/24        10.0.0.2             GigabitEthernet0/1
+  172.22.6.0/24        10.0.0.2             GigabitEthernet0/1
+  172.23.7.0/24        10.0.0.2             GigabitEthernet0/1
+  172.24.8.0/24        10.0.0.2             GigabitEthernet0/1
+  172.25.9.0/24        10.0.0.2             GigabitEthernet0/1
+  172.26.10.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.11.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.12.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.13.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.14.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.15.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.16.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.17.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.18.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.19.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.20.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.21.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.22.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.23.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.24.0/24       10.0.0.2             GigabitEthernet0/1
+  172.25.25.0/24       10.0.0.2             GigabitEthernet0/1
+  172.26.26.0/24       10.0.0.2             GigabitEthernet0/1
+  172.27.27.0/24       10.0.0.2             GigabitEthernet0/1
+  172.28.28.0/24       10.0.0.2             GigabitEthernet0/1
+  172.29.29.0/24       10.0.0.2             GigabitEthernet0/1
+  172.30.30.0/24       10.0.0.2             GigabitEthernet0/1
+  172.31.31.0/24       10.0.0.2             GigabitEthernet0/1
+  172.16.32.0/24       10.0.0.2             GigabitEthernet0/1
+  172.17.33.0/24       10.0.0.2             GigabitEthernet0/1
+  172.18.34.0/24       10.0.0.2             GigabitEthernet0/1
+  172.19.35.0/24       10.0.0.2             GigabitEthernet0/1
+  172.20.36.0/24       10.0.0.2             GigabitEthernet0/1
+  172.21.37.0/24       10.0.0.2             GigabitEthernet0/1
+  172.22.38.0/24       10.0.0.2             GigabitEthernet0/1
+  172.23.39.0/24       10.0.0.2             GigabitEthernet0/1
+  172.24.40.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.6             
+  192.168.50.0/24      10.0.0.2             GigabitEthernet0/1
+  192.168.51.0/24      10.0.0.2             GigabitEthernet0/1
+  8.8.8.0/24           10.0.0.2             GigabitEthernet0/1
+  192.168.99.0/24      10.0.0.2             GigabitEthernet0/1
+
+[264/325] r1 R1(config)# show interfaces GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[265/325] r1 R1(config)# show interfaces GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[266/325] r1 R1(config)# show ip interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[267/325] r1 R1(config)# show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[268/325] r1 R1(config)# show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    172.17.1.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.18.2.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.19.3.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.20.4.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.21.5.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.22.6.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.23.7.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.24.8.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.25.9.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.26.10.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.27.11.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.28.12.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.29.13.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.30.14.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.31.15.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.16.16.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.17.17.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.18.18.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.19.19.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.20.20.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.21.21.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.22.22.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.23.23.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.24.24.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.25.25.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.26.26.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.27.27.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.28.28.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.29.29.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.30.30.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.31.31.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.16.32.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.17.33.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.18.34.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.19.35.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.20.36.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.21.37.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.22.38.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.23.39.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    172.24.40.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.50.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.51.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    8.8.8.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S    192.168.99.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S*    0.0.0.0/0 via 10.0.0.6, 
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  
+  ------------------ show ip protocols ------------------
+  No routing protocol is configured.
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[269/325] r1 R1(config)# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[270/325] r1 R1(config)# show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[271/325] r1 R1(config)# show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[272/325] r1 R1(config)# show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[273/325] r1 R1(config)# show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[274/325] r1 R1(config)# show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[275/325] r1 R1(config)# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[276/325] r1 R1(config)# show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[277/325] r1 R1(config)# show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[278/325] r1 R1(config)# show aliases
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+
+
+--- [279] § regression: pipe filters ---
+[279/325] r1 R1(config)# show running-config | include router
+<empty>
+
+[280/325] r1 R1(config)# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[281/325] r1 R1(config)# show running-config | begin line
+<empty>
+
+[282/325] r1 R1(config)# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  end
+
+[283/325] r1 R1(config)# show ip route | include via
+  S    172.17.1.0/24 [1/0] via 10.0.0.2
+  S    172.18.2.0/24 [1/0] via 10.0.0.2
+  S    172.19.3.0/24 [1/0] via 10.0.0.2
+  S    172.20.4.0/24 [1/0] via 10.0.0.2
+  S    172.21.5.0/24 [1/0] via 10.0.0.2
+  S    172.22.6.0/24 [1/0] via 10.0.0.2
+  S    172.23.7.0/24 [1/0] via 10.0.0.2
+  S    172.24.8.0/24 [1/0] via 10.0.0.2
+  S    172.25.9.0/24 [1/0] via 10.0.0.2
+  S    172.26.10.0/24 [1/0] via 10.0.0.2
+  S    172.27.11.0/24 [1/0] via 10.0.0.2
+  S    172.28.12.0/24 [1/0] via 10.0.0.2
+  S    172.29.13.0/24 [1/0] via 10.0.0.2
+  S    172.30.14.0/24 [1/0] via 10.0.0.2
+  S    172.31.15.0/24 [1/0] via 10.0.0.2
+  S    172.16.16.0/24 [1/0] via 10.0.0.2
+  S    172.17.17.0/24 [1/0] via 10.0.0.2
+  S    172.18.18.0/24 [1/0] via 10.0.0.2
+  S    172.19.19.0/24 [1/0] via 10.0.0.2
+  S    172.20.20.0/24 [1/0] via 10.0.0.2
+  S    172.21.21.0/24 [1/0] via 10.0.0.2
+  S    172.22.22.0/24 [1/0] via 10.0.0.2
+  S    172.23.23.0/24 [1/0] via 10.0.0.2
+  S    172.24.24.0/24 [1/0] via 10.0.0.2
+  S    172.25.25.0/24 [1/0] via 10.0.0.2
+  S    172.26.26.0/24 [1/0] via 10.0.0.2
+  S    172.27.27.0/24 [1/0] via 10.0.0.2
+  S    172.28.28.0/24 [1/0] via 10.0.0.2
+  S    172.29.29.0/24 [1/0] via 10.0.0.2
+  S    172.30.30.0/24 [1/0] via 10.0.0.2
+  S    172.31.31.0/24 [1/0] via 10.0.0.2
+  S    172.16.32.0/24 [1/0] via 10.0.0.2
+  S    172.17.33.0/24 [1/0] via 10.0.0.2
+  S    172.18.34.0/24 [1/0] via 10.0.0.2
+  S    172.19.35.0/24 [1/0] via 10.0.0.2
+  S    172.20.36.0/24 [1/0] via 10.0.0.2
+  S    172.21.37.0/24 [1/0] via 10.0.0.2
+  S    172.22.38.0/24 [1/0] via 10.0.0.2
+  S    172.23.39.0/24 [1/0] via 10.0.0.2
+  S    172.24.40.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.6
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    8.8.8.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
+
+[284/325] r1 R1(config)# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+
+
+--- [285] § regression: mode nav + negation ---
+[285/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[286/325] r1 R1(config)# no ip routing
+<empty>
+
+[287/325] r1 R1(config)# ip routing
+<empty>
+
+[288/325] r1 R1(config)# no ip cef
+<empty>
+
+[289/325] r1 R1(config)# ip cef
+<empty>
+
+[290/325] r1 R1(config)# no cdp run
+<empty>
+
+[291/325] r1 R1(config)# cdp run
+<empty>
+
+[292/325] r1 R1(config)# no lldp run
+<empty>
+
+[293/325] r1 R1(config)# lldp run
+<empty>
+
+[294/325] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[295/325] r1 R1(config)# ip domain-lookup
+<empty>
+
+[296/325] r1 R1(config)# no ip http server
+<empty>
+
+[297/325] r1 R1(config)# ip http server
+<empty>
+
+[298/325] r1 R1(config)# no ip source-route
+<empty>
+
+[299/325] r1 R1(config)# ip source-route
+<empty>
+
+[300/325] r1 R1(config)# no service pad
+<empty>
+
+[301/325] r1 R1(config)# service pad
+<empty>
+
+[302/325] r1 R1(config)# no ipv6 unicast-routing
+<empty>
+
+[303/325] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[304/325] r1 R1(config)# no service password-encryption
+<empty>
+
+[305/325] r1 R1(config)# service password-encryption
+<empty>
+
+[306/325] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[307/325] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[308/325] r1 R1(config-if)# shutdown
+<empty>
+
+[309/325] r1 R1(config-if)# no shutdown
+<empty>
+
+[310/325] r1 R1(config-if)# exit
+<empty>
+
+[311/325] r1 R1(config)# router ospf 1
+<empty>
+
+[312/325] r1 R1(config-router)# do show ip protocols
+  No routing protocol is configured.
+
+[313/325] r1 R1(config-router)# exit
+<empty>
+
+[314/325] r1 R1(config)# line vty 0 4
+<empty>
+
+[315/325] r1 R1(config-line)# exit
+<empty>
+
+[316/325] r1 R1(config)# end
+<empty>
+
+
+--- [317] § regression: context help ---
+[317/325] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[318/325] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[319/325] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    prefix-list    Build a prefix list
+    sla            Configure an IP SLA operation
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[320/325] r1 R1(config)# router ?
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
+
+[321/325] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[322/325] r1 R1(config)# no ?
+    hostname     Reset hostname
+    alias        Remove a command alias
+    cdp          cdp
+    lldp         lldp
+    ip           ip
+    ipv6         ipv6
+    logging      Disable logging
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
+    track        Remove a tracked object
+    access-list  Remove an access list
+    crypto       crypto
+
+[323/325] r1 R1(config)# end
+<empty>
+
+[324/325] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 101 permit ip 192.168.1.0 0.0.0.255 any
+  access-list 102 permit ip 192.168.2.0 0.0.0.255 any
+  !
+  ip route 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.6
+  ip route 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route 8.8.8.0 255.255.255.0 10.0.0.2
+  ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[325/325] r1 R1# write memory
+  Building configuration...
+  [OK]

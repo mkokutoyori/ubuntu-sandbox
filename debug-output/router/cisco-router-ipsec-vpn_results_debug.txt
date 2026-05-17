@@ -1,0 +1,2025 @@
+============================================================
+Router (L3) debug transcript — cisco-router-ipsec-vpn
+Generated: 2026-05-17T18:13:57.367Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
+Total steps: 370
+============================================================
+
+
+--- [1] § base addressing ---
+[1/370] r1 R1> enable
+<empty>
+
+[2/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/370] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[4/370] r1 R1(config-if)# ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[5/370] r1 R1(config-if)# no shutdown
+<empty>
+
+[6/370] r1 R1(config-if)# exit
+<empty>
+
+[7/370] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[8/370] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[9/370] r1 R1(config-if)# no shutdown
+<empty>
+
+[10/370] r1 R1(config-if)# exit
+<empty>
+
+[11/370] r1 R1(config)# interface Loopback0
+<empty>
+
+[12/370] r1 R1(config-if)# ip address 1.1.1.1 255.255.255.255
+<empty>
+
+[13/370] r1 R1(config-if)# exit
+<empty>
+
+[14/370] r1 R1(config)# end
+<empty>
+
+
+--- [15] § IKEv1 / ISAKMP policies ---
+[15/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[16/370] r1 R1(config)# crypto isakmp policy 10
+<empty>
+
+[17/370] r1 R1(config-isakmp)# encryption aes 192
+<empty>
+
+[18/370] r1 R1(config-isakmp)# hash sha256
+<empty>
+
+[19/370] r1 R1(config-isakmp)# authentication pre-share
+<empty>
+
+[20/370] r1 R1(config-isakmp)# group 2
+<empty>
+
+[21/370] r1 R1(config-isakmp)# lifetime 3600
+<empty>
+
+[22/370] r1 R1(config-isakmp)# exit
+<empty>
+
+[23/370] r1 R1(config)# crypto isakmp policy 20
+<empty>
+
+[24/370] r1 R1(config-isakmp)# encryption aes 256
+<empty>
+
+[25/370] r1 R1(config-isakmp)# hash sha256
+<empty>
+
+[26/370] r1 R1(config-isakmp)# authentication pre-share
+<empty>
+
+[27/370] r1 R1(config-isakmp)# group 5
+<empty>
+
+[28/370] r1 R1(config-isakmp)# lifetime 7200
+<empty>
+
+[29/370] r1 R1(config-isakmp)# exit
+<empty>
+
+[30/370] r1 R1(config)# crypto isakmp policy 30
+<empty>
+
+[31/370] r1 R1(config-isakmp)# encryption aes 128
+<empty>
+
+[32/370] r1 R1(config-isakmp)# hash sha256
+<empty>
+
+[33/370] r1 R1(config-isakmp)# authentication pre-share
+<empty>
+
+[34/370] r1 R1(config-isakmp)# group 14
+<empty>
+
+[35/370] r1 R1(config-isakmp)# lifetime 10800
+<empty>
+
+[36/370] r1 R1(config-isakmp)# exit
+<empty>
+
+[37/370] r1 R1(config)# crypto isakmp policy 40
+<empty>
+
+[38/370] r1 R1(config-isakmp)# encryption aes 192
+<empty>
+
+[39/370] r1 R1(config-isakmp)# hash sha256
+<empty>
+
+[40/370] r1 R1(config-isakmp)# authentication pre-share
+<empty>
+
+[41/370] r1 R1(config-isakmp)# group 19
+<empty>
+
+[42/370] r1 R1(config-isakmp)# lifetime 14400
+<empty>
+
+[43/370] r1 R1(config-isakmp)# exit
+<empty>
+
+[44/370] r1 R1(config)# crypto isakmp policy 50
+<empty>
+
+[45/370] r1 R1(config-isakmp)# encryption aes 256
+<empty>
+
+[46/370] r1 R1(config-isakmp)# hash sha256
+<empty>
+
+[47/370] r1 R1(config-isakmp)# authentication pre-share
+<empty>
+
+[48/370] r1 R1(config-isakmp)# group 24
+<empty>
+
+[49/370] r1 R1(config-isakmp)# lifetime 18000
+<empty>
+
+[50/370] r1 R1(config-isakmp)# exit
+<empty>
+
+[51/370] r1 R1(config)# crypto isakmp key MyPreShared0 address 10.0.0.2
+<empty>
+
+[52/370] r1 R1(config)# crypto isakmp key MyPreShared1 address 10.0.0.0 255.255.255.0
+<empty>
+
+[53/370] r1 R1(config)# crypto isakmp key MyPreShared2 hostname peer.lab.local
+  % Incomplete command. Usage: crypto isakmp key KEY address IP
+
+[54/370] r1 R1(config)# crypto isakmp keepalive 10 3
+<empty>
+
+[55/370] r1 R1(config)# crypto isakmp keepalive 10 3 periodic
+<empty>
+
+[56/370] r1 R1(config)# crypto isakmp nat keepalive 20
+<empty>
+
+[57/370] r1 R1(config)# crypto isakmp invalid-spi-recovery
+  % Invalid input detected at '^' marker.
+  crypto isakmp invalid-spi-recovery
+                ^
+
+[58/370] r1 R1(config)# crypto isakmp identity address
+  % Invalid input detected at '^' marker.
+  crypto isakmp identity address
+                ^
+
+[59/370] r1 R1(config)# crypto isakmp identity hostname
+  % Invalid input detected at '^' marker.
+  crypto isakmp identity hostname
+                ^
+
+[60/370] r1 R1(config)# crypto isakmp aggressive-mode disable
+<empty>
+
+[61/370] r1 R1(config)# crypto isakmp profile IKEV1-PROF
+  % Invalid input detected at '^' marker.
+  crypto isakmp profile IKEV1-PROF
+                ^
+
+[62/370] r1 R1(config)# keyring default
+  % Invalid input detected at '^' marker.
+  keyring default
+  ^
+
+[63/370] r1 R1(config)# match identity address 10.0.0.2 255.255.255.255
+  % Invalid input detected at '^' marker.
+  match identity address 10.0.0.2 255.255.255.255
+  ^
+
+[64/370] r1 R1(config)# self-identity address
+  % Invalid input detected at '^' marker.
+  self-identity address
+  ^
+
+[65/370] r1 R1(config)# exit
+<empty>
+
+[66/370] r1 R1# end
+<empty>
+
+[67/370] r1 R1# show crypto isakmp policy
+  Global IKE policy
+  Protection suite of priority 10
+  	encryption algorithm:   AES - Advanced Encryption Standard (192 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #2 (1024 bit)
+  	lifetime:               3600 seconds, no volume limit
+  Protection suite of priority 20
+  	encryption algorithm:   AES - Advanced Encryption Standard (256 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #5 (1536 bit)
+  	lifetime:               7200 seconds, no volume limit
+  Protection suite of priority 30
+  	encryption algorithm:   AES 128
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               10800 seconds, no volume limit
+  Protection suite of priority 40
+  	encryption algorithm:   AES - Advanced Encryption Standard (192 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #19 (256 bit)
+  	lifetime:               14400 seconds, no volume limit
+  Protection suite of priority 50
+  	encryption algorithm:   AES - Advanced Encryption Standard (256 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #24 (2048 bit)
+  	lifetime:               18000 seconds, no volume limit
+  Default protection suite
+  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #1 (768 bit)
+  	lifetime:               86400 seconds, no volume limit
+
+[68/370] r1 R1# show crypto isakmp key
+  Keychain  Hostname / Address   Preshared Key
+  default   10.0.0.2             ************
+  default   10.0.0.0             ************
+
+[69/370] r1 R1# show crypto isakmp sa
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
+
+[70/370] r1 R1# show crypto isakmp sa detail
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
+
+[71/370] r1 R1# show crypto isakmp profile
+  % Invalid input detected at '^' marker.
+  show crypto isakmp profile
+                     ^
+
+
+--- [72] § IPsec transform-sets / profiles ---
+[72/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[73/370] r1 R1(config)# crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
+<empty>
+
+[74/370] r1 R1(cfg-crypto-trans)# mode tunnel
+<empty>
+
+[75/370] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[76/370] r1 R1(config)# crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
+<empty>
+
+[77/370] r1 R1(cfg-crypto-trans)# mode transport
+<empty>
+
+[78/370] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[79/370] r1 R1(config)# crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
+<empty>
+
+[80/370] r1 R1(cfg-crypto-trans)# mode transport
+<empty>
+
+[81/370] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[82/370] r1 R1(config)# crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
+<empty>
+
+[83/370] r1 R1(cfg-crypto-trans)# mode transport
+<empty>
+
+[84/370] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[85/370] r1 R1(config)# crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
+<empty>
+
+[86/370] r1 R1(cfg-crypto-trans)# mode transport
+<empty>
+
+[87/370] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[88/370] r1 R1(config)# crypto ipsec transform-set TS-GCM esp-gcm 256
+<empty>
+
+[89/370] r1 R1(cfg-crypto-trans)# crypto ipsec transform-set TS-AH ah-sha-hmac esp-aes
+  % Invalid input detected at '^' marker.
+  crypto ipsec transform-set TS-AH ah-sha-hmac esp-aes
+  ^
+
+[90/370] r1 R1(cfg-crypto-trans)# crypto ipsec security-association lifetime seconds 3600
+  % Invalid input detected at '^' marker.
+  crypto ipsec security-association lifetime seconds 3600
+  ^
+
+[91/370] r1 R1(cfg-crypto-trans)# crypto ipsec security-association lifetime kilobytes 4608000
+  % Invalid input detected at '^' marker.
+  crypto ipsec security-association lifetime kilobytes 4608000
+  ^
+
+[92/370] r1 R1(cfg-crypto-trans)# crypto ipsec security-association replay window-size 1024
+  % Invalid input detected at '^' marker.
+  crypto ipsec security-association replay window-size 1024
+  ^
+
+[93/370] r1 R1(cfg-crypto-trans)# crypto ipsec security-association idle-time 600
+  % Invalid input detected at '^' marker.
+  crypto ipsec security-association idle-time 600
+  ^
+
+[94/370] r1 R1(cfg-crypto-trans)# crypto ipsec df-bit clear
+  % Invalid input detected at '^' marker.
+  crypto ipsec df-bit clear
+  ^
+
+[95/370] r1 R1(cfg-crypto-trans)# crypto ipsec fragmentation before-encryption
+  % Invalid input detected at '^' marker.
+  crypto ipsec fragmentation before-encryption
+  ^
+
+[96/370] r1 R1(cfg-crypto-trans)# crypto ipsec profile IPSEC-PROF
+  % Invalid input detected at '^' marker.
+  crypto ipsec profile IPSEC-PROF
+  ^
+
+[97/370] r1 R1(cfg-crypto-trans)# set transform-set TS1 TS2
+  % Invalid input detected at '^' marker.
+  set transform-set TS1 TS2
+  ^
+
+[98/370] r1 R1(cfg-crypto-trans)# set pfs group14
+  % Invalid input detected at '^' marker.
+  set pfs group14
+  ^
+
+[99/370] r1 R1(cfg-crypto-trans)# set security-association lifetime seconds 1800
+  % Invalid input detected at '^' marker.
+  set security-association lifetime seconds 1800
+  ^
+
+[100/370] r1 R1(cfg-crypto-trans)# set ikev2-profile IKEV2-PROF
+  % Invalid input detected at '^' marker.
+  set ikev2-profile IKEV2-PROF
+  ^
+
+[101/370] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[102/370] r1 R1(config)# end
+<empty>
+
+[103/370] r1 R1# show crypto ipsec transform-set
+  Transform set TS1: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+  Transform set TS2: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Transport, },
+  Transform set TS3: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Transport, },
+  Transform set TS4: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Transport, },
+  Transform set TS5: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Transport, },
+  Transform set TS-GCM: { esp-gcm 256 }
+     will negotiate = { Tunnel, },
+
+[104/370] r1 R1# show crypto ipsec profile
+  No IPSec profiles configured.
+
+[105/370] r1 R1# show crypto ipsec security-association lifetime
+  % Invalid input detected at '^' marker.
+  show crypto ipsec security-association lifetime
+                    ^
+
+
+--- [106] § crypto map (static/dynamic) ---
+[106/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[107/370] r1 R1(config)# access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+<empty>
+
+[108/370] r1 R1(config)# access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+<empty>
+
+[109/370] r1 R1(config)# crypto map CMAP 10 ipsec-isakmp
+<empty>
+
+[110/370] r1 R1(config-crypto-map)# set peer 10.0.0.2
+<empty>
+
+[111/370] r1 R1(config-crypto-map)# set transform-set TS1
+<empty>
+
+[112/370] r1 R1(config-crypto-map)# match address 110
+<empty>
+
+[113/370] r1 R1(config-crypto-map)# set pfs group14
+<empty>
+
+[114/370] r1 R1(config-crypto-map)# set security-association lifetime seconds 3600
+<empty>
+
+[115/370] r1 R1(config-crypto-map)# description TUNNEL-1
+  % Invalid input detected at '^' marker.
+  description TUNNEL-1
+  ^
+
+[116/370] r1 R1(config-crypto-map)# exit
+<empty>
+
+[117/370] r1 R1(config)# crypto map CMAP 20 ipsec-isakmp
+<empty>
+
+[118/370] r1 R1(config-crypto-map)# set peer 10.0.0.3
+<empty>
+
+[119/370] r1 R1(config-crypto-map)# set transform-set TS2
+<empty>
+
+[120/370] r1 R1(config-crypto-map)# match address 111
+<empty>
+
+[121/370] r1 R1(config-crypto-map)# set pfs group14
+<empty>
+
+[122/370] r1 R1(config-crypto-map)# set security-association lifetime seconds 3600
+<empty>
+
+[123/370] r1 R1(config-crypto-map)# description TUNNEL-2
+  % Invalid input detected at '^' marker.
+  description TUNNEL-2
+  ^
+
+[124/370] r1 R1(config-crypto-map)# exit
+<empty>
+
+[125/370] r1 R1(config)# crypto map CMAP 30 ipsec-isakmp
+<empty>
+
+[126/370] r1 R1(config-crypto-map)# set peer 10.0.0.4
+<empty>
+
+[127/370] r1 R1(config-crypto-map)# set transform-set TS3
+<empty>
+
+[128/370] r1 R1(config-crypto-map)# match address 112
+<empty>
+
+[129/370] r1 R1(config-crypto-map)# set pfs group14
+<empty>
+
+[130/370] r1 R1(config-crypto-map)# set security-association lifetime seconds 3600
+<empty>
+
+[131/370] r1 R1(config-crypto-map)# description TUNNEL-3
+  % Invalid input detected at '^' marker.
+  description TUNNEL-3
+  ^
+
+[132/370] r1 R1(config-crypto-map)# exit
+<empty>
+
+[133/370] r1 R1(config)# crypto dynamic-map DMAP 10
+<empty>
+
+[134/370] r1 R1(config-crypto-map)# set transform-set TS1
+<empty>
+
+[135/370] r1 R1(config-crypto-map)# reverse-route
+  % Invalid input detected at '^' marker.
+  reverse-route
+  ^
+
+[136/370] r1 R1(config-crypto-map)# exit
+<empty>
+
+[137/370] r1 R1(config)# crypto map CMAP 100 ipsec-isakmp dynamic DMAP
+<empty>
+
+[138/370] r1 R1(config)# crypto map CMAP local-address GigabitEthernet0/1
+  % Invalid sequence number.
+
+[139/370] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[140/370] r1 R1(config-if)# crypto map CMAP
+<empty>
+
+[141/370] r1 R1(config-if)# exit
+<empty>
+
+[142/370] r1 R1(config)# end
+<empty>
+
+[143/370] r1 R1# show crypto map
+  Crypto Map "CMAP" 10 ipsec-isakmp
+  	Peer = 10.0.0.2
+  	Extended IP access list 110
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 20 ipsec-isakmp
+  	Peer = 10.0.0.3
+  	Extended IP access list 111
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 30 ipsec-isakmp
+  	Peer = 10.0.0.4
+  	Extended IP access list 112
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS3: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 100 ipsec-isakmp dynamic DMAP
+
+[144/370] r1 R1# show crypto map interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show crypto map interface GigabitEthernet0/1
+                  ^
+
+[145/370] r1 R1# show crypto ipsec sa
+  No IPSec SAs established.
+
+[146/370] r1 R1# show crypto ipsec sa detail
+  No IPSec SAs established.
+
+[147/370] r1 R1# show crypto engine connections active
+  % Invalid input detected at '^' marker.
+  show crypto engine connections active
+                     ^
+
+
+--- [148] § IKEv2 ---
+[148/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[149/370] r1 R1(config)# crypto ikev2 proposal IKEV2-PROP
+<empty>
+
+[150/370] r1 R1(config-ikev2-proposal)# encryption aes-cbc-256 aes-gcm-256
+<empty>
+
+[151/370] r1 R1(config-ikev2-proposal)# integrity sha256 sha512
+<empty>
+
+[152/370] r1 R1(config-ikev2-proposal)# group 14 19 21
+<empty>
+
+[153/370] r1 R1(config-ikev2-proposal)# prf sha256
+  % Invalid input detected at '^' marker.
+  prf sha256
+  ^
+
+[154/370] r1 R1(config-ikev2-proposal)# exit
+<empty>
+
+[155/370] r1 R1(config)# crypto ikev2 policy IKEV2-POL
+<empty>
+
+[156/370] r1 R1(config-ikev2-policy)# match address local 10.0.0.1
+<empty>
+
+[157/370] r1 R1(config-ikev2-policy)# proposal IKEV2-PROP
+<empty>
+
+[158/370] r1 R1(config-ikev2-policy)# exit
+<empty>
+
+[159/370] r1 R1(config)# crypto ikev2 keyring IKEV2-KR
+<empty>
+
+[160/370] r1 R1(config-ikev2-keyring)# peer PEER1
+<empty>
+
+[161/370] r1 R1(config-ikev2-keyring-peer)# address 10.0.0.2
+<empty>
+
+[162/370] r1 R1(config-ikev2-keyring-peer)# pre-shared-key local LocalKey123
+<empty>
+
+[163/370] r1 R1(config-ikev2-keyring-peer)# pre-shared-key remote RemoteKey123
+<empty>
+
+[164/370] r1 R1(config-ikev2-keyring-peer)# exit
+<empty>
+
+[165/370] r1 R1(config-ikev2-keyring)# exit
+<empty>
+
+[166/370] r1 R1(config)# crypto ikev2 profile IKEV2-PROF
+<empty>
+
+[167/370] r1 R1(config-ikev2-profile)# match identity remote address 10.0.0.2 255.255.255.255
+<empty>
+
+[168/370] r1 R1(config-ikev2-profile)# identity local address 10.0.0.1
+  % Invalid input detected at '^' marker.
+  identity local address 10.0.0.1
+  ^
+
+[169/370] r1 R1(config-ikev2-profile)# authentication local pre-share
+<empty>
+
+[170/370] r1 R1(config-ikev2-profile)# authentication remote pre-share
+<empty>
+
+[171/370] r1 R1(config-ikev2-profile)# keyring local IKEV2-KR
+<empty>
+
+[172/370] r1 R1(config-ikev2-profile)# lifetime 86400
+  % Invalid input detected at '^' marker.
+  lifetime 86400
+  ^
+
+[173/370] r1 R1(config-ikev2-profile)# dpd 10 3 periodic
+  % Invalid input detected at '^' marker.
+  dpd 10 3 periodic
+  ^
+
+[174/370] r1 R1(config-ikev2-profile)# exit
+<empty>
+
+[175/370] r1 R1(config)# crypto ikev2 dpd 10 3 periodic
+  % Invalid input detected at '^' marker.
+  crypto ikev2 dpd 10 3 periodic
+               ^
+
+[176/370] r1 R1(config)# crypto ikev2 nat keepalive 20
+  % Invalid input detected at '^' marker.
+  crypto ikev2 nat keepalive 20
+               ^
+
+[177/370] r1 R1(config)# crypto ikev2 cookie-challenge 450
+  % Invalid input detected at '^' marker.
+  crypto ikev2 cookie-challenge 450
+               ^
+
+[178/370] r1 R1(config)# crypto ikev2 window 10
+  % Invalid input detected at '^' marker.
+  crypto ikev2 window 10
+               ^
+
+[179/370] r1 R1(config)# end
+<empty>
+
+[180/370] r1 R1# show crypto ikev2 proposal
+  IKEv2 Proposal: IKEV2-PROP
+    Encryption  : aes-cbc-256, aes-gcm-256
+    Integrity   : sha256, sha512
+    DH Group    : 14, 19, 21
+  
+
+[181/370] r1 R1# show crypto ikev2 policy
+  IKEv2 Policy : IKEV2-POL
+    Match fvrf  : any
+    Proposals   : IKEV2-PROP
+  
+
+[182/370] r1 R1# show crypto ikev2 profile
+  IKEv2 Profile: IKEV2-PROF
+    Match identity : address 10.0.0.2
+    Local auth     : pre-share
+    Remote auth    : pre-share
+    Keyring local  : IKEV2-KR
+  
+
+[183/370] r1 R1# show crypto ikev2 keyring
+  Keyring: IKEV2-KR
+    Peer: PEER1
+      Address: 10.0.0.2
+      Pre-shared key: ********
+  
+
+[184/370] r1 R1# show crypto ikev2 sa
+  There are no IKEv2 SAs.
+
+[185/370] r1 R1# show crypto ikev2 sa detailed
+  % Invalid input detected at '^' marker.
+  show crypto ikev2 sa detailed
+                       ^
+
+[186/370] r1 R1# show crypto ikev2 stats
+  % Invalid input detected at '^' marker.
+  show crypto ikev2 stats
+                    ^
+
+
+--- [187] § sVTI / dVTI / GRE-over-IPsec ---
+[187/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[188/370] r1 R1(config)# interface Tunnel0
+<empty>
+
+[189/370] r1 R1(config-if)# ip address 172.16.0.1 255.255.255.252
+<empty>
+
+[190/370] r1 R1(config-if)# tunnel source GigabitEthernet0/1
+<empty>
+
+[191/370] r1 R1(config-if)# tunnel destination 10.0.0.2
+<empty>
+
+[192/370] r1 R1(config-if)# tunnel mode ipsec ipv4
+  % Invalid input detected at '^' marker.
+  tunnel mode ipsec ipv4
+         ^
+
+[193/370] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF
+<empty>
+
+[194/370] r1 R1(config-if)# exit
+<empty>
+
+[195/370] r1 R1(config)# interface Tunnel1
+<empty>
+
+[196/370] r1 R1(config-if)# ip address 172.16.0.5 255.255.255.252
+<empty>
+
+[197/370] r1 R1(config-if)# tunnel source GigabitEthernet0/1
+<empty>
+
+[198/370] r1 R1(config-if)# tunnel destination 10.0.0.2
+<empty>
+
+[199/370] r1 R1(config-if)# tunnel mode gre ip
+  % Invalid input detected at '^' marker.
+  tunnel mode gre ip
+         ^
+
+[200/370] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF shared
+<empty>
+
+[201/370] r1 R1(config-if)# exit
+<empty>
+
+[202/370] r1 R1(config)# interface Virtual-Template1 type tunnel
+  % Invalid interface "Virtual-Template1 type tunnel"
+
+[203/370] r1 R1(config)# ip unnumbered Loopback0
+  % Invalid input detected at '^' marker.
+  ip unnumbered Loopback0
+     ^
+
+[204/370] r1 R1(config)# tunnel mode ipsec ipv4
+  % Invalid input detected at '^' marker.
+  tunnel mode ipsec ipv4
+  ^
+
+[205/370] r1 R1(config)# tunnel protection ipsec profile IPSEC-PROF
+  % Invalid input detected at '^' marker.
+  tunnel protection ipsec profile IPSEC-PROF
+  ^
+
+[206/370] r1 R1(config)# exit
+<empty>
+
+[207/370] r1 R1# crypto ipsec profile IPSEC-PROF
+  % Invalid input detected at '^' marker.
+  crypto ipsec profile IPSEC-PROF
+  ^
+
+[208/370] r1 R1# set ikev2-profile IKEV2-PROF
+  % Invalid input detected at '^' marker.
+  set ikev2-profile IKEV2-PROF
+  ^
+
+[209/370] r1 R1# exit
+<empty>
+
+[210/370] r1 R1> end
+<empty>
+
+[211/370] r1 R1> show interfaces Tunnel0
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    tunnel protection ipsec profile IPSEC-PROF
+    Tunnel protocol/transport GRE/IP
+
+[212/370] r1 R1> show crypto ipsec sa interface Tunnel0
+  % Invalid input detected at '^' marker.
+  show crypto ipsec sa interface Tunnel0
+                       ^
+
+[213/370] r1 R1> show crypto session
+  No active crypto sessions.
+
+[214/370] r1 R1> show crypto session detail
+  % Invalid input detected at '^' marker.
+  show crypto session detail
+                      ^
+
+
+--- [215] § DMVPN / NHRP ---
+[215/370] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[216/370] r1 R1> interface Tunnel100
+  % Invalid input detected at '^' marker.
+  interface Tunnel100
+  ^
+
+[217/370] r1 R1> ip address 172.20.0.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 172.20.0.1 255.255.255.0
+  ^
+
+[218/370] r1 R1> tunnel source GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  tunnel source GigabitEthernet0/1
+  ^
+
+[219/370] r1 R1> tunnel mode gre multipoint
+  % Invalid input detected at '^' marker.
+  tunnel mode gre multipoint
+  ^
+
+[220/370] r1 R1> tunnel key 100
+  % Invalid input detected at '^' marker.
+  tunnel key 100
+  ^
+
+[221/370] r1 R1> ip nhrp authentication NHRPKEY
+  % Invalid input detected at '^' marker.
+  ip nhrp authentication NHRPKEY
+  ^
+
+[222/370] r1 R1> ip nhrp network-id 100
+  % Invalid input detected at '^' marker.
+  ip nhrp network-id 100
+  ^
+
+[223/370] r1 R1> ip nhrp map 172.20.0.2 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ip nhrp map 172.20.0.2 10.0.0.2
+  ^
+
+[224/370] r1 R1> ip nhrp map multicast 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ip nhrp map multicast 10.0.0.2
+  ^
+
+[225/370] r1 R1> ip nhrp nhs 172.20.0.2
+  % Invalid input detected at '^' marker.
+  ip nhrp nhs 172.20.0.2
+  ^
+
+[226/370] r1 R1> ip nhrp holdtime 600
+  % Invalid input detected at '^' marker.
+  ip nhrp holdtime 600
+  ^
+
+[227/370] r1 R1> ip nhrp shortcut
+  % Invalid input detected at '^' marker.
+  ip nhrp shortcut
+  ^
+
+[228/370] r1 R1> ip nhrp redirect
+  % Invalid input detected at '^' marker.
+  ip nhrp redirect
+  ^
+
+[229/370] r1 R1> tunnel protection ipsec profile IPSEC-PROF
+  % Invalid input detected at '^' marker.
+  tunnel protection ipsec profile IPSEC-PROF
+  ^
+
+[230/370] r1 R1> exit
+<empty>
+
+[231/370] r1 R1> end
+<empty>
+
+[232/370] r1 R1> show ip nhrp
+  % Invalid input detected at '^' marker.
+  show ip nhrp
+          ^
+
+[233/370] r1 R1> show ip nhrp brief
+  % Invalid input detected at '^' marker.
+  show ip nhrp brief
+          ^
+
+[234/370] r1 R1> show dmvpn
+  % Invalid input detected at '^' marker.
+  show dmvpn
+       ^
+
+[235/370] r1 R1> show dmvpn detail
+  % Invalid input detected at '^' marker.
+  show dmvpn detail
+       ^
+
+
+--- [236] § PKI / trustpoint ---
+[236/370] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[237/370] r1 R1> crypto pki trustpoint CA1
+  % Invalid input detected at '^' marker.
+  crypto pki trustpoint CA1
+  ^
+
+[238/370] r1 R1> enrollment url http://10.0.0.5:80
+  % Invalid input detected at '^' marker.
+  enrollment url http://10.0.0.5:80
+  ^
+
+[239/370] r1 R1> subject-name CN=R1.lab.local
+  % Invalid input detected at '^' marker.
+  subject-name CN=R1.lab.local
+  ^
+
+[240/370] r1 R1> revocation-check crl
+  % Invalid input detected at '^' marker.
+  revocation-check crl
+  ^
+
+[241/370] r1 R1> rsakeypair SSH-KEY
+  % Invalid input detected at '^' marker.
+  rsakeypair SSH-KEY
+  ^
+
+[242/370] r1 R1> exit
+<empty>
+
+[243/370] r1 R1> crypto pki authenticate CA1
+  % Invalid input detected at '^' marker.
+  crypto pki authenticate CA1
+  ^
+
+[244/370] r1 R1> crypto pki enroll CA1
+  % Invalid input detected at '^' marker.
+  crypto pki enroll CA1
+  ^
+
+[245/370] r1 R1> end
+<empty>
+
+[246/370] r1 R1> show crypto pki trustpoints
+  % Invalid input detected at '^' marker.
+  show crypto pki trustpoints
+              ^
+
+[247/370] r1 R1> show crypto pki certificates
+  % Invalid input detected at '^' marker.
+  show crypto pki certificates
+              ^
+
+[248/370] r1 R1> show crypto pki certificates verbose
+  % Invalid input detected at '^' marker.
+  show crypto pki certificates verbose
+              ^
+
+
+--- [249] § crypto clear / debug ---
+[249/370] r1 R1(config)# clear crypto isakmp
+  % Invalid input detected at '^' marker.
+  clear crypto isakmp
+  ^
+
+[250/370] r1 R1(config)# clear crypto sa
+  % Invalid input detected at '^' marker.
+  clear crypto sa
+  ^
+
+[251/370] r1 R1(config)# clear crypto session
+  % Invalid input detected at '^' marker.
+  clear crypto session
+  ^
+
+[252/370] r1 R1(config)# clear crypto ikev2 sa
+  % Invalid input detected at '^' marker.
+  clear crypto ikev2 sa
+  ^
+
+[253/370] r1 R1(config)# clear crypto isakmp sa
+  % Invalid input detected at '^' marker.
+  clear crypto isakmp sa
+  ^
+
+[254/370] r1 R1(config)# debug crypto isakmp
+  % Invalid input detected at '^' marker.
+  debug crypto isakmp
+  ^
+
+[255/370] r1 R1(config)# debug crypto ipsec
+  % Invalid input detected at '^' marker.
+  debug crypto ipsec
+  ^
+
+[256/370] r1 R1(config)# debug crypto ikev2
+  % Invalid input detected at '^' marker.
+  debug crypto ikev2
+  ^
+
+[257/370] r1 R1(config)# debug crypto pki transactions
+  % Invalid input detected at '^' marker.
+  debug crypto pki transactions
+  ^
+
+[258/370] r1 R1(config)# undebug all
+  % Invalid input detected at '^' marker.
+  undebug all
+  ^
+
+[259/370] r1 R1(config)# show crypto engine brief
+  crypto engine name:  Cisco Software Crypto Engine
+  crypto engine type:  software
+  State: Enabled
+  Number of IPSec SAs: 0
+  Number of IKEv1 SAs: 0
+  Number of IKEv2 SAs: 0
+
+[260/370] r1 R1(config)# show crypto eli
+  % Invalid input detected at '^' marker.
+  show crypto eli
+              ^
+
+
+--- [261] § regression: show family ---
+[261/370] r1 R1(config)# enable
+  % Incomplete command.
+
+[262/370] r1 R1(config)# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[263/370] r1 R1(config)# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   ip address 1.1.1.1 255.255.255.255
+   no shutdown
+  !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  !
+  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  end
+
+[264/370] r1 R1(config)# show startup-config
+  % startup-config is not present
+
+[265/370] r1 R1(config)# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  1.1.1.1         YES manual administratively down down
+  Tunnel0                    172.16.0.1      YES manual administratively down down
+  Tunnel1                    172.16.0.5      YES manual administratively down down
+
+[266/370] r1 R1(config)# show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  Loopback0 is up, line protocol is up
+    Hardware is Loopback
+    Internet address is 1.1.1.1/32
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    tunnel protection ipsec profile IPSEC-PROF
+    Tunnel protocol/transport GRE/IP
+  Tunnel1 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.5/30
+    tunnel protection ipsec profile IPSEC-PROF shared
+    Tunnel protocol/transport GRE/IP
+
+[267/370] r1 R1(config)# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  C    1.1.1.1/32 is directly connected, Loopback0
+  C    172.16.0.0/30 is directly connected, Tunnel0
+  C    172.16.0.4/30 is directly connected, Tunnel1
+
+[268/370] r1 R1(config)# show ip route summary
+  % Network not in table
+
+[269/370] r1 R1(config)# show ip protocols
+  No routing protocol is configured.
+
+[270/370] r1 R1(config)# show ip arp
+  No ARP entries.
+
+[271/370] r1 R1(config)# show arp
+  No ARP entries.
+
+[272/370] r1 R1(config)# show ip ospf
+  % OSPF is not configured
+
+[273/370] r1 R1(config)# show ip ospf neighbor
+  % OSPF is not configured
+
+[274/370] r1 R1(config)# show ip ospf database
+  % OSPF is not configured
+
+[275/370] r1 R1(config)# show ip ospf interface brief
+  % OSPF is not configured
+
+[276/370] r1 R1(config)# show ip eigrp neighbors
+  % EIGRP not running (no autonomous-system configured)
+
+[277/370] r1 R1(config)# show ip eigrp topology
+  % EIGRP not running (no autonomous-system configured)
+
+[278/370] r1 R1(config)# show ip bgp
+  % BGP not active
+
+[279/370] r1 R1(config)# show ip bgp summary
+  % BGP not active
+
+[280/370] r1 R1(config)# show ip rip database
+<empty>
+
+[281/370] r1 R1(config)# show ip nat translations
+  No NAT translations.
+
+[282/370] r1 R1(config)# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[283/370] r1 R1(config)# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[284/370] r1 R1(config)# show ip dhcp pool
+<empty>
+
+[285/370] r1 R1(config)# show access-lists
+  Extended IP access list 110
+      permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255 (0 matches)
+  Extended IP access list 111
+      permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255 (0 matches)
+
+[286/370] r1 R1(config)# show ip access-lists
+  Extended IP access list 110
+      permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255 (0 matches)
+  Extended IP access list 111
+      permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255 (0 matches)
+
+[287/370] r1 R1(config)# show crypto isakmp sa
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
+
+[288/370] r1 R1(config)# show crypto ipsec sa
+  No IPSec SAs established.
+
+[289/370] r1 R1(config)# show crypto session
+  No active crypto sessions.
+
+[290/370] r1 R1(config)# show crypto map
+  Crypto Map "CMAP" 10 ipsec-isakmp
+  	Peer = 10.0.0.2
+  	Extended IP access list 110
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 20 ipsec-isakmp
+  	Peer = 10.0.0.3
+  	Extended IP access list 111
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 30 ipsec-isakmp
+  	Peer = 10.0.0.4
+  	Extended IP access list 112
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS3: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 100 ipsec-isakmp dynamic DMAP
+
+[291/370] r1 R1(config)# show standby brief
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+
+[292/370] r1 R1(config)# show vrrp brief
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+
+[293/370] r1 R1(config)# show track
+  No tracked objects configured.
+
+[294/370] r1 R1(config)# show ip sla statistics
+  No IP SLA operations configured.
+
+[295/370] r1 R1(config)# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[296/370] r1 R1(config)# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[297/370] r1 R1(config)# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[298/370] r1 R1(config)# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[299/370] r1 R1(config)# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[300/370] r1 R1(config)# show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[301/370] r1 R1(config)# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[302/370] r1 R1(config)# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[303/370] r1 R1(config)# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[304/370] r1 R1(config)# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[305/370] r1 R1(config)# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[306/370] r1 R1(config)# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[307/370] r1 R1(config)# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[308/370] r1 R1(config)# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  1.1.1.1/32           attached             Loopback0
+  172.16.0.0/30        attached             Tunnel0
+  172.16.0.4/30        attached             Tunnel1
+
+[309/370] r1 R1(config)# show interfaces GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[310/370] r1 R1(config)# show interfaces GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[311/370] r1 R1(config)# show ip interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[312/370] r1 R1(config)# show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Loopback0 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Tunnel0 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Tunnel1 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[313/370] r1 R1(config)# show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   ip address 1.1.1.1 255.255.255.255
+   no shutdown
+  !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  !
+  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  1.1.1.1         YES manual administratively down down
+  Tunnel0                    172.16.0.1      YES manual administratively down down
+  Tunnel1                    172.16.0.5      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  C    1.1.1.1/32 is directly connected, Loopback0
+  C    172.16.0.0/30 is directly connected, Tunnel0
+  C    172.16.0.4/30 is directly connected, Tunnel1
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  Loopback0 is up, line protocol is up
+    Hardware is Loopback
+    Internet address is 1.1.1.1/32
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    tunnel protection ipsec profile IPSEC-PROF
+    Tunnel protocol/transport GRE/IP
+  Tunnel1 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.5/30
+    tunnel protection ipsec profile IPSEC-PROF shared
+    Tunnel protocol/transport GRE/IP
+  
+  ------------------ show ip protocols ------------------
+  No routing protocol is configured.
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[314/370] r1 R1(config)# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[315/370] r1 R1(config)# show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[316/370] r1 R1(config)# show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[317/370] r1 R1(config)# show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[318/370] r1 R1(config)# show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[319/370] r1 R1(config)# show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[320/370] r1 R1(config)# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[321/370] r1 R1(config)# show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[322/370] r1 R1(config)# show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[323/370] r1 R1(config)# show aliases
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+
+
+--- [324] § regression: pipe filters ---
+[324/370] r1 R1(config)# show running-config | include router
+<empty>
+
+[325/370] r1 R1(config)# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   ip address 1.1.1.1 255.255.255.255
+   no shutdown
+  !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  !
+  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  end
+
+[326/370] r1 R1(config)# show running-config | begin line
+<empty>
+
+[327/370] r1 R1(config)# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  interface Loopback0
+   ip address 1.1.1.1 255.255.255.255
+   no shutdown
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  end
+
+[328/370] r1 R1(config)# show ip route | include via
+<empty>
+
+[329/370] r1 R1(config)# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  Loopback0                  1.1.1.1         YES manual administratively down down
+  Tunnel0                    172.16.0.1      YES manual administratively down down
+  Tunnel1                    172.16.0.5      YES manual administratively down down
+
+
+--- [330] § regression: mode nav + negation ---
+[330/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[331/370] r1 R1(config)# no ip routing
+<empty>
+
+[332/370] r1 R1(config)# ip routing
+<empty>
+
+[333/370] r1 R1(config)# no ip cef
+<empty>
+
+[334/370] r1 R1(config)# ip cef
+<empty>
+
+[335/370] r1 R1(config)# no cdp run
+<empty>
+
+[336/370] r1 R1(config)# cdp run
+<empty>
+
+[337/370] r1 R1(config)# no lldp run
+<empty>
+
+[338/370] r1 R1(config)# lldp run
+<empty>
+
+[339/370] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[340/370] r1 R1(config)# ip domain-lookup
+<empty>
+
+[341/370] r1 R1(config)# no ip http server
+<empty>
+
+[342/370] r1 R1(config)# ip http server
+<empty>
+
+[343/370] r1 R1(config)# no ip source-route
+<empty>
+
+[344/370] r1 R1(config)# ip source-route
+<empty>
+
+[345/370] r1 R1(config)# no service pad
+<empty>
+
+[346/370] r1 R1(config)# service pad
+<empty>
+
+[347/370] r1 R1(config)# no ipv6 unicast-routing
+<empty>
+
+[348/370] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[349/370] r1 R1(config)# no service password-encryption
+<empty>
+
+[350/370] r1 R1(config)# service password-encryption
+<empty>
+
+[351/370] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[352/370] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  1.1.1.1         YES manual administratively down down
+  Tunnel0                    172.16.0.1      YES manual administratively down down
+  Tunnel1                    172.16.0.5      YES manual administratively down down
+
+[353/370] r1 R1(config-if)# shutdown
+<empty>
+
+[354/370] r1 R1(config-if)# no shutdown
+<empty>
+
+[355/370] r1 R1(config-if)# exit
+<empty>
+
+[356/370] r1 R1(config)# router ospf 1
+<empty>
+
+[357/370] r1 R1(config-router)# do show ip protocols
+  No routing protocol is configured.
+
+[358/370] r1 R1(config-router)# exit
+<empty>
+
+[359/370] r1 R1(config)# line vty 0 4
+<empty>
+
+[360/370] r1 R1(config-line)# exit
+<empty>
+
+[361/370] r1 R1(config)# end
+<empty>
+
+
+--- [362] § regression: context help ---
+[362/370] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[363/370] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[364/370] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    prefix-list    Build a prefix list
+    sla            Configure an IP SLA operation
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[365/370] r1 R1(config)# router ?
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
+
+[366/370] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[367/370] r1 R1(config)# no ?
+    hostname     Reset hostname
+    alias        Remove a command alias
+    cdp          cdp
+    lldp         lldp
+    ip           ip
+    ipv6         ipv6
+    logging      Disable logging
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
+    track        Remove a tracked object
+    access-list  Remove an access list
+    crypto       crypto
+
+[368/370] r1 R1(config)# end
+<empty>
+
+[369/370] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   ip address 1.1.1.1 255.255.255.255
+   no shutdown
+  !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  !
+  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  end
+
+[370/370] r1 R1# write memory
+  Building configuration...
+  [OK]

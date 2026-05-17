@@ -1,0 +1,2317 @@
+============================================================
+Router (L3) debug transcript — cisco-router-redundancy-qos
+Generated: 2026-05-17T18:13:57.892Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
+Total steps: 413
+============================================================
+
+
+--- [1] § base addressing ---
+[1/413] r1 R1> enable
+<empty>
+
+[2/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[4/413] r1 R1(config-if)# ip address 192.168.1.2 255.255.255.0
+<empty>
+
+[5/413] r1 R1(config-if)# no shutdown
+<empty>
+
+[6/413] r1 R1(config-if)# exit
+<empty>
+
+[7/413] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[8/413] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[9/413] r1 R1(config-if)# no shutdown
+<empty>
+
+[10/413] r1 R1(config-if)# exit
+<empty>
+
+[11/413] r1 R1(config)# end
+<empty>
+
+
+--- [12] § HSRP ---
+[12/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[13/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[14/413] r1 R1(config-if)# standby 1 ip 192.168.1.1
+<empty>
+
+[15/413] r1 R1(config-if)# standby 1 ip 192.168.1.101 secondary
+<empty>
+
+[16/413] r1 R1(config-if)# standby 1 priority 110
+<empty>
+
+[17/413] r1 R1(config-if)# standby 1 preempt delay minimum 30 reload 60
+<empty>
+
+[18/413] r1 R1(config-if)# standby 1 timers 1 3
+<empty>
+
+[19/413] r1 R1(config-if)# standby 1 timers msec 200 msec 750
+<empty>
+
+[20/413] r1 R1(config-if)# standby 1 authentication md5 key-string HsrpKey1
+<empty>
+
+[21/413] r1 R1(config-if)# standby 1 track GigabitEthernet0/1 30
+<empty>
+
+[22/413] r1 R1(config-if)# standby 1 track 1 decrement 20
+<empty>
+
+[23/413] r1 R1(config-if)# standby 1 name HSRP-GRP-1
+<empty>
+
+[24/413] r1 R1(config-if)# standby 1 mac-address 0000.0c07.ac01
+<empty>
+
+[25/413] r1 R1(config-if)# standby 1 follow HSRP-GRP-1
+<empty>
+
+[26/413] r1 R1(config-if)# standby 2 ip 192.168.1.2
+<empty>
+
+[27/413] r1 R1(config-if)# standby 2 ip 192.168.1.102 secondary
+<empty>
+
+[28/413] r1 R1(config-if)# standby 2 priority 120
+<empty>
+
+[29/413] r1 R1(config-if)# standby 2 preempt delay minimum 30 reload 60
+<empty>
+
+[30/413] r1 R1(config-if)# standby 2 timers 1 3
+<empty>
+
+[31/413] r1 R1(config-if)# standby 2 timers msec 200 msec 750
+<empty>
+
+[32/413] r1 R1(config-if)# standby 2 authentication md5 key-string HsrpKey2
+<empty>
+
+[33/413] r1 R1(config-if)# standby 2 track GigabitEthernet0/1 30
+<empty>
+
+[34/413] r1 R1(config-if)# standby 2 track 1 decrement 20
+<empty>
+
+[35/413] r1 R1(config-if)# standby 2 name HSRP-GRP-2
+<empty>
+
+[36/413] r1 R1(config-if)# standby 2 mac-address 0000.0c07.ac02
+<empty>
+
+[37/413] r1 R1(config-if)# standby 2 follow HSRP-GRP-1
+<empty>
+
+[38/413] r1 R1(config-if)# standby 3 ip 192.168.1.3
+<empty>
+
+[39/413] r1 R1(config-if)# standby 3 ip 192.168.1.103 secondary
+<empty>
+
+[40/413] r1 R1(config-if)# standby 3 priority 130
+<empty>
+
+[41/413] r1 R1(config-if)# standby 3 preempt delay minimum 30 reload 60
+<empty>
+
+[42/413] r1 R1(config-if)# standby 3 timers 1 3
+<empty>
+
+[43/413] r1 R1(config-if)# standby 3 timers msec 200 msec 750
+<empty>
+
+[44/413] r1 R1(config-if)# standby 3 authentication md5 key-string HsrpKey3
+<empty>
+
+[45/413] r1 R1(config-if)# standby 3 track GigabitEthernet0/1 30
+<empty>
+
+[46/413] r1 R1(config-if)# standby 3 track 1 decrement 20
+<empty>
+
+[47/413] r1 R1(config-if)# standby 3 name HSRP-GRP-3
+<empty>
+
+[48/413] r1 R1(config-if)# standby 3 mac-address 0000.0c07.ac03
+<empty>
+
+[49/413] r1 R1(config-if)# standby 3 follow HSRP-GRP-1
+<empty>
+
+[50/413] r1 R1(config-if)# standby 4 ip 192.168.1.4
+<empty>
+
+[51/413] r1 R1(config-if)# standby 4 ip 192.168.1.104 secondary
+<empty>
+
+[52/413] r1 R1(config-if)# standby 4 priority 140
+<empty>
+
+[53/413] r1 R1(config-if)# standby 4 preempt delay minimum 30 reload 60
+<empty>
+
+[54/413] r1 R1(config-if)# standby 4 timers 1 3
+<empty>
+
+[55/413] r1 R1(config-if)# standby 4 timers msec 200 msec 750
+<empty>
+
+[56/413] r1 R1(config-if)# standby 4 authentication md5 key-string HsrpKey4
+<empty>
+
+[57/413] r1 R1(config-if)# standby 4 track GigabitEthernet0/1 30
+<empty>
+
+[58/413] r1 R1(config-if)# standby 4 track 1 decrement 20
+<empty>
+
+[59/413] r1 R1(config-if)# standby 4 name HSRP-GRP-4
+<empty>
+
+[60/413] r1 R1(config-if)# standby 4 mac-address 0000.0c07.ac04
+<empty>
+
+[61/413] r1 R1(config-if)# standby 4 follow HSRP-GRP-1
+<empty>
+
+[62/413] r1 R1(config-if)# standby version 2
+<empty>
+
+[63/413] r1 R1(config-if)# standby use-bia
+<empty>
+
+[64/413] r1 R1(config-if)# standby delay minimum 30 reload 60
+<empty>
+
+[65/413] r1 R1(config-if)# exit
+<empty>
+
+[66/413] r1 R1(config)# end
+<empty>
+
+[67/413] r1 R1# show standby
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
+
+[68/413] r1 R1# show standby brief
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+  GigabitEthe 1    110 P Active   local           unknown         192.168.1.1
+  GigabitEthe 2    120 P Active   local           unknown         192.168.1.2
+  GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
+  GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
+
+[69/413] r1 R1# show standby GigabitEthernet0/0
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
+
+[70/413] r1 R1# show standby GigabitEthernet0/0 1
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
+
+[71/413] r1 R1# show standby all
+  GigabitEthernet0/0 - Group 1 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.1
+    Active virtual MAC address is 0000.0c9f.f001
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 110 (configured 110)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-1" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 2 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.2
+    Active virtual MAC address is 0000.0c9f.f002
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 120 (configured 120)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-2" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 3 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.3
+    Active virtual MAC address is 0000.0c9f.f003
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 130 (configured 130)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-3" (cfgd)
+    Following group HSRP-GRP-1
+  GigabitEthernet0/0 - Group 4 (version 2)
+    State is Active
+    Virtual IP address is 192.168.1.4
+    Active virtual MAC address is 0000.0c9f.f004
+    Hello time 200 sec, hold time 750 sec
+    Preemption enabled, delay min 30 secs
+    Active router is local
+    Standby router is unknown
+    Priority 140 (configured 140)
+    Track object GigabitEthernet0/1 state decrement 10
+    Track object 1 state decrement 20
+    Group name is "HSRP-GRP-4" (cfgd)
+    Following group HSRP-GRP-1
+
+[72/413] r1 R1# debug standby
+  % Invalid input detected at '^' marker.
+  debug standby
+        ^
+
+[73/413] r1 R1# debug standby events
+  % Invalid input detected at '^' marker.
+  debug standby events
+        ^
+
+[74/413] r1 R1# undebug all
+  All possible debugging has been turned off
+
+
+--- [75] § VRRP ---
+[75/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[76/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[77/413] r1 R1(config-if)# vrrp 1 ip 192.168.1.201
+<empty>
+
+[78/413] r1 R1(config-if)# vrrp 1 priority 120
+<empty>
+
+[79/413] r1 R1(config-if)# vrrp 1 preempt delay minimum 15
+<empty>
+
+[80/413] r1 R1(config-if)# vrrp 1 timers advertise 1
+<empty>
+
+[81/413] r1 R1(config-if)# vrrp 1 timers learn
+<empty>
+
+[82/413] r1 R1(config-if)# vrrp 1 authentication md5 key-string VrrpKey1
+<empty>
+
+[83/413] r1 R1(config-if)# vrrp 1 track 1 decrement 20
+<empty>
+
+[84/413] r1 R1(config-if)# vrrp 1 description VRRP-GRP-1
+<empty>
+
+[85/413] r1 R1(config-if)# vrrp 2 ip 192.168.1.202
+<empty>
+
+[86/413] r1 R1(config-if)# vrrp 2 priority 130
+<empty>
+
+[87/413] r1 R1(config-if)# vrrp 2 preempt delay minimum 15
+<empty>
+
+[88/413] r1 R1(config-if)# vrrp 2 timers advertise 1
+<empty>
+
+[89/413] r1 R1(config-if)# vrrp 2 timers learn
+<empty>
+
+[90/413] r1 R1(config-if)# vrrp 2 authentication md5 key-string VrrpKey2
+<empty>
+
+[91/413] r1 R1(config-if)# vrrp 2 track 1 decrement 20
+<empty>
+
+[92/413] r1 R1(config-if)# vrrp 2 description VRRP-GRP-2
+<empty>
+
+[93/413] r1 R1(config-if)# vrrp 3 ip 192.168.1.203
+<empty>
+
+[94/413] r1 R1(config-if)# vrrp 3 priority 140
+<empty>
+
+[95/413] r1 R1(config-if)# vrrp 3 preempt delay minimum 15
+<empty>
+
+[96/413] r1 R1(config-if)# vrrp 3 timers advertise 1
+<empty>
+
+[97/413] r1 R1(config-if)# vrrp 3 timers learn
+<empty>
+
+[98/413] r1 R1(config-if)# vrrp 3 authentication md5 key-string VrrpKey3
+<empty>
+
+[99/413] r1 R1(config-if)# vrrp 3 track 1 decrement 20
+<empty>
+
+[100/413] r1 R1(config-if)# vrrp 3 description VRRP-GRP-3
+<empty>
+
+[101/413] r1 R1(config-if)# vrrp 1 address-family ipv4
+<empty>
+
+[102/413] r1 R1(config-if)# exit
+<empty>
+
+[103/413] r1 R1(config)# end
+<empty>
+
+[104/413] r1 R1# show vrrp
+  GigabitEthernet0/0 - Group 1
+    State is Master
+    Virtual IP address is 192.168.1.201
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 120
+    Description is "VRRP-GRP-1"
+  GigabitEthernet0/0 - Group 2
+    State is Master
+    Virtual IP address is 192.168.1.202
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 130
+    Description is "VRRP-GRP-2"
+  GigabitEthernet0/0 - Group 3
+    State is Master
+    Virtual IP address is 192.168.1.203
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 140
+    Description is "VRRP-GRP-3"
+
+[105/413] r1 R1# show vrrp brief
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+  GigabitEthernet0/0 1   120     -   Y   Master  local           192.168.1.201
+  GigabitEthernet0/0 2   130     -   Y   Master  local           192.168.1.202
+  GigabitEthernet0/0 3   140     -   Y   Master  local           192.168.1.203
+
+[106/413] r1 R1# show vrrp interface GigabitEthernet0/0
+  GigabitEthernet0/0 - Group 1
+    State is Master
+    Virtual IP address is 192.168.1.201
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 120
+    Description is "VRRP-GRP-1"
+  GigabitEthernet0/0 - Group 2
+    State is Master
+    Virtual IP address is 192.168.1.202
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 130
+    Description is "VRRP-GRP-2"
+  GigabitEthernet0/0 - Group 3
+    State is Master
+    Virtual IP address is 192.168.1.203
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 140
+    Description is "VRRP-GRP-3"
+
+
+--- [107] § GLBP ---
+[107/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[108/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[109/413] r1 R1(config-if)# glbp 1 ip 192.168.1.250
+<empty>
+
+[110/413] r1 R1(config-if)# glbp 1 priority 150
+<empty>
+
+[111/413] r1 R1(config-if)# glbp 1 preempt delay minimum 30
+<empty>
+
+[112/413] r1 R1(config-if)# glbp 1 load-balancing host-dependent
+<empty>
+
+[113/413] r1 R1(config-if)# glbp 1 load-balancing round-robin
+<empty>
+
+[114/413] r1 R1(config-if)# glbp 1 weighting 100 lower 90 upper 95
+<empty>
+
+[115/413] r1 R1(config-if)# glbp 1 weighting track 1 decrement 10
+<empty>
+
+[116/413] r1 R1(config-if)# glbp 1 timers 3 10
+<empty>
+
+[117/413] r1 R1(config-if)# glbp 1 timers redirect 600 7200
+<empty>
+
+[118/413] r1 R1(config-if)# glbp 1 authentication md5 key-string GlbpKey
+<empty>
+
+[119/413] r1 R1(config-if)# glbp 1 name GLBP-GRP-1
+<empty>
+
+[120/413] r1 R1(config-if)# glbp 1 forwarder preempt delay minimum 30
+<empty>
+
+[121/413] r1 R1(config-if)# exit
+<empty>
+
+[122/413] r1 R1(config)# end
+<empty>
+
+[123/413] r1 R1# show glbp
+  GigabitEthernet0/0 - Group 1
+    State is Active
+    Virtual IP address is 192.168.1.250
+    Hello time 3 sec, hold time 10 sec
+    Preemption enabled
+    Active is local
+    Priority 150 (configured)
+    Weighting 100 (configured 100)
+    Load balancing: round-robin
+    Group name is "GLBP-GRP-1"
+
+[124/413] r1 R1# show glbp brief
+  Interface   Grp  Fwd Pri State    Address         Active router   Standby router
+  GigabitEthe 1    -   150 Active   192.168.1.250   local           unknown
+
+
+--- [125] § object tracking ---
+[125/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[126/413] r1 R1(config)# track 1 interface GigabitEthernet0/1 line-protocol
+<empty>
+
+[127/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[128/413] r1 R1(config-track)# exit
+<empty>
+
+[129/413] r1 R1(config)# track 2 interface GigabitEthernet0/0 line-protocol
+<empty>
+
+[130/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[131/413] r1 R1(config-track)# exit
+<empty>
+
+[132/413] r1 R1(config)# track 3 interface GigabitEthernet0/1 line-protocol
+<empty>
+
+[133/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[134/413] r1 R1(config-track)# exit
+<empty>
+
+[135/413] r1 R1(config)# track 4 interface GigabitEthernet0/0 line-protocol
+<empty>
+
+[136/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[137/413] r1 R1(config-track)# exit
+<empty>
+
+[138/413] r1 R1(config)# track 5 interface GigabitEthernet0/1 line-protocol
+<empty>
+
+[139/413] r1 R1(config-track)# delay up 10 down 20
+<empty>
+
+[140/413] r1 R1(config-track)# exit
+<empty>
+
+[141/413] r1 R1(config)# track 10 ip route 10.0.0.0 255.0.0.0 reachability
+<empty>
+
+[142/413] r1 R1(config-track)# track 11 ip sla 1 reachability
+  % Invalid input detected at '^' marker.
+  track 11 ip sla 1 reachability
+  ^
+
+[143/413] r1 R1(config-track)# track 12 ip sla 1 state
+  % Invalid input detected at '^' marker.
+  track 12 ip sla 1 state
+  ^
+
+[144/413] r1 R1(config-track)# track 20 list boolean and
+  % Invalid input detected at '^' marker.
+  track 20 list boolean and
+  ^
+
+[145/413] r1 R1(config-track)# object 1
+<empty>
+
+[146/413] r1 R1(config-track)# object 10
+<empty>
+
+[147/413] r1 R1(config-track)# exit
+<empty>
+
+[148/413] r1 R1(config)# track 21 list threshold weight
+<empty>
+
+[149/413] r1 R1(config-track)# object 1 weight 10
+<empty>
+
+[150/413] r1 R1(config-track)# object 10 weight 20
+<empty>
+
+[151/413] r1 R1(config-track)# threshold weight up 25 down 10
+<empty>
+
+[152/413] r1 R1(config-track)# exit
+<empty>
+
+[153/413] r1 R1(config)# track 22 stub-object
+<empty>
+
+[154/413] r1 R1(config-track)# exit
+<empty>
+
+[155/413] r1 R1(config)# end
+<empty>
+
+[156/413] r1 R1# show track
+  Track 1
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 2
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 3
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 4
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 5
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 10
+    IP route 10.0.0.0 reachability
+    State is Up
+      1 Up
+      10 Up
+  Track 21
+    List threshold weight
+    State is Up
+      1 weight 10 Up
+      10 weight 20 Up
+  Track 22
+    Stub object
+    State is Down
+
+[157/413] r1 R1# show track brief
+  Track  Type                     State
+  1      interface-line           Up
+  2      interface-line           Up
+  3      interface-line           Up
+  4      interface-line           Up
+  5      interface-line           Up
+  10     route                    Up
+  21     list-threshold           Up
+  22     stub                     Down
+
+[158/413] r1 R1# show track 1
+  Track 1
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+
+
+--- [159] § IP SLA + responder ---
+[159/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[160/413] r1 R1(config)# ip sla 1
+<empty>
+
+[161/413] r1 R1(config-ip-sla)# icmp-echo 10.0.0.2 source-interface GigabitEthernet0/1
+<empty>
+
+[162/413] r1 R1(config-ip-sla)# frequency 5
+<empty>
+
+[163/413] r1 R1(config-ip-sla)# threshold 200
+<empty>
+
+[164/413] r1 R1(config-ip-sla)# timeout 1000
+<empty>
+
+[165/413] r1 R1(config-ip-sla)# tag WAN-PROBE
+<empty>
+
+[166/413] r1 R1(config-ip-sla)# history enhanced interval 900 buckets 4
+<empty>
+
+[167/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[168/413] r1 R1(config)# ip sla 2
+<empty>
+
+[169/413] r1 R1(config-ip-sla)# udp-jitter 10.0.0.2 16384 codec g711alaw
+<empty>
+
+[170/413] r1 R1(config-ip-sla)# frequency 10
+<empty>
+
+[171/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[172/413] r1 R1(config)# ip sla 3
+<empty>
+
+[173/413] r1 R1(config-ip-sla)# tcp-connect 10.0.0.2 80
+<empty>
+
+[174/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[175/413] r1 R1(config)# ip sla 4
+<empty>
+
+[176/413] r1 R1(config-ip-sla)# http get http://10.0.0.2
+<empty>
+
+[177/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[178/413] r1 R1(config)# ip sla 5
+<empty>
+
+[179/413] r1 R1(config-ip-sla)# dns lab.local name-server 8.8.8.8
+<empty>
+
+[180/413] r1 R1(config-ip-sla)# exit
+<empty>
+
+[181/413] r1 R1(config)# ip sla schedule 1 life forever start-time now
+<empty>
+
+[182/413] r1 R1(config)# ip sla schedule 2 life 3600 start-time after 00:01:00
+<empty>
+
+[183/413] r1 R1(config)# ip sla group schedule 10 1,2,3 schedule-period 60 frequency 30 start-time now
+<empty>
+
+[184/413] r1 R1(config)# ip sla responder
+<empty>
+
+[185/413] r1 R1(config)# ip sla responder udp-echo ipaddress 10.0.0.1 port 5000
+<empty>
+
+[186/413] r1 R1(config)# ip sla enable reaction-alerts
+<empty>
+
+[187/413] r1 R1(config)# ip sla reaction-configuration 1 react timeout threshold-type immediate action-type trapAndTrigger
+<empty>
+
+[188/413] r1 R1(config)# ip sla logging traps
+<empty>
+
+[189/413] r1 R1(config)# end
+<empty>
+
+[190/413] r1 R1# show ip sla configuration
+  IP SLA Operation 1
+    Type of operation: icmp-echo
+    Target: 10.0.0.2
+    Frequency: 5 sec
+    Schedule: Active
+  IP SLA Operation 2
+    Type of operation: udp-jitter
+    Target: 10.0.0.2
+    Frequency: 10 sec
+    Schedule: Active
+  IP SLA Operation 3
+    Type of operation: tcp-connect
+    Target: 10.0.0.2
+    Frequency: 60 sec
+    Schedule: Active
+  IP SLA Operation 4
+    Type of operation: http
+    Target: http://10.0.0.2
+    Frequency: 60 sec
+    Schedule: Pending
+  IP SLA Operation 5
+    Type of operation: dns
+    Target: 8.8.8.8
+    Frequency: 60 sec
+    Schedule: Pending
+
+[191/413] r1 R1# show ip sla statistics
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 2
+    Type of operation: udp-jitter
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 3
+    Type of operation: tcp-connect
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 4
+    Type of operation: http
+    Latest operation state: Pending (unreachable)
+  IPSLA operation id: 5
+    Type of operation: dns
+    Latest operation state: Pending (unreachable)
+
+[192/413] r1 R1# show ip sla statistics aggregated
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 2
+    Type of operation: udp-jitter
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 3
+    Type of operation: tcp-connect
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 4
+    Type of operation: http
+    Latest operation state: Pending (unreachable)
+  IPSLA operation id: 5
+    Type of operation: dns
+    Latest operation state: Pending (unreachable)
+
+[193/413] r1 R1# show ip sla responder
+  IP SLA Responder is: Enabled
+
+[194/413] r1 R1# show ip sla application
+  IP SLA Operation 1
+    Type of operation: icmp-echo
+    Target: 10.0.0.2
+    Frequency: 5 sec
+    Schedule: Active
+  IP SLA Operation 2
+    Type of operation: udp-jitter
+    Target: 10.0.0.2
+    Frequency: 10 sec
+    Schedule: Active
+  IP SLA Operation 3
+    Type of operation: tcp-connect
+    Target: 10.0.0.2
+    Frequency: 60 sec
+    Schedule: Active
+  IP SLA Operation 4
+    Type of operation: http
+    Target: http://10.0.0.2
+    Frequency: 60 sec
+    Schedule: Pending
+  IP SLA Operation 5
+    Type of operation: dns
+    Target: 8.8.8.8
+    Frequency: 60 sec
+    Schedule: Pending
+
+
+--- [195] § BFD ---
+[195/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[196/413] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[197/413] r1 R1(config-if)# bfd interval 100 min_rx 100 multiplier 3
+<empty>
+
+[198/413] r1 R1(config-if)# bfd echo
+<empty>
+
+[199/413] r1 R1(config-if)# no bfd echo
+  % Invalid input detected at '^' marker.
+  no bfd echo
+     ^
+
+[200/413] r1 R1(config-if)# exit
+<empty>
+
+[201/413] r1 R1(config)# router ospf 1
+<empty>
+
+[202/413] r1 R1(config-router)# bfd all-interfaces
+<empty>
+
+[203/413] r1 R1(config-router)# exit
+<empty>
+
+[204/413] r1 R1(config)# ip route 192.168.9.0 255.255.255.0 10.0.0.2 track 1
+<empty>
+
+[205/413] r1 R1(config)# end
+<empty>
+
+[206/413] r1 R1# show bfd neighbors
+  % Invalid input detected at '^' marker.
+  show bfd neighbors
+       ^
+
+[207/413] r1 R1# show bfd neighbors details
+  % Invalid input detected at '^' marker.
+  show bfd neighbors details
+       ^
+
+[208/413] r1 R1# show bfd summary
+  % Invalid input detected at '^' marker.
+  show bfd summary
+       ^
+
+
+--- [209] § QoS — MQC class/policy ---
+[209/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[210/413] r1 R1(config)# ip access-list extended VOICE
+<empty>
+
+[211/413] r1 R1(config-ext-nacl)# permit udp any any range 16384 32767
+<empty>
+
+[212/413] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[213/413] r1 R1(config)# ip access-list extended VIDEO
+<empty>
+
+[214/413] r1 R1(config-ext-nacl)# permit tcp any any eq 1720
+<empty>
+
+[215/413] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[216/413] r1 R1(config)# class-map match-any CM-VOICE
+  % Invalid input detected at '^' marker.
+  class-map match-any CM-VOICE
+  ^
+
+[217/413] r1 R1(config)# match ip dscp ef
+  % Invalid input detected at '^' marker.
+  match ip dscp ef
+  ^
+
+[218/413] r1 R1(config)# match access-group name VOICE
+  % Invalid input detected at '^' marker.
+  match access-group name VOICE
+  ^
+
+[219/413] r1 R1(config)# match protocol rtp
+  % Invalid input detected at '^' marker.
+  match protocol rtp
+  ^
+
+[220/413] r1 R1(config)# exit
+<empty>
+
+[221/413] r1 R1# class-map match-all CM-VIDEO
+  % Invalid input detected at '^' marker.
+  class-map match-all CM-VIDEO
+  ^
+
+[222/413] r1 R1# match ip dscp af41
+  % Invalid input detected at '^' marker.
+  match ip dscp af41
+  ^
+
+[223/413] r1 R1# match access-group name VIDEO
+  % Invalid input detected at '^' marker.
+  match access-group name VIDEO
+  ^
+
+[224/413] r1 R1# exit
+<empty>
+
+[225/413] r1 R1> class-map match-any CM-CRITICAL
+  % Invalid input detected at '^' marker.
+  class-map match-any CM-CRITICAL
+  ^
+
+[226/413] r1 R1> match protocol bgp
+  % Invalid input detected at '^' marker.
+  match protocol bgp
+  ^
+
+[227/413] r1 R1> match protocol ospf
+  % Invalid input detected at '^' marker.
+  match protocol ospf
+  ^
+
+[228/413] r1 R1> match ip precedence 6
+  % Invalid input detected at '^' marker.
+  match ip precedence 6
+  ^
+
+[229/413] r1 R1> exit
+<empty>
+
+[230/413] r1 R1> class-map match-any CM-SCAVENGER
+  % Invalid input detected at '^' marker.
+  class-map match-any CM-SCAVENGER
+  ^
+
+[231/413] r1 R1> match protocol bittorrent
+  % Invalid input detected at '^' marker.
+  match protocol bittorrent
+  ^
+
+[232/413] r1 R1> match protocol napster
+  % Invalid input detected at '^' marker.
+  match protocol napster
+  ^
+
+[233/413] r1 R1> exit
+<empty>
+
+[234/413] r1 R1> policy-map PM-WAN-OUT
+  % Invalid input detected at '^' marker.
+  policy-map PM-WAN-OUT
+  ^
+
+[235/413] r1 R1> class CM-VOICE
+  % Invalid input detected at '^' marker.
+  class CM-VOICE
+  ^
+
+[236/413] r1 R1> priority percent 20
+  % Invalid input detected at '^' marker.
+  priority percent 20
+  ^
+
+[237/413] r1 R1> set dscp ef
+  % Invalid input detected at '^' marker.
+  set dscp ef
+  ^
+
+[238/413] r1 R1> exit
+<empty>
+
+[239/413] r1 R1> class CM-VIDEO
+  % Invalid input detected at '^' marker.
+  class CM-VIDEO
+  ^
+
+[240/413] r1 R1> bandwidth percent 25
+  % Invalid input detected at '^' marker.
+  bandwidth percent 25
+  ^
+
+[241/413] r1 R1> random-detect dscp-based
+  % Invalid input detected at '^' marker.
+  random-detect dscp-based
+  ^
+
+[242/413] r1 R1> set dscp af41
+  % Invalid input detected at '^' marker.
+  set dscp af41
+  ^
+
+[243/413] r1 R1> exit
+<empty>
+
+[244/413] r1 R1> class CM-CRITICAL
+  % Invalid input detected at '^' marker.
+  class CM-CRITICAL
+  ^
+
+[245/413] r1 R1> bandwidth percent 15
+  % Invalid input detected at '^' marker.
+  bandwidth percent 15
+  ^
+
+[246/413] r1 R1> exit
+<empty>
+
+[247/413] r1 R1> class CM-SCAVENGER
+  % Invalid input detected at '^' marker.
+  class CM-SCAVENGER
+  ^
+
+[248/413] r1 R1> bandwidth percent 1
+  % Invalid input detected at '^' marker.
+  bandwidth percent 1
+  ^
+
+[249/413] r1 R1> set dscp cs1
+  % Invalid input detected at '^' marker.
+  set dscp cs1
+  ^
+
+[250/413] r1 R1> exit
+<empty>
+
+[251/413] r1 R1> class class-default
+  % Invalid input detected at '^' marker.
+  class class-default
+  ^
+
+[252/413] r1 R1> fair-queue
+  % Invalid input detected at '^' marker.
+  fair-queue
+  ^
+
+[253/413] r1 R1> random-detect
+  % Invalid input detected at '^' marker.
+  random-detect
+  ^
+
+[254/413] r1 R1> shape average 50000000
+  % Invalid input detected at '^' marker.
+  shape average 50000000
+  ^
+
+[255/413] r1 R1> exit
+<empty>
+
+[256/413] r1 R1> exit
+<empty>
+
+[257/413] r1 R1> policy-map PM-SHAPER
+  % Invalid input detected at '^' marker.
+  policy-map PM-SHAPER
+  ^
+
+[258/413] r1 R1> class class-default
+  % Invalid input detected at '^' marker.
+  class class-default
+  ^
+
+[259/413] r1 R1> shape average 100000000 1000000
+  % Invalid input detected at '^' marker.
+  shape average 100000000 1000000
+  ^
+
+[260/413] r1 R1> service-policy PM-WAN-OUT
+  % Invalid input detected at '^' marker.
+  service-policy PM-WAN-OUT
+  ^
+
+[261/413] r1 R1> exit
+<empty>
+
+[262/413] r1 R1> exit
+<empty>
+
+[263/413] r1 R1> policy-map PM-POLICE-IN
+  % Invalid input detected at '^' marker.
+  policy-map PM-POLICE-IN
+  ^
+
+[264/413] r1 R1> class CM-SCAVENGER
+  % Invalid input detected at '^' marker.
+  class CM-SCAVENGER
+  ^
+
+[265/413] r1 R1> police 1000000 conform-action transmit exceed-action drop
+  % Invalid input detected at '^' marker.
+  police 1000000 conform-action transmit exceed-action drop
+  ^
+
+[266/413] r1 R1> exit
+<empty>
+
+[267/413] r1 R1> class class-default
+  % Invalid input detected at '^' marker.
+  class class-default
+  ^
+
+[268/413] r1 R1> police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+  % Invalid input detected at '^' marker.
+  police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+  ^
+
+[269/413] r1 R1> exit
+<empty>
+
+[270/413] r1 R1> exit
+<empty>
+
+[271/413] r1 R1> interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/1
+  ^
+
+[272/413] r1 R1> service-policy output PM-SHAPER
+  % Invalid input detected at '^' marker.
+  service-policy output PM-SHAPER
+  ^
+
+[273/413] r1 R1> service-policy input PM-POLICE-IN
+  % Invalid input detected at '^' marker.
+  service-policy input PM-POLICE-IN
+  ^
+
+[274/413] r1 R1> bandwidth 100000
+  % Invalid input detected at '^' marker.
+  bandwidth 100000
+  ^
+
+[275/413] r1 R1> max-reserved-bandwidth 90
+  % Invalid input detected at '^' marker.
+  max-reserved-bandwidth 90
+  ^
+
+[276/413] r1 R1> exit
+<empty>
+
+[277/413] r1 R1> end
+<empty>
+
+[278/413] r1 R1> show policy-map
+  % Invalid input detected at '^' marker.
+  show policy-map
+       ^
+
+[279/413] r1 R1> show policy-map PM-WAN-OUT
+  % Invalid input detected at '^' marker.
+  show policy-map PM-WAN-OUT
+       ^
+
+[280/413] r1 R1> show policy-map interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show policy-map interface GigabitEthernet0/1
+       ^
+
+[281/413] r1 R1> show class-map
+  % Invalid input detected at '^' marker.
+  show class-map
+       ^
+
+[282/413] r1 R1> show class-map CM-VOICE
+  % Invalid input detected at '^' marker.
+  show class-map CM-VOICE
+       ^
+
+[283/413] r1 R1> show table-map
+  % Invalid input detected at '^' marker.
+  show table-map
+       ^
+
+[284/413] r1 R1> show mls qos
+  % Invalid input detected at '^' marker.
+  show mls qos
+       ^
+
+
+--- [285] § legacy QoS / NBAR ---
+[285/413] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[286/413] r1 R1> interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/1
+  ^
+
+[287/413] r1 R1> rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+  % Invalid input detected at '^' marker.
+  rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+  ^
+
+[288/413] r1 R1> ip nbar protocol-discovery
+  % Invalid input detected at '^' marker.
+  ip nbar protocol-discovery
+  ^
+
+[289/413] r1 R1> priority-group 1
+  % Invalid input detected at '^' marker.
+  priority-group 1
+  ^
+
+[290/413] r1 R1> custom-queue-list 1
+  % Invalid input detected at '^' marker.
+  custom-queue-list 1
+  ^
+
+[291/413] r1 R1> fair-queue 64 256 8
+  % Invalid input detected at '^' marker.
+  fair-queue 64 256 8
+  ^
+
+[292/413] r1 R1> random-detect
+  % Invalid input detected at '^' marker.
+  random-detect
+  ^
+
+[293/413] r1 R1> tx-ring-limit 3
+  % Invalid input detected at '^' marker.
+  tx-ring-limit 3
+  ^
+
+[294/413] r1 R1> exit
+<empty>
+
+[295/413] r1 R1> priority-list 1 protocol ip high tcp telnet
+  % Invalid input detected at '^' marker.
+  priority-list 1 protocol ip high tcp telnet
+  ^
+
+[296/413] r1 R1> queue-list 1 protocol ip 1 tcp www
+  % Invalid input detected at '^' marker.
+  queue-list 1 protocol ip 1 tcp www
+  ^
+
+[297/413] r1 R1> access-list rate-limit 10 5
+  % Invalid input detected at '^' marker.
+  access-list rate-limit 10 5
+  ^
+
+[298/413] r1 R1> end
+<empty>
+
+[299/413] r1 R1> show ip nbar protocol-discovery
+  % Invalid input detected at '^' marker.
+  show ip nbar protocol-discovery
+          ^
+
+[300/413] r1 R1> show queueing interface GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show queueing interface GigabitEthernet0/1
+       ^
+
+[301/413] r1 R1> show interfaces GigabitEthernet0/1 rate-limit
+  % Invalid input detected at '^' marker.
+  show interface GigabitEthernet0/1 rate-limit
+       ^
+
+[302/413] r1 R1> show traffic-shape
+  % Invalid input detected at '^' marker.
+  show traffic-shape
+       ^
+
+[303/413] r1 R1> show traffic-shape statistics
+  % Invalid input detected at '^' marker.
+  show traffic-shape statistics
+       ^
+
+
+--- [304] § regression: show family ---
+[304/413] r1 R1> enable
+<empty>
+
+[305/413] r1 R1# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[306/413] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[307/413] r1 R1# show startup-config
+  % startup-config is not present
+
+[308/413] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[309/413] r1 R1# show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.2/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[310/413] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.9.0/24 [1/0] via 10.0.0.2
+
+[311/413] r1 R1# show ip route summary
+  % Network not in table
+
+[312/413] r1 R1# show ip protocols
+  No routing protocol is configured.
+
+[313/413] r1 R1# show ip arp
+  No ARP entries.
+
+[314/413] r1 R1# show arp
+  No ARP entries.
+
+[315/413] r1 R1# show ip ospf
+  Routing Process "ospf 1" with ID 192.168.1.2
+   Number of areas in this router is 0
+   Reference bandwidth unit is 100 mbps
+  
+
+[316/413] r1 R1# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+
+[317/413] r1 R1# show ip ospf database
+              OSPF Router with ID (192.168.1.2) (Process ID 1)
+  
+
+[318/413] r1 R1# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+
+[319/413] r1 R1# show ip eigrp neighbors
+  % EIGRP not running (no autonomous-system configured)
+
+[320/413] r1 R1# show ip eigrp topology
+  % EIGRP not running (no autonomous-system configured)
+
+[321/413] r1 R1# show ip bgp
+  % BGP not active
+
+[322/413] r1 R1# show ip bgp summary
+  % BGP not active
+
+[323/413] r1 R1# show ip rip database
+<empty>
+
+[324/413] r1 R1# show ip nat translations
+  No NAT translations.
+
+[325/413] r1 R1# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[326/413] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[327/413] r1 R1# show ip dhcp pool
+<empty>
+
+[328/413] r1 R1# show access-lists
+  Extended IP access list VOICE
+      permit udp any any (0 matches)
+  Extended IP access list VIDEO
+      permit tcp any any eq 1720 (0 matches)
+
+[329/413] r1 R1# show ip access-lists
+  Extended IP access list VOICE
+      permit udp any any (0 matches)
+  Extended IP access list VIDEO
+      permit tcp any any eq 1720 (0 matches)
+
+[330/413] r1 R1# show crypto isakmp sa
+  IPSec not configured.
+
+[331/413] r1 R1# show crypto ipsec sa
+  IPSec not configured.
+
+[332/413] r1 R1# show crypto session
+  IPSec not configured.
+
+[333/413] r1 R1# show crypto map
+  IPSec not configured.
+
+[334/413] r1 R1# show standby brief
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+  GigabitEthe 1    110 P Active   local           unknown         192.168.1.1
+  GigabitEthe 2    120 P Active   local           unknown         192.168.1.2
+  GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
+  GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
+
+[335/413] r1 R1# show vrrp brief
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+  GigabitEthernet0/0 1   120     -   Y   Master  local           192.168.1.201
+  GigabitEthernet0/0 2   130     -   Y   Master  local           192.168.1.202
+  GigabitEthernet0/0 3   140     -   Y   Master  local           192.168.1.203
+
+[336/413] r1 R1# show track
+  Track 1
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 2
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 3
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 4
+    Interface GigabitEthernet0/0 line-protocol
+    State is Up
+  Track 5
+    Interface GigabitEthernet0/1 line-protocol
+    State is Up
+  Track 10
+    IP route 10.0.0.0 reachability
+    State is Up
+      1 Up
+      10 Up
+  Track 21
+    List threshold weight
+    State is Up
+      1 weight 10 Up
+      10 weight 20 Up
+  Track 22
+    Stub object
+    State is Down
+
+[337/413] r1 R1# show ip sla statistics
+  IPSLA operation id: 1
+    Type of operation: icmp-echo
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 2
+    Type of operation: udp-jitter
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 3
+    Type of operation: tcp-connect
+    Latest operation state: Active (reachable)
+  IPSLA operation id: 4
+    Type of operation: http
+    Latest operation state: Pending (unreachable)
+  IPSLA operation id: 5
+    Type of operation: dns
+    Latest operation state: Pending (unreachable)
+
+[338/413] r1 R1# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[339/413] r1 R1# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[340/413] r1 R1# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[341/413] r1 R1# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[342/413] r1 R1# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[343/413] r1 R1# show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[344/413] r1 R1# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[345/413] r1 R1# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[346/413] r1 R1# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[347/413] r1 R1# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[348/413] r1 R1# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[349/413] r1 R1# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[350/413] r1 R1# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[351/413] r1 R1# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  192.168.9.0/24       10.0.0.2             GigabitEthernet0/1
+
+[352/413] r1 R1# show interfaces GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.2/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[353/413] r1 R1# show interfaces GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[354/413] r1 R1# show ip interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[355/413] r1 R1# show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[356/413] r1 R1# show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.9.0/24 via 10.0.0.2, GigabitEthernet0/1
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.2/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  
+  ------------------ show ip protocols ------------------
+  No routing protocol is configured.
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[357/413] r1 R1# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[358/413] r1 R1# show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[359/413] r1 R1# show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[360/413] r1 R1# show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[361/413] r1 R1# show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[362/413] r1 R1# show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[363/413] r1 R1# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[364/413] r1 R1# show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[365/413] r1 R1# show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[366/413] r1 R1# show aliases
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+
+
+--- [367] § regression: pipe filters ---
+[367/413] r1 R1(config)# show running-config | include router
+<empty>
+
+[368/413] r1 R1(config)# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[369/413] r1 R1(config)# show running-config | begin line
+<empty>
+
+[370/413] r1 R1(config)# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  end
+
+[371/413] r1 R1(config)# show ip route | include via
+  S    192.168.9.0/24 [1/0] via 10.0.0.2
+
+[372/413] r1 R1(config)# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+
+
+--- [373] § regression: mode nav + negation ---
+[373/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[374/413] r1 R1(config)# no ip routing
+<empty>
+
+[375/413] r1 R1(config)# ip routing
+<empty>
+
+[376/413] r1 R1(config)# no ip cef
+<empty>
+
+[377/413] r1 R1(config)# ip cef
+<empty>
+
+[378/413] r1 R1(config)# no cdp run
+<empty>
+
+[379/413] r1 R1(config)# cdp run
+<empty>
+
+[380/413] r1 R1(config)# no lldp run
+<empty>
+
+[381/413] r1 R1(config)# lldp run
+<empty>
+
+[382/413] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[383/413] r1 R1(config)# ip domain-lookup
+<empty>
+
+[384/413] r1 R1(config)# no ip http server
+<empty>
+
+[385/413] r1 R1(config)# ip http server
+<empty>
+
+[386/413] r1 R1(config)# no ip source-route
+<empty>
+
+[387/413] r1 R1(config)# ip source-route
+<empty>
+
+[388/413] r1 R1(config)# no service pad
+<empty>
+
+[389/413] r1 R1(config)# service pad
+<empty>
+
+[390/413] r1 R1(config)# no ipv6 unicast-routing
+<empty>
+
+[391/413] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[392/413] r1 R1(config)# no service password-encryption
+<empty>
+
+[393/413] r1 R1(config)# service password-encryption
+<empty>
+
+[394/413] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[395/413] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.2     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[396/413] r1 R1(config-if)# shutdown
+<empty>
+
+[397/413] r1 R1(config-if)# no shutdown
+<empty>
+
+[398/413] r1 R1(config-if)# exit
+<empty>
+
+[399/413] r1 R1(config)# router ospf 1
+<empty>
+
+[400/413] r1 R1(config-router)# do show ip protocols
+  No routing protocol is configured.
+
+[401/413] r1 R1(config-router)# exit
+<empty>
+
+[402/413] r1 R1(config)# line vty 0 4
+<empty>
+
+[403/413] r1 R1(config-line)# exit
+<empty>
+
+[404/413] r1 R1(config)# end
+<empty>
+
+
+--- [405] § regression: context help ---
+[405/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[406/413] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[407/413] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    prefix-list    Build a prefix list
+    sla            Configure an IP SLA operation
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[408/413] r1 R1(config)# router ?
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
+
+[409/413] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[410/413] r1 R1(config)# no ?
+    hostname     Reset hostname
+    alias        Remove a command alias
+    cdp          cdp
+    lldp         lldp
+    ip           ip
+    ipv6         ipv6
+    logging      Disable logging
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
+    track        Remove a tracked object
+    access-list  Remove an access list
+    crypto       crypto
+
+[411/413] r1 R1(config)# end
+<empty>
+
+[412/413] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.2 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip access-list extended VOICE
+   permit udp any any
+  ip access-list extended VIDEO
+   permit tcp any any eq 1720
+  !
+  ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  end
+
+[413/413] r1 R1# write memory
+  Building configuration...
+  [OK]

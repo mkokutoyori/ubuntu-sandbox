@@ -1,0 +1,2135 @@
+============================================================
+Router (L3) debug transcript — cisco-router-connectivity
+Generated: 2026-05-17T18:13:56.278Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
+Total steps: 313
+============================================================
+
+
+--- [1] § host setup ---
+[1/313] linux1 linux1$ ip addr add 192.168.1.10/24 dev eth0
+<empty>
+
+[2/313] linux1 linux1$ ip link set eth0 up
+<empty>
+
+[3/313] linux1 linux1$ ip route add default via 192.168.1.1
+<empty>
+
+[4/313] linux1 linux1$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:09 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.1.10/24 brd 192.168.1.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0a brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0b brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0c brd ff:ff:ff:ff:ff:ff
+
+[5/313] linux1 linux1$ ip route show
+  192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.10 metric 0
+  default via 192.168.1.1 dev eth0 proto static
+
+[6/313] win1 win1$ netsh interface ip set address eth0 static 192.168.2.10 255.255.255.0 192.168.2.1
+  Ok.
+
+[7/313] win1 win1$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : W1
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-0D
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 192.168.2.10(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.2.1
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-0E
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-0F
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-10
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+[8/313] win1 win1$ route print
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 0d ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 0e ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 0f ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 10 ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+    192.168.2.0              255.255.255.0    On-link         192.168.2.10   0
+    0.0.0.0                  0.0.0.0          192.168.2.1     192.168.2.10   0
+  ===========================================================================
+  Persistent Routes:
+    None
+
+
+--- [9] § scenario 1: static routing ---
+[9/313] r1 R1> enable
+<empty>
+
+[10/313] r1 R1# enable
+<empty>
+
+[11/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[12/313] r1 R1(config)# hostname R1
+<empty>
+
+[13/313] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[14/313] r1 R1(config-if)# ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[15/313] r1 R1(config-if)# no shutdown
+<empty>
+
+[16/313] r1 R1(config-if)# exit
+<empty>
+
+[17/313] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[18/313] r1 R1(config-if)# ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[19/313] r1 R1(config-if)# no shutdown
+<empty>
+
+[20/313] r1 R1(config-if)# exit
+<empty>
+
+[21/313] r1 R1(config)# ip route 192.168.2.0 255.255.255.0 10.0.0.2
+<empty>
+
+[22/313] r1 R1(config)# end
+<empty>
+
+[23/313] r2 R2> enable
+<empty>
+
+[24/313] r2 R2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[25/313] r2 R2(config)# hostname R2
+<empty>
+
+[26/313] r2 R2(config)# interface GigabitEthernet0/0
+<empty>
+
+[27/313] r2 R2(config-if)# ip address 192.168.2.1 255.255.255.0
+<empty>
+
+[28/313] r2 R2(config-if)# no shutdown
+<empty>
+
+[29/313] r2 R2(config-if)# exit
+<empty>
+
+[30/313] r2 R2(config)# interface GigabitEthernet0/1
+<empty>
+
+[31/313] r2 R2(config-if)# ip address 10.0.0.2 255.255.255.252
+<empty>
+
+[32/313] r2 R2(config-if)# no shutdown
+<empty>
+
+[33/313] r2 R2(config-if)# exit
+<empty>
+
+[34/313] r2 R2(config)# ip route 192.168.1.0 255.255.255.0 10.0.0.1
+<empty>
+
+[35/313] r2 R2(config)# end
+<empty>
+
+
+--- [36] § verify (static) ---
+[36/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[37/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+
+[38/313] r2 R2# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.2.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.1.0/24 [1/0] via 10.0.0.1
+
+[39/313] r1 R1# ping 10.0.0.2
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 10.0.0.2, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/1 ms
+
+[40/313] r1 R1# ping 192.168.2.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.2.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[41/313] r2 R2# ping 192.168.1.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.1.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[42/313] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.770 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.152 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.178 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.152/0.367/0.770/0.286 ms
+
+[43/313] linux1 linux1$ ping -c 3 10.0.0.2
+  PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
+  
+  --- 10.0.0.2 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[44/313] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[45/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.119 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.287 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.241 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.241/0.549/1.119/0.403 ms
+
+[46/313] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.652 ms  0.176 ms  0.160 ms
+   2  10.0.0.2 (10.0.0.2)  0.287 ms  0.202 ms  0.134 ms
+   3  192.168.2.10 (192.168.2.10)  0.317 ms  0.180 ms  0.222 ms
+
+[47/313] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+
+[48/313] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[49/313] r1 R1# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[50/313] r2 R2# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.1         0           02:00:00:00:00:02ARPA   GigabitEthernet0/1
+  Internet  192.168.2.10     0           02:00:00:00:00:0dARPA   GigabitEthernet0/0
+
+
+--- [51] § scenario 2: default routes ---
+[51/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[52/313] r1 R1(config)# no ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  % Invalid input detected at '^' marker.
+  no ip route 192.168.2.0 255.255.255.0 10.0.0.2
+        ^
+
+[53/313] r1 R1(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.2
+<empty>
+
+[54/313] r1 R1(config)# end
+<empty>
+
+[55/313] r2 R2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[56/313] r2 R2(config)# no ip route 192.168.1.0 255.255.255.0 10.0.0.1
+  % Invalid input detected at '^' marker.
+  no ip route 192.168.1.0 255.255.255.0 10.0.0.1
+        ^
+
+[57/313] r2 R2(config)# ip route 0.0.0.0 0.0.0.0 10.0.0.1
+<empty>
+
+[58/313] r2 R2(config)# end
+<empty>
+
+
+--- [59] § verify (default) ---
+[59/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[60/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+
+[61/313] r2 R2# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.2.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.1.0/24 [1/0] via 10.0.0.1
+  S*    0.0.0.0/0 [1/0] via 10.0.0.1
+
+[62/313] r1 R1# ping 10.0.0.2
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 10.0.0.2, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[63/313] r1 R1# ping 192.168.2.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.2.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[64/313] r2 R2# ping 192.168.1.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.1.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[65/313] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.129 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.137 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.090 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.090/0.119/0.137/0.020 ms
+
+[66/313] linux1 linux1$ ping -c 3 10.0.0.2
+  PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
+  
+  --- 10.0.0.2 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[67/313] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[68/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.446 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.193 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.118 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.118/0.252/0.446/0.140 ms
+
+[69/313] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.193 ms  0.091 ms  0.054 ms
+   2  10.0.0.2 (10.0.0.2)  0.084 ms  0.087 ms  0.078 ms
+   3  192.168.2.10 (192.168.2.10)  0.152 ms  0.115 ms  0.110 ms
+
+[70/313] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+
+[71/313] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[72/313] r1 R1# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[73/313] r2 R2# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.1         0           02:00:00:00:00:02ARPA   GigabitEthernet0/1
+  Internet  192.168.2.10     0           02:00:00:00:00:0dARPA   GigabitEthernet0/0
+
+
+--- [74] § scenario 3: OSPF ---
+[74/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[75/313] r1 R1(config)# no ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  % Invalid input detected at '^' marker.
+  no ip route 0.0.0.0 0.0.0.0 10.0.0.2
+        ^
+
+[76/313] r1 R1(config)# router ospf 1
+<empty>
+
+[77/313] r1 R1(config-router)# router-id 1.1.1.1
+<empty>
+
+[78/313] r1 R1(config-router)# network 192.168.1.0 0.0.0.255 area 0
+<empty>
+
+[79/313] r1 R1(config-router)# network 10.0.0.0 0.0.0.3 area 0
+<empty>
+
+[80/313] r1 R1(config-router)# end
+<empty>
+
+[81/313] r2 R2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[82/313] r2 R2(config)# no ip route 0.0.0.0 0.0.0.0 10.0.0.1
+  % Invalid input detected at '^' marker.
+  no ip route 0.0.0.0 0.0.0.0 10.0.0.1
+        ^
+
+[83/313] r2 R2(config)# router ospf 1
+<empty>
+
+[84/313] r2 R2(config-router)# router-id 2.2.2.2
+<empty>
+
+[85/313] r2 R2(config-router)# network 192.168.2.0 0.0.0.255 area 0
+<empty>
+
+[86/313] r2 R2(config-router)# network 10.0.0.0 0.0.0.3 area 0
+<empty>
+
+[87/313] r2 R2(config-router)# end
+<empty>
+
+[88/313] r1 R1# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  2.2.2.2         1     FULL/  -        40s         10.0.0.2        GigabitEthernet0/1
+
+[89/313] r1 R1# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               192.168.1.1/24     100000DR    0/0
+  GigabitEthernet0/1   1     0               10.0.0.1/30        100000BDR   1/1
+
+[90/313] r1 R1# show ip ospf database
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x8000000c        0x9eae      2
+  2.2.2.2         2.2.2.2         0           0x80000003        0x8f6d      2
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.0.0.2        2.2.2.2         0           0x80000007        0xc8bc
+  
+
+[91/313] r2 R2# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         10.0.0.1        GigabitEthernet0/1
+
+
+--- [92] § verify (ospf) ---
+[92/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[93/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+  O 192.168.2.0/24 [110/200000] via 10.0.0.2, GigabitEthernet0/1
+
+[94/313] r2 R2# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.2.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.1.0/24 [1/0] via 10.0.0.1
+  S*    0.0.0.0/0 [1/0] via 10.0.0.1
+  O 192.168.1.0/24 [110/200000] via 10.0.0.1, GigabitEthernet0/1
+
+[95/313] r1 R1# ping 10.0.0.2
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 10.0.0.2, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[96/313] r1 R1# ping 192.168.2.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.2.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[97/313] r2 R2# ping 192.168.1.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.1.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/1 ms
+
+[98/313] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.072 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.040 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.038 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.038/0.050/0.072/0.016 ms
+
+[99/313] linux1 linux1$ ping -c 3 10.0.0.2
+  PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
+  
+  --- 10.0.0.2 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[100/313] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[101/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.341 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.145 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.111 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.111/0.199/0.341/0.102 ms
+
+[102/313] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.075 ms  0.043 ms  0.050 ms
+   2  10.0.0.2 (10.0.0.2)  0.081 ms  0.109 ms  0.066 ms
+   3  192.168.2.10 (192.168.2.10)  0.976 ms  0.110 ms  0.095 ms
+
+[103/313] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[104/313] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    1 ms     192.168.1.10
+  
+  Trace complete.
+
+[105/313] r1 R1# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[106/313] r2 R2# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.1         0           02:00:00:00:00:02ARPA   GigabitEthernet0/1
+  Internet  192.168.2.10     0           02:00:00:00:00:0dARPA   GigabitEthernet0/0
+
+
+--- [107] § scenario 4: RIP ---
+[107/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[108/313] r1 R1(config)# no router ospf 1
+<empty>
+
+[109/313] r1 R1(config)# router rip
+<empty>
+
+[110/313] r1 R1(config-router)# version 2
+<empty>
+
+[111/313] r1 R1(config-router)# no auto-summary
+<empty>
+
+[112/313] r1 R1(config-router)# network 192.168.1.0
+<empty>
+
+[113/313] r1 R1(config-router)# network 10.0.0.0
+<empty>
+
+[114/313] r1 R1(config-router)# end
+<empty>
+
+[115/313] r2 R2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[116/313] r2 R2(config)# no router ospf 1
+<empty>
+
+[117/313] r2 R2(config)# router rip
+<empty>
+
+[118/313] r2 R2(config-router)# version 2
+<empty>
+
+[119/313] r2 R2(config-router)# no auto-summary
+<empty>
+
+[120/313] r2 R2(config-router)# network 192.168.2.0
+<empty>
+
+[121/313] r2 R2(config-router)# network 10.0.0.0
+<empty>
+
+[122/313] r2 R2(config-router)# end
+<empty>
+
+[123/313] r1 R1# show ip rip database
+  192.168.1.0/24    auto-summary
+  192.168.1.0/24
+      [1] directly connected, via configured network
+  10.0.0.0/8    auto-summary
+  10.0.0.0/8
+      [1] directly connected, via configured network
+
+[124/313] r2 R2# show ip rip database
+  192.168.2.0/24    auto-summary
+  192.168.2.0/24
+      [1] directly connected, via configured network
+  10.0.0.0/8    auto-summary
+  10.0.0.0/8
+      [1] directly connected, via configured network
+
+
+--- [125] § verify (rip) ---
+[125/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[126/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+
+[127/313] r2 R2# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.2.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.1.0/24 [1/0] via 10.0.0.1
+  S*    0.0.0.0/0 [1/0] via 10.0.0.1
+
+[128/313] r1 R1# ping 10.0.0.2
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 10.0.0.2, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[129/313] r1 R1# ping 192.168.2.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.2.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[130/313] r2 R2# ping 192.168.1.1
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 192.168.1.1, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[131/313] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.065 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.039 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.050 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.039/0.051/0.065/0.011 ms
+
+[132/313] linux1 linux1$ ping -c 3 10.0.0.2
+  PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
+  
+  --- 10.0.0.2 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[133/313] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[134/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.276 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.110 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.099 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.099/0.161/0.276/0.081 ms
+
+[135/313] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.102 ms  0.059 ms  0.041 ms
+   2  10.0.0.2 (10.0.0.2)  0.076 ms  0.065 ms  0.067 ms
+   3  192.168.2.10 (192.168.2.10)  0.116 ms  0.091 ms  0.088 ms
+
+[136/313] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+
+[137/313] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[138/313] r1 R1# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[139/313] r2 R2# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.1         0           02:00:00:00:00:02ARPA   GigabitEthernet0/1
+  Internet  192.168.2.10     0           02:00:00:00:00:0dARPA   GigabitEthernet0/0
+
+
+--- [140] § scenario 5: DHCP ---
+[140/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[141/313] r1 R1(config)# ip dhcp excluded-address 192.168.1.1 192.168.1.9
+<empty>
+
+[142/313] r1 R1(config)# ip dhcp pool LAN1
+<empty>
+
+[143/313] r1 R1(dhcp-config)# network 192.168.1.0 255.255.255.0
+<empty>
+
+[144/313] r1 R1(dhcp-config)# default-router 192.168.1.1
+<empty>
+
+[145/313] r1 R1(dhcp-config)# dns-server 8.8.8.8
+<empty>
+
+[146/313] r1 R1(dhcp-config)# exit
+<empty>
+
+[147/313] r1 R1(config)# end
+<empty>
+
+[148/313] linux1 linux1$ ip addr flush dev eth0
+  Command "flush" is unknown, try "ip addr help".
+
+[149/313] linux1 linux1$ dhclient eth0
+<empty>
+
+[150/313] linux1 linux1$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:09 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.1.10/24 brd 192.168.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0a brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0b brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0c brd ff:ff:ff:ff:ff:ff
+
+[151/313] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=1.001 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.069 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.039 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.039/0.370/1.001/0.447 ms
+
+[152/313] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[153/313] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  192.168.1.10     02:00:00:00:00:09       5/18/2026, 6:14:44 PM   automatic
+
+[154/313] r1 R1# show ip dhcp pool
+  Pool LAN1 :
+    Network          : 192.168.1.0/24
+    Default Router   : 192.168.1.1
+    DNS Server(s)    : 8.8.8.8
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 1
+
+
+--- [155] § scenario 6: NAT/PAT ---
+[155/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[156/313] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[157/313] r1 R1(config-if)# ip nat inside
+<empty>
+
+[158/313] r1 R1(config-if)# exit
+<empty>
+
+[159/313] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[160/313] r1 R1(config-if)# ip nat outside
+<empty>
+
+[161/313] r1 R1(config-if)# exit
+<empty>
+
+[162/313] r1 R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+<empty>
+
+[163/313] r1 R1(config)# ip nat inside source list 1 interface GigabitEthernet0/1 overload
+<empty>
+
+[164/313] r1 R1(config)# end
+<empty>
+
+[165/313] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[166/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[167/313] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
+  icmp 10.0.0.1:10240         192.168.1.10:0         ---                    ---
+  icmp 10.0.0.1:10241         192.168.1.10:0         ---                    ---
+
+[168/313] r1 R1# show ip nat statistics
+  Total active translations: 2 (0 static, 2 dynamic; 0 extended)
+  Outside interfaces:  GigabitEthernet0/1
+  Inside interfaces:   GigabitEthernet0/0
+  Hits: 4  Misses: 8
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+   -- Inside Source [acl 1] overload
+
+
+--- [169] § scenario 7: link fault ---
+[169/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[170/313] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[171/313] r1 R1(config-if)# shutdown
+<empty>
+
+[172/313] r1 R1(config-if)# end
+<empty>
+
+[173/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[174/313] linux1 linux1$ ping -c 2 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  
+  --- 192.168.2.10 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[175/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+
+[176/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[177/313] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[178/313] r1 R1(config-if)# no shutdown
+<empty>
+
+[179/313] r1 R1(config-if)# end
+<empty>
+
+[180/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[181/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+
+--- [182] § scenario 8: wrong mask ---
+[182/313] r2 R2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[183/313] r2 R2(config)# interface GigabitEthernet0/1
+<empty>
+
+[184/313] r2 R2(config-if)# ip address 10.0.0.2 255.255.255.0
+<empty>
+
+[185/313] r2 R2(config-if)# end
+<empty>
+
+[186/313] r1 R1# ping 10.0.0.2
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 10.0.0.2, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+
+[187/313] linux1 linux1$ ping -c 2 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  
+  --- 192.168.2.10 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[188/313] r2 R2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[189/313] r2 R2(config)# interface GigabitEthernet0/1
+<empty>
+
+[190/313] r2 R2(config-if)# ip address 10.0.0.2 255.255.255.252
+<empty>
+
+[191/313] r2 R2(config-if)# end
+<empty>
+
+[192/313] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+
+--- [193] § final state ---
+[193/313] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN1
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8
+  ip dhcp excluded-address 192.168.1.1 192.168.1.9
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+   ip nat inside
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+   ip nat outside
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  !
+  ip nat inside source list 1 interface (outside) overload
+  !
+  ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  !
+  router rip
+   version 2
+   network 192.168.1.0
+   network 10.0.0.0
+  !
+  end
+
+[194/313] r2 R2# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R2
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.2.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.2 255.255.255.252
+   no shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  ip route 192.168.1.0 255.255.255.0 10.0.0.1
+  ip route 0.0.0.0 0.0.0.0 10.0.0.1
+  !
+  router rip
+   version 2
+   network 192.168.2.0
+   network 10.0.0.0
+  !
+  end
+
+[195/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+
+[196/313] r1 R1# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[197/313] r1 R1# show ip protocols
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+      192.168.1.0/24
+      10.0.0.0/8
+  
+    RIP learned routes: 0
+    Automatic network summarization is not in effect
+
+[198/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[199/313] r1 R1# show interfaces GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[200/313] linux1 linux1$ arp -n
+  Address                  HWtype  HWaddress           Flags Mask            Iface
+  192.168.1.1              ether   02:00:00:00:00:01   C     *               eth0
+
+[201/313] linux1 linux1$ ip route show
+  192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.10 metric 0
+  default via 192.168.1.1 dev eth0 proto dhcp
+
+[202/313] win1 win1$ arp -a
+  
+  Interface: 192.168.2.10 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.2.1           02-00-00-00-00-05     dynamic
+
+[203/313] win1 win1$ netstat -rn
+  
+  Active Connections
+  
+    Proto  Local Address          Foreign Address        State
+
+
+--- [204] § regression: show family ---
+[204/313] r1 R1# enable
+<empty>
+
+[205/313] r1 R1# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[206/313] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN1
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8
+  ip dhcp excluded-address 192.168.1.1 192.168.1.9
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+   ip nat inside
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+   ip nat outside
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  !
+  ip nat inside source list 1 interface (outside) overload
+  !
+  ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  !
+  router rip
+   version 2
+   network 192.168.1.0
+   network 10.0.0.0
+  !
+  end
+
+[207/313] r1 R1# show startup-config
+  % startup-config is not present
+
+[208/313] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[209/313] r1 R1# show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[210/313] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+
+[211/313] r1 R1# show ip route summary
+  Routing entry for 0.0.0.0/0
+    Known via "static", distance 1, metric 0
+  S* 0.0.0.0/0 via 10.0.0.2
+
+[212/313] r1 R1# show ip protocols
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+      192.168.1.0/24
+      10.0.0.0/8
+  
+    RIP learned routes: 0
+    Automatic network summarization is not in effect
+
+[213/313] r1 R1# show ip arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[214/313] r1 R1# show arp
+  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
+  Internet  10.0.0.2         0           02:00:00:00:00:06ARPA   GigabitEthernet0/1
+  Internet  192.168.1.10     0           02:00:00:00:00:09ARPA   GigabitEthernet0/0
+
+[215/313] r1 R1# show ip ospf
+  % OSPF is not configured
+
+[216/313] r1 R1# show ip ospf neighbor
+  % OSPF is not configured
+
+[217/313] r1 R1# show ip ospf database
+  % OSPF is not configured
+
+[218/313] r1 R1# show ip ospf interface brief
+  % OSPF is not configured
+
+[219/313] r1 R1# show ip eigrp neighbors
+  % EIGRP not running (no autonomous-system configured)
+
+[220/313] r1 R1# show ip eigrp topology
+  % EIGRP not running (no autonomous-system configured)
+
+[221/313] r1 R1# show ip bgp
+  % BGP not active
+
+[222/313] r1 R1# show ip bgp summary
+  % BGP not active
+
+[223/313] r1 R1# show ip rip database
+  192.168.1.0/24    auto-summary
+  192.168.1.0/24
+      [1] directly connected, via configured network
+  10.0.0.0/8    auto-summary
+  10.0.0.0/8
+      [1] directly connected, via configured network
+
+[224/313] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
+  icmp 10.0.0.1:10240         192.168.1.10:0         ---                    ---
+  icmp 10.0.0.1:10241         192.168.1.10:0         ---                    ---
+
+[225/313] r1 R1# show ip nat statistics
+  Total active translations: 2 (0 static, 2 dynamic; 0 extended)
+  Outside interfaces:  GigabitEthernet0/1
+  Inside interfaces:   GigabitEthernet0/0
+  Hits: 14  Misses: 23
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+   -- Inside Source [acl 1] overload
+
+[226/313] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  192.168.1.10     02:00:00:00:00:09       5/18/2026, 6:14:44 PM   automatic
+
+[227/313] r1 R1# show ip dhcp pool
+  Pool LAN1 :
+    Network          : 192.168.1.0/24
+    Default Router   : 192.168.1.1
+    DNS Server(s)    : 8.8.8.8
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 1
+
+[228/313] r1 R1# show access-lists
+  Standard IP access list 1
+      permit 192.168.1.0 0.0.0.255 (16 matches)
+
+[229/313] r1 R1# show ip access-lists
+  Standard IP access list 1
+      permit 192.168.1.0 0.0.0.255 (16 matches)
+
+[230/313] r1 R1# show crypto isakmp sa
+  IPSec not configured.
+
+[231/313] r1 R1# show crypto ipsec sa
+  IPSec not configured.
+
+[232/313] r1 R1# show crypto session
+  IPSec not configured.
+
+[233/313] r1 R1# show crypto map
+  IPSec not configured.
+
+[234/313] r1 R1# show standby brief
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+
+[235/313] r1 R1# show vrrp brief
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+
+[236/313] r1 R1# show track
+  No tracked objects configured.
+
+[237/313] r1 R1# show ip sla statistics
+  No IP SLA operations configured.
+
+[238/313] r1 R1# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[239/313] r1 R1# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[240/313] r1 R1# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[241/313] r1 R1# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[242/313] r1 R1# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[243/313] r1 R1# show clock
+  *18:14:50.000 UTC Sun May 17 2026
+
+[244/313] r1 R1# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[245/313] r1 R1# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[246/313] r1 R1# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[247/313] r1 R1# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[248/313] r1 R1# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[249/313] r1 R1# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[250/313] r1 R1# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[251/313] r1 R1# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  192.168.2.0/24       10.0.0.2             GigabitEthernet0/1
+  0.0.0.0/0            10.0.0.2             GigabitEthernet0/1
+
+[252/313] r1 R1# show interfaces GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[253/313] r1 R1# show interfaces GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[254/313] r1 R1# show ip interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[255/313] r1 R1# show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[256/313] r1 R1# show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN1
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8
+  ip dhcp excluded-address 192.168.1.1 192.168.1.9
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+   ip nat inside
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+   ip nat outside
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  !
+  ip nat inside source list 1 interface (outside) overload
+  !
+  ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  !
+  router rip
+   version 2
+   network 192.168.1.0
+   network 10.0.0.0
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  S    192.168.2.0/24 via 10.0.0.2, GigabitEthernet0/1
+  S*    0.0.0.0/0 via 10.0.0.2, GigabitEthernet0/1
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  
+  ------------------ show ip protocols ------------------
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+      192.168.1.0/24
+      10.0.0.0/8
+  
+    RIP learned routes: 0
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[257/313] r1 R1# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[258/313] r1 R1# show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[259/313] r1 R1# show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[260/313] r1 R1# show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[261/313] r1 R1# show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[262/313] r1 R1# show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[263/313] r1 R1# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[264/313] r1 R1# show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[265/313] r1 R1# show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[266/313] r1 R1# show aliases
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+
+
+--- [267] § regression: pipe filters ---
+[267/313] r1 R1# show running-config | include router
+   default-router 192.168.1.1
+  router rip
+
+[268/313] r1 R1# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN1
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8
+  ip dhcp excluded-address 192.168.1.1 192.168.1.9
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+   ip nat inside
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+   ip nat outside
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  !
+  ip nat inside source list 1 interface (outside) overload
+  !
+  ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  !
+  router rip
+   version 2
+   network 192.168.1.0
+   network 10.0.0.0
+  !
+  end
+
+[269/313] r1 R1# show running-config | begin line
+<empty>
+
+[270/313] r1 R1# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1
+  service dhcp
+  ip dhcp pool LAN1
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8
+  ip dhcp excluded-address 192.168.1.1 192.168.1.9
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+   ip nat inside
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+   ip nat outside
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  ip nat inside source list 1 interface (outside) overload
+  ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  router rip
+   version 2
+   network 192.168.1.0
+   network 10.0.0.0
+  end
+
+[271/313] r1 R1# show ip route | include via
+  S    192.168.2.0/24 [1/0] via 10.0.0.2
+  S*    0.0.0.0/0 [1/0] via 10.0.0.2
+
+[272/313] r1 R1# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+
+
+--- [273] § regression: mode nav + negation ---
+[273/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[274/313] r1 R1(config)# no ip routing
+<empty>
+
+[275/313] r1 R1(config)# ip routing
+<empty>
+
+[276/313] r1 R1(config)# no ip cef
+<empty>
+
+[277/313] r1 R1(config)# ip cef
+<empty>
+
+[278/313] r1 R1(config)# no cdp run
+<empty>
+
+[279/313] r1 R1(config)# cdp run
+<empty>
+
+[280/313] r1 R1(config)# no lldp run
+<empty>
+
+[281/313] r1 R1(config)# lldp run
+<empty>
+
+[282/313] r1 R1(config)# no ip domain-lookup
+<empty>
+
+[283/313] r1 R1(config)# ip domain-lookup
+<empty>
+
+[284/313] r1 R1(config)# no ip http server
+<empty>
+
+[285/313] r1 R1(config)# ip http server
+<empty>
+
+[286/313] r1 R1(config)# no ip source-route
+<empty>
+
+[287/313] r1 R1(config)# ip source-route
+<empty>
+
+[288/313] r1 R1(config)# no service pad
+<empty>
+
+[289/313] r1 R1(config)# service pad
+<empty>
+
+[290/313] r1 R1(config)# no ipv6 unicast-routing
+<empty>
+
+[291/313] r1 R1(config)# ipv6 unicast-routing
+<empty>
+
+[292/313] r1 R1(config)# no service password-encryption
+<empty>
+
+[293/313] r1 R1(config)# service password-encryption
+<empty>
+
+[294/313] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[295/313] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[296/313] r1 R1(config-if)# shutdown
+<empty>
+
+[297/313] r1 R1(config-if)# no shutdown
+<empty>
+
+[298/313] r1 R1(config-if)# exit
+<empty>
+
+[299/313] r1 R1(config)# router ospf 1
+<empty>
+
+[300/313] r1 R1(config-router)# do show ip protocols
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+      192.168.1.0/24
+      10.0.0.0/8
+  
+    RIP learned routes: 0
+    Automatic network summarization is not in effect
+
+[301/313] r1 R1(config-router)# exit
+<empty>
+
+[302/313] r1 R1(config)# line vty 0 4
+<empty>
+
+[303/313] r1 R1(config-line)# exit
+<empty>
+
+[304/313] r1 R1(config)# end
+<empty>
+
+
+--- [305] § regression: context help ---
+[305/313] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[306/313] r1 R1(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[307/313] r1 R1(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    prefix-list    Build a prefix list
+    sla            Configure an IP SLA operation
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[308/313] r1 R1(config)# router ?
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
+
+[309/313] r1 R1(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[310/313] r1 R1(config)# no ?
+    hostname     Reset hostname
+    alias        Remove a command alias
+    cdp          cdp
+    lldp         lldp
+    ip           ip
+    ipv6         ipv6
+    logging      Disable logging
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
+    track        Remove a tracked object
+    access-list  Remove an access list
+    crypto       crypto
+
+[311/313] r1 R1(config)# end
+<empty>
+
+[312/313] r1 R1# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN1
+   network 192.168.1.0 255.255.255.0
+   default-router 192.168.1.1
+   dns-server 8.8.8.8
+  ip dhcp excluded-address 192.168.1.1 192.168.1.9
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+   ip nat inside
+  !
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+   no shutdown
+   ip nat outside
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  !
+  ip nat inside source list 1 interface (outside) overload
+  !
+  ip route 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route 0.0.0.0 0.0.0.0 10.0.0.2
+  !
+  router rip
+   version 2
+   network 192.168.1.0
+   network 10.0.0.0
+  !
+  end
+
+[313/313] r1 R1# write memory
+  Building configuration...
+  [OK]

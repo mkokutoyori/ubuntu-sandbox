@@ -24,7 +24,16 @@ import {
 import {
   showClock, showUsers, showInventory, showProcessesCpu,
   showMemoryStatistics, showFlash, showPrivilege,
+  showCdp, showLldp, showSnmp, showNtpStatus, showNtpAssociations,
+  showLine, showIpSsh, showSshSessions, showHosts, showVrf, showBoot,
+  showRedundancy, showFileSystems, showCalendar, showTerminal,
+  showProcessesMemory, showBuffers, showTcpBrief, showSockets,
+  showStacks, showReload, showAaa, showEnvironment, showControllers,
+  type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
+import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
+import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
+import { LoggingConfig } from '../inspection/config/LoggingConfig';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -32,6 +41,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Recent commands for `show history` (shared switch + router). */
   protected cmdHistory: string[] = [];
   protected deviceRef: TDevice | null = null;
+
+  /**
+   * Config-driven global feature state (cdp/lldp/ip routing…) — a real
+   * Repository the CLI mutates and `show` projects (no silent no-ops).
+   */
+  protected readonly configState = new CiscoConfigState();
+
+  /** Config-driven CLI aliases — real, working, projected by show. */
+  protected readonly aliases = new AliasRepository();
+
+  /** Config-driven syslog/logging state, projected by `show logging`. */
+  protected readonly logging = new LoggingConfig();
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
@@ -72,6 +93,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.deviceRef;
   }
 
+  /** Device as the real-state surface the shared show helpers read. */
+  protected cs(): ShowStateDevice {
+    return this.d() as unknown as ShowStateDevice;
+  }
+
   // ─── Initialization ─────────────────────────────────────────────
 
   /**
@@ -97,7 +123,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!trimmed) return '';
     if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
 
-    const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
+    const parsed = parsePipeFilter(trimmed);
+    let cmdPart = parsed.cmd;
+    const pipeFilter = parsed.filter;
 
     // Context-sensitive help
     if (cmdPart.endsWith('?')) {
@@ -105,6 +133,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const helpResult = this.getHelp(cmdPart.slice(0, -1));
       this.deviceRef = null;
       return helpResult;
+    }
+
+    // Exec alias expansion (real AliasRepository state): in
+    // user/privileged mode, an alias head expands to its command.
+    if (!this.isConfigMode()) {
+      const sp = cmdPart.indexOf(' ');
+      const head = sp === -1 ? cmdPart : cmdPart.slice(0, sp);
+      const expansion = this.aliases.resolve('exec', head);
+      if (expansion) cmdPart = expansion + (sp === -1 ? '' : cmdPart.slice(sp));
     }
 
     // Global shortcuts (no device ref needed)
@@ -242,6 +279,64 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show history', 'Display command history', () =>
       this.cmdHistory.slice(-20).join('\n'));
     trie.registerGreedy('terminal', 'Set terminal parameters', () => '');
+
+    // Generic device-info show family — missing on BOTH the Cisco
+    // router and switch, so it lives here in the shared base (DRY).
+    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus());
+    trie.registerGreedy('show ntp', 'Display NTP associations', () =>
+      showNtpAssociations());
+    trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
+      showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
+    trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
+      showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')));
+    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp());
+    trie.registerGreedy('show controllers', 'Display controller status', (a) =>
+      showControllers(this.cs(), a.join(' ')));
+    trie.registerGreedy('show environment', 'Display environment', () =>
+      showEnvironment());
+    trie.registerGreedy('show line', 'Display TTY lines', () =>
+      showLine(this.cs()));
+    trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
+    trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
+      showSshSessions());
+    trie.registerGreedy('show hosts', 'Display host cache', () => showHosts());
+    trie.register('show ip vrf', 'Display VRFs', () => showVrf());
+    trie.registerGreedy('show vrf', 'Display VRFs', () => showVrf());
+    trie.registerGreedy('show boot', 'Display boot variables', () => showBoot());
+    trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
+      showRedundancy());
+    trie.registerGreedy('show file', 'Display file systems', () =>
+      showFileSystems());
+    trie.register('show calendar', 'Display hardware calendar', () =>
+      showCalendar());
+    trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
+      showTerminal());
+    trie.register('show processes memory', 'Display per-process memory', () =>
+      showProcessesMemory());
+    trie.registerGreedy('show buffers', 'Display buffer pools', () =>
+      showBuffers());
+    trie.registerGreedy('show tcp', 'Display TCP connections', () =>
+      showTcpBrief());
+    trie.registerGreedy('show sockets', 'Display open sockets', () =>
+      showSockets());
+    trie.registerGreedy('show stacks', 'Display process stacks', () =>
+      showStacks());
+    trie.registerGreedy('show reload', 'Display reload schedule', () =>
+      showReload());
+    trie.registerGreedy('show aaa', 'Display AAA state', (a) =>
+      showAaa(a.join(' ')));
+    trie.register('show aliases', 'Display command aliases', () =>
+      this.aliases.render());
+  }
+
+  /** Map a CLI alias mode keyword to the repository's AliasMode. */
+  private aliasMode(token: string): AliasMode {
+    switch (token) {
+      case 'configure': return 'configure';
+      case 'interface': return 'interface';
+      case 'router': return 'router';
+      default: return 'exec';
+    }
   }
 
   private registerCommonUserCommands(): void {
@@ -293,15 +388,65 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    // Common global-config no-ops (recognised; the sim has no datapath
-    // for these). Shared by switch + router.
     this.configTrie.register('no hostname', 'Reset hostname', () => '');
-    this.configTrie.registerGreedy('ip domain-lookup', 'DNS lookup', () => '');
-    this.configTrie.registerGreedy('no ip domain-lookup', 'Disable DNS lookup', () => '');
+
+    // `alias <mode> <name> <command…>` — real, working aliases.
+    this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
+      if (args.length < 3) return '% Incomplete command.';
+      const [modeTok, name, ...rest] = args;
+      this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
+      return '';
+    });
+    this.configTrie.registerGreedy('no alias', 'Remove a command alias', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      this.aliases.remove(this.aliasMode(args[0]), args[1]);
+      return '';
+    });
+
+    // Global feature toggles — mutate the real CiscoConfigState
+    // Repository (shared switch + router, DRY). `show cdp`/`show lldp`
+    // and `show running-config` project this real state.
+    const flag = (feature: string, enableCmd: string, desc: string) => {
+      this.configTrie.registerGreedy(enableCmd, desc, () => {
+        this.configState.set(feature, true);
+        return '';
+      });
+      this.configTrie.registerGreedy(`no ${enableCmd}`, `Disable ${desc}`, () => {
+        this.configState.set(feature, false);
+        return '';
+      });
+    };
+    flag('cdp', 'cdp run', 'CDP');
+    flag('lldp', 'lldp run', 'LLDP');
+    flag('ip cef', 'ip cef', 'CEF');
+    flag('ip http server', 'ip http server', 'HTTP server');
+    flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');
+    flag('ip source-route', 'ip source-route', 'IP source-route');
+    flag('ip domain-lookup', 'ip domain-lookup', 'DNS lookup');
+    // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
+    // the router (CiscoOspfCommands, device-specific); only record the
+    // negation here so it's recognised on both vendors without
+    // shadowing that specific handler.
+    this.configTrie.registerGreedy('no ip routing', 'Disable IP routing', () => {
+      this.configState.set('ip routing', false);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ipv6 unicast-routing', 'Disable IPv6 routing', () => {
+      this.configState.set('ipv6 unicast-routing', false);
+      return '';
+    });
+
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
     this.configTrie.registerGreedy('banner', 'Set a banner', () => '');
-    this.configTrie.registerGreedy('logging', 'Logging configuration', () => '');
+    this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
+      this.logging.apply(args, false);
+      return '';
+    });
+    this.configTrie.registerGreedy('no logging', 'Disable logging', (args) => {
+      this.logging.apply(args, true);
+      return '';
+    });
     this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
 

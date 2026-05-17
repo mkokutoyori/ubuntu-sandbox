@@ -1,0 +1,3380 @@
+============================================================
+Router (L3) debug transcript — cisco-router-cli-basics
+Generated: 2026-05-17T18:13:57.358Z
+Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
+focus=IOS router CLI: show family, mode nav, pipes, no, save
+Total steps: 482
+============================================================
+
+
+--- [1] § user-mode show family ---
+[1/482] r1 R1> show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[2/482] r1 R1> show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[3/482] r1 R1> show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[4/482] r1 R1> show calendar
+  18:13:57 UTC Sun May 17 2026
+
+[5/482] r1 R1> show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[6/482] r1 R1> show history
+  show version
+  show version
+  show clock
+  show calendar
+  show users
+  show history
+
+[7/482] r1 R1> show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[8/482] r1 R1> show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[9/482] r1 R1> show processes cpu history
+  % Invalid input detected at '^' marker.
+  show processes cpu history
+                     ^
+
+[10/482] r1 R1> show processes memory
+  Processor Pool Total: 0 Used: 0 Free: 0
+   PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process
+
+[11/482] r1 R1> show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[12/482] r1 R1> show memory summary
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[13/482] r1 R1> show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+
+[14/482] r1 R1> show startup-config
+  % startup-config is not present
+
+[15/482] r1 R1> show running-config all
+  % Invalid input detected at '^' marker.
+  show running-config all
+                      ^
+
+[16/482] r1 R1> show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         unassigned      YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[17/482] r1 R1> show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[18/482] r1 R1> show interfaces description
+  Interface                      Status         Protocol Description
+  GigabitEthernet0/0             up             up       
+  GigabitEthernet0/1             up             up       
+  GigabitEthernet0/2             up             down     
+  GigabitEthernet0/3             up             down     
+
+[19/482] r1 R1> show interfaces status
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  GigabitEt                    connected    routed     full    1000  1000BASE-T
+  GigabitEt                    connected    routed     full    1000  1000BASE-T
+  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
+  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
+
+[20/482] r1 R1> show interfaces summary
+   Interface                IHQ   IQD  OHQ   OQD  RXBS RXPS  TXBS  TXPS  TRTL
+  --------------------------------------------------------------------------
+   GigabitEthernet0/0        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/1        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/2        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/3        0     0    0     0     0    0     0     0     0
+
+[21/482] r1 R1> show ip interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+  GigabitEthernet0/2 is up, line protocol is down
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+  GigabitEthernet0/3 is up, line protocol is down
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+
+[22/482] r1 R1> show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+
+[23/482] r1 R1> show ip route summary
+  % Network not in table
+
+[24/482] r1 R1> show ip route connected
+  % Network not in table
+
+[25/482] r1 R1> show ip protocols
+  No routing protocol is configured.
+
+[26/482] r1 R1> show ip arp
+  No ARP entries.
+
+[27/482] r1 R1> show arp
+  No ARP entries.
+
+[28/482] r1 R1> show mac address-table
+  % Invalid input detected at '^' marker.
+  show mac address-table
+       ^
+
+[29/482] r1 R1> show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[30/482] r1 R1> show cdp neighbors detail
+  -------------------------
+  Device ID: L1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: GigabitEthernet0/0,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: R2
+  Entry address(es):
+  Platform: Cisco 2911,  Capabilities: Router
+  Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
+  Holdtime : 180 sec
+  
+  Total cdp entries displayed : 2
+
+[31/482] r1 R1> show cdp interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/1 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/2 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/3 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+
+[32/482] r1 R1> show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[33/482] r1 R1> show lldp neighbors detail
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[34/482] r1 R1> show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[35/482] r1 R1> show ip dhcp pool
+<empty>
+
+[36/482] r1 R1> show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        0
+  Automatic bindings   0
+  
+  Message              Received
+  DHCPDISCOVER         0
+  DHCPREQUEST          0
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            0
+  DHCPACK              0
+  DHCPNAK              0
+
+[37/482] r1 R1> show ip nat translations
+  No NAT translations.
+
+[38/482] r1 R1> show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[39/482] r1 R1> show access-lists
+<empty>
+
+[40/482] r1 R1> show ip access-lists
+<empty>
+
+[41/482] r1 R1> show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[42/482] r1 R1> show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[43/482] r1 R1> show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[44/482] r1 R1> show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[45/482] r1 R1> show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[46/482] r1 R1> show file systems
+  File Systems:
+  
+         Size(b)     Free(b)      Type  Flags  Prefixes
+              -           -     flash     rw   flash:
+              -           -     nvram     rw   nvram:
+
+[47/482] r1 R1> show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[48/482] r1 R1> show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[49/482] r1 R1> show platform
+  % Invalid input detected at '^' marker.
+  show platform
+       ^
+
+[50/482] r1 R1> show license
+  % Invalid input detected at '^' marker.
+  show license
+       ^
+
+[51/482] r1 R1> show license udi
+  % Invalid input detected at '^' marker.
+  show license udi
+       ^
+
+[52/482] r1 R1> show boot
+  BOOT variable does not exist
+  CONFIG_FILE variable does not exist
+  Configuration register is 0x2102
+
+[53/482] r1 R1> show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[54/482] r1 R1> show buffers
+  Buffer elements:
+       0 in free list
+  No public buffer pools instrumented in this model.
+
+[55/482] r1 R1> show stacks
+  Minimum process stacks:
+  Free/Size   Name
+  Interrupt level stacks:
+  Level    Called Unused/Size Name
+
+[56/482] r1 R1> show reload
+  No reload is scheduled.
+
+[57/482] r1 R1> show tcp brief
+  TCB       Local Address           Foreign Address        (state)
+
+[58/482] r1 R1> show sockets
+  Proto    Local Address      Foreign Address      State
+
+[59/482] r1 R1> show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[60/482] r1 R1> show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[61/482] r1 R1> show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[62/482] r1 R1> show ssh
+  Connection Version Mode Encryption  Hmac  State  Username
+  %No SSHv2 server connections running.
+
+[63/482] r1 R1> show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[64/482] r1 R1> show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[65/482] r1 R1> show privilege
+  Current privilege level is 1
+
+[66/482] r1 R1> show aaa sessions
+  Total sessions since last reload: 0
+
+[67/482] r1 R1> show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[68/482] r1 R1> show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         unassigned      YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  No routes configured.
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  
+  ------------------ show ip protocols ------------------
+  No routing protocol is configured.
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[69/482] r1 R1> show diag
+  % Invalid input detected at '^' marker.
+  show diag
+       ^
+
+[70/482] r1 R1> show idprom backplane
+  % Invalid input detected at '^' marker.
+  show idprom backplane
+       ^
+
+[71/482] r1 R1> ?
+    enable      Enter privileged EXEC mode
+    show        show
+    terminal    Set terminal parameters
+    ping        Send echo messages
+    traceroute  Trace route to destination
+
+[72/482] r1 R1> show ?
+    clock           Display the system clock
+    users           Display active lines
+    inventory       Display hardware inventory
+    processes       processes
+    memory          Display memory statistics
+    flash           Display flash filesystem
+    privilege       Display current privilege level
+    history         Display command history
+    ntp             Display NTP associations
+    cdp             Display CDP information
+    lldp            Display LLDP information
+    snmp            Display SNMP status
+    controllers     Display controller status
+    environment     Display environment
+    line            Display TTY lines
+    ip              ip
+    ssh             Display SSH sessions
+    hosts           Display host cache
+    vrf             Display VRFs
+    boot            Display boot variables
+    redundancy      Display redundancy state
+    file            Display file systems
+    calendar        Display hardware calendar
+    terminal        Display terminal parameters
+    buffers         Display buffer pools
+    tcp             Display TCP connections
+    sockets         Display open sockets
+    stacks          Display process stacks
+    reload          Display reload schedule
+    aaa             Display AAA state
+    aliases         Display command aliases
+    arp             Display ARP table
+    bgp             Display BGP
+    standby         Display HSRP state
+    vrrp            Display VRRP state
+    glbp            Display GLBP state
+    track           Display tracked objects
+    ipv6            ipv6
+    route-map       Display route-maps
+    logging         Display syslog state
+    tech-support    Aggregate diagnostic output
+    running-config  Display running configuration
+    startup-config  Display saved configuration
+    configuration   Display saved configuration
+    counters        Display traffic counters
+    debug           Display debugging flags
+    access-lists    Display all access lists
+    crypto          crypto
+    version         Display system hardware and software status
+    interface       Display interface status
+    interfaces      Display interface status
+
+[73/482] r1 R1> ping
+  % Ping requires a target IP address.
+
+[74/482] r1 R1> traceroute
+  % Traceroute requires a target IP address.
+
+[75/482] r1 R1> telnet 10.0.0.2
+  % Invalid input detected at '^' marker.
+  telnet 10.0.0.2
+  ^
+
+[76/482] r1 R1> ssh -l admin 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ssh -l admin 10.0.0.2
+  ^
+
+[77/482] r1 R1> enable
+<empty>
+
+
+--- [78] § privileged show family ---
+[78/482] r1 R1# show privilege
+  Current privilege level is 15
+
+[79/482] r1 R1# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[80/482] r1 R1# show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[81/482] r1 R1# show calendar
+  18:13:57 UTC Sun May 17 2026
+
+[82/482] r1 R1# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[83/482] r1 R1# show history
+  show ssh
+  show line
+  show terminal
+  show privilege
+  show aaa sessions
+  show ip vrf
+  show tech-support
+  show diag
+  show idprom backplane
+  ping
+  traceroute
+  telnet 10.0.0.2
+  ssh -l admin 10.0.0.2
+  enable
+  show privilege
+  show version
+  show clock
+  show calendar
+  show users
+  show history
+
+[84/482] r1 R1# show inventory
+  NAME: "R1", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[85/482] r1 R1# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[86/482] r1 R1# show processes cpu history
+  % Invalid input detected at '^' marker.
+  show processes cpu history
+                     ^
+
+[87/482] r1 R1# show processes memory
+  Processor Pool Total: 0 Used: 0 Free: 0
+   PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process
+
+[88/482] r1 R1# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[89/482] r1 R1# show memory summary
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[90/482] r1 R1# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+
+[91/482] r1 R1# show startup-config
+  % startup-config is not present
+
+[92/482] r1 R1# show running-config all
+  % Invalid input detected at '^' marker.
+  show running-config all
+                      ^
+
+[93/482] r1 R1# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         unassigned      YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+
+[94/482] r1 R1# show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[95/482] r1 R1# show interfaces description
+  Interface                      Status         Protocol Description
+  GigabitEthernet0/0             up             up       
+  GigabitEthernet0/1             up             up       
+  GigabitEthernet0/2             up             down     
+  GigabitEthernet0/3             up             down     
+
+[96/482] r1 R1# show interfaces status
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  GigabitEt                    connected    routed     full    1000  1000BASE-T
+  GigabitEt                    connected    routed     full    1000  1000BASE-T
+  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
+  GigabitEt                    notconnect   routed     full    1000  1000BASE-T
+
+[97/482] r1 R1# show interfaces summary
+   Interface                IHQ   IQD  OHQ   OQD  RXBS RXPS  TXBS  TXPS  TRTL
+  --------------------------------------------------------------------------
+   GigabitEthernet0/0        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/1        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/2        0     0    0     0     0    0     0     0     0
+   GigabitEthernet0/3        0     0    0     0     0    0     0     0     0
+
+[98/482] r1 R1# show ip interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+  GigabitEthernet0/2 is up, line protocol is down
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+  GigabitEthernet0/3 is up, line protocol is down
+    Internet protocol processing disabled
+    Broadcast address is 255.255.255.255
+    MTU is 1500 bytes
+    ICMP redirects are always sent
+    Proxy ARP is enabled
+
+[99/482] r1 R1# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+
+[100/482] r1 R1# show ip route summary
+  % Network not in table
+
+[101/482] r1 R1# show ip route connected
+  % Network not in table
+
+[102/482] r1 R1# show ip protocols
+  No routing protocol is configured.
+
+[103/482] r1 R1# show ip arp
+  No ARP entries.
+
+[104/482] r1 R1# show arp
+  No ARP entries.
+
+[105/482] r1 R1# show mac address-table
+  % Invalid input detected at '^' marker.
+  show mac address-table
+       ^
+
+[106/482] r1 R1# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  
+  Total cdp entries displayed : 2
+
+[107/482] r1 R1# show cdp neighbors detail
+  -------------------------
+  Device ID: L1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: GigabitEthernet0/0,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
+  
+  -------------------------
+  Device ID: R2
+  Entry address(es):
+  Platform: Cisco 2911,  Capabilities: Router
+  Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
+  Holdtime : 180 sec
+  
+  Total cdp entries displayed : 2
+
+[108/482] r1 R1# show cdp interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/1 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/2 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/3 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+
+[109/482] r1 R1# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[110/482] r1 R1# show lldp neighbors detail
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[111/482] r1 R1# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[112/482] r1 R1# show ip dhcp pool
+<empty>
+
+[113/482] r1 R1# show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        0
+  Automatic bindings   0
+  
+  Message              Received
+  DHCPDISCOVER         0
+  DHCPREQUEST          0
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            0
+  DHCPACK              0
+  DHCPNAK              0
+
+[114/482] r1 R1# show ip nat translations
+  No NAT translations.
+
+[115/482] r1 R1# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[116/482] r1 R1# show access-lists
+<empty>
+
+[117/482] r1 R1# show ip access-lists
+<empty>
+
+[118/482] r1 R1# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[119/482] r1 R1# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[120/482] r1 R1# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[121/482] r1 R1# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[122/482] r1 R1# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[123/482] r1 R1# show file systems
+  File Systems:
+  
+         Size(b)     Free(b)      Type  Flags  Prefixes
+              -           -     flash     rw   flash:
+              -           -     nvram     rw   nvram:
+
+[124/482] r1 R1# show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[125/482] r1 R1# show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[126/482] r1 R1# show platform
+  % Invalid input detected at '^' marker.
+  show platform
+       ^
+
+[127/482] r1 R1# show license
+  % Invalid input detected at '^' marker.
+  show license
+       ^
+
+[128/482] r1 R1# show license udi
+  % Invalid input detected at '^' marker.
+  show license udi
+       ^
+
+[129/482] r1 R1# show boot
+  BOOT variable does not exist
+  CONFIG_FILE variable does not exist
+  Configuration register is 0x2102
+
+[130/482] r1 R1# show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[131/482] r1 R1# show buffers
+  Buffer elements:
+       0 in free list
+  No public buffer pools instrumented in this model.
+
+[132/482] r1 R1# show stacks
+  Minimum process stacks:
+  Free/Size   Name
+  Interrupt level stacks:
+  Level    Called Unused/Size Name
+
+[133/482] r1 R1# show reload
+  No reload is scheduled.
+
+[134/482] r1 R1# show tcp brief
+  TCB       Local Address           Foreign Address        (state)
+
+[135/482] r1 R1# show sockets
+  Proto    Local Address      Foreign Address      State
+
+[136/482] r1 R1# show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[137/482] r1 R1# show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[138/482] r1 R1# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[139/482] r1 R1# show ssh
+  Connection Version Mode Encryption  Hmac  State  Username
+  %No SSHv2 server connections running.
+
+[140/482] r1 R1# show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[141/482] r1 R1# show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[142/482] r1 R1# show privilege
+  Current privilege level is 15
+
+[143/482] r1 R1# show aaa sessions
+  Total sessions since last reload: 0
+
+[144/482] r1 R1# show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[145/482] r1 R1# show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1 uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1
+  !
+  service dhcp
+  !
+  interface GigabitEthernet0/0
+   shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         unassigned      YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  No routes configured.
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  
+  ------------------ show ip protocols ------------------
+  No routing protocol is configured.
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[146/482] r1 R1# show diag
+  % Invalid input detected at '^' marker.
+  show diag
+       ^
+
+[147/482] r1 R1# show idprom backplane
+  % Invalid input detected at '^' marker.
+  show idprom backplane
+       ^
+
+[148/482] r1 R1# show controllers GigabitEthernet0/0
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+
+[149/482] r1 R1# show interfaces GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[150/482] r1 R1# show interfaces GigabitEthernet0/0 stats
+  % Invalid input detected at '^' marker.
+  show interface GigabitEthernet0/0 stats
+       ^
+
+[151/482] r1 R1# show interfaces accounting
+  % Invalid input detected at '^' marker.
+  show interface accounting
+       ^
+
+[152/482] r1 R1# debug ip packet
+  % Invalid input detected at '^' marker.
+  debug ip packet
+           ^
+
+[153/482] r1 R1# undebug all
+  All possible debugging has been turned off
+
+[154/482] r1 R1# show debugging
+  % Invalid input detected at '^' marker.
+  show debugging
+       ^
+
+
+--- [155] § config sub-mode navigation ---
+[155/482] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[156/482] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[157/482] r1 R1(config-if)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[158/482] r1 R1(config-if)# exit
+<empty>
+
+[159/482] r1 R1(config)# interface Loopback0
+<empty>
+
+[160/482] r1 R1(config-if)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[161/482] r1 R1(config-if)# exit
+<empty>
+
+[162/482] r1 R1(config)# interface Tunnel0
+<empty>
+
+[163/482] r1 R1(config-if)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[164/482] r1 R1(config-if)# exit
+<empty>
+
+[165/482] r1 R1(config)# router ospf 1
+<empty>
+
+[166/482] r1 R1(config-router)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[167/482] r1 R1(config-router)# exit
+<empty>
+
+[168/482] r1 R1(config)# router rip
+<empty>
+
+[169/482] r1 R1(config-router)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[170/482] r1 R1(config-router)# exit
+<empty>
+
+[171/482] r1 R1(config)# router eigrp 100
+<empty>
+
+[172/482] r1 R1(config-router)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[173/482] r1 R1(config-router)# exit
+<empty>
+
+[174/482] r1 R1(config)# router bgp 65000
+<empty>
+
+[175/482] r1 R1(config-router)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[176/482] r1 R1(config-router)# exit
+<empty>
+
+[177/482] r1 R1(config)# ip dhcp pool LAN
+<empty>
+
+[178/482] r1 R1(dhcp-config)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[179/482] r1 R1(dhcp-config)# exit
+<empty>
+
+[180/482] r1 R1(config)# line console 0
+<empty>
+
+[181/482] r1 R1(config-line)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[182/482] r1 R1(config-line)# exit
+<empty>
+
+[183/482] r1 R1(config)# line vty 0 4
+<empty>
+
+[184/482] r1 R1(config-line)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[185/482] r1 R1(config-line)# exit
+<empty>
+
+[186/482] r1 R1(config)# line aux 0
+<empty>
+
+[187/482] r1 R1(config-line)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[188/482] r1 R1(config-line)# exit
+<empty>
+
+[189/482] r1 R1(config)# ip access-list standard STD1
+<empty>
+
+[190/482] r1 R1(config-std-nacl)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[191/482] r1 R1(config-std-nacl)# exit
+<empty>
+
+[192/482] r1 R1(config)# ip access-list extended EXT1
+<empty>
+
+[193/482] r1 R1(config-ext-nacl)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[194/482] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[195/482] r1 R1(config)# route-map RM1 permit 10
+<empty>
+
+[196/482] r1 R1(config-route-map)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[197/482] r1 R1(config-route-map)# exit
+<empty>
+
+[198/482] r1 R1(config)# class-map CM1
+  % Invalid input detected at '^' marker.
+  class-map CM1
+  ^
+
+[199/482] r1 R1(config)# do show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[200/482] r1 R1(config)# exit
+<empty>
+
+[201/482] r1 R1# policy-map PM1
+  % Invalid input detected at '^' marker.
+  policy-map PM1
+  ^
+
+[202/482] r1 R1# do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[203/482] r1 R1# exit
+<empty>
+
+[204/482] r1 R1> crypto isakmp policy 10
+  % Invalid input detected at '^' marker.
+  crypto isakmp policy 10
+  ^
+
+[205/482] r1 R1> do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[206/482] r1 R1> exit
+<empty>
+
+[207/482] r1 R1> crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  % Invalid input detected at '^' marker.
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  ^
+
+[208/482] r1 R1> do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[209/482] r1 R1> exit
+<empty>
+
+[210/482] r1 R1> crypto map CM 10 ipsec-isakmp
+  % Invalid input detected at '^' marker.
+  crypto map CM 10 ipsec-isakmp
+  ^
+
+[211/482] r1 R1> do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[212/482] r1 R1> exit
+<empty>
+
+[213/482] r1 R1> key chain KC1
+  % Invalid input detected at '^' marker.
+  key chain KC1
+  ^
+
+[214/482] r1 R1> do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[215/482] r1 R1> exit
+<empty>
+
+[216/482] r1 R1> track 1 interface GigabitEthernet0/0 line-protocol
+  % Invalid input detected at '^' marker.
+  track 1 interface GigabitEthernet0/0 line-protocol
+  ^
+
+[217/482] r1 R1> do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[218/482] r1 R1> exit
+<empty>
+
+[219/482] r1 R1> vrf definition CUST
+  % Invalid input detected at '^' marker.
+  vrf definition CUST
+  ^
+
+[220/482] r1 R1> do show clock
+  % Invalid input detected at '^' marker.
+  do show clock
+  ^
+
+[221/482] r1 R1> exit
+<empty>
+
+[222/482] r1 R1> end
+<empty>
+
+
+--- [223] § hostname / domain / banner ---
+[223/482] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
+
+[224/482] r1 R1> hostname R1-CORE
+  % Invalid input detected at '^' marker.
+  hostname R1-CORE
+  ^
+
+[225/482] r1 R1> ip domain-name lab.local
+  % Invalid input detected at '^' marker.
+  ip domain-name lab.local
+  ^
+
+[226/482] r1 R1> ip domain-lookup
+  % Invalid input detected at '^' marker.
+  ip domain-lookup
+  ^
+
+[227/482] r1 R1> no ip domain-lookup
+  % Invalid input detected at '^' marker.
+  no ip domain-lookup
+  ^
+
+[228/482] r1 R1> ip name-server 8.8.8.8
+  % Invalid input detected at '^' marker.
+  ip name-server 8.8.8.8
+  ^
+
+[229/482] r1 R1> ip name-server 8.8.4.4 1.1.1.1
+  % Invalid input detected at '^' marker.
+  ip name-server 8.8.4.4 1.1.1.1
+  ^
+
+[230/482] r1 R1> banner motd # Authorized access only #
+  % Invalid input detected at '^' marker.
+  banner motd # Authorized access only #
+  ^
+
+[231/482] r1 R1> banner login ^C Login banner ^C
+  % Invalid input detected at '^' marker.
+  banner login ^C Login banner ^C
+  ^
+
+[232/482] r1 R1> banner exec $ Exec banner $
+  % Invalid input detected at '^' marker.
+  banner exec $ Exec banner $
+  ^
+
+[233/482] r1 R1> clock timezone UTC 0
+  % Invalid input detected at '^' marker.
+  clock timezone UTC 0
+  ^
+
+[234/482] r1 R1> clock summer-time CEST recurring
+  % Invalid input detected at '^' marker.
+  clock summer-time CEST recurring
+  ^
+
+[235/482] r1 R1> no banner motd
+  % Invalid input detected at '^' marker.
+  no banner motd
+  ^
+
+[236/482] r1 R1> end
+<empty>
+
+[237/482] r1 R1> show running-config | include banner
+<empty>
+
+
+--- [238] § abbreviations ---
+[238/482] r1 R1> en
+<empty>
+
+[239/482] r1 R1# conf t
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[240/482] r1 R1(config)# host R1-EDGE
+<empty>
+
+[241/482] r1 R1-EDGE(config)# do sh ver
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1-EDGE uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[242/482] r1 R1-EDGE(config)# do sh ip int br
+  % Invalid input detected at '^' marker.
+
+[243/482] r1 R1-EDGE(config)# int gi0/0
+<empty>
+
+[244/482] r1 R1-EDGE(config-if)# ip addr 192.168.1.1 255.255.255.0
+<empty>
+
+[245/482] r1 R1-EDGE(config-if)# no shut
+<empty>
+
+[246/482] r1 R1-EDGE(config-if)# do sh run int gi0/0
+  Building configuration...
+  
+  Current configuration : interface GigabitEthernet0/0
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  end
+
+[247/482] r1 R1-EDGE(config-if)# exi
+  % Invalid input detected at '^' marker.
+  exi
+  ^
+
+[248/482] r1 R1-EDGE(config-if)# rou ospf 1
+  % Invalid input detected at '^' marker.
+  rou ospf 1
+  ^
+
+[249/482] r1 R1-EDGE(config-if)# net 192.168.1.0 0.0.0.255 a 0
+  % Invalid input detected at '^' marker.
+  net 192.168.1.0 0.0.0.255 a 0
+  ^
+
+[250/482] r1 R1-EDGE(config-if)# end
+<empty>
+
+[251/482] r1 R1-EDGE# sh ip int br
+  % Invalid input detected at '^' marker.
+
+[252/482] r1 R1-EDGE# sh ip ro
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+
+[253/482] r1 R1-EDGE# wr
+  % Incomplete command.
+
+
+--- [254] § context help (?) ---
+[254/482] r1 R1-EDGE# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[255/482] r1 R1-EDGE(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[256/482] r1 R1-EDGE(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    prefix-list    Build a prefix list
+    sla            Configure an IP SLA operation
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[257/482] r1 R1-EDGE(config)# router ?
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
+
+[258/482] r1 R1-EDGE(config)# no ?
+    hostname     Reset hostname
+    alias        Remove a command alias
+    cdp          cdp
+    lldp         lldp
+    ip           ip
+    ipv6         ipv6
+    logging      Disable logging
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
+    track        Remove a tracked object
+    access-list  Remove an access list
+    crypto       crypto
+
+[259/482] r1 R1-EDGE(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[260/482] r1 R1-EDGE(config)# access-list ?
+    WORD  Define a standard or extended access list
+    <cr>  
+
+[261/482] r1 R1-EDGE(config)# snmp-server ?
+    WORD  SNMP configuration
+    <cr>  
+
+[262/482] r1 R1-EDGE(config)# logging ?
+    WORD  Logging configuration
+    <cr>  
+
+[263/482] r1 R1-EDGE(config)# ntp ?
+    WORD  NTP configuration
+    <cr>  
+
+[264/482] r1 R1-EDGE(config)# clock ?
+  % Unrecognized command
+
+[265/482] r1 R1-EDGE(config)# banner ?
+    WORD  Set a banner
+    <cr>  
+
+[266/482] r1 R1-EDGE(config)# aaa ?
+    WORD  AAA configuration
+    <cr>  
+
+[267/482] r1 R1-EDGE(config)# username ?
+    WORD  Configure a local user
+    <cr>  
+
+[268/482] r1 R1-EDGE(config)# line ?
+    WORD  Enter line configuration
+    <cr>  
+
+[269/482] r1 R1-EDGE(config)# service ?
+    dhcp  Enable DHCP service
+    <cr>  
+
+[270/482] r1 R1-EDGE(config)# spanning-tree ?
+  % Unrecognized command
+
+[271/482] r1 R1-EDGE(config)# interface GigabitEthernet0/0
+<empty>
+
+[272/482] r1 R1-EDGE(config-if)# ip ?
+    address           Set interface IP address
+    helper-address    Set DHCP relay agent address
+    forward-protocol  forward-protocol
+    access-group      Set access group on interface
+    nat               nat
+    ospf              ospf
+
+[273/482] r1 R1-EDGE(config-if)# ip address ?
+    WORD  Set interface IP address
+    <cr>  
+
+[274/482] r1 R1-EDGE(config-if)# ip ospf ?
+    cost                 Set OSPF cost on interface
+    priority             Set OSPF priority on interface
+    hello-interval       Set OSPF hello interval
+    dead-interval        Set OSPF dead interval
+    network              Set OSPF network type
+    authentication-key   Set OSPF authentication key
+    authentication       Enable OSPF authentication
+    message-digest-key   Set MD5 key
+    demand-circuit       Configure demand circuit
+    mtu-ignore           Ignore MTU mismatch in DBD packets
+    retransmit-interval  Set OSPF retransmit interval
+    transmit-delay       Set OSPF transmit delay
+
+[275/482] r1 R1-EDGE(config-if)# standby ?
+    WORD  HSRP configuration
+    <cr>  
+
+[276/482] r1 R1-EDGE(config-if)# exit
+<empty>
+
+[277/482] r1 R1-EDGE(config)# end
+<empty>
+
+
+--- [278] § no / negation battery ---
+[278/482] r1 R1-EDGE# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[279/482] r1 R1-EDGE(config)# logging buffered
+<empty>
+
+[280/482] r1 R1-EDGE(config)# no logging buffered
+<empty>
+
+[281/482] r1 R1-EDGE(config)# service timestamps
+<empty>
+
+[282/482] r1 R1-EDGE(config)# no service timestamps
+<empty>
+
+[283/482] r1 R1-EDGE(config)# service password-encryption
+<empty>
+
+[284/482] r1 R1-EDGE(config)# no service password-encryption
+<empty>
+
+[285/482] r1 R1-EDGE(config)# ip cef
+<empty>
+
+[286/482] r1 R1-EDGE(config)# no ip cef
+<empty>
+
+[287/482] r1 R1-EDGE(config)# ip routing
+<empty>
+
+[288/482] r1 R1-EDGE(config)# no ip routing
+<empty>
+
+[289/482] r1 R1-EDGE(config)# ip domain-lookup
+<empty>
+
+[290/482] r1 R1-EDGE(config)# no ip domain-lookup
+<empty>
+
+[291/482] r1 R1-EDGE(config)# cdp run
+<empty>
+
+[292/482] r1 R1-EDGE(config)# no cdp run
+<empty>
+
+[293/482] r1 R1-EDGE(config)# lldp run
+<empty>
+
+[294/482] r1 R1-EDGE(config)# no lldp run
+<empty>
+
+[295/482] r1 R1-EDGE(config)# ip http server
+<empty>
+
+[296/482] r1 R1-EDGE(config)# no ip http server
+<empty>
+
+[297/482] r1 R1-EDGE(config)# ip http secure-server
+<empty>
+
+[298/482] r1 R1-EDGE(config)# no ip http secure-server
+<empty>
+
+[299/482] r1 R1-EDGE(config)# ip source-route
+<empty>
+
+[300/482] r1 R1-EDGE(config)# no ip source-route
+<empty>
+
+[301/482] r1 R1-EDGE(config)# ip bootp server
+  % Invalid input detected at '^' marker.
+  ip bootp server
+     ^
+
+[302/482] r1 R1-EDGE(config)# no ip bootp server
+  % Invalid input detected at '^' marker.
+  no ip bootp server
+        ^
+
+[303/482] r1 R1-EDGE(config)# ip finger
+  % Invalid input detected at '^' marker.
+  ip finger
+     ^
+
+[304/482] r1 R1-EDGE(config)# no ip finger
+  % Invalid input detected at '^' marker.
+  no ip finger
+        ^
+
+[305/482] r1 R1-EDGE(config)# service config
+<empty>
+
+[306/482] r1 R1-EDGE(config)# no service config
+<empty>
+
+[307/482] r1 R1-EDGE(config)# service pad
+<empty>
+
+[308/482] r1 R1-EDGE(config)# no service pad
+<empty>
+
+[309/482] r1 R1-EDGE(config)# ip gratuitous-arps
+  % Invalid input detected at '^' marker.
+  ip gratuitous-arps
+     ^
+
+[310/482] r1 R1-EDGE(config)# no ip gratuitous-arps
+  % Invalid input detected at '^' marker.
+  no ip gratuitous-arps
+        ^
+
+[311/482] r1 R1-EDGE(config)# end
+<empty>
+
+
+--- [312] § pipe filters ---
+[312/482] r1 R1-EDGE# show running-config | include hostname
+  hostname R1-EDGE
+
+[313/482] r1 R1-EDGE# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1-EDGE
+  service dhcp
+  ip dhcp pool LAN
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  interface Loopback0
+   shutdown
+  interface Tunnel0
+   shutdown
+  router rip
+   version 2
+  end
+
+[314/482] r1 R1-EDGE# show running-config | begin interface
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[315/482] r1 R1-EDGE# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[316/482] r1 R1-EDGE# show running-config | section router
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[317/482] r1 R1-EDGE# show ip interface brief | include up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+
+[318/482] r1 R1-EDGE# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+
+[319/482] r1 R1-EDGE# show ip route | include C
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+
+[320/482] r1 R1-EDGE# show ip route | begin Gateway
+<empty>
+
+[321/482] r1 R1-EDGE# show interfaces | include line protocol
+  GigabitEthernet0/0 is up, line protocol is up
+  GigabitEthernet0/1 is up, line protocol is up
+  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/3 is up, line protocol is down
+  Loopback0 is up, line protocol is up
+  Tunnel0 is up, line protocol is up
+
+[322/482] r1 R1-EDGE# show processes cpu | exclude 0.00
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+
+[323/482] r1 R1-EDGE# show running-config | redirect flash:cfg.txt
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[324/482] r1 R1-EDGE# show running-config | append flash:cfg.txt
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[325/482] r1 R1-EDGE# show running-config | tee flash:cfg.txt
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+
+--- [326] § terminal settings ---
+[326/482] r1 R1-EDGE# terminal length 0
+<empty>
+
+[327/482] r1 R1-EDGE# terminal length 24
+<empty>
+
+[328/482] r1 R1-EDGE# terminal width 132
+<empty>
+
+[329/482] r1 R1-EDGE# terminal monitor
+<empty>
+
+[330/482] r1 R1-EDGE# terminal no monitor
+<empty>
+
+[331/482] r1 R1-EDGE# terminal history size 100
+<empty>
+
+[332/482] r1 R1-EDGE# terminal exec prompt timestamp
+<empty>
+
+[333/482] r1 R1-EDGE# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[334/482] r1 R1-EDGE(config)# line console 0
+<empty>
+
+[335/482] r1 R1-EDGE(config-line)# exec-timeout 0 0
+<empty>
+
+[336/482] r1 R1-EDGE(config-line)# logging synchronous
+<empty>
+
+[337/482] r1 R1-EDGE(config-line)# history size 50
+<empty>
+
+[338/482] r1 R1-EDGE(config-line)# privilege level 15
+<empty>
+
+[339/482] r1 R1-EDGE(config-line)# exit
+<empty>
+
+[340/482] r1 R1-EDGE(config)# line vty 0 4
+<empty>
+
+[341/482] r1 R1-EDGE(config-line)# transport input ssh
+<empty>
+
+[342/482] r1 R1-EDGE(config-line)# transport input telnet ssh
+<empty>
+
+[343/482] r1 R1-EDGE(config-line)# transport output none
+<empty>
+
+[344/482] r1 R1-EDGE(config-line)# access-class 10 in
+<empty>
+
+[345/482] r1 R1-EDGE(config-line)# exec-timeout 5 0
+<empty>
+
+[346/482] r1 R1-EDGE(config-line)# login local
+<empty>
+
+[347/482] r1 R1-EDGE(config-line)# exit
+<empty>
+
+[348/482] r1 R1-EDGE(config)# end
+<empty>
+
+
+--- [349] § aliases / privilege ---
+[349/482] r1 R1-EDGE# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[350/482] r1 R1-EDGE(config)# alias exec sr show running-config
+<empty>
+
+[351/482] r1 R1-EDGE(config)# alias exec sib show ip interface brief
+<empty>
+
+[352/482] r1 R1-EDGE(config)# privilege exec level 5 show running-config
+  % Invalid input detected at '^' marker.
+  privilege exec level 5 show running-config
+  ^
+
+[353/482] r1 R1-EDGE(config)# enable secret cisco123
+<empty>
+
+[354/482] r1 R1-EDGE(config)# enable password weakpass
+<empty>
+
+[355/482] r1 R1-EDGE(config)# username admin privilege 15 secret admin123
+<empty>
+
+[356/482] r1 R1-EDGE(config)# username operator privilege 5 password oper
+<empty>
+
+[357/482] r1 R1-EDGE(config)# service password-encryption
+<empty>
+
+[358/482] r1 R1-EDGE(config)# end
+<empty>
+
+[359/482] r1 R1-EDGE# sr
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[360/482] r1 R1-EDGE# sib
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  unassigned      YES manual administratively down down
+  Tunnel0                    unassigned      YES manual administratively down down
+
+[361/482] r1 R1-EDGE# show aliases
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+    sr                  show running-config
+    sib                 show ip interface brief
+
+
+--- [362] § save / reload / copy ---
+[362/482] r1 R1-EDGE# write memory
+  Building configuration...
+  [OK]
+
+[363/482] r1 R1-EDGE# copy running-config startup-config
+  Building configuration...
+  [OK]
+
+[364/482] r1 R1-EDGE# copy startup-config running-config
+  % Invalid input detected at '^' marker.
+  copy startup-config running-config
+       ^
+
+[365/482] r1 R1-EDGE# copy running-config tftp:
+  % Invalid input detected at '^' marker.
+  copy running-config tftp:
+                      ^
+
+[366/482] r1 R1-EDGE# copy running-config flash:backup.cfg
+  % Invalid input detected at '^' marker.
+  copy running-config flash:backup.cfg
+                      ^
+
+[367/482] r1 R1-EDGE# write erase
+  % Invalid input detected at '^' marker.
+  write erase
+        ^
+
+[368/482] r1 R1-EDGE# erase startup-config
+  % Invalid input detected at '^' marker.
+  erase startup-config
+  ^
+
+[369/482] r1 R1-EDGE# show startup-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[370/482] r1 R1-EDGE# reload in 5
+  % Invalid input detected at '^' marker.
+  reload in 5
+  ^
+
+[371/482] r1 R1-EDGE# reload cancel
+  % Invalid input detected at '^' marker.
+  reload cancel
+  ^
+
+[372/482] r1 R1-EDGE# reload
+  % Invalid input detected at '^' marker.
+  reload
+  ^
+
+
+--- [373] § regression: show family ---
+[373/482] r1 R1-EDGE# enable
+<empty>
+
+[374/482] r1 R1-EDGE# show version
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1-EDGE uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+
+[375/482] r1 R1-EDGE# show running-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[376/482] r1 R1-EDGE# show startup-config
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[377/482] r1 R1-EDGE# show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  unassigned      YES manual administratively down down
+  Tunnel0                    unassigned      YES manual administratively down down
+
+[378/482] r1 R1-EDGE# show interfaces
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  Loopback0 is up, line protocol is up
+    Hardware is Loopback
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Tunnel protocol/transport GRE/IP
+
+[379/482] r1 R1-EDGE# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+
+[380/482] r1 R1-EDGE# show ip route summary
+  % Network not in table
+
+[381/482] r1 R1-EDGE# show ip protocols
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+  
+    RIP learned routes: 0
+  Routing Protocol is "eigrp 100"
+    Routing for Networks:
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 0
+
+[382/482] r1 R1-EDGE# show ip arp
+  No ARP entries.
+
+[383/482] r1 R1-EDGE# show arp
+  No ARP entries.
+
+[384/482] r1 R1-EDGE# show ip ospf
+  Routing Process "ospf 1" with ID 0.0.0.0
+   Number of areas in this router is 0
+   Reference bandwidth unit is 100 mbps
+  
+
+[385/482] r1 R1-EDGE# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+
+[386/482] r1 R1-EDGE# show ip ospf database
+              OSPF Router with ID (0.0.0.0) (Process ID 1)
+  
+
+[387/482] r1 R1-EDGE# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+
+[388/482] r1 R1-EDGE# show ip eigrp neighbors
+  EIGRP-IPv4 Neighbors for AS(100)
+  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  (no neighbours — no EIGRP peer in topology)
+
+[389/482] r1 R1-EDGE# show ip eigrp topology
+  EIGRP-IPv4 Topology Table for AS(100)
+  
+
+[390/482] r1 R1-EDGE# show ip bgp
+  BGP table version is 1, local router ID is 0.0.0.0
+     Network          Next Hop            Metric LocPrf Weight Path
+
+[391/482] r1 R1-EDGE# show ip bgp summary
+  BGP router identifier 0.0.0.0, local AS number 65000
+  
+  Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State
+
+[392/482] r1 R1-EDGE# show ip rip database
+  RIP routing database is empty
+
+[393/482] r1 R1-EDGE# show ip nat translations
+  No NAT translations.
+
+[394/482] r1 R1-EDGE# show ip nat statistics
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Expired translations: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+
+[395/482] r1 R1-EDGE# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+
+[396/482] r1 R1-EDGE# show ip dhcp pool
+  Pool LAN :
+    Network          : not configured/?
+    Default Router   : not configured
+    DNS Server(s)    : not configured
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 0
+
+[397/482] r1 R1-EDGE# show access-lists
+<empty>
+
+[398/482] r1 R1-EDGE# show ip access-lists
+<empty>
+
+[399/482] r1 R1-EDGE# show crypto isakmp sa
+  IPSec not configured.
+
+[400/482] r1 R1-EDGE# show crypto ipsec sa
+  IPSec not configured.
+
+[401/482] r1 R1-EDGE# show crypto session
+  IPSec not configured.
+
+[402/482] r1 R1-EDGE# show crypto map
+  IPSec not configured.
+
+[403/482] r1 R1-EDGE# show standby brief
+                       P indicates configured to preempt.
+                       |
+  Interface   Grp  Pri P State    Active          Standby         Virtual IP
+
+[404/482] r1 R1-EDGE# show vrrp brief
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+
+[405/482] r1 R1-EDGE# show track
+  No tracked objects configured.
+
+[406/482] r1 R1-EDGE# show ip sla statistics
+  No IP SLA operations configured.
+
+[407/482] r1 R1-EDGE# show policy-map interface
+  % Invalid input detected at '^' marker.
+  show policy-map interface
+       ^
+
+[408/482] r1 R1-EDGE# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[409/482] r1 R1-EDGE# show snmp
+  SNMP agent not enabled
+  0 SNMP packets input
+  0 SNMP packets output
+
+[410/482] r1 R1-EDGE# show ntp status
+  Clock is unsynchronized, stratum 16, no reference clock
+
+[411/482] r1 R1-EDGE# show ntp associations
+    address         ref clock     st  when poll reach delay offset disp
+   * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
+
+[412/482] r1 R1-EDGE# show clock
+  *18:13:57.000 UTC Sun May 17 2026
+
+[413/482] r1 R1-EDGE# show cdp neighbors
+  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
+                    S - Switch, H - Host, I - IGMP, r - Repeater
+  
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  
+  Total cdp entries displayed : 0
+
+[414/482] r1 R1-EDGE# show lldp neighbors
+  Capability codes:
+      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
+      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
+  
+  Device ID           Local Intf     Hold-time  Capability      Port ID
+  
+  Total entries displayed: 0
+
+[415/482] r1 R1-EDGE# show processes cpu
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+
+[416/482] r1 R1-EDGE# show memory statistics
+                  Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
+  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
+  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+
+[417/482] r1 R1-EDGE# show flash
+  Directory of flash:/
+  
+      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+  
+  64016384 bytes total (46188544 bytes free)
+
+[418/482] r1 R1-EDGE# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[419/482] r1 R1-EDGE# show history
+  show crypto ipsec sa
+  show crypto session
+  show crypto map
+  show standby brief
+  show vrrp brief
+  show track
+  show ip sla statistics
+  show policy-map interface
+  show logging
+  show snmp
+  show ntp status
+  show ntp associations
+  show clock
+  show cdp neighbors
+  show lldp neighbors
+  show processes cpu
+  show memory statistics
+  show flash
+  show users
+  show history
+
+[420/482] r1 R1-EDGE# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+
+[421/482] r1 R1-EDGE# show interfaces GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[422/482] r1 R1-EDGE# show interfaces GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[423/482] r1 R1-EDGE# show ip interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+
+[424/482] r1 R1-EDGE# show controllers
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Loopback0 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Tunnel0 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+
+[425/482] r1 R1-EDGE# show tech-support
+  ------------------ show version ------------------
+  Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
+  Copyright (c) 1986-2025 by Cisco Systems, Inc.
+  
+  ROM: System Bootstrap, Version 15.0(1r)M15
+  
+  R1-EDGE uptime is 0 minutes
+  System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
+  
+  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
+  Processor board ID FTX1234567A
+  4 Gigabit Ethernet interfaces
+  DRAM configuration is 64 bits wide with parity enabled.
+  256K bytes of non-volatile configuration memory.
+  
+  Configuration register is 0x2102
+  
+  ------------------ show running-config ------------------
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+  
+  ------------------ show ip interface brief ------------------
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  unassigned      YES manual administratively down down
+  Tunnel0                    unassigned      YES manual administratively down down
+  
+  ------------------ show ip route ------------------
+  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  
+  ------------------ show interfaces ------------------
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Internet address is 192.168.1.1/24
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  Loopback0 is up, line protocol is up
+    Hardware is Loopback
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Tunnel protocol/transport GRE/IP
+  
+  ------------------ show ip protocols ------------------
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+  
+    RIP learned routes: 0
+  
+  ------------------ show logging ------------------
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[426/482] r1 R1-EDGE# show inventory
+  NAME: "R1-EDGE", DESCR: "Cisco Catalyst Switch"
+  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+
+[427/482] r1 R1-EDGE# show environment
+  Environmental monitoring is not instrumented on this platform.
+
+[428/482] r1 R1-EDGE# show redundancy
+  Redundant System Information :
+         Configured Redundancy Mode = Simplex
+  Current Processor Information :
+         Active Location = slot 0
+         Current Software state = ACTIVE
+
+[429/482] r1 R1-EDGE# show ip vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[430/482] r1 R1-EDGE# show vrf
+    Name                             Default RD            Protocols   Interfaces
+
+[431/482] r1 R1-EDGE# show hosts
+  Default domain is not set
+  Name/address lookup uses domain service
+  
+  Host                      Port  Flags      Age Type   Address(es)
+
+[432/482] r1 R1-EDGE# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[433/482] r1 R1-EDGE# show line
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+[434/482] r1 R1-EDGE# show terminal
+  Line 0, Location: "", Type: ""
+  Length: 24 lines, Width: 80 columns
+  Editing is enabled.
+  History is enabled, history size is 20.
+
+[435/482] r1 R1-EDGE# show aliases
+  Exec mode aliases:
+    h                   help
+    lo                  logout
+    p                   ping
+    r                   resume
+    s                   show
+    u                   undebug
+    un                  undebug
+    w                   where
+    sr                  show running-config
+    sib                 show ip interface brief
+
+
+--- [436] § regression: pipe filters ---
+[436/482] r1 R1-EDGE# show running-config | include router
+  router rip
+
+[437/482] r1 R1-EDGE# show running-config | section interface
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[438/482] r1 R1-EDGE# show running-config | begin line
+<empty>
+
+[439/482] r1 R1-EDGE# show running-config | exclude !
+  Building configuration...
+  
+  Current configuration:
+  hostname R1-EDGE
+  service dhcp
+  ip dhcp pool LAN
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  interface GigabitEthernet0/1
+   shutdown
+  interface GigabitEthernet0/2
+   shutdown
+  interface GigabitEthernet0/3
+   shutdown
+  interface Loopback0
+   shutdown
+  interface Tunnel0
+   shutdown
+  router rip
+   version 2
+  end
+
+[440/482] r1 R1-EDGE# show ip route | include via
+<empty>
+
+[441/482] r1 R1-EDGE# show ip interface brief | exclude unassigned
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+
+
+--- [442] § regression: mode nav + negation ---
+[442/482] r1 R1-EDGE# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[443/482] r1 R1-EDGE(config)# no ip routing
+<empty>
+
+[444/482] r1 R1-EDGE(config)# ip routing
+<empty>
+
+[445/482] r1 R1-EDGE(config)# no ip cef
+<empty>
+
+[446/482] r1 R1-EDGE(config)# ip cef
+<empty>
+
+[447/482] r1 R1-EDGE(config)# no cdp run
+<empty>
+
+[448/482] r1 R1-EDGE(config)# cdp run
+<empty>
+
+[449/482] r1 R1-EDGE(config)# no lldp run
+<empty>
+
+[450/482] r1 R1-EDGE(config)# lldp run
+<empty>
+
+[451/482] r1 R1-EDGE(config)# no ip domain-lookup
+<empty>
+
+[452/482] r1 R1-EDGE(config)# ip domain-lookup
+<empty>
+
+[453/482] r1 R1-EDGE(config)# no ip http server
+<empty>
+
+[454/482] r1 R1-EDGE(config)# ip http server
+<empty>
+
+[455/482] r1 R1-EDGE(config)# no ip source-route
+<empty>
+
+[456/482] r1 R1-EDGE(config)# ip source-route
+<empty>
+
+[457/482] r1 R1-EDGE(config)# no service pad
+<empty>
+
+[458/482] r1 R1-EDGE(config)# service pad
+<empty>
+
+[459/482] r1 R1-EDGE(config)# no ipv6 unicast-routing
+<empty>
+
+[460/482] r1 R1-EDGE(config)# ipv6 unicast-routing
+<empty>
+
+[461/482] r1 R1-EDGE(config)# no service password-encryption
+<empty>
+
+[462/482] r1 R1-EDGE(config)# service password-encryption
+<empty>
+
+[463/482] r1 R1-EDGE(config)# interface GigabitEthernet0/0
+<empty>
+
+[464/482] r1 R1-EDGE(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
+  GigabitEthernet0/1         unassigned      YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual administratively down down
+  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  Loopback0                  unassigned      YES manual administratively down down
+  Tunnel0                    unassigned      YES manual administratively down down
+
+[465/482] r1 R1-EDGE(config-if)# shutdown
+<empty>
+
+[466/482] r1 R1-EDGE(config-if)# no shutdown
+<empty>
+
+[467/482] r1 R1-EDGE(config-if)# exit
+<empty>
+
+[468/482] r1 R1-EDGE(config)# router ospf 1
+<empty>
+
+[469/482] r1 R1-EDGE(config-router)# do show ip protocols
+  Routing Protocol is "rip"
+    Version: 2
+    Update interval: 30s
+    Route timeout: 180s
+    Garbage collection: 120s
+    Split horizon: enabled
+    Poisoned reverse: enabled
+  
+    Advertised networks:
+  
+    RIP learned routes: 0
+  Routing Protocol is "eigrp 100"
+    Routing for Networks:
+  Routing Protocol is "bgp 65000"
+    IGP synchronization is disabled
+    Neighbor(s): 0
+
+[470/482] r1 R1-EDGE(config-router)# exit
+<empty>
+
+[471/482] r1 R1-EDGE(config)# line vty 0 4
+<empty>
+
+[472/482] r1 R1-EDGE(config-line)# exit
+<empty>
+
+[473/482] r1 R1-EDGE(config)# end
+<empty>
+
+
+--- [474] § regression: context help ---
+[474/482] r1 R1-EDGE# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[475/482] r1 R1-EDGE(config)# interface ?
+    WORD  Select an interface to configure
+    <cr>  
+
+[476/482] r1 R1-EDGE(config)# ip ?
+    cef            CEF
+    http           http
+    source-route   IP source-route
+    domain-lookup  DNS lookup
+    domain-name    Set domain name
+    domain         IP domain configuration
+    ssh            SSH server configuration
+    dhcp           dhcp
+    route          Establish static routes
+    prefix-list    Build a prefix list
+    sla            Configure an IP SLA operation
+    access-list    access-list
+    nat            nat
+    routing        Enable IP routing
+
+[477/482] r1 R1-EDGE(config)# router ?
+    rip    Enter RIP routing protocol configuration
+    eigrp  Enter EIGRP configuration
+    bgp    Enter BGP configuration
+    ospf   Enter OSPF routing protocol configuration
+
+[478/482] r1 R1-EDGE(config)# crypto ?
+    isakmp       isakmp
+    ipsec        ipsec
+    map          Define a crypto map entry
+    dynamic-map  Define a dynamic crypto map
+    ikev2        ikev2
+    <cr>         
+
+[479/482] r1 R1-EDGE(config)# no ?
+    hostname     Reset hostname
+    alias        Remove a command alias
+    cdp          cdp
+    lldp         lldp
+    ip           ip
+    ipv6         ipv6
+    logging      Disable logging
+    service      Disable a service
+    arp          Remove ARP entry
+    router       router
+    shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
+    track        Remove a tracked object
+    access-list  Remove an access list
+    crypto       crypto
+
+[480/482] r1 R1-EDGE(config)# end
+<empty>
+
+[481/482] r1 R1-EDGE# show running-config | count !
+  Building configuration...
+  
+  Current configuration:
+  !
+  hostname R1-EDGE
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+   no shutdown
+  !
+  interface GigabitEthernet0/1
+   shutdown
+  !
+  interface GigabitEthernet0/2
+   shutdown
+  !
+  interface GigabitEthernet0/3
+   shutdown
+  !
+  interface Loopback0
+   shutdown
+  !
+  interface Tunnel0
+   shutdown
+  !
+  !
+  router rip
+   version 2
+  !
+  end
+
+[482/482] r1 R1-EDGE# write memory
+  Building configuration...
+  [OK]

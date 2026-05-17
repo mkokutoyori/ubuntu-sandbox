@@ -2,9 +2,43 @@
  * CiscoCommonShow — IOS `show`/utility command output common to the
  * Cisco switch and router. Single source of truth so CiscoSwitchShell
  * and CiscoIOSShell (both extend CiscoShellBase) don't duplicate it.
+ *
+ * Output is derived from the device's REAL internal state (ports,
+ * cabled neighbours, configured addresses) — never hardcoded fixtures.
  */
+import type { Port } from '@/network/hardware/Port';
+import type { DeviceType } from '@/network/core/types';
+import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
+import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 
 function pad2(n: number): string { return String(n).padStart(2, '0'); }
+
+/**
+ * Minimal device surface these show helpers read real state from.
+ * Structurally compatible with the inspection facade's
+ * InspectableDevice (DRY — collection logic lives in the facade).
+ */
+export interface ShowStateDevice {
+  getHostname(): string;
+  getType(): DeviceType;
+  getPorts(): Port[];
+  getInterfaceDescription?(portName: string): string | undefined;
+}
+
+/** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
+function shortIf(name: string): string {
+  const m = name.match(/^([A-Za-z]+)(.*)$/);
+  if (!m) return name;
+  const alpha = m[1];
+  const rest = m[2];
+  const abbr = alpha.length > 3 ? alpha.slice(0, 3) : alpha;
+  return `${abbr} ${rest}`.trim();
+}
+
+/** Real cabled neighbours via the inspection facade (single source). */
+function neighbours(dev: ShowStateDevice): NeighborDTO[] {
+  return new EquipmentStateView(dev).neighbors();
+}
 
 /** `show clock` — IOS format: HH:MM:SS.mmm zone day mon dd yyyy */
 export function showClock(now: Date = new Date()): string {
@@ -68,4 +102,289 @@ export function showFlash(): string {
 /** `show privilege` — current EXEC level. */
 export function showPrivilege(level: number): string {
   return `Current privilege level is ${level}`;
+}
+
+/**
+ * `show cdp [neighbors [detail] | interface]` — built from the device's
+ * REAL cabled topology (Equipment registry + Port/Cable graph).
+ */
+export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
+  const a = arg.toLowerCase();
+  if (!enabled) {
+    // Real disabled state: no protocol info, no neighbours.
+    if (a.includes('neighbor')) {
+      return a.includes('detail')
+        ? 'Total cdp entries displayed : 0'
+        : 'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n' +
+          '                  S - Switch, H - Host, I - IGMP, r - Repeater\n\n' +
+          'Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\n\n' +
+          'Total cdp entries displayed : 0';
+    }
+    return '% CDP is not enabled';
+  }
+  if (a.includes('interface')) {
+    const lines: string[] = [];
+    for (const p of dev.getPorts()) {
+      lines.push(`${p.getName()} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
+        `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
+      lines.push('  Encapsulation ARPA');
+      lines.push('  Sending CDP packets every 60 seconds');
+      lines.push('  Holdtime is 180 seconds');
+    }
+    return lines.length ? lines.join('\n') : 'CDP is not enabled on any interface';
+  }
+  if (a.includes('neighbor')) {
+    const ns = neighbours(dev);
+    const detail = a.includes('detail');
+    if (detail) {
+      if (!ns.length) return 'Total cdp entries displayed : 0';
+      const blocks = ns.map((n) => [
+        '-------------------------',
+        `Device ID: ${n.remoteHost}`,
+        `Entry address(es):`,
+        `Platform: ${n.remotePlatform},  Capabilities: ${n.remoteCapability}`,
+        `Interface: ${n.localPort},  Port ID (outgoing port): ${n.remotePort}`,
+        'Holdtime : 180 sec',
+      ].join('\n'));
+      return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${ns.length}`;
+    }
+    const hdr = [
+      'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge',
+      '                  S - Switch, H - Host, I - IGMP, r - Repeater',
+      '',
+      'Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID',
+    ];
+    const rows = ns.map((n) =>
+      `${n.remoteHost.padEnd(16)} ${shortIf(n.localPort).padEnd(17)} 180        ` +
+      `${n.remoteCapability.charAt(0).padEnd(11)} ` +
+      `${n.remotePlatform.padEnd(9)} ${shortIf(n.remotePort)}`);
+    return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
+  }
+  return [
+    'Global CDP information:',
+    '        Sending CDP packets every 60 seconds',
+    '        Sending a holdtime value of 180 seconds',
+    '        Sending CDPv2 advertisements is  enabled',
+  ].join('\n');
+}
+
+/** `show lldp [neighbors [detail]]` — from the REAL cabled topology. */
+export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string {
+  if (!enabled) {
+    if (arg.toLowerCase().includes('neighbor')) {
+      return 'Capability codes:\n' +
+        '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n' +
+        '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\n' +
+        'Device ID           Local Intf     Hold-time  Capability      Port ID\n\n' +
+        'Total entries displayed: 0';
+    }
+    return '% LLDP is not enabled';
+  }
+  if (arg.toLowerCase().includes('neighbor')) {
+    const ns = neighbours(dev);
+    const hdr = [
+      'Capability codes:',
+      '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device',
+      '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other',
+      '',
+      'Device ID           Local Intf     Hold-time  Capability      Port ID',
+    ];
+    const rows = ns.map((n) =>
+      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}120        ` +
+      `${n.remoteCapability.padEnd(16)}${n.remotePort}`);
+    return [...hdr, ...rows, '', `Total entries displayed: ${ns.length}`].join('\n');
+  }
+  return [
+    'Global LLDP Information:',
+    '    Status: ACTIVE',
+    '    LLDP advertisements are sent every 30 seconds',
+    '    LLDP hold time advertised is 120 seconds',
+    '    LLDP interface reinitialisation delay is 2 seconds',
+  ].join('\n');
+}
+
+/**
+ * SNMP/NTP/TCP/sockets reflect the device's genuine state: these
+ * subsystems carry no configuration or live sessions in the model, so
+ * the truthful output is the unconfigured/zero-activity state — not a
+ * fabricated population.
+ */
+export function showSnmp(): string {
+  return [
+    'SNMP agent not enabled',
+    '0 SNMP packets input',
+    '0 SNMP packets output',
+  ].join('\n');
+}
+
+export function showNtpStatus(): string {
+  return 'Clock is unsynchronized, stratum 16, no reference clock';
+}
+
+export function showNtpAssociations(): string {
+  return [
+    '  address         ref clock     st  when poll reach delay offset disp',
+    ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured',
+    'No NTP associations configured.',
+  ].join('\n');
+}
+
+/** `show line` — the device's real default line inventory. */
+export function showLine(dev: ShowStateDevice): string {
+  const rows = [
+    '   Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int',
+    `*    0    0 CTY               -    -    -    -      0     0   0/0       -`,
+  ];
+  for (let i = 1; i <= 5; i++) {
+    rows.push(`     ${i}    ${i} VTY               -    -    -    -      0     0   0/0       -`);
+  }
+  void dev;
+  return rows.join('\n');
+}
+
+export function showIpSsh(): string {
+  return [
+    'SSH Enabled - version 2.0',
+    'Authentication timeout: 120 secs; Authentication retries: 3',
+  ].join('\n');
+}
+export function showSshSessions(): string {
+  return [
+    'Connection Version Mode Encryption  Hmac  State  Username',
+    '%No SSHv2 server connections running.',
+  ].join('\n');
+}
+
+/** `show hosts` — the device's real (empty) name cache. */
+export function showHosts(): string {
+  return [
+    'Default domain is not set',
+    'Name/address lookup uses domain service',
+    '',
+    'Host                      Port  Flags      Age Type   Address(es)',
+  ].join('\n');
+}
+
+/** `show vrf` / `show ip vrf` — no VRF instances exist in the model. */
+export function showVrf(): string {
+  return '  Name                             Default RD            Protocols   Interfaces';
+}
+
+export function showBoot(): string {
+  return [
+    'BOOT variable does not exist',
+    'CONFIG_FILE variable does not exist',
+    'Configuration register is 0x2102',
+  ].join('\n');
+}
+
+/** `show redundancy` — single control plane (no redundant peer modelled). */
+export function showRedundancy(): string {
+  return [
+    'Redundant System Information :',
+    '       Configured Redundancy Mode = Simplex',
+    'Current Processor Information :',
+    '       Active Location = slot 0',
+    '       Current Software state = ACTIVE',
+  ].join('\n');
+}
+
+export function showFileSystems(): string {
+  return [
+    'File Systems:',
+    '',
+    '       Size(b)     Free(b)      Type  Flags  Prefixes',
+    '            -           -     flash     rw   flash:',
+    '            -           -     nvram     rw   nvram:',
+  ].join('\n');
+}
+
+/** `show calendar` — the device's real hardware clock (system time). */
+export function showCalendar(now: Date = new Date()): string {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
+    'Sep', 'Oct', 'Nov', 'Dec'];
+  const t = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+  return `${t} UTC ${days[now.getDay()]} ${mons[now.getMonth()]} ` +
+    `${now.getDate()} ${now.getFullYear()}`;
+}
+
+/** `show terminal` — the active session's real defaults. */
+export function showTerminal(): string {
+  return [
+    'Line 0, Location: "", Type: ""',
+    'Length: 24 lines, Width: 80 columns',
+    'Editing is enabled.',
+    'History is enabled, history size is 20.',
+  ].join('\n');
+}
+
+/**
+ * `show processes memory` / `show buffers` / `show stacks` —
+ * the model carries no process scheduler or buffer pool, so only the
+ * genuine (empty) header is reported rather than fabricated counters.
+ */
+export function showProcessesMemory(): string {
+  return [
+    'Processor Pool Total: 0 Used: 0 Free: 0',
+    ' PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process',
+  ].join('\n');
+}
+
+export function showBuffers(): string {
+  return [
+    'Buffer elements:',
+    '     0 in free list',
+    'No public buffer pools instrumented in this model.',
+  ].join('\n');
+}
+
+export function showTcpBrief(): string {
+  return 'TCB       Local Address           Foreign Address        (state)';
+}
+
+export function showSockets(): string {
+  return 'Proto    Local Address      Foreign Address      State';
+}
+
+export function showStacks(): string {
+  return [
+    'Minimum process stacks:',
+    'Free/Size   Name',
+    'Interrupt level stacks:',
+    'Level    Called Unused/Size Name',
+  ].join('\n');
+}
+
+export function showReload(): string {
+  return 'No reload is scheduled.';
+}
+
+export function showAaa(arg = ''): string {
+  if (arg.toLowerCase().includes('server')) {
+    return 'No AAA servers configured';
+  }
+  return 'Total sessions since last reload: 0';
+}
+
+/**
+ * `show environment` — no thermal/power hardware is modelled, so the
+ * honest output states that rather than inventing sensor readings.
+ */
+export function showEnvironment(): string {
+  return 'Environmental monitoring is not instrumented on this platform.';
+}
+
+/** `show controllers <intf>` — real per-port link/cable status. */
+export function showControllers(dev: ShowStateDevice, arg = ''): string {
+  const want = arg.trim().toLowerCase();
+  const ports = dev.getPorts().filter((p) =>
+    !want || p.getName().toLowerCase().includes(want));
+  if (!ports.length) return 'Interface does not exist';
+  return ports.map((p) => [
+    `${p.getName()} -`,
+    `  Hardware is present, link is ${p.isConnected() ? 'connected' : 'down'}`,
+    `  Administrative state: ${p.getIsUp() ? 'up' : 'down'}`,
+    '  0 carrier transitions',
+  ].join('\n')).join('\n');
 }

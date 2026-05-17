@@ -26,6 +26,22 @@ import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
 import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
+import {
+  buildHsrpInterfaceCommands, registerHsrpShowCommands,
+} from './cisco/CiscoHsrpCommands';
+import {
+  buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
+} from './cisco/CiscoVrrpGlbpCommands';
+import {
+  buildTrackSlaConfig, registerTrackSlaShow,
+} from './cisco/CiscoTrackSlaCommands';
+import { FhrpRepository } from '../inspection/config/FhrpRepository';
+import { TrackRepository } from '../inspection/config/TrackRepository';
+import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
+import { PolicyRepository } from '../inspection/config/PolicyRepository';
+import {
+  buildPolicyConfig, registerPolicyShow,
+} from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -38,7 +54,10 @@ import {
   registerDhcpShowCommands,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
-import { buildConfigRouterCommands } from './cisco/CiscoRipCommands';
+import {
+  buildRoutingProtoConfig, registerRoutingProtoShow,
+} from './cisco/CiscoRoutingProtoCommands';
+import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
   type CiscoACLShellContext,
   buildACLConfigCommands, buildACLInterfaceCommands,
@@ -71,6 +90,29 @@ import {
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
+  /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
+  private readonly fhrp = new FhrpRepository();
+  /** Real config-driven object-tracking & IP SLA state. */
+  private readonly track = new TrackRepository();
+  private readonly ipsla = new IpSlaRepository();
+  private readonly policy = new PolicyRepository();
+  private readonly routingCfg = new RoutingConfigRepository();
+  private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
+  getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {
+    return this.selectedRoutingProto;
+  }
+  setSelectedRoutingProto(v: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null): void {
+    this.selectedRoutingProto = v;
+  }
+  private selectedTrack: number | null = null;
+  private selectedIpSla: number | null = null;
+  private selectedRouteMap: { name: string; seq: number } | null = null;
+  getSelectedRouteMap(): { name: string; seq: number } | null { return this.selectedRouteMap; }
+  setSelectedRouteMap(v: { name: string; seq: number } | null): void { this.selectedRouteMap = v; }
+  getSelectedTrack(): number | null { return this.selectedTrack; }
+  setSelectedTrack(id: number | null): void { this.selectedTrack = id; }
+  getSelectedIpSla(): number | null { return this.selectedIpSla; }
+  setSelectedIpSla(id: number | null): void { this.selectedIpSla = id; }
   private selectedDHCPPool: string | null = null;
   private selectedACL: string | null = null;
   private selectedACLType: 'standard' | 'extended' | null = null;
@@ -93,6 +135,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configDhcpTrie = new CommandTrie();
+  private configTrackTrie = new CommandTrie();
+  private configIpSlaTrie = new CommandTrie();
+  private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
   private configRouterOspfv3Trie = new CommandTrie();
@@ -178,7 +223,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected getPromptMap(): PromptMap { return CISCO_IOS_PROMPTS; }
 
-  protected onSave(): string { return 'Building configuration...\n[OK]'; }
+  /** Real saved configuration (null until first `write memory`). */
+  private startupConfig: string | null = null;
+
+  protected onSave(): string {
+    // Snapshot the REAL running-config so `show startup-config`
+    // reflects exactly what was saved (no fabricated content).
+    this.startupConfig = Show.showRunningConfig(this.d());
+    return 'Building configuration...\n[OK]';
+  }
 
   protected override cmdExit(): string {
     // Router: exit at user mode returns '' (no "Connection closed." like switch)
@@ -197,6 +250,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-if': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
       case 'config-dhcp': return this.configDhcpTrie;
+      case 'config-track': return this.configTrackTrie;
+      case 'config-ipsla': return this.configIpSlaTrie;
+      case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
@@ -220,6 +276,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     for (const f of fields) {
       if (f === 'selectedInterface') this.selectedInterface = null;
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
+      if (f === 'selectedTrack') this.selectedTrack = null;
+      if (f === 'selectedIpSla') this.selectedIpSla = null;
+      if (f === 'selectedRouteMap') this.selectedRouteMap = null;
+      if (f === 'selectedRoutingProto') this.selectedRoutingProto = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
       if (f === 'selectedACLType') this.selectedACLType = null;
       if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
@@ -262,13 +322,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
+    buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
+    buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
+      this.configIpSlaTrie, this, this.track, this.ipsla);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
-    buildConfigRouterCommands(this.configRouterTrie, this);
+    buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
     buildIPv6ACLGlobalCommands(this.configTrie, this);
@@ -297,13 +362,46 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     const getRouter = () => this.d();
+    registerRoutingProtoShow(trie, this, this.routingCfg);
+    registerHsrpShowCommands(trie, this, this.fhrp);
+    registerVrrpGlbpShowCommands(trie, this, this.fhrp);
+    registerTrackSlaShow(trie, this, this.track, this.ipsla);
+    registerPolicyShow(trie, this.policy);
+
+    // `show logging` — projects the real LoggingConfig (router).
+    trie.registerGreedy('show logging', 'Display syslog state', () =>
+      this.logging.render());
+
+    // `show tech-support` — real aggregation of the key show outputs.
+    trie.register('show tech-support', 'Aggregate diagnostic output', () => {
+      const r = this.d();
+      const section = (title: string, body: string) =>
+        `------------------ ${title} ------------------\n${body}`;
+      return [
+        section('show version', Show.showVersion(r)),
+        section('show running-config', Show.showRunningConfig(r)),
+        section('show ip interface brief', Show.showIpIntBrief(r)),
+        section('show ip route', Show.showIpRoute(r)),
+        section('show interfaces', Show.showInterfacesAll(r)),
+        section('show ip protocols', Show.showIpProtocols(r)),
+        section('show logging', this.logging.render()),
+      ].join('\n\n');
+    });
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
+    trie.register('show startup-config', 'Display saved configuration', () =>
+      this.startupConfig ?? '% startup-config is not present');
+    trie.register('show configuration', 'Display saved configuration', () =>
+      this.startupConfig ?? '% startup-config is not present');
+    trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
+    trie.registerGreedy('show ip cef', 'Display CEF FIB', () => Show.showIpCef(getRouter()));
+    // BGP/EIGRP/RIP-extras + show ip protocols come from the
+    // RoutingConfigRepository (registerRoutingProtoShow), so they
+    // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));
-    trie.register('show ip protocols', 'Display routing protocol status', () => Show.showIpProtocols(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
 
     // DHCP show commands
@@ -331,12 +429,33 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter()));
 
-    trie.registerGreedy('show interface', 'Display interface status', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+    // `show interface[s] [<name>|description|status|summary]`.
+    // Registered under both the singular and plural IOS spellings;
+    // dispatch logic lives in one place (single source of truth).
+    const showInterfaceCmd = (args: string[]): string => {
+      const sub = (args[0] || '').toLowerCase();
+      if (args.length === 0) return Show.showInterfacesAll(getRouter());
+      if (sub === 'description') return Show.showInterfacesDescription(getRouter());
+      if (sub === 'status') return Show.showInterfacesStatus(getRouter());
+      if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
       const ifName = resolveInterfaceName(getRouter(), args.join(' '));
       if (!ifName) return `% Invalid input detected at '^' marker.\nshow interface ${args.join(' ')}\n     ^`;
       return Show.showInterface(getRouter(), ifName);
-    });
+    };
+    trie.registerGreedy('show interface', 'Display interface status', showInterfaceCmd);
+    trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
+
+    // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
+    const showIpInterfaceCmd = (args: string[]): string => {
+      const sub = (args[0] || '').toLowerCase();
+      if (args.length === 0) return Show.showIpInterfaceAll(getRouter());
+      if (sub === 'brief') return Show.showIpIntBrief(getRouter());
+      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
+      if (!ifName) return `% Invalid input detected at '^' marker.`;
+      return Show.showInterface(getRouter(), ifName);
+    };
+    trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
+    trie.registerGreedy('show ip interfaces', 'Display IP interface status', showIpInterfaceCmd);
   }
 
   // ─── Ping Command ────────────────────────────────────────────────
