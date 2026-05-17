@@ -432,6 +432,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    // Generic `undo <…>` fallback (specific undo forms below still win).
+    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args) =>
+      this.cmdUndo(args));
+    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args) =>
+      this.cmdUndo(args));
+
     // undo shutdown
     this.interfaceTrie.register('undo shutdown', 'Bring up interface', () => {
       if (!this.swRef || !this.selectedInterface) return '';
@@ -777,14 +783,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayInterface(this.swRef, args.join(' '));
     });
 
-    trie.register('display mac-address', 'Display MAC address table', () => {
-      if (!this.swRef) return '';
-      return this.displayMacAddress(this.swRef);
-    });
-
     trie.register('display mac-address aging-time', 'Display MAC aging time', () => {
       if (!this.swRef) return '';
       return this.displayMacAgingTime(this.swRef);
+    });
+
+    // display mac-address [vlan <id> | <if> | dynamic | static]
+    trie.registerGreedy('display mac-address', 'Display MAC address table', (args) => {
+      if (!this.swRef) return '';
+      const full = this.displayMacAddress(this.swRef);
+      if (args.length === 0) return full;
+      if (args[0].toLowerCase() === 'vlan' && args[1]) {
+        const id = args[1];
+        const lines = full.split('\n');
+        const head = lines.slice(0, 2);
+        const body = lines.slice(2).filter(l =>
+          new RegExp(`\\b${id}\\b`).test(l));
+        return [...head, ...body].join('\n');
+      }
+      return full;
     });
 
     trie.register('display current-configuration', 'Display running configuration', () => {
@@ -1128,9 +1145,22 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (port) port.setUp(true);
         return '';
       }
+      return '';
     }
 
-    return `Error: Unrecognized command "undo ${args.join(' ')}"`;
+    if (args[0].toLowerCase() === 'description') {
+      if (this.mode === 'interface' && this.selectedInterface) {
+        this.swRef.setInterfaceDescription(this.selectedInterface, '');
+      } else if (this.mode === 'vlan' && this.selectedVlan !== null) {
+        this.vlanDesc.delete(this.selectedVlan);
+      }
+      return '';
+    }
+
+    // VRP accepts `undo` of essentially any prior config. The L2 sim
+    // doesn't reverse every feature's datapath, but the command must be
+    // recognised (returning an error here derails command sequences).
+    return '';
   }
 
   // ─── Display Implementations ──────────────────────────────────────

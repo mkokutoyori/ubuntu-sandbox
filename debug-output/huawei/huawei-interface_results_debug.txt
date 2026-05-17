@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-interface
-Generated: 2026-05-17T05:45:59.196Z
+Generated: 2026-05-17T05:49:44.215Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
 Total steps: 74
