@@ -12,13 +12,16 @@ export const JobBuilder = {
   backupDatabase(opts: {
     tag?: string; format?: string; compressed?: boolean;
     keepForever?: boolean; keepUntilTime?: string;
+    maxPieceSize?: number; encrypted?: boolean;
   } = {}): RmanJob {
     const params: Record<string, string> = {};
-    if (opts.tag)           params.tag           = opts.tag;
-    if (opts.format)        params.format        = opts.format;
-    if (opts.compressed)    params.compressed    = 'true';
-    if (opts.keepForever)   params.keepForever   = 'true';
-    if (opts.keepUntilTime) params.keepUntilTime = opts.keepUntilTime;
+    if (opts.tag)              params.tag           = opts.tag;
+    if (opts.format)           params.format        = opts.format;
+    if (opts.compressed)       params.compressed    = 'true';
+    if (opts.keepForever)      params.keepForever   = 'true';
+    if (opts.keepUntilTime)    params.keepUntilTime = opts.keepUntilTime;
+    if (opts.maxPieceSize !== undefined) params.maxPieceSize = String(opts.maxPieceSize);
+    if (opts.encrypted)        params.encrypted     = 'true';
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },
@@ -39,12 +42,14 @@ export const JobBuilder = {
   },
 
   /** Incremental level 0 (full baseline) or level 1 (changes since 0). */
-  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string } = {}): RmanJob {
+  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean } = {}): RmanJob {
     const params: Record<string, string> = { incrementalLevel: String(level) };
     if (opts.tag) params.tag = opts.tag;
     if (opts.format) params.format = opts.format;
+    if (opts.cumulative) params.cumulative = 'true';
+    const cumLabel = opts.cumulative ? ' cumulative' : '';
     return _make('BACKUP_DATABASE', [
-      { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting incremental level ${level} datafile backup set` },
+      { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting${cumLabel} incremental level ${level} datafile backup set` },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },
       { name: 'backup_what',   pct: 50, message: 'channel ORA_DISK_1: backing up database' },
     ], params);

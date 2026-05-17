@@ -57,8 +57,10 @@ export class BackupCommand implements IRmanCommand<void> {
         return engine.run(JobBuilder.backupTablespace(args[0] ?? 'USERS', opts));
       case 'incremental': {
         const level = (args[0] === '0' ? 0 : 1) as 0 | 1;
-        // args[1] would carry any post-clauses; reparse from there
-        const clauseOpts = parseBackupOptions(args[1] ?? '');
+        // args[1] = "CUMULATIVE" if present, args[2] = post-clauses
+        const cumulative = (args[1] ?? '').toUpperCase() === 'CUMULATIVE';
+        const clauseOpts = parseBackupOptions(args.slice(1).join(' '));
+        clauseOpts.cumulative = cumulative || clauseOpts.cumulative;
         return engine.run(JobBuilder.backupIncremental(level, clauseOpts));
       }
       case 'controlfile':
@@ -80,11 +82,15 @@ export function parseBackupOptions(text: string): {
   tag?: string; format?: string; deleteInput?: boolean;
   compressed?: boolean; fromScn?: number;
   keepForever?: boolean; keepUntilTime?: string;
+  cumulative?: boolean; maxPieceSize?: number;
+  encrypted?: boolean;
 } {
   const out: {
     tag?: string; format?: string; deleteInput?: boolean;
     compressed?: boolean; fromScn?: number;
     keepForever?: boolean; keepUntilTime?: string;
+    cumulative?: boolean; maxPieceSize?: number;
+    encrypted?: boolean;
   } = {};
   const tagMatch = text.match(/\bTAG\s+'([^']+)'/i);
   if (tagMatch) out.tag = tagMatch[1].toUpperCase();
@@ -97,5 +103,15 @@ export function parseBackupOptions(text: string): {
   if (/\bKEEP\s+FOREVER\b/i.test(text)) out.keepForever = true;
   const keepUntil = text.match(/\bKEEP\s+UNTIL\s+TIME\s+'([^']+)'/i);
   if (keepUntil) out.keepUntilTime = keepUntil[1];
+  if (/\bCUMULATIVE\b/i.test(text)) out.cumulative = true;
+  if (/\bENCRYPTED\b/i.test(text))  out.encrypted = true;
+  const mps = text.match(/\bMAXPIECESIZE\s+(\d+)\s*([KMG])?/i);
+  if (mps) {
+    const mult = mps[2]?.toUpperCase() === 'G' ? 1_073_741_824
+              : mps[2]?.toUpperCase() === 'M' ? 1_048_576
+              : mps[2]?.toUpperCase() === 'K' ? 1024
+              : 1;
+    out.maxPieceSize = Number(mps[1]) * mult;
+  }
   return out;
 }

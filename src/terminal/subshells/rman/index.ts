@@ -81,3 +81,4 @@ export {
   type RmanSessionVM, type RmanActiveJobVM, type RmanMetricsVM, type RmanObservables,
 } from './RmanSignalStore';
 export { RmanSignalRefreshActor } from './actors/RmanSignalRefreshActor';
+export { RmanLoggerActor } from './actors/RmanLoggerActor';

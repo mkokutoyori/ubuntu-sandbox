@@ -24,6 +24,7 @@ export interface BackupPiece {
   readonly checkpointScn:  Scn;
   readonly completionTime: number;
   readonly compressed:     boolean;
+  readonly encrypted?:     boolean;
 }
 
 export interface DatafileEntry {

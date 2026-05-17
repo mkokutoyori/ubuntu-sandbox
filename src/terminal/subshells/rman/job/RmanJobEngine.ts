@@ -115,21 +115,23 @@ export class RmanJobEngine implements IRmanJobEngine {
     const validate = params.validate === 'true';
     const deleteInput = params.deleteInput === 'true';
     const compressed = params.compressed === 'true';
+    const encrypted  = params.encrypted  === 'true';
     const tag = params.tag ? RmanTag.of(params.tag) : RmanTag.generate();
-    const path = this._resolvePath(params.format, tag);
+    const basePath = this._resolvePath(params.format, tag);
     const isControlfile = params.what === 'controlfile';
     const isSpfile      = params.what === 'spfile';
     const isArchivelog  = job.operation === 'BACKUP_ARCHIVELOG';
     const incLevel = params.incrementalLevel === '0' || params.incrementalLevel === '1'
       ? (Number(params.incrementalLevel) as 0 | 1)
       : undefined;
+    const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
 
     const allDatafiles = this._ctx.getDatafiles();
     const fileFilter = params.fileNo ? Number(params.fileNo) : undefined;
     const datafiles = fileFilter !== undefined
       ? allDatafiles.filter(df => df.fileNo === fileFilter)
       : allDatafiles;
-    const size = isControlfile
+    const totalSize = isControlfile
       ? 9_650_176
       : isSpfile
         ? 4_096
@@ -142,9 +144,6 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
       return ok(undefined);
     }
-
-    const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0));
-    if (!writeResult.ok) return writeResult;
 
     const dfEntries: DatafileEntry[] = (isControlfile || isSpfile) ? [] : datafiles.map(df => {
       const ckp = Scn.of(1_892_354);
@@ -167,19 +166,38 @@ export class RmanJobEngine implements IRmanJobEngine {
       : params.keepUntilTime
         ? `KEEP UNTIL TIME ${params.keepUntilTime}`
         : undefined;
-    const set = BackupSetFactory.createBackupSet({
-      type, level, path, sizeBytes: size, tag, datafiles: dfEntries, compressed, keepNote,
-    });
 
-    this._bus.emit({
-      type: 'BACKUP_PIECE_CREATED', jobId: job.id, channelId,
-      piece: { key: set.pieces[0].key, tag, path, sizeBytes: size, checkpointScn: set.pieces[0].checkpointScn },
-    });
+    // MAXPIECESIZE — split the logical backup into N piece files. Each
+    // piece is its own BackupSet/BackupPiece in the catalog so LIST BACKUP
+    // shows them individually.
+    const pieceCount = maxPieceSize ? Math.max(1, Math.ceil(totalSize / maxPieceSize)) : 1;
+    const pieceSize  = maxPieceSize ? Math.min(maxPieceSize, totalSize) : totalSize;
 
-    const recR = this._catalog.recordBackupSet(set);
-    if (!recR.ok) return recR;
+    for (let i = 1; i <= pieceCount; i++) {
+      const path = pieceCount === 1 ? basePath : `${basePath}.p${i}`;
+      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0));
+      if (!writeResult.ok) return writeResult;
 
-    this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
+      const size = i === pieceCount
+        ? (totalSize - pieceSize * (pieceCount - 1))
+        : pieceSize;
+
+      const set = BackupSetFactory.createBackupSet({
+        type, level, path, sizeBytes: size, tag,
+        datafiles: i === 1 ? dfEntries : [],
+        compressed, encrypted, keepNote,
+      });
+
+      this._bus.emit({
+        type: 'BACKUP_PIECE_CREATED', jobId: job.id, channelId,
+        piece: { key: set.pieces[0].key, tag, path, sizeBytes: size, checkpointScn: set.pieces[0].checkpointScn },
+      });
+
+      const recR = this._catalog.recordBackupSet(set);
+      if (!recR.ok) return recR;
+
+      this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
+    }
 
     // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog
     if (isArchivelog && deleteInput) {

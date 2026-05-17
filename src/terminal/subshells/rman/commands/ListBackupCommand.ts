@@ -113,7 +113,8 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       if (s.keepNote) lines.push(`  Keep: ${s.keepNote}`);
       for (const p of s.pieces) {
         const comp = p.compressed ? 'YES' : 'NO';
-        lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: ${comp}  Tag: ${p.tag.label}`);
+        const enc  = p.encrypted  ? 'YES' : 'NO';
+        lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: ${comp}  Encrypted: ${enc}  Tag: ${p.tag.label}`);
         lines.push(`          Piece Name: ${p.path}`);
       }
       if (s.type === 'CONTROLFILE') {

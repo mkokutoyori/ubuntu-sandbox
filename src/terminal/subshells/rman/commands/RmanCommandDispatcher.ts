@@ -65,7 +65,7 @@ export class RmanCommandDispatcher {
       // VALIDATE / CONTROLFILE / INCREMENTAL — match before plain "BACKUP DATABASE"
       { pattern: /^BACKUP VALIDATE DATABASE$/i,                    command: new BackupCommand('validate') },
       { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
-      { pattern: /^BACKUP INCREMENTAL LEVEL (\d) DATABASE(.*)$/i,  command: new BackupCommand('incremental') },
+      { pattern: /^BACKUP INCREMENTAL LEVEL (\d)(?:\s+(CUMULATIVE))? DATABASE(.*)$/i, command: new BackupCommand('incremental') },
       { pattern: /^BACKUP COMPRESSED BACKUPSET DATABASE(.*)$/i,    command: new BackupCommand('database', true) },
       { pattern: /^BACKUP DATABASE(.*)$/i,                         command: new BackupCommand('database') },
       { pattern: /^BACKUP ARCHIVELOG ALL(.*)$/i,                   command: new BackupCommand('archivelog') },
