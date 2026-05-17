@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-05-17T17:56:37.607Z
+Generated: 2026-05-17T18:01:19.558Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -466,34 +466,24 @@ Total steps: 311
 <empty>
 
 [117/311] r1 R1(config)# route-map RM-OSPF permit 10
-  % Invalid input detected at '^' marker.
-  route-map RM-OSPF permit 10
-  ^
-
-[118/311] r1 R1(config)# match ip address 10
-  % Invalid input detected at '^' marker.
-  match ip address 10
-  ^
-
-[119/311] r1 R1(config)# set metric 100
-  % Invalid input detected at '^' marker.
-  set metric 100
-  ^
-
-[120/311] r1 R1(config)# set metric-type type-1
-  % Invalid input detected at '^' marker.
-  set metric-type type-1
-  ^
-
-[121/311] r1 R1(config)# exit
 <empty>
 
-[122/311] r1 R1# access-list 10 permit 172.16.0.0 0.0.255.255
-  % Invalid input detected at '^' marker.
-  access-list 10 permit 172.16.0.0 0.0.255.255
-  ^
+[118/311] r1 R1(config-route-map)# match ip address 10
+<empty>
 
-[123/311] r1 R1# end
+[119/311] r1 R1(config-route-map)# set metric 100
+<empty>
+
+[120/311] r1 R1(config-route-map)# set metric-type type-1
+<empty>
+
+[121/311] r1 R1(config-route-map)# exit
+<empty>
+
+[122/311] r1 R1(config)# access-list 10 permit 172.16.0.0 0.0.255.255
+<empty>
+
+[123/311] r1 R1(config)# end
 <empty>
 
 [124/311] r1 R1# show ip ospf
@@ -1072,6 +1062,8 @@ Total steps: 311
    ip address 10.10.4.1 255.255.255.0
    no shutdown
   !
+  access-list 10 permit 172.16.0.0 0.0.255.255
+  !
   !
   end
 
@@ -1258,10 +1250,12 @@ Total steps: 311
 <empty>
 
 [226/311] r1 R1# show access-lists
-<empty>
+  Standard IP access list 10
+      permit 172.16.0.0 0.0.255.255 (0 matches)
 
 [227/311] r1 R1# show ip access-lists
-<empty>
+  Standard IP access list 10
+      permit 172.16.0.0 0.0.255.255 (0 matches)
 
 [228/311] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1319,7 +1313,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *17:56:37.000 UTC Sun May 17 2026
+  *18:01:19.000 UTC Sun May 17 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1521,6 +1515,8 @@ Total steps: 311
    ip address 10.10.4.1 255.255.255.0
    no shutdown
   !
+  access-list 10 permit 172.16.0.0 0.0.255.255
+  !
   !
   end
   
@@ -1707,6 +1703,8 @@ Total steps: 311
    ip address 10.10.4.1 255.255.255.0
    no shutdown
   !
+  access-list 10 permit 172.16.0.0 0.0.255.255
+  !
   !
   end
 
@@ -1741,6 +1739,7 @@ Total steps: 311
   interface Loopback4
    ip address 10.10.4.1 255.255.255.0
    no shutdown
+  access-list 10 permit 172.16.0.0 0.0.255.255
   end
 
 [269/311] r1 R1# show ip route | include via
@@ -1880,6 +1879,7 @@ Total steps: 311
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    prefix-list    Build a prefix list
     sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
@@ -1909,6 +1909,7 @@ Total steps: 311
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
@@ -1954,6 +1955,8 @@ Total steps: 311
   interface Loopback4
    ip address 10.10.4.1 255.255.255.0
    no shutdown
+  !
+  access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
   end

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-05-17T17:56:39.242Z
+Generated: 2026-05-17T18:01:21.277Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1657,7 +1657,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *17:56:39.000 UTC Sun May 17 2026
+  *18:01:21.000 UTC Sun May 17 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2309,6 +2309,7 @@ Total steps: 369
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
+    prefix-list    Build a prefix list
     sla            Configure an IP SLA operation
     access-list    access-list
     nat            nat
@@ -2338,6 +2339,7 @@ Total steps: 369
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
+    route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto

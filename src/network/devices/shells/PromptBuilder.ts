@@ -59,6 +59,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-router':             '{host}(config-router)#',
   'config-track':              '{host}(config-track)#',
   'config-ipsla':              '{host}(config-ip-sla)#',
+  'config-route-map':          '{host}(config-route-map)#',
   'config-router-ospf':        '{host}(config-router)#',
   'config-router-ospfv3':      '{host}(config-rtr)#',
   'config-std-nacl':           '{host}(config-std-nacl)#',

@@ -38,6 +38,10 @@ import {
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { TrackRepository } from '../inspection/config/TrackRepository';
 import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
+import { PolicyRepository } from '../inspection/config/PolicyRepository';
+import {
+  buildPolicyConfig, registerPolicyShow,
+} from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
@@ -88,8 +92,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   /** Real config-driven object-tracking & IP SLA state. */
   private readonly track = new TrackRepository();
   private readonly ipsla = new IpSlaRepository();
+  private readonly policy = new PolicyRepository();
   private selectedTrack: number | null = null;
   private selectedIpSla: number | null = null;
+  private selectedRouteMap: { name: string; seq: number } | null = null;
+  getSelectedRouteMap(): { name: string; seq: number } | null { return this.selectedRouteMap; }
+  setSelectedRouteMap(v: { name: string; seq: number } | null): void { this.selectedRouteMap = v; }
   getSelectedTrack(): number | null { return this.selectedTrack; }
   setSelectedTrack(id: number | null): void { this.selectedTrack = id; }
   getSelectedIpSla(): number | null { return this.selectedIpSla; }
@@ -118,6 +126,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configDhcpTrie = new CommandTrie();
   private configTrackTrie = new CommandTrie();
   private configIpSlaTrie = new CommandTrie();
+  private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
   private configRouterOspfv3Trie = new CommandTrie();
@@ -232,6 +241,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-track': return this.configTrackTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
+      case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
@@ -257,6 +267,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
       if (f === 'selectedTrack') this.selectedTrack = null;
       if (f === 'selectedIpSla') this.selectedIpSla = null;
+      if (f === 'selectedRouteMap') this.selectedRouteMap = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
       if (f === 'selectedACLType') this.selectedACLType = null;
       if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
@@ -301,6 +312,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigIfCommands(this.configIfTrie, this);
     buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
     buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
     buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
       this.configIpSlaTrie, this, this.track, this.ipsla);
     buildACLConfigCommands(this.configTrie, this);
@@ -341,6 +353,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerTrackSlaShow(trie, this, this.track, this.ipsla);
+    registerPolicyShow(trie, this.policy);
 
     // `show logging` — projects the real LoggingConfig (router).
     trie.registerGreedy('show logging', 'Display syslog state', () =>
