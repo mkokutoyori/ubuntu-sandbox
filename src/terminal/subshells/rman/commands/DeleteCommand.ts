@@ -20,11 +20,11 @@ import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 
 export type DeleteMode = 'EXPIRED' | 'OBSOLETE' | 'BY_TAG' | 'BY_BSKEY' | 'ARCHIVELOG';
 
-export class DeleteCommand implements IRmanCommand<void> {
+export class DeleteCommand implements IRmanCommand<string[] | void> {
   readonly name = 'DELETE';
   constructor(private readonly mode: DeleteMode) {}
 
-  execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[] | void, RmanError> {
     const { catalog, ctx, policy, engine } = cmdCtx;
 
     switch (this.mode) {
@@ -67,7 +67,15 @@ export class DeleteCommand implements IRmanCommand<void> {
       case 'ARCHIVELOG': {
         const paths = ctx.getArchivelogPaths?.() ?? [];
         for (const p of paths) ctx.vfs.deleteFile(p);
-        return ok(undefined);
+        if (paths.length === 0) {
+          return ok(['specification matches no archived logs in the recovery catalog']);
+        }
+        return ok([
+          'allocated channel: ORA_DISK_1',
+          `channel ORA_DISK_1: deleting archived log(s) — ${paths.length} file(s)`,
+          ...paths.map(p => `archived log file name=${p}`),
+          `Deleted ${paths.length} objects`,
+        ]);
       }
     }
   }

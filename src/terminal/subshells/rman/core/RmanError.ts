@@ -36,5 +36,10 @@ export type RmanError =
   | { code: 'RETENTION_EVAL_ERROR'; message: string };
 
 export function rmanErrorMessage(e: RmanError): string {
-  return `${e.code}: ${e.message}`;
+  // Oracle prints "RMAN-NNNNN" (hyphen). Our discriminant union uses
+  // underscores so TypeScript can narrow; rewrite to hyphens for any
+  // RMAN_NNNNN code, keep internal categories (CATALOG_*, VFS_*, …)
+  // as-is.
+  const code = /^RMAN_\d+$/.test(e.code) ? e.code.replace('_', '-') : e.code;
+  return `${code}: ${e.message}`;
 }
