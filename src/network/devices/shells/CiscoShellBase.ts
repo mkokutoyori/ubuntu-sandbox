@@ -21,10 +21,16 @@ import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter } from './cli-utils';
 import {
   registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
+import {
+  showClock, showUsers, showInventory, showProcessesCpu,
+  showMemoryStatistics, showFlash, showPrivilege,
+} from './cisco/CiscoCommonShow';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
+  /** Recent commands for `show history` (shared switch + router). */
+  protected cmdHistory: string[] = [];
   protected deviceRef: TDevice | null = null;
 
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
@@ -38,6 +44,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected privilegedTrie = new CommandTrie();
   protected configTrie = new CommandTrie();
   protected configIfTrie = new CommandTrie();
+  /** Shared `line …` sub-mode trie (switch + router). */
+  protected configLineTrie = new CommandTrie();
 
   // ─── Abstract hooks (Template Method) ───────────────────────────
 
@@ -87,6 +95,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    if (!trimmed.endsWith('?')) this.cmdHistory.push(trimmed);
 
     const { cmd: cmdPart, filter: pipeFilter } = parsePipeFilter(trimmed);
 
@@ -217,12 +226,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Shared Command Registration ───────────────────────────────
 
+  /** IOS show/util commands common to every Cisco device + mode (DRY). */
+  private registerCommonShowCommands(trie: CommandTrie): void {
+    trie.register('show clock', 'Display the system clock', () => showClock());
+    trie.register('show users', 'Display active lines', () => showUsers());
+    trie.register('show inventory', 'Display hardware inventory', () =>
+      showInventory(this.d().getHostname()));
+    trie.register('show processes cpu', 'Display CPU utilisation', () =>
+      showProcessesCpu());
+    trie.registerGreedy('show memory', 'Display memory statistics', () =>
+      showMemoryStatistics());
+    trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash());
+    trie.register('show privilege', 'Display current privilege level', () =>
+      showPrivilege(this.mode === 'user' ? 1 : 15));
+    trie.register('show history', 'Display command history', () =>
+      this.cmdHistory.slice(-20).join('\n'));
+    trie.registerGreedy('terminal', 'Set terminal parameters', () => '');
+  }
+
   private registerCommonUserCommands(): void {
     this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
       this.mode = 'privileged';
       return '';
     });
 
+    this.registerCommonShowCommands(this.userTrie);
     // ARP show commands (shared between router and switch)
     registerArpShowCommands(this.userTrie, () => this.d());
   }
@@ -248,17 +276,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return this.onSave();
     });
 
+    this.registerCommonShowCommands(this.privilegedTrie);
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
   }
 
   private registerCommonConfigCommands(): void {
+    // `configure terminal` while already in config is an idempotent
+    // no-op (re-issuing it must not error mid-sequence).
+    this.configTrie.register('configure terminal', 'Already in global config', () => '');
+
     this.configTrie.registerGreedy('hostname', 'Set system hostname', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       this.d()._setHostnameInternal(args[0]);
       return '';
     });
+
+    // Common global-config no-ops (recognised; the sim has no datapath
+    // for these). Shared by switch + router.
+    this.configTrie.register('no hostname', 'Reset hostname', () => '');
+    this.configTrie.registerGreedy('ip domain-lookup', 'DNS lookup', () => '');
+    this.configTrie.registerGreedy('no ip domain-lookup', 'Disable DNS lookup', () => '');
+    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
+    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
+    this.configTrie.registerGreedy('banner', 'Set a banner', () => '');
+    this.configTrie.registerGreedy('logging', 'Logging configuration', () => '');
+    this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
+    this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
+
+    // Management commands missing on BOTH switch & router → shared here
+    // (DRY). Recognised; the sim has no AAA/crypto datapath.
+    this.configTrie.registerGreedy('aaa', 'AAA configuration', () => '');
+    this.configTrie.registerGreedy('enable secret', 'Set enable secret', () => '');
+    this.configTrie.registerGreedy('enable password', 'Set enable password', () => '');
+    this.configTrie.registerGreedy('username', 'Configure a local user', () => '');
+    this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');
+    this.configTrie.registerGreedy('service', 'Service configuration', () => '');
+    this.configTrie.registerGreedy('no service', 'Disable a service', () => '');
+    this.configTrie.registerGreedy('login', 'Login configuration', () => '');
+    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
+
+    // `line {console|vty|aux} …` → shared config-line sub-mode.
+    this.configTrie.registerGreedy('line', 'Enter line configuration', () => {
+      this.mode = 'config-line';
+      return '';
+    });
+    for (const kw of ['transport', 'login', 'password', 'exec-timeout',
+      'logging', 'access-class', 'privilege', 'no', 'speed', 'stopbits',
+      'session-timeout', 'history', 'length', 'width', 'authorization',
+      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
+      this.configLineTrie.registerGreedy(kw, `line ${kw}`, () => '');
+    }
 
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());

@@ -103,6 +103,7 @@ describe('debug-dump: huawei-interface', () => {
       topology,
       steps,
       'focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl',
+      { resyncSwitchPerSection: true },
     );
   });
 });

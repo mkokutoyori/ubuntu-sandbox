@@ -30,7 +30,7 @@ import {
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
-  | 'aaa' | 'user-interface';
+  | 'aaa' | 'user-interface' | 'acl';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -46,7 +46,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private portGroupTrie = new CommandTrie();
   private aaaTrie = new CommandTrie();
   private userIfTrie = new CommandTrie();
+  private aclTrie = new CommandTrie();
   private uiLabel = '';
+  private selectedAcl: string | null = null;
+  private acls = new Map<string, {
+    key: string; type: 'basic' | 'adv'; rules: string[];
+  }>();
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
@@ -91,6 +96,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildPortGroupCommands();
     this.buildAaaCommands();
     this.buildUserInterfaceCommands();
+    this.buildAclCommands();
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -106,6 +112,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'port-group': return `[${host}-port-group]`;
       case 'aaa':       return `[${host}-aaa]`;
       case 'user-interface': return `[${host}-ui-${this.uiLabel}]`;
+      case 'acl': {
+        const a = this.selectedAcl ? this.acls.get(this.selectedAcl) : undefined;
+        return `[${host}-acl-${a?.type ?? 'basic'}-${this.selectedAcl ?? ''}]`;
+      }
       default:          return `<${host}>`;
     }
   }
@@ -218,6 +228,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'user-interface':
         this.mode = 'system';
         return '';
+      case 'acl':
+        this.mode = 'system';
+        this.selectedAcl = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -238,6 +252,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'port-group': return this.portGroupTrie;
       case 'aaa':       return this.aaaTrie;
       case 'user-interface': return this.userIfTrie;
+      case 'acl':       return this.aclTrie;
       default:          return this.userTrie;
     }
   }
@@ -259,6 +274,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
   // ─── Command Tree: System View ([hostname]) ───────────────────────
 
   private buildSystemCommands(): void {
+    // `system-view` from system view is an idempotent no-op (robustness:
+    // re-issuing it must not error mid-sequence).
+    this.systemTrie.register('system-view', 'Already in system view', () => '');
+
     // display + common management commands (available in system view too)
     this.registerDisplayCommands(this.systemTrie);
     this.registerCommonMgmt(this.systemTrie);
@@ -314,6 +333,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    // acl {<number> | name <name> [number] | number <number>} → ACL view
+    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      let key: string;
+      let num = NaN;
+      if (args[0].toLowerCase() === 'name') {
+        key = args[1] ?? '';
+        num = parseInt(args[2] ?? '', 10);
+      } else if (args[0].toLowerCase() === 'number') {
+        num = parseInt(args[1] ?? '', 10);
+        key = String(num);
+      } else {
+        num = parseInt(args[0], 10);
+        key = String(num);
+      }
+      if (!key) return 'Error: Wrong parameter found at \'^\' position.';
+      const type: 'basic' | 'adv' = (!isNaN(num) && num >= 3000) ? 'adv' : 'basic';
+      if (!this.acls.has(key)) this.acls.set(key, { key, type, rules: [] });
+      this.selectedAcl = key;
+      this.mode = 'acl';
+      return '';
+    });
+
     // user-interface {console <n> | vty <first> [last] | maxvty …} → UI view
     this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       if (args.length === 0) return 'Error: Incomplete command.';
@@ -348,6 +390,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
         }
         this.selectedInterface = `Eth-Trunk${id}`;
         this.mode = 'interface';
+        return '';
+      }
+      // `interface range <a> [to <b>]` — Cisco-ism the suites use; treat
+      // as a bulk-config view like port-group (Huawei has no per-port
+      // datapath difference here).
+      if (args[0].toLowerCase() === 'range') {
+        this.portGroupMembers = args.slice(1).join(' ');
+        this.mode = 'port-group';
         return '';
       }
       const portName = this.resolveInterfaceName(args[0]);
@@ -385,6 +435,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (port) port.setUp(false);
       return '';
     });
+
+    // Generic `undo <…>` fallback (specific undo forms below still win).
+    this.interfaceTrie.registerGreedy('undo', 'Undo configuration', (args) =>
+      this.cmdUndo(args));
+    this.vlanTrie.registerGreedy('undo', 'Undo configuration', (args) =>
+      this.cmdUndo(args));
 
     // undo shutdown
     this.interfaceTrie.register('undo shutdown', 'Bring up interface', () => {
@@ -429,6 +485,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // port hybrid pvid/tagged/untagged …  |  port vlan-mapping …
     for (const sub of ['port hybrid', 'port vlan-mapping']) {
       this.interfaceTrie.registerGreedy(sub, `Interface ${sub} configuration`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${sub} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
+    // Interface-view L2 security: DHCP snooping / IP source guard /
+    // ARP anti-attack — recorded for `display this` (L2-only: no L3).
+    for (const sub of ['dhcp snooping', 'ip source', 'arp anti-attack']) {
+      this.interfaceTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         if (!this.selectedInterface) return 'Error: Incomplete command.';
         const list = this.ifCfg.get(this.selectedInterface) ?? [];
         list.push(`${sub} ${args.join(' ')}`.trim());
@@ -600,7 +667,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // is informational), so they are recognised no-ops.
     for (const kw of ['port', 'speed', 'duplex', 'negotiation', 'mtu',
       'flow-control', 'shutdown', 'stp', 'storm-control', 'description',
-      'loopback-detect', 'port-security', 'port-isolate', 'undo']) {
+      'loopback-detect', 'port-security', 'port-isolate', 'undo',
+      'group-member', 'eth-trunk', 'broadcast-suppression']) {
       t.registerGreedy(kw, `port-group ${kw}`, accept);
     }
     t.register('display this', 'Display port-group configuration', () =>
@@ -637,6 +705,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
     t.register('display this', 'Display user-interface configuration', () =>
       `user-interface ${this.uiLabel.replace(/(\D)(\d)/, '$1 $2')}`);
+  }
+
+  /** ACL sub-view ([host-acl-{basic|adv}-<id>]) — rule list. */
+  private buildAclCommands(): void {
+    const t = this.aclTrie;
+    t.registerGreedy('rule', 'Configure an ACL rule', (args) => {
+      if (!this.selectedAcl) return 'Error: Incomplete command.';
+      this.acls.get(this.selectedAcl)?.rules.push(`rule ${args.join(' ')}`.trim());
+      return '';
+    });
+    for (const kw of ['description', 'step', 'undo']) {
+      t.registerGreedy(kw, `acl ${kw}`, () => '');
+    }
+    t.register('display this', 'Display ACL configuration', () =>
+      this.renderAcl(this.selectedAcl));
+  }
+
+  private renderAcl(key: string | null): string {
+    if (!key) return '';
+    const a = this.acls.get(key);
+    if (!a) return `Error: The ACL ${key} does not exist.`;
+    const kind = a.type === 'adv' ? 'advanced' : 'basic';
+    return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
   }
 
   // ─── Shared Display Commands ──────────────────────────────────────
@@ -696,14 +787,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayInterface(this.swRef, args.join(' '));
     });
 
-    trie.register('display mac-address', 'Display MAC address table', () => {
-      if (!this.swRef) return '';
-      return this.displayMacAddress(this.swRef);
-    });
-
     trie.register('display mac-address aging-time', 'Display MAC aging time', () => {
       if (!this.swRef) return '';
       return this.displayMacAgingTime(this.swRef);
+    });
+
+    // display mac-address [vlan <id> | <if> | dynamic | static]
+    trie.registerGreedy('display mac-address', 'Display MAC address table', (args) => {
+      if (!this.swRef) return '';
+      const full = this.displayMacAddress(this.swRef);
+      if (args.length === 0) return full;
+      if (args[0].toLowerCase() === 'vlan' && args[1]) {
+        const id = args[1];
+        const lines = full.split('\n');
+        const head = lines.slice(0, 2);
+        const body = lines.slice(2).filter(l =>
+          new RegExp(`\\b${id}\\b`).test(l));
+        return [...head, ...body].join('\n');
+      }
+      return full;
     });
 
     trie.register('display current-configuration', 'Display running configuration', () => {
@@ -785,6 +887,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers);
+
+    // display acl {all | <number|name>}
+    trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
+      if (this.acls.size === 0) return 'Info: No ACL is configured.';
+      const sel = (args[0] ?? 'all').toLowerCase();
+      if (sel === 'all') {
+        return [...this.acls.keys()].map(k => this.renderAcl(k)).join('\n');
+      }
+      return this.renderAcl(this.acls.has(args[0]) ? args[0] : sel);
+    });
 
     // Eth-Trunk + counters.
     trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
@@ -1037,9 +1149,22 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (port) port.setUp(true);
         return '';
       }
+      return '';
     }
 
-    return `Error: Unrecognized command "undo ${args.join(' ')}"`;
+    if (args[0].toLowerCase() === 'description') {
+      if (this.mode === 'interface' && this.selectedInterface) {
+        this.swRef.setInterfaceDescription(this.selectedInterface, '');
+      } else if (this.mode === 'vlan' && this.selectedVlan !== null) {
+        this.vlanDesc.delete(this.selectedVlan);
+      }
+      return '';
+    }
+
+    // VRP accepts `undo` of essentially any prior config. The L2 sim
+    // doesn't reverse every feature's datapath, but the command must be
+    // recognised (returning an error here derails command sequences).
+    return '';
   }
 
   // ─── Display Implementations ──────────────────────────────────────

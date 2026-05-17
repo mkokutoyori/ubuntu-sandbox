@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T05:41:03.575Z
+Generated: 2026-05-17T05:56:29.873Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
@@ -179,16 +179,16 @@ Total steps: 90
 <empty>
 
 [41/90] sw [SW-SEC-GigabitEthernet0/0/1] dhcp snooping enable
-  Error: Unrecognized command "dhcp snooping enable"
+<empty>
 
 [42/90] sw [SW-SEC-GigabitEthernet0/0/1] dhcp snooping trusted
-  Error: Unrecognized command "dhcp snooping trusted"
+<empty>
 
 [43/90] sw [SW-SEC-GigabitEthernet0/0/1] ip source check user-bind enable
-  Error: Unrecognized command "ip source check user-bind enable"
+<empty>
 
 [44/90] sw [SW-SEC-GigabitEthernet0/0/1] arp anti-attack check user-bind enable
-  Error: Unrecognized command "arp anti-attack check user-bind enable"
+<empty>
 
 [45/90] sw [SW-SEC-GigabitEthernet0/0/1] quit
 <empty>
@@ -209,34 +209,40 @@ Total steps: 90
   Enter system view, return user view with return command.
 
 [49/90] sw [SW-SEC] acl 3001
-  Error: Unrecognized command "acl 3001"
-
-[50/90] sw [SW-SEC] rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255
-  Error: Unrecognized command "rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255"
-
-[51/90] sw [SW-SEC] rule 10 deny ip
-  Error: Unrecognized command "rule 10 deny ip"
-
-[52/90] sw [SW-SEC] quit
 <empty>
 
-[53/90] sw <SW-SEC> acl name MGMT 2999
-  Error: Unrecognized command "acl name MGMT 2999"
-
-[54/90] sw <SW-SEC> rule permit source 10.0.0.0 0.0.0.255
-  Error: Unrecognized command "rule permit source 10.0.0.0 0.0.0.255"
-
-[55/90] sw <SW-SEC> quit
+[50/90] sw [SW-SEC-acl-adv-3001] rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255
 <empty>
 
-[56/90] sw <SW-SEC> return
+[51/90] sw [SW-SEC-acl-adv-3001] rule 10 deny ip
+<empty>
+
+[52/90] sw [SW-SEC-acl-adv-3001] quit
+<empty>
+
+[53/90] sw [SW-SEC] acl name MGMT 2999
+<empty>
+
+[54/90] sw [SW-SEC-acl-basic-MGMT] rule permit source 10.0.0.0 0.0.0.255
+<empty>
+
+[55/90] sw [SW-SEC-acl-basic-MGMT] quit
+<empty>
+
+[56/90] sw [SW-SEC] return
 <empty>
 
 [57/90] sw <SW-SEC> display acl all
-  Error: Unrecognized command "display acl all"
+  acl advanced 3001
+   rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255
+   rule 10 deny ip
+  acl basic MGMT
+   rule permit source 10.0.0.0 0.0.0.255
 
 [58/90] sw <SW-SEC> display acl 3001
-  Error: Unrecognized command "display acl 3001"
+  acl advanced 3001
+   rule 5 permit ip source 192.168.10.0 0.0.0.255 destination 192.168.20.0 0.0.0.255
+   rule 10 deny ip
 
 
 --- [59] § AAA local users + SSH/Telnet ---

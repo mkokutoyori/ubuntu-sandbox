@@ -23,7 +23,9 @@ import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 
 /** CLI Mode (FSM State) */
-export type CLIMode = 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan';
+export type CLIMode =
+  | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
+  | 'config-mst' | 'config-line' | 'config-acl';
 
 export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
@@ -36,6 +38,17 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── Additional tries (beyond base's user/privileged/config/configIf) ─
   private configVlanTrie = new CommandTrie();
+  private configMstTrie = new CommandTrie();
+
+  // STP state (switch-only, L2)
+  private stpMode = 'pvst';
+  private mstRegion: { name: string; revision: number; instances: Map<number, string> } =
+    { name: '', revision: 0, instances: new Map() };
+  private ifStp = new Map<string, string[]>();
+  private ifExtra = new Map<string, string[]>();
+  private configAclTrie = new CommandTrie();
+  private selectedAcl: string | null = null;
+  private acls = new Map<string, string[]>();
 
   constructor() {
     super();
@@ -72,6 +85,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       case 'config':      return this.configTrie;
       case 'config-if':   return this.configIfTrie;
       case 'config-vlan': return this.configVlanTrie;
+      case 'config-mst':  return this.configMstTrie;
+      case 'config-line': return this.configLineTrie;
+      case 'config-acl':  return this.configAclTrie;
       default:            return this.userTrie;
     }
   }
@@ -104,6 +120,162 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
       return this.d().renameVLAN(this.selectedVlan, args[0]) ? '' : '% VLAN not found';
     });
+
+    // ── Spanning Tree (L2, switch-only) ──
+    this.registerStpCommands();
+
+    // ── ACL + DAI (switch-only; router has its own ACL impl) ──
+    this.configTrie.registerGreedy('access-list', 'Numbered ACL entry', (args) => {
+      const n = args[0] ?? '?';
+      const l = this.acls.get(n) ?? [];
+      l.push(`access-list ${args.join(' ')}`);
+      this.acls.set(n, l);
+      return '';
+    });
+    this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
+      // ip access-list {standard|extended} <name>
+      const name = args[1] ?? args[0] ?? 'ACL';
+      this.selectedAcl = name;
+      if (!this.acls.has(name)) this.acls.set(name, []);
+      this.mode = 'config-acl';
+      return '';
+    });
+    this.configTrie.registerGreedy('ip arp inspection', 'Dynamic ARP Inspection', () => '');
+    this.configIfTrie.registerGreedy('ip arp inspection', 'DAI trust', (args) =>
+      this.applyToSelectedInterfaces(() => { void args; return ''; }));
+    for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
+      this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
+        if (this.selectedAcl) {
+          this.acls.get(this.selectedAcl)!.push(`${kw} ${args.join(' ')}`.trim());
+        }
+        return '';
+      });
+    }
+    // numbered sequence entries (e.g. "10 permit ip any any")
+    this.configAclTrie.registerGreedy('', 'Sequenced ACL entry', (args) => {
+      if (this.selectedAcl && args.length) {
+        this.acls.get(this.selectedAcl)!.push(args.join(' '));
+      }
+      return '';
+    });
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show ip interface brief', 'Display IP interface brief', () => {
+        // L2 switch: only SVIs/mgmt carry IPs (none by default here).
+        return [
+          'Interface              IP-Address      OK? Method Status                Protocol',
+          'Vlan1                  unassigned      YES unset  administratively down down',
+        ].join('\n');
+      });
+      t.registerGreedy('show access-lists', 'Display ACLs', () => {
+        if (this.acls.size === 0) return '';
+        const out: string[] = [];
+        for (const [k, rules] of this.acls) {
+          out.push(/^\d+$/.test(k)
+            ? `Standard IP access list ${k}` : `Extended IP access list ${k}`);
+          for (const r of rules) out.push(`    ${r}`);
+        }
+        return out.join('\n');
+      });
+      t.registerGreedy('show port-security', 'Display port security', (args) => {
+        if (args[0]?.toLowerCase() === 'interface') {
+          return [`Port Security              : Enabled`,
+            `Port Status                : Secure-up`,
+            `Violation Mode             : Shutdown`,
+            `Maximum MAC Addresses      : 1`,
+            `Total MAC Addresses        : 0`].join('\n');
+        }
+        return ['Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
+          '------------------------------------------------------------------------------'].join('\n');
+      });
+    }
+  }
+
+  private registerStpCommands(): void {
+    // Global: `spanning-tree mst configuration` → config-mst sub-mode
+    this.configTrie.register('spanning-tree mst configuration',
+      'Enter MST configuration sub-mode', () => {
+        this.mode = 'config-mst';
+        return '';
+      });
+    // Global: every other `spanning-tree …` is accepted (mode/priority/
+    // root/extend/portfast/loopguard/…). Track the mode for `show`.
+    this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+      if (args[0]?.toLowerCase() === 'mode' && args[1]) this.stpMode = args[1];
+      return '';
+    });
+
+    // Interface: spanning-tree portfast/bpduguard/cost/… (tracked).
+    this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const l = this.ifStp.get(i) ?? [];
+        l.push(`spanning-tree ${args.join(' ')}`.trim());
+        this.ifStp.set(i, l);
+      }
+      return '';
+    });
+
+    // config-mst sub-mode
+    this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
+      this.mstRegion.name = a.join(' '); return '';
+    });
+    this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
+      const n = parseInt(a[0], 10); if (!isNaN(n)) this.mstRegion.revision = n; return '';
+    });
+    this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
+      const id = parseInt(a[0], 10);
+      if (!isNaN(id)) this.mstRegion.instances.set(id, a.slice(1).join(' '));
+      return '';
+    });
+    this.configMstTrie.register('show current', 'Show pending MST config', () =>
+      this.showMstConfig());
+    // The base redirects `show …` in config modes to the privileged
+    // trie, so `show current` must also resolve there.
+    this.privilegedTrie.register('show current', 'Show pending MST config', () =>
+      this.showMstConfig());
+    this.configMstTrie.registerGreedy('no', 'Negate', () => '');
+    this.configMstTrie.registerGreedy('abort', 'Abort MST changes', () => {
+      this.mode = 'config'; return '';
+    });
+
+    // show spanning-tree summary | mst configuration | interface <if>
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show spanning-tree summary', 'STP summary', () =>
+        `Switch is in ${this.stpMode} mode\nRoot bridge for: none\n` +
+        `Extended system ID           is enabled\n` +
+        `Portfast Default             is disabled\n` +
+        `Name                   Blocking Listening Learning Forwarding STP Active\n` +
+        `---------------------- -------- --------- -------- ---------- ----------`);
+      t.register('show spanning-tree mst configuration', 'MST region config', () =>
+        this.showMstConfig());
+      t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
+        const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
+        const lines = this.ifStp.get(name) ?? [];
+        return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
+      });
+    }
+  }
+
+  private showMstConfig(): string {
+    const ml: string[] = [
+      'Name      [' + this.mstRegion.name + ']',
+      'Revision  ' + this.mstRegion.revision + '     Instances configured ' +
+        (this.mstRegion.instances.size + 1),
+      '-------------------------------------------------------------',
+      'Instance  Vlans mapped',
+      '--------  -------------------------------------------------',
+      '0         1-4094',
+    ];
+    for (const [id, v] of this.mstRegion.instances) ml.push(`${String(id).padEnd(10)}${v}`);
+    return ml.join('\n');
+  }
+
+  private resolvePortName(input: string): string | null {
+    const names = this.d().getPortNames();
+    const lower = input.replace(/\s+/g, '').toLowerCase();
+    for (const n of names) if (n.toLowerCase() === lower) return n;
+    return null;
   }
 
   // ─── User Commands ────────────────────────────────────────────────
@@ -133,8 +305,52 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   // ─── Privileged Commands ──────────────────────────────────────────
 
   private registerPrivilegedCommands(): void {
-    this.privilegedTrie.register('show mac address-table', 'Display MAC address table', () => {
-      return this.showMACAddressTable(this.d());
+    this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
+      const full = this.showMACAddressTable(this.d());
+      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
+        const lines = full.split('\n');
+        return [lines[0] ?? '', ...lines.filter(l =>
+          new RegExp(`\\b${args[1]}\\b`).test(l))].join('\n');
+      }
+      return full;
+    });
+
+    this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
+      const rows = ['Port      Mode  Encapsulation  Status   Native vlan'];
+      for (const p of this.d().getPortNames()) {
+        const c = this.d().getSwitchportConfig(p);
+        if (c && c.mode === 'trunk') {
+          rows.push(`${p.padEnd(10)}on    802.1q         trunking ${c.trunkNativeVlan}`);
+        }
+      }
+      return rows.join('\n');
+    });
+
+    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', () =>
+      ['Flags:  D - down        P - bundled in port-channel',
+       'Number of channel-groups in use: 0',
+       'Group  Port-channel  Protocol    Ports',
+       '------+-------------+-----------+-----------------------------------------'].join('\n'));
+
+    // `show interfaces <if> switchport`
+    this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
+      if (args.length >= 2 && args[args.length - 1].toLowerCase() === 'switchport') {
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '))
+          ?? args.slice(0, -1).join(' ');
+        const c = this.d().getSwitchportConfig(name);
+        return [
+          `Name: ${name}`,
+          `Switchport: Enabled`,
+          `Administrative Mode: ${c?.mode === 'trunk' ? 'trunk' : 'static access'}`,
+          `Operational Mode: ${c?.mode ?? 'access'}`,
+          `Access Mode VLAN: ${c?.accessVlan ?? 1}`,
+          `Trunking Native Mode VLAN: ${c?.trunkNativeVlan ?? 1}`,
+        ].join('\n');
+      }
+      if (args[0]?.toLowerCase() === 'status' || args.length === 0) {
+        return this.showInterfacesStatus(this.d());
+      }
+      return this.showInterfacesStatus(this.d());
     });
 
     this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
@@ -151,6 +367,23 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.privilegedTrie.register('show interfaces', 'Display interface information', () => {
       return this.showInterfacesStatus(this.d());
+    });
+
+    this.privilegedTrie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
+      const name = this.resolveInterfaceName(args.join(' '))
+        ?? this.virtualInterfaceName(args.join(' ')) ?? args.join(' ');
+      const cfg = this.d().getSwitchportConfig(name);
+      const out = [`interface ${name}`];
+      if (cfg) {
+        out.push(cfg.mode === 'trunk' ? ' switchport mode trunk' : ' switchport mode access');
+        if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
+          out.push(` switchport access vlan ${cfg.accessVlan}`);
+        }
+      }
+      for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
+      for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
+      out.push('end');
+      return out.join('\n');
     });
 
     this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
@@ -201,13 +434,28 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
       if (args.length < 1) return '% Incomplete command.';
-      const id = parseInt(args[0], 10);
-      if (isNaN(id) || id < 1 || id > 4094) return '% Invalid VLAN ID';
-      if (!this.d().getVLAN(id)) {
-        this.d().createVLAN(id);
+      // Accept a single id, a comma list (100,200,300) and ranges
+      // (30-35) — IOS creates them all; only a single id enters
+      // config-vlan.
+      const spec = args.join('');
+      const ids: number[] = [];
+      for (const part of spec.split(',')) {
+        const m = part.match(/^(\d+)-(\d+)$/);
+        if (m) {
+          for (let i = +m[1]; i <= +m[2]; i++) ids.push(i);
+        } else {
+          const n = parseInt(part, 10);
+          if (!isNaN(n)) ids.push(n);
+        }
       }
-      this.selectedVlan = id;
-      this.mode = 'config-vlan';
+      if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
+        return '% Invalid VLAN ID';
+      }
+      for (const id of ids) if (!this.d().getVLAN(id)) this.d().createVLAN(id);
+      if (ids.length === 1) {
+        this.selectedVlan = ids[0];
+        this.mode = 'config-vlan';
+      }
       return '';
     });
 
@@ -224,6 +472,14 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
+      }
+
+      const virt = this.virtualInterfaceName(args.join(' '));
+      if (virt) {
+        this.selectedInterface = virt;
+        this.selectedInterfaceRange = [virt];
+        this.mode = 'config-if';
+        return '';
       }
 
       const portName = this.resolveInterfaceName(args[0]);
@@ -289,6 +545,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (args.length < 1) return '% Incomplete command.';
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
+      }
+      const virt = this.virtualInterfaceName(args.join(' '));
+      if (virt) {
+        this.selectedInterface = virt;
+        this.selectedInterfaceRange = [virt];
+        return '';
       }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName || !this.d().getPort(portName)) {
@@ -375,6 +637,27 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         this.d().setTrunkAllowedVlans(portName, vlans) ? '' : '% Error'
       );
     });
+
+    // ── switchport extras / EtherChannel (recorded for show run) ──
+    const recordIf = (line: string) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      for (const i of ifs) {
+        const l = this.ifExtra.get(i) ?? [];
+        l.push(line);
+        this.ifExtra.set(i, l);
+      }
+      return '';
+    };
+    for (const sub of [
+      'switchport trunk encapsulation', 'switchport nonegotiate',
+      'switchport voice', 'switchport port-security', 'switchport priority',
+      'channel-group', 'channel-protocol', 'storm-control', 'mls qos',
+      'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
+    ]) {
+      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) =>
+        recordIf(`${sub} ${args.join(' ')}`.trim()));
+    }
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => {
@@ -477,6 +760,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           lines.push(` switchport access vlan ${cfg.accessVlan}`);
         }
       }
+      for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
+      for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
@@ -676,6 +961,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   }
 
   // ─── Interface Resolution ─────────────────────────────────────────
+
+  /**
+   * Virtual (non-physical) L2 interfaces this switch accepts:
+   * Port-channel only. `Vlan<n>` is an L3 SVI and stays rejected on an
+   * L2-only switch (returns null → "% Invalid interface name").
+   */
+  private virtualInterfaceName(input: string): string | null {
+    const m = input.replace(/\s+/g, '').match(/^(?:po|port-?channel)(\d+)$/i);
+    return m ? `Port-channel${m[1]}` : null;
+  }
 
   private resolveInterfaceName(input: string): string | null {
     const lower = input.toLowerCase();

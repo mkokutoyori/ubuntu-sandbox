@@ -119,6 +119,42 @@ describe('Huawei CLI — common display commands (switch & router, DRY)', () => 
   });
 });
 
+describe('Huawei CLI — system-view is idempotent', () => {
+  it('system-view from system view is a recognized no-op', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    await sw.executeCommand('system-view');
+    expect(sw.getPrompt()).toBe('[SW1]');
+    expect(await sw.executeCommand('system-view')).not.toMatch(/Unrecognized/);
+    expect(sw.getPrompt()).toBe('[SW1]');
+    // still functional afterwards
+    expect(await sw.executeCommand('vlan 10')).not.toMatch(/Unrecognized/);
+  });
+});
+
+describe('Huawei CLI — undo & display mac-address vlan', () => {
+  it('undo description / sysname / info-center are recognized (no derail)', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    await sw.executeCommand('system-view');
+    await sw.executeCommand('interface GigabitEthernet0/0/1');
+    await sw.executeCommand('description TEST');
+    expect(await sw.executeCommand('undo description')).not.toMatch(/Unrecognized/);
+    expect(await sw.executeCommand('display this')).not.toContain('TEST');
+    await sw.executeCommand('quit');
+    expect(await sw.executeCommand('undo info-center enable')).not.toMatch(/Unrecognized/);
+    expect(await sw.executeCommand('undo sysname')).not.toMatch(/Unrecognized/);
+    // sequence not derailed: a normal command still works
+    expect(await sw.executeCommand('vlan 50')).not.toMatch(/Unrecognized/);
+  });
+
+  it('display mac-address vlan <id> is recognized', async () => {
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
+    expect(await sw.executeCommand('display mac-address vlan 10'))
+      .not.toMatch(/Unrecognized command/);
+    expect(await sw.executeCommand('display mac-address'))
+      .not.toMatch(/Unrecognized command/);
+  });
+});
+
 describe('Huawei CLI — VRP lifecycle/management commands (switch & router, DRY)', () => {
   it('switch: save reports success (non-interactive sim)', async () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
