@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T05:16:22.718Z
+Generated: 2026-05-17T05:21:35.195Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
@@ -9,10 +9,43 @@ Total steps: 90
 
 --- [1] § STP baseline ---
 [1/90] sw <SW1> display stp
-  Error: Unrecognized command "display stp"
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :32768.SW1
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :32768.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :32768.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Disabled
+  TC or TCN received  :0
+  STP Status          :Enabled
 
 [2/90] sw <SW1> display stp brief
-  Error: Unrecognized command "display stp brief"
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/0        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/4        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/5        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/7        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/8        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/9        DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/10       DESI  FORWARDING    NONE
+       0  GigabitEthernet0/0/11       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/12       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/13       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/14       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/15       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/16       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/17       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/18       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/19       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/20       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/21       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/22       DESI  LISTENING     NONE
+       0  GigabitEthernet0/0/23       DESI  LISTENING     NONE
 
 [3/90] sw <SW1> system-view
   Enter system view, return user view with return command.
@@ -23,73 +56,83 @@ Total steps: 90
 
 --- [5] § STP / RSTP / MSTP ---
 [5/90] sw [SW-SEC] stp mode rstp
-  Error: Unrecognized command "stp mode rstp"
+<empty>
 
 [6/90] sw [SW-SEC] stp enable
-  Error: Unrecognized command "stp enable"
+<empty>
 
 [7/90] sw [SW-SEC] stp priority 4096
-  Error: Unrecognized command "stp priority 4096"
+<empty>
 
 [8/90] sw [SW-SEC] stp root primary
-  Error: Unrecognized command "stp root primary"
+<empty>
 
 [9/90] sw [SW-SEC] stp mode mstp
-  Error: Unrecognized command "stp mode mstp"
+<empty>
 
 [10/90] sw [SW-SEC] stp region-configuration
-  Error: Unrecognized command "stp region-configuration"
-
-[11/90] sw [SW-SEC] region-name LAB
-  Error: Unrecognized command "region-name LAB"
-
-[12/90] sw [SW-SEC] instance 1 vlan 10
-  Error: Unrecognized command "instance 1 vlan 10"
-
-[13/90] sw [SW-SEC] instance 2 vlan 20
-  Error: Unrecognized command "instance 2 vlan 20"
-
-[14/90] sw [SW-SEC] active region-configuration
-  Error: Unrecognized command "active region-configuration"
-
-[15/90] sw [SW-SEC] quit
 <empty>
 
-[16/90] sw <SW-SEC> interface GigabitEthernet0/0/1
-  Error: Unrecognized command "interface GigabitEthernet0/0/1"
-
-[17/90] sw <SW-SEC> stp edged-port enable
-  Error: Unrecognized command "stp edged-port enable"
-
-[18/90] sw <SW-SEC> stp bpdu-protection
-  Error: Unrecognized command "stp bpdu-protection"
-
-[19/90] sw <SW-SEC> quit
+[11/90] sw [SW-SEC-mst-region] region-name LAB
 <empty>
 
-[20/90] sw <SW-SEC> stp bpdu-protection
-  Error: Unrecognized command "stp bpdu-protection"
-
-[21/90] sw <SW-SEC> interface GigabitEthernet0/0/23
-  Error: Unrecognized command "interface GigabitEthernet0/0/23"
-
-[22/90] sw <SW-SEC> stp cost 20000
-  Error: Unrecognized command "stp cost 20000"
-
-[23/90] sw <SW-SEC> stp port priority 64
-  Error: Unrecognized command "stp port priority 64"
-
-[24/90] sw <SW-SEC> quit
+[12/90] sw [SW-SEC-mst-region] instance 1 vlan 10
 <empty>
 
-[25/90] sw <SW-SEC> return
+[13/90] sw [SW-SEC-mst-region] instance 2 vlan 20
+<empty>
+
+[14/90] sw [SW-SEC-mst-region] active region-configuration
+<empty>
+
+[15/90] sw [SW-SEC-mst-region] quit
+<empty>
+
+[16/90] sw [SW-SEC] interface GigabitEthernet0/0/1
+<empty>
+
+[17/90] sw [SW-SEC-GigabitEthernet0/0/1] stp edged-port enable
+<empty>
+
+[18/90] sw [SW-SEC-GigabitEthernet0/0/1] stp bpdu-protection
+<empty>
+
+[19/90] sw [SW-SEC-GigabitEthernet0/0/1] quit
+<empty>
+
+[20/90] sw [SW-SEC] stp bpdu-protection
+<empty>
+
+[21/90] sw [SW-SEC] interface GigabitEthernet0/0/23
+<empty>
+
+[22/90] sw [SW-SEC-GigabitEthernet0/0/23] stp cost 20000
+<empty>
+
+[23/90] sw [SW-SEC-GigabitEthernet0/0/23] stp port priority 64
+<empty>
+
+[24/90] sw [SW-SEC-GigabitEthernet0/0/23] quit
+<empty>
+
+[25/90] sw [SW-SEC] return
 <empty>
 
 [26/90] sw <SW-SEC> display stp
-  Error: Unrecognized command "display stp"
+  -------[CIST Global Info][Mode MSTP]-------
+  CIST Bridge         :0.SW-SEC
+  Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
+  CIST Root/ERPC      :0.0000-0000-0000 / 0
+  CIST RegRoot/IRPC   :0.0000-0000-0000 / 0
+  CIST RootPortId     :0.0
+  BPDU-Protection     :Enabled
+  TC or TCN received  :0
+  STP Status          :Enabled
 
 [27/90] sw <SW-SEC> display stp interface GigabitEthernet0/0/1
-  Error: Unrecognized command "display stp interface GigabitEthernet0/0/1"
+   MSTID  Port                        Role  STP State     Protection
+       0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
 
 
 --- [28] § port-security sticky MAC ---

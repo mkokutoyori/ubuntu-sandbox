@@ -25,7 +25,7 @@ import {
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 
-type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan';
+type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan' | 'mst-region';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -37,15 +37,33 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private systemTrie = new CommandTrie();
   private interfaceTrie = new CommandTrie();
   private vlanTrie = new CommandTrie();
+  private mstRegionTrie = new CommandTrie();
 
   private swRef: Switch | null = null;
   private history: string[] = [];
+
+  // STP/RSTP/MSTP global config (switch-only, L2). Default: VRP MSTP.
+  private stp: {
+    enabled: boolean;
+    mode: 'stp' | 'rstp' | 'mstp';
+    priority: number;
+    root: '' | 'primary' | 'secondary';
+    bpduProtection: boolean;
+  } = { enabled: true, mode: 'mstp', priority: 32768, root: '', bpduProtection: false };
+
+  private mstRegion: {
+    name: string; revision: number; instances: Map<number, string>;
+  } = { name: '', revision: 0, instances: new Map() };
+
+  /** Per-interface STP config lines (rendered verbatim in `display this`). */
+  private ifStp = new Map<string, string[]>();
 
   constructor() {
     this.buildUserCommands();
     this.buildSystemCommands();
     this.buildInterfaceCommands();
     this.buildVlanCommands();
+    this.buildMstRegionCommands();
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -57,6 +75,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'system':    return `[${host}]`;
       case 'interface': return `[${host}-${this.selectedInterface}]`;
       case 'vlan':      return `[${host}-vlan${this.selectedVlan}]`;
+      case 'mst-region': return `[${host}-mst-region]`;
       default:          return `<${host}>`;
     }
   }
@@ -158,6 +177,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'system';
         this.selectedVlan = null;
         return '';
+      case 'mst-region':
+        this.mode = 'system';
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -174,6 +196,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'system':    return this.systemTrie;
       case 'interface': return this.interfaceTrie;
       case 'vlan':      return this.vlanTrie;
+      case 'mst-region': return this.mstRegionTrie;
       default:          return this.userTrie;
     }
   }
@@ -198,6 +221,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display + common management commands (available in system view too)
     this.registerDisplayCommands(this.systemTrie);
     this.registerCommonMgmt(this.systemTrie);
+    this.registerStpSystemCommands(this.systemTrie);
 
     // sysname <name>
     this.systemTrie.registerGreedy('sysname', 'Set system hostname', (args) => {
@@ -264,6 +288,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private buildInterfaceCommands(): void {
     // display commands
     this.registerDisplayCommands(this.interfaceTrie);
+    this.registerStpInterfaceCommands(this.interfaceTrie);
 
     // shutdown
     this.interfaceTrie.register('shutdown', 'Shut down interface', () => {
@@ -465,6 +490,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       displayPatchInformation());
     trie.register('display diagnostic-information', 'Collect diagnostic information', () =>
       displayDiagnosticInformation());
+
+    // STP display family (switch-only).
+    this.registerStpDisplay(trie);
   }
 
   /**
@@ -474,6 +502,152 @@ export class HuaweiSwitchShell implements ISwitchShell {
    */
   private registerCommonMgmt(trie: CommandTrie): void {
     registerHuaweiCommonMgmt(trie);
+  }
+
+  // ─── STP / RSTP / MSTP (switch-only, L2) ──────────────────────────
+
+  /** System-view `stp …` configuration commands. */
+  private registerStpSystemCommands(trie: CommandTrie): void {
+    trie.registerGreedy('stp', 'Spanning Tree Protocol configuration', (args) => {
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) return 'Error: Incomplete command.';
+
+      switch (a[0]) {
+        case 'enable':  this.stp.enabled = true;  return '';
+        case 'disable': this.stp.enabled = false; return '';
+        case 'mode': {
+          const m = a[1];
+          if (m !== 'stp' && m !== 'rstp' && m !== 'mstp') {
+            return 'Error: Wrong parameter found at \'^\' position.';
+          }
+          this.stp.mode = m;
+          return '';
+        }
+        case 'priority': {
+          const p = parseInt(a[1], 10);
+          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
+            return 'Error: Wrong parameter found at \'^\' position.';
+          }
+          this.stp.priority = p;
+          return '';
+        }
+        case 'root':
+          if (a[1] === 'primary')   { this.stp.root = 'primary';   this.stp.priority = 0;     return ''; }
+          if (a[1] === 'secondary') { this.stp.root = 'secondary'; this.stp.priority = 4096;  return ''; }
+          return 'Error: Wrong parameter found at \'^\' position.';
+        case 'bpdu-protection':
+          this.stp.bpduProtection = true;
+          return '';
+        case 'pathcost-standard':
+        case 'tc-protection':
+        case 'converge':
+        case 'timer':
+          return ''; // accepted, no behavioural effect in the sim
+        case 'region-configuration':
+          this.mode = 'mst-region';
+          return '';
+        default:
+          return `Error: Unrecognized command "stp ${args.join(' ')}"`;
+      }
+    });
+  }
+
+  /** Interface-view `stp …` configuration commands. */
+  private registerStpInterfaceCommands(trie: CommandTrie): void {
+    trie.registerGreedy('stp', 'Interface STP configuration', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) return 'Error: Incomplete command.';
+      const valid = new Set(['edged-port', 'bpdu-protection', 'cost',
+        'port', 'disable', 'enable', 'bpdu-filter', 'loop-protection',
+        'root-protection', 'tc-restriction']);
+      if (!valid.has(a[0])) {
+        return `Error: Unrecognized command "stp ${args.join(' ')}"`;
+      }
+      // Persist a normalised line for `display this`.
+      const list = this.ifStp.get(this.selectedInterface) ?? [];
+      list.push(`stp ${args.join(' ')}`);
+      this.ifStp.set(this.selectedInterface, list);
+      return '';
+    });
+  }
+
+  /** MST region sub-view command tree ([host-mst-region]). */
+  private buildMstRegionCommands(): void {
+    const t = this.mstRegionTrie;
+    t.registerGreedy('region-name', 'Set MST region name', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      this.mstRegion.name = args[0];
+      return '';
+    });
+    t.registerGreedy('instance', 'Map VLANs to an MST instance', (args) => {
+      if (args.length < 3 || args[1].toLowerCase() !== 'vlan') {
+        return 'Error: Incomplete command.';
+      }
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
+      this.mstRegion.instances.set(id, args.slice(2).join(' '));
+      return '';
+    });
+    t.registerGreedy('revision-level', 'Set MST revision level', (args) => {
+      const n = parseInt(args[0], 10);
+      if (!isNaN(n)) this.mstRegion.revision = n;
+      return '';
+    });
+    t.register('active region-configuration', 'Activate MST region', () => '');
+    t.register('check region-configuration', 'Check MST region', () => '');
+    t.register('display this', 'Display MST region configuration', () => {
+      const lines = ['stp region-configuration'];
+      if (this.mstRegion.name) lines.push(` region-name ${this.mstRegion.name}`);
+      for (const [id, v] of this.mstRegion.instances) {
+        lines.push(` instance ${id} vlan ${v}`);
+      }
+      lines.push('#');
+      return lines.join('\n');
+    });
+  }
+
+  /** `display stp` family — rendered from shell-tracked config + ports. */
+  private registerStpDisplay(trie: CommandTrie): void {
+    trie.register('display stp', 'Display STP status', () => this.displayStp());
+    trie.register('display stp brief', 'Display STP brief', () => this.displayStpBrief());
+    trie.registerGreedy('display stp interface', 'Display STP for an interface', (args) => {
+      if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      return this.displayStpBrief(this.resolveInterfaceName(args.join(' ')) || args.join(' '));
+    });
+  }
+
+  private displayStp(): string {
+    const modeName = this.stp.mode.toUpperCase();
+    return [
+      `-------[CIST Global Info][Mode ${modeName}]-------`,
+      `CIST Bridge         :${this.stp.priority}.${this.swRef?.getHostname() ?? ''}`,
+      `Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      `Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20`,
+      `CIST Root/ERPC      :${this.stp.priority}.0000-0000-0000 / 0`,
+      `CIST RegRoot/IRPC   :${this.stp.priority}.0000-0000-0000 / 0`,
+      `CIST RootPortId     :0.0`,
+      `BPDU-Protection     :${this.stp.bpduProtection ? 'Enabled' : 'Disabled'}`,
+      `TC or TCN received  :0`,
+      `STP Status          :${this.stp.enabled ? 'Enabled' : 'Disabled'}`,
+    ].join('\n');
+  }
+
+  private displayStpBrief(only?: string): string {
+    if (!this.swRef) return '';
+    const header = ' MSTID  Port                        Role  STP State     Protection';
+    const rows: string[] = [];
+    for (const p of this.swRef.getPortNames()) {
+      if (only && p !== only) continue;
+      const st = this.swRef.getSTPState(p);
+      const state = st === 'forwarding' ? 'FORWARDING'
+        : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
+      rows.push(`     0  ${p.padEnd(27)} DESI  ${state.padEnd(13)} NONE`);
+    }
+    if (only && rows.length === 0) {
+      return `Error: The port ${only} does not exist.`;
+    }
+    return [header, ...rows].join('\n');
   }
 
   // ─── Undo Command ────────────────────────────────────────────────
@@ -677,6 +851,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (cfg.accessVlan !== 1) {
         lines.push(` port default vlan ${cfg.accessVlan}`);
       }
+    }
+    for (const stpLine of this.ifStp.get(portName) ?? []) {
+      lines.push(` ${stpLine}`);
     }
     if (!port.getIsUp()) lines.push(` shutdown`);
     lines.push('#');
