@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-vlan
-Generated: 2026-05-17T05:41:03.096Z
+Generated: 2026-05-17T05:43:51.464Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=L2 VLAN lifecycle, access/trunk/hybrid, voice/mux/QinQ (Vlanif shown only to confirm L2 switch rejects L3)
 Total steps: 78

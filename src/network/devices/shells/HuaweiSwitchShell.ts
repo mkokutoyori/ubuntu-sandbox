@@ -30,7 +30,7 @@ import {
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
-  | 'aaa' | 'user-interface';
+  | 'aaa' | 'user-interface' | 'acl';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -46,7 +46,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private portGroupTrie = new CommandTrie();
   private aaaTrie = new CommandTrie();
   private userIfTrie = new CommandTrie();
+  private aclTrie = new CommandTrie();
   private uiLabel = '';
+  private selectedAcl: string | null = null;
+  private acls = new Map<string, {
+    key: string; type: 'basic' | 'adv'; rules: string[];
+  }>();
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
@@ -91,6 +96,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildPortGroupCommands();
     this.buildAaaCommands();
     this.buildUserInterfaceCommands();
+    this.buildAclCommands();
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -106,6 +112,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'port-group': return `[${host}-port-group]`;
       case 'aaa':       return `[${host}-aaa]`;
       case 'user-interface': return `[${host}-ui-${this.uiLabel}]`;
+      case 'acl': {
+        const a = this.selectedAcl ? this.acls.get(this.selectedAcl) : undefined;
+        return `[${host}-acl-${a?.type ?? 'basic'}-${this.selectedAcl ?? ''}]`;
+      }
       default:          return `<${host}>`;
     }
   }
@@ -218,6 +228,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'user-interface':
         this.mode = 'system';
         return '';
+      case 'acl':
+        this.mode = 'system';
+        this.selectedAcl = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -238,6 +252,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'port-group': return this.portGroupTrie;
       case 'aaa':       return this.aaaTrie;
       case 'user-interface': return this.userIfTrie;
+      case 'acl':       return this.aclTrie;
       default:          return this.userTrie;
     }
   }
@@ -311,6 +326,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // aaa → AAA view
     this.systemTrie.register('aaa', 'Enter AAA view', () => {
       this.mode = 'aaa';
+      return '';
+    });
+
+    // acl {<number> | name <name> [number] | number <number>} → ACL view
+    this.systemTrie.registerGreedy('acl', 'Configure an ACL', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      let key: string;
+      let num = NaN;
+      if (args[0].toLowerCase() === 'name') {
+        key = args[1] ?? '';
+        num = parseInt(args[2] ?? '', 10);
+      } else if (args[0].toLowerCase() === 'number') {
+        num = parseInt(args[1] ?? '', 10);
+        key = String(num);
+      } else {
+        num = parseInt(args[0], 10);
+        key = String(num);
+      }
+      if (!key) return 'Error: Wrong parameter found at \'^\' position.';
+      const type: 'basic' | 'adv' = (!isNaN(num) && num >= 3000) ? 'adv' : 'basic';
+      if (!this.acls.has(key)) this.acls.set(key, { key, type, rules: [] });
+      this.selectedAcl = key;
+      this.mode = 'acl';
       return '';
     });
 
@@ -429,6 +467,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // port hybrid pvid/tagged/untagged …  |  port vlan-mapping …
     for (const sub of ['port hybrid', 'port vlan-mapping']) {
       this.interfaceTrie.registerGreedy(sub, `Interface ${sub} configuration`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${sub} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
+    // Interface-view L2 security: DHCP snooping / IP source guard /
+    // ARP anti-attack — recorded for `display this` (L2-only: no L3).
+    for (const sub of ['dhcp snooping', 'ip source', 'arp anti-attack']) {
+      this.interfaceTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         if (!this.selectedInterface) return 'Error: Incomplete command.';
         const list = this.ifCfg.get(this.selectedInterface) ?? [];
         list.push(`${sub} ${args.join(' ')}`.trim());
@@ -639,6 +688,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `user-interface ${this.uiLabel.replace(/(\D)(\d)/, '$1 $2')}`);
   }
 
+  /** ACL sub-view ([host-acl-{basic|adv}-<id>]) — rule list. */
+  private buildAclCommands(): void {
+    const t = this.aclTrie;
+    t.registerGreedy('rule', 'Configure an ACL rule', (args) => {
+      if (!this.selectedAcl) return 'Error: Incomplete command.';
+      this.acls.get(this.selectedAcl)?.rules.push(`rule ${args.join(' ')}`.trim());
+      return '';
+    });
+    for (const kw of ['description', 'step', 'undo']) {
+      t.registerGreedy(kw, `acl ${kw}`, () => '');
+    }
+    t.register('display this', 'Display ACL configuration', () =>
+      this.renderAcl(this.selectedAcl));
+  }
+
+  private renderAcl(key: string | null): string {
+    if (!key) return '';
+    const a = this.acls.get(key);
+    if (!a) return `Error: The ACL ${key} does not exist.`;
+    const kind = a.type === 'adv' ? 'advanced' : 'basic';
+    return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
+  }
+
   // ─── Shared Display Commands ──────────────────────────────────────
 
   private registerDisplayCommands(trie: CommandTrie): void {
@@ -785,6 +857,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers);
+
+    // display acl {all | <number|name>}
+    trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
+      if (this.acls.size === 0) return 'Info: No ACL is configured.';
+      const sel = (args[0] ?? 'all').toLowerCase();
+      if (sel === 'all') {
+        return [...this.acls.keys()].map(k => this.renderAcl(k)).join('\n');
+      }
+      return this.renderAcl(this.acls.has(args[0]) ? args[0] : sel);
+    });
 
     // Eth-Trunk + counters.
     trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
