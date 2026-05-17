@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-05-17T17:26:52.667Z
+Generated: 2026-05-17T17:30:24.071Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -455,129 +455,79 @@ Total steps: 413
 <empty>
 
 [77/413] r1 R1(config-if)# vrrp 1 ip 192.168.1.201
-  % Invalid input detected at '^' marker.
-  vrrp 1 ip 192.168.1.201
-  ^
+<empty>
 
 [78/413] r1 R1(config-if)# vrrp 1 priority 120
-  % Invalid input detected at '^' marker.
-  vrrp 1 priority 120
-  ^
+<empty>
 
 [79/413] r1 R1(config-if)# vrrp 1 preempt delay minimum 15
-  % Invalid input detected at '^' marker.
-  vrrp 1 preempt delay minimum 15
-  ^
+<empty>
 
 [80/413] r1 R1(config-if)# vrrp 1 timers advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp 1 timers advertise 1
-  ^
+<empty>
 
 [81/413] r1 R1(config-if)# vrrp 1 timers learn
-  % Invalid input detected at '^' marker.
-  vrrp 1 timers learn
-  ^
+<empty>
 
 [82/413] r1 R1(config-if)# vrrp 1 authentication md5 key-string VrrpKey1
-  % Invalid input detected at '^' marker.
-  vrrp 1 authentication md5 key-string VrrpKey1
-  ^
+<empty>
 
 [83/413] r1 R1(config-if)# vrrp 1 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  vrrp 1 track 1 decrement 20
-  ^
+<empty>
 
 [84/413] r1 R1(config-if)# vrrp 1 description VRRP-GRP-1
-  % Invalid input detected at '^' marker.
-  vrrp 1 description VRRP-GRP-1
-  ^
+<empty>
 
 [85/413] r1 R1(config-if)# vrrp 2 ip 192.168.1.202
-  % Invalid input detected at '^' marker.
-  vrrp 2 ip 192.168.1.202
-  ^
+<empty>
 
 [86/413] r1 R1(config-if)# vrrp 2 priority 130
-  % Invalid input detected at '^' marker.
-  vrrp 2 priority 130
-  ^
+<empty>
 
 [87/413] r1 R1(config-if)# vrrp 2 preempt delay minimum 15
-  % Invalid input detected at '^' marker.
-  vrrp 2 preempt delay minimum 15
-  ^
+<empty>
 
 [88/413] r1 R1(config-if)# vrrp 2 timers advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp 2 timers advertise 1
-  ^
+<empty>
 
 [89/413] r1 R1(config-if)# vrrp 2 timers learn
-  % Invalid input detected at '^' marker.
-  vrrp 2 timers learn
-  ^
+<empty>
 
 [90/413] r1 R1(config-if)# vrrp 2 authentication md5 key-string VrrpKey2
-  % Invalid input detected at '^' marker.
-  vrrp 2 authentication md5 key-string VrrpKey2
-  ^
+<empty>
 
 [91/413] r1 R1(config-if)# vrrp 2 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  vrrp 2 track 1 decrement 20
-  ^
+<empty>
 
 [92/413] r1 R1(config-if)# vrrp 2 description VRRP-GRP-2
-  % Invalid input detected at '^' marker.
-  vrrp 2 description VRRP-GRP-2
-  ^
+<empty>
 
 [93/413] r1 R1(config-if)# vrrp 3 ip 192.168.1.203
-  % Invalid input detected at '^' marker.
-  vrrp 3 ip 192.168.1.203
-  ^
+<empty>
 
 [94/413] r1 R1(config-if)# vrrp 3 priority 140
-  % Invalid input detected at '^' marker.
-  vrrp 3 priority 140
-  ^
+<empty>
 
 [95/413] r1 R1(config-if)# vrrp 3 preempt delay minimum 15
-  % Invalid input detected at '^' marker.
-  vrrp 3 preempt delay minimum 15
-  ^
+<empty>
 
 [96/413] r1 R1(config-if)# vrrp 3 timers advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp 3 timers advertise 1
-  ^
+<empty>
 
 [97/413] r1 R1(config-if)# vrrp 3 timers learn
-  % Invalid input detected at '^' marker.
-  vrrp 3 timers learn
-  ^
+<empty>
 
 [98/413] r1 R1(config-if)# vrrp 3 authentication md5 key-string VrrpKey3
-  % Invalid input detected at '^' marker.
-  vrrp 3 authentication md5 key-string VrrpKey3
-  ^
+<empty>
 
 [99/413] r1 R1(config-if)# vrrp 3 track 1 decrement 20
-  % Invalid input detected at '^' marker.
-  vrrp 3 track 1 decrement 20
-  ^
+<empty>
 
 [100/413] r1 R1(config-if)# vrrp 3 description VRRP-GRP-3
-  % Invalid input detected at '^' marker.
-  vrrp 3 description VRRP-GRP-3
-  ^
+<empty>
 
 [101/413] r1 R1(config-if)# vrrp 1 address-family ipv4
-  % Invalid input detected at '^' marker.
-  vrrp 1 address-family ipv4
-  ^
+<empty>
 
 [102/413] r1 R1(config-if)# exit
 <empty>
@@ -586,19 +536,56 @@ Total steps: 413
 <empty>
 
 [104/413] r1 R1# show vrrp
-  % Invalid input detected at '^' marker.
-  show vrrp
-       ^
+  GigabitEthernet0/0 - Group 1
+    State is Master
+    Virtual IP address is 192.168.1.201
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 120
+    Description is "VRRP-GRP-1"
+  GigabitEthernet0/0 - Group 2
+    State is Master
+    Virtual IP address is 192.168.1.202
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 130
+    Description is "VRRP-GRP-2"
+  GigabitEthernet0/0 - Group 3
+    State is Master
+    Virtual IP address is 192.168.1.203
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 140
+    Description is "VRRP-GRP-3"
 
 [105/413] r1 R1# show vrrp brief
-  % Invalid input detected at '^' marker.
-  show vrrp brief
-       ^
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+  GigabitEthernet0/0 1   120     -   Y   Master  local           192.168.1.201
+  GigabitEthernet0/0 2   130     -   Y   Master  local           192.168.1.202
+  GigabitEthernet0/0 3   140     -   Y   Master  local           192.168.1.203
 
 [106/413] r1 R1# show vrrp interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  show vrrp interface GigabitEthernet0/0
-       ^
+  GigabitEthernet0/0 - Group 1
+    State is Master
+    Virtual IP address is 192.168.1.201
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 120
+    Description is "VRRP-GRP-1"
+  GigabitEthernet0/0 - Group 2
+    State is Master
+    Virtual IP address is 192.168.1.202
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 130
+    Description is "VRRP-GRP-2"
+  GigabitEthernet0/0 - Group 3
+    State is Master
+    Virtual IP address is 192.168.1.203
+    Advertisement interval 1 sec
+    Preemption enabled
+    Priority is 140
+    Description is "VRRP-GRP-3"
 
 
 --- [107] § GLBP ---
@@ -609,64 +596,40 @@ Total steps: 413
 <empty>
 
 [109/413] r1 R1(config-if)# glbp 1 ip 192.168.1.250
-  % Invalid input detected at '^' marker.
-  glbp 1 ip 192.168.1.250
-  ^
+<empty>
 
 [110/413] r1 R1(config-if)# glbp 1 priority 150
-  % Invalid input detected at '^' marker.
-  glbp 1 priority 150
-  ^
+<empty>
 
 [111/413] r1 R1(config-if)# glbp 1 preempt delay minimum 30
-  % Invalid input detected at '^' marker.
-  glbp 1 preempt delay minimum 30
-  ^
+<empty>
 
 [112/413] r1 R1(config-if)# glbp 1 load-balancing host-dependent
-  % Invalid input detected at '^' marker.
-  glbp 1 load-balancing host-dependent
-  ^
+<empty>
 
 [113/413] r1 R1(config-if)# glbp 1 load-balancing round-robin
-  % Invalid input detected at '^' marker.
-  glbp 1 load-balancing round-robin
-  ^
+<empty>
 
 [114/413] r1 R1(config-if)# glbp 1 weighting 100 lower 90 upper 95
-  % Invalid input detected at '^' marker.
-  glbp 1 weighting 100 lower 90 upper 95
-  ^
+<empty>
 
 [115/413] r1 R1(config-if)# glbp 1 weighting track 1 decrement 10
-  % Invalid input detected at '^' marker.
-  glbp 1 weighting track 1 decrement 10
-  ^
+<empty>
 
 [116/413] r1 R1(config-if)# glbp 1 timers 3 10
-  % Invalid input detected at '^' marker.
-  glbp 1 timers 3 10
-  ^
+<empty>
 
 [117/413] r1 R1(config-if)# glbp 1 timers redirect 600 7200
-  % Invalid input detected at '^' marker.
-  glbp 1 timers redirect 600 7200
-  ^
+<empty>
 
 [118/413] r1 R1(config-if)# glbp 1 authentication md5 key-string GlbpKey
-  % Invalid input detected at '^' marker.
-  glbp 1 authentication md5 key-string GlbpKey
-  ^
+<empty>
 
 [119/413] r1 R1(config-if)# glbp 1 name GLBP-GRP-1
-  % Invalid input detected at '^' marker.
-  glbp 1 name GLBP-GRP-1
-  ^
+<empty>
 
 [120/413] r1 R1(config-if)# glbp 1 forwarder preempt delay minimum 30
-  % Invalid input detected at '^' marker.
-  glbp 1 forwarder preempt delay minimum 30
-  ^
+<empty>
 
 [121/413] r1 R1(config-if)# exit
 <empty>
@@ -675,14 +638,20 @@ Total steps: 413
 <empty>
 
 [123/413] r1 R1# show glbp
-  % Invalid input detected at '^' marker.
-  show glbp
-       ^
+  GigabitEthernet0/0 - Group 1
+    State is Active
+    Virtual IP address is 192.168.1.250
+    Hello time 3 sec, hold time 10 sec
+    Preemption enabled
+    Active is local
+    Priority 150 (configured)
+    Weighting 100 (configured 100)
+    Load balancing: round-robin
+    Group name is "GLBP-GRP-1"
 
 [124/413] r1 R1# show glbp brief
-  % Invalid input detected at '^' marker.
-  show glbp brief
-       ^
+  Interface   Grp  Fwd Pri State    Address         Active router   Standby router
+  GigabitEthe 1    -   150 Active   192.168.1.250   local           unknown
 
 
 --- [125] § object tracking ---
@@ -1697,9 +1666,10 @@ Total steps: 413
   GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
 
 [335/413] r1 R1# show vrrp brief
-  % Invalid input detected at '^' marker.
-  show vrrp brief
-       ^
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
+  GigabitEthernet0/0 1   120     -   Y   Master  local           192.168.1.201
+  GigabitEthernet0/0 2   130     -   Y   Master  local           192.168.1.202
+  GigabitEthernet0/0 3   140     -   Y   Master  local           192.168.1.203
 
 [336/413] r1 R1# show track
   % Invalid input detected at '^' marker.
@@ -1735,7 +1705,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *17:26:52.000 UTC Sun May 17 2026
+  *17:30:24.000 UTC Sun May 17 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

@@ -29,6 +29,9 @@ import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
 import {
   buildHsrpInterfaceCommands, registerHsrpShowCommands,
 } from './cisco/CiscoHsrpCommands';
+import {
+  buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
+} from './cisco/CiscoVrrpGlbpCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 
 // Extracted command modules
@@ -277,6 +280,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
     buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, this.fhrp);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
@@ -313,6 +317,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private registerShowCommands(trie: CommandTrie): void {
     const getRouter = () => this.d();
     registerHsrpShowCommands(trie, this, this.fhrp);
+    registerVrrpGlbpShowCommands(trie, this, this.fhrp);
 
     trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));

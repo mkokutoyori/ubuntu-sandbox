@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-05-17T17:26:53.166Z
+Generated: 2026-05-17T17:30:23.082Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -1656,9 +1656,7 @@ Total steps: 388
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
 [310/388] r1 R1# show vrrp brief
-  % Invalid input detected at '^' marker.
-  show vrrp brief
-       ^
+  Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [311/388] r1 R1# show track
   % Invalid input detected at '^' marker.
@@ -1694,7 +1692,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *17:26:53.000 UTC Sun May 17 2026
+  *17:30:23.000 UTC Sun May 17 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
