@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-17T10:39:40.572Z
+Generated: 2026-05-17T10:52:08.678Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -328,48 +328,24 @@ Total steps: 322
 <empty>
 
 [82/322] r1 R1> show snmp
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 [83/322] r1 R1> show snmp community
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 [84/322] r1 R1> show snmp host
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 [85/322] r1 R1> show snmp group
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 
 --- [86] § SNMPv3 ---
@@ -437,37 +413,19 @@ Total steps: 322
 <empty>
 
 [99/322] r1 R1> show snmp user
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 [100/322] r1 R1> show snmp view
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 [101/322] r1 R1> show snmp engineID
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 
 --- [102] § NTP / clock ---
@@ -581,20 +539,19 @@ Total steps: 322
 
 [124/322] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
-  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
-  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [125/322] r1 R1> show ntp associations
-    address         ref clock       st   when   poll reach  delay  offset   disp
+    address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
 
 [126/322] r1 R1> show ntp associations detail
-    address         ref clock       st   when   poll reach  delay  offset   disp
+    address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *10:39:40.000 UTC Sun May 17 2026
+  *10:52:08.000 UTC Sun May 17 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -602,7 +559,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  10:39:40 UTC Sun May 17 2026
+  10:52:08 UTC Sun May 17 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -943,20 +900,50 @@ Total steps: 322
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
-  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
   
-  Total cdp entries displayed : 0
+  Total cdp entries displayed : 2
 
 [201/322] r1 R1> show cdp neighbors detail
-  Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
-                    S - Switch, H - Host, I - IGMP, r - Repeater
+  -------------------------
+  Device ID: L1
+  Entry address(es):
+  Platform: Linux Host,  Capabilities: Host
+  Interface: GigabitEthernet0/0,  Port ID (outgoing port): eth0
+  Holdtime : 180 sec
   
-  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  -------------------------
+  Device ID: R2
+  Entry address(es):
+  Platform: Cisco 2911,  Capabilities: Router
+  Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
+  Holdtime : 180 sec
   
-  Total cdp entries displayed : 0
+  Total cdp entries displayed : 2
 
 [202/322] r1 R1> show cdp interface
-  CDP is not enabled on any interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/1 is up, line protocol is up
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/2 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  GigabitEthernet0/3 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
+  Loopback0 is up, line protocol is down
+    Encapsulation ARPA
+    Sending CDP packets every 60 seconds
+    Holdtime is 180 seconds
 
 [203/322] r1 R1> show cdp traffic
   Global CDP information:
@@ -977,8 +964,10 @@ Total steps: 322
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
+  L1                  Gig 0/0        120        Host            eth0
+  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 0
+  Total entries displayed: 2
 
 [206/322] r1 R1> show lldp neighbors detail
   Capability codes:
@@ -986,8 +975,10 @@ Total steps: 322
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
+  L1                  Gig 0/0        120        Host            eth0
+  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 0
+  Total entries displayed: 2
 
 [207/322] r1 R1> show lldp traffic
   Global LLDP Information:
@@ -1158,9 +1149,42 @@ Total steps: 322
   Loopback0                  1.1.1.1         YES manual administratively down down
 
 [218/322] r1 R1# show interfaces
-  % Invalid input detected at '^' marker.
-  show interfaces
-       ^
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/2 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  GigabitEthernet0/3 is up, line protocol is down
+    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
+  Loopback0 is up, line protocol is up
+    Hardware is Loopback
+    Internet address is 1.1.1.1/32
 
 [219/322] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1287,36 +1311,30 @@ Total steps: 322
        ^
 
 [249/322] r1 R1# show snmp
-  Chassis: 0
+  SNMP agent not enabled
   0 SNMP packets input
-      0 Bad SNMP version errors
-      0 Unknown community name
-      0 Encoding errors
   0 SNMP packets output
-      0 Too big errors
-      0 No such name errors
-  SNMP logging: disabled
 
 [250/322] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
-  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)
-  clock offset is 0.0000 msec, root delay is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
-    address         ref clock       st   when   poll reach  delay  offset   disp
+    address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
+  No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *10:39:40.000 UTC Sun May 17 2026
+  *10:52:08.000 UTC Sun May 17 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
-  Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID
+  Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
+  L1               Gig 0/0           180        H           Linux Host eth 0
+  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
   
-  Total cdp entries displayed : 0
+  Total cdp entries displayed : 2
 
 [254/322] r1 R1# show lldp neighbors
   Capability codes:
@@ -1324,8 +1342,10 @@ Total steps: 322
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
+  L1                  Gig 0/0        120        Host            eth0
+  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 0
+  Total entries displayed: 2
 
 [255/322] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1380,23 +1400,57 @@ Total steps: 322
           ^
 
 [261/322] r1 R1# show interfaces GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  show interfaces GigabitEthernet0/0
-       ^
+  GigabitEthernet0/0 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
 
 [262/322] r1 R1# show interfaces GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  show interfaces GigabitEthernet0/1
-       ^
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
 
 [263/322] r1 R1# show ip interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  show ip interface GigabitEthernet0/1
-                    ^
+  GigabitEthernet0/1 is up, line protocol is up
+    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Internet address is 10.0.0.1/30
+    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation ARPA, loopback not set
+    Full-duplex, 1000Mbps, media type is RJ45
+    output flow-control is unsupported, input flow-control is unsupported
+    ARP type: ARPA, ARP Timeout 04:00:00
 
 [264/322] r1 R1# show controllers
-  Interface - controller status
-    Hardware is present and operational
+  GigabitEthernet0/0 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/1 -
+    Hardware is present, link is connected
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  GigabitEthernet0/3 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Loopback0 -
+    Hardware is present, link is down
+    Administrative state: up
     0 carrier transitions
 
 [265/322] r1 R1# show tech-support
@@ -1409,14 +1463,11 @@ Total steps: 322
   PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
 
 [267/322] r1 R1# show environment
-  SYSTEM TEMPERATURE is OK
-  Temperature value: 35C, state: GREEN
-  Power supply: OK
-  Fan: OK
+  Environmental monitoring is not instrumented on this platform.
 
 [268/322] r1 R1# show redundancy
   Redundant System Information :
-         Available system uptime = 0 minutes
+         Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
@@ -1430,31 +1481,25 @@ Total steps: 322
 [271/322] r1 R1# show hosts
   Default domain is not set
   Name/address lookup uses domain service
-  Name servers are 255.255.255.255
-  
-  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
   
   Host                      Port  Flags      Age Type   Address(es)
 
 [272/322] r1 R1# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
-  Minimum expected Diffie Hellman key size : 1024 bits
 
 [273/322] r1 R1# show line
-     Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int
-  *    0 CTY              -    -      -    -    -      1       0     0/0       -
-       1 VTY              -    -      -    -    -      0       0     0/0       -
-       2 VTY              -    -      -    -    -      0       0     0/0       -
-       3 VTY              -    -      -    -    -      0       0     0/0       -
-       4 VTY              -    -      -    -    -      0       0     0/0       -
-       5 VTY              -    -      -    -    -      0       0     0/0       -
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
 
 [274/322] r1 R1# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
-  Baud rate (TX/RX) is 9600/9600
-  Status: PSI Enabled, Ready, Active
   Editing is enabled.
   History is enabled, history size is 20.
 

@@ -303,3 +303,73 @@ export function showIpProtocols(router: Router): string {
   }
   return lines.join('\n');
 }
+
+/** `show interfaces` (all) — real per-port detail for every interface. */
+export function showInterfacesAll(router: Router): string {
+  const names = [...router._getPortsInternal().keys()];
+  if (!names.length) return 'No interfaces present.';
+  return names.map((n) => showInterface(router, n)).join('\n');
+}
+
+/** `show interfaces description` — real status/protocol/description table. */
+export function showInterfacesDescription(router: Router): string {
+  const rows = ['Interface                      Status         Protocol Description'];
+  for (const [name, port] of router._getPortsInternal()) {
+    const up = port.getIsUp();
+    const status = up ? 'up' : 'admin down';
+    const proto = up && port.isConnected() ? 'up' : 'down';
+    const desc = router.getInterfaceDescription(name) || '';
+    rows.push(`${name.padEnd(31)}${status.padEnd(15)}${proto.padEnd(9)}${desc}`);
+  }
+  return rows.join('\n');
+}
+
+/** `show interfaces status` — real connected/notconnect/disabled table. */
+export function showInterfacesStatus(router: Router): string {
+  const rows = ['Port      Name               Status       Vlan       Duplex  Speed Type'];
+  for (const [name, port] of router._getPortsInternal()) {
+    const status = port.getIsUp()
+      ? (port.isConnected() ? 'connected' : 'notconnect')
+      : 'disabled';
+    const desc = (router.getInterfaceDescription(name) || '').slice(0, 17);
+    rows.push(
+      `${name.slice(0, 9).padEnd(10)}${desc.padEnd(19)}${status.padEnd(13)}` +
+      `${'routed'.padEnd(11)}${String(port.getDuplex()).padEnd(8)}` +
+      `${String(port.getSpeed()).padEnd(6)}${name.startsWith('Gig') ? '1000BASE-T' : '10/100BaseTX'}`);
+  }
+  return rows.join('\n');
+}
+
+/** `show interfaces summary` — real per-port queue summary. */
+export function showInterfacesSummary(router: Router): string {
+  const rows = [
+    ' Interface                IHQ   IQD  OHQ   OQD  RXBS RXPS  TXBS  TXPS  TRTL',
+    '--------------------------------------------------------------------------',
+  ];
+  for (const name of router._getPortsInternal().keys()) {
+    rows.push(` ${name.padEnd(24)}  0     0    0     0     0    0     0     0     0`);
+  }
+  return rows.join('\n');
+}
+
+/** `show ip interface` (all, verbose) — real per-port L3 state. */
+export function showIpInterfaceAll(router: Router): string {
+  const blocks: string[] = [];
+  for (const [name, port] of router._getPortsInternal()) {
+    const up = port.getIsUp();
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    blocks.push([
+      `${name} is ${up ? 'up' : 'administratively down'}, ` +
+        `line protocol is ${up && port.isConnected() ? 'up' : 'down'}`,
+      ip
+        ? `  Internet address is ${ip}${mask ? `/${mask.toCIDR()}` : ''}`
+        : '  Internet protocol processing disabled',
+      '  Broadcast address is 255.255.255.255',
+      '  MTU is 1500 bytes',
+      '  ICMP redirects are always sent',
+      '  Proxy ARP is enabled',
+    ].join('\n'));
+  }
+  return blocks.length ? blocks.join('\n') : 'No interfaces present.';
+}

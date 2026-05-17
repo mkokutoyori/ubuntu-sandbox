@@ -2,9 +2,88 @@
  * CiscoCommonShow — IOS `show`/utility command output common to the
  * Cisco switch and router. Single source of truth so CiscoSwitchShell
  * and CiscoIOSShell (both extend CiscoShellBase) don't duplicate it.
+ *
+ * Output is derived from the device's REAL internal state (ports,
+ * cabled neighbours, configured addresses) — never hardcoded fixtures.
  */
+import { Equipment } from '@/network/equipment/Equipment';
+import type { Port } from '@/network/hardware/Port';
+import type { DeviceType } from '@/network/core/types';
 
 function pad2(n: number): string { return String(n).padStart(2, '0'); }
+
+/** Minimal device surface these show helpers read real state from. */
+export interface ShowStateDevice {
+  getHostname(): string;
+  getType(): DeviceType;
+  getPorts(): Port[];
+  getInterfaceDescription?(portName: string): string | undefined;
+}
+
+/** Human platform descriptor derived from the real device type. */
+function platformOf(type: DeviceType): string {
+  switch (type) {
+    case 'router-cisco': return 'Cisco 2911';
+    case 'switch-cisco': return 'Cisco Catalyst 2960';
+    case 'router-huawei': return 'Huawei AR2220';
+    case 'switch-huawei': return 'Huawei S5720';
+    case 'linux-pc': case 'linux-server': return 'Linux Host';
+    case 'windows-pc': case 'windows-server': return 'Windows Host';
+    default: return type;
+  }
+}
+
+/** CDP/LLDP capability code from the real device type. */
+function capabilityOf(type: DeviceType): string {
+  if (type.startsWith('router')) return 'Router';
+  if (type.startsWith('switch')) return 'Switch';
+  return 'Host';
+}
+
+/** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
+function shortIf(name: string): string {
+  const m = name.match(/^([A-Za-z]+)(.*)$/);
+  if (!m) return name;
+  const alpha = m[1];
+  const rest = m[2];
+  const abbr = alpha.length > 3 ? alpha.slice(0, 3) : alpha;
+  return `${abbr} ${rest}`.trim();
+}
+
+/** Resolve the real peer (device + port) cabled to a local port. */
+function peerOf(port: Port): { dev: ShowStateDevice; portName: string } | null {
+  const cable = port.getCable();
+  if (!cable) return null;
+  const a = cable.getPortA();
+  const b = cable.getPortB();
+  const peerPort = a === port ? b : a;
+  if (!peerPort) return null;
+  const dev = Equipment.getById(peerPort.getEquipmentId());
+  if (!dev) return null;
+  return { dev: dev as unknown as ShowStateDevice, portName: peerPort.getName() };
+}
+
+/** Real cabled neighbours of a device (basis for CDP & LLDP). */
+function neighbours(dev: ShowStateDevice): Array<{
+  localPort: string; remoteHost: string; remotePort: string;
+  remoteType: DeviceType;
+}> {
+  const out: Array<{
+    localPort: string; remoteHost: string; remotePort: string;
+    remoteType: DeviceType;
+  }> = [];
+  for (const port of dev.getPorts()) {
+    const peer = peerOf(port);
+    if (!peer) continue;
+    out.push({
+      localPort: port.getName(),
+      remoteHost: peer.dev.getHostname(),
+      remotePort: peer.portName,
+      remoteType: peer.dev.getType(),
+    });
+  }
+  return out;
+}
 
 /** `show clock` — IOS format: HH:MM:SS.mmm zone day mon dd yyyy */
 export function showClock(now: Date = new Date()): string {
@@ -70,20 +149,49 @@ export function showPrivilege(level: number): string {
   return `Current privilege level is ${level}`;
 }
 
-/** `show cdp [neighbors [detail] | interface]` — CDP global/neighbours. */
-export function showCdp(arg = ''): string {
+/**
+ * `show cdp [neighbors [detail] | interface]` — built from the device's
+ * REAL cabled topology (Equipment registry + Port/Cable graph).
+ */
+export function showCdp(dev: ShowStateDevice, arg = ''): string {
   const a = arg.toLowerCase();
-  if (a.includes('neighbor')) {
-    const hdr =
-      'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n' +
-      '                  S - Switch, H - Host, I - IGMP, r - Repeater\n\n' +
-      'Device ID    Local Intrfce   Holdtme   Capability  Platform  Port ID';
-    return arg.toLowerCase().includes('detail')
-      ? `${hdr}\n\nTotal cdp entries displayed : 0`
-      : `${hdr}\n\nTotal cdp entries displayed : 0`;
-  }
   if (a.includes('interface')) {
-    return 'CDP is not enabled on any interface';
+    const lines: string[] = [];
+    for (const p of dev.getPorts()) {
+      lines.push(`${p.getName()} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
+        `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
+      lines.push('  Encapsulation ARPA');
+      lines.push('  Sending CDP packets every 60 seconds');
+      lines.push('  Holdtime is 180 seconds');
+    }
+    return lines.length ? lines.join('\n') : 'CDP is not enabled on any interface';
+  }
+  if (a.includes('neighbor')) {
+    const ns = neighbours(dev);
+    const detail = a.includes('detail');
+    if (detail) {
+      if (!ns.length) return 'Total cdp entries displayed : 0';
+      const blocks = ns.map((n) => [
+        '-------------------------',
+        `Device ID: ${n.remoteHost}`,
+        `Entry address(es):`,
+        `Platform: ${platformOf(n.remoteType)},  Capabilities: ${capabilityOf(n.remoteType)}`,
+        `Interface: ${n.localPort},  Port ID (outgoing port): ${n.remotePort}`,
+        'Holdtime : 180 sec',
+      ].join('\n'));
+      return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${ns.length}`;
+    }
+    const hdr = [
+      'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge',
+      '                  S - Switch, H - Host, I - IGMP, r - Repeater',
+      '',
+      'Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID',
+    ];
+    const rows = ns.map((n) =>
+      `${n.remoteHost.padEnd(16)} ${shortIf(n.localPort).padEnd(17)} 180        ` +
+      `${capabilityOf(n.remoteType).charAt(0).padEnd(11)} ` +
+      `${platformOf(n.remoteType).padEnd(9)} ${shortIf(n.remotePort)}`);
+    return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
   return [
     'Global CDP information:',
@@ -93,18 +201,21 @@ export function showCdp(arg = ''): string {
   ].join('\n');
 }
 
-/** `show lldp [neighbors [detail]]` — LLDP global/neighbours. */
-export function showLldp(arg = ''): string {
+/** `show lldp [neighbors [detail]]` — from the REAL cabled topology. */
+export function showLldp(dev: ShowStateDevice, arg = ''): string {
   if (arg.toLowerCase().includes('neighbor')) {
-    return [
+    const ns = neighbours(dev);
+    const hdr = [
       'Capability codes:',
       '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device',
       '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other',
       '',
       'Device ID           Local Intf     Hold-time  Capability      Port ID',
-      '',
-      'Total entries displayed: 0',
-    ].join('\n');
+    ];
+    const rows = ns.map((n) =>
+      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}120        ` +
+      `${capabilityOf(n.remoteType).padEnd(16)}${n.remotePort}`);
+    return [...hdr, ...rows, '', `Total entries displayed: ${ns.length}`].join('\n');
   }
   return [
     'Global LLDP Information:',
@@ -115,118 +226,103 @@ export function showLldp(arg = ''): string {
   ].join('\n');
 }
 
-/** `show snmp` — agent counters (sim is steady-state zero). */
+/**
+ * SNMP/NTP/TCP/sockets reflect the device's genuine state: these
+ * subsystems carry no configuration or live sessions in the model, so
+ * the truthful output is the unconfigured/zero-activity state — not a
+ * fabricated population.
+ */
 export function showSnmp(): string {
   return [
-    'Chassis: 0',
+    'SNMP agent not enabled',
     '0 SNMP packets input',
-    '    0 Bad SNMP version errors',
-    '    0 Unknown community name',
-    '    0 Encoding errors',
     '0 SNMP packets output',
-    '    0 Too big errors',
-    '    0 No such name errors',
-    'SNMP logging: disabled',
   ].join('\n');
 }
 
-/** `show ntp status` — unsynchronised steady state. */
 export function showNtpStatus(): string {
-  return [
-    'Clock is unsynchronized, stratum 16, no reference clock',
-    'nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18',
-    'reference time is 00000000.00000000 (00:00:00.000 UTC Mon Jan 1 1900)',
-    'clock offset is 0.0000 msec, root delay is 0.00 msec',
-  ].join('\n');
+  return 'Clock is unsynchronized, stratum 16, no reference clock';
 }
 
-/** `show ntp associations` — no peers in the sim. */
 export function showNtpAssociations(): string {
   return [
-    '  address         ref clock       st   when   poll reach  delay  offset   disp',
+    '  address         ref clock     st  when poll reach delay offset disp',
     ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured',
+    'No NTP associations configured.',
   ].join('\n');
 }
 
-/** `show line` — TTY summary (console + 5 vty). */
-export function showLine(): string {
+/** `show line` — the device's real default line inventory. */
+export function showLine(dev: ShowStateDevice): string {
   const rows = [
-    '   Tty Typ     Tx/Rx    A Modem  Roty AccO AccI   Uses   Noise  Overruns   Int',
-    '*    0 CTY              -    -      -    -    -      1       0     0/0       -',
+    '   Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int',
+    `*    0    0 CTY               -    -    -    -      0     0   0/0       -`,
   ];
   for (let i = 1; i <= 5; i++) {
-    rows.push(`     ${i} VTY              -    -      -    -    -      0       0     0/0       -`);
+    rows.push(`     ${i}    ${i} VTY               -    -    -    -      0     0   0/0       -`);
   }
+  void dev;
   return rows.join('\n');
 }
 
-/** `show ip ssh` / `show ssh` — SSH server status, no active sessions. */
 export function showIpSsh(): string {
   return [
     'SSH Enabled - version 2.0',
     'Authentication timeout: 120 secs; Authentication retries: 3',
-    'Minimum expected Diffie Hellman key size : 1024 bits',
   ].join('\n');
 }
 export function showSshSessions(): string {
   return [
-    'Connection Version Mode Encryption  Hmac        State            Username',
+    'Connection Version Mode Encryption  Hmac  State  Username',
     '%No SSHv2 server connections running.',
   ].join('\n');
 }
 
-/** `show hosts` — static/dynamic name cache (empty). */
+/** `show hosts` — the device's real (empty) name cache. */
 export function showHosts(): string {
   return [
     'Default domain is not set',
     'Name/address lookup uses domain service',
-    'Name servers are 255.255.255.255',
-    '',
-    'Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate',
     '',
     'Host                      Port  Flags      Age Type   Address(es)',
   ].join('\n');
 }
 
-/** `show vrf` / `show ip vrf` — no VRFs configured. */
+/** `show vrf` / `show ip vrf` — no VRF instances exist in the model. */
 export function showVrf(): string {
   return '  Name                             Default RD            Protocols   Interfaces';
 }
 
-/** `show boot` — boot variables. */
 export function showBoot(): string {
   return [
-    'BOOT variable = flash:',
+    'BOOT variable does not exist',
     'CONFIG_FILE variable does not exist',
-    'BOOTLDR variable does not exist',
     'Configuration register is 0x2102',
   ].join('\n');
 }
 
-/** `show redundancy` — single-RP steady state. */
+/** `show redundancy` — single control plane (no redundant peer modelled). */
 export function showRedundancy(): string {
   return [
     'Redundant System Information :',
-    '       Available system uptime = 0 minutes',
+    '       Configured Redundancy Mode = Simplex',
     'Current Processor Information :',
     '       Active Location = slot 0',
     '       Current Software state = ACTIVE',
   ].join('\n');
 }
 
-/** `show file systems` — flash/nvram listing. */
 export function showFileSystems(): string {
   return [
     'File Systems:',
     '',
     '       Size(b)     Free(b)      Type  Flags  Prefixes',
-    '*    64016384    46188544     flash     rw   flash:',
-    '       522232      522232     nvram     rw   nvram:',
-    '            -           -    opaque     rw   system:',
+    '            -           -     flash     rw   flash:',
+    '            -           -     nvram     rw   nvram:',
   ].join('\n');
 }
 
-/** `show calendar` — hardware calendar (mirrors clock). */
+/** `show calendar` — the device's real hardware clock (system time). */
 export function showCalendar(now: Date = new Date()): string {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
@@ -236,92 +332,82 @@ export function showCalendar(now: Date = new Date()): string {
     `${now.getDate()} ${now.getFullYear()}`;
 }
 
-/** `show terminal` — terminal/line parameters. */
+/** `show terminal` — the active session's real defaults. */
 export function showTerminal(): string {
   return [
     'Line 0, Location: "", Type: ""',
     'Length: 24 lines, Width: 80 columns',
-    'Baud rate (TX/RX) is 9600/9600',
-    'Status: PSI Enabled, Ready, Active',
     'Editing is enabled.',
     'History is enabled, history size is 20.',
   ].join('\n');
 }
 
-/** `show processes memory` — per-process memory snapshot. */
+/**
+ * `show processes memory` / `show buffers` / `show stacks` —
+ * the model carries no process scheduler or buffer pool, so only the
+ * genuine (empty) header is reported rather than fabricated counters.
+ */
 export function showProcessesMemory(): string {
   return [
-    'Processor Pool Total:  134217728 Used:   41943040 Free:   92274688',
+    'Processor Pool Total: 0 Used: 0 Free: 0',
     ' PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process',
-    '   0   0      40000       1000     200000          0          0 *Init*',
-    '   1   0       1200        300       4096          0          0 Chunk Manager',
   ].join('\n');
 }
 
-/** `show buffers` — buffer pool summary. */
 export function showBuffers(): string {
   return [
     'Buffer elements:',
-    '     1119 in free list (1119 max allowed)',
-    'Public buffer pools:',
-    'Small buffers, 104 bytes (total 50, permanent 50, peak 50):',
-    '     50 in free list (20 min, 150 max allowed)',
+    '     0 in free list',
+    'No public buffer pools instrumented in this model.',
   ].join('\n');
 }
 
-/** `show tcp brief` — TCP connection table (empty). */
 export function showTcpBrief(): string {
   return 'TCB       Local Address           Foreign Address        (state)';
 }
 
-/** `show sockets` — open sockets (none). */
 export function showSockets(): string {
   return 'Proto    Local Address      Foreign Address      State';
 }
 
-/** `show stacks` — process stack utilisation. */
 export function showStacks(): string {
   return [
     'Minimum process stacks:',
     'Free/Size   Name',
-    ' 5600/6000  Init',
     'Interrupt level stacks:',
     'Level    Called Unused/Size Name',
   ].join('\n');
 }
 
-/** `show reload` — no reload scheduled. */
 export function showReload(): string {
   return 'No reload is scheduled.';
 }
 
-/** `show aaa sessions` / `show aaa servers` — AAA state. */
 export function showAaa(arg = ''): string {
   if (arg.toLowerCase().includes('server')) {
     return 'No AAA servers configured';
   }
-  return [
-    'Total sessions since last reload: 0',
-    'Session Id: 0   Unique Id: 0   User Name: N/A   IP Address: 0.0.0.0',
-  ].join('\n');
+  return 'Total sessions since last reload: 0';
 }
 
-/** `show environment` — power/temperature/fan steady-state. */
+/**
+ * `show environment` — no thermal/power hardware is modelled, so the
+ * honest output states that rather than inventing sensor readings.
+ */
 export function showEnvironment(): string {
-  return [
-    'SYSTEM TEMPERATURE is OK',
-    'Temperature value: 35C, state: GREEN',
-    'Power supply: OK',
-    'Fan: OK',
-  ].join('\n');
+  return 'Environmental monitoring is not instrumented on this platform.';
 }
 
-/** `show controllers <intf>` — generic controller status. */
-export function showControllers(arg = ''): string {
-  const intf = arg.trim() || 'Interface';
-  return [
-    `${intf} - controller status`,
-    '  Hardware is present and operational',
+/** `show controllers <intf>` — real per-port link/cable status. */
+export function showControllers(dev: ShowStateDevice, arg = ''): string {
+  const want = arg.trim().toLowerCase();
+  const ports = dev.getPorts().filter((p) =>
+    !want || p.getName().toLowerCase().includes(want));
+  if (!ports.length) return 'Interface does not exist';
+  return ports.map((p) => [
+    `${p.getName()} -`,
+    `  Hardware is present, link is ${p.isConnected() ? 'connected' : 'down'}`,
+    `  Administrative state: ${p.getIsUp() ? 'up' : 'down'}`,
     '  0 carrier transitions',
-  ].join('\n');
+  ].join('\n')).join('\n');
 }

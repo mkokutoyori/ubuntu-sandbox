@@ -29,6 +29,7 @@ import {
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showProcessesMemory, showBuffers, showTcpBrief, showSockets,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
+  type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -75,6 +76,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected d(): TDevice {
     if (!this.deviceRef) throw new Error('Device reference not set (BUG: called outside execute)');
     return this.deviceRef;
+  }
+
+  /** Device as the real-state surface the shared show helpers read. */
+  protected cs(): ShowStateDevice {
+    return this.d() as unknown as ShowStateDevice;
   }
 
   // ─── Initialization ─────────────────────────────────────────────
@@ -254,15 +260,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show ntp', 'Display NTP associations', () =>
       showNtpAssociations());
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
-      showCdp(a.join(' ')));
+      showCdp(this.cs(), a.join(' ')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
-      showLldp(a.join(' ')));
+      showLldp(this.cs(), a.join(' ')));
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp());
     trie.registerGreedy('show controllers', 'Display controller status', (a) =>
-      showControllers(a.join(' ')));
+      showControllers(this.cs(), a.join(' ')));
     trie.registerGreedy('show environment', 'Display environment', () =>
       showEnvironment());
-    trie.registerGreedy('show line', 'Display TTY lines', () => showLine());
+    trie.registerGreedy('show line', 'Display TTY lines', () =>
+      showLine(this.cs()));
     trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
     trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
       showSshSessions());

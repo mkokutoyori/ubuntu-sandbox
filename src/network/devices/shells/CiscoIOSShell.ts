@@ -331,12 +331,33 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter()));
 
-    trie.registerGreedy('show interface', 'Display interface status', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
+    // `show interface[s] [<name>|description|status|summary]`.
+    // Registered under both the singular and plural IOS spellings;
+    // dispatch logic lives in one place (single source of truth).
+    const showInterfaceCmd = (args: string[]): string => {
+      const sub = (args[0] || '').toLowerCase();
+      if (args.length === 0) return Show.showInterfacesAll(getRouter());
+      if (sub === 'description') return Show.showInterfacesDescription(getRouter());
+      if (sub === 'status') return Show.showInterfacesStatus(getRouter());
+      if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
       const ifName = resolveInterfaceName(getRouter(), args.join(' '));
       if (!ifName) return `% Invalid input detected at '^' marker.\nshow interface ${args.join(' ')}\n     ^`;
       return Show.showInterface(getRouter(), ifName);
-    });
+    };
+    trie.registerGreedy('show interface', 'Display interface status', showInterfaceCmd);
+    trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
+
+    // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
+    const showIpInterfaceCmd = (args: string[]): string => {
+      const sub = (args[0] || '').toLowerCase();
+      if (args.length === 0) return Show.showIpInterfaceAll(getRouter());
+      if (sub === 'brief') return Show.showIpIntBrief(getRouter());
+      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
+      if (!ifName) return `% Invalid input detected at '^' marker.`;
+      return Show.showInterface(getRouter(), ifName);
+    };
+    trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
+    trie.registerGreedy('show ip interfaces', 'Display IP interface status', showIpInterfaceCmd);
   }
 
   // ─── Ping Command ────────────────────────────────────────────────
