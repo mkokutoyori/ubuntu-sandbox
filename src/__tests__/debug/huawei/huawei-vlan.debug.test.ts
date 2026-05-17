@@ -1,7 +1,8 @@
 /**
- * Huawei VRP VLAN management — create/delete, vlan batch, access/trunk/
- * hybrid port types, PVID, voice & MUX VLAN, VLAN interfaces (SVI),
- * VLAN description, display vlan/port.
+ * Huawei VRP VLAN management on an L2-only switch — create/delete,
+ * vlan batch, access/trunk/hybrid port types, PVID, voice & MUX VLAN,
+ * VLAN description, display vlan/port. Vlanif/L3 is exercised only to
+ * confirm the L2 switch does not act as a router.
  *
  * 70 steps. Transcript dump for gap analysis.
  */
@@ -70,7 +71,7 @@ describe('debug-dump: huawei-vlan', () => {
       'port default vlan 200',
       'quit',
 
-      { section: 'VLAN interface (SVI) + L3', cmd: 'interface Vlanif10' },
+      { section: 'Vlanif/L3 on L2 switch (expect rejected/ignored — switch does not route)', cmd: 'interface Vlanif10' },
       'ip address 192.168.10.1 255.255.255.0',
       'description Gateway-SALES',
       'undo shutdown',
@@ -108,7 +109,7 @@ describe('debug-dump: huawei-vlan', () => {
       'huawei-vlan',
       topology,
       steps,
-      'focus=VLAN lifecycle, access/trunk/hybrid, SVI, voice/mux/QinQ',
+      'focus=L2 VLAN lifecycle, access/trunk/hybrid, voice/mux/QinQ (Vlanif shown only to confirm L2 switch rejects L3)',
     );
   });
 });

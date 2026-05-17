@@ -1,9 +1,12 @@
 /**
  * Huawei switch LAN scenario — a real little network: two Linux PCs and
- * two Windows PCs cabled to a Huawei S5720. We segment them into VLANs,
- * assign IPs from the hosts, prove intra-VLAN reachability, prove
- * inter-VLAN isolation, then enable L3 SVIs for inter-VLAN routing and
- * re-test. MAC/ARP tables are inspected throughout.
+ * two Windows PCs cabled to a Huawei S5720. The switch is a pure LAYER-2
+ * device in this project (no routing): we segment hosts into VLANs,
+ * assign IPs from the hosts, prove intra-VLAN reachability and inter-VLAN
+ * ISOLATION (which is the correct L2 behaviour — crossing VLANs would
+ * need an external router, out of the switch's scope). Any Vlanif/L3
+ * config is exercised only to confirm the L2 switch rejects/ignores it.
+ * MAC/ARP tables are inspected throughout.
  *
  * 64 steps spanning the switch CLI + Linux/Windows host shells.
  */
@@ -67,8 +70,8 @@ describe('debug-dump: huawei-lan-connectivity', () => {
       { on: 'linux2', cmd: 'ping -c 2 192.168.20.22' },
       { on: 'win2', cmd: 'ping -n 2 192.168.20.12' },
 
-      // ── inter-VLAN isolation (should fail: no L3 yet) ──
-      { section: 'inter-VLAN ping (expect FAIL)', on: 'linux1', cmd: 'ping -c 2 192.168.20.12' },
+      // ── inter-VLAN isolation: CORRECT on an L2 switch (no routing) ──
+      { section: 'inter-VLAN ping (expect FAIL — L2 switch never routes)', on: 'linux1', cmd: 'ping -c 2 192.168.20.12' },
       { on: 'win1', cmd: 'ping -n 2 192.168.20.22' },
 
       // ── switch learned state ──
@@ -77,8 +80,10 @@ describe('debug-dump: huawei-lan-connectivity', () => {
       { on: 'sw', cmd: 'display mac-address vlan 20' },
       { on: 'sw', cmd: 'display interface GigabitEthernet0/0/1' },
 
-      // ── enable inter-VLAN routing via SVIs ──
-      { section: 'inter-VLAN routing (SVI)', on: 'sw', cmd: 'system-view' },
+      // ── L3/SVI on an L2 switch: expected to be rejected/ignored ──
+      // (kept as gap analysis — confirms the switch does NOT become a
+      //  router; inter-VLAN would require a separate L3 device.)
+      { section: 'Vlanif/L3 on L2 switch (expect rejected/ignored)', on: 'sw', cmd: 'system-view' },
       { on: 'sw', cmd: 'interface Vlanif10' },
       { on: 'sw', cmd: 'ip address 192.168.10.1 255.255.255.0' },
       { on: 'sw', cmd: 'quit' },
@@ -89,8 +94,9 @@ describe('debug-dump: huawei-lan-connectivity', () => {
       { on: 'sw', cmd: 'display ip interface brief' },
       { on: 'sw', cmd: 'display ip routing-table' },
 
-      // ── point hosts at their gateways and re-test inter-VLAN ──
-      { section: 'gateways + inter-VLAN retry', on: 'linux1', cmd: 'route add default gw 192.168.10.1' },
+      // ── even with host gateways set, inter-VLAN STAYS isolated ──
+      // (correct: an L2 switch has no SVI/route to forward between VLANs)
+      { section: 'host gateways set — inter-VLAN STILL isolated (L2)', on: 'linux1', cmd: 'route add default gw 192.168.10.1' },
       { on: 'linux2', cmd: 'route add default gw 192.168.20.1' },
       { on: 'linux1', cmd: 'ping -c 2 192.168.20.12' },
       { on: 'linux1', cmd: 'traceroute 192.168.20.12' },
@@ -108,7 +114,7 @@ describe('debug-dump: huawei-lan-connectivity', () => {
       'huawei-lan-connectivity',
       topology,
       steps,
-      'focus=VLAN segmentation, intra/inter-VLAN reachability, SVI routing',
+      'focus=L2 switch: VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation (no routing)',
     );
   }, 120000);
 });

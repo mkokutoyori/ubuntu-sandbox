@@ -1,8 +1,8 @@
 ============================================================
 Huawei switch debug transcript — huawei-lan-connectivity
-Generated: 2026-05-17T00:15:07.171Z
+Generated: 2026-05-17T00:17:18.963Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
-focus=VLAN segmentation, intra/inter-VLAN reachability, SVI routing
+focus=L2 switch: VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation (no routing)
 Total steps: 68
 ============================================================
 
@@ -236,12 +236,12 @@ Total steps: 68
 --- [39] § intra-VLAN ping (expect OK) ---
 [39/68] linux1 linux1$ ping -c 2 192.168.10.21
   PING 192.168.10.21 (192.168.10.21) 56(84) bytes of data.
-  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.496 ms
-  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.346 ms
+  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.966 ms
+  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.587 ms
   
   --- 192.168.10.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.346/0.921/1.496/0.575 ms
+  rtt min/avg/max/mdev = 0.587/1.277/1.966/0.690 ms
 
 [40/68] win1 win1$ ping -n 2 192.168.10.11
   
@@ -252,16 +252,16 @@ Total steps: 68
   Ping statistics for 192.168.10.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [41/68] linux2 linux2$ ping -c 2 192.168.20.22
   PING 192.168.20.22 (192.168.20.22) 56(84) bytes of data.
-  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.357 ms
-  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.144 ms
+  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.664 ms
+  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.231 ms
   
   --- 192.168.20.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.144/0.251/0.357/0.106 ms
+  rtt min/avg/max/mdev = 0.231/0.447/0.664/0.217 ms
 
 [42/68] win2 win2$ ping -n 2 192.168.20.12
   
@@ -275,7 +275,7 @@ Total steps: 68
       Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 
---- [43] § inter-VLAN ping (expect FAIL) ---
+--- [43] § inter-VLAN ping (expect FAIL — L2 switch never routes) ---
 [43/68] linux1 linux1$ ping -c 2 192.168.20.12
   PING 192.168.20.12 (192.168.20.12) 56(84) bytes of data.
   connect: Network is unreachable
@@ -322,7 +322,7 @@ Total steps: 68
   Output: 0 packets, 0 bytes
 
 
---- [49] § inter-VLAN routing (SVI) ---
+--- [49] § Vlanif/L3 on L2 switch (expect rejected/ignored) ---
 [49/68] sw <SW-LAB> system-view
   Enter system view, return user view with return command.
 
@@ -354,7 +354,7 @@ Total steps: 68
   Error: Unrecognized command "display ip routing-table"
 
 
---- [59] § gateways + inter-VLAN retry ---
+--- [59] § host gateways set — inter-VLAN STILL isolated (L2) ---
 [59/68] linux1 linux1$ route add default gw 192.168.10.1
 <empty>
 

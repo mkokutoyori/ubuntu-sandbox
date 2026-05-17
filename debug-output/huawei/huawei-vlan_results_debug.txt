@@ -1,8 +1,8 @@
 ============================================================
 Huawei switch debug transcript — huawei-vlan
-Generated: 2026-05-17T00:14:46.009Z
+Generated: 2026-05-17T00:17:18.960Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
-focus=VLAN lifecycle, access/trunk/hybrid, SVI, voice/mux/QinQ
+focus=L2 VLAN lifecycle, access/trunk/hybrid, voice/mux/QinQ (Vlanif shown only to confirm L2 switch rejects L3)
 Total steps: 78
 ============================================================
 
@@ -193,7 +193,7 @@ Total steps: 78
 <empty>
 
 
---- [50] § VLAN interface (SVI) + L3 ---
+--- [50] § Vlanif/L3 on L2 switch (expect rejected/ignored — switch does not route) ---
 [50/78] sw <SW-VLAN> interface Vlanif10
   Error: Unrecognized command "interface Vlanif10"
 
