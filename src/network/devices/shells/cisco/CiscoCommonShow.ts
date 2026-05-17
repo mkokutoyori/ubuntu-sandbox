@@ -6,38 +6,23 @@
  * Output is derived from the device's REAL internal state (ports,
  * cabled neighbours, configured addresses) — never hardcoded fixtures.
  */
-import { Equipment } from '@/network/equipment/Equipment';
 import type { Port } from '@/network/hardware/Port';
 import type { DeviceType } from '@/network/core/types';
+import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
+import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 
 function pad2(n: number): string { return String(n).padStart(2, '0'); }
 
-/** Minimal device surface these show helpers read real state from. */
+/**
+ * Minimal device surface these show helpers read real state from.
+ * Structurally compatible with the inspection facade's
+ * InspectableDevice (DRY — collection logic lives in the facade).
+ */
 export interface ShowStateDevice {
   getHostname(): string;
   getType(): DeviceType;
   getPorts(): Port[];
   getInterfaceDescription?(portName: string): string | undefined;
-}
-
-/** Human platform descriptor derived from the real device type. */
-function platformOf(type: DeviceType): string {
-  switch (type) {
-    case 'router-cisco': return 'Cisco 2911';
-    case 'switch-cisco': return 'Cisco Catalyst 2960';
-    case 'router-huawei': return 'Huawei AR2220';
-    case 'switch-huawei': return 'Huawei S5720';
-    case 'linux-pc': case 'linux-server': return 'Linux Host';
-    case 'windows-pc': case 'windows-server': return 'Windows Host';
-    default: return type;
-  }
-}
-
-/** CDP/LLDP capability code from the real device type. */
-function capabilityOf(type: DeviceType): string {
-  if (type.startsWith('router')) return 'Router';
-  if (type.startsWith('switch')) return 'Switch';
-  return 'Host';
 }
 
 /** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
@@ -50,39 +35,9 @@ function shortIf(name: string): string {
   return `${abbr} ${rest}`.trim();
 }
 
-/** Resolve the real peer (device + port) cabled to a local port. */
-function peerOf(port: Port): { dev: ShowStateDevice; portName: string } | null {
-  const cable = port.getCable();
-  if (!cable) return null;
-  const a = cable.getPortA();
-  const b = cable.getPortB();
-  const peerPort = a === port ? b : a;
-  if (!peerPort) return null;
-  const dev = Equipment.getById(peerPort.getEquipmentId());
-  if (!dev) return null;
-  return { dev: dev as unknown as ShowStateDevice, portName: peerPort.getName() };
-}
-
-/** Real cabled neighbours of a device (basis for CDP & LLDP). */
-function neighbours(dev: ShowStateDevice): Array<{
-  localPort: string; remoteHost: string; remotePort: string;
-  remoteType: DeviceType;
-}> {
-  const out: Array<{
-    localPort: string; remoteHost: string; remotePort: string;
-    remoteType: DeviceType;
-  }> = [];
-  for (const port of dev.getPorts()) {
-    const peer = peerOf(port);
-    if (!peer) continue;
-    out.push({
-      localPort: port.getName(),
-      remoteHost: peer.dev.getHostname(),
-      remotePort: peer.portName,
-      remoteType: peer.dev.getType(),
-    });
-  }
-  return out;
+/** Real cabled neighbours via the inspection facade (single source). */
+function neighbours(dev: ShowStateDevice): NeighborDTO[] {
+  return new EquipmentStateView(dev).neighbors();
 }
 
 /** `show clock` — IOS format: HH:MM:SS.mmm zone day mon dd yyyy */
@@ -175,7 +130,7 @@ export function showCdp(dev: ShowStateDevice, arg = ''): string {
         '-------------------------',
         `Device ID: ${n.remoteHost}`,
         `Entry address(es):`,
-        `Platform: ${platformOf(n.remoteType)},  Capabilities: ${capabilityOf(n.remoteType)}`,
+        `Platform: ${n.remotePlatform},  Capabilities: ${n.remoteCapability}`,
         `Interface: ${n.localPort},  Port ID (outgoing port): ${n.remotePort}`,
         'Holdtime : 180 sec',
       ].join('\n'));
@@ -189,8 +144,8 @@ export function showCdp(dev: ShowStateDevice, arg = ''): string {
     ];
     const rows = ns.map((n) =>
       `${n.remoteHost.padEnd(16)} ${shortIf(n.localPort).padEnd(17)} 180        ` +
-      `${capabilityOf(n.remoteType).charAt(0).padEnd(11)} ` +
-      `${platformOf(n.remoteType).padEnd(9)} ${shortIf(n.remotePort)}`);
+      `${n.remoteCapability.charAt(0).padEnd(11)} ` +
+      `${n.remotePlatform.padEnd(9)} ${shortIf(n.remotePort)}`);
     return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
   return [
@@ -214,7 +169,7 @@ export function showLldp(dev: ShowStateDevice, arg = ''): string {
     ];
     const rows = ns.map((n) =>
       `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}120        ` +
-      `${capabilityOf(n.remoteType).padEnd(16)}${n.remotePort}`);
+      `${n.remoteCapability.padEnd(16)}${n.remotePort}`);
     return [...hdr, ...rows, '', `Total entries displayed: ${ns.length}`].join('\n');
   }
   return [
