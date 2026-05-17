@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-interface
-Generated: 2026-05-17T05:23:52.253Z
+Generated: 2026-05-17T05:31:19.554Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
 Total steps: 74
@@ -66,10 +66,13 @@ Total steps: 74
   Error: Wrong parameter found at '^' position.
 
 [4/74] sw <SW1> display ip interface brief
-  Error: Unrecognized command "display ip interface brief"
+  *down: administratively down
+  Interface                   IP Address/Mask      Physical   Protocol
+  MEth0/0/1                   unassigned           down       down
+  (SW1: L2 switch — no Vlanif/L3 interfaces)
 
 [5/74] sw <SW1> display port
-  Error: Unrecognized command "display port"
+  Error: Incomplete command.
 
 
 --- [6] § physical config ---
@@ -189,21 +192,21 @@ Total steps: 74
 
 --- [29] § range / port-group ---
 [29/74] sw [SW-INT] port-group pg1
-  Error: Unrecognized command "port-group pg1"
-
-[30/74] sw [SW-INT] group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9
-  Error: Unrecognized command "group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9"
-
-[31/74] sw [SW-INT] quit
 <empty>
 
-[32/74] sw <SW-INT> interface range GigabitEthernet0/0/6 to GigabitEthernet0/0/9
-  Error: Unrecognized command "interface range GigabitEthernet0/0/6 to GigabitEthernet0/0/9"
+[30/74] sw [SW-INT-port-group] group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9
+  Error: Unrecognized command "group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9"
 
-[33/74] sw <SW-INT> shutdown
+[31/74] sw [SW-INT-port-group] quit
+<empty>
+
+[32/74] sw [SW-INT] interface range GigabitEthernet0/0/6 to GigabitEthernet0/0/9
+  Error: Wrong parameter found at '^' position.
+
+[33/74] sw [SW-INT] shutdown
   Error: Unrecognized command "shutdown"
 
-[34/74] sw <SW-INT> quit
+[34/74] sw [SW-INT] quit
 <empty>
 
 

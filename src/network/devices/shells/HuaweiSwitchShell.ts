@@ -25,7 +25,8 @@ import {
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 
-type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan' | 'mst-region';
+type VRPSwitchMode =
+  | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -38,6 +39,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private interfaceTrie = new CommandTrie();
   private vlanTrie = new CommandTrie();
   private mstRegionTrie = new CommandTrie();
+  private portGroupTrie = new CommandTrie();
 
   private swRef: Switch | null = null;
   private history: string[] = [];
@@ -61,12 +63,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Per-interface physical/security config lines (rendered in `display this`). */
   private ifCfg = new Map<string, string[]>();
 
+  /** Per-VLAN description (vlan-view `description …`). */
+  private vlanDesc = new Map<number, string>();
+
+  /** Active `port-group` member range (port-group bulk-config view). */
+  private portGroupMembers: string | null = null;
+
   constructor() {
     this.buildUserCommands();
     this.buildSystemCommands();
     this.buildInterfaceCommands();
     this.buildVlanCommands();
     this.buildMstRegionCommands();
+    this.buildPortGroupCommands();
   }
 
   getMode(): VRPSwitchMode { return this.mode; }
@@ -79,6 +88,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'interface': return `[${host}-${this.selectedInterface}]`;
       case 'vlan':      return `[${host}-vlan${this.selectedVlan}]`;
       case 'mst-region': return `[${host}-mst-region]`;
+      case 'port-group': return `[${host}-port-group]`;
       default:          return `<${host}>`;
     }
   }
@@ -183,6 +193,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'mst-region':
         this.mode = 'system';
         return '';
+      case 'port-group':
+        this.mode = 'system';
+        this.portGroupMembers = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -200,6 +214,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'interface': return this.interfaceTrie;
       case 'vlan':      return this.vlanTrie;
       case 'mst-region': return this.mstRegionTrie;
+      case 'port-group': return this.portGroupTrie;
       default:          return this.userTrie;
     }
   }
@@ -261,6 +276,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.systemTrie.registerGreedy('undo', 'Undo configuration', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       return this.cmdUndo(args);
+    });
+
+    // port-group {group-member <a> [to <b>] | <name>} → bulk-config view
+    this.systemTrie.registerGreedy('port-group', 'Enter port-group view', (args) => {
+      this.portGroupMembers = args.join(' ');
+      this.mode = 'port-group';
+      return '';
     });
 
     // interface <name>
@@ -330,6 +352,38 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.setSwitchportMode(this.selectedInterface, 'trunk');
       return '';
     });
+
+    // port link-type hybrid — the Switch model has no hybrid datapath,
+    // so it is recorded for `display this` and treated as access for
+    // forwarding (closest L2 behaviour) without breaking VLAN tests.
+    this.interfaceTrie.register('port link-type hybrid', 'Set port to hybrid mode', () => {
+      if (!this.selectedInterface) return 'Error: Wrong parameter.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push('port link-type hybrid');
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    });
+
+    // port hybrid pvid/tagged/untagged …  |  port vlan-mapping …
+    for (const sub of ['port hybrid', 'port vlan-mapping']) {
+      this.interfaceTrie.registerGreedy(sub, `Interface ${sub} configuration`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${sub} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
+    // voice-vlan / qinq — recognised L2 features (recorded for display).
+    for (const kw of ['voice-vlan', 'qinq']) {
+      this.interfaceTrie.registerGreedy(kw, `Interface ${kw} configuration`, (args) => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        const list = this.ifCfg.get(this.selectedInterface) ?? [];
+        list.push(`${kw} ${args.join(' ')}`.trim());
+        this.ifCfg.set(this.selectedInterface, list);
+        return '';
+      });
+    }
 
     // port default vlan <id>
     this.interfaceTrie.registerGreedy('port default vlan', 'Set default VLAN for access port', (args) => {
@@ -411,6 +465,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef.renameVLAN(this.selectedVlan, args[0]);
       return '';
     });
+
+    // description <text> — stored per-VLAN.
+    this.vlanTrie.registerGreedy('description', 'Set VLAN description', (args) => {
+      if (this.selectedVlan === null || args.length < 1) return 'Error: Incomplete command.';
+      this.vlanDesc.set(this.selectedVlan, args.join(' '));
+      return '';
+    });
+
+    // VLAN-view features the L2 sim accepts (recognised, no datapath model).
+    for (const kw of ['mux-vlan', 'aggregate-vlan', 'access-vlan',
+      'vlan-type', 'mac-vlan', 'ip', 'igmp-snooping', 'arp']) {
+      // `ip`/`arp` here are VLAN-view sub-features (e.g. `ip binding`),
+      // NOT an L3 Vlanif address — those remain rejected (L2 switch).
+      this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, () => '');
+    }
+  }
+
+  /** `port-group` bulk-config sub-view ([host-port-group]). */
+  private buildPortGroupCommands(): void {
+    const t = this.portGroupTrie;
+    const accept = () => '';
+    // Same port/physical/stp keywords as interface view — applied to the
+    // member range. The L2 sim records nothing per-port here (the range
+    // is informational), so they are recognised no-ops.
+    for (const kw of ['port', 'speed', 'duplex', 'negotiation', 'mtu',
+      'flow-control', 'shutdown', 'stp', 'storm-control', 'description',
+      'loopback-detect', 'port-security', 'port-isolate', 'undo']) {
+      t.registerGreedy(kw, `port-group ${kw}`, accept);
+    }
+    t.register('display this', 'Display port-group configuration', () =>
+      `port-group group-member ${this.portGroupMembers ?? ''}`.trim());
   }
 
   // ─── Shared Display Commands ──────────────────────────────────────
@@ -421,9 +506,42 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayVersion(this.swRef);
     });
 
-    trie.register('display vlan', 'Display VLAN information', () => {
+    // display vlan [summary | <id>]
+    trie.registerGreedy('display vlan', 'Display VLAN information', (args) => {
       if (!this.swRef) return '';
-      return this.displayVlan(this.swRef);
+      const full = this.displayVlan(this.swRef);
+      if (args.length === 0) return full;
+      if (args[0].toLowerCase() === 'summary') {
+        const ids: number[] = [];
+        for (const [id] of this.swRef.getVLANs()) ids.push(id);
+        return [
+          `The total number of vlans is : ${ids.length}`,
+          `--------------------------------`,
+          `static vlan:`,
+          `Total ${ids.length} static vlan.`,
+          ids.sort((a, b) => a - b).join(' '),
+        ].join('\n');
+      }
+      const id = parseInt(args[0], 10);
+      if (!isNaN(id)) {
+        const lines = full.split('\n');
+        const hit = lines.filter(l => new RegExp(`(^|\\s)${id}(\\s|$)`).test(l));
+        return [lines[0] ?? '', ...(hit.length ? hit : [`VLAN ${id} not found`])].join('\n');
+      }
+      return full;
+    });
+
+    // display port vlan [active]
+    trie.registerGreedy('display port vlan', 'Display port VLAN assignment', () => {
+      if (!this.swRef) return '';
+      const rows = ['Port                    Link Type    PVID  Trunk VLAN List'];
+      for (const p of this.swRef.getPortNames()) {
+        const cfg = this.swRef.getSwitchportConfig(p);
+        if (!cfg) continue;
+        const pvid = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
+        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}-`);
+      }
+      return rows.join('\n');
     });
 
     trie.register('display interface brief', 'Display interface summary', () => {
@@ -455,6 +573,30 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.registerGreedy('display current-configuration interface', 'Display interface configuration', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       return this.displayCurrentConfigInterface(this.swRef, args.join(' '));
+    });
+
+    // display current-configuration configuration <module>  (vlan, …)
+    trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
+      if (!this.swRef) return '';
+      const full = this.displayCurrentConfig(this.swRef);
+      const mod = (args[0] ?? '').toLowerCase();
+      if (mod === 'vlan') {
+        const block = full.split('\n').filter(l => /vlan/i.test(l));
+        return block.length ? block.join('\n') : '#';
+      }
+      return full;
+    });
+
+    // L2 switch: only the management interface has an IP. Recognised so
+    // the command doesn't error (no Vlanif/L3 routing on an L2 switch).
+    trie.register('display ip interface brief', 'Display IP interface brief', () => {
+      const host = this.swRef?.getHostname() ?? 'SW';
+      return [
+        `*down: administratively down`,
+        `Interface                   IP Address/Mask      Physical   Protocol`,
+        `MEth0/0/1                   unassigned           down       down`,
+        `(${host}: L2 switch — no Vlanif/L3 interfaces)`,
+      ].join('\n');
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──

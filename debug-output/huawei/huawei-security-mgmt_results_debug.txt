@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T05:23:52.737Z
+Generated: 2026-05-17T05:31:20.044Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
