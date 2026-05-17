@@ -141,7 +141,12 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     // VALIDATE — skip the VFS write and the catalog persistence.
     if (validate) {
-      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
+      const scope = params.validateScope;
+      const label = scope === 'TABLESPACE' && params.tablespace ? `tablespace ${params.tablespace}`
+                  : scope === 'DATAFILE'   && params.fileNo     ? `datafile ${params.fileNo}`
+                  : scope === 'BACKUPSET'  && params.bsKey      ? `backupset ${params.bsKey}`
+                  :                                                what;
+      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what: label });
       return ok(undefined);
     }
 

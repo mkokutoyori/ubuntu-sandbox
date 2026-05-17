@@ -25,6 +25,7 @@ import { CatalogCommand } from './CatalogCommand';
 import { DuplicateCommand } from './DuplicateCommand';
 import { ChangeCommand } from './ChangeCommand';
 import { SetCommand } from './SetCommand';
+import { ValidateCommand } from './ValidateCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -86,6 +87,12 @@ export class RmanCommandDispatcher {
       { pattern: /^LIST EXPIRED BACKUP$/i,       command: new ListBackupCommand('EXPIRED') },
       { pattern: /^LIST OBSOLETE$/i,             command: new ListBackupCommand('OBSOLETE') },
       { pattern: /^LIST COPY(?:\s+.*)?$/i,       command: new ListBackupCommand('COPY') },
+      { pattern: /^LIST INCARNATION(?:\s+OF DATABASE)?$/i, command: new ListBackupCommand('INCARNATION') },
+      // VALIDATE (12c+) — distinct from BACKUP VALIDATE
+      { pattern: /^VALIDATE DATABASE$/i,                  command: new ValidateCommand('DATABASE') },
+      { pattern: /^VALIDATE TABLESPACE (\S+)$/i,          command: new ValidateCommand('TABLESPACE') },
+      { pattern: /^VALIDATE DATAFILE (\d+)$/i,            command: new ValidateCommand('DATAFILE') },
+      { pattern: /^VALIDATE BACKUPSET (\d+)$/i,           command: new ValidateCommand('BACKUPSET') },
       { pattern: /^REPORT SCHEMA$/i,             command: new ReportCommand('SCHEMA') },
       { pattern: /^REPORT NEED BACKUP$/i,        command: new ReportCommand('NEED_BACKUP') },
       { pattern: /^REPORT OBSOLETE$/i,           command: new ReportCommand('OBSOLETE') },
