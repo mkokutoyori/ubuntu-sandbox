@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-interface
-Generated: 2026-05-17T00:14:45.485Z
+Generated: 2026-05-17T00:30:15.016Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
 Total steps: 74
@@ -113,7 +113,10 @@ Total steps: 74
   Error: Unrecognized command "loopback-detect enable"
 
 [19/74] sw [SW-INT-GigabitEthernet0/0/1] display this
-  Error: Unrecognized command "display this"
+  interface GigabitEthernet0/0/1
+   description >> uplink to L1 <<
+   port link-type access
+  #
 
 [20/74] sw [SW-INT-GigabitEthernet0/0/1] quit
 <empty>
@@ -218,7 +221,83 @@ Total steps: 74
   Error: Unrecognized command "load-balance src-dst-mac"
 
 [42/74] sw <SW-INT> display this
-  Error: Unrecognized command "display this"
+  #
+  sysname SW-INT
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   description >> uplink to L1 <<
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
 
 [43/74] sw <SW-INT> quit
 <empty>
@@ -319,7 +398,7 @@ Total steps: 74
   Output: 0 packets, 0 bytes
 
 [71/74] sw <SW-INT> display interface GigabitEthernet0/0/1 | include rate
-  Error: Wrong parameter found at '^' position.
+<empty>
 
 [72/74] sw <SW-INT> reset counters interface GigabitEthernet0/0/1
   Error: Unrecognized command "reset counters interface GigabitEthernet0/0/1"
@@ -328,4 +407,7 @@ Total steps: 74
   Error: Unrecognized command "display counters inbound interface GigabitEthernet0/0/1"
 
 [74/74] sw <SW-INT> display interface brief | include up
-  Error: Unrecognized command "display interface brief | include up"
+  GigabitEthernet0/0/1          up      up        0%     0%
+  GigabitEthernet0/0/2          up      up        0%     0%
+  GigabitEthernet0/0/3          up      up        0%     0%
+  GigabitEthernet0/0/10         up      up        0%     0%

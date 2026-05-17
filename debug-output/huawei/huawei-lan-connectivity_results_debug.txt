@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-lan-connectivity
-Generated: 2026-05-17T00:17:18.963Z
+Generated: 2026-05-17T00:30:14.493Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=L2 switch: VLAN segmentation, intra-VLAN reachability, inter-VLAN isolation (no routing)
 Total steps: 68
@@ -236,12 +236,12 @@ Total steps: 68
 --- [39] § intra-VLAN ping (expect OK) ---
 [39/68] linux1 linux1$ ping -c 2 192.168.10.21
   PING 192.168.10.21 (192.168.10.21) 56(84) bytes of data.
-  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.966 ms
-  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.587 ms
+  64 bytes from 192.168.10.21: icmp_seq=1 ttl=128 time=1.803 ms
+  64 bytes from 192.168.10.21: icmp_seq=2 ttl=128 time=0.516 ms
   
   --- 192.168.10.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.587/1.277/1.966/0.690 ms
+  rtt min/avg/max/mdev = 0.516/1.160/1.803/0.644 ms
 
 [40/68] win1 win1$ ping -n 2 192.168.10.11
   
@@ -252,16 +252,16 @@ Total steps: 68
   Ping statistics for 192.168.10.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [41/68] linux2 linux2$ ping -c 2 192.168.20.22
   PING 192.168.20.22 (192.168.20.22) 56(84) bytes of data.
-  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.664 ms
-  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.231 ms
+  64 bytes from 192.168.20.22: icmp_seq=1 ttl=128 time=0.480 ms
+  64 bytes from 192.168.20.22: icmp_seq=2 ttl=128 time=0.269 ms
   
   --- 192.168.20.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.231/0.447/0.664/0.217 ms
+  rtt min/avg/max/mdev = 0.269/0.374/0.480/0.105 ms
 
 [42/68] win2 win2$ ping -n 2 192.168.20.12
   

@@ -28,7 +28,21 @@ export interface PipeFilter {
   pattern: string;
 }
 
-const PIPE_FILTER_RE = /^(include|exclude|grep|findstr)\s+(.+)$/i;
+const PIPE_FILTER_RE = /^(include|exclude|begin|grep|findstr)\s+(.+)$/i;
+
+/**
+ * Resolve a Huawei VRP global-navigation abbreviation.
+ *
+ * VRP accepts any unambiguous prefix. `quit`/`return` are the only
+ * top-level navigation verbs, but `r`/`re` also prefix reset/reboot, so
+ * `return` only matches from `ret` onward (avoids that ambiguity).
+ * Shared by HuaweiSwitchShell and HuaweiVRPShell (DRY).
+ */
+export function resolveHuaweiNav(lower: string): 'return' | 'quit' | null {
+  if (lower.length >= 1 && 'quit'.startsWith(lower)) return 'quit';
+  if (lower.length >= 3 && 'return'.startsWith(lower)) return 'return';
+  return null;
+}
 
 /**
  * Parse pipe filter from raw CLI input.
@@ -74,6 +88,10 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
   }
   if (filter.type === 'exclude') {
     return lines.filter(l => !l.toLowerCase().includes(lowerPattern)).join('\n');
+  }
+  if (filter.type === 'begin') {
+    const start = lines.findIndex(l => l.toLowerCase().includes(lowerPattern));
+    return start === -1 ? '' : lines.slice(start).join('\n');
   }
 
   return output;

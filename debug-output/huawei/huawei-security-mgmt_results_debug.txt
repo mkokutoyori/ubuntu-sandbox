@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-security-mgmt
-Generated: 2026-05-17T00:14:45.488Z
+Generated: 2026-05-17T00:30:14.990Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=STP/MSTP, port-security, DHCP snooping, ACL, AAA/SSH, SNMP/NTP
 Total steps: 90
@@ -284,10 +284,85 @@ Total steps: 90
   Error: Unrecognized command "save"
 
 [88/90] sw <SW-SEC> display saved-configuration
-  Error: Unrecognized command "display saved-configuration"
+  #
+  sysname SW-SEC
+  #
+  interface GigabitEthernet0/0/0
+   port link-type access
+  #
+  interface GigabitEthernet0/0/1
+   port link-type access
+  #
+  interface GigabitEthernet0/0/2
+   port link-type access
+  #
+  interface GigabitEthernet0/0/3
+   port link-type access
+  #
+  interface GigabitEthernet0/0/4
+   port link-type access
+  #
+  interface GigabitEthernet0/0/5
+   port link-type access
+  #
+  interface GigabitEthernet0/0/6
+   port link-type access
+  #
+  interface GigabitEthernet0/0/7
+   port link-type access
+  #
+  interface GigabitEthernet0/0/8
+   port link-type access
+  #
+  interface GigabitEthernet0/0/9
+   port link-type access
+  #
+  interface GigabitEthernet0/0/10
+   port link-type access
+  #
+  interface GigabitEthernet0/0/11
+   port link-type access
+  #
+  interface GigabitEthernet0/0/12
+   port link-type access
+  #
+  interface GigabitEthernet0/0/13
+   port link-type access
+  #
+  interface GigabitEthernet0/0/14
+   port link-type access
+  #
+  interface GigabitEthernet0/0/15
+   port link-type access
+  #
+  interface GigabitEthernet0/0/16
+   port link-type access
+  #
+  interface GigabitEthernet0/0/17
+   port link-type access
+  #
+  interface GigabitEthernet0/0/18
+   port link-type access
+  #
+  interface GigabitEthernet0/0/19
+   port link-type access
+  #
+  interface GigabitEthernet0/0/20
+   port link-type access
+  #
+  interface GigabitEthernet0/0/21
+   port link-type access
+  #
+  interface GigabitEthernet0/0/22
+   port link-type access
+  #
+  interface GigabitEthernet0/0/23
+   port link-type access
+  #
+  return
 
 [89/90] sw <SW-SEC> display current-configuration | include snmp
-  Error: Unrecognized command "display current-configuration | include snmp"
+<empty>
 
 [90/90] sw <SW-SEC> reset saved-configuration
   Error: Unrecognized command "reset saved-configuration"

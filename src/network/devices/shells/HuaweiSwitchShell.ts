@@ -16,6 +16,11 @@
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import {
+  displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
+  displayDevice, displayHistoryCommand,
+} from './huawei/HuaweiCommonDisplay';
 
 type VRPSwitchMode = 'user' | 'system' | 'interface' | 'vlan';
 
@@ -31,6 +36,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private vlanTrie = new CommandTrie();
 
   private swRef: Switch | null = null;
+  private history: string[] = [];
 
   constructor() {
     this.buildUserCommands();
@@ -57,6 +63,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   execute(sw: Switch, input: string): string {
     const trimmed = input.trim();
     if (!trimmed) return '';
+    if (!trimmed.endsWith('?')) this.history.push(trimmed);
 
     // Handle ? for help
     if (trimmed.endsWith('?')) {
@@ -67,32 +74,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return result;
     }
 
-    const lower = trimmed.toLowerCase();
+    // Split off an output pipe filter (| include/exclude/begin …) — shared
+    // with the router shell + Cisco shells via cli-utils (DRY).
+    const { cmd, filter } = parsePipeFilter(trimmed);
+    const lower = cmd.toLowerCase();
 
-    // Global navigation commands (available in all modes)
-    if (lower === 'return') {
+    // Global navigation (all modes). Accepts unambiguous VRP
+    // abbreviations: q/qu/qui→quit, ret/retu…→return.
+    const nav = resolveHuaweiNav(lower);
+    if (nav === 'return') {
       this.mode = 'user';
       this.selectedInterface = null;
       this.selectedVlan = null;
       return '';
     }
-    if (lower === 'quit') return this.cmdQuit();
+    if (nav === 'quit') return this.cmdQuit();
 
     // Bind switch reference for command closures
     this.swRef = sw;
 
     // Get the trie for current mode
     const trie = this.getActiveTrie();
-    const result = trie.match(trimmed);
+    const result = trie.match(cmd);
 
     let output: string;
     switch (result.status) {
       case 'ok':
-        output = result.node?.action ? result.node.action(result.args, trimmed) : '';
+        output = result.node?.action ? result.node.action(result.args, cmd) : '';
         break;
 
       case 'ambiguous':
-        output = `Error: Ambiguous command "${trimmed}"`;
+        output = `Error: Ambiguous command "${cmd}"`;
         break;
 
       case 'incomplete':
@@ -100,15 +112,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
         break;
 
       case 'invalid':
-        output = `Error: Unrecognized command "${trimmed}"`;
+        output = `Error: Unrecognized command "${cmd}"`;
         break;
 
       default:
-        output = `Error: Unrecognized command "${trimmed}"`;
+        output = `Error: Unrecognized command "${cmd}"`;
     }
 
     this.swRef = null;
-    return output;
+    // Apply the pipe filter only to successful output (errors pass through).
+    return filter && !output.startsWith('Error:')
+      ? applyPipeFilter(output, filter)
+      : output;
   }
 
   // ─── Help / Completion ────────────────────────────────────────────
@@ -407,6 +422,32 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       return this.displayCurrentConfigInterface(this.swRef, args.join(' '));
     });
+
+    // ── Common VRP display commands (shared with the router, DRY) ──
+    trie.register('display clock', 'Display system clock', () => displayClock());
+    trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());
+    trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage());
+    trie.register('display users', 'Display user sessions', () => displayUsers());
+    trie.register('display device', 'Display device status', () =>
+      this.swRef ? displayDevice(this.swRef.getHostname()) : '');
+    trie.register('display history-command', 'Display command history', () =>
+      displayHistoryCommand(this.history));
+
+    // `display this` — running config of the CURRENT view only.
+    trie.register('display this', 'Display active view configuration', () => {
+      if (!this.swRef) return '';
+      if (this.mode === 'interface' && this.selectedInterface) {
+        return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
+      }
+      return this.displayCurrentConfig(this.swRef);
+    });
+
+    // `display saved-configuration` / `display startup` — mirror running
+    // config (the sim has no separate flash image).
+    trie.register('display saved-configuration', 'Display saved configuration', () =>
+      this.swRef ? this.displayCurrentConfig(this.swRef) : '');
+    trie.register('display startup', 'Display startup configuration', () =>
+      this.swRef ? this.displayCurrentConfig(this.swRef) : '');
   }
 
   // ─── Undo Command ────────────────────────────────────────────────

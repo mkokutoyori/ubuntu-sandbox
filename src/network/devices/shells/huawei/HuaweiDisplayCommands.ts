@@ -11,6 +11,13 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
+import {
+  displayClock as commonDisplayClock,
+  displayCpuUsage as commonDisplayCpuUsage,
+  displayMemoryUsage as commonDisplayMemoryUsage,
+  displayUsers as commonDisplayUsers,
+  displayDevice as commonDisplayDevice,
+} from './HuaweiCommonDisplay';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -592,6 +599,14 @@ export function registerDisplayCommands(
 
   trie.register('display ip pool', 'Display all DHCP pools', () =>
     displayIpPoolAll(getRouter()));
+
+  // ── Common VRP display commands (shared with the switch, DRY) ──
+  trie.register('display clock', 'Display system clock', () => commonDisplayClock());
+  trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
+  trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
+  trie.register('display users', 'Display user sessions', () => commonDisplayUsers());
+  trie.register('display device', 'Display device status', () =>
+    commonDisplayDevice(getRouter().getHostname()));
 }
 
 // ─── Interface Name Resolution (Huawei format) ──────────────────────
