@@ -1,6 +1,6 @@
 ============================================================
 Huawei switch debug transcript — huawei-interface
-Generated: 2026-05-17T05:49:44.215Z
+Generated: 2026-05-17T05:53:14.926Z
 Topology: SW1 (Huawei S5720, 24 ports) — L1(Linux) g0/0/1, W1(Windows) g0/0/2, L2(Linux) g0/0/3, W2(Windows) g0/0/10
 focus=interface physical config, Eth-Trunk/LACP, isolation, storm-ctl
 Total steps: 74
@@ -8,7 +8,7 @@ Total steps: 74
 
 
 --- [1] § inventory ---
-[1/74] sw <SW1> display interface brief
+[1/74] sw [SW1] display interface brief
   Interface                     PHY     Protocol  InUti  OutUti
   GigabitEthernet0/0/0          down    down      0%     0%
   GigabitEthernet0/0/1          up      up        0%     0%
@@ -35,7 +35,7 @@ Total steps: 74
   GigabitEthernet0/0/22         down    down      0%     0%
   GigabitEthernet0/0/23         down    down      0%     0%
 
-[2/74] sw <SW1> display interface
+[2/74] sw [SW1] display interface
   Interface                     PHY     Protocol  InUti  OutUti
   GigabitEthernet0/0/0          down    down      0%     0%
   GigabitEthernet0/0/1          up      up        0%     0%
@@ -62,16 +62,16 @@ Total steps: 74
   GigabitEthernet0/0/22         down    down      0%     0%
   GigabitEthernet0/0/23         down    down      0%     0%
 
-[3/74] sw <SW1> display interface description
+[3/74] sw [SW1] display interface description
   Error: Wrong parameter found at '^' position.
 
-[4/74] sw <SW1> display ip interface brief
+[4/74] sw [SW1] display ip interface brief
   *down: administratively down
   Interface                   IP Address/Mask      Physical   Protocol
   MEth0/0/1                   unassigned           down       down
   (SW1: L2 switch — no Vlanif/L3 interfaces)
 
-[5/74] sw <SW1> display port
+[5/74] sw [SW1] display port
   Error: Incomplete command.
 
 
@@ -293,50 +293,50 @@ Total steps: 74
 
 
 --- [57] § port isolation ---
-[57/74] sw <SW-INT> interface GigabitEthernet0/0/3
-  Error: Unrecognized command "interface GigabitEthernet0/0/3"
-
-[58/74] sw <SW-INT> port-isolate enable group 1
-  Error: Unrecognized command "port-isolate enable group 1"
-
-[59/74] sw <SW-INT> quit
+[57/74] sw [SW-INT] interface GigabitEthernet0/0/3
 <empty>
 
-[60/74] sw <SW-INT> interface GigabitEthernet0/0/4
-  Error: Unrecognized command "interface GigabitEthernet0/0/4"
+[58/74] sw [SW-INT-GigabitEthernet0/0/3] port-isolate enable group 1
+<empty>
 
-[61/74] sw <SW-INT> port-isolate enable group 1
-  Error: Unrecognized command "port-isolate enable group 1"
+[59/74] sw [SW-INT-GigabitEthernet0/0/3] quit
+<empty>
 
-[62/74] sw <SW-INT> quit
+[60/74] sw [SW-INT] interface GigabitEthernet0/0/4
+<empty>
+
+[61/74] sw [SW-INT-GigabitEthernet0/0/4] port-isolate enable group 1
+<empty>
+
+[62/74] sw [SW-INT-GigabitEthernet0/0/4] quit
 <empty>
 
 
 --- [63] § storm / traffic control ---
-[63/74] sw <SW-INT> interface GigabitEthernet0/0/2
-  Error: Unrecognized command "interface GigabitEthernet0/0/2"
-
-[64/74] sw <SW-INT> storm-control broadcast min-rate 100 max-rate 200
-  Error: Unrecognized command "storm-control broadcast min-rate 100 max-rate 200"
-
-[65/74] sw <SW-INT> storm-control multicast min-rate 100 max-rate 200
-  Error: Unrecognized command "storm-control multicast min-rate 100 max-rate 200"
-
-[66/74] sw <SW-INT> broadcast-suppression 10
-  Error: Unrecognized command "broadcast-suppression 10"
-
-[67/74] sw <SW-INT> traffic-policy P1 inbound
-  Error: Unrecognized command "traffic-policy P1 inbound"
-
-[68/74] sw <SW-INT> quit
+[63/74] sw [SW-INT] interface GigabitEthernet0/0/2
 <empty>
 
-[69/74] sw <SW-INT> return
+[64/74] sw [SW-INT-GigabitEthernet0/0/2] storm-control broadcast min-rate 100 max-rate 200
+<empty>
+
+[65/74] sw [SW-INT-GigabitEthernet0/0/2] storm-control multicast min-rate 100 max-rate 200
+<empty>
+
+[66/74] sw [SW-INT-GigabitEthernet0/0/2] broadcast-suppression 10
+<empty>
+
+[67/74] sw [SW-INT-GigabitEthernet0/0/2] traffic-policy P1 inbound
+<empty>
+
+[68/74] sw [SW-INT-GigabitEthernet0/0/2] quit
+<empty>
+
+[69/74] sw [SW-INT] return
 <empty>
 
 
 --- [70] § counters / diagnostics ---
-[70/74] sw <SW-INT> display interface GigabitEthernet0/0/1
+[70/74] sw [SW-INT] display interface GigabitEthernet0/0/1
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Description: >> uplink to L1 <<
@@ -345,18 +345,18 @@ Total steps: 74
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[71/74] sw <SW-INT> display interface GigabitEthernet0/0/1 | include rate
+[71/74] sw [SW-INT] display interface GigabitEthernet0/0/1 | include rate
 <empty>
 
-[72/74] sw <SW-INT> reset counters interface GigabitEthernet0/0/1
+[72/74] sw [SW-INT] reset counters interface GigabitEthernet0/0/1
 <empty>
 
-[73/74] sw <SW-INT> display counters inbound interface GigabitEthernet0/0/1
+[73/74] sw [SW-INT] display counters inbound interface GigabitEthernet0/0/1
   Interface counters (GigabitEthernet0/0/1):
     Input :  0 packets,  0 bytes,  0 errors
     Output:  0 packets,  0 bytes,  0 errors
 
-[74/74] sw <SW-INT> display interface brief | include up
+[74/74] sw [SW-INT] display interface brief | include up
   GigabitEthernet0/0/1          up      up        0%     0%
   GigabitEthernet0/0/2          up      up        0%     0%
   GigabitEthernet0/0/3          up      up        0%     0%

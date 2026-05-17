@@ -95,11 +95,22 @@ export function buildLab(): {
  * The switch prompt is captured before each switch command so CLI mode
  * transitions (<SW1> → [SW1] → [SW1-GigabitEthernet0/0/1]) are visible.
  */
+export interface DumpOptions {
+  /**
+   * Re-synchronise the switch to system-view at the start of every
+   * `section` (silent `return; system-view`). Keeps sections
+   * independent so one *intended* rejection (e.g. L3 config on an
+   * L2-only switch) doesn't cascade into the next section's commands.
+   */
+  resyncSwitchPerSection?: boolean;
+}
+
 export async function dumpHuawei(
   label: string,
   topology: HuaweiTopology,
   steps: readonly HuaweiStepInput[],
   header?: string,
+  options: DumpOptions = {},
 ): Promise<void> {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const lines: string[] = [];
@@ -122,6 +133,23 @@ export async function dumpHuawei(
     if (step.section) {
       lines.push('');
       lines.push(`--- [${index}] § ${step.section} ---`);
+      if (options.resyncSwitchPerSection) {
+        const sw = topology.devices['sw'];
+        if (sw) {
+          // Reset to a known base view (system-view) so one *intended*
+          // rejection in a section (e.g. L3 on an L2-only switch) can't
+          // cascade into the next section.
+          // If the section's own first switch step already enters
+          // system-view, just `return` (avoid a redundant system-view).
+          const firstIsSysView =
+            (step.on ?? 'sw') === 'sw' &&
+            /^sys(tem-view)?$/i.test(step.cmd.trim());
+          try {
+            await sw.executeCommand('return');
+            if (!firstIsSysView) await sw.executeCommand('system-view');
+          } catch { /* resync is best-effort */ }
+        }
+      }
     }
     if (!dev) {
       lines.push(`[${index}/${steps.length}] (${key})> ${step.cmd}`);

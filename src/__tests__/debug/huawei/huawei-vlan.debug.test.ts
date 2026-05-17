@@ -110,6 +110,7 @@ describe('debug-dump: huawei-vlan', () => {
       topology,
       steps,
       'focus=L2 VLAN lifecycle, access/trunk/hybrid, voice/mux/QinQ (Vlanif shown only to confirm L2 switch rejects L3)',
+      { resyncSwitchPerSection: true },
     );
   });
 });
