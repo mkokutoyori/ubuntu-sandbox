@@ -63,7 +63,10 @@ export class ShowCommand implements IRmanCommand<string[]> {
     const encDb       = c?.encryptionForDatabase ? 'ON' : 'OFF';
     const encAlg      = c?.encryptionAlgorithm ?? 'AES128';
     const compAlg     = c?.compressionAlgorithm ?? 'BASIC';
-    const arDelPol    = c?.archivelogDeletionPolicy ?? 'NONE';
+    const arDelPolRaw = c?.archivelogDeletionPolicy ?? 'NONE';
+    const arDelPol    = arDelPolRaw === 'APPLIED_ON_ALL_STANDBY' ? 'APPLIED ON ALL STANDBY'
+                     :  arDelPolRaw === 'BACKED_UP'             ? 'BACKED UP'
+                     :                                            'NONE';
 
     return ok([
       '',

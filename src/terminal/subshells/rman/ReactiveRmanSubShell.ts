@@ -217,14 +217,23 @@ export class ReactiveRmanSubShell implements ISubShell {
   }
   private _push(line: string): void { this._outputBuffer.push(line); }
 
-  private _formatRmanError(_e: RmanError): string[] {
-    return [
+  private _formatRmanError(e: RmanError): string[] {
+    const banner = [
       'RMAN-00571: ===========================================================',
       'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
       'RMAN-00571: ===========================================================',
-      'RMAN-00558: error encountered while parsing input command',
-      'RMAN-01009: syntax error: found: unknown command',
-      'RMAN-01007: at line 1 column 1 file: standard input',
     ];
+    // Match the canonical "RMAN-NNNNN: <message>" rendering for every
+    // typed error. Parse errors get the classic 03002/01007 trailer the
+    // real RMAN client emits for syntax failures.
+    if (e.code === 'RMAN_01009' || e.code === 'RMAN_00558') {
+      banner.push('RMAN-00558: error encountered while parsing input command');
+      banner.push(`RMAN-01009: ${e.message}`);
+      banner.push('RMAN-01007: at line 1 column 1 file: standard input');
+      return banner;
+    }
+    const numeric = e.code.replace(/^RMAN_/, 'RMAN-');
+    banner.push(`${numeric}: ${e.message}`);
+    return banner;
   }
 }

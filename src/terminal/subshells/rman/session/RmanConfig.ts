@@ -10,6 +10,8 @@ import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import { RedundancyPolicy } from '../policy/RedundancyPolicy';
 
 export type CompressionAlg = 'BASIC' | 'LOW' | 'MEDIUM' | 'HIGH';
+export type EncryptionAlg  = 'AES128' | 'AES192' | 'AES256';
+export type ArchivelogDelPolicy = 'NONE' | 'APPLIED_ON_ALL_STANDBY' | 'BACKED_UP';
 
 export interface RmanConfigSnapshot {
   readonly retentionPolicy:        IRetentionPolicy;
@@ -23,9 +25,11 @@ export interface RmanConfigSnapshot {
   readonly maxSetSize:             string; // 'UNLIMITED' or '<n>[KMGT]'
   readonly compressionAlgorithm:   CompressionAlg;
   readonly encryptionForDatabase:  boolean;
-  readonly encryptionAlgorithm:    'AES128' | 'AES192' | 'AES256';
-  readonly archivelogDeletionPolicy: 'NONE';
+  readonly encryptionAlgorithm:    EncryptionAlg;
+  readonly archivelogDeletionPolicy: ArchivelogDelPolicy;
   readonly backupOptimization:     boolean;
+  /** FORMAT '<x>' applied to the default channel of the active device. */
+  readonly channelFormat:          string | undefined;
 }
 
 export interface ConfigDelta {
@@ -46,9 +50,10 @@ export class RmanConfig {
   private _maxSetSize = 'UNLIMITED';
   private _compressionAlgorithm: CompressionAlg = 'BASIC';
   private _encryptionForDatabase = false;
-  private _encryptionAlgorithm: 'AES128' | 'AES192' | 'AES256' = 'AES128';
-  private _archivelogDeletionPolicy: 'NONE' = 'NONE';
+  private _encryptionAlgorithm: EncryptionAlg = 'AES128';
+  private _archivelogDeletionPolicy: ArchivelogDelPolicy = 'NONE';
   private _backupOptimization = false;
+  private _channelFormat: string | undefined;
 
   constructor(initialPolicy: IRetentionPolicy = new RedundancyPolicy(1), initialAutobackup = true) {
     this._retentionPolicy = initialPolicy;
@@ -71,6 +76,7 @@ export class RmanConfig {
       encryptionAlgorithm:    this._encryptionAlgorithm,
       archivelogDeletionPolicy: this._archivelogDeletionPolicy,
       backupOptimization:     this._backupOptimization,
+      channelFormat:          this._channelFormat,
     };
   }
 
@@ -122,5 +128,47 @@ export class RmanConfig {
     const old = String(this._encryptionForDatabase);
     this._encryptionForDatabase = on;
     return { key: 'encryptionForDatabase', oldValue: old, newValue: String(on) };
+  }
+
+  setEncryptionAlgorithm(alg: EncryptionAlg): ConfigDelta {
+    const old = this._encryptionAlgorithm;
+    this._encryptionAlgorithm = alg;
+    return { key: 'encryptionAlgorithm', oldValue: old, newValue: alg };
+  }
+
+  setControlfileAutobackupFormat(fmt: string): ConfigDelta {
+    const old = this._controlfileAutobackupFormat;
+    this._controlfileAutobackupFormat = fmt;
+    return { key: 'controlfileAutobackupFormat', oldValue: old, newValue: fmt };
+  }
+
+  setDefaultBackupType(t: 'BACKUPSET' | 'COMPRESSED BACKUPSET' | 'COPY'): ConfigDelta {
+    const old = this._defaultBackupType;
+    this._defaultBackupType = t;
+    return { key: 'defaultBackupType', oldValue: old, newValue: t };
+  }
+
+  setDatafileBackupCopies(n: number): ConfigDelta {
+    const old = String(this._datafileBackupCopies);
+    this._datafileBackupCopies = n;
+    return { key: 'datafileBackupCopies', oldValue: old, newValue: String(n) };
+  }
+
+  setArchivelogBackupCopies(n: number): ConfigDelta {
+    const old = String(this._archivelogBackupCopies);
+    this._archivelogBackupCopies = n;
+    return { key: 'archivelogBackupCopies', oldValue: old, newValue: String(n) };
+  }
+
+  setArchivelogDeletionPolicy(p: ArchivelogDelPolicy): ConfigDelta {
+    const old = this._archivelogDeletionPolicy;
+    this._archivelogDeletionPolicy = p;
+    return { key: 'archivelogDeletionPolicy', oldValue: old, newValue: p };
+  }
+
+  setChannelFormat(fmt: string): ConfigDelta {
+    const old = this._channelFormat ?? '<unset>';
+    this._channelFormat = fmt;
+    return { key: 'channelFormat', oldValue: old, newValue: fmt };
   }
 }

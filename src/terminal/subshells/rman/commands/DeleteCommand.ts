@@ -14,6 +14,9 @@ import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import { JobBuilder } from '../job/JobBuilder';
+import { RedundancyPolicy } from '../policy/RedundancyPolicy';
+import { RecoveryWindowPolicy } from '../policy/RecoveryWindowPolicy';
+import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 
 export type DeleteMode = 'EXPIRED' | 'OBSOLETE' | 'BY_TAG' | 'BY_BSKEY' | 'ARCHIVELOG';
 
@@ -29,9 +32,18 @@ export class DeleteCommand implements IRmanCommand<void> {
         return engine.run(JobBuilder.deleteExpired());
 
       case 'OBSOLETE': {
+        // Optional policy suffix: REDUNDANCY n / RECOVERY WINDOW OF n DAYS
+        const suffix = (args[0] ?? '').trim();
+        const activePolicy: IRetentionPolicy = (() => {
+          const r = suffix.match(/^REDUNDANCY\s+(\d+)$/i);
+          if (r) return new RedundancyPolicy(parseInt(r[1], 10));
+          const w = suffix.match(/^RECOVERY\s+WINDOW\s+OF\s+(\d+)\s+DAYS?$/i);
+          if (w) return new RecoveryWindowPolicy(parseInt(w[1], 10));
+          return policy;
+        })();
         const snap = catalog.listAll();
         if (!snap.ok) return snap;
-        const obsolete = policy.findObsolete(snap.value.sets).map(s => s.bsKey);
+        const obsolete = activePolicy.findObsolete(snap.value.sets).map(s => s.bsKey);
         return engine.run(JobBuilder.deleteObsolete(obsolete));
       }
 
