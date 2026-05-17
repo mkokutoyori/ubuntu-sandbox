@@ -50,6 +50,18 @@ export class InMemoryRmanCatalog implements IRmanCatalogRepository {
     return ok(undefined);
   }
 
+  setSetStatus(bsKey: number, status: 'AVAILABLE' | 'UNAVAILABLE'): Result<void, RmanError> {
+    const set = this._sets.get(bsKey);
+    if (!set) return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `BS ${bsKey} not found`, key: String(bsKey) });
+    const newPieces = set.pieces.map(p => Object.freeze({ ...p, status }));
+    for (const p of newPieces) this._pieces.set(pieceKeyStr(p.key), p);
+    this._sets.set(bsKey, Object.freeze({ ...set, pieces: Object.freeze(newPieces) }));
+    for (const p of newPieces) {
+      this._changes$.next({ type: 'CATALOG_UPDATED', operation: 'INSERT', key: p.key });
+    }
+    return ok(undefined);
+  }
+
   deleteBackupSet(bsKey: number): Result<void, RmanError> {
     const set = this._sets.get(bsKey);
     if (!set) return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `BS ${bsKey} not found`, key: String(bsKey) });

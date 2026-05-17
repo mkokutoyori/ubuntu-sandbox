@@ -26,6 +26,8 @@ export interface IRmanCatalogWriter {
   recordBackupSet(set: BackupSet):     Result<void, RmanError>;
   expirePiece(key: BackupKey):         Result<void, RmanError>;
   deleteBackupSet(bsKey: number):      Result<void, RmanError>;
+  /** Switch every piece of a backup set to a new status (AVAILABLE / UNAVAILABLE). */
+  setSetStatus(bsKey: number, status: 'AVAILABLE' | 'UNAVAILABLE'): Result<void, RmanError>;
 }
 
 export interface IRmanCatalogRepository extends IRmanCatalogReader, IRmanCatalogWriter {

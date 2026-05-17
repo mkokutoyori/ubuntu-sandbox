@@ -18,13 +18,15 @@ export type RmanOperation =
   | 'BACKUP_TABLESPACE'
   | 'RESTORE_DATABASE'
   | 'RECOVER_DATABASE'
+  | 'DUPLICATE_DATABASE'
   | 'CROSSCHECK'
   | 'DELETE_EXPIRED'
   | 'DELETE_OBSOLETE'
   | 'LIST_BACKUP'
   | 'REPORT_SCHEMA'
   | 'SHOW_ALL'
-  | 'CONNECT';
+  | 'CONNECT'
+  | 'CONFIGURE';
 
 export type RmanSessionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'RUNNING_JOB' | 'DISCONNECTED';
 
@@ -56,6 +58,8 @@ export type RmanEvent =
   | { type: 'BACKUP_PIECE_STARTED'; jobId: string; channelId: string; what: string }
   | { type: 'BACKUP_PIECE_CREATED'; jobId: string; channelId: string; piece: BackupPieceInfo }
   | { type: 'BACKUP_SET_COMPLETE';  jobId: string; bsKey: number; tag: RmanTag; sizeBytes: number }
+  | { type: 'BACKUP_VALIDATED';     jobId: string; what: string }
+  | { type: 'ARCHIVELOG_DELETED';   jobId: string; path: string }
   // Restore / Recover
   | { type: 'RESTORE_DATAFILE_STARTED';   jobId: string; channelId: string; fileNo: number; to: string }
   | { type: 'RESTORE_DATAFILE_COMPLETED'; jobId: string; fileNo: number; elapsedMs: number }
@@ -64,6 +68,8 @@ export type RmanEvent =
   // Catalog
   | { type: 'CATALOG_UPDATED'; operation: 'INSERT' | 'DELETE' | 'EXPIRE'; key: BackupKey }
   | { type: 'CROSSCHECK_DONE'; available: number; expired: number }
+  // Configuration
+  | { type: 'CONFIG_CHANGED'; key: string; oldValue: string; newValue: string }
   // Script parser (future use)
   | { type: 'SCRIPT_LINE_PARSED'; lineNo: number; command: string }
   | { type: 'SCRIPT_BLOCK_START'; blockId: string }

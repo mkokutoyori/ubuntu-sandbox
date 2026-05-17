@@ -28,6 +28,7 @@ import type { DhcpDomainEvent } from '@/network/dhcp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { OracleDomainEvent } from '@/database/oracle/events';
+import type { RmanDomainEvent } from '@/terminal/subshells/rman/events';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cross-cutting
@@ -241,7 +242,9 @@ export type DomainEvent =
   // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)
   | HostDomainEvent
   // Oracle DBMS (sub-union, see src/database/oracle/events.ts)
-  | OracleDomainEvent;
+  | OracleDomainEvent
+  // RMAN sub-shell (sub-union, see src/terminal/subshells/rman/events.ts)
+  | RmanDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 

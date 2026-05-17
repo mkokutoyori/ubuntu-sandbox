@@ -18,8 +18,10 @@ export { DbId } from './values/DbId';
 
 // Reactive primitives
 export { RmanSubject, type RmanObservable, type RmanOperator } from './reactive/RmanSubject';
+export { RmanBehaviorSubject } from './reactive/RmanBehaviorSubject';
 export { Operators } from './reactive/operators';
 export { RmanEventBus } from './reactive/RmanEventBus';
+export { createAggregations, EMPTY_METRICS, type SessionMetrics, type ReactiveAggregations } from './reactive/aggregations';
 
 // Policy
 export type { IRetentionPolicy, RetentionKind } from './policy/IRetentionPolicy';
@@ -63,3 +65,21 @@ export { LinuxRmanContext } from './integration/LinuxRmanContext';
 
 // SubShell
 export { ReactiveRmanSubShell } from './ReactiveRmanSubShell';
+
+// Shared-bus integration
+export type {
+  RmanDomainEvent, RmanDomainEventTopic, RmanSessionRef,
+  RmanSessionStateChangedPayload, RmanConnectedPayload, RmanDisconnectedPayload,
+  RmanJobStartedPayload, RmanJobCompletedPayload, RmanJobFailedPayload,
+  RmanProgressUpdatedPayload, RmanBackupPieceCreatedPayload,
+  RmanBackupSetCompletePayload, RmanChannelAllocatedPayload,
+  RmanChannelReleasedPayload, RmanCatalogUpdatedPayload, RmanConfigChangedPayload,
+} from './events';
+export { RmanBusBridge } from './RmanBusBridge';
+export {
+  RmanSignalStore, EMPTY_RMAN_METRICS, makeReadonlyRmanObservables,
+  type RmanSessionVM, type RmanActiveJobVM, type RmanMetricsVM, type RmanObservables,
+} from './RmanSignalStore';
+export { RmanSignalRefreshActor } from './actors/RmanSignalRefreshActor';
+export { RmanLoggerActor } from './actors/RmanLoggerActor';
+export { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';

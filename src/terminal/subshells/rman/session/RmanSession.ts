@@ -13,7 +13,9 @@
  */
 
 import { RmanEventBus } from '../reactive/RmanEventBus';
+import { createAggregations, type ReactiveAggregations, type SessionMetrics } from '../reactive/aggregations';
 import { ReactiveChannelPool } from '../channel/ReactiveChannelPool';
+import { RmanBusBridge } from '../RmanBusBridge';
 import { InMemoryRmanCatalog } from '../catalog/InMemoryRmanCatalog';
 import { RmanJobEngine } from '../job/RmanJobEngine';
 import { RmanCommandDispatcher } from '../commands/RmanCommandDispatcher';
@@ -26,6 +28,7 @@ import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
 import type { RmanObservable } from '../reactive/RmanSubject';
 import type { RmanEvent } from '../core/types';
 import { RmanSessionOptionsBuilder } from './RmanSessionOptionsBuilder';
+import { RmanConfig } from './RmanConfig';
 
 export class RmanSession implements IRmanSession {
   private readonly _bus:        RmanEventBus;
@@ -33,11 +36,25 @@ export class RmanSession implements IRmanSession {
   private readonly _catalog:    InMemoryRmanCatalog;
   private readonly _engine:     RmanJobEngine;
   private readonly _dispatcher: RmanCommandDispatcher;
+  private readonly _config:     RmanConfig;
+  /** Lines accumulated inside an active RUN { ... } block. */
+  private readonly _block:      string[] = [];
+  private _inBlock = false;
+  /** User-aliased channels held by ALLOCATE CHANNEL. */
+  private readonly _userChannels = new Map<string, import('../channel/types').ChannelHandle>();
+  /** Rename map populated by SET NEWNAME FOR DATAFILE inside a RUN block. */
+  private readonly _setNewname = new Map<number, string>();
   private _state: RmanSessionState = 'IDLE';
   private readonly _unsubs: Array<() => void> = [];
   private _disposed = false;
 
-  readonly events$: RmanObservable<RmanEvent>;
+  readonly events$:        RmanObservable<RmanEvent>;
+  readonly metrics$:        RmanObservable<SessionMetrics>;
+  readonly activeJob$:      RmanObservable<string | null>;
+  readonly activeChannels$: RmanObservable<ReadonlySet<string>>;
+  private readonly _aggregations: ReactiveAggregations;
+  private readonly _bridge?: RmanBusBridge;
+  readonly sessionId: string;
 
   constructor(
     private readonly _options: RmanSessionOptions,
@@ -48,14 +65,31 @@ export class RmanSession implements IRmanSession {
     this._catalog    = new InMemoryRmanCatalog();
     this._engine     = new RmanJobEngine(this._bus, this._pool, this._catalog, _ctx);
     this._dispatcher = new RmanCommandDispatcher();
+    this._config     = new RmanConfig(_options.retentionPolicy, _options.autobackupCf);
     this.events$     = this._bus.events$;
     this._wireReactiveStreams();
+    // Derived state — must subscribe after _wireReactiveStreams so that
+    // channel/catalog forwards are already feeding events$.
+    this._aggregations    = createAggregations(this.events$);
+    this.metrics$         = this._aggregations.metrics$;
+    this.activeJob$       = this._aggregations.activeJob$;
+    this.activeChannels$  = this._aggregations.activeChannels$;
+
+    this.sessionId = _options.sessionId ?? `rman-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    if (_options.sharedBus) {
+      this._bridge = new RmanBusBridge(_options.sharedBus, this.sessionId, this.events$);
+      this._bridge.start();
+    }
   }
 
   get state(): RmanSessionState { return this._state; }
 
   connect(_target?: string): Result<void, RmanError> {
     if (this._state === 'CONNECTED' || this._state === 'RUNNING_JOB') return ok(undefined);
+    const inst = this._ctx.getInstanceState?.();
+    if (inst === 'SHUTDOWN') {
+      return err({ code: 'RMAN_04014', message: 'Oracle instance is not started' });
+    }
     this._transition('CONNECTING');
     this._transition('CONNECTED');
     this._bus.emit({
@@ -70,15 +104,54 @@ export class RmanSession implements IRmanSession {
   processLine(line: string): Result<string[], RmanError> {
     const trimmed = line.trim();
     if (!trimmed) return ok([]);
+    if (trimmed.startsWith('#')) return ok([]); // comment
+
     const upper = trimmed.toUpperCase();
 
-    if (upper === 'EXIT' || upper === 'QUIT') {
+    // Inline RUN { stmt1; stmt2; } — Oracle's canonical single-line form.
+    const inline = trimmed.match(/^RUN\s*\{(.*)\}\s*;?\s*$/i);
+    if (inline) {
+      if (this._state !== 'CONNECTED' && this._state !== 'RUNNING_JOB') {
+        return err({ code: 'RMAN_03002', message: 'target database is not connected' });
+      }
+      const body = inline[1].split(';').map(s => s.trim()).filter(Boolean);
+      return this._runBlock(body);
+    }
+
+    // Block control — recognised in any state, before the connection check.
+    if (upper === 'RUN' || upper === 'RUN {' || trimmed === '{') {
+      this._inBlock = true;
+      this._block.length = 0;
+      return ok([]);
+    }
+    if (trimmed === '}') {
+      if (!this._inBlock) {
+        return err({ code: 'RMAN_00558', message: 'syntax error: unexpected "}" outside RUN block' });
+      }
+      const lines = [...this._block];
+      this._block.length = 0;
+      this._inBlock = false;
+      return this._runBlock(lines);
+    }
+
+    if (this._inBlock) {
+      // Drop trailing ; just like a single-line command would.
+      const cmd = trimmed.endsWith(';') ? trimmed.slice(0, -1).trim() : trimmed;
+      if (cmd) this._block.push(cmd);
+      return ok([]);
+    }
+
+    // One-shot line — strip optional trailing semicolon.
+    const cleaned = trimmed.endsWith(';') ? trimmed.slice(0, -1).trim() : trimmed;
+    const cleanedUpper = cleaned.toUpperCase();
+
+    if (cleanedUpper === 'EXIT' || cleanedUpper === 'QUIT') {
       this.dispose();
       return ok(['Recovery Manager complete.']);
     }
 
-    if (upper.startsWith('CONNECT TARGET')) {
-      const r = this.connect(trimmed);
+    if (cleanedUpper.startsWith('CONNECT TARGET')) {
+      const r = this.connect(cleaned);
       if (!r.ok) return r as Result<string[], RmanError>;
       return ok([`connected to target database: ${this._ctx.dbName} (DBID=${this._ctx.dbId.value})`]);
     }
@@ -87,13 +160,35 @@ export class RmanSession implements IRmanSession {
       return err({ code: 'RMAN_03002', message: 'target database is not connected' });
     }
 
-    return this._dispatcher.dispatch(trimmed, {
+    return this._dispatcher.dispatch(cleaned, this._cmdCtx());
+  }
+
+  private _cmdCtx() {
+    return {
       bus:     this._bus,
       engine:  this._engine,
       catalog: this._catalog,
       ctx:     this._ctx,
-      policy:  this._options.retentionPolicy,
-    });
+      policy:  this._config.snapshot().retentionPolicy,
+      config:  this._config,
+      pool:    this._pool,
+      userChannels: this._userChannels,
+      setNewname:   this._setNewname,
+    };
+  }
+
+  /** Execute every accumulated line of a RUN { ... } block in order. */
+  private _runBlock(lines: string[]): Result<string[], RmanError> {
+    if (this._state !== 'CONNECTED' && this._state !== 'RUNNING_JOB') {
+      return err({ code: 'RMAN_03002', message: 'target database is not connected' });
+    }
+    const output: string[] = [];
+    for (const cmd of lines) {
+      const r = this._dispatcher.dispatch(cmd, this._cmdCtx());
+      if (!r.ok) return r;
+      output.push(...r.value);
+    }
+    return ok(output);
   }
 
   getBanner(): string[] {
@@ -112,6 +207,8 @@ export class RmanSession implements IRmanSession {
     if (this._state !== 'DISCONNECTED') this._transition('DISCONNECTED');
     this._bus.emit({ type: 'DISCONNECTED' });
     for (const u of this._unsubs) u();
+    this._aggregations.dispose();
+    this._bridge?.stop();
     this._pool.dispose();
     this._catalog.dispose();
     this._bus.dispose();

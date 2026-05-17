@@ -29,14 +29,14 @@ export class ReactiveChannelPool implements IChannelPool {
 
   constructor(private readonly _configs: ReadonlyArray<ChannelConfig>) {}
 
-  allocate(): Result<ChannelHandle, RmanError> {
+  allocate(alias?: string): Result<ChannelHandle, RmanError> {
     for (const cfg of this._configs) {
       const busyCount = [...this._handles.values()]
         .filter(e => e.handle.id.startsWith(cfg.id + '_') && e.state === 'BUSY').length;
 
       if (busyCount < cfg.parallelism) {
         const idx = busyCount + 1;
-        const id = `${cfg.id}_${idx}`;
+        const id = alias ?? `${cfg.id}_${idx}`;
         const sid = this._sidCounter++;
         const handle: ChannelHandle = Object.freeze({
           id, deviceType: cfg.deviceType, sid, allocatedAt: Date.now(),

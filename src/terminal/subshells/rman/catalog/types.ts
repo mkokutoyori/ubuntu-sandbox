@@ -9,9 +9,9 @@ import type { RmanTag }   from '../values/RmanTag';
 import type { Scn }       from '../values/Scn';
 import type { DbId }      from '../values/DbId';
 
-export type BackupType  = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1';
+export type BackupType  = 'FULL' | 'INCREMENTAL_0' | 'INCREMENTAL_1' | 'ARCHIVELOG' | 'CONTROLFILE' | 'DATAFILECOPY';
 export type DeviceType  = 'DISK' | 'SBT';
-export type PieceStatus = 'AVAILABLE' | 'EXPIRED' | 'DELETED';
+export type PieceStatus = 'AVAILABLE' | 'EXPIRED' | 'DELETED' | 'UNAVAILABLE';
 
 export interface BackupPiece {
   readonly key:            BackupKey;
@@ -24,6 +24,7 @@ export interface BackupPiece {
   readonly checkpointScn:  Scn;
   readonly completionTime: number;
   readonly compressed:     boolean;
+  readonly encrypted?:     boolean;
 }
 
 export interface DatafileEntry {
@@ -45,6 +46,8 @@ export interface BackupSet {
   readonly completionTime: number;
   readonly sizeBytes:      number;
   readonly datafiles:      readonly DatafileEntry[];
+  /** Optional human-readable note rendered by LIST BACKUP (KEEP FOREVER, KEEP UNTIL …). */
+  readonly keepNote?:      string;
 }
 
 export interface CatalogSnapshot {

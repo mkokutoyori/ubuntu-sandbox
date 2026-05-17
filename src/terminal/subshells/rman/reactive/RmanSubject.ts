@@ -8,7 +8,11 @@
 
 export interface RmanObservable<T> {
   subscribe(fn: (value: T) => void): () => void;
-  pipe<U>(operator: RmanOperator<T, U>): RmanObservable<U>;
+  pipe<A>(o1: RmanOperator<T, A>): RmanObservable<A>;
+  pipe<A, B>(o1: RmanOperator<T, A>, o2: RmanOperator<A, B>): RmanObservable<B>;
+  pipe<A, B, C>(o1: RmanOperator<T, A>, o2: RmanOperator<A, B>, o3: RmanOperator<B, C>): RmanObservable<C>;
+  pipe<A, B, C, D>(o1: RmanOperator<T, A>, o2: RmanOperator<A, B>, o3: RmanOperator<B, C>, o4: RmanOperator<C, D>): RmanObservable<D>;
+  pipe(...ops: Array<RmanOperator<unknown, unknown>>): RmanObservable<unknown>;
 }
 
 export type RmanOperator<T, U> = (source: RmanObservable<T>) => RmanObservable<U>;
@@ -36,13 +40,16 @@ export class RmanSubject<T> implements RmanObservable<T> {
   }
 
   asObservable(): RmanObservable<T> {
+    const self = this;
     return {
-      subscribe: (fn) => this.subscribe(fn),
-      pipe:      (op) => this.pipe(op),
-    };
+      subscribe: (fn) => self.subscribe(fn),
+      pipe:      (...ops: Array<RmanOperator<unknown, unknown>>) => self.pipe(...ops as never),
+    } as RmanObservable<T>;
   }
 
-  pipe<U>(operator: RmanOperator<T, U>): RmanObservable<U> {
-    return operator(this.asObservable());
+  pipe(...operators: Array<RmanOperator<unknown, unknown>>): RmanObservable<unknown> {
+    let current: RmanObservable<unknown> = this.asObservable() as RmanObservable<unknown>;
+    for (const op of operators) current = op(current);
+    return current;
   }
 }

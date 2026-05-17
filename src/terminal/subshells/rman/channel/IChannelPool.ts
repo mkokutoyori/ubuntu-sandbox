@@ -9,7 +9,12 @@ import type { RmanObservable } from '../reactive/RmanSubject';
 import type { RmanEvent } from '../core/types';
 
 export interface IChannelPool {
-  allocate(): Result<ChannelHandle, RmanError>;
+  /**
+   * Allocate a channel. If `alias` is provided, it is used as the
+   * channel id in the emitted CHANNEL_ALLOCATED event (instead of the
+   * auto-generated `${cfg.id}_${n}` name).
+   */
+  allocate(alias?: string): Result<ChannelHandle, RmanError>;
   release(handle: ChannelHandle): Result<void, RmanError>;
   getStats(): ChannelStats;
   readonly allocations$: RmanObservable<Extract<RmanEvent, { type: 'CHANNEL_ALLOCATED' }>>;

@@ -20,7 +20,9 @@ export interface BackupSetSpec {
   readonly sizeBytes:   number;
   readonly datafiles:   ReadonlyArray<DatafileEntry>;
   readonly compressed?: boolean;
+  readonly encrypted?:  boolean;
   readonly deviceType?: DeviceType;
+  readonly keepNote?:   string;
 }
 
 export const BackupSetFactory = {
@@ -43,6 +45,7 @@ export const BackupSetFactory = {
       checkpointScn:  scn,
       completionTime: now,
       compressed:     spec.compressed ?? false,
+      encrypted:      spec.encrypted  ?? false,
     });
 
     return Object.freeze({
@@ -56,6 +59,7 @@ export const BackupSetFactory = {
       completionTime: now,
       sizeBytes:      spec.sizeBytes,
       datafiles:      Object.freeze([...spec.datafiles]),
+      keepNote:       spec.keepNote,
     });
   },
 };

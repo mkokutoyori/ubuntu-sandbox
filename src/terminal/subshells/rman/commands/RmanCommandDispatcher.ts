@@ -18,6 +18,13 @@ import { ReportCommand } from './ReportCommand';
 import { ShowCommand } from './ShowCommand';
 import { ConnectCommand } from './ConnectCommand';
 import { HelpCommand } from './HelpCommand';
+import { ConfigureCommand } from './ConfigureCommand';
+import { AllocateChannelCommand } from './AllocateChannelCommand';
+import { ReleaseChannelCommand } from './ReleaseChannelCommand';
+import { CatalogCommand } from './CatalogCommand';
+import { DuplicateCommand } from './DuplicateCommand';
+import { ChangeCommand } from './ChangeCommand';
+import { SetCommand } from './SetCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -54,21 +61,63 @@ export class RmanCommandDispatcher {
 
   private _registerDefaults(): void {
     this._entries.push(
-      { pattern: /^CONNECT TARGET(.*)$/i,        command: new ConnectCommand() },
-      { pattern: /^BACKUP DATABASE$/i,           command: new BackupCommand('database') },
-      { pattern: /^BACKUP ARCHIVELOG ALL$/i,     command: new BackupCommand('archivelog') },
-      { pattern: /^BACKUP TABLESPACE (\S+)$/i,   command: new BackupCommand('tablespace') },
-      { pattern: /^RESTORE DATABASE$/i,          command: new RestoreCommand() },
-      { pattern: /^RECOVER DATABASE$/i,          command: new RecoverCommand() },
+      { pattern: /^CONNECT TARGET(.*)$/i,                          command: new ConnectCommand() },
+      // VALIDATE / CONTROLFILE / INCREMENTAL — match before plain "BACKUP DATABASE"
+      { pattern: /^BACKUP VALIDATE DATABASE$/i,                    command: new BackupCommand('validate') },
+      { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
+      { pattern: /^BACKUP INCREMENTAL LEVEL (\d)(?:\s+(CUMULATIVE))? DATABASE(.*)$/i, command: new BackupCommand('incremental') },
+      { pattern: /^BACKUP COMPRESSED BACKUPSET DATABASE(.*)$/i,    command: new BackupCommand('database', true) },
+      { pattern: /^BACKUP DATABASE(.*)$/i,                         command: new BackupCommand('database') },
+      { pattern: /^BACKUP ARCHIVELOG ALL(.*)$/i,                   command: new BackupCommand('archivelog') },
+      { pattern: /^BACKUP ARCHIVELOG (FROM SCN \d+.*)$/i,          command: new BackupCommand('archivelog') },
+      { pattern: /^BACKUP TABLESPACE (\S+)(.*)$/i,                 command: new BackupCommand('tablespace') },
+      { pattern: /^BACKUP DATAFILE (\d+)(.*)$/i,                   command: new BackupCommand('datafile')   },
+      { pattern: /^BACKUP SPFILE(.*)$/i,                           command: new BackupCommand('spfile')     },
+      { pattern: /^RESTORE (DATABASE)(?:\s+(.*))?$/i,     command: new RestoreCommand() },
+      { pattern: /^RESTORE (TABLESPACE) (\S+)(?:\s+(.*))?$/i, command: new RestoreCommand() },
+      { pattern: /^RESTORE (DATAFILE) (\d+)(?:\s+(.*))?$/i,   command: new RestoreCommand() },
+      { pattern: /^RECOVER (DATABASE)(?:\s+(.*))?$/i,        command: new RecoverCommand() },
+      { pattern: /^RECOVER (TABLESPACE) (\S+)(?:\s+(.*))?$/i, command: new RecoverCommand() },
+      { pattern: /^RECOVER (DATAFILE) (\d+)(?:\s+(.*))?$/i,   command: new RecoverCommand() },
       { pattern: /^LIST BACKUP SUMMARY$/i,       command: new ListBackupCommand('SUMMARY') },
       { pattern: /^LIST BACKUP$/i,               command: new ListBackupCommand('DETAIL') },
+      { pattern: /^LIST ARCHIVELOG ALL$/i,       command: new ListBackupCommand('ARCHIVELOG') },
+      { pattern: /^LIST EXPIRED BACKUP$/i,       command: new ListBackupCommand('EXPIRED') },
+      { pattern: /^LIST OBSOLETE$/i,             command: new ListBackupCommand('OBSOLETE') },
+      { pattern: /^LIST COPY(?:\s+.*)?$/i,       command: new ListBackupCommand('COPY') },
       { pattern: /^REPORT SCHEMA$/i,             command: new ReportCommand('SCHEMA') },
       { pattern: /^REPORT NEED BACKUP$/i,        command: new ReportCommand('NEED_BACKUP') },
+      { pattern: /^REPORT OBSOLETE$/i,           command: new ReportCommand('OBSOLETE') },
+      { pattern: /^REPORT UNRECOVERABLE$/i,      command: new ReportCommand('UNRECOVERABLE') },
       { pattern: /^CROSSCHECK BACKUP$/i,         command: new CrosscheckCommand() },
-      { pattern: /^DELETE EXPIRED BACKUP$/i,     command: new DeleteCommand('EXPIRED') },
-      { pattern: /^DELETE OBSOLETE$/i,           command: new DeleteCommand('OBSOLETE') },
-      { pattern: /^SHOW ALL$/i,                  command: new ShowCommand() },
+      { pattern: /^DELETE (?:NOPROMPT )?EXPIRED BACKUP$/i,           command: new DeleteCommand('EXPIRED') },
+      { pattern: /^DELETE (?:NOPROMPT )?OBSOLETE$/i,                 command: new DeleteCommand('OBSOLETE') },
+      { pattern: /^DELETE (?:NOPROMPT )?BACKUP TAG '([^']+)'$/i,     command: new DeleteCommand('BY_TAG') },
+      { pattern: /^DELETE (?:NOPROMPT )?BACKUPSET (\d+)$/i,          command: new DeleteCommand('BY_BSKEY') },
+      { pattern: /^DELETE (?:NOPROMPT )?ARCHIVELOG ALL$/i,           command: new DeleteCommand('ARCHIVELOG') },
+      { pattern: /^SHOW ALL$/i,                       command: new ShowCommand('ALL') },
+      { pattern: /^SHOW RETENTION POLICY$/i,          command: new ShowCommand('RETENTION_POLICY') },
+      { pattern: /^SHOW DEFAULT DEVICE TYPE$/i,       command: new ShowCommand('DEFAULT_DEVICE_TYPE') },
+      { pattern: /^SHOW CONTROLFILE AUTOBACKUP$/i,    command: new ShowCommand('CONTROLFILE_AUTOBACKUP') },
+      { pattern: /^CROSSCHECK ARCHIVELOG ALL$/i,      command: new CrosscheckCommand('ARCHIVELOG') },
       { pattern: /^HELP$/i,                      command: new HelpCommand() },
+      // CONFIGURE — capture the everything after the keyword in args[0]
+      { pattern: /^CONFIGURE (.+)$/i,            command: new ConfigureCommand() },
+      // Explicit channels (inside RUN blocks)
+      { pattern: /^ALLOCATE CHANNEL (\S+) DEVICE TYPE (DISK|SBT)$/i, command: new AllocateChannelCommand() },
+      { pattern: /^RELEASE CHANNEL (\S+)$/i,                          command: new ReleaseChannelCommand() },
+      // Manual catalog registration (DEF-RMAN-16)
+      { pattern: /^CATALOG DATAFILECOPY (.+)$/i, command: new CatalogCommand('DATAFILECOPY') },
+      { pattern: /^CATALOG BACKUPPIECE (.+)$/i,  command: new CatalogCommand('BACKUPPIECE')  },
+      // DUPLICATE DATABASE (DEF-RMAN-17)
+      { pattern: /^DUPLICATE TARGET DATABASE TO (\S+)$/i, command: new DuplicateCommand() },
+      { pattern: /^DUPLICATE DATABASE TO (\S+)$/i,        command: new DuplicateCommand() },
+      // CHANGE (UN)AVAILABLE + tag-scoped delete
+      { pattern: /^CHANGE BACKUPSET (\d+) UNAVAILABLE$/i,           command: new ChangeCommand('UNAVAILABLE')  },
+      { pattern: /^CHANGE BACKUPSET (\d+) AVAILABLE$/i,             command: new ChangeCommand('AVAILABLE')    },
+      { pattern: /^CHANGE BACKUP TAG '([^']+)' DELETE$/i,           command: new ChangeCommand('DELETE_BY_TAG') },
+      // SET NEWNAME (RUN-block binding consumed by RESTORE / DUPLICATE)
+      { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand() },
     );
   }
 }
