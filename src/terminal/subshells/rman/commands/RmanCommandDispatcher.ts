@@ -22,6 +22,7 @@ import { ConfigureCommand } from './ConfigureCommand';
 import { AllocateChannelCommand } from './AllocateChannelCommand';
 import { ReleaseChannelCommand } from './ReleaseChannelCommand';
 import { CatalogCommand } from './CatalogCommand';
+import { DuplicateCommand } from './DuplicateCommand';
 
 interface DispatchEntry {
   pattern: RegExp;
@@ -85,6 +86,9 @@ export class RmanCommandDispatcher {
       // Manual catalog registration (DEF-RMAN-16)
       { pattern: /^CATALOG DATAFILECOPY (.+)$/i, command: new CatalogCommand('DATAFILECOPY') },
       { pattern: /^CATALOG BACKUPPIECE (.+)$/i,  command: new CatalogCommand('BACKUPPIECE')  },
+      // DUPLICATE DATABASE (DEF-RMAN-17)
+      { pattern: /^DUPLICATE TARGET DATABASE TO (\S+)$/i, command: new DuplicateCommand() },
+      { pattern: /^DUPLICATE DATABASE TO (\S+)$/i,        command: new DuplicateCommand() },
     );
   }
 }

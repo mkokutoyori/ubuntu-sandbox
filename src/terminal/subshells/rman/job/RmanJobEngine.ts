@@ -102,6 +102,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, `tablespace ${job.params?.tablespace ?? 'USERS'}`);
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
+      case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
       case 'CROSSCHECK':         return this._doCrosscheck();
       case 'DELETE_EXPIRED':     return this._doDeleteExpired();
       case 'DELETE_OBSOLETE':    return this._doDeleteObsolete(job);
@@ -209,6 +210,27 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
         fileNo: df.fileNo, elapsedMs: 5_000,
+      });
+    }
+    return ok(undefined);
+  }
+
+  private _doDuplicate(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const aux = (job.params?.auxiliary ?? 'AUX').toUpperCase();
+    const snap = this._catalog.listAll();
+    if (!snap.ok) return snap;
+    if (snap.value.sets.length === 0) {
+      return err({ code: 'RMAN_06023', message: 'No backup found to duplicate' });
+    }
+    for (const df of this._ctx.getDatafiles()) {
+      const dest = df.path.replace(this._ctx.dbName.toUpperCase(), aux);
+      this._bus.emit({
+        type: 'RESTORE_DATAFILE_STARTED', jobId: job.id, channelId,
+        fileNo: df.fileNo, to: dest,
+      });
+      this._bus.emit({
+        type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
+        fileNo: df.fileNo, elapsedMs: 4_000,
       });
     }
     return ok(undefined);

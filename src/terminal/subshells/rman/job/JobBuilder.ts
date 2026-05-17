@@ -77,6 +77,15 @@ export const JobBuilder = {
     ]);
   },
 
+  duplicateDatabase(targetDbName: string): RmanJob {
+    return _make('DUPLICATE_DATABASE', [
+      { name: 'start_duplicate',  pct: 10, message: `Starting Duplicate Db at ${new Date().toISOString()}` },
+      { name: 'set_auxiliary',    pct: 20, message: `contents of Memory Script: { set newname for datafiles }` },
+      { name: 'restore_clone',    pct: 60, message: 'restore clone database' },
+      { name: 'switch_clone',     pct: 80, message: 'switch clone datafile' },
+    ], { auxiliary: targetDbName });
+  },
+
   recoverDatabase(opts: { untilScn?: number; untilTime?: string } = {}): RmanJob {
     const params: Record<string, string> = {};
     if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
