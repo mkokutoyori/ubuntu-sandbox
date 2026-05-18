@@ -35,6 +35,8 @@ export type {
 } from './catalog/types';
 export { InMemoryRmanCatalog } from './catalog/InMemoryRmanCatalog';
 export { BackupSetFactory } from './catalog/BackupSetFactory';
+export { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
+export { DeviceConfigRegistry } from './session/DeviceConfigRegistry';
 export type {
   IRmanCatalogReader, IRmanCatalogWriter, IRmanCatalogRepository,
 } from './catalog/IRmanCatalogRepository';

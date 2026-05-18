@@ -30,6 +30,8 @@ export interface RmanConfigSnapshot {
   readonly backupOptimization:     boolean;
   /** FORMAT '<x>' applied to the default channel of the active device. */
   readonly channelFormat:          string | undefined;
+  /** Tablespaces marked EXCLUDED via CONFIGURE EXCLUDE FOR TABLESPACE. */
+  readonly excludedTablespaces:    ReadonlySet<string>;
 }
 
 export interface ConfigDelta {
@@ -54,6 +56,7 @@ export class RmanConfig {
   private _archivelogDeletionPolicy: ArchivelogDelPolicy = 'NONE';
   private _backupOptimization = false;
   private _channelFormat: string | undefined;
+  private _excludedTablespaces = new Set<string>();
 
   constructor(initialPolicy: IRetentionPolicy = new RedundancyPolicy(1), initialAutobackup = true) {
     this._retentionPolicy = initialPolicy;
@@ -77,6 +80,7 @@ export class RmanConfig {
       archivelogDeletionPolicy: this._archivelogDeletionPolicy,
       backupOptimization:     this._backupOptimization,
       channelFormat:          this._channelFormat,
+      excludedTablespaces:    this._excludedTablespaces,
     };
   }
 
@@ -170,5 +174,21 @@ export class RmanConfig {
     const old = this._channelFormat ?? '<unset>';
     this._channelFormat = fmt;
     return { key: 'channelFormat', oldValue: old, newValue: fmt };
+  }
+
+  addExcludedTablespace(name: string): ConfigDelta {
+    const upper = name.toUpperCase();
+    const old = [...this._excludedTablespaces].sort().join(',');
+    this._excludedTablespaces.add(upper);
+    const next = [...this._excludedTablespaces].sort().join(',');
+    return { key: 'excludeTablespace', oldValue: old || '<none>', newValue: next };
+  }
+
+  removeExcludedTablespace(name: string): ConfigDelta {
+    const upper = name.toUpperCase();
+    const old = [...this._excludedTablespaces].sort().join(',');
+    this._excludedTablespaces.delete(upper);
+    const next = [...this._excludedTablespaces].sort().join(',') || '<none>';
+    return { key: 'excludeTablespace', oldValue: old || '<none>', newValue: next };
   }
 }

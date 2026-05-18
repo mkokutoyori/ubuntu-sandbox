@@ -127,10 +127,24 @@ export class RmanJobEngine implements IRmanJobEngine {
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
 
     const allDatafiles = this._ctx.getDatafiles();
-    const fileFilter = params.fileNo ? Number(params.fileNo) : undefined;
-    const datafiles = fileFilter !== undefined
-      ? allDatafiles.filter(df => df.fileNo === fileFilter)
-      : allDatafiles;
+    // Multi-fileNo : params.fileNo peut contenir "4" ou "1,2,3"
+    const fileFilters = params.fileNo
+      ? new Set(params.fileNo.split(',').map(s => Number(s.trim())).filter(Number.isFinite))
+      : null;
+    // Multi-tablespace : params.tablespace peut contenir "USERS" ou "SYSTEM,USERS"
+    const tsFilters = params.tablespace
+      ? new Set(params.tablespace.split(',').map(s => s.trim().toUpperCase()))
+      : null;
+    // Exclusions de CONFIGURE EXCLUDE FOR TABLESPACE name (CSV)
+    const tsExclusions = new Set(
+      (params.excludeTablespaces ?? '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+    );
+    const datafiles = allDatafiles.filter(df => {
+      if (tsExclusions.has(df.tablespace.toUpperCase())) return false;
+      if (fileFilters && !fileFilters.has(df.fileNo)) return false;
+      if (tsFilters   && !tsFilters.has(df.tablespace.toUpperCase())) return false;
+      return true;
+    });
     const totalSize = isControlfile
       ? 9_650_176
       : isSpfile
@@ -175,6 +189,35 @@ export class RmanJobEngine implements IRmanJobEngine {
         ckpTime: Date.now(), path: df.path,
       });
     });
+
+    // BACKUP AS COPY — un DATAFILECOPY par datafile, pas de set agrégé.
+    // Chaque copie va dans son propre BackupSet de type DATAFILECOPY.
+    if (params.asCopy === 'true' && !isControlfile && !isSpfile && !isArchivelog) {
+      const ckpR = Scn.of(1_892_354);
+      const ckp = ckpR.ok ? ckpR.value : Scn.ZERO;
+      for (const df of datafiles) {
+        const copyPath = `${basePath}.df${df.fileNo}`;
+        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0));
+        if (!writeR.ok) return writeR;
+        const set = BackupSetFactory.createBackupSet({
+          type: 'DATAFILECOPY', level: 0, path: copyPath,
+          sizeBytes: df.sizeBytes, tag,
+          datafiles: [Object.freeze({
+            fileNo: df.fileNo, level: 0 as 0 | 1,
+            ckpScn: ckp, ckpTime: Date.now(), path: df.path,
+          })],
+          compressed, encrypted,
+        });
+        this._bus.emit({
+          type: 'BACKUP_PIECE_CREATED', jobId: job.id, channelId,
+          piece: { key: set.pieces[0].key, tag, path: copyPath, sizeBytes: df.sizeBytes, checkpointScn: set.pieces[0].checkpointScn },
+        });
+        const recR = this._catalog.recordBackupSet(set);
+        if (!recR.ok) return recR;
+        this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: df.sizeBytes });
+      }
+      return ok(undefined);
+    }
 
     const type = isControlfile  ? 'CONTROLFILE'
               : isArchivelog    ? 'ARCHIVELOG'
@@ -360,6 +403,24 @@ export class RmanJobEngine implements IRmanJobEngine {
     const from = Scn.of(fromValue);
     const to   = Scn.of(toValue);
     this._bus.emit({ type: 'RECOVER_STARTED',   jobId: job.id, fromScn: from.ok ? from.value : Scn.ZERO });
+    // Émet une ligne par archivelog "applied" — Oracle imprime
+    //   "archived log for thread 1 with sequence 42 is already on disk
+    //    as file /u01/.../arch_1_42_xxx.arc"
+    // pour chaque log appliqué pendant le RECOVER. On synthétise un set
+    // raisonnable autour des SCN from/to.
+    const arcPaths = this._ctx.getArchivelogPaths?.() ?? [];
+    if (arcPaths.length > 0) {
+      const baseSeq = 1;
+      for (let i = 0; i < arcPaths.length; i++) {
+        const seq = baseSeq + i;
+        this._bus.emit({
+          type: 'ARCHIVELOG_APPLIED', jobId: job.id,
+          thread: 1, sequence: seq, path: arcPaths[i],
+          firstScn: fromValue - (arcPaths.length - i) * 100,
+          nextScn:  fromValue - (arcPaths.length - i - 1) * 100,
+        });
+      }
+    }
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     return ok(undefined);
   }

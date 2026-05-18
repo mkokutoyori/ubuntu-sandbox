@@ -22,7 +22,7 @@ import { JobBuilder } from '../job/JobBuilder';
 
 export type BackupMode =
   | 'database' | 'archivelog' | 'tablespace' | 'incremental'
-  | 'controlfile' | 'validate' | 'datafile' | 'spfile';
+  | 'controlfile' | 'validate' | 'datafile' | 'spfile' | 'recoveryArea';
 
 export class BackupCommand implements IRmanCommand<void> {
   readonly name = 'BACKUP';
@@ -31,15 +31,18 @@ export class BackupCommand implements IRmanCommand<void> {
     private readonly mode: BackupMode,
     private readonly forceCompressed = false,
     private readonly notBackedUpFromArg0 = false,
+    private readonly forceAsCopy = false,
   ) {}
 
-  execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
+    const { engine } = cmdCtx;
     // Parse options against every captured fragment so trailing TAG / FORMAT /
     // DELETE INPUT / COMPRESSED / FROM SCN clauses are picked up regardless of
     // where the dispatcher pattern slotted them.
     const all = args.join(' ');
     const opts = parseBackupOptions(all);
     if (this.forceCompressed) opts.compressed = true;
+    if (this.forceAsCopy)     opts.asCopy     = true;
     if (this.notBackedUpFromArg0) {
       const n = Number(args[0]);
       if (Number.isFinite(n)) opts.notBackedUpNTimes = n;
@@ -47,38 +50,70 @@ export class BackupCommand implements IRmanCommand<void> {
 
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
+    // Tablespaces exclus via CONFIGURE EXCLUDE FOR TABLESPACE — appliqués
+    // automatiquement à BACKUP DATABASE / INCREMENTAL DATABASE.
+    const excluded = [...(cmdCtx.config?.snapshot().excludedTablespaces ?? [])];
+
+    let result: Result<void, RmanError>;
     switch (this.mode) {
       case 'database': {
-        const r = engine.run(JobBuilder.backupDatabase(opts));
+        const r = engine.run(JobBuilder.backupDatabase({ ...opts, excludeTablespaces: excluded }));
         if (!r.ok) return r;
         if (plusArchivelog) {
-          return engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
+          const r2 = engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
+          if (!r2.ok) return r2;
         }
-        return r;
+        result = r;
+        break;
       }
       case 'archivelog':
-        return engine.run(JobBuilder.backupArchivelog(opts));
-      case 'tablespace':
-        return engine.run(JobBuilder.backupTablespace(args[0] ?? 'USERS', opts));
+        result = engine.run(JobBuilder.backupArchivelog(opts));
+        break;
+      case 'tablespace': {
+        // args[0] = "USERS" ou "SYSTEM, USERS, SYSAUX" (séparateur virgule)
+        const list = (args[0] ?? 'USERS').split(',').map(s => s.trim()).filter(Boolean);
+        result = engine.run(JobBuilder.backupTablespace(list, opts));
+        break;
+      }
       case 'incremental': {
         const level = (args[0] === '0' ? 0 : 1) as 0 | 1;
         // args[1] = "CUMULATIVE" if present, args[2] = post-clauses
         const cumulative = (args[1] ?? '').toUpperCase() === 'CUMULATIVE';
         const clauseOpts = parseBackupOptions(args.slice(1).join(' '));
         clauseOpts.cumulative = cumulative || clauseOpts.cumulative;
-        return engine.run(JobBuilder.backupIncremental(level, clauseOpts));
+        result = engine.run(JobBuilder.backupIncremental(level, clauseOpts));
+        break;
       }
       case 'controlfile':
+        // Explicit BACKUP CURRENT CONTROLFILE — never re-triggers autobackup
         return engine.run(JobBuilder.backupControlfile(opts));
       case 'validate':
         return engine.run(JobBuilder.backupValidate());
       case 'datafile': {
-        const n = Number(args[0]);
-        return engine.run(JobBuilder.backupDatafile(Number.isFinite(n) ? n : 1, opts));
+        // args[0] = "4" ou "1,2,3" (séparateur virgule)
+        const list = (args[0] ?? '1').split(',')
+          .map(s => Number(s.trim()))
+          .filter(n => Number.isFinite(n));
+        result = engine.run(JobBuilder.backupDatafile(list.length > 0 ? list : [1], opts));
+        break;
       }
+      case 'recoveryArea':
+        result = engine.run(JobBuilder.backupRecoveryArea(opts));
+        break;
       case 'spfile':
-        return engine.run(JobBuilder.backupSpfile(opts));
+        result = engine.run(JobBuilder.backupSpfile(opts));
+        break;
     }
+
+    // Controlfile autobackup — fires automatically after a successful
+    // BACKUP DATABASE / TABLESPACE / DATAFILE / ARCHIVELOG / INCREMENTAL
+    // when CONFIGURE CONTROLFILE AUTOBACKUP ON. Mirrors real Oracle's
+    // behaviour. Self-trigger is guarded by `params.what === 'controlfile'`
+    // so the autobackup doesn't recurse.
+    if (result.ok && cmdCtx.config?.snapshot().controlfileAutobackup === true) {
+      engine.run(JobBuilder.backupControlfile({ tag: 'AUTOBACKUP' }));
+    }
+    return result;
   }
 }
 
@@ -89,6 +124,7 @@ export function parseBackupOptions(text: string): {
   keepForever?: boolean; keepUntilTime?: string;
   cumulative?: boolean; maxPieceSize?: number;
   encrypted?: boolean; notBackedUpNTimes?: number;
+  asCopy?: boolean;
 } {
   const out: {
     tag?: string; format?: string; deleteInput?: boolean;
@@ -96,6 +132,7 @@ export function parseBackupOptions(text: string): {
     keepForever?: boolean; keepUntilTime?: string;
     cumulative?: boolean; maxPieceSize?: number;
     encrypted?: boolean; notBackedUpNTimes?: number;
+    asCopy?: boolean;
   } = {};
   const tagMatch = text.match(/\bTAG\s+'([^']+)'/i);
   if (tagMatch) out.tag = tagMatch[1].toUpperCase();
@@ -110,6 +147,7 @@ export function parseBackupOptions(text: string): {
   if (keepUntil) out.keepUntilTime = keepUntil[1];
   if (/\bCUMULATIVE\b/i.test(text)) out.cumulative = true;
   if (/\bENCRYPTED\b/i.test(text))  out.encrypted = true;
+  if (/\bAS\s+COPY\b/i.test(text))  out.asCopy   = true;
   const notBackedUp = text.match(/\bNOT\s+BACKED\s+UP\s+(\d+)\s+TIMES\b/i);
   if (notBackedUp) out.notBackedUpNTimes = Number(notBackedUp[1]);
   const mps = text.match(/\bMAXPIECESIZE\s+(\d+)\s*([KMG])?/i);

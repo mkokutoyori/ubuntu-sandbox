@@ -43,7 +43,8 @@ describe('RmanSessionOptionsBuilder', () => {
     expect(Object.isFrozen(opts)).toBe(true);
     expect(opts.dbId.name).toBe('ORCL');
     expect(opts.channelConfigs.length).toBeGreaterThan(0);
-    expect(opts.autobackupCf).toBe(true);
+    // Oracle default is OFF (must be explicitly enabled via CONFIGURE CONTROLFILE AUTOBACKUP ON).
+    expect(opts.autobackupCf).toBe(false);
     expect(opts.retentionPolicy.describe()).toBe('REDUNDANCY 1');
   });
 

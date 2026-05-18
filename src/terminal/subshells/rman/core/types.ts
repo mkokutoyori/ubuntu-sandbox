@@ -64,6 +64,7 @@ export type RmanEvent =
   | { type: 'RESTORE_DATAFILE_STARTED';   jobId: string; channelId: string; fileNo: number; to: string }
   | { type: 'RESTORE_DATAFILE_COMPLETED'; jobId: string; fileNo: number; elapsedMs: number }
   | { type: 'RECOVER_STARTED';            jobId: string; fromScn: Scn }
+  | { type: 'ARCHIVELOG_APPLIED';         jobId: string; thread: number; sequence: number; path: string; firstScn: number; nextScn: number }
   | { type: 'RECOVER_COMPLETED';          jobId: string; toScn: Scn; elapsedMs: number }
   // Catalog
   | { type: 'CATALOG_UPDATED'; operation: 'INSERT' | 'DELETE' | 'EXPIRE'; key: BackupKey }

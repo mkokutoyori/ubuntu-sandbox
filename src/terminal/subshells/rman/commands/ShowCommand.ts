@@ -68,6 +68,11 @@ export class ShowCommand implements IRmanCommand<string[]> {
                      :  arDelPolRaw === 'BACKED_UP'             ? 'BACKED UP'
                      :                                            'NONE';
 
+    const excluded = c?.excludedTablespaces;
+    const excludedLines = excluded && excluded.size > 0
+      ? [...excluded].sort().map(ts => `CONFIGURE EXCLUDE FOR TABLESPACE ${ts};`)
+      : ['CONFIGURE EXCLUDE FOR TABLESPACE TEMP; # default, cleared if explicit'];
+
     return ok([
       '',
       `RMAN configuration parameters for database with db_unique_name ${ctx.dbName} are:`,
@@ -83,6 +88,7 @@ export class ShowCommand implements IRmanCommand<string[]> {
       `CONFIGURE ENCRYPTION FOR DATABASE ${encDb};`,
       `CONFIGURE ENCRYPTION ALGORITHM '${encAlg}';`,
       `CONFIGURE COMPRESSION ALGORITHM '${compAlg}' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;`,
+      ...excludedLines,
       `CONFIGURE ARCHIVELOG DELETION POLICY TO ${arDelPol};`,
       '',
     ]);

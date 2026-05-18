@@ -58,16 +58,28 @@ export class RmanSession implements IRmanSession {
   private readonly _bridge?: RmanBusBridge;
   readonly sessionId: string;
 
+  /** True quand le catalog est externe et survit à la session — on ne le
+   *  dispose pas dans `RmanSession.dispose()`. */
+  private readonly _ownsCatalog: boolean;
+
   constructor(
     private readonly _options: RmanSessionOptions,
     private readonly _ctx:     IRmanOracleContext,
   ) {
     this._bus        = new RmanEventBus();
     this._pool       = new ReactiveChannelPool(_options.channelConfigs);
-    this._catalog    = new InMemoryRmanCatalog();
+    if (_options.catalog) {
+      this._catalog    = _options.catalog;
+      this._ownsCatalog = false;
+    } else {
+      this._catalog    = new InMemoryRmanCatalog();
+      this._ownsCatalog = true;
+    }
     this._engine     = new RmanJobEngine(this._bus, this._pool, this._catalog, _ctx);
     this._dispatcher = new RmanCommandDispatcher();
-    this._config     = new RmanConfig(_options.retentionPolicy, _options.autobackupCf);
+    // External config (device-scoped) wins over a fresh-per-session one.
+    this._config     = _options.config
+      ?? new RmanConfig(_options.retentionPolicy, _options.autobackupCf);
     this.events$     = this._bus.events$;
     this._wireReactiveStreams();
     // Derived state — must subscribe after _wireReactiveStreams so that
@@ -220,7 +232,9 @@ export class RmanSession implements IRmanSession {
     this._aggregations.dispose();
     this._bridge?.stop();
     this._pool.dispose();
-    this._catalog.dispose();
+    // Only dispose the catalog we created — external (device-scoped)
+    // catalogs survive across sessions and are owned by their registry.
+    if (this._ownsCatalog) this._catalog.dispose();
     this._bus.dispose();
   }
 
