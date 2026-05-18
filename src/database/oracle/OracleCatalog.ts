@@ -12,6 +12,7 @@ import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { queryView } from './views/registry';
+import type { SecurityEngine } from './security/SecurityEngine';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
 // and adding it to `views/index.ts` — no edits to the catalog.
@@ -122,10 +123,21 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Injected provider for stored PL/SQL units (avoids circular dependency) */
   private storedUnitsProvider: (() => StoredUnit[]) | null = null;
+  /** Injected SecurityEngine (set after construction to avoid circular dep) */
+  private securityEngine: SecurityEngine | null = null;
 
   /** Set the provider for stored PL/SQL units */
   setStoredUnitsProvider(provider: () => StoredUnit[]): void {
     this.storedUnitsProvider = provider;
+  }
+
+  /** Wire in the SecurityEngine after construction. */
+  setSecurityEngine(engine: SecurityEngine): void {
+    this.securityEngine = engine;
+  }
+
+  getSecurityEngine(): SecurityEngine | null {
+    return this.securityEngine;
   }
 
   constructor(storage: OracleStorage, instance: OracleInstance) {
@@ -237,25 +249,42 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Create a custom profile with resource limit overrides */
   createProfile(name: string, limits: Map<string, string>): void {
-    this.profiles.set(name.toUpperCase(), limits);
+    const upper = name.toUpperCase();
+    this.profiles.set(upper, limits);
+    this.securityEngine?.profiles.createProfile(upper, limits);
   }
 
   /** Alter an existing profile's limits */
   alterProfile(name: string, limits: Map<string, string>): void {
     const upper = name.toUpperCase();
     const existing = this.profiles.get(upper);
-    if (!existing) throw new Error(`Profile ${upper} does not exist`);
-    for (const [k, v] of limits) existing.set(k, v);
+    if (!existing && upper !== 'DEFAULT') throw new Error(`Profile ${upper} does not exist`);
+    if (existing) {
+      for (const [k, v] of limits) existing.set(k, v);
+    } else {
+      // Altering DEFAULT profile
+      const defMap = this.profiles.get('DEFAULT') ?? new Map<string, string>();
+      for (const [k, v] of limits) defMap.set(k, v);
+      this.profiles.set('DEFAULT', defMap);
+    }
+    this.securityEngine?.profiles.alterProfile(upper, limits);
   }
 
   /** Drop a custom profile */
   dropProfile(name: string): void {
-    this.profiles.delete(name.toUpperCase());
+    const upper = name.toUpperCase();
+    this.profiles.delete(upper);
+    if (this.securityEngine?.profiles.profileExists(upper)) {
+      this.securityEngine.profiles.dropProfile(upper);
+    }
   }
 
   /** Check if a profile exists */
   profileExists(name: string): boolean {
-    return name.toUpperCase() === 'DEFAULT' || this.profiles.has(name.toUpperCase());
+    const upper = name.toUpperCase();
+    if (upper === 'DEFAULT') return true;
+    if (this.profiles.has(upper)) return true;
+    return this.securityEngine?.profiles.profileExists(upper) ?? false;
   }
 
   override dropUser(username: string): void {
@@ -426,30 +455,95 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private vSession(currentUser: string): ResultSet {
+    const cols = [
+      { name: 'SID', dataType: oracleNumber(10) },
+      { name: 'SERIAL#', dataType: oracleNumber(10) },
+      { name: 'USERNAME', dataType: oracleVarchar2(128) },
+      { name: 'STATUS', dataType: oracleVarchar2(8) },
+      { name: 'OSUSER', dataType: oracleVarchar2(128) },
+      { name: 'MACHINE', dataType: oracleVarchar2(64) },
+      { name: 'PROGRAM', dataType: oracleVarchar2(64) },
+      { name: 'TYPE', dataType: oracleVarchar2(10) },
+      { name: 'LOGON_TIME', dataType: oracleDate() },
+      { name: 'SCHEMANAME', dataType: oracleVarchar2(128) },
+      { name: 'COMMAND', dataType: oracleNumber(10) },
+      { name: 'SQL_ID', dataType: oracleVarchar2(13) },
+      { name: 'TERMINAL', dataType: oracleVarchar2(30) },
+      { name: 'BLOCKING_SESSION', dataType: oracleNumber(10) },
+      { name: 'SQL_CHILD_NUMBER', dataType: oracleNumber(10) },
+      { name: 'SQL_EXEC_START', dataType: oracleDate() },
+      { name: 'SQL_EXEC_ID', dataType: oracleNumber(20) },
+      { name: 'EVENT', dataType: oracleVarchar2(64) },
+      { name: 'WAIT_CLASS', dataType: oracleVarchar2(64) },
+      { name: 'SECONDS_IN_WAIT', dataType: oracleNumber(10) },
+      { name: 'STATE', dataType: oracleVarchar2(32) },
+      { name: 'LAST_CALL_ET', dataType: oracleNumber(10) },
+      { name: 'SQL_TRACE', dataType: oracleVarchar2(8) },
+      { name: 'RESOURCE_CONSUMER_GROUP', dataType: oracleVarchar2(32) },
+      { name: 'SERVICE_NAME', dataType: oracleVarchar2(64) },
+      { name: 'MODULE', dataType: oracleVarchar2(64) },
+      { name: 'ACTION', dataType: oracleVarchar2(64) },
+      { name: 'CLIENT_INFO', dataType: oracleVarchar2(64) },
+      { name: 'PADDR', dataType: oracleVarchar2(16) },
+      { name: 'TADDR', dataType: oracleVarchar2(16) },
+      { name: 'LOCKWAIT', dataType: oracleVarchar2(16) },
+    ];
+
+    const engine = this.securityEngine;
+    const activeSessions = engine?.sessions.getAllSessions() ?? [];
+
+    if (activeSessions.length > 0) {
+      // Use real tracked sessions from SecurityEngine
+      const rows = activeSessions.map(s => [
+        s.sid, s.serial, s.username, s.status,
+        s.osUser, s.machine, s.program, s.type,
+        s.logonTime.toISOString(), s.schema,
+        3, // COMMAND (3 = SELECT)
+        s.sqlId,
+        s.terminal,
+        s.blockingSession,
+        s.sqlChildNumber,
+        s.sqlExecStart ? s.sqlExecStart.toISOString() : null,
+        s.sqlExecStart ? 1 : null,
+        s.event,
+        s.waitClass,
+        s.secondsInWait,
+        s.state,
+        s.lastCallEt,
+        'DISABLED',
+        s.resourceConsumerGroup,
+        s.service,
+        s.module,
+        s.action,
+        s.clientInfo,
+        null, null, null,
+      ]);
+      return queryResult(cols, rows);
+    }
+
+    // Fallback: static simulation (no sessions registered yet)
     const now = new Date().toISOString();
-    return queryResult(
+    const bgRow = (sid: number, prog: string): (string | number | null)[] => [
+      sid, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', prog, 'BACKGROUND',
+      now, 'SYS', 0, null,
+      'UNKNOWN', null, null, null, null,
+      'pmon timer', 'Idle', 0, 'WAITING', 0, 'DISABLED',
+      'SYS_GROUP', 'orcl', null, null, null, null, null, null,
+    ];
+    const upper = currentUser.toUpperCase();
+    return queryResult(cols, [
+      bgRow(1, 'oracle@localhost (PMON)'),
+      bgRow(2, 'oracle@localhost (SMON)'),
+      bgRow(3, 'oracle@localhost (DBW0)'),
+      bgRow(4, 'oracle@localhost (LGWR)'),
       [
-        { name: 'SID', dataType: oracleNumber(10) },
-        { name: 'SERIAL#', dataType: oracleNumber(10) },
-        { name: 'USERNAME', dataType: oracleVarchar2(128) },
-        { name: 'STATUS', dataType: oracleVarchar2(8) },
-        { name: 'OSUSER', dataType: oracleVarchar2(128) },
-        { name: 'MACHINE', dataType: oracleVarchar2(64) },
-        { name: 'PROGRAM', dataType: oracleVarchar2(64) },
-        { name: 'TYPE', dataType: oracleVarchar2(10) },
-        { name: 'LOGON_TIME', dataType: oracleDate() },
-        { name: 'SCHEMANAME', dataType: oracleVarchar2(128) },
-        { name: 'COMMAND', dataType: oracleNumber(10) },
-        { name: 'SQL_ID', dataType: oracleVarchar2(13) },
+        10, 100, upper, 'ACTIVE', 'oracle', 'localhost',
+        'sqlplus@localhost', 'USER', now, upper, 3, null,
+        'pts/0', null, null, null, null,
+        'SQL*Net message from client', 'Idle', 0, 'WAITING', 0, 'DISABLED',
+        'DEFAULT_CONSUMER_GROUP', 'orcl', null, null, null, null, null, null,
       ],
-      [
-        [1, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (PMON)', 'BACKGROUND', now, 'SYS', 0, null],
-        [2, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (SMON)', 'BACKGROUND', now, 'SYS', 0, null],
-        [3, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (DBW0)', 'BACKGROUND', now, 'SYS', 0, null],
-        [4, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', 'oracle@localhost (LGWR)', 'BACKGROUND', now, 'SYS', 0, null],
-        [10, 100, currentUser.toUpperCase(), 'ACTIVE', 'oracle', 'localhost', 'sqlplus@localhost', 'USER', now, currentUser.toUpperCase(), 3, null],
-      ]
-    );
+    ]);
   }
 
   private vParameter(): ResultSet {
@@ -1049,6 +1143,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_AUDIT_TRAIL': return this.dbaAuditTrail();
       case 'DBA_STMT_AUDIT_OPTS': return this.dbaStmtAuditOpts();
       case 'DBA_PROFILES': return this.dbaProfiles();
+      case 'DBA_TS_QUOTAS': return this.dbaTsQuotas();
       case 'DBA_TAB_STATISTICS': return this.dbaTabStatistics();
       case 'DBA_DIRECTORIES': return this.dbaDirectories();
       case 'DBA_DB_LINKS': return this.dbaDbLinks();
@@ -1565,30 +1660,55 @@ export class OracleCatalog extends BaseCatalog {
   ];
 
   private dbaProfiles(): ResultSet {
-    const rows: (string | number | null)[][] = [];
+    const cols = [
+      { name: 'PROFILE', dataType: oracleVarchar2(128) },
+      { name: 'RESOURCE_NAME', dataType: oracleVarchar2(32) },
+      { name: 'RESOURCE_TYPE', dataType: oracleVarchar2(8) },
+      { name: 'LIMIT', dataType: oracleVarchar2(128) },
+    ];
 
-    // DEFAULT profile
+    // Prefer SecurityEngine's ProfileManager (authoritative)
+    if (this.securityEngine) {
+      const profileRows = this.securityEngine.profiles.getAllProfileRows();
+      return queryResult(cols, profileRows.map(r => [r.profile, r.resourceName, r.resourceType, r.limit]));
+    }
+
+    // Legacy fallback (no SecurityEngine wired yet)
+    const rows: (string | number | null)[][] = [];
     for (const [resName, resType, defaultLimit] of OracleCatalog.PROFILE_RESOURCES) {
       rows.push(['DEFAULT', resName, resType, defaultLimit]);
     }
-
-    // Custom profiles — override specified limits, inherit DEFAULT for the rest
     for (const [profileName, overrides] of this.profiles) {
       for (const [resName, resType] of OracleCatalog.PROFILE_RESOURCES) {
         const limit = overrides.get(resName) ?? 'DEFAULT';
         rows.push([profileName, resName, resType, limit]);
       }
     }
+    return queryResult(cols, rows);
+  }
 
-    return queryResult(
-      [
-        { name: 'PROFILE', dataType: oracleVarchar2(128) },
-        { name: 'RESOURCE_NAME', dataType: oracleVarchar2(32) },
-        { name: 'RESOURCE_TYPE', dataType: oracleVarchar2(8) },
-        { name: 'LIMIT', dataType: oracleVarchar2(128) },
-      ],
-      rows
-    );
+  private dbaTsQuotas(): ResultSet {
+    const cols = [
+      { name: 'USERNAME', dataType: oracleVarchar2(128) },
+      { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
+      { name: 'BYTES', dataType: oracleNumber(20) },
+      { name: 'MAX_BYTES', dataType: oracleNumber(20) },
+      { name: 'BLOCKS', dataType: oracleNumber(20) },
+      { name: 'MAX_BLOCKS', dataType: oracleNumber(20) },
+      { name: 'DROPPED', dataType: oracleVarchar2(3) },
+    ];
+    if (!this.securityEngine) return queryResult(cols, []);
+    const quotas = this.securityEngine.quotas.getAllQuotas();
+    const blockSize = 8192;
+    return queryResult(cols, quotas.map(q => {
+      const maxBytes = q.maxBytes === -1 ? -1 : q.maxBytes;
+      return [
+        q.username, q.tablespace, q.bytesUsed, maxBytes,
+        Math.ceil(q.bytesUsed / blockSize),
+        maxBytes === -1 ? -1 : Math.ceil(maxBytes / blockSize),
+        'NO',
+      ];
+    }));
   }
 
   private dbaTabStatistics(): ResultSet {

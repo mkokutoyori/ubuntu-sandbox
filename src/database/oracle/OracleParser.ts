@@ -288,10 +288,13 @@ export class OracleParser extends BaseParser {
     // ALTER SYSTEM FLUSH SHARED_POOL / BUFFER_CACHE
     // ALTER SYSTEM SWITCH LOGFILE
     // ALTER SYSTEM CHECKPOINT
+    // ALTER SYSTEM KILL SESSION 'sid,serial#' [IMMEDIATE]
+    // ALTER SYSTEM DISCONNECT SESSION 'sid,serial#' [IMMEDIATE]
+    // ALTER SYSTEM ARCHIVE LOG {ALL|NEXT|CURRENT}
+    // ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION
     if (this.matchKeyword('SET')) {
       const parameter = this.expectIdentifier();
       this.expect(TokenType.COMPARISON_OP, '=');
-      // Value can be string, number, or identifier
       let value: string;
       if (this.check(TokenType.STRING_LITERAL)) {
         const raw = this.advance().value;
@@ -320,7 +323,60 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('CHECKPOINT')) {
       return { type: 'AlterSystemStatement', position: pos, action: 'CHECKPOINT' };
     }
-    throw this.error('Unsupported ALTER SYSTEM action');
+    if (this.matchKeyword('KILL')) {
+      this.expectKeyword('SESSION');
+      // Session ID string: 'sid,serial#'
+      const raw = this.expect(TokenType.STRING_LITERAL).value;
+      const sessionId = raw.slice(1, -1); // strip quotes
+      const immediate = this.matchKeyword('IMMEDIATE');
+      return { type: 'AlterSystemStatement', position: pos, action: 'KILL SESSION', sessionId, immediate };
+    }
+    if (this.matchKeyword('DISCONNECT')) {
+      this.expectKeyword('SESSION');
+      const raw = this.expect(TokenType.STRING_LITERAL).value;
+      const sessionId = raw.slice(1, -1);
+      const immediate = this.matchKeyword('IMMEDIATE')
+        || (this.matchKeyword('POST') ? (this.matchKeyword('TRANSACTION'), false) : false);
+      return { type: 'AlterSystemStatement', position: pos, action: 'DISCONNECT SESSION', sessionId, immediate };
+    }
+    if (this.matchKeyword('ARCHIVE')) {
+      this.expectKeyword('LOG');
+      let target = 'NEXT';
+      if (this.matchKeyword('ALL')) target = 'ALL';
+      else if (this.matchKeyword('CURRENT')) target = 'CURRENT';
+      else if (this.matchKeyword('NEXT')) target = 'NEXT';
+      return { type: 'AlterSystemStatement', position: pos, action: 'ARCHIVE LOG', parameter: target };
+    }
+    if (this.matchKeyword('ENABLE')) {
+      if (this.matchKeyword('RESTRICTED')) {
+        this.matchKeyword('SESSION');
+        return { type: 'AlterSystemStatement', position: pos, action: 'ENABLE RESTRICTED SESSION' };
+      }
+      return { type: 'AlterSystemStatement', position: pos, action: 'ENABLE' };
+    }
+    if (this.matchKeyword('DISABLE')) {
+      if (this.matchKeyword('RESTRICTED')) {
+        this.matchKeyword('SESSION');
+        return { type: 'AlterSystemStatement', position: pos, action: 'DISABLE RESTRICTED SESSION' };
+      }
+      return { type: 'AlterSystemStatement', position: pos, action: 'DISABLE' };
+    }
+    if (this.matchKeyword('RESET')) {
+      const parameter = this.expectIdentifier();
+      let scope: AlterSystemStatement['scope'];
+      if (this.matchKeyword('SCOPE')) {
+        this.expect(TokenType.COMPARISON_OP, '=');
+        const s = this.expectIdentifier().toUpperCase();
+        if (s === 'MEMORY' || s === 'SPFILE' || s === 'BOTH') scope = s;
+      }
+      return { type: 'AlterSystemStatement', position: pos, action: 'RESET', parameter, scope };
+    }
+    // Fallback: consume remaining tokens as generic action
+    let action = '';
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      action += this.advance().value + ' ';
+    }
+    return { type: 'AlterSystemStatement', position: pos, action: action.trim() || 'UNKNOWN' };
   }
 
   // ── ALTER DATABASE ────────────────────────────────────────────────

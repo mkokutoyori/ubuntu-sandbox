@@ -15,6 +15,7 @@ import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
 import { OracleExecutor } from './OracleExecutor';
+import { SecurityEngine } from './security/SecurityEngine';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
@@ -57,6 +58,7 @@ export class OracleDatabase {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
   readonly catalog: OracleCatalog;
+  readonly securityEngine: SecurityEngine;
   private lexer: OracleLexer;
   private connections: Map<number, ConnectionInfo> = new Map();
   private sidCounter: number = 1;
@@ -68,6 +70,8 @@ export class OracleDatabase {
     this.storage = new OracleStorage();
     this.catalog = new OracleCatalog(this.storage, this.instance);
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
+    this.securityEngine = new SecurityEngine(this.catalog);
+    this.catalog.setSecurityEngine(this.securityEngine);
     this.lexer = new OracleLexer();
   }
 

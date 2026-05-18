@@ -821,14 +821,39 @@ export abstract class BaseParser {
     let temporaryTablespace: string | undefined;
     let profile: string | undefined;
     let accountLocked: boolean | undefined;
+    let passwordExpired: boolean | undefined;
+    const quota: { size: string; tablespace: string }[] = [];
+
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       if (this.matchKeyword('DEFAULT')) { this.expectKeyword('TABLESPACE'); defaultTablespace = this.expectIdentifier(); }
       else if (this.matchKeyword('TEMPORARY')) { this.expectKeyword('TABLESPACE'); temporaryTablespace = this.expectIdentifier(); }
       else if (this.matchKeyword('PROFILE')) { profile = this.expectIdentifier(); }
       else if (this.matchKeyword('ACCOUNT')) { this.expectKeyword('LOCK'); accountLocked = true; }
+      else if (this.matchKeyword('PASSWORD')) { this.expectKeyword('EXPIRE'); passwordExpired = true; }
+      else if (this.matchKeyword('QUOTA')) {
+        // QUOTA { n [K|M|G] | UNLIMITED } ON tablespace
+        const sizeVal = this.parseQuotaSize();
+        this.expectKeyword('ON');
+        const tsName = this.expectIdentifier();
+        quota.push({ size: sizeVal, tablespace: tsName });
+      }
       else break;
     }
-    return { type: 'CreateUserStatement', position: pos, username, password, defaultTablespace, temporaryTablespace, profile, accountLocked };
+    return { type: 'CreateUserStatement', position: pos, username, password, defaultTablespace, temporaryTablespace, profile, accountLocked, passwordExpired, quota: quota.length > 0 ? quota : undefined };
+  }
+
+  private parseQuotaSize(): string {
+    if (this.matchKeyword('UNLIMITED')) return 'UNLIMITED';
+    if (!this.check(TokenType.NUMBER_LITERAL)) throw this.error('Expected quota size (number or UNLIMITED)');
+    let size = this.advance().value;
+    // Optional size suffix: K, M, G (may be tokenized as identifier)
+    if (this.check(TokenType.IDENTIFIER)) {
+      const suffix = this.current().value.toUpperCase();
+      if (['K', 'M', 'G', 'T'].includes(suffix)) {
+        size += this.advance().value.toUpperCase();
+      }
+    }
+    return size;
   }
 
   protected parseCreateRole(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').CreateRoleStatement {
@@ -903,6 +928,10 @@ export abstract class BaseParser {
     let accountLock: boolean | undefined;
     let accountUnlock: boolean | undefined;
     let passwordExpire: boolean | undefined;
+    let defaultTablespace: string | undefined;
+    let temporaryTablespace: string | undefined;
+    let profile: string | undefined;
+    const quota: { size: string; tablespace: string }[] = [];
 
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       if (this.matchKeyword('IDENTIFIED')) { this.expectKeyword('BY'); password = this.expectIdentifierOrString(); }
@@ -911,9 +940,18 @@ export abstract class BaseParser {
         else { this.expectKeyword('UNLOCK'); accountUnlock = true; }
       }
       else if (this.matchKeyword('PASSWORD')) { this.expectKeyword('EXPIRE'); passwordExpire = true; }
+      else if (this.matchKeyword('DEFAULT')) { this.expectKeyword('TABLESPACE'); defaultTablespace = this.expectIdentifier(); }
+      else if (this.matchKeyword('TEMPORARY')) { this.expectKeyword('TABLESPACE'); temporaryTablespace = this.expectIdentifier(); }
+      else if (this.matchKeyword('PROFILE')) { profile = this.expectIdentifier(); }
+      else if (this.matchKeyword('QUOTA')) {
+        const sizeVal = this.parseQuotaSize();
+        this.expectKeyword('ON');
+        const tsName = this.expectIdentifier();
+        quota.push({ size: sizeVal, tablespace: tsName });
+      }
       else break;
     }
-    return { type: 'AlterUserStatement', position: pos, username, password, accountLock, accountUnlock, passwordExpire };
+    return { type: 'AlterUserStatement', position: pos, username, password, accountLock, accountUnlock, passwordExpire, defaultTablespace, temporaryTablespace, profile, quota: quota.length > 0 ? quota : undefined };
   }
 
   // ── DROP ──────────────────────────────────────────────────────────
@@ -1014,9 +1052,20 @@ export abstract class BaseParser {
       if (!this.check(TokenType.IDENTIFIER) && !this.check(TokenType.KEYWORD)) break;
       const resName = this.expectIdentifierOrKeyword();
       // Value can be a number, keyword (UNLIMITED, DEFAULT, NULL), or identifier (function name)
+      // Special case: fractional days like 1/24 or 1/1440
       let value: string;
       if (this.check(TokenType.NUMBER_LITERAL)) {
         value = this.advance().value;
+        // Check for optional division suffix: 1/24, 1/1440, etc.
+        if (this.check(TokenType.ARITHMETIC_OP) && this.current().value === '/') {
+          this.advance(); // consume /
+          if (this.check(TokenType.NUMBER_LITERAL)) {
+            const den = this.advance().value;
+            value = `${value}/${den}`;
+          }
+        }
+      } else if (this.checkKeyword('UNLIMITED') || this.checkKeyword('DEFAULT') || this.checkKeyword('NULL')) {
+        value = this.advance().value.toUpperCase();
       } else {
         value = this.expectIdentifierOrKeyword();
       }

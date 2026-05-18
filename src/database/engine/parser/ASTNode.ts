@@ -539,6 +539,10 @@ export interface AlterSystemStatement extends ASTNode {
   parameter?: string;
   value?: string;
   scope?: 'MEMORY' | 'SPFILE' | 'BOTH';
+  /** For KILL SESSION / DISCONNECT SESSION: 'sid,serial#' */
+  sessionId?: string;
+  /** For KILL SESSION: IMMEDIATE flag */
+  immediate?: boolean;
 }
 
 export interface AlterDatabaseStatement extends ASTNode {
