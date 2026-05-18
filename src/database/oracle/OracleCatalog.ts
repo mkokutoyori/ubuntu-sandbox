@@ -173,6 +173,7 @@ export class OracleCatalog extends BaseCatalog {
       'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE INDEX', 'CREATE USER', 'ALTER USER',
       'DROP USER', 'CREATE ROLE', 'GRANT ANY PRIVILEGE', 'GRANT ANY ROLE',
       'SELECT ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE', 'DELETE ANY TABLE',
+      'CREATE ANY TABLE', 'DROP ANY TABLE', 'ALTER ANY TABLE',
       'CREATE TABLESPACE', 'ALTER TABLESPACE', 'DROP TABLESPACE', 'ALTER SYSTEM',
       'ALTER DATABASE', 'UNLIMITED TABLESPACE', 'CREATE ANY DIRECTORY'];
     for (const priv of allPrivs) {
@@ -184,6 +185,15 @@ export class OracleCatalog extends BaseCatalog {
     for (const priv of allPrivs) this.grantSystemPrivilege('DBA', priv, true);
     this.grantRole('SYS', 'DBA', true);
     this.grantRole('SYSTEM', 'DBA', true);
+
+    // CONNECT role (Oracle 10.2+): grants CREATE SESSION only.
+    this.grantSystemPrivilege('CONNECT', 'CREATE SESSION');
+    // RESOURCE role: object-creation privileges.
+    for (const p of ['CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
+                     'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE TYPE',
+                     'CREATE CLUSTER', 'CREATE INDEXTYPE', 'CREATE OPERATOR']) {
+      this.grantSystemPrivilege('RESOURCE', p);
+    }
 
     // HR, SCOTT, and FCUBSLIVE get basic privileges
     for (const u of ['HR', 'SCOTT', 'FCUBSLIVE']) {

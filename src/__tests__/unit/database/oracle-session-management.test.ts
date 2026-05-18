@@ -217,6 +217,10 @@ describe('Regular user (non-SYS) switching schema', () => {
   beforeEach(() => {
     installHRSchema(db);
     installSCOTTSchema(db);
+    // Cross-schema queries require explicit grants — install them as SYSDBA.
+    const sys = db.connectAsSysdba().executor;
+    db.executeSql(sys, 'GRANT SELECT ANY TABLE TO HR');
+    db.executeSql(sys, 'GRANT SELECT ANY TABLE TO SCOTT');
   });
 
   test('HR user can switch to SCOTT schema', () => {

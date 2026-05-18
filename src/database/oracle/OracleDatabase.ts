@@ -97,6 +97,12 @@ export class OracleDatabase {
     if (!authResult.success) {
       throw new Error(authResult.message || ORACLE_ERRORS.ORA_01017);
     }
+
+    // Enforce CREATE SESSION privilege (direct or via role)
+    if (!this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'CREATE SESSION')) {
+      throw new Error('ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
+    }
+
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 

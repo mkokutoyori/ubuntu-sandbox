@@ -361,6 +361,63 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  // ── Privilege enforcement ────────────────────────────────────────
+
+  /** Throws ORA-01031 if the current user lacks any of the listed system privileges. */
+  private requireSystemPrivilege(...privileges: string[]): void {
+    const user = this.context.currentUser;
+    if (user === 'SYS') return; // SYSDBA bypass
+    const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+    if (!engine) return;
+    const checker = engine.privileges;
+    for (const p of privileges) {
+      if (checker.hasSystemPrivilege(user, p)) return;
+    }
+    throw new OracleError(1031, 'insufficient privileges');
+  }
+
+  /**
+   * Throws ORA-01031 if the current user can neither (a) act on their own schema,
+   * nor (b) hold an `ANY` system privilege for the operation on the target schema.
+   *
+   * Used for cross-schema DDL such as `DROP TABLE other.t`.
+   */
+  private requireSchemaOrAnyPrivilege(targetSchema: string, anyPrivilege: string): void {
+    const user = this.context.currentUser;
+    if (user === 'SYS') return;
+    if (targetSchema.toUpperCase() === user) return; // own schema
+    const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+    if (!engine) return;
+    if (!engine.privileges.hasSystemPrivilege(user, anyPrivilege)) {
+      throw new OracleError(1031, 'insufficient privileges');
+    }
+  }
+
+  /**
+   * Throws ORA-00942 (table or view does not exist) when the user cannot see the
+   * cross-schema object — Oracle prefers ORA-00942 over ORA-01031 when an
+   * object exists but the user has no privilege on it (information hiding).
+   */
+  private requireObjectAccess(
+    targetSchema: string,
+    objectName: string,
+    operation: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE',
+  ): void {
+    const user = this.context.currentUser;
+    if (user === 'SYS') return;
+    const targetUpper = targetSchema.toUpperCase();
+    if (targetUpper === user) return;
+    const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+    if (!engine) return;
+    // Any-table system privilege?
+    const anyPriv = `${operation} ANY TABLE`;
+    if (engine.privileges.hasSystemPrivilege(user, anyPriv)) return;
+    // Explicit object grant?
+    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objectName.toUpperCase())) return;
+    // Hide existence
+    throw new OracleError(942, 'table or view does not exist');
+  }
+
   // ── Transaction control ──────────────────────────────────────────
 
   private executeCommit(): ResultSet {
@@ -717,6 +774,9 @@ export class OracleExecutor extends BaseExecutor {
     if (!this.storage.tableExists(schema, tableName)) {
       throw new OracleError(942, `table or view does not exist`);
     }
+
+    // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
+    this.requireObjectAccess(schema, tableName, 'SELECT');
 
     const meta = this.storage.getTableMeta(schema, tableName)!;
     const rows = this.storage.getRows(schema, tableName);
@@ -1765,6 +1825,8 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(942, `table or view does not exist`);
     }
 
+    this.requireObjectAccess(schema, tableName, 'INSERT');
+
     const tableMeta = this.storage.getTableMeta(schema, tableName)!;
     let insertedCount = 0;
 
@@ -1854,6 +1916,8 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(942, `table or view does not exist`);
     }
 
+    this.requireObjectAccess(schema, tableName, 'UPDATE');
+
     const tableMeta = this.storage.getTableMeta(schema, tableName)!;
 
     // Validate assignment column names exist
@@ -1894,6 +1958,8 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(942, `table or view does not exist`);
     }
 
+    this.requireObjectAccess(schema, tableName, 'DELETE');
+
     const tableMeta = this.storage.getTableMeta(schema, tableName)!;
 
     // Validate FK constraints on rows to be deleted
@@ -1919,6 +1985,13 @@ export class OracleExecutor extends BaseExecutor {
 
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.name.toUpperCase();
+
+    // Creating in own schema needs CREATE TABLE; creating in another schema needs CREATE ANY TABLE.
+    if (schema === this.context.currentUser) {
+      this.requireSystemPrivilege('CREATE TABLE', 'CREATE ANY TABLE');
+    } else {
+      this.requireSystemPrivilege('CREATE ANY TABLE');
+    }
 
     if (this.storage.tableExists(schema, tableName)) {
       throw new OracleError(955, `name is already used by an existing object`);
@@ -2002,6 +2075,10 @@ export class OracleExecutor extends BaseExecutor {
     if (this._inTransaction) this.executeCommit();
     const schema = (stmt.schema || this.context.currentSchema).toUpperCase();
     const tableName = stmt.name.toUpperCase();
+
+    // Cross-schema drop requires DROP ANY TABLE; own-schema needs no extra priv.
+    this.requireSchemaOrAnyPrivilege(schema, 'DROP ANY TABLE');
+
     if (!this.storage.tableExists(schema, tableName)) {
       if (stmt.ifExists) return emptyResult('');
       throw new OracleError(942, `table or view does not exist`);
@@ -2350,14 +2427,22 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeGrant(stmt: GrantStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
+    // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
+    // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
-      const schema = stmt.objectSchema || this.context.currentSchema;
+      const user = this.context.currentUser;
+      const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
+      const engine = catalog.getSecurityEngine();
+      if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
+        // Not the owner and not DBA — must hold the priv WITH GRANT OPTION (simplified check)
+        throw new OracleError(1031, 'insufficient privileges');
+      }
       for (const priv of stmt.privileges) {
         catalog.grantTablePrivilege(stmt.grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
       }
     } else {
+      this.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
       for (const priv of stmt.privileges) {
-        // Check if it's a role name
         if (catalog.roleExists(priv)) {
           catalog.grantRole(stmt.grantee, priv, stmt.withAdminOption);
         } else {
@@ -2390,6 +2475,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── User/Role management ──────────────────────────────────────────
 
   private executeCreateUser(stmt: CreateUserStatement): ResultSet {
+    this.requireSystemPrivilege('CREATE USER');
     const catalog = this.catalog as OracleCatalog;
     if (catalog.userExists(stmt.username)) {
       throw new OracleError(1920, `user name '${stmt.username.toUpperCase()}' conflicts with another user or role name`);
@@ -2432,6 +2518,18 @@ export class OracleExecutor extends BaseExecutor {
     if (!catalog.userExists(username)) {
       throw new OracleError(1917, `user or role '${username}' does not exist`);
     }
+
+    // Users may always alter their own password; any other ALTER USER needs ALTER USER priv.
+    const isSelfPasswordChange =
+      username === this.context.currentUser &&
+      stmt.password !== undefined &&
+      !stmt.accountLock && !stmt.accountUnlock && !stmt.passwordExpire &&
+      !stmt.defaultTablespace && !stmt.temporaryTablespace &&
+      !stmt.profile && (!stmt.quota || stmt.quota.length === 0);
+    if (!isSelfPasswordChange) {
+      this.requireSystemPrivilege('ALTER USER');
+    }
+
     const engine = catalog.getSecurityEngine();
     const user = catalog.getUser(username);
 
@@ -2476,6 +2574,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropUser(stmt: DropUserStatement): ResultSet {
+    this.requireSystemPrivilege('DROP USER');
     const catalog = this.catalog as OracleCatalog;
     const username = stmt.username.toUpperCase();
     if (!catalog.userExists(username)) {
