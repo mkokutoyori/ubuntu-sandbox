@@ -360,6 +360,24 @@ export class RmanJobEngine implements IRmanJobEngine {
     const from = Scn.of(fromValue);
     const to   = Scn.of(toValue);
     this._bus.emit({ type: 'RECOVER_STARTED',   jobId: job.id, fromScn: from.ok ? from.value : Scn.ZERO });
+    // Émet une ligne par archivelog "applied" — Oracle imprime
+    //   "archived log for thread 1 with sequence 42 is already on disk
+    //    as file /u01/.../arch_1_42_xxx.arc"
+    // pour chaque log appliqué pendant le RECOVER. On synthétise un set
+    // raisonnable autour des SCN from/to.
+    const arcPaths = this._ctx.getArchivelogPaths?.() ?? [];
+    if (arcPaths.length > 0) {
+      const baseSeq = 1;
+      for (let i = 0; i < arcPaths.length; i++) {
+        const seq = baseSeq + i;
+        this._bus.emit({
+          type: 'ARCHIVELOG_APPLIED', jobId: job.id,
+          thread: 1, sequence: seq, path: arcPaths[i],
+          firstScn: fromValue - (arcPaths.length - i) * 100,
+          nextScn:  fromValue - (arcPaths.length - i - 1) * 100,
+        });
+      }
+    }
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     return ok(undefined);
   }

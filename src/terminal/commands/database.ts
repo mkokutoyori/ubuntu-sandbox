@@ -13,6 +13,7 @@ import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
+import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
 
 /** Per-device Oracle database instances. */
 const oracleInstances: Map<string, OracleDatabase> = new Map();
@@ -121,9 +122,10 @@ export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.get(deviceId)?.stop();
   oracleFsSyncs.delete(deviceId);
   oracleInstances.delete(deviceId);
-  // Tear down the RMAN device-scoped catalog so a subsequent
+  // Tear down the RMAN device-scoped catalog + config so a subsequent
   // getOracleDatabase(deviceId) starts fresh.
   DeviceCatalogRegistry.dispose(deviceId);
+  DeviceConfigRegistry.dispose(deviceId);
 }
 
 /**
@@ -137,6 +139,7 @@ export function resetAllOracleInstances(): void {
   oracleInstances.clear();
   oracleFilesystemInitialized.clear();
   DeviceCatalogRegistry._reset();
+  DeviceConfigRegistry._reset();
 }
 
 /**

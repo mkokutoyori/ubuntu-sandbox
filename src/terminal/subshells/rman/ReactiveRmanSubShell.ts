@@ -23,6 +23,7 @@ import { LinuxRmanContext } from './integration/LinuxRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
 import { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
+import { DeviceConfigRegistry } from './session/DeviceConfigRegistry';
 import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
@@ -82,7 +83,9 @@ export class ReactiveRmanSubShell implements ISubShell {
       // Device-scoped catalog so backups survive an OracleInstanceWatcher
       // disposal (shutdown → mount) and subsequent restore calls see the
       // pieces that were already written.
-      .withCatalog(DeviceCatalogRegistry.get((device as { id?: string }).id ?? 'default'));
+      .withCatalog(DeviceCatalogRegistry.get((device as { id?: string }).id ?? 'default'))
+      // Device-scoped config — CONFIGURE statements persist across sessions.
+      .withConfig(DeviceConfigRegistry.get((device as { id?: string }).id ?? 'default'));
     const session = new RmanSession(builder.build(), ctx);
     const banner  = session.getBanner();
     const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
@@ -179,7 +182,14 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push(`channel ORA_DISK_1: restore complete, elapsed time: 00:00:25`);
         break;
       case 'RECOVER_STARTED':
-        this._push('starting media recovery');
+        // Le PROGRESS_UPDATED 'start_recover' a déjà imprimé
+        // "starting media recovery" — on ne le re-imprime pas.
+        break;
+      case 'ARCHIVELOG_APPLIED':
+        this._push(
+          `archived log for thread ${e.thread} with sequence ${e.sequence} ` +
+          `is already on disk as file ${e.path}`,
+        );
         break;
       case 'RECOVER_COMPLETED':
         this._push('media recovery complete, elapsed time: 00:00:03');

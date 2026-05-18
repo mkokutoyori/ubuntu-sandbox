@@ -10,6 +10,7 @@ import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import type { ChannelConfig } from '../channel/types';
 import type { IEventBus } from '@/events/EventBus';
 import type { InMemoryRmanCatalog } from '../catalog/InMemoryRmanCatalog';
+import type { RmanConfig } from './RmanConfig';
 
 export class RmanSessionOptionsBuilder {
   private _dbId: DbId = DbId.DEFAULT;
@@ -20,6 +21,7 @@ export class RmanSessionOptionsBuilder {
   private _sharedBus?: IEventBus;
   private _sessionId?: string;
   private _catalog?: InMemoryRmanCatalog;
+  private _config?:  RmanConfig;
 
   withDbId(dbId: DbId): this { this._dbId = dbId; return this; }
   withChannelConfigs(c: ReadonlyArray<ChannelConfig>): this { this._channelConfigs = c; return this; }
@@ -30,6 +32,7 @@ export class RmanSessionOptionsBuilder {
     this._sharedBus = bus; this._sessionId = sessionId; return this;
   }
   withCatalog(c: InMemoryRmanCatalog): this { this._catalog = c; return this; }
+  withConfig(c: RmanConfig): this { this._config = c; return this; }
 
   build(): RmanSessionOptions {
     return Object.freeze({
@@ -41,6 +44,7 @@ export class RmanSessionOptionsBuilder {
       sharedBus:       this._sharedBus,
       sessionId:       this._sessionId,
       catalog:         this._catalog,
+      config:          this._config,
     });
   }
 }
