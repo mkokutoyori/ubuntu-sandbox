@@ -15,6 +15,7 @@ export const JobBuilder = {
     maxPieceSize?: number; encrypted?: boolean;
     notBackedUpNTimes?: number;
     excludeTablespaces?: ReadonlyArray<string>;
+    asCopy?: boolean;
   } = {}): RmanJob {
     const params: Record<string, string> = {};
     if (opts.tag)              params.tag           = opts.tag;
@@ -28,6 +29,7 @@ export const JobBuilder = {
     if (opts.excludeTablespaces && opts.excludeTablespaces.length > 0) {
       params.excludeTablespaces = opts.excludeTablespaces.map(s => s.toUpperCase()).join(',');
     }
+    if (opts.asCopy) params.asCopy = 'true';
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },
@@ -100,12 +102,13 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean } = {}): RmanJob {
+  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean } = {}): RmanJob {
     const list = Array.isArray(fileNos) ? fileNos : [fileNos as number];
     const params: Record<string, string> = { fileNo: list.join(',') };
     if (opts.tag)        params.tag        = opts.tag;
     if (opts.format)     params.format     = opts.format;
     if (opts.compressed) params.compressed = 'true';
+    if (opts.asCopy)     params.asCopy     = 'true';
     const label = list.length === 1 ? `datafile ${list[0]}` : `datafiles ${list.join(', ')}`;
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting full ${label} backup set` },
@@ -123,11 +126,12 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string } = {}): RmanJob {
+  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean } = {}): RmanJob {
     const list = (Array.isArray(tsName) ? tsName : [tsName as string]).map(s => s.toUpperCase());
     const params: Record<string, string> = { tablespace: list.join(',') };
     if (opts.tag)    params.tag    = opts.tag;
     if (opts.format) params.format = opts.format;
+    if (opts.asCopy) params.asCopy = 'true';
     const label = list.length === 1 ? `tablespace ${list[0]}` : `tablespaces ${list.join(', ')}`;
     return _make('BACKUP_TABLESPACE', [
       { name: 'start_backup', pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },

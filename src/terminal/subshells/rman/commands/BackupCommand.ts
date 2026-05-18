@@ -31,6 +31,7 @@ export class BackupCommand implements IRmanCommand<void> {
     private readonly mode: BackupMode,
     private readonly forceCompressed = false,
     private readonly notBackedUpFromArg0 = false,
+    private readonly forceAsCopy = false,
   ) {}
 
   execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
@@ -41,6 +42,7 @@ export class BackupCommand implements IRmanCommand<void> {
     const all = args.join(' ');
     const opts = parseBackupOptions(all);
     if (this.forceCompressed) opts.compressed = true;
+    if (this.forceAsCopy)     opts.asCopy     = true;
     if (this.notBackedUpFromArg0) {
       const n = Number(args[0]);
       if (Number.isFinite(n)) opts.notBackedUpNTimes = n;
@@ -122,6 +124,7 @@ export function parseBackupOptions(text: string): {
   keepForever?: boolean; keepUntilTime?: string;
   cumulative?: boolean; maxPieceSize?: number;
   encrypted?: boolean; notBackedUpNTimes?: number;
+  asCopy?: boolean;
 } {
   const out: {
     tag?: string; format?: string; deleteInput?: boolean;
@@ -129,6 +132,7 @@ export function parseBackupOptions(text: string): {
     keepForever?: boolean; keepUntilTime?: string;
     cumulative?: boolean; maxPieceSize?: number;
     encrypted?: boolean; notBackedUpNTimes?: number;
+    asCopy?: boolean;
   } = {};
   const tagMatch = text.match(/\bTAG\s+'([^']+)'/i);
   if (tagMatch) out.tag = tagMatch[1].toUpperCase();
@@ -143,6 +147,7 @@ export function parseBackupOptions(text: string): {
   if (keepUntil) out.keepUntilTime = keepUntil[1];
   if (/\bCUMULATIVE\b/i.test(text)) out.cumulative = true;
   if (/\bENCRYPTED\b/i.test(text))  out.encrypted = true;
+  if (/\bAS\s+COPY\b/i.test(text))  out.asCopy   = true;
   const notBackedUp = text.match(/\bNOT\s+BACKED\s+UP\s+(\d+)\s+TIMES\b/i);
   if (notBackedUp) out.notBackedUpNTimes = Number(notBackedUp[1]);
   const mps = text.match(/\bMAXPIECESIZE\s+(\d+)\s*([KMG])?/i);

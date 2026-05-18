@@ -190,6 +190,35 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
     });
 
+    // BACKUP AS COPY — un DATAFILECOPY par datafile, pas de set agrégé.
+    // Chaque copie va dans son propre BackupSet de type DATAFILECOPY.
+    if (params.asCopy === 'true' && !isControlfile && !isSpfile && !isArchivelog) {
+      const ckpR = Scn.of(1_892_354);
+      const ckp = ckpR.ok ? ckpR.value : Scn.ZERO;
+      for (const df of datafiles) {
+        const copyPath = `${basePath}.df${df.fileNo}`;
+        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0));
+        if (!writeR.ok) return writeR;
+        const set = BackupSetFactory.createBackupSet({
+          type: 'DATAFILECOPY', level: 0, path: copyPath,
+          sizeBytes: df.sizeBytes, tag,
+          datafiles: [Object.freeze({
+            fileNo: df.fileNo, level: 0 as 0 | 1,
+            ckpScn: ckp, ckpTime: Date.now(), path: df.path,
+          })],
+          compressed, encrypted,
+        });
+        this._bus.emit({
+          type: 'BACKUP_PIECE_CREATED', jobId: job.id, channelId,
+          piece: { key: set.pieces[0].key, tag, path: copyPath, sizeBytes: df.sizeBytes, checkpointScn: set.pieces[0].checkpointScn },
+        });
+        const recR = this._catalog.recordBackupSet(set);
+        if (!recR.ok) return recR;
+        this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: df.sizeBytes });
+      }
+      return ok(undefined);
+    }
+
     const type = isControlfile  ? 'CONTROLFILE'
               : isArchivelog    ? 'ARCHIVELOG'
               : incLevel === 0  ? 'INCREMENTAL_0'
