@@ -11,17 +11,16 @@ registerView({
   name: 'V$DIAG_INFO',
   comment: 'Diagnostic repository info',
   query() {
-    const sid = ORACLE_CONFIG.SID;
     const base = ORACLE_CONFIG.BASE;
-    const diagBase = `${base}/diag/rdbms/${sid.toLowerCase()}/${sid}`;
+    const diagBase = ORACLE_CONFIG.DIAG_HOME;
     return queryResult(
       [
         { name: 'NAME', dataType: oracleVarchar2(64) },
         { name: 'VALUE', dataType: oracleVarchar2(512) },
       ],
       [
-        ['Diag Trace', `${diagBase}/trace`],
-        ['Diag Alert', `${diagBase}/trace`],
+        ['Diag Trace', ORACLE_CONFIG.DIAG_TRACE],
+        ['Diag Alert', ORACLE_CONFIG.DIAG_TRACE],
         ['Diag Incident', `${diagBase}/incident`],
         ['ADR Base', base],
         ['ADR Home', diagBase],

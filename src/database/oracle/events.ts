@@ -203,6 +203,111 @@ export interface OracleFlashbackEventPayload extends OracleDeviceRef {
   scn?: number;
 }
 
+/** Logical storage events — emitted whenever the on-disk layout changes. */
+export interface OracleTablespaceDatafile {
+  path: string;
+  size: string;
+  autoextend: boolean;
+}
+
+export interface OracleTablespaceCreatedPayload extends OracleDeviceRef {
+  name: string;
+  type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
+  datafiles: OracleTablespaceDatafile[];
+}
+
+export interface OracleTablespaceDroppedPayload extends OracleDeviceRef {
+  name: string;
+  type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
+  /** Datafile paths that were attached to the tablespace at DROP time. */
+  datafiles: string[];
+  /** Whether the DROP included `INCLUDING DATAFILES` — drives FS removal. */
+  removeDatafiles: boolean;
+}
+
+export interface OracleDatafileRenamedPayload extends OracleDeviceRef {
+  tablespace: string;
+  oldPath: string;
+  newPath: string;
+}
+
+export interface OracleDatafileResizedPayload extends OracleDeviceRef {
+  tablespace: string;
+  path: string;
+  size: string;
+}
+
+export interface OracleDatafileAutoextendChangedPayload extends OracleDeviceRef {
+  tablespace: string;
+  path: string;
+  autoextend: boolean;
+}
+
+export interface OracleDatafileAddedPayload extends OracleDeviceRef {
+  tablespace: string;
+  type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
+  path: string;
+  size: string;
+  autoextend: boolean;
+}
+
+export interface OracleTablespaceStatusChangedPayload extends OracleDeviceRef {
+  name: string;
+  oldStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
+  newStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
+}
+
+export interface OracleTablespaceRenamedPayload extends OracleDeviceRef {
+  oldName: string;
+  newName: string;
+}
+
+export interface OracleAsmDiskgroupCreatedPayload extends OracleDeviceRef {
+  groupNumber: number;
+  name: string;
+  redundancy: 'EXTERNAL' | 'NORMAL' | 'HIGH';
+}
+
+export interface OracleAsmDiskgroupDroppedPayload extends OracleDeviceRef {
+  name: string;
+  diskPaths: string[];
+}
+
+export interface OracleAsmDiskAddedPayload extends OracleDeviceRef {
+  diskgroup: string;
+  diskNumber: number;
+  diskName: string;
+  path: string;
+  sizeMb: number;
+}
+
+export interface OracleAsmDiskDroppedPayload extends OracleDeviceRef {
+  diskgroup: string;
+  diskName: string;
+  path: string;
+}
+
+export interface OracleParameterFileRequestedPayload extends OracleDeviceRef {
+  target: 'PFILE' | 'SPFILE';
+  outputPath: string;
+  /** Parameters to render (snapshot at request time). */
+  params: Record<string, string>;
+}
+
+export interface OracleAuditRecordedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  actionName: string;
+  objOwner: string | null;
+  objName: string | null;
+  returncode: number;
+  sqlText: string | null;
+  timestamp: Date;
+  osUsername: string;
+  userhost: string;
+  terminal: string;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -231,4 +336,18 @@ export type OracleDomainEvent =
   | { topic: 'oracle.listener.event';                    payload: OracleListenerEventPayload }
   | { topic: 'oracle.session.longops';                   payload: OracleSessionLongopsPayload }
   | { topic: 'oracle.session.metric';                    payload: OracleSessionMetricPayload }
-  | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload };
+  | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload }
+  | { topic: 'oracle.storage.tablespace-created';        payload: OracleTablespaceCreatedPayload }
+  | { topic: 'oracle.storage.tablespace-dropped';        payload: OracleTablespaceDroppedPayload }
+  | { topic: 'oracle.storage.datafile-renamed';          payload: OracleDatafileRenamedPayload }
+  | { topic: 'oracle.storage.datafile-resized';          payload: OracleDatafileResizedPayload }
+  | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
+  | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
+  | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }
+  | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload }
+  | { topic: 'oracle.instance.parameter-file-requested'; payload: OracleParameterFileRequestedPayload }
+  | { topic: 'oracle.asm.diskgroup-created';             payload: OracleAsmDiskgroupCreatedPayload }
+  | { topic: 'oracle.asm.diskgroup-dropped';             payload: OracleAsmDiskgroupDroppedPayload }
+  | { topic: 'oracle.asm.disk-added';                    payload: OracleAsmDiskAddedPayload }
+  | { topic: 'oracle.asm.disk-dropped';                  payload: OracleAsmDiskDroppedPayload };

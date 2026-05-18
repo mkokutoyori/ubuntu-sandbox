@@ -191,6 +191,12 @@ export class OracleParser extends BaseParser {
 
   protected override parseDialectCreate(pos: SourcePosition, orReplace: boolean): Statement | null {
     if (this.matchKeyword('TABLESPACE')) return this.parseCreateTablespace(pos);
+    if (this.matchKeyword('BIGFILE') || this.matchKeyword('SMALLFILE')) {
+      // BIGFILE / SMALLFILE are pure metadata hints; treat as a plain
+      // CREATE TABLESPACE (the simulator doesn't enforce file-count limits).
+      this.expectKeyword('TABLESPACE');
+      return this.parseCreateTablespace(pos);
+    }
     if (this.matchKeyword('TEMPORARY')) {
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos, true);
@@ -199,6 +205,9 @@ export class OracleParser extends BaseParser {
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos, false, true);
     }
+    if (this.matchKeyword('PFILE')) return this.parseCreatePfileOrSpfile(pos, 'PFILE');
+    if (this.matchKeyword('SPFILE')) return this.parseCreatePfileOrSpfile(pos, 'SPFILE');
+    if (this.matchKeyword('DISKGROUP')) return this.parseCreateDiskgroup(pos);
     if (this.matchKeyword('TRIGGER')) return this.parseCreateTrigger(pos, orReplace);
     if (this.matchKeyword('SYNONYM')) return this.parseCreateSynonym(pos, orReplace, false);
     if (this.matchKeyword('PUBLIC')) {
@@ -215,11 +224,230 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
     if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
+    if (this.matchKeyword('TABLESPACE')) return this.parseAlterTablespace(pos);
+    if (this.matchKeyword('DISKGROUP')) return this.parseAlterDiskgroup(pos);
     return null;
+  }
+
+  /**
+   * CREATE PFILE[=path] FROM SPFILE[=path]
+   * CREATE PFILE[=path] FROM MEMORY
+   * CREATE SPFILE[=path] FROM PFILE[=path]
+   * CREATE SPFILE[=path] FROM MEMORY
+   */
+  private parseCreatePfileOrSpfile(
+    pos: SourcePosition,
+    target: 'PFILE' | 'SPFILE',
+  ): import('../engine/parser/ASTNode').CreatePfileSpfileStatement {
+    const readQuoted = (): string => {
+      const raw = this.advance().value;
+      return raw.startsWith("'") ? raw.slice(1, -1) : raw;
+    };
+    let outputPath: string | undefined;
+    if (this.match(TokenType.COMPARISON_OP, '=')) outputPath = readQuoted();
+    this.expectKeyword('FROM');
+    let source: 'PFILE' | 'SPFILE' | 'MEMORY';
+    let sourcePath: string | undefined;
+    if (this.matchKeyword('MEMORY')) source = 'MEMORY';
+    else if (this.matchKeyword('PFILE')) {
+      source = 'PFILE';
+      if (this.match(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
+    } else {
+      this.expectKeyword('SPFILE');
+      source = 'SPFILE';
+      if (this.match(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
+    }
+    return {
+      type: 'CreatePfileSpfileStatement', position: pos,
+      target, outputPath, source, sourcePath,
+    };
+  }
+
+  // ── CREATE / ALTER / DROP DISKGROUP ──────────────────────────────
+
+  private parseCreateDiskgroup(pos: SourcePosition): import('../engine/parser/ASTNode').CreateDiskgroupStatement {
+    const name = this.expectIdentifier();
+    let redundancy: 'EXTERNAL' | 'NORMAL' | 'HIGH' = 'EXTERNAL';
+    if (this.matchKeyword('EXTERNAL')) { redundancy = 'EXTERNAL'; this.matchKeyword('REDUNDANCY'); }
+    else if (this.matchKeyword('NORMAL')) { redundancy = 'NORMAL'; this.matchKeyword('REDUNDANCY'); }
+    else if (this.matchKeyword('HIGH')) { redundancy = 'HIGH'; this.matchKeyword('REDUNDANCY'); }
+    else if (this.matchKeyword('REDUNDANCY')) {
+      const r = this.expectIdentifier().toUpperCase();
+      if (r === 'EXTERNAL' || r === 'NORMAL' || r === 'HIGH') redundancy = r;
+    }
+    this.matchKeyword('DISK');
+    const disks: { path: string; name?: string; sizeMb?: number }[] = [];
+    do {
+      disks.push(this.parseDiskSpec());
+    } while (this.match(TokenType.COMMA));
+    // Optional ATTRIBUTE clause / FAILGROUP — swallow.
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'CreateDiskgroupStatement', position: pos, name, redundancy, disks };
+  }
+
+  private parseDropDiskgroup(pos: SourcePosition): import('../engine/parser/ASTNode').DropDiskgroupStatement {
+    const name = this.expectIdentifier();
+    let includingContents = false;
+    if (this.matchKeyword('INCLUDING')) { this.expectKeyword('CONTENTS'); includingContents = true; }
+    if (this.matchKeyword('FORCE')) { this.matchKeyword('INCLUDING'); this.matchKeyword('CONTENTS'); includingContents = true; }
+    return { type: 'DropDiskgroupStatement', position: pos, name, includingContents };
+  }
+
+  private parseAlterDiskgroup(pos: SourcePosition): import('../engine/parser/ASTNode').AlterDiskgroupStatement {
+    type Action = import('../engine/parser/ASTNode').AlterDiskgroupAction;
+    const name = this.expectIdentifier();
+    let action: Action;
+    if (this.matchKeyword('ADD')) {
+      // ADD [FAILGROUP fg] DISK 'path' [NAME x] [SIZE n M] [, …]
+      let failgroup: string | undefined;
+      if (this.matchKeyword('FAILGROUP')) failgroup = this.expectIdentifier();
+      this.expectKeyword('DISK');
+      const disks: { path: string; name?: string; sizeMb?: number; failgroup?: string }[] = [];
+      do {
+        const d = this.parseDiskSpec();
+        disks.push({ ...d, failgroup });
+      } while (this.match(TokenType.COMMA));
+      action = { kind: 'ADD_DISK', disks };
+    } else if (this.matchKeyword('DROP')) {
+      this.expectKeyword('DISK');
+      const ids: string[] = [];
+      do {
+        if (this.check(TokenType.STRING_LITERAL)) {
+          const raw = this.advance().value;
+          ids.push(raw.slice(1, -1));
+        } else {
+          ids.push(this.expectIdentifier());
+        }
+      } while (this.match(TokenType.COMMA));
+      action = { kind: 'DROP_DISK', identifiers: ids };
+    } else if (this.matchKeyword('REBALANCE')) {
+      let power: number | undefined;
+      if (this.matchKeyword('POWER')) power = Number(this.advance().value);
+      action = { kind: 'REBALANCE', power };
+    } else if (this.matchKeyword('MOUNT')) {
+      action = { kind: 'MOUNT' };
+    } else if (this.matchKeyword('DISMOUNT')) {
+      action = { kind: 'DISMOUNT' };
+    } else {
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+      action = { kind: 'REBALANCE' };
+    }
+    // Swallow optional trailing clauses (NOWAIT, WAIT, etc.)
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AlterDiskgroupStatement', position: pos, name, action };
+  }
+
+  private parseDiskSpec(): { path: string; name?: string; sizeMb?: number } {
+    let path = '';
+    if (this.check(TokenType.STRING_LITERAL)) {
+      const raw = this.advance().value;
+      path = raw.slice(1, -1);
+    } else {
+      path = this.expectIdentifier();
+    }
+    let name: string | undefined;
+    let sizeMb: number | undefined;
+    // Use matchKeyword (which also matches non-reserved IDENTIFIER tokens)
+    // in a loop until neither NAME nor SIZE is found.
+    for (;;) {
+      if (this.matchKeyword('NAME')) { name = this.expectIdentifier(); continue; }
+      if (this.matchKeyword('SIZE')) {
+        const n = Number(this.advance().value);
+        let mult = 1;
+        if (this.check(TokenType.IDENTIFIER) || this.check(TokenType.KEYWORD)) {
+          const u = this.current().value.toUpperCase();
+          if (u === 'M' || u === 'G' || u === 'K' || u === 'T') {
+            this.advance();
+            mult = u === 'K' ? 1 / 1024 : u === 'M' ? 1 : u === 'G' ? 1024 : 1024 * 1024;
+          }
+        }
+        sizeMb = n * mult;
+        continue;
+      }
+      break;
+    }
+    return { path, name, sizeMb };
+  }
+
+  private parseAlterTablespace(pos: SourcePosition): import('../engine/parser/ASTNode').AlterTablespaceStatement {
+    const name = this.expectIdentifier();
+    type Action = import('../engine/parser/ASTNode').AlterTablespaceAction;
+    const action: Action = this.parseAlterTablespaceAction();
+    return { type: 'AlterTablespaceStatement', position: pos, name, action };
+  }
+
+  private parseAlterTablespaceAction(): import('../engine/parser/ASTNode').AlterTablespaceAction {
+    type A = import('../engine/parser/ASTNode').AlterTablespaceAction;
+    const readQuoted = (): string => {
+      const raw = this.advance().value;
+      return raw.startsWith("'") ? raw.slice(1, -1) : raw;
+    };
+    const readSize = (): string => {
+      let s = this.advance().value;
+      if (this.check(TokenType.IDENTIFIER)) s += this.advance().value;
+      return s;
+    };
+    if (this.matchKeyword('ADD')) {
+      this.expectKeyword('DATAFILE');
+      const path = readQuoted();
+      this.expectKeyword('SIZE');
+      const size = readSize();
+      let autoextend: boolean | undefined;
+      if (this.matchKeyword('AUTOEXTEND')) {
+        if (this.matchKeyword('ON')) autoextend = true;
+        else if (this.matchKeyword('OFF')) autoextend = false;
+        // Optional NEXT/MAXSIZE clauses are accepted but not parsed in detail.
+        while (this.matchKeyword('NEXT') || this.matchKeyword('MAXSIZE')) {
+          if (this.matchKeyword('UNLIMITED')) continue;
+          readSize();
+        }
+      }
+      return { kind: 'ADD_DATAFILE', path, size, autoextend } as A;
+    }
+    if (this.matchKeyword('ONLINE')) return { kind: 'ONLINE' };
+    if (this.matchKeyword('OFFLINE')) {
+      let mode: 'NORMAL' | 'TEMPORARY' | 'IMMEDIATE' | undefined;
+      if (this.matchKeyword('NORMAL')) mode = 'NORMAL';
+      else if (this.matchKeyword('TEMPORARY')) mode = 'TEMPORARY';
+      else if (this.matchKeyword('IMMEDIATE')) mode = 'IMMEDIATE';
+      return { kind: 'OFFLINE', mode };
+    }
+    if (this.matchKeyword('READ')) {
+      if (this.matchKeyword('ONLY')) return { kind: 'READ_ONLY' };
+      if (this.matchKeyword('WRITE')) return { kind: 'READ_WRITE' };
+    }
+    if (this.matchKeyword('RENAME')) {
+      if (this.matchKeyword('TO')) {
+        const newName = this.expectIdentifier();
+        return { kind: 'RENAME_TO', newName };
+      }
+      if (this.matchKeyword('DATAFILE')) {
+        const oldPath = readQuoted();
+        this.expectKeyword('TO');
+        const newPath = readQuoted();
+        return { kind: 'RENAME_DATAFILE', oldPath, newPath };
+      }
+    }
+    if (this.matchKeyword('BEGIN')) { this.expectKeyword('BACKUP'); return { kind: 'BEGIN_BACKUP' }; }
+    if (this.matchKeyword('END')) { this.expectKeyword('BACKUP'); return { kind: 'END_BACKUP' }; }
+    if (this.matchKeyword('NOLOGGING')) return { kind: 'NOLOGGING' };
+    if (this.matchKeyword('LOGGING')) return { kind: 'LOGGING' };
+    if (this.matchKeyword('FORCE')) { this.expectKeyword('LOGGING'); return { kind: 'FORCE_LOGGING' }; }
+    if (this.matchKeyword('NO')) { this.expectKeyword('FORCE'); this.expectKeyword('LOGGING'); return { kind: 'NO_FORCE_LOGGING' }; }
+    if (this.matchKeyword('FLASHBACK')) {
+      if (this.matchKeyword('ON')) return { kind: 'FLASHBACK_ON' };
+      if (this.matchKeyword('OFF')) return { kind: 'FLASHBACK_OFF' };
+    }
+    if (this.matchKeyword('SHRINK')) { this.matchKeyword('SPACE'); return { kind: 'SHRINK_SPACE' }; }
+    if (this.matchKeyword('COALESCE')) return { kind: 'COALESCE' };
+    // Fallback: swallow the rest so we don't choke on unknown clauses.
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { kind: 'LOGGING' };
   }
 
   protected override parseDialectDrop(pos: SourcePosition): Statement | null {
     if (this.matchKeyword('TABLESPACE')) return this.parseDropTablespace(pos);
+    if (this.matchKeyword('DISKGROUP')) return this.parseDropDiskgroup(pos);
     if (this.matchKeyword('TRIGGER')) {
       const schema = this.parseSchemaPrefix();
       const name = this.expectIdentifier();
@@ -301,6 +529,14 @@ export class OracleParser extends BaseParser {
         value = raw.slice(1, -1);
       } else if (this.check(TokenType.NUMBER_LITERAL)) {
         value = this.advance().value;
+        // Size literals like 4G / 100M / 512K are tokenised as
+        // NUMBER + IDENTIFIER ("G"); re-glue the suffix.
+        if (this.check(TokenType.IDENTIFIER)) {
+          const suffix = this.current().value;
+          if (/^[KMGT]$/i.test(suffix)) {
+            value += this.advance().value;
+          }
+        }
       } else {
         value = this.expectIdentifier();
       }
@@ -445,8 +681,41 @@ export class OracleParser extends BaseParser {
       }
     }
 
-    // Consume remaining clauses (EXTENT MANAGEMENT, SEGMENT SPACE, etc.) — skip for now
-    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+    // Parse trailing storage-attribute clauses so they reach the meta.
+    let logging: boolean | undefined;
+    let extentManagement: 'LOCAL' | 'DICTIONARY' | undefined;
+    let segmentSpaceManagement: 'AUTO' | 'MANUAL' | undefined;
+    let allocationType: 'SYSTEM' | 'UNIFORM' | 'USER' | undefined;
+    let encrypted: boolean | undefined;
+    let safety = 200;
+    while (--safety > 0 && !this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('LOGGING')) { logging = true; continue; }
+      if (this.matchKeyword('NOLOGGING')) { logging = false; continue; }
+      if (this.matchKeyword('EXTENT')) {
+        this.expectKeyword('MANAGEMENT');
+        extentManagement = this.matchKeyword('DICTIONARY') ? 'DICTIONARY' : (this.matchKeyword('LOCAL'), 'LOCAL');
+        if (this.matchKeyword('UNIFORM')) {
+          allocationType = 'UNIFORM';
+          if (this.matchKeyword('SIZE')) { this.advance(); if (this.check(TokenType.IDENTIFIER)) this.advance(); }
+        } else if (this.matchKeyword('AUTOALLOCATE')) {
+          allocationType = 'SYSTEM';
+        }
+        continue;
+      }
+      if (this.matchKeyword('SEGMENT')) {
+        this.expectKeyword('SPACE'); this.expectKeyword('MANAGEMENT');
+        segmentSpaceManagement = this.matchKeyword('MANUAL') ? 'MANUAL' : (this.matchKeyword('AUTO'), 'AUTO');
+        continue;
+      }
+      if (this.matchKeyword('ENCRYPTION')) {
+        encrypted = true;
+        // USING 'algorithm' DEFAULT STORAGE (ENCRYPT) — swallow.
+        while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF) && !this.checkKeyword('LOGGING') && !this.checkKeyword('NOLOGGING')) {
+          this.advance();
+        }
+        continue;
+      }
+      // Unknown trailing clause — skip one token to make progress.
       this.advance();
     }
 
@@ -454,6 +723,7 @@ export class OracleParser extends BaseParser {
       type: 'CreateTablespaceStatement', position: pos,
       name, temporary: temporary || undefined, undo: undo || undefined,
       datafile, size, autoextend,
+      logging, extentManagement, segmentSpaceManagement, allocationType, encrypted,
     };
   }
 
@@ -470,6 +740,14 @@ export class OracleParser extends BaseParser {
         this.expectKeyword('DATAFILES');
         includeDatafiles = true;
       }
+    }
+    // Optional trailing CASCADE CONSTRAINTS — accepted, no effect in the simulator.
+    if (this.matchKeyword('CASCADE')) {
+      this.matchKeyword('CONSTRAINTS');
+    }
+    // KEEP DATAFILES (Oracle 12c+) — accepted for symmetry.
+    if (this.matchKeyword('KEEP')) {
+      this.matchKeyword('DATAFILES');
     }
     return {
       type: 'DropTablespaceStatement', position: pos, name,

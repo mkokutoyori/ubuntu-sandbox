@@ -361,7 +361,11 @@ export type AlterTableAction =
   | { action: 'ADD_CONSTRAINT'; constraint: TableConstraint }
   | { action: 'DROP_CONSTRAINT'; constraintName: string; cascade?: boolean }
   | { action: 'RENAME_COLUMN'; oldName: string; newName: string }
-  | { action: 'RENAME_TABLE'; newName: string };
+  | { action: 'RENAME_TABLE'; newName: string }
+  | { action: 'MOVE_TABLESPACE'; tablespace: string }
+  | { action: 'MOVE_COMPRESS'; compressionLevel?: string }
+  | { action: 'SHRINK_SPACE'; compact?: boolean; cascade?: boolean }
+  | { action: 'ROW_MOVEMENT'; enabled: boolean };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';
@@ -565,6 +569,12 @@ export interface CreateTablespaceStatement extends ASTNode {
   datafile: string;
   size: string;
   autoextend?: { on: boolean; next?: string; maxSize?: string };
+  /** Optional storage-attribute clauses — propagated to TablespaceMeta. */
+  logging?: boolean;
+  extentManagement?: 'LOCAL' | 'DICTIONARY';
+  segmentSpaceManagement?: 'AUTO' | 'MANUAL';
+  allocationType?: 'SYSTEM' | 'UNIFORM' | 'USER';
+  encrypted?: boolean;
 }
 
 export interface DropTablespaceStatement extends ASTNode {
@@ -572,6 +582,80 @@ export interface DropTablespaceStatement extends ASTNode {
   name: string;
   includeContents?: boolean;
   includeDatafiles?: boolean;
+}
+
+export type AlterTablespaceAction =
+  | { kind: 'ADD_DATAFILE'; path: string; size: string; autoextend?: boolean }
+  | { kind: 'ONLINE' }
+  | { kind: 'OFFLINE'; mode?: 'NORMAL' | 'TEMPORARY' | 'IMMEDIATE' }
+  | { kind: 'READ_ONLY' }
+  | { kind: 'READ_WRITE' }
+  | { kind: 'RENAME_TO'; newName: string }
+  | { kind: 'BEGIN_BACKUP' }
+  | { kind: 'END_BACKUP' }
+  | { kind: 'LOGGING' }
+  | { kind: 'NOLOGGING' }
+  | { kind: 'FORCE_LOGGING' }
+  | { kind: 'NO_FORCE_LOGGING' }
+  | { kind: 'FLASHBACK_ON' }
+  | { kind: 'FLASHBACK_OFF' }
+  | { kind: 'SHRINK_SPACE' }
+  | { kind: 'COALESCE' }
+  | { kind: 'RENAME_DATAFILE'; oldPath: string; newPath: string };
+
+export interface AlterTablespaceStatement extends ASTNode {
+  type: 'AlterTablespaceStatement';
+  name: string;
+  action: AlterTablespaceAction;
+}
+
+export interface CreateDiskgroupStatement extends ASTNode {
+  type: 'CreateDiskgroupStatement';
+  name: string;
+  redundancy: 'EXTERNAL' | 'NORMAL' | 'HIGH';
+  /** Disks paired with their literal paths (and optional NAME / SIZE). */
+  disks: { path: string; name?: string; sizeMb?: number }[];
+}
+
+export interface DropDiskgroupStatement extends ASTNode {
+  type: 'DropDiskgroupStatement';
+  name: string;
+  includingContents: boolean;
+}
+
+export type AlterDiskgroupAction =
+  | { kind: 'ADD_DISK'; disks: { path: string; name?: string; sizeMb?: number; failgroup?: string }[] }
+  | { kind: 'DROP_DISK'; identifiers: string[] }
+  | { kind: 'REBALANCE'; power?: number }
+  | { kind: 'MOUNT' }
+  | { kind: 'DISMOUNT' };
+
+export interface AlterDiskgroupStatement extends ASTNode {
+  type: 'AlterDiskgroupStatement';
+  name: string;
+  action: AlterDiskgroupAction;
+}
+
+export interface AnalyzeStatement extends ASTNode {
+  type: 'AnalyzeStatement';
+  /** TABLE | INDEX | CLUSTER. */
+  target: 'TABLE' | 'INDEX' | 'CLUSTER';
+  schema?: string;
+  name: string;
+  /** COMPUTE STATISTICS | ESTIMATE STATISTICS | VALIDATE STRUCTURE | DELETE STATISTICS. */
+  action: 'COMPUTE_STATISTICS' | 'ESTIMATE_STATISTICS' | 'VALIDATE_STRUCTURE' | 'DELETE_STATISTICS';
+}
+
+export interface CreatePfileSpfileStatement extends ASTNode {
+  type: 'CreatePfileSpfileStatement';
+  /** What we're writing — PFILE or SPFILE. */
+  target: 'PFILE' | 'SPFILE';
+  /** Explicit output path; absent means the default $ORACLE_HOME/dbs/… location. */
+  outputPath?: string;
+  /** Where the parameters come from. MEMORY=current running values. */
+  source: 'PFILE' | 'SPFILE' | 'MEMORY';
+  /** Explicit source path when source=PFILE|SPFILE. */
+  sourcePath?: string;
 }
 
 // ── PL/SQL Blocks (basic) ───────────────────────────────────────────
@@ -746,7 +830,9 @@ export type Statement =
   | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
-  | CreateTablespaceStatement | DropTablespaceStatement
+  | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement
+  | CreatePfileSpfileStatement | AnalyzeStatement
+  | CreateDiskgroupStatement | DropDiskgroupStatement | AlterDiskgroupStatement
   // Explain
   | ExplainPlanStatement
   // Triggers

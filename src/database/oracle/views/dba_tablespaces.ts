@@ -1,5 +1,7 @@
 /**
- * DBA_TABLESPACES — tablespaces, from real storage.
+ * DBA_TABLESPACES — tablespaces, every column derived from the
+ * TablespaceMeta now carried by the storage layer (no fabricated
+ * LOGGING / EXTENT_MANAGEMENT defaults that ignore the actual DDL).
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -16,8 +18,30 @@ registerView({
         { name: 'STATUS', dataType: oracleVarchar2(9) },
         { name: 'CONTENTS', dataType: oracleVarchar2(9) },
         { name: 'BLOCK_SIZE', dataType: oracleNumber(10) },
+        { name: 'INITIAL_EXTENT', dataType: oracleNumber(20) },
+        { name: 'NEXT_EXTENT', dataType: oracleNumber(20) },
+        { name: 'MIN_EXTLEN', dataType: oracleNumber(20) },
+        { name: 'LOGGING', dataType: oracleVarchar2(9) },
+        { name: 'FORCE_LOGGING', dataType: oracleVarchar2(3) },
+        { name: 'EXTENT_MANAGEMENT', dataType: oracleVarchar2(10) },
+        { name: 'ALLOCATION_TYPE', dataType: oracleVarchar2(9) },
+        { name: 'SEGMENT_SPACE_MANAGEMENT', dataType: oracleVarchar2(6) },
+        { name: 'BIGFILE', dataType: oracleVarchar2(3) },
+        { name: 'ENCRYPTED', dataType: oracleVarchar2(3) },
+        { name: 'FLASHBACK_ON', dataType: oracleVarchar2(3) },
       ],
-      storage.getAllTablespaces().map(ts => [ts.name, ts.status, ts.type, ts.blockSize])
+      storage.getAllTablespaces().map(ts => [
+        ts.name, ts.status, ts.type, ts.blockSize,
+        ts.initialExtent, ts.nextExtent, ts.minExtentLength,
+        ts.logging ? 'LOGGING' : 'NOLOGGING',
+        ts.forceLogging ? 'YES' : 'NO',
+        ts.extentManagement,
+        ts.allocationType,
+        ts.segmentSpaceManagement,
+        ts.bigfile ? 'YES' : 'NO',
+        ts.encrypted ? 'YES' : 'NO',
+        ts.flashbackOn ? 'YES' : 'NO',
+      ])
     );
   },
 });

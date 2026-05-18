@@ -80,6 +80,7 @@ export abstract class BaseParser {
         case 'COMMIT': return this.parseCommit();
         case 'ROLLBACK': return this.parseRollback();
         case 'SAVEPOINT': return this.parseSavepoint();
+        case 'ANALYZE': return this.parseAnalyze();
       }
     }
 
@@ -930,6 +931,37 @@ export abstract class BaseParser {
         const newName = this.expectIdentifier();
         actions.push({ action: 'RENAME_TABLE', newName });
       }
+    } else if (this.matchKeyword('MOVE')) {
+      // MOVE TABLESPACE x | MOVE COMPRESS [FOR QUERY|ARCHIVE LOW|HIGH]
+      if (this.matchKeyword('TABLESPACE')) {
+        actions.push({ action: 'MOVE_TABLESPACE', tablespace: this.expectIdentifier() });
+      } else if (this.matchKeyword('COMPRESS')) {
+        let level: string | undefined;
+        if (this.matchKeyword('FOR')) {
+          const parts: string[] = [];
+          while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) parts.push(this.advance().value);
+          level = parts.join(' ');
+        }
+        actions.push({ action: 'MOVE_COMPRESS', compressionLevel: level });
+      } else {
+        // Swallow unknown MOVE clauses gracefully.
+        while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+        actions.push({ action: 'MOVE_TABLESPACE', tablespace: '' });
+      }
+    } else if (this.matchKeyword('SHRINK')) {
+      this.matchKeyword('SPACE');
+      let compact = false, cascade = false;
+      while (this.matchKeyword('COMPACT') || this.matchKeyword('CASCADE')) {
+        compact = compact || true;
+        if (this.tokens[this.pos - 1]?.value.toUpperCase() === 'CASCADE') cascade = true;
+      }
+      actions.push({ action: 'SHRINK_SPACE', compact: compact || undefined, cascade: cascade || undefined });
+    } else if (this.matchKeyword('ENABLE')) {
+      this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT');
+      actions.push({ action: 'ROW_MOVEMENT', enabled: true });
+    } else if (this.matchKeyword('DISABLE')) {
+      this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT');
+      actions.push({ action: 'ROW_MOVEMENT', enabled: false });
     }
 
     return { type: 'AlterTableStatement', position: pos, schema, name, actions };
@@ -1089,6 +1121,26 @@ export abstract class BaseParser {
   }
 
   // ── TRUNCATE ──────────────────────────────────────────────────────
+
+  protected parseAnalyze(): import('./ASTNode').AnalyzeStatement {
+    const pos = this.current().position;
+    this.expectKeyword('ANALYZE');
+    let target: 'TABLE' | 'INDEX' | 'CLUSTER' = 'TABLE';
+    if (this.matchKeyword('TABLE')) target = 'TABLE';
+    else if (this.matchKeyword('INDEX')) target = 'INDEX';
+    else if (this.matchKeyword('CLUSTER')) target = 'CLUSTER';
+    let schema: string | undefined;
+    let name = this.expectIdentifier();
+    if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+    let action: 'COMPUTE_STATISTICS' | 'ESTIMATE_STATISTICS' | 'VALIDATE_STRUCTURE' | 'DELETE_STATISTICS' = 'COMPUTE_STATISTICS';
+    if (this.matchKeyword('COMPUTE')) { this.matchKeyword('STATISTICS'); action = 'COMPUTE_STATISTICS'; }
+    else if (this.matchKeyword('ESTIMATE')) { this.matchKeyword('STATISTICS'); action = 'ESTIMATE_STATISTICS'; }
+    else if (this.matchKeyword('VALIDATE')) { this.matchKeyword('STRUCTURE'); action = 'VALIDATE_STRUCTURE'; }
+    else if (this.matchKeyword('DELETE')) { this.matchKeyword('STATISTICS'); action = 'DELETE_STATISTICS'; }
+    // Swallow trailing options (FOR TABLE / FOR ALL COLUMNS / SAMPLE n PERCENT / ONLINE).
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AnalyzeStatement', position: pos, target, schema, name, action };
+  }
 
   protected parseTruncate(): import('./ASTNode').TruncateTableStatement {
     const pos = this.current().position;

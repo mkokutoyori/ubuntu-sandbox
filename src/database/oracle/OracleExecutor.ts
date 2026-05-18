@@ -13,6 +13,8 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
+  AlterTablespaceStatement, AlterTablespaceAction, CreatePfileSpfileStatement,
+  CreateDiskgroupStatement, DropDiskgroupStatement, AlterDiskgroupStatement,
   MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
@@ -28,6 +30,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
 import { makeSqlId } from './views/sqlId';
 import { OracleParser } from './OracleParser';
+import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 
 /** Snapshot of table rows for transaction undo */
 interface TransactionSnapshot {
@@ -274,17 +277,37 @@ export class OracleExecutor extends BaseExecutor {
 
     const objInfo = this.getObjInfo(statement);
     const effectiveAction = actionName ?? dmlAction!;
-    const sqlText = this._lastSqlText || this.statementText(statement);
+    const fullSqlText = this._lastSqlText || this.statementText(statement);
+    const sqlText = fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText;
+    const sessionIdNum = parseInt(this._sessionId, 10) || 0;
     catalog.recordAudit({
-      sessionId: parseInt(this._sessionId, 10) || 0,
+      sessionId: sessionIdNum,
       username: this.context.currentSchema,
       actionName: effectiveAction,
       objName: objInfo.name,
       objOwner: objInfo.owner,
       returncode,
       privUsed: null,
-      sqlText: sqlText.length > 2000 ? sqlText.slice(0, 2000) : sqlText,
+      sqlText,
       statementType: effectiveAction,
+    });
+    this.bus.publish({
+      topic: 'oracle.audit.recorded',
+      payload: {
+        deviceId: this.deviceId,
+        sid: this.sid,
+        sessionId: sessionIdNum,
+        username: this.context.currentSchema,
+        actionName: effectiveAction,
+        objName: objInfo.name ?? null,
+        objOwner: objInfo.owner ?? null,
+        returncode,
+        sqlText,
+        timestamp: new Date(),
+        osUsername: 'oracle',
+        userhost: 'localhost',
+        terminal: 'pts/0',
+      },
     });
     if (dmlAction) {
       this.recordFgaForDml(statement, dmlAction as 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE');
@@ -339,6 +362,10 @@ export class OracleExecutor extends BaseExecutor {
       DropSynonymStatement: 'DROP SYNONYM',
       CreateTablespaceStatement: 'CREATE TABLESPACE',
       DropTablespaceStatement: 'DROP TABLESPACE',
+      AlterTablespaceStatement: 'ALTER TABLESPACE',
+      CreateDiskgroupStatement: 'CREATE DISKGROUP',
+      DropDiskgroupStatement: 'DROP DISKGROUP',
+      AlterDiskgroupStatement: 'ALTER DISKGROUP',
       AlterSystemStatement: 'ALTER SYSTEM',
       AlterDatabaseStatement: 'ALTER DATABASE',
       CreateProfileStatement: 'CREATE PROFILE',
@@ -408,6 +435,22 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterDatabaseStatement': return this.executeAlterDatabase(statement);
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
+      case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
+      case 'AnalyzeStatement': {
+        const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
+        const schema = (s.schema || this.context.currentSchema).toUpperCase();
+        const name = s.name.toUpperCase();
+        if (s.target === 'TABLE' && !this.storage.tableExists(schema, name)) {
+          throw new OracleError(942, `table or view does not exist`);
+        }
+        // The simulator does not maintain CBO histograms, so ANALYZE is
+        // a no-op that returns the same success message real Oracle does.
+        return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
+      }
+      case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
+      case 'CreateDiskgroupStatement': return this.executeCreateDiskgroup(statement);
+      case 'DropDiskgroupStatement': return this.executeDropDiskgroup(statement);
+      case 'AlterDiskgroupStatement': return this.executeAlterDiskgroup(statement);
       case 'MergeStatement': return this.executeMerge(statement);
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
@@ -2218,6 +2261,19 @@ export class OracleExecutor extends BaseExecutor {
         }
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
+      } else if (action.action === 'MOVE_TABLESPACE') {
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const target = action.tablespace.toUpperCase();
+        if (target && !(this.storage as OracleStorage).tablespaceExists(target)) {
+          throw new OracleError(959, `tablespace '${target}' does not exist`);
+        }
+        if (target) meta.tablespace = target;
+      } else if (action.action === 'MOVE_COMPRESS') {
+        // Compression flag isn't tracked yet — accept silently.
+      } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
+        // No persisted state changes in the simulator; the operation
+        // succeeds the same way it does on a real instance with no rows.
       }
     }
 
@@ -2749,23 +2805,273 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.action === 'OPEN') {
       return emptyResult('Database altered.');
     }
+    // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']
+    // MOVE DATAFILE 'old' TO 'new' [KEEP|REUSE]
+    const renameMatch = /^\s*(?:RENAME\s+FILE|MOVE\s+DATAFILE)\s+(.+)$/i.exec(stmt.action);
+    if (renameMatch) {
+      this.applyDatafileRename(renameMatch[1]);
+      return emptyResult('Database altered.');
+    }
+    // DATAFILE '…' RESIZE 200M
+    const resizeMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bRESIZE\s+(\d+\s*[KMGT]?)/i.exec(stmt.action);
+    if (resizeMatch) {
+      this.applyDatafileResize(resizeMatch[1], resizeMatch[2].replace(/\s+/g, ''));
+      return emptyResult('Database altered.');
+    }
+    // DATAFILE '…' AUTOEXTEND ON|OFF
+    const autoMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bAUTOEXTEND\s+(ON|OFF)\b/i.exec(stmt.action);
+    if (autoMatch) {
+      this.applyDatafileAutoextend(autoMatch[1], autoMatch[2].toUpperCase() === 'ON');
+      return emptyResult('Database altered.');
+    }
     return emptyResult('Database altered.');
   }
 
+  private applyDatafileResize(path: string, size: string): void {
+    const ts = (this.storage as OracleStorage).resizeDatafile(path, size);
+    if (!ts) return;
+    this.bus.publish({
+      topic: 'oracle.storage.datafile-resized',
+      payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, path, size },
+    });
+  }
+
+  private applyDatafileAutoextend(path: string, on: boolean): void {
+    const ts = (this.storage as OracleStorage).setDatafileAutoextend(path, on);
+    if (!ts) return;
+    this.bus.publish({
+      topic: 'oracle.storage.datafile-autoextend-changed',
+      payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, path, autoextend: on },
+    });
+  }
+
+  /**
+   * Parse the comma-separated FROM/TO lists in
+   *   ALTER DATABASE RENAME FILE 'a','b' TO 'c','d'
+   * and apply each rename through the storage layer, emitting one
+   * `oracle.storage.datafile-renamed` event per actual rename.
+   */
+  private applyDatafileRename(tail: string): void {
+    const [lhs, rhs] = tail.split(/\bTO\b/i);
+    const pick = (s: string | undefined): string[] =>
+      (s ?? '').match(/'([^']*)'/g)?.map(q => q.slice(1, -1)) ?? [];
+    const olds = pick(lhs);
+    const news = pick(rhs);
+    if (olds.length === 0) return;
+    const storage = this.storage as OracleStorage;
+    for (let i = 0; i < olds.length; i++) {
+      const oldPath = olds[i];
+      const newPath = news[i] ?? olds[i];
+      if (!newPath || newPath === oldPath) continue;
+      const ts = storage.renameDatafile(oldPath, newPath);
+      if (!ts) continue;
+      this.bus.publish({
+        topic: 'oracle.storage.datafile-renamed',
+        payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, oldPath, newPath },
+      });
+    }
+  }
+
   private executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {
+    const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT';
+    const datafiles = [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }];
     (this.storage as OracleStorage).createTablespace({
       name: stmt.name.toUpperCase(),
-      type: stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT',
+      type,
       status: 'ONLINE',
-      datafiles: [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }],
+      datafiles,
       blockSize: 8192,
+      logging: stmt.logging,
+      extentManagement: stmt.extentManagement,
+      segmentSpaceManagement: stmt.segmentSpaceManagement,
+      allocationType: stmt.allocationType,
+      encrypted: stmt.encrypted,
+    });
+    this.bus.publish({
+      topic: 'oracle.storage.tablespace-created',
+      payload: {
+        deviceId: this.deviceId,
+        sid: this.sid,
+        name: stmt.name.toUpperCase(),
+        type,
+        datafiles,
+      },
     });
     return emptyResult('Tablespace created.');
   }
 
   private executeDropTablespace(stmt: DropTablespaceStatement): ResultSet {
-    (this.storage as OracleStorage).dropTablespace(stmt.name);
+    const storage = this.storage as OracleStorage;
+    const ts = storage.getTablespace(stmt.name);
+    const datafiles = ts ? ts.datafiles.map(d => d.path) : [];
+    const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = ts?.type ?? 'PERMANENT';
+    storage.dropTablespace(stmt.name);
+    this.bus.publish({
+      topic: 'oracle.storage.tablespace-dropped',
+      payload: {
+        deviceId: this.deviceId,
+        sid: this.sid,
+        name: stmt.name.toUpperCase(),
+        type,
+        datafiles,
+        removeDatafiles: stmt.includeDatafiles ?? false,
+      },
+    });
     return emptyResult('Tablespace dropped.');
+  }
+
+  private executeCreatePfileSpfile(stmt: CreatePfileSpfileStatement): ResultSet {
+    // We don't actually re-import parameters from disk — the instance
+    // is the single source of truth in the simulator. So `FROM MEMORY`
+    // and `FROM SPFILE/PFILE` all snapshot the current parameter set
+    // and just choose where to render it.
+    const params: Record<string, string> = {};
+    for (const [k, v] of this.instance.getAllParameters()) params[k] = v;
+    const sid = this.sid;
+    const defaultPath =
+      stmt.target === 'SPFILE'
+        ? `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`
+        : `${ORACLE_CONFIG.HOME}/dbs/init${sid}.ora`;
+    const outputPath = stmt.outputPath ?? defaultPath;
+    this.bus.publish({
+      topic: 'oracle.instance.parameter-file-requested',
+      payload: {
+        deviceId: this.deviceId, sid,
+        target: stmt.target, outputPath, params,
+      },
+    });
+    return emptyResult(`File created.`);
+  }
+
+  private executeAlterTablespace(stmt: AlterTablespaceStatement): ResultSet {
+    const storage = this.storage as OracleStorage;
+    const ts = storage.getTablespace(stmt.name);
+    if (!ts) throw new OracleError(959, `tablespace '${stmt.name}' does not exist`);
+    this.applyAlterTablespaceAction(ts.name, stmt.action);
+    return emptyResult('Tablespace altered.');
+  }
+
+  private applyAlterTablespaceAction(name: string, action: AlterTablespaceAction): void {
+    const storage = this.storage as OracleStorage;
+    const ts = storage.getTablespace(name)!;
+    const publishStatus = (oldStatus: typeof ts.status, newStatus: typeof ts.status) =>
+      this.bus.publish({
+        topic: 'oracle.storage.tablespace-status-changed',
+        payload: { deviceId: this.deviceId, sid: this.sid, name: ts.name, oldStatus, newStatus },
+      });
+    switch (action.kind) {
+      case 'ADD_DATAFILE': {
+        const df = { path: action.path, size: action.size, autoextend: action.autoextend ?? false };
+        const updated = storage.addDatafileToTablespace(name, df);
+        if (!updated) return;
+        this.bus.publish({
+          topic: 'oracle.storage.datafile-added',
+          payload: {
+            deviceId: this.deviceId, sid: this.sid,
+            tablespace: ts.name, type: ts.type,
+            path: df.path, size: df.size, autoextend: df.autoextend,
+          },
+        });
+        return;
+      }
+      case 'ONLINE': case 'READ_WRITE': {
+        const old = ts.status;
+        if (storage.setTablespaceStatus(name, 'ONLINE')) publishStatus(old, 'ONLINE');
+        return;
+      }
+      case 'OFFLINE': {
+        const old = ts.status;
+        if (storage.setTablespaceStatus(name, 'OFFLINE')) publishStatus(old, 'OFFLINE');
+        return;
+      }
+      case 'READ_ONLY': {
+        const old = ts.status;
+        if (storage.setTablespaceStatus(name, 'READ ONLY')) publishStatus(old, 'READ ONLY');
+        return;
+      }
+      case 'RENAME_TO': {
+        const oldName = ts.name;
+        storage.renameTablespace(name, action.newName);
+        this.bus.publish({
+          topic: 'oracle.storage.tablespace-renamed',
+          payload: { deviceId: this.deviceId, sid: this.sid, oldName, newName: action.newName.toUpperCase() },
+        });
+        return;
+      }
+      case 'RENAME_DATAFILE': {
+        const owner = storage.renameDatafile(action.oldPath, action.newPath);
+        if (!owner) return;
+        this.bus.publish({
+          topic: 'oracle.storage.datafile-renamed',
+          payload: { deviceId: this.deviceId, sid: this.sid, tablespace: owner, oldPath: action.oldPath, newPath: action.newPath },
+        });
+        return;
+      }
+      case 'LOGGING':         ts.logging = true; return;
+      case 'NOLOGGING':       ts.logging = false; return;
+      case 'FORCE_LOGGING':   ts.forceLogging = true; return;
+      case 'NO_FORCE_LOGGING':ts.forceLogging = false; return;
+      case 'FLASHBACK_ON':    ts.flashbackOn = true; return;
+      case 'FLASHBACK_OFF':   ts.flashbackOn = false; return;
+      // Operational verbs with no persisted metadata.
+      case 'BEGIN_BACKUP': case 'END_BACKUP':
+      case 'SHRINK_SPACE': case 'COALESCE':
+        return;
+    }
+  }
+
+  // ── ASM ──────────────────────────────────────────────────────────
+
+  private executeCreateDiskgroup(stmt: CreateDiskgroupStatement): ResultSet {
+    const asm = this.instance.asm;
+    const dg = asm.createDiskgroup(stmt.name, { redundancy: stmt.redundancy });
+    this.bus.publish({
+      topic: 'oracle.asm.diskgroup-created',
+      payload: { deviceId: this.deviceId, sid: this.sid, groupNumber: dg.groupNumber, name: dg.name, redundancy: dg.redundancy },
+    });
+    for (const d of stmt.disks) {
+      const { disk } = asm.addDisk(dg.name, d.path, { name: d.name, sizeMb: d.sizeMb });
+      this.bus.publish({
+        topic: 'oracle.asm.disk-added',
+        payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: dg.name, diskNumber: disk.diskNumber, diskName: disk.name, path: disk.path, sizeMb: disk.sizeMb },
+      });
+    }
+    return emptyResult('Diskgroup created.');
+  }
+
+  private executeDropDiskgroup(stmt: DropDiskgroupStatement): ResultSet {
+    const { diskPaths } = this.instance.asm.dropDiskgroup(stmt.name, stmt.includingContents);
+    this.bus.publish({
+      topic: 'oracle.asm.diskgroup-dropped',
+      payload: { deviceId: this.deviceId, sid: this.sid, name: stmt.name.toUpperCase(), diskPaths },
+    });
+    return emptyResult('Diskgroup dropped.');
+  }
+
+  private executeAlterDiskgroup(stmt: AlterDiskgroupStatement): ResultSet {
+    const asm = this.instance.asm;
+    switch (stmt.action.kind) {
+      case 'ADD_DISK':
+        for (const d of stmt.action.disks) {
+          const { diskgroup, disk } = asm.addDisk(stmt.name, d.path, { name: d.name, sizeMb: d.sizeMb, failgroup: d.failgroup });
+          this.bus.publish({
+            topic: 'oracle.asm.disk-added',
+            payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: diskgroup.name, diskNumber: disk.diskNumber, diskName: disk.name, path: disk.path, sizeMb: disk.sizeMb },
+          });
+        }
+        return emptyResult('Diskgroup altered.');
+      case 'DROP_DISK':
+        for (const id of stmt.action.identifiers) {
+          const { diskgroup, disk } = asm.dropDisk(stmt.name, id);
+          this.bus.publish({
+            topic: 'oracle.asm.disk-dropped',
+            payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: diskgroup.name, diskName: disk.name, path: disk.path },
+          });
+        }
+        return emptyResult('Diskgroup altered.');
+      case 'REBALANCE': case 'MOUNT': case 'DISMOUNT':
+        return emptyResult('Diskgroup altered.');
+    }
   }
 
   // ── Expression evaluation ─────────────────────────────────────────

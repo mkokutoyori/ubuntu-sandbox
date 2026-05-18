@@ -9,7 +9,17 @@ import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
+import type { HostCommandRunner } from '@/database/oracle/commands/HostCommandRunner';
 import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
+
+interface SyncShellHost {
+  executeShellCommandSync(command: string): string;
+}
+
+function asSyncShellHost(device: Equipment): SyncShellHost | null {
+  const d = device as unknown as Partial<SyncShellHost>;
+  return typeof d.executeShellCommandSync === 'function' ? (d as SyncShellHost) : null;
+}
 
 export class SqlPlusSubShell implements ISubShell {
   private session: SQLPlusSession;
@@ -34,6 +44,17 @@ export class SqlPlusSubShell implements ISubShell {
     initOracleFilesystem(device);
     const deviceId = device.getId();
     const { session, banner, loginOutput } = createSQLPlusSession(deviceId, args);
+
+    const host = asSyncShellHost(device);
+    if (host) {
+      const runner: HostCommandRunner = {
+        execute(cmd: string): string[] {
+          const out = host.executeShellCommandSync(cmd);
+          return out === '' ? [] : out.split('\n');
+        },
+      };
+      session.setHostCommandRunner(runner);
+    }
 
     return {
       subShell: new SqlPlusSubShell(session, session.getPrompt()),

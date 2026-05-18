@@ -284,6 +284,19 @@ import './v_pga_target_advice';
 import './v_sql_plan';
 import './v_resource_limit';
 import './v_asm_diskgroup';
+import './v_asm_disk';
+import './v_asm_file';
+import './v_asm_client';
+import './v_asm_template';
+import './v_asm_alias';
+import './v_iostat_file';
+import './v_iostat_function';
+import './v_iostat_consumer_group';
+import './v_iostat_network';
+import './v_pwfile_users';
+import './v_nonlogged_block';
+import './v_diag_problem';
+import './v_diag_incident';
 
 // Core DBA_ views migrated out of OracleCatalog (one file per view).
 import './dba_users';

@@ -20,6 +20,7 @@ import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
+import type { HostCommandRunner } from './HostCommandRunner';
 
 export interface ColumnFormat {
   name: string;
@@ -76,6 +77,8 @@ export class SQLPlusSession {
   private bindVariables: Map<string, { type: string; value: unknown }> = new Map();
   /** Column formatting rules (COLUMN ... FORMAT) */
   private columnFormats: Map<string, ColumnFormat> = new Map();
+  /** Optional host-shell executor for HOST / `!` commands. */
+  private hostRunner: HostCommandRunner | null = null;
 
   constructor(db: OracleDatabase) {
     this.db = db;
@@ -108,6 +111,11 @@ export class SQLPlusSession {
   /** Access the underlying OracleDatabase for VFS sync. */
   getDatabase(): OracleDatabase | null {
     return this.connected ? this.db : null;
+  }
+
+  /** Wire a HOST executor (typically delegated to the underlying device). */
+  setHostCommandRunner(runner: HostCommandRunner | null): void {
+    this.hostRunner = runner;
   }
 
   /**
@@ -243,8 +251,10 @@ export class SQLPlusSession {
     // SQL*Plus commands (case-insensitive)
     const upper = trimmed.toUpperCase();
 
-    // EXIT / QUIT
-    if (upper === 'EXIT' || upper === 'QUIT' || upper.startsWith('EXIT ') || upper.startsWith('QUIT ')) {
+    // EXIT / QUIT — accept trailing ';' which real SQL*Plus tolerates too.
+    if (upper === 'EXIT' || upper === 'QUIT'
+        || upper === 'EXIT;' || upper === 'QUIT;'
+        || upper.startsWith('EXIT ') || upper.startsWith('QUIT ')) {
       this.disconnect();
       return { output: ['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'], exit: true, needsMoreInput: false, prompt: '' };
     }
@@ -309,9 +319,17 @@ export class SQLPlusSession {
       return { output: [text], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // HOST / ! — shell command (not supported in simulator)
+    // HOST / ! — delegate to host shell when a runner is wired.
     if (upper.startsWith('HOST ') || upper === 'HOST' || upper.startsWith('!')) {
-      return { output: ['SP2-0734: HOST command is not available in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      return this.handleHost(trimmed);
+    }
+
+    // EXEC / EXECUTE … — short-hand for an anonymous PL/SQL block.
+    // We don't run PL/SQL, but accepting the syntax keeps DBA scripts
+    // from producing SP2-0734 noise.
+    if (upper.startsWith('EXEC ') || upper === 'EXEC' || upper === 'EXEC;'
+        || upper.startsWith('EXECUTE ') || upper === 'EXECUTE' || upper === 'EXECUTE;') {
+      return { output: ['PL/SQL procedure successfully completed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
     // @ / START — execute script (simulated)
@@ -458,8 +476,14 @@ export class SQLPlusSession {
       'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER',
       'GRANT', 'REVOKE', 'TRUNCATE', 'MERGE', 'WITH', 'COMMIT', 'ROLLBACK',
       'SAVEPOINT', 'COMMENT', 'EXPLAIN', 'AUDIT', 'NOAUDIT',
+      'ANALYZE', 'LOCK', 'SET',
     ];
-    return sqlKeywords.some(kw => upper.startsWith(kw + ' ') || upper === kw);
+    // Match the keyword followed by a space, the bare keyword, or the
+    // keyword with a trailing semicolon (e.g. "COMMIT;" — real SQL*Plus
+    // executes it without complaint).
+    return sqlKeywords.some(kw =>
+      upper === kw || upper === kw + ';' || upper.startsWith(kw + ' '),
+    );
   }
 
   private executeBuffer(): SQLPlusResult {
@@ -968,6 +992,24 @@ export class SQLPlusSession {
   }
 
   // ── SPOOL ────────────────────────────────────────────────────────
+
+  // ── HOST / ! ────────────────────────────────────────────────────
+
+  private handleHost(line: string): SQLPlusResult {
+    let cmd: string;
+    if (line.startsWith('!')) cmd = line.substring(1).trim();
+    else if (line.length <= 4) cmd = '';
+    else cmd = line.substring(5).trim();
+
+    if (!this.hostRunner) {
+      return { output: ['SP2-0734: HOST command is not available in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (!cmd) {
+      // Real SQL*Plus drops to a subshell here — not supported.
+      return { output: ['SP2-0738: interactive HOST subshell is not supported in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    return { output: this.hostRunner.execute(cmd), exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
 
   private handleSpool(args: string): SQLPlusResult {
     const upper = args.toUpperCase();

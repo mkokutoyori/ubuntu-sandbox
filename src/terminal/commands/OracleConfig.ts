@@ -27,8 +27,16 @@ export const ORACLE_CONFIG = {
   get DBS_DIR(): string { return `${this.HOME}/dbs`; },
   /** Oracle data directory */
   get ORADATA(): string { return `${this.BASE}/oradata/${this.SID}`; },
+  /** ADR home (Automatic Diagnostic Repository) — DB name lowercase, SID as-is. */
+  get DIAG_HOME(): string { return `${this.BASE}/diag/rdbms/${this.SID.toLowerCase()}/${this.SID}`; },
   /** Diagnostic trace directory */
-  get DIAG_TRACE(): string { return `${this.BASE}/diag/rdbms/orcl/${this.SID}/trace`; },
+  get DIAG_TRACE(): string { return `${this.DIAG_HOME}/trace`; },
+  /** Audit directory (audit_file_dest) */
+  get AUDIT_DIR(): string { return `${this.BASE}/admin/${this.SID}/adump`; },
+  /** Archive log destination */
+  get ARCHIVELOG_DIR(): string { return `${this.BASE}/archivelog`; },
+  /** Fast recovery area */
+  get FRA(): string { return `${this.BASE}/fast_recovery_area`; },
 } as const;
 
 // ─── Oracle Error Codes (ORA-XXXXX) ─────────────────────────────────

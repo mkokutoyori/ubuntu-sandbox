@@ -223,15 +223,18 @@ export function handleAdrci(
   }
 
   const subcmd = args.join(' ').toUpperCase();
+  const adrHomeRel = ORACLE_CONFIG.DIAG_HOME.startsWith(ORACLE_CONFIG.BASE + '/')
+    ? ORACLE_CONFIG.DIAG_HOME.slice(ORACLE_CONFIG.BASE.length + 1)
+    : ORACLE_CONFIG.DIAG_HOME;
   if (subcmd.includes('SHOW HOMES') || subcmd.includes('SHOW HOME')) {
     addLine('ADR Homes:');
-    addLine(`  diag/rdbms/orcl/ORCL`);
+    addLine(`  ${adrHomeRel}`);
   } else if (subcmd.includes('SHOW ALERT')) {
-    addLine('ADR Home = /u01/app/oracle/diag/rdbms/orcl/ORCL:');
+    addLine(`ADR Home = ${ORACLE_CONFIG.DIAG_HOME}:`);
     addLine('');
     addLine('No alert log entries found in simulated environment.');
   } else if (subcmd.includes('SHOW INCIDENT')) {
-    addLine('ADR Home = /u01/app/oracle/diag/rdbms/orcl/ORCL:');
+    addLine(`ADR Home = ${ORACLE_CONFIG.DIAG_HOME}:`);
     addLine('');
     addLine('0 incidents found.');
   } else {

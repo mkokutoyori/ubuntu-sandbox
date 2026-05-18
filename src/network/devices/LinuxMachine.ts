@@ -801,11 +801,32 @@ export abstract class LinuxMachine extends EndHost {
     return this.executor.vfs.readFile(absPath);
   }
 
+  /**
+   * Synchronous bash-only execution path. Bypasses the network-command
+   * dispatcher (so it's safe to call from synchronous contexts like
+   * SQL*Plus `HOST`). Returns the command's stdout as a single string.
+   */
+  executeShellCommandSync(command: string): string {
+    if (!this.isPoweredOn) return 'Device is powered off';
+    const trimmed = command.trim();
+    if (!trimmed) return '';
+    return this.executor.execute(trimmed);
+  }
+
   writeFileFromEditor(path: string, content: string): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     const uid = this.executor.getCurrentUid();
     const gid = uid === 0 ? 0 : 1000;
     return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
+  }
+
+  /**
+   * Programmatic file deletion. Used by adapters that materialise
+   * external state (e.g. Oracle FS sync removing dropped datafiles).
+   */
+  deleteFileFromEditor(path: string): boolean {
+    const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    return this.executor.vfs.deleteFile(absPath);
   }
 
   resolveAbsolutePath(path: string): string {

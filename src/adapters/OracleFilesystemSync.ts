@@ -41,6 +41,7 @@ export interface OracleFilesystemSyncCtx {
  */
 interface FsEquipment {
   writeFileFromEditor(path: string, content: string): void;
+  deleteFileFromEditor?: (path: string) => boolean;
   registerProcess?: (pid: number, user: string, cmd: string) => void;
   unregisterProcess?: (pid: number) => void;
   clearSystemProcesses?: () => void;
@@ -50,6 +51,8 @@ export class OracleFilesystemSync {
   private subs: Unsubscribe[] = [];
   /** Per-device accumulated spfile parameters, rendered atomically on each change. */
   private spfileParams: Map<string, Map<string, string>> = new Map();
+  /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
+  private auditCounters: Map<string, number> = new Map();
 
   constructor(
     private readonly bus: IEventBus,
@@ -73,7 +76,7 @@ export class OracleFilesystemSync {
         const { deviceId, sid, line } = e.payload;
         const dev = this.dev(deviceId);
         if (!dev) return;
-        const path = `${ORACLE_CONFIG.BASE}/diag/rdbms/${sid.toLowerCase()}/${sid}/trace/alert_${sid}.log`;
+        const path = `${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`;
         // Append to the existing log (we re-read from the in-memory accumulator —
         // the adapter doesn't keep history itself).
         const db = this.ctx.resolveDatabase(deviceId);
@@ -105,6 +108,117 @@ export class OracleFilesystemSync {
         if (!dev?.unregisterProcess) return;
         dev.unregisterProcess(e.payload.pid);
       }),
+
+      this.bus.subscribe('oracle.storage.tablespace-created', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        for (const df of e.payload.datafiles) {
+          dev.writeFileFromEditor(
+            df.path,
+            `[ORACLE ${typeLabel} - ${e.payload.name} tablespace - ${df.size}]`,
+          );
+        }
+      }),
+
+      this.bus.subscribe('oracle.storage.datafile-added', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
+        );
+      }),
+
+      this.bus.subscribe('oracle.asm.disk-added', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ASM DISK ${e.payload.diskName} - diskgroup ${e.payload.diskgroup} - ${e.payload.sizeMb}M]`,
+        );
+      }),
+
+      this.bus.subscribe('oracle.asm.disk-dropped', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.deleteFileFromEditor) return;
+        dev.deleteFileFromEditor(e.payload.path);
+      }),
+
+      this.bus.subscribe('oracle.asm.diskgroup-dropped', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.deleteFileFromEditor) return;
+        for (const p of e.payload.diskPaths) dev.deleteFileFromEditor(p);
+      }),
+
+      this.bus.subscribe('oracle.instance.parameter-file-requested', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        dev.writeFileFromEditor(
+          e.payload.outputPath,
+          renderParameterFile(e.payload.target, e.payload.params),
+        );
+      }),
+
+      this.bus.subscribe('oracle.audit.recorded', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
+        this.auditCounters.set(e.payload.deviceId, seq);
+        const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
+        dev.writeFileFromEditor(
+          `${ORACLE_CONFIG.AUDIT_DIR}/${fname}`,
+          renderAuditEntry(e.payload),
+        );
+      }),
+
+      this.bus.subscribe('oracle.archive-log.created', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
+        );
+      }),
+
+      this.bus.subscribe('oracle.storage.tablespace-dropped', (e) => {
+        if (!e.payload.removeDatafiles) return;
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.deleteFileFromEditor) return;
+        for (const path of e.payload.datafiles) {
+          dev.deleteFileFromEditor(path);
+        }
+      }),
+
+      this.bus.subscribe('oracle.storage.datafile-resized', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        const storage = db?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined;
+        const ts = storage?.getTablespace(e.payload.tablespace);
+        const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
+        );
+      }),
+
+      this.bus.subscribe('oracle.storage.datafile-renamed', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        const storage = db?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined;
+        const ts = storage?.getTablespace(e.payload.tablespace);
+        const df = ts?.datafiles.find(d => d.path === e.payload.newPath);
+        const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        const size = df?.size ?? '0M';
+        dev.writeFileFromEditor(
+          e.payload.newPath,
+          `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${size}]`,
+        );
+        dev.deleteFileFromEditor?.(e.payload.oldPath);
+      }),
     );
   }
 
@@ -112,6 +226,7 @@ export class OracleFilesystemSync {
     for (const u of this.subs) u();
     this.subs.length = 0;
     this.spfileParams.clear();
+    this.auditCounters.clear();
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
@@ -160,4 +275,54 @@ export class OracleFilesystemSync {
       dev.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
   }
+}
+
+/**
+ * Render a parameter snapshot in either spfile (*.<param>=value) or
+ * pfile (<param>=value) format.
+ */
+function renderParameterFile(target: 'PFILE' | 'SPFILE', params: Record<string, string>): string {
+  const prefix = target === 'SPFILE' ? '*.' : '';
+  const lines: string[] = [];
+  for (const name of Object.keys(params).sort()) {
+    const value = params[name];
+    const needsQuote = /[^0-9.+-]/.test(value) && !value.startsWith("'");
+    lines.push(`${prefix}${name}=${needsQuote ? `'${value}'` : value}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+/**
+ * Format a single audit entry the way the OS-level `.aud` files look
+ * under audit_file_dest. Kept as a free function to stay small and
+ * trivially testable without instantiating the adapter.
+ */
+function renderAuditEntry(p: import('@/database/oracle/events').OracleAuditRecordedPayload): string {
+  const lines: string[] = [];
+  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
+  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
+  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
+  lines.push(`System name:    Linux`);
+  lines.push(`Node name:      ${p.userhost}`);
+  lines.push(`Instance name:  ${p.sid}`);
+  lines.push(`Redo thread mounted by this instance: 1`);
+  lines.push(`Oracle process number: ${p.sessionId}`);
+  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
+  lines.push('');
+  lines.push(p.timestamp.toISOString());
+  lines.push(`LENGTH : '${(p.sqlText ?? '').length}'`);
+  lines.push(`ACTION : ${p.actionName}`);
+  lines.push(`DATABASE USER: ${p.username}`);
+  lines.push(`PRIVILEGE: ${p.username === 'SYS' ? 'SYSDBA' : '--'}`);
+  lines.push(`CLIENT USER: ${p.osUsername}`);
+  lines.push(`CLIENT TERMINAL: ${p.terminal}`);
+  lines.push(`STATUS: ${p.returncode}`);
+  if (p.objOwner || p.objName) {
+    lines.push(`OBJECT: ${p.objOwner ?? ''}.${p.objName ?? ''}`);
+  }
+  if (p.sqlText) {
+    lines.push(`STATEMENT TEXT:`);
+    lines.push(p.sqlText);
+  }
+  return lines.join('\n') + '\n';
 }

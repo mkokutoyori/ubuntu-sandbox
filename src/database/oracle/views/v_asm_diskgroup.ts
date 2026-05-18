@@ -1,5 +1,6 @@
 /**
- * V$ASM_DISKGROUP — ASM disk groups (simulated DATA/FRA groups).
+ * V$ASM_DISKGROUP — derived from the live AsmManager on the instance.
+ * Empty until the DBA issues CREATE DISKGROUP.
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -9,7 +10,8 @@ import { registerView } from './registry';
 registerView({
   name: 'V$ASM_DISKGROUP',
   comment: 'ASM disk groups',
-  query() {
+  query({ instance }) {
+    const asm = instance.asm;
     return queryResult(
       [
         { name: 'GROUP_NUMBER', dataType: oracleNumber(10) },
@@ -22,10 +24,15 @@ registerView({
         { name: 'TOTAL_MB', dataType: oracleNumber(20) },
         { name: 'FREE_MB', dataType: oracleNumber(20) },
       ],
-      [
-        [1, 'DATA', 512, 4096, 1048576, 'MOUNTED', 'EXTERN', 102400, 81920],
-        [2, 'FRA', 512, 4096, 1048576, 'MOUNTED', 'EXTERN', 51200, 40960],
-      ]
+      asm.getAllDiskgroups().map(dg => [
+        dg.groupNumber, dg.name, dg.sectorSize, dg.blockSize, dg.allocationUnitSize,
+        dg.state, redundancyShort(dg.redundancy),
+        asm.totalMb(dg), asm.freeMb(dg),
+      ])
     );
   },
 });
+
+function redundancyShort(r: 'EXTERNAL' | 'NORMAL' | 'HIGH'): 'EXTERN' | 'NORMAL' | 'HIGH' {
+  return r === 'EXTERNAL' ? 'EXTERN' : r;
+}

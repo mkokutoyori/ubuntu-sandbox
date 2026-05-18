@@ -180,14 +180,20 @@ describe('SQL*Plus Commands', () => {
 
 describe('V$ Dynamic Performance Views', () => {
 
-  test('V$ASM_DISKGROUP returns disk group data', () => {
-    const result = exec('SELECT * FROM V$ASM_DISKGROUP');
+  test('V$ASM_DISKGROUP reflects the live AsmManager state', () => {
+    // No ASM by default — the view truthfully reports zero diskgroups.
+    let result = exec('SELECT * FROM V$ASM_DISKGROUP');
     expect(result.isQuery).toBe(true);
     expect(result.columns.some(c => c.name === 'NAME')).toBe(true);
     expect(result.columns.some(c => c.name === 'TOTAL_MB')).toBe(true);
-    expect(result.rows.length).toBe(2);
-    expect(result.rows[0][1]).toBe('DATA');
-    expect(result.rows[1][1]).toBe('FRA');
+    expect(result.rows.length).toBe(0);
+
+    // After a CREATE DISKGROUP, the view picks it up.
+    exec("CREATE DISKGROUP DATA EXTERNAL REDUNDANCY DISK '/dev/sda1' SIZE 100 M");
+    result = exec('SELECT name, total_mb FROM V$ASM_DISKGROUP');
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0][0]).toBe('DATA');
+    expect(result.rows[0][1]).toBe(100);
   });
 
   test('V$DIAG_INFO returns diagnostic info', () => {
