@@ -71,6 +71,7 @@ import './v_libcache_locks';
 import './v_latchname';
 import './v_latch';
 import './v_latch_parent';
+import './v_latch_children';
 import './v_nodes';
 import './v_rac_global_view';
 import './v_thread';
