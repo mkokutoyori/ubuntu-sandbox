@@ -85,6 +85,7 @@ import './v_system_wait_class';
 import './v_session_event';
 import './v_session_blockers';
 import './v_session_object_cache';
+import './v_session_cursor_cache';
 import './v_session_longops';
 import './v_session_metric';
 import './v_session_metric_history';
