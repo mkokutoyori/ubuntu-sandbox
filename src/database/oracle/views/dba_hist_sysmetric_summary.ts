@@ -1,0 +1,40 @@
+/**
+ * DBA_HIST_SYSMETRIC_SUMMARY — historical metric min/max/avg per snapshot.
+ */
+
+import { queryView } from './registry';
+import { col } from './_columns';
+import { queryResult } from '../../engine/executor/ResultSet';
+import { registerView } from './registry';
+import { METRIC_CATALOGUE } from './v_sysmetric';
+
+registerView({
+  name: 'DBA_HIST_SYSMETRIC_SUMMARY',
+  comment: 'Historical metric summary',
+  query(ctx) {
+    const sample = queryView('V$SYSMETRIC', ctx);
+    if (!sample) return queryResult([], []);
+    const now = Date.now();
+    const elapsedHours = Math.max(1, Math.floor((now - ctx.runtime.startedAt) / 3_600_000));
+    const rows: (string | number)[][] = [];
+    for (let b = 0; b < Math.min(elapsedHours, 100); b++) {
+      const snapId = elapsedHours - b;
+      METRIC_CATALOGUE.forEach((m, i) => {
+        const v = (sample.rows[i]?.[6] as number) ?? 0;
+        rows.push([snapId, m.id, m.name, v, v, v, m.unit]);
+      });
+    }
+    return queryResult(
+      [
+        col.num('SNAP_ID'),
+        col.num('METRIC_ID'),
+        col.str('METRIC_NAME', 64),
+        col.num('MINVAL'),
+        col.num('MAXVAL'),
+        col.num('AVERAGE'),
+        col.str('METRIC_UNIT', 64),
+      ],
+      rows
+    );
+  },
+});
