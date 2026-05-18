@@ -1,0 +1,1840 @@
+============================================================
+Router (L3) debug transcript — huawei-router-connectivity
+Generated: 2026-05-18T04:43:32.753Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP routed data path: static/default/OSPF/RIP/BGP/DHCP + faults
+Total steps: 312
+============================================================
+
+
+--- [1] § host setup ---
+[1/312] linux1 linux1$ ip addr add 192.168.1.10/24 dev eth0
+<empty>
+
+[2/312] linux1 linux1$ ip link set eth0 up
+<empty>
+
+[3/312] linux1 linux1$ ip route add default via 192.168.1.1
+<empty>
+
+[4/312] linux1 linux1$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:09 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.1.10/24 brd 192.168.1.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0a brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0b brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0c brd ff:ff:ff:ff:ff:ff
+
+[5/312] win1 win1$ netsh interface ip set address eth0 static 192.168.2.10 255.255.255.0 192.168.2.1
+  Ok.
+
+[6/312] win1 win1$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : W1
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-0D
+     DHCP Enabled. . . . . . . . . . . : No
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 192.168.2.10(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.2.1
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-0E
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-0F
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-10
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+
+--- [7] § scenario 1: static ---
+[7/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[8/312] r1 [R1] system-view
+  % Invalid input detected at '^' marker.
+  system-view
+  ^
+
+[9/312] r1 [R1] sysname R1
+<empty>
+
+[10/312] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[11/312] r1 [R1-GE0/0/1] ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[12/312] r1 [R1-GE0/0/1] undo shutdown
+<empty>
+
+[13/312] r1 [R1-GE0/0/1] quit
+<empty>
+
+[14/312] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[15/312] r1 [R1-GE0/0/0] ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[16/312] r1 [R1-GE0/0/0] undo shutdown
+<empty>
+
+[17/312] r1 [R1-GE0/0/0] quit
+<empty>
+
+[18/312] r1 [R1] ip route-static 192.168.2.0 255.255.255.0 10.0.0.2
+<empty>
+
+[19/312] r1 [R1] return
+<empty>
+
+[20/312] r2 <R2> system-view
+  Enter system view, return user view with return command.
+
+[21/312] r2 [R2] sysname R2
+<empty>
+
+[22/312] r2 [R2] interface GigabitEthernet0/0/1
+<empty>
+
+[23/312] r2 [R2-GE0/0/1] ip address 192.168.2.1 255.255.255.0
+<empty>
+
+[24/312] r2 [R2-GE0/0/1] undo shutdown
+<empty>
+
+[25/312] r2 [R2-GE0/0/1] quit
+<empty>
+
+[26/312] r2 [R2] interface GigabitEthernet0/0/0
+<empty>
+
+[27/312] r2 [R2-GE0/0/0] ip address 10.0.0.2 255.255.255.252
+<empty>
+
+[28/312] r2 [R2-GE0/0/0] undo shutdown
+<empty>
+
+[29/312] r2 [R2-GE0/0/0] quit
+<empty>
+
+[30/312] r2 [R2] ip route-static 192.168.1.0 255.255.255.0 10.0.0.1
+<empty>
+
+[31/312] r2 [R2] return
+<empty>
+
+
+--- [32] § verify (static) ---
+[32/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[33/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 3        Routes : 3
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[34/312] r2 <R2> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 3        Routes : 3
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.2.0/255.255.255.0Direct  0    0     D     192.168.2.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.1.0/255.255.255.0Static  60   60    RD    10.0.0.1        GE0/0/0
+
+[35/312] r1 <R1> ping 10.0.0.2
+  PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=1 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 10.0.0.2 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[36/312] r1 <R1> ping 192.168.2.1
+  PING 192.168.2.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.2.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.2.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[37/312] r2 <R2> ping 192.168.1.1
+  PING 192.168.1.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[38/312] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.785 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.139 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.232 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.139/0.385/0.785/0.285 ms
+
+[39/312] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[40/312] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.138 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.333 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.336 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.333/0.602/1.138/0.379 ms
+
+[41/312] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.451 ms  0.173 ms  0.151 ms
+   2  10.0.0.2 (10.0.0.2)  0.143 ms  0.248 ms  0.151 ms
+   3  192.168.2.10 (192.168.2.10)  0.289 ms  0.189 ms  0.130 ms
+
+[42/312] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[43/312] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[44/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[45/312] r2 <R2> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.1        02:00:00:00:00:010          D         GE0/0/0
+  192.168.2.10    02:00:00:00:00:0d0          D         GE0/0/1
+
+
+--- [46] § scenario 2: default ---
+[46/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[47/312] r1 [R1] undo ip route-static 192.168.2.0 255.255.255.0 10.0.0.2
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[48/312] r1 [R1] ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+<empty>
+
+[49/312] r1 [R1] return
+<empty>
+
+[50/312] r2 <R2> system-view
+  Enter system view, return user view with return command.
+
+[51/312] r2 [R2] undo ip route-static 192.168.1.0 255.255.255.0 10.0.0.1
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[52/312] r2 [R2] ip route-static 0.0.0.0 0.0.0.0 10.0.0.1
+<empty>
+
+[53/312] r2 [R2] return
+<empty>
+
+
+--- [54] § verify (default) ---
+[54/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[55/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[56/312] r2 <R2> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.2.0/255.255.255.0Direct  0    0     D     192.168.2.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.1.0/255.255.255.0Static  60   60    RD    10.0.0.1        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.1        GE0/0/0
+
+[57/312] r1 <R1> ping 10.0.0.2
+  PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 10.0.0.2 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[58/312] r1 <R1> ping 192.168.2.1
+  PING 192.168.2.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.2.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.2.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[59/312] r2 <R2> ping 192.168.1.1
+  PING 192.168.1.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[60/312] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.081 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.050 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.046 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.046/0.059/0.081/0.016 ms
+
+[61/312] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[62/312] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.369 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.145 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.113 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.113/0.209/0.369/0.114 ms
+
+[63/312] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.081 ms  0.054 ms  0.047 ms
+   2  10.0.0.2 (10.0.0.2)  0.103 ms  0.183 ms  0.084 ms
+   3  192.168.2.10 (192.168.2.10)  0.181 ms  0.134 ms  0.124 ms
+
+[64/312] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[65/312] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[66/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[67/312] r2 <R2> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.1        02:00:00:00:00:010          D         GE0/0/0
+  192.168.2.10    02:00:00:00:00:0d0          D         GE0/0/1
+
+
+--- [68] § scenario 3: OSPF ---
+[68/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[69/312] r1 [R1] undo ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[70/312] r1 [R1] ospf 1 router-id 1.1.1.1
+<empty>
+
+[71/312] r1 [R1-ospf-1] area 0
+<empty>
+
+[72/312] r1 [R1-ospf-1-area-0] network 192.168.1.0 0.0.0.255
+<empty>
+
+[73/312] r1 [R1-ospf-1-area-0] network 10.0.0.0 0.0.0.3
+<empty>
+
+[74/312] r1 [R1-ospf-1-area-0] quit
+<empty>
+
+[75/312] r1 [R1-ospf-1] quit
+<empty>
+
+[76/312] r1 [R1] return
+<empty>
+
+[77/312] r2 <R2> system-view
+  Enter system view, return user view with return command.
+
+[78/312] r2 [R2] undo ip route-static 0.0.0.0 0.0.0.0 10.0.0.1
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[79/312] r2 [R2] ospf 1 router-id 2.2.2.2
+<empty>
+
+[80/312] r2 [R2-ospf-1] area 0
+<empty>
+
+[81/312] r2 [R2-ospf-1-area-0] network 192.168.2.0 0.0.0.255
+<empty>
+
+[82/312] r2 [R2-ospf-1-area-0] network 10.0.0.0 0.0.0.3
+<empty>
+
+[83/312] r2 [R2-ospf-1-area-0] quit
+<empty>
+
+[84/312] r2 [R2-ospf-1] quit
+<empty>
+
+[85/312] r2 [R2] return
+<empty>
+
+[86/312] r1 <R1> display ospf peer
+  OSPF Process with Router ID 192.168.1.1
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+
+[87/312] r1 <R1> display ospf peer brief
+  % Invalid input detected at '^' marker.
+  display ospf peer brief
+                    ^
+
+[88/312] r1 <R1> display ospf lsdb
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Area: 0
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+  
+
+[89/312] r2 <R2> display ospf peer
+  OSPF Process with Router ID 192.168.2.1
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+
+
+--- [90] § verify (ospf) ---
+[90/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[91/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[92/312] r2 <R2> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.2.0/255.255.255.0Direct  0    0     D     192.168.2.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.1.0/255.255.255.0Static  60   60    RD    10.0.0.1        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.1        GE0/0/0
+
+[93/312] r1 <R1> ping 10.0.0.2
+  PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 10.0.0.2 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[94/312] r1 <R1> ping 192.168.2.1
+  PING 192.168.2.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.2.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.2.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[95/312] r2 <R2> ping 192.168.1.1
+  PING 192.168.1.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[96/312] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.094 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.050 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.045 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.045/0.063/0.094/0.022 ms
+
+[97/312] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[98/312] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.474 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.444 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.191 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.191/0.370/0.474/0.127 ms
+
+[99/312] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.087 ms  0.150 ms  0.067 ms
+   2  10.0.0.2 (10.0.0.2)  0.088 ms  0.079 ms  0.077 ms
+   3  192.168.2.10 (192.168.2.10)  0.123 ms  0.186 ms  0.168 ms
+
+[100/312] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+
+[101/312] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[102/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[103/312] r2 <R2> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.1        02:00:00:00:00:010          D         GE0/0/0
+  192.168.2.10    02:00:00:00:00:0d0          D         GE0/0/1
+
+
+--- [104] § scenario 4: RIP ---
+[104/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[105/312] r1 [R1] undo ospf 1
+<empty>
+
+[106/312] r1 [R1] rip 1
+<empty>
+
+[107/312] r1 [R1-rip-1] version 2
+<empty>
+
+[108/312] r1 [R1-rip-1] undo summary
+  % Invalid input detected at '^' marker.
+  undo summary
+       ^
+
+[109/312] r1 [R1-rip-1] network 192.168.1.0
+<empty>
+
+[110/312] r1 [R1-rip-1] network 10.0.0.0
+<empty>
+
+[111/312] r1 [R1-rip-1] quit
+<empty>
+
+[112/312] r1 [R1] return
+<empty>
+
+[113/312] r2 <R2> system-view
+  Enter system view, return user view with return command.
+
+[114/312] r2 [R2] undo ospf 1
+<empty>
+
+[115/312] r2 [R2] rip 1
+<empty>
+
+[116/312] r2 [R2-rip-1] version 2
+<empty>
+
+[117/312] r2 [R2-rip-1] undo summary
+  % Invalid input detected at '^' marker.
+  undo summary
+       ^
+
+[118/312] r2 [R2-rip-1] network 192.168.2.0
+<empty>
+
+[119/312] r2 [R2-rip-1] network 10.0.0.0
+<empty>
+
+[120/312] r2 [R2-rip-1] quit
+<empty>
+
+[121/312] r2 [R2] return
+<empty>
+
+[122/312] r1 <R1> display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[123/312] r2 <R2> display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+
+--- [124] § verify (rip) ---
+[124/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[125/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[126/312] r2 <R2> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.2.0/255.255.255.0Direct  0    0     D     192.168.2.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.1.0/255.255.255.0Static  60   60    RD    10.0.0.1        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.1        GE0/0/0
+
+[127/312] r1 <R1> ping 10.0.0.2
+  PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 10.0.0.2 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[128/312] r1 <R1> ping 192.168.2.1
+  PING 192.168.2.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.2.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.2.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[129/312] r2 <R2> ping 192.168.1.1
+  PING 192.168.1.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[130/312] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.069 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.052 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.039 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.039/0.054/0.069/0.012 ms
+
+[131/312] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[132/312] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.277 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.107 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.099 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.099/0.161/0.277/0.082 ms
+
+[133/312] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.060 ms  0.099 ms  0.050 ms
+   2  10.0.0.2 (10.0.0.2)  0.099 ms  0.074 ms  1.109 ms
+   3  192.168.2.10 (192.168.2.10)  0.154 ms  0.094 ms  0.086 ms
+
+[134/312] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[135/312] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    1 ms     <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[136/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[137/312] r2 <R2> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.1        02:00:00:00:00:010          D         GE0/0/0
+  192.168.2.10    02:00:00:00:00:0d0          D         GE0/0/1
+
+
+--- [138] § scenario 5: BGP ---
+[138/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[139/312] r1 [R1] undo rip 1
+<empty>
+
+[140/312] r1 [R1] bgp 65001
+  % Invalid input detected at '^' marker.
+  bgp 65001
+  ^
+
+[141/312] r1 [R1] router-id 1.1.1.1
+  % Invalid input detected at '^' marker.
+  router-id 1.1.1.1
+  ^
+
+[142/312] r1 [R1] peer 10.0.0.2 as-number 65002
+  % Invalid input detected at '^' marker.
+  peer 10.0.0.2 as-number 65002
+  ^
+
+[143/312] r1 [R1] ipv4-family unicast
+  % Invalid input detected at '^' marker.
+  ipv4-family unicast
+  ^
+
+[144/312] r1 [R1] network 192.168.1.0 255.255.255.0
+  % Invalid input detected at '^' marker.
+  network 192.168.1.0 255.255.255.0
+  ^
+
+[145/312] r1 [R1] peer 10.0.0.2 enable
+  % Invalid input detected at '^' marker.
+  peer 10.0.0.2 enable
+  ^
+
+[146/312] r1 [R1] quit
+<empty>
+
+[147/312] r1 <R1> quit
+<empty>
+
+[148/312] r1 <R1> return
+<empty>
+
+[149/312] r2 <R2> system-view
+  Enter system view, return user view with return command.
+
+[150/312] r2 [R2] undo rip 1
+<empty>
+
+[151/312] r2 [R2] bgp 65002
+  % Invalid input detected at '^' marker.
+  bgp 65002
+  ^
+
+[152/312] r2 [R2] router-id 2.2.2.2
+  % Invalid input detected at '^' marker.
+  router-id 2.2.2.2
+  ^
+
+[153/312] r2 [R2] peer 10.0.0.1 as-number 65001
+  % Invalid input detected at '^' marker.
+  peer 10.0.0.1 as-number 65001
+  ^
+
+[154/312] r2 [R2] ipv4-family unicast
+  % Invalid input detected at '^' marker.
+  ipv4-family unicast
+  ^
+
+[155/312] r2 [R2] network 192.168.2.0 255.255.255.0
+  % Invalid input detected at '^' marker.
+  network 192.168.2.0 255.255.255.0
+  ^
+
+[156/312] r2 [R2] peer 10.0.0.1 enable
+  % Invalid input detected at '^' marker.
+  peer 10.0.0.1 enable
+  ^
+
+[157/312] r2 [R2] quit
+<empty>
+
+[158/312] r2 <R2> quit
+<empty>
+
+[159/312] r2 <R2> return
+<empty>
+
+[160/312] r1 <R1> display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[161/312] r1 <R1> display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+
+--- [162] § verify (bgp) ---
+[162/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[163/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[164/312] r2 <R2> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.2.0/255.255.255.0Direct  0    0     D     192.168.2.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.1.0/255.255.255.0Static  60   60    RD    10.0.0.1        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.1        GE0/0/0
+
+[165/312] r1 <R1> ping 10.0.0.2
+  PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 10.0.0.2 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[166/312] r1 <R1> ping 192.168.2.1
+  PING 192.168.2.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.2.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.2.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.2.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[167/312] r2 <R2> ping 192.168.1.1
+  PING 192.168.1.1: 56  data bytes, press CTRL_C to break
+  Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  5 packet(s) transmitted, 5 packet(s) received, 0% packet loss
+
+[168/312] linux1 linux1$ ping -c 3 192.168.1.1
+  PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.069 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.097 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.059 ms
+  
+  --- 192.168.1.1 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.059/0.075/0.097/0.016 ms
+
+[169/312] linux1 linux1$ ping -c 3 192.168.2.1
+  PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
+  
+  --- 192.168.2.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+[170/312] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.313 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.115 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.244 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.115/0.224/0.313/0.082 ms
+
+[171/312] linux1 linux1$ traceroute 192.168.2.10
+  traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
+   1  192.168.1.1 (192.168.1.1)  0.079 ms  0.042 ms  0.038 ms
+   2  10.0.0.2 (10.0.0.2)  0.113 ms  0.079 ms  0.148 ms
+   3  192.168.2.10 (192.168.2.10)  0.185 ms  0.177 ms  0.103 ms
+
+[172/312] win1 win1$ ping 192.168.1.10
+  
+  Pinging 192.168.1.10 with 32 bytes of data:
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 192.168.1.10:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+
+[173/312] win1 win1$ tracert 192.168.1.10
+  
+  Tracing route to 192.168.1.10 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+  
+  Trace complete.
+
+[174/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[175/312] r2 <R2> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.1        02:00:00:00:00:010          D         GE0/0/0
+  192.168.2.10    02:00:00:00:00:0d0          D         GE0/0/1
+
+
+--- [176] § scenario 6: DHCP ---
+[176/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[177/312] r1 [R1] dhcp enable
+<empty>
+
+[178/312] r1 [R1] ip pool LAN1
+<empty>
+
+[179/312] r1 [R1-ip-pool-LAN1] network 192.168.1.0 mask 255.255.255.0
+<empty>
+
+[180/312] r1 [R1-ip-pool-LAN1] gateway-list 192.168.1.1
+<empty>
+
+[181/312] r1 [R1-ip-pool-LAN1] dns-list 8.8.8.8
+<empty>
+
+[182/312] r1 [R1-ip-pool-LAN1] excluded-ip-address 192.168.1.1 192.168.1.9
+<empty>
+
+[183/312] r1 [R1-ip-pool-LAN1] quit
+<empty>
+
+[184/312] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[185/312] r1 [R1-GE0/0/1] dhcp select global
+<empty>
+
+[186/312] r1 [R1-GE0/0/1] quit
+<empty>
+
+[187/312] r1 [R1] return
+<empty>
+
+[188/312] linux1 linux1$ ip addr flush dev eth0
+  Command "flush" is unknown, try "ip addr help".
+
+[189/312] linux1 linux1$ dhclient eth0
+<empty>
+
+[190/312] linux1 linux1$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:09 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.1.10/24 brd 192.168.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0a brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0b brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:0c brd ff:ff:ff:ff:ff:ff
+
+[191/312] r1 <R1> display ip pool
+  Pool-name      : LAN1
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.1.1
+  Network        : 192.168.1.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[192/312] r1 <R1> display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+
+--- [193] § fault injection ---
+[193/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[194/312] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[195/312] r1 [R1-GE0/0/0] shutdown
+<empty>
+
+[196/312] r1 [R1-GE0/0/0] return
+<empty>
+
+[197/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[198/312] linux1 linux1$ ping -c 2 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  
+  --- 192.168.2.10 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[199/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[200/312] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[201/312] r1 [R1-GE0/0/0] undo shutdown
+<empty>
+
+[202/312] r1 [R1-GE0/0/0] return
+<empty>
+
+[203/312] linux1 linux1$ ping -c 3 192.168.2.10
+  PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.335 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.127 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.097 ms
+  
+  --- 192.168.2.10 ping statistics ---
+  3 packets transmitted, 3 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.097/0.187/0.335/0.106 ms
+
+
+--- [204] § final state ---
+[204/312] r1 <R1> display current-configuration
+  #
+  sysname R1
+  #
+  dhcp enable
+  #
+  ip pool LAN1
+   network 192.168.1.0 mask 255.255.255.0
+   gateway-list 192.168.1.1
+   dns-list 8.8.8.8
+  #
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
+  interface GE0/0/0
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/1
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  ip route-static 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  #
+
+[205/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[206/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[207/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+
+--- [208] § regression: display family ---
+[208/312] r1 <R1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[209/312] r1 <R1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[210/312] r1 <R1> display current-configuration
+  #
+  sysname R1
+  #
+  dhcp enable
+  #
+  ip pool LAN1
+   network 192.168.1.0 mask 255.255.255.0
+   gateway-list 192.168.1.1
+   dns-list 8.8.8.8
+  #
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
+  interface GE0/0/0
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/1
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  ip route-static 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  #
+
+[211/312] r1 <R1> display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[212/312] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[213/312] r1 <R1> display interface
+  Error: Incomplete command.
+
+[214/312] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 4        Routes : 4
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+  192.168.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/0
+  0.0.0.0/0.0.0.0     Static  60   60    RD    10.0.0.2        GE0/0/0
+
+[215/312] r1 <R1> display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    2
+  Static    2
+  --------------------
+  Total     4
+
+[216/312] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  10.0.0.2        02:00:00:00:00:050          D         GE0/0/0
+  192.168.1.10    02:00:00:00:00:090          D         GE0/0/1
+
+[217/312] r1 <R1> display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[218/312] r1 <R1> display ospf peer
+  Error: OSPF is not configured.
+
+[219/312] r1 <R1> display ospf interface
+  Error: OSPF is not configured.
+
+[220/312] r1 <R1> display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[221/312] r1 <R1> display ospf lsdb
+  Error: OSPF is not configured.
+
+[222/312] r1 <R1> display ospf brief
+  Error: OSPF is not configured.
+
+[223/312] r1 <R1> display rip
+  Info: RIP is not enabled.
+
+[224/312] r1 <R1> display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[225/312] r1 <R1> display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[226/312] r1 <R1> display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[227/312] r1 <R1> display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[228/312] r1 <R1> display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[229/312] r1 <R1> display ip pool
+  Pool-name      : LAN1
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.1.1
+  Network        : 192.168.1.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[230/312] r1 <R1> display acl all
+  Total 0 ACL(s)
+
+[231/312] r1 <R1> display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[232/312] r1 <R1> display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[233/312] r1 <R1> display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[234/312] r1 <R1> display ike sa
+  Info: No IPSec configuration.
+
+[235/312] r1 <R1> display ipsec sa
+  Info: No IPSec configuration.
+
+[236/312] r1 <R1> display ipsec policy
+  Info: No IPSec configuration.
+
+[237/312] r1 <R1> display ipsec proposal
+  Info: No IPSec configuration.
+
+[238/312] r1 <R1> display ike proposal
+  Info: No IPSec configuration.
+
+[239/312] r1 <R1> display ike peer
+  Info: No IKE peers configured.
+
+[240/312] r1 <R1> display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[241/312] r1 <R1> display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[242/312] r1 <R1> display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[243/312] r1 <R1> display clock
+  2026-05-18 04:44:06
+  Monday
+  Time Zone(UTC) : UTC
+
+[244/312] r1 <R1> display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[245/312] r1 <R1> display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[246/312] r1 <R1> display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:44:06
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[247/312] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-05-18 04:44:06
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[248/312] r1 <R1> display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[249/312] r1 <R1> display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[250/312] r1 <R1> display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[251/312] r1 <R1> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:44:06 %01SRM/4/PORT_STATE: Port state changed.
+
+[252/312] r1 <R1> display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[253/312] r1 <R1> display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[254/312] r1 <R1> display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[255/312] r1 <R1> display patch-information
+  Info: No patch exists.
+
+[256/312] r1 <R1> display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[257/312] r1 <R1> display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[258/312] r1 <R1> display interface brief
+  Error: Wrong parameter found at '^' position.
+
+[259/312] r1 <R1> display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[260/312] r1 <R1> display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.0.0.1/255.255.255.252
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[261/312] r1 <R1> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[262/312] r1 <R1> display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[263/312] r1 <R1> display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[264/312] r1 <R1> display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[265/312] r1 <R1> display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[266/312] r1 <R1> display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[267/312] r1 <R1> display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[268/312] r1 <R1> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [269] § regression: pipe filters ---
+[269/312] r1 <R1> display current-configuration | include ospf
+<empty>
+
+[270/312] r1 <R1> display current-configuration | begin interface
+  interface GE0/0/0
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/1
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  ip route-static 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+  #
+
+[271/312] r1 <R1> display current-configuration | exclude #
+  sysname R1
+  dhcp enable
+  ip pool LAN1
+   network 192.168.1.0 mask 255.255.255.0
+   gateway-list 192.168.1.1
+   dns-list 8.8.8.8
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
+  interface GE0/0/0
+   ip address 10.0.0.1 255.255.255.252
+  interface GE0/0/1
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+  ip route-static 192.168.2.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 10.0.0.2
+
+[272/312] r1 <R1> display ip routing-table | include Direct
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/1
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/0
+
+[273/312] r1 <R1> display ip interface brief | include up
+  GE0/0/0                           10.0.0.1/255.255.255.252up         up
+  GE0/0/1                           192.168.1.1/255.255.255.0up         up
+
+
+--- [274] § regression: view nav + undo ---
+[274/312] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[275/312] r1 [R1] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[276/312] r1 [R1] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[277/312] r1 [R1] dhcp enable
+<empty>
+
+[278/312] r1 [R1] undo dhcp enable
+<empty>
+
+[279/312] r1 [R1] snmp-agent
+<empty>
+
+[280/312] r1 [R1] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[281/312] r1 [R1] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[282/312] r1 [R1] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[283/312] r1 [R1] telnet server enable
+<empty>
+
+[284/312] r1 [R1] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[285/312] r1 [R1] info-center enable
+<empty>
+
+[286/312] r1 [R1] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[287/312] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[288/312] r1 [R1] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[289/312] r1 [R1] ntp-service enable
+<empty>
+
+[290/312] r1 [R1] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[291/312] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[292/312] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[293/312] r1 [R1] sysname TEST
+<empty>
+
+[294/312] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[295/312] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[296/312] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[297/312] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[298/312] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[299/312] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[300/312] r1 [TEST] ospf 1
+<empty>
+
+[301/312] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[302/312] r1 [TEST-ospf-1] quit
+<empty>
+
+[303/312] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[304/312] r1 [TEST] quit
+<empty>
+
+[305/312] r1 <TEST> return
+<empty>
+
+
+--- [306] § regression: context help ---
+[306/312] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[307/312] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[308/312] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[309/312] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[310/312] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[311/312] r1 [TEST] return
+<empty>
+
+[312/312] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.

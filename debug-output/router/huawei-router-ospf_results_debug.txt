@@ -1,0 +1,1295 @@
+============================================================
+Router (L3) debug transcript — huawei-router-ospf
+Generated: 2026-05-18T04:43:35.000Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
+Total steps: 247
+============================================================
+
+
+--- [1] § base addressing ---
+[1/247] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[2/247] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[3/247] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[4/247] r1 [R1-GE0/0/0] undo shutdown
+<empty>
+
+[5/247] r1 [R1-GE0/0/0] quit
+<empty>
+
+[6/247] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[7/247] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[8/247] r1 [R1-GE0/0/1] undo shutdown
+<empty>
+
+[9/247] r1 [R1-GE0/0/1] quit
+<empty>
+
+[10/247] r1 [R1] interface LoopBack1
+<empty>
+
+[11/247] r1 [R1-LoopBack1] ip address 10.10.1.1 255.255.255.0
+<empty>
+
+[12/247] r1 [R1-LoopBack1] quit
+<empty>
+
+[13/247] r1 [R1] interface LoopBack2
+<empty>
+
+[14/247] r1 [R1-LoopBack2] ip address 10.10.2.1 255.255.255.0
+<empty>
+
+[15/247] r1 [R1-LoopBack2] quit
+<empty>
+
+[16/247] r1 [R1] interface LoopBack3
+<empty>
+
+[17/247] r1 [R1-LoopBack3] ip address 10.10.3.1 255.255.255.0
+<empty>
+
+[18/247] r1 [R1-LoopBack3] quit
+<empty>
+
+[19/247] r1 [R1] interface LoopBack4
+<empty>
+
+[20/247] r1 [R1-LoopBack4] ip address 10.10.4.1 255.255.255.0
+<empty>
+
+[21/247] r1 [R1-LoopBack4] quit
+<empty>
+
+[22/247] r1 [R1] return
+<empty>
+
+
+--- [23] § OSPF process / area ---
+[23/247] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[24/247] r1 [R1] ospf 1 router-id 1.1.1.1
+<empty>
+
+[25/247] r1 [R1-ospf-1] bandwidth-reference 10000
+<empty>
+
+[26/247] r1 [R1-ospf-1] spf-schedule-interval 5
+<empty>
+
+[27/247] r1 [R1-ospf-1] lsa-arrival-interval 100
+  % Invalid input detected at '^' marker.
+  lsa-arrival-interval 100
+  ^
+
+[28/247] r1 [R1-ospf-1] opaque-capability enable
+<empty>
+
+[29/247] r1 [R1-ospf-1] graceful-restart
+<empty>
+
+[30/247] r1 [R1-ospf-1] default-route-advertise always
+  % Invalid input detected at '^' marker.
+  default-route-advertise always
+                          ^
+
+[31/247] r1 [R1-ospf-1] default-route-advertise cost 10 type 1
+  % Invalid input detected at '^' marker.
+  default-route-advertise cost 10 type 1
+                          ^
+
+[32/247] r1 [R1-ospf-1] import-route direct
+<empty>
+
+[33/247] r1 [R1-ospf-1] import-route static cost 20 type 1
+<empty>
+
+[34/247] r1 [R1-ospf-1] import-route rip 1
+<empty>
+
+[35/247] r1 [R1-ospf-1] import-route bgp route-policy RP
+<empty>
+
+[36/247] r1 [R1-ospf-1] maximum load-balancing 4
+  % Invalid input detected at '^' marker.
+  maximum load-balancing 4
+  ^
+
+[37/247] r1 [R1-ospf-1] preference 150
+  % Invalid input detected at '^' marker.
+  preference 150
+  ^
+
+[38/247] r1 [R1-ospf-1] silent-interface GigabitEthernet0/0/0
+<empty>
+
+[39/247] r1 [R1-ospf-1] undo silent-interface GigabitEthernet0/0/0
+<empty>
+
+[40/247] r1 [R1-ospf-1] area 0
+<empty>
+
+[41/247] r1 [R1-ospf-1-area-0] network 10.10.1.0 0.0.0.255
+<empty>
+
+[42/247] r1 [R1-ospf-1-area-0] network 10.10.2.0 0.0.0.255
+<empty>
+
+[43/247] r1 [R1-ospf-1-area-0] network 10.10.3.0 0.0.0.255
+<empty>
+
+[44/247] r1 [R1-ospf-1-area-0] network 10.10.4.0 0.0.0.255
+<empty>
+
+[45/247] r1 [R1-ospf-1-area-0] network 10.10.5.0 0.0.0.255
+<empty>
+
+[46/247] r1 [R1-ospf-1-area-0] network 10.10.6.0 0.0.0.255
+<empty>
+
+[47/247] r1 [R1-ospf-1-area-0] network 192.168.1.0 0.0.0.255
+<empty>
+
+[48/247] r1 [R1-ospf-1-area-0] network 10.0.0.0 0.0.0.3
+<empty>
+
+[49/247] r1 [R1-ospf-1-area-0] quit
+<empty>
+
+[50/247] r1 [R1-ospf-1] quit
+<empty>
+
+[51/247] r1 [R1] return
+<empty>
+
+[52/247] r1 <R1> display ospf brief
+  OSPF Process 1 with Router ID 192.168.1.1
+  
+   Area    Type   Intf    Adj   LSA
+   0       normal 0       0     0
+
+[53/247] r1 <R1> display ospf cumulative
+  % Invalid input detected at '^' marker.
+  display ospf cumulative
+               ^
+
+
+--- [54] § area types / auth ---
+[54/247] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[55/247] r1 [R1] ospf 1
+<empty>
+
+[56/247] r1 [R1-ospf-1] area 1
+<empty>
+
+[57/247] r1 [R1-ospf-1-area-1] stub
+<empty>
+
+[58/247] r1 [R1-ospf-1-area-1] stub no-summary
+<empty>
+
+[59/247] r1 [R1-ospf-1-area-1] default-cost 10
+  % Invalid input detected at '^' marker.
+  default-cost 10
+  ^
+
+[60/247] r1 [R1-ospf-1-area-1] quit
+<empty>
+
+[61/247] r1 [R1-ospf-1] area 2
+<empty>
+
+[62/247] r1 [R1-ospf-1-area-2] nssa
+<empty>
+
+[63/247] r1 [R1-ospf-1-area-2] nssa default-route-advertise no-summary
+  % Invalid input detected at '^' marker.
+  nssa default-route-advertise no-summary
+       ^
+
+[64/247] r1 [R1-ospf-1-area-2] quit
+<empty>
+
+[65/247] r1 [R1-ospf-1] area 3
+<empty>
+
+[66/247] r1 [R1-ospf-1-area-3] abr-summary 10.30.0.0 255.255.0.0
+<empty>
+
+[67/247] r1 [R1-ospf-1-area-3] quit
+<empty>
+
+[68/247] r1 [R1-ospf-1] area 0
+<empty>
+
+[69/247] r1 [R1-ospf-1-area-0] authentication-mode md5 1 cipher Huawei@123
+  % Invalid input detected at '^' marker.
+  authentication-mode md5 1 cipher Huawei@123
+  ^
+
+[70/247] r1 [R1-ospf-1-area-0] authentication-mode simple plain Huawei
+  % Invalid input detected at '^' marker.
+  authentication-mode simple plain Huawei
+  ^
+
+[71/247] r1 [R1-ospf-1-area-0] quit
+<empty>
+
+[72/247] r1 [R1-ospf-1] vlink-peer 2.2.2.2
+  % Invalid input detected at '^' marker.
+  vlink-peer 2.2.2.2
+  ^
+
+[73/247] r1 [R1-ospf-1] sham-link 1.1.1.1 2.2.2.2
+  % Invalid input detected at '^' marker.
+  sham-link 1.1.1.1 2.2.2.2
+  ^
+
+[74/247] r1 [R1-ospf-1] quit
+<empty>
+
+[75/247] r1 [R1] return
+<empty>
+
+[76/247] r1 <R1> display ospf brief
+  OSPF Process 1 with Router ID 192.168.1.1
+  
+   Area    Type   Intf    Adj   LSA
+   0       normal 0       0     0
+   1       totally-stubby0       0     0
+   2       nssa   0       0     0
+
+[77/247] r1 <R1> display ospf abr-asbr
+  OSPF Process 1 with Router ID 192.168.1.1
+  
+   (No border routers known)
+
+
+--- [78] § per-interface OSPF ---
+[78/247] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[79/247] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[80/247] r1 [R1-GE0/0/1] ospf cost 100
+<empty>
+
+[81/247] r1 [R1-GE0/0/1] ospf dr-priority 200
+<empty>
+
+[82/247] r1 [R1-GE0/0/1] ospf timer hello 5
+<empty>
+
+[83/247] r1 [R1-GE0/0/1] ospf timer dead 20
+<empty>
+
+[84/247] r1 [R1-GE0/0/1] ospf timer retransmit 10
+  % Invalid input detected at '^' marker.
+  ospf timer retransmit 10
+             ^
+
+[85/247] r1 [R1-GE0/0/1] ospf trans-delay 2
+  % Invalid input detected at '^' marker.
+  ospf trans-delay 2
+       ^
+
+[86/247] r1 [R1-GE0/0/1] ospf network-type p2p
+<empty>
+
+[87/247] r1 [R1-GE0/0/1] ospf network-type broadcast
+<empty>
+
+[88/247] r1 [R1-GE0/0/1] ospf network-type nbma
+<empty>
+
+[89/247] r1 [R1-GE0/0/1] ospf network-type p2mp
+<empty>
+
+[90/247] r1 [R1-GE0/0/1] ospf authentication-mode md5 1 cipher Key123
+<empty>
+
+[91/247] r1 [R1-GE0/0/1] ospf authentication-mode null
+<empty>
+
+[92/247] r1 [R1-GE0/0/1] ospf mtu-enable
+<empty>
+
+[93/247] r1 [R1-GE0/0/1] ospf bfd enable
+<empty>
+
+[94/247] r1 [R1-GE0/0/1] ospf bfd min-tx-interval 100 min-rx-interval 100
+  % Invalid input detected at '^' marker.
+  ospf bfd min-tx-interval 100 min-rx-interval 100
+           ^
+
+[95/247] r1 [R1-GE0/0/1] ospf silent-interface
+  % Invalid input detected at '^' marker.
+  ospf silent-interface
+       ^
+
+[96/247] r1 [R1-GE0/0/1] quit
+<empty>
+
+[97/247] r1 [R1] return
+<empty>
+
+[98/247] r1 <R1> display ospf interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display ospf interface GigabitEthernet0/0/1
+                         ^
+
+[99/247] r1 <R1> display ospf interface all
+  % Invalid input detected at '^' marker.
+  display ospf interface all
+                         ^
+
+
+--- [100] § OSPFv3 ---
+[100/247] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[101/247] r1 [R1] ospfv3 1
+<empty>
+
+[102/247] r1 [R1-ospfv3-1] router-id 1.1.1.1
+<empty>
+
+[103/247] r1 [R1-ospfv3-1] area 0
+  Error: Incomplete command.
+
+[104/247] r1 [R1-ospfv3-1] quit
+<empty>
+
+[105/247] r1 [R1] quit
+<empty>
+
+[106/247] r1 <R1> interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0/1
+  ^
+
+[107/247] r1 <R1> ipv6 enable
+  % Invalid input detected at '^' marker.
+  ipv6 enable
+  ^
+
+[108/247] r1 <R1> ipv6 address 2001:db8:1::1/64
+  % Invalid input detected at '^' marker.
+  ipv6 address 2001:db8:1::1/64
+  ^
+
+[109/247] r1 <R1> ospfv3 1 area 0
+  % Invalid input detected at '^' marker.
+  ospfv3 1 area 0
+  ^
+
+[110/247] r1 <R1> ospfv3 cost 50
+  % Invalid input detected at '^' marker.
+  ospfv3 cost 50
+  ^
+
+[111/247] r1 <R1> ospfv3 network-type p2p
+  % Invalid input detected at '^' marker.
+  ospfv3 network-type p2p
+  ^
+
+[112/247] r1 <R1> ospfv3 timer hello 5
+  % Invalid input detected at '^' marker.
+  ospfv3 timer hello 5
+  ^
+
+[113/247] r1 <R1> quit
+<empty>
+
+[114/247] r1 <R1> return
+<empty>
+
+[115/247] r1 <R1> display ospfv3
+  % Incomplete command.
+
+[116/247] r1 <R1> display ospfv3 peer
+  OSPFv3 Process 1 with Router ID 1.1.1.1
+  
+  Neighbor ID     Pri   State           Interface
+
+[117/247] r1 <R1> display ospfv3 interface
+<empty>
+
+[118/247] r1 <R1> display ospfv3 routing-table
+  % Invalid input detected at '^' marker.
+  display ospfv3 routing-table
+                 ^
+
+
+--- [119] § OSPF display / reset / debug ---
+[119/247] r1 <R1> display ospf peer
+  OSPF Process with Router ID 192.168.1.1
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+
+[120/247] r1 <R1> display ospf peer brief
+  % Invalid input detected at '^' marker.
+  display ospf peer brief
+                    ^
+
+[121/247] r1 <R1> display ospf interface
+   GE0/0/0 (192.168.1.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0  Cost: 100  State: DR
+     Type: p2mp  Priority: 200
+     DR: 10.0.0.1  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+  
+   LoopBack1 (10.10.1.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack2 (10.10.2.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack3 (10.10.3.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.3.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack4 (10.10.4.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.4.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+
+[122/247] r1 <R1> display ospf lsdb
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Area: 0
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     96    0x80000010
+  
+                       Area: 1
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000011
+  
+                       Area: 2
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000012
+  
+
+[123/247] r1 <R1> display ospf lsdb router
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Type: Router
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     96    0x80000013
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000014
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000015
+
+[124/247] r1 <R1> display ospf lsdb network
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Type: Network
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+
+[125/247] r1 <R1> display ospf lsdb summary
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Type: Sum-Net
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+
+[126/247] r1 <R1> display ospf lsdb ase
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Type: External
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+
+[127/247] r1 <R1> display ospf lsdb nssa
+  % Invalid input detected at '^' marker.
+  display ospf lsdb nssa
+                    ^
+
+[128/247] r1 <R1> display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[129/247] r1 <R1> display ospf abr-asbr
+  OSPF Process 1 with Router ID 192.168.1.1
+  
+   (No border routers known)
+
+[130/247] r1 <R1> display ospf nexthop
+  % Invalid input detected at '^' marker.
+  display ospf nexthop
+               ^
+
+[131/247] r1 <R1> display ospf vlink
+  OSPF Process with Router ID 192.168.1.1
+  
+   No virtual links configured
+
+[132/247] r1 <R1> display ospf sham-link
+  % Invalid input detected at '^' marker.
+  display ospf sham-link
+               ^
+
+[133/247] r1 <R1> display ospf statistics
+  OSPF statistics:
+    LSA: 3 total
+    SPF: 11 runs
+    Neighbors: 0, Adjacent: 0
+  
+    Area statistics:
+      Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 1: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+
+[134/247] r1 <R1> display ospf error
+  % Invalid input detected at '^' marker.
+  display ospf error
+               ^
+
+[135/247] r1 <R1> display ospf request-queue
+  % Invalid input detected at '^' marker.
+  display ospf request-queue
+               ^
+
+[136/247] r1 <R1> display ospf retrans-queue
+  % Invalid input detected at '^' marker.
+  display ospf retrans-queue
+               ^
+
+[137/247] r1 <R1> display ip routing-table protocol ospf
+  OSPF Routing Table:
+    (No OSPF routes)
+
+[138/247] r1 <R1> reset ospf process
+  % Invalid input detected at '^' marker.
+  reset ospf process
+        ^
+
+[139/247] r1 <R1> reset ospf 1 counters
+  % Invalid input detected at '^' marker.
+  reset ospf 1 counters
+        ^
+
+[140/247] r1 <R1> debugging ospf event
+  % Invalid input detected at '^' marker.
+  debugging ospf event
+            ^
+
+[141/247] r1 <R1> debugging ospf packet
+  % Invalid input detected at '^' marker.
+  debugging ospf packet
+            ^
+
+[142/247] r1 <R1> undo debugging all
+  Info: All debugging turned off.
+
+
+--- [143] § regression: display family ---
+[143/247] r1 <R1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[144/247] r1 <R1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[145/247] r1 <R1> display current-configuration
+  #
+  sysname R1
+  #
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack1
+   ip address 10.10.1.1 255.255.255.0
+  #
+  interface LoopBack2
+   ip address 10.10.2.1 255.255.255.0
+  #
+  interface LoopBack3
+   ip address 10.10.3.1 255.255.255.0
+  #
+  interface LoopBack4
+   ip address 10.10.4.1 255.255.255.0
+  #
+  #
+  ospf 1
+   router-id 192.168.1.1
+   area 0
+    network 10.10.1.0 0.0.0.255
+    network 10.10.2.0 0.0.0.255
+    network 10.10.3.0 0.0.0.255
+    network 10.10.4.0 0.0.0.255
+    network 10.10.5.0 0.0.0.255
+    network 10.10.6.0 0.0.0.255
+    network 192.168.1.0 0.0.0.255
+    network 10.0.0.0 0.0.0.3
+  #
+
+[146/247] r1 <R1> display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[147/247] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           192.168.1.1/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+  LoopBack1                         10.10.1.1/255.255.255.0down       down
+  LoopBack2                         10.10.2.1/255.255.255.0down       down
+  LoopBack3                         10.10.3.1/255.255.255.0down       down
+  LoopBack4                         10.10.4.1/255.255.255.0down       down
+
+[148/247] r1 <R1> display interface
+  Error: Incomplete command.
+
+[149/247] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 6        Routes : 6
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  10.10.1.0/255.255.255.0Direct  0    0     D     10.10.1.0       LoopBack1
+  10.10.2.0/255.255.255.0Direct  0    0     D     10.10.2.0       LoopBack2
+  10.10.3.0/255.255.255.0Direct  0    0     D     10.10.3.0       LoopBack3
+  10.10.4.0/255.255.255.0Direct  0    0     D     10.10.4.0       LoopBack4
+
+[150/247] r1 <R1> display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    6
+  --------------------
+  Total     6
+
+[151/247] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[152/247] r1 <R1> display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[153/247] r1 <R1> display ospf peer
+  OSPF Process with Router ID 192.168.1.1
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+
+[154/247] r1 <R1> display ospf interface
+   GE0/0/0 (192.168.1.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0  Cost: 100  State: DR
+     Type: p2mp  Priority: 200
+     DR: 10.0.0.1  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+  
+   LoopBack1 (10.10.1.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack2 (10.10.2.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack3 (10.10.3.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.3.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack4 (10.10.4.1)
+     Area: 0  Cost: 10000000  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.4.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+
+[155/247] r1 <R1> display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[156/247] r1 <R1> display ospf lsdb
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Area: 0
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     96    0x8000002b
+  
+                       Area: 1
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     24    0x8000002c
+  
+                       Area: 2
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    192.168.1.1     192.168.1.1     0     24    0x8000002d
+  
+
+[157/247] r1 <R1> display ospf brief
+  OSPF Process 1 with Router ID 192.168.1.1
+  
+   Area    Type   Intf    Adj   LSA
+   0       normal 6       0     1
+   1       totally-stubby0       0     1
+   2       nssa   0       0     1
+
+[158/247] r1 <R1> display rip
+  Info: RIP is not enabled.
+
+[159/247] r1 <R1> display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[160/247] r1 <R1> display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[161/247] r1 <R1> display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[162/247] r1 <R1> display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[163/247] r1 <R1> display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[164/247] r1 <R1> display ip pool
+  No DHCP pools configured.
+
+[165/247] r1 <R1> display acl all
+  Total 0 ACL(s)
+
+[166/247] r1 <R1> display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[167/247] r1 <R1> display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[168/247] r1 <R1> display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[169/247] r1 <R1> display ike sa
+  Info: No IPSec configuration.
+
+[170/247] r1 <R1> display ipsec sa
+  Info: No IPSec configuration.
+
+[171/247] r1 <R1> display ipsec policy
+  Info: No IPSec configuration.
+
+[172/247] r1 <R1> display ipsec proposal
+  Info: No IPSec configuration.
+
+[173/247] r1 <R1> display ike proposal
+  Info: No IPSec configuration.
+
+[174/247] r1 <R1> display ike peer
+  Info: No IKE peers configured.
+
+[175/247] r1 <R1> display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[176/247] r1 <R1> display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[177/247] r1 <R1> display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[178/247] r1 <R1> display clock
+  2026-05-18 04:43:35
+  Monday
+  Time Zone(UTC) : UTC
+
+[179/247] r1 <R1> display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[180/247] r1 <R1> display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[181/247] r1 <R1> display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:43:35
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[182/247] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-05-18 04:43:35
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[183/247] r1 <R1> display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[184/247] r1 <R1> display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[185/247] r1 <R1> display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[186/247] r1 <R1> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:43:35 %01SRM/4/PORT_STATE: Port state changed.
+
+[187/247] r1 <R1> display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[188/247] r1 <R1> display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[189/247] r1 <R1> display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[190/247] r1 <R1> display patch-information
+  Info: No patch exists.
+
+[191/247] r1 <R1> display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[192/247] r1 <R1> display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[193/247] r1 <R1> display interface brief
+  Error: Wrong parameter found at '^' position.
+
+[194/247] r1 <R1> display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[195/247] r1 <R1> display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[196/247] r1 <R1> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[197/247] r1 <R1> display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[198/247] r1 <R1> display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[199/247] r1 <R1> display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[200/247] r1 <R1> display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[201/247] r1 <R1> display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[202/247] r1 <R1> display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[203/247] r1 <R1> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [204] § regression: pipe filters ---
+[204/247] r1 <R1> display current-configuration | include ospf
+  ospf 1
+
+[205/247] r1 <R1> display current-configuration | begin interface
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack1
+   ip address 10.10.1.1 255.255.255.0
+  #
+  interface LoopBack2
+   ip address 10.10.2.1 255.255.255.0
+  #
+  interface LoopBack3
+   ip address 10.10.3.1 255.255.255.0
+  #
+  interface LoopBack4
+   ip address 10.10.4.1 255.255.255.0
+  #
+  #
+  ospf 1
+   router-id 192.168.1.1
+   area 0
+    network 10.10.1.0 0.0.0.255
+    network 10.10.2.0 0.0.0.255
+    network 10.10.3.0 0.0.0.255
+    network 10.10.4.0 0.0.0.255
+    network 10.10.5.0 0.0.0.255
+    network 10.10.6.0 0.0.0.255
+    network 192.168.1.0 0.0.0.255
+    network 10.0.0.0 0.0.0.3
+  #
+
+[206/247] r1 <R1> display current-configuration | exclude #
+  sysname R1
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+  interface LoopBack1
+   ip address 10.10.1.1 255.255.255.0
+  interface LoopBack2
+   ip address 10.10.2.1 255.255.255.0
+  interface LoopBack3
+   ip address 10.10.3.1 255.255.255.0
+  interface LoopBack4
+   ip address 10.10.4.1 255.255.255.0
+  ospf 1
+   router-id 192.168.1.1
+   area 0
+    network 10.10.1.0 0.0.0.255
+    network 10.10.2.0 0.0.0.255
+    network 10.10.3.0 0.0.0.255
+    network 10.10.4.0 0.0.0.255
+    network 10.10.5.0 0.0.0.255
+    network 10.10.6.0 0.0.0.255
+    network 192.168.1.0 0.0.0.255
+    network 10.0.0.0 0.0.0.3
+
+[207/247] r1 <R1> display ip routing-table | include Direct
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  10.10.1.0/255.255.255.0Direct  0    0     D     10.10.1.0       LoopBack1
+  10.10.2.0/255.255.255.0Direct  0    0     D     10.10.2.0       LoopBack2
+  10.10.3.0/255.255.255.0Direct  0    0     D     10.10.3.0       LoopBack3
+  10.10.4.0/255.255.255.0Direct  0    0     D     10.10.4.0       LoopBack4
+
+[208/247] r1 <R1> display ip interface brief | include up
+  GE0/0/0                           192.168.1.1/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+
+
+--- [209] § regression: view nav + undo ---
+[209/247] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[210/247] r1 [R1] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[211/247] r1 [R1] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[212/247] r1 [R1] dhcp enable
+<empty>
+
+[213/247] r1 [R1] undo dhcp enable
+<empty>
+
+[214/247] r1 [R1] snmp-agent
+<empty>
+
+[215/247] r1 [R1] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[216/247] r1 [R1] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[217/247] r1 [R1] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[218/247] r1 [R1] telnet server enable
+<empty>
+
+[219/247] r1 [R1] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[220/247] r1 [R1] info-center enable
+<empty>
+
+[221/247] r1 [R1] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[222/247] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[223/247] r1 [R1] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[224/247] r1 [R1] ntp-service enable
+<empty>
+
+[225/247] r1 [R1] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[226/247] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[227/247] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[228/247] r1 [R1] sysname TEST
+<empty>
+
+[229/247] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[230/247] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[231/247] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[232/247] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[233/247] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[234/247] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[235/247] r1 [TEST] ospf 1
+<empty>
+
+[236/247] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[237/247] r1 [TEST-ospf-1] quit
+<empty>
+
+[238/247] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[239/247] r1 [TEST] quit
+<empty>
+
+[240/247] r1 <TEST> return
+<empty>
+
+
+--- [241] § regression: context help ---
+[241/247] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[242/247] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[243/247] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[244/247] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[245/247] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[246/247] r1 [TEST] return
+<empty>
+
+[247/247] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.

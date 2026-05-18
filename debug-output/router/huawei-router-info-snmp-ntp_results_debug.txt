@@ -1,0 +1,1055 @@
+============================================================
+Router (L3) debug transcript — huawei-router-info-snmp-ntp
+Generated: 2026-05-18T04:43:32.753Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
+Total steps: 233
+============================================================
+
+
+--- [1] § base addressing ---
+[1/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[2/233] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[3/233] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[4/233] r1 [R1-GE0/0/1] undo shutdown
+<empty>
+
+[5/233] r1 [R1-GE0/0/1] quit
+<empty>
+
+[6/233] r1 [R1] interface LoopBack0
+<empty>
+
+[7/233] r1 [R1-LoopBack0] ip address 1.1.1.1 255.255.255.255
+<empty>
+
+[8/233] r1 [R1-LoopBack0] quit
+<empty>
+
+[9/233] r1 [R1] return
+<empty>
+
+
+--- [10] § info-center logging ---
+[10/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[11/233] r1 [R1] info-center enable
+<empty>
+
+[12/233] r1 [R1] info-center timestamp log date
+<empty>
+
+[13/233] r1 [R1] info-center timestamp debugging date precision-time tenth-second
+<empty>
+
+[14/233] r1 [R1] info-center logbuffer
+<empty>
+
+[15/233] r1 [R1] info-center logbuffer size 1024
+<empty>
+
+[16/233] r1 [R1] info-center logbuffer channel 4
+<empty>
+
+[17/233] r1 [R1] info-center console channel 0
+<empty>
+
+[18/233] r1 [R1] info-center monitor channel 1
+<empty>
+
+[19/233] r1 [R1] info-center loghost 10.0.0.2 channel 2 facility local6
+<empty>
+
+[20/233] r1 [R1] info-center loghost 10.0.0.3 channel 2 facility local6
+<empty>
+
+[21/233] r1 [R1] info-center loghost 10.0.0.4 channel 2 facility local6
+<empty>
+
+[22/233] r1 [R1] info-center loghost source LoopBack0
+<empty>
+
+[23/233] r1 [R1] info-center source default channel 2 log level informational
+<empty>
+
+[24/233] r1 [R1] info-center source IFNET channel 2 log level warning
+<empty>
+
+[25/233] r1 [R1] info-center filter-id bymodule-alias default default
+<empty>
+
+[26/233] r1 [R1] info-center max-logfile-number 8
+<empty>
+
+[27/233] r1 [R1] info-center statistic-suppress enable
+<empty>
+
+[28/233] r1 [R1] return
+<empty>
+
+[29/233] r1 <R1> display info-center
+  % Invalid input detected at '^' marker.
+  display info-center
+          ^
+
+[30/233] r1 <R1> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:43:32 %01SRM/4/PORT_STATE: Port state changed.
+
+[31/233] r1 <R1> display logbuffer summary
+  % Invalid input detected at '^' marker.
+  display logbuffer summary
+                    ^
+
+[32/233] r1 <R1> display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[33/233] r1 <R1> display channel
+  % Invalid input detected at '^' marker.
+  display channel
+          ^
+
+[34/233] r1 <R1> reset logbuffer
+  % Invalid input detected at '^' marker.
+  reset logbuffer
+        ^
+
+
+--- [35] § SNMP v1/v2c ---
+[35/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[36/233] r1 [R1] snmp-agent
+<empty>
+
+[37/233] r1 [R1] snmp-agent sys-info version v2c v3
+<empty>
+
+[38/233] r1 [R1] snmp-agent sys-info contact noc@lab.local
+<empty>
+
+[39/233] r1 [R1] snmp-agent sys-info location DC1-Rack5
+<empty>
+
+[40/233] r1 [R1] snmp-agent community read cipher RoComm123
+<empty>
+
+[41/233] r1 [R1] snmp-agent community write cipher RwComm123
+<empty>
+
+[42/233] r1 [R1] snmp-agent community read cipher AclComm mib-view iso acl 2000
+<empty>
+
+[43/233] r1 [R1] acl 2000
+<empty>
+
+[44/233] r1 [R1-acl-basic-2000] rule 5 permit source 10.0.0.0 0.0.0.255
+  Error: Expected permit or deny.
+
+[45/233] r1 [R1-acl-basic-2000] quit
+<empty>
+
+[46/233] r1 [R1] snmp-agent mib-view included iso-view iso
+<empty>
+
+[47/233] r1 [R1] snmp-agent trap enable
+<empty>
+
+[48/233] r1 [R1] snmp-agent trap enable feature-name ospf
+<empty>
+
+[49/233] r1 [R1] snmp-agent trap enable feature-name bgp
+<empty>
+
+[50/233] r1 [R1] snmp-agent target-host trap-hostname H1 address 10.0.0.5 udp-port 162 trap-paramsname P1
+<empty>
+
+[51/233] r1 [R1] snmp-agent target-host trap-paramsname P1 v2c securityname cipher Pub123
+<empty>
+
+[52/233] r1 [R1] snmp-agent trap source LoopBack0
+<empty>
+
+[53/233] r1 [R1] snmp-agent packet max-size 1500
+<empty>
+
+[54/233] r1 [R1] snmp-agent protocol source-interface LoopBack0
+<empty>
+
+[55/233] r1 [R1] return
+<empty>
+
+[56/233] r1 <R1> display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[57/233] r1 <R1> display snmp-agent community
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[58/233] r1 <R1> display snmp-agent mib-view
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[59/233] r1 <R1> display snmp-agent target-host
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[60/233] r1 <R1> display snmp-agent trap-list
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[61/233] r1 <R1> display snmp-agent statistics
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+
+--- [62] § SNMPv3 ---
+[62/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[63/233] r1 [R1] snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
+<empty>
+
+[64/233] r1 [R1] snmp-agent group v3 GRP-RO authentication read-view iso
+<empty>
+
+[65/233] r1 [R1] snmp-agent usm-user v3 adminv3 group GRP-RW
+<empty>
+
+[66/233] r1 [R1] snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
+<empty>
+
+[67/233] r1 [R1] snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
+<empty>
+
+[68/233] r1 [R1] snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
+<empty>
+
+[69/233] r1 [R1] snmp-agent local-engineid 800007DB0300DEADBEEF01
+<empty>
+
+[70/233] r1 [R1] snmp-agent target-host trap-hostname H3 address 10.0.0.8 trap-paramsname P3
+<empty>
+
+[71/233] r1 [R1] snmp-agent target-host trap-paramsname P3 v3 securityname adminv3 privacy
+<empty>
+
+[72/233] r1 [R1] return
+<empty>
+
+[73/233] r1 <R1> display snmp-agent usm-user
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[74/233] r1 <R1> display snmp-agent group
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[75/233] r1 <R1> display snmp-agent local-engineid
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+
+--- [76] § NTP ---
+[76/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[77/233] r1 [R1] ntp-service enable
+<empty>
+
+[78/233] r1 [R1] ntp-service authentication enable
+<empty>
+
+[79/233] r1 [R1] ntp-service authentication-keyid 1 authentication-mode md5 cipher NtpKey@123
+<empty>
+
+[80/233] r1 [R1] ntp-service authentication-keyid 2 authentication-mode hmac-sha256 cipher NtpKey@456
+<empty>
+
+[81/233] r1 [R1] ntp-service reliable authentication-keyid 1
+<empty>
+
+[82/233] r1 [R1] ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
+<empty>
+
+[83/233] r1 [R1] ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
+<empty>
+
+[84/233] r1 [R1] ntp-service unicast-server 10.0.0.23 authentication-keyid 1 preference
+<empty>
+
+[85/233] r1 [R1] ntp-service unicast-peer 10.0.0.30
+<empty>
+
+[86/233] r1 [R1] ntp-service refclock-master 3
+<empty>
+
+[87/233] r1 [R1] ntp-service source-interface LoopBack0
+<empty>
+
+[88/233] r1 [R1] ntp-service access peer 2000
+<empty>
+
+[89/233] r1 [R1] ntp-service access server 2000
+<empty>
+
+[90/233] r1 [R1] ntp-service max-dynamic-sessions 20
+<empty>
+
+[91/233] r1 [R1] ntp-service server disable
+<empty>
+
+[92/233] r1 [R1] undo ntp-service server disable
+  Error: Unrecognized command "undo ntp-service server disable"
+
+[93/233] r1 [R1] return
+<empty>
+
+[94/233] r1 <R1> display ntp-service status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[95/233] r1 <R1> display ntp-service sessions
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[96/233] r1 <R1> display ntp-service trace
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[97/233] r1 <R1> display clock
+  2026-05-18 04:43:32
+  Monday
+  Time Zone(UTC) : UTC
+
+
+--- [98] § LLDP / NQA / sFlow ---
+[98/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[99/233] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[100/233] r1 [R1] lldp message-transmission interval 30
+  % Invalid input detected at '^' marker.
+  lldp message-transmission interval 30
+  ^
+
+[101/233] r1 [R1] lldp message-transmission hold-multiplier 4
+  % Invalid input detected at '^' marker.
+  lldp message-transmission hold-multiplier 4
+  ^
+
+[102/233] r1 [R1] lldp management-address 1.1.1.1
+  % Invalid input detected at '^' marker.
+  lldp management-address 1.1.1.1
+  ^
+
+[103/233] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[104/233] r1 [R1-GE0/0/1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[105/233] r1 [R1-GE0/0/1] lldp admin-status txrx
+  % Invalid input detected at '^' marker.
+  lldp admin-status txrx
+  ^
+
+[106/233] r1 [R1-GE0/0/1] quit
+<empty>
+
+[107/233] r1 [R1] nqa test-instance admin jitter
+  % Invalid input detected at '^' marker.
+  nqa test-instance admin jitter
+  ^
+
+[108/233] r1 [R1] test-type jitter
+  % Invalid input detected at '^' marker.
+  test-type jitter
+  ^
+
+[109/233] r1 [R1] destination-address ipv4 10.0.0.2
+  % Invalid input detected at '^' marker.
+  destination-address ipv4 10.0.0.2
+  ^
+
+[110/233] r1 [R1] destination-port 16384
+  % Invalid input detected at '^' marker.
+  destination-port 16384
+  ^
+
+[111/233] r1 [R1] frequency 60
+  % Invalid input detected at '^' marker.
+  frequency 60
+  ^
+
+[112/233] r1 [R1] start now
+  % Invalid input detected at '^' marker.
+  start now
+  ^
+
+[113/233] r1 [R1] quit
+<empty>
+
+[114/233] r1 <R1> sflow collector 1 ip 10.0.0.9
+  % Invalid input detected at '^' marker.
+  sflow collector 1 ip 10.0.0.9
+  ^
+
+[115/233] r1 <R1> sflow agent ip 1.1.1.1
+  % Invalid input detected at '^' marker.
+  sflow agent ip 1.1.1.1
+  ^
+
+[116/233] r1 <R1> interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0/1
+  ^
+
+[117/233] r1 <R1> sflow flow-sampling collector 1
+  % Invalid input detected at '^' marker.
+  sflow flow-sampling collector 1
+  ^
+
+[118/233] r1 <R1> sflow flow-sampling rate 1000
+  % Invalid input detected at '^' marker.
+  sflow flow-sampling rate 1000
+  ^
+
+[119/233] r1 <R1> sflow counter-sampling collector 1
+  % Invalid input detected at '^' marker.
+  sflow counter-sampling collector 1
+  ^
+
+[120/233] r1 <R1> quit
+<empty>
+
+[121/233] r1 <R1> return
+<empty>
+
+[122/233] r1 <R1> display lldp local
+  % Invalid input detected at '^' marker.
+  display lldp local
+          ^
+
+[123/233] r1 <R1> display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[124/233] r1 <R1> display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[125/233] r1 <R1> display lldp statistics
+  % Invalid input detected at '^' marker.
+  display lldp statistics
+          ^
+
+[126/233] r1 <R1> display nqa results test-instance admin jitter
+  % Invalid input detected at '^' marker.
+  display nqa results test-instance admin jitter
+          ^
+
+[127/233] r1 <R1> display sflow
+  % Invalid input detected at '^' marker.
+  display sflow
+          ^
+
+[128/233] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 2        Routes : 2
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+
+
+--- [129] § regression: display family ---
+[129/233] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[130/233] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[131/233] r1 [R1] display current-configuration
+  #
+  sysname R1
+  #
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+
+[132/233] r1 [R1] display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[133/233] r1 [R1] display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+  LoopBack0                         1.1.1.1/255.255.255.255down       down
+
+[134/233] r1 [R1] display interface
+  Error: Incomplete command.
+
+[135/233] r1 [R1] display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 2        Routes : 2
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+
+[136/233] r1 [R1] display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    2
+  --------------------
+  Total     2
+
+[137/233] r1 [R1] display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[138/233] r1 [R1] display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[139/233] r1 [R1] display ospf peer
+  Error: OSPF is not configured.
+
+[140/233] r1 [R1] display ospf interface
+  Error: OSPF is not configured.
+
+[141/233] r1 [R1] display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[142/233] r1 [R1] display ospf lsdb
+  Error: OSPF is not configured.
+
+[143/233] r1 [R1] display ospf brief
+  Error: OSPF is not configured.
+
+[144/233] r1 [R1] display rip
+  Info: RIP is not enabled.
+
+[145/233] r1 [R1] display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[146/233] r1 [R1] display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[147/233] r1 [R1] display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[148/233] r1 [R1] display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[149/233] r1 [R1] display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[150/233] r1 [R1] display ip pool
+  No DHCP pools configured.
+
+[151/233] r1 [R1] display acl all
+  Total 0 ACL(s)
+
+[152/233] r1 [R1] display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[153/233] r1 [R1] display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[154/233] r1 [R1] display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[155/233] r1 [R1] display ike sa
+  Info: No IPSec configuration.
+
+[156/233] r1 [R1] display ipsec sa
+  Info: No IPSec configuration.
+
+[157/233] r1 [R1] display ipsec policy
+  Info: No IPSec configuration.
+
+[158/233] r1 [R1] display ipsec proposal
+  Info: No IPSec configuration.
+
+[159/233] r1 [R1] display ike proposal
+  Info: No IPSec configuration.
+
+[160/233] r1 [R1] display ike peer
+  Info: No IKE peers configured.
+
+[161/233] r1 [R1] display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[162/233] r1 [R1] display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[163/233] r1 [R1] display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[164/233] r1 [R1] display clock
+  2026-05-18 04:43:32
+  Monday
+  Time Zone(UTC) : UTC
+
+[165/233] r1 [R1] display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[166/233] r1 [R1] display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[167/233] r1 [R1] display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:43:32
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[168/233] r1 [R1] display memory-usage
+  Memory utilization statistics at 2026-05-18 04:43:32
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[169/233] r1 [R1] display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[170/233] r1 [R1] display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[171/233] r1 [R1] display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[172/233] r1 [R1] display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:43:32 %01SRM/4/PORT_STATE: Port state changed.
+
+[173/233] r1 [R1] display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[174/233] r1 [R1] display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[175/233] r1 [R1] display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[176/233] r1 [R1] display patch-information
+  Info: No patch exists.
+
+[177/233] r1 [R1] display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[178/233] r1 [R1] display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[179/233] r1 [R1] display interface brief
+  Error: Wrong parameter found at '^' position.
+
+[180/233] r1 [R1] display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[181/233] r1 [R1] display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[182/233] r1 [R1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[183/233] r1 [R1] display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[184/233] r1 [R1] display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[185/233] r1 [R1] display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[186/233] r1 [R1] display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[187/233] r1 [R1] display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[188/233] r1 [R1] display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[189/233] r1 [R1] display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [190] § regression: pipe filters ---
+[190/233] r1 [R1] display current-configuration | include ospf
+<empty>
+
+[191/233] r1 [R1] display current-configuration | begin interface
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+
+[192/233] r1 [R1] display current-configuration | exclude #
+  sysname R1
+  interface GE0/0/0
+   shutdown
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+
+[193/233] r1 [R1] display ip routing-table | include Direct
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+
+[194/233] r1 [R1] display ip interface brief | include up
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+
+
+--- [195] § regression: view nav + undo ---
+[195/233] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[196/233] r1 [R1] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[197/233] r1 [R1] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[198/233] r1 [R1] dhcp enable
+<empty>
+
+[199/233] r1 [R1] undo dhcp enable
+<empty>
+
+[200/233] r1 [R1] snmp-agent
+<empty>
+
+[201/233] r1 [R1] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[202/233] r1 [R1] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[203/233] r1 [R1] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[204/233] r1 [R1] telnet server enable
+<empty>
+
+[205/233] r1 [R1] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[206/233] r1 [R1] info-center enable
+<empty>
+
+[207/233] r1 [R1] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[208/233] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[209/233] r1 [R1] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[210/233] r1 [R1] ntp-service enable
+<empty>
+
+[211/233] r1 [R1] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[212/233] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[213/233] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[214/233] r1 [R1] sysname TEST
+<empty>
+
+[215/233] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[216/233] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[217/233] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[218/233] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[219/233] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[220/233] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[221/233] r1 [TEST] ospf 1
+<empty>
+
+[222/233] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[223/233] r1 [TEST-ospf-1] quit
+<empty>
+
+[224/233] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[225/233] r1 [TEST] quit
+<empty>
+
+[226/233] r1 <TEST> return
+<empty>
+
+
+--- [227] § regression: context help ---
+[227/233] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[228/233] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[229/233] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[230/233] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[231/233] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[232/233] r1 [TEST] return
+<empty>
+
+[233/233] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.

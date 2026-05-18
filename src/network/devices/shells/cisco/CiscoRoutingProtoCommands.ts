@@ -26,28 +26,41 @@ export function buildRoutingProtoConfig(
   ctx: CiscoShellContext, repo: RoutingConfigRepository,
 ): void {
   // ── process enters (router rip is in CiscoConfigCommands) ──
+  // Real engines (RIB-integrated, config-driven adjacency).
+  const eigrpEng = () => ctx.r().getEIGRPEngine();
+  const bgpEng = () => ctx.r().getBGPEngine();
+  const converge = () => ctx.r().convergeDynamicRouting();
+
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
     const asn = parseInt(a[0], 10);
     const named = Number.isNaN(asn);
     repo.ensureEigrp(named ? 0 : asn, named);
+    eigrpEng().enable({ asn: named ? 0 : asn });
     ctx.setSelectedRoutingProto({ proto: 'eigrp', asn: named ? 0 : asn });
     ctx.setMode('config-router');
+    converge();
     return '';
   });
   configTrie.registerGreedy('no router eigrp', 'Disable EIGRP', (a) => {
     repo.removeEigrp(parseInt(a[0], 10) || 0);
+    eigrpEng().disable();
+    converge();
     return '';
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
     repo.ensureBgp(parseInt(a[0], 10));
+    bgpEng().enable({ asn: parseInt(a[0], 10) });
     ctx.setSelectedRoutingProto({ proto: 'bgp', asn: parseInt(a[0], 10) });
     ctx.setMode('config-router');
+    converge();
     return '';
   });
   configTrie.registerGreedy('no router bgp', 'Disable BGP', () => {
     repo.removeBgp();
+    bgpEng().disable();
+    converge();
     return '';
   });
 
@@ -71,8 +84,18 @@ export function buildRoutingProtoConfig(
         return `% Invalid input: ${e instanceof Error ? e.message : e}`;
       }
     }
-    if (proto === 'eigrp') eigrp().networks.push(args.join(' '));
-    else bgp()?.networks.push(args.join(' '));
+    if (proto === 'eigrp') {
+      eigrp().networks.push(args.join(' '));
+      eigrpEng().getConfig().networks.push({
+        network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
+      });
+    } else {
+      bgp()?.networks.push(args.join(' '));
+      const mask = args[1] === 'mask' && args[2]
+        ? args[2] : String(classfulMask(new IPAddress(args[0])));
+      bgpEng().getConfig().networks.push({ network: args[0], mask });
+    }
+    converge();
     return '';
   });
 
@@ -107,7 +130,11 @@ export function buildRoutingProtoConfig(
     if (a[0] === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = true;
     } else if (p === 'rip') repo.rip.passive.add(tgt);
-    else if (p === 'eigrp') eigrp().passive.add(tgt);
+    else if (p === 'eigrp') {
+      eigrp().passive.add(tgt);
+      eigrpEng().getConfig().passive.add(tgt);
+      converge();
+    }
     return '';
   });
   routerTrie.registerGreedy('no passive-interface', 'Allow updates', (a) => {
@@ -162,18 +189,32 @@ export function buildRoutingProtoConfig(
         else if (a[1] === 'activate') n.activated = true;
         else n.attrs.push(raw ?? a.join(' '));
       }
+      // Drive the real BGP engine session config.
+      const ec = bgpEng().getConfig();
+      let bn = ec.neighbors.get(a[0]);
+      if (!bn) { bn = { ip: a[0], activated: false }; ec.neighbors.set(a[0], bn); }
+      if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
+      else if (a[1] === 'activate') bn.activated = true;
+      converge();
     }
     return '';
   });
   routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
     const p = curProto(ctx).proto;
-    if (p === 'eigrp') eigrp().routerId = a[0];
-    else if (p === 'bgp') { const b = bgp(); if (b) b.routerId = a[0]; }
+    if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
+    else if (p === 'bgp') {
+      const b = bgp(); if (b) b.routerId = a[0];
+      bgpEng().getConfig().routerId = a[0];
+    }
     return '';
   });
   routerTrie.registerGreedy('eigrp', 'EIGRP option', (a) => {
-    if (a[0] === 'router-id') eigrp().routerId = a[1];
-    else if (a[0] === 'stub') eigrp().stub = a.slice(1).join(' ') || 'connected summary';
+    if (a[0] === 'router-id') {
+      eigrp().routerId = a[1];
+      eigrpEng().getConfig().routerId = a[1];
+    } else if (a[0] === 'stub') {
+      eigrp().stub = a.slice(1).join(' ') || 'connected summary';
+    }
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
@@ -181,7 +222,10 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
-    if (a[0] === 'router-id') { const b = bgp(); if (b) b.routerId = a[1]; }
+    if (a[0] === 'router-id') {
+      const b = bgp(); if (b) b.routerId = a[1];
+      bgpEng().getConfig().routerId = a[1];
+    }
     return '';
   });
   routerTrie.registerGreedy('aggregate-address', 'BGP aggregate', (a, raw) => {
@@ -210,64 +254,108 @@ export function buildRoutingProtoConfig(
 export function registerRoutingProtoShow(
   trie: CommandTrie, ctx: CiscoShellContext, repo: RoutingConfigRepository,
 ): void {
+  // Live engines drive neighbour/session/route state (converge first
+  // so it reflects the real topology); the repo supplies configured
+  // metadata (remote-as, description) the engine doesn't model.
+  const bgpE = () => ctx.r().getBGPEngine();
+  const eigrpE = () => ctx.r().getEIGRPEngine();
+  const live = () => ctx.r().convergeDynamicRouting();
+
   trie.registerGreedy('show ip bgp summary', 'Display BGP neighbour summary', () => {
-    const b = repo.getBgp();
-    if (!b) return '% BGP not active';
+    const e = bgpE();
+    if (!e.isEnabled()) return '% BGP not active';
+    live();
+    const c = e.getConfig();
+    const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
     const rows = [
-      `BGP router identifier ${b.routerId ?? '0.0.0.0'}, local AS number ${b.asn}`,
+      `BGP router identifier ${c.routerId ?? '0.0.0.0'}, local AS number ${c.asn}`,
       '',
-      'Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State',
+      'Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd',
     ];
-    for (const n of b.neighbors.values()) {
-      rows.push(`${n.ip.padEnd(16)}4 ${String(n.remoteAs ?? 0).padEnd(5)}` +
-        `      0        0       0    0    0 never    Idle`);
+    for (const [ip, cfg] of c.neighbors) {
+      const v = byId.get(ip);
+      const upDown = v && v.isUp ? `${v.uptimeSec}s` : 'never';
+      const state = v ? v.state : 'Idle';
+      rows.push(`${ip.padEnd(16)}4 ${String(cfg.remoteAs ?? 0).padEnd(5)}` +
+        `      0        0       0    0    0 ${upDown.padEnd(8)} ${state}`);
     }
     return rows.join('\n');
   });
   trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbours', () => {
-    const b = repo.getBgp();
-    if (!b) return '% BGP not active';
-    return [...b.neighbors.values()].map((n) =>
-      `BGP neighbor is ${n.ip}, remote AS ${n.remoteAs ?? 'unset'}\n` +
-      `  Description: ${n.description ?? '(none)'}\n` +
-      `  BGP state = Idle (no TCP session — no peer in topology)`)
-      .join('\n') || 'No bgp neighbors configured';
+    const e = bgpE();
+    if (!e.isEnabled()) return '% BGP not active';
+    live();
+    const repoB = repo.getBgp();
+    const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
+    const out: string[] = [];
+    for (const [ip, cfg] of e.getConfig().neighbors) {
+      const v = byId.get(ip);
+      const desc = repoB?.neighbors.get(ip)?.description ?? '(none)';
+      out.push(`BGP neighbor is ${ip}, remote AS ${cfg.remoteAs ?? 'unset'}`);
+      out.push(`  Description: ${desc}`);
+      out.push(`  BGP state = ${v ? v.state : 'Idle'}` +
+        `${v && v.isUp ? `, up for ${v.uptimeSec}s` : ''}`);
+    }
+    return out.length ? out.join('\n') : 'No bgp neighbors configured';
   });
   trie.registerGreedy('show ip bgp', 'Display BGP table', () => {
-    const b = repo.getBgp();
-    if (!b) return '% BGP not active';
+    const e = bgpE();
+    if (!e.isEnabled()) return '% BGP not active';
+    live();
+    const c = e.getConfig();
     const rows = [
-      `BGP table version is 1, local router ID is ${b.routerId ?? '0.0.0.0'}`,
-      '   Network          Next Hop            Metric LocPrf Weight Path',
+      `BGP table version is 1, local router ID is ${c.routerId ?? '0.0.0.0'}`,
+      '     Network          Next Hop            Metric LocPrf Weight Path',
     ];
-    for (const net of b.networks) rows.push(`*> ${net}`);
+    for (const s of c.networks) {
+      rows.push(`*>   ${s.network}/${new SubnetMask(s.mask).toCIDR()}` +
+        `      0.0.0.0               0         32768 i`);
+    }
+    for (const r of e.getContributedRoutes()) {
+      rows.push(`*>   ${r.network}/${r.mask.toCIDR()}` +
+        `      ${String(r.nextHop ?? '0.0.0.0').padEnd(20)}0              0 i`);
+    }
     return rows.join('\n');
   });
   trie.registerGreedy('show bgp', 'Display BGP', () => {
-    const b = repo.getBgp();
-    return b ? `BGP local AS ${b.asn}, ${b.neighbors.size} neighbour(s) configured`
-      : '% BGP not active';
+    const e = bgpE();
+    if (!e.isEnabled()) return '% BGP not active';
+    live();
+    const up = e.getNeighbors().filter((n) => n.isUp).length;
+    return `BGP local AS ${e.getConfig().asn}, ` +
+      `${e.getConfig().neighbors.size} neighbour(s), ${up} established`;
   });
 
   trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbours', () => {
-    const procs = repo.allEigrp();
-    if (!procs.length) return '% EIGRP not running (no autonomous-system configured)';
-    return procs.map((p) =>
-      `EIGRP-IPv4 Neighbors for AS(${p.asn})\n` +
-      'H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq\n' +
-      '(no neighbours — no EIGRP peer in topology)').join('\n');
+    const e = eigrpE();
+    if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
+    live();
+    const ns = e.getNeighbors();
+    const head = `EIGRP-IPv4 Neighbors for AS(${e.getConfig().asn})\n` +
+      'H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq';
+    if (!ns.length) return `${head}\n(no neighbours — no real EIGRP peer cabled)`;
+    return [head, ...ns.map((n, i) =>
+      `${i}   ${n.address.padEnd(16)}${n.iface.padEnd(12)}` +
+      `13   ${n.uptimeSec}s     1      200  0  ${i + 1}`)].join('\n');
   });
   trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', () => {
-    const procs = repo.allEigrp();
-    if (!procs.length) return '% EIGRP not running (no autonomous-system configured)';
-    return procs.map((p) =>
-      `EIGRP-IPv4 Topology Table for AS(${p.asn})\n` +
-      p.networks.map((n) => `P ${n}, 1 successors`).join('\n')).join('\n');
+    const e = eigrpE();
+    if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
+    live();
+    const lines = [`EIGRP-IPv4 Topology Table for AS(${e.getConfig().asn})`];
+    for (const n of repo.allEigrp().flatMap((p) => p.networks)) {
+      lines.push(`P ${n}, 1 successors, FD is 0 (connected)`);
+    }
+    for (const r of e.getContributedRoutes()) {
+      lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, ` +
+        `FD is ${r.metric} via ${r.nextHop} (${r.iface})`);
+    }
+    return lines.join('\n');
   });
   trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', () => {
-    const procs = repo.allEigrp();
-    return procs.length
-      ? `EIGRP-IPv4 Interfaces for AS(${procs[0].asn})`
+    const e = eigrpE();
+    return e.isEnabled()
+      ? `EIGRP-IPv4 Interfaces for AS(${e.getConfig().asn})`
       : '% EIGRP not running (no autonomous-system configured)';
   });
 

@@ -163,6 +163,40 @@ export function displayIpIntBrief(router: Router): string {
   return lines.join('\n');
 }
 
+/** `display interface` (all) — real per-port detail. */
+export function displayInterfaceAll(router: Router): string {
+  const names = [...router._getPortsInternal().keys()];
+  if (!names.length) return 'No interfaces present.';
+  return names.map((n) => displayInterface(router, n)).join('\n');
+}
+
+/** `display interface brief` — real status table. */
+export function displayInterfaceBrief(router: Router): string {
+  const rows = [
+    'PHY: Physical   *down: administratively down',
+    'Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors',
+  ];
+  for (const [name, port] of router._getPortsInternal()) {
+    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
+    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+    rows.push(`${name.padEnd(28)}${phy.padEnd(8)}${proto.padEnd(10)}` +
+      `0%    0%       0          0`);
+  }
+  return rows.join('\n');
+}
+
+/** `display interface description` — real description table. */
+export function displayInterfaceDescription(router: Router): string {
+  const rows = ['Interface                     PHY     Protocol Description'];
+  for (const [name, port] of router._getPortsInternal()) {
+    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
+    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+    const desc = router.getInterfaceDescription(name) || '';
+    rows.push(`${name.padEnd(30)}${phy.padEnd(8)}${proto.padEnd(9)}${desc}`);
+  }
+  return rows.join('\n');
+}
+
 export function displayArp(router: Router): string {
   const arpTable = router._getArpTableInternal();
   const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
@@ -595,7 +629,10 @@ export function registerDisplayCommands(
   });
 
   trie.registerGreedy('display interface', 'Display interface information', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
+    const sub = (args[0] || '').toLowerCase();
+    if (args.length === 0) return displayInterfaceAll(getRouter());
+    if (sub === 'brief') return displayInterfaceBrief(getRouter());
+    if (sub === 'description') return displayInterfaceDescription(getRouter());
     return displayInterface(getRouter(), args.join(' '));
   });
 

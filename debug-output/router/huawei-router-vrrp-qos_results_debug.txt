@@ -1,0 +1,1223 @@
+============================================================
+Router (L3) debug transcript — huawei-router-vrrp-qos
+Generated: 2026-05-18T04:43:34.448Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
+Total steps: 257
+============================================================
+
+
+--- [1] § base addressing ---
+[1/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[2/257] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[3/257] r1 [R1-GE0/0/0] ip address 192.168.1.2 255.255.255.0
+<empty>
+
+[4/257] r1 [R1-GE0/0/0] undo shutdown
+<empty>
+
+[5/257] r1 [R1-GE0/0/0] quit
+<empty>
+
+[6/257] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[7/257] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[8/257] r1 [R1-GE0/0/1] undo shutdown
+<empty>
+
+[9/257] r1 [R1-GE0/0/1] quit
+<empty>
+
+[10/257] r1 [R1] return
+<empty>
+
+
+--- [11] § VRRP ---
+[11/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[12/257] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[13/257] r1 [R1-GE0/0/0] vrrp vrid 1 virtual-ip 192.168.1.1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 virtual-ip 192.168.1.1
+  ^
+
+[14/257] r1 [R1-GE0/0/0] vrrp vrid 1 virtual-ip 192.168.1.101
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 virtual-ip 192.168.1.101
+  ^
+
+[15/257] r1 [R1-GE0/0/0] vrrp vrid 1 priority 110
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 priority 110
+  ^
+
+[16/257] r1 [R1-GE0/0/0] vrrp vrid 1 preempt-mode timer delay 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 preempt-mode timer delay 20
+  ^
+
+[17/257] r1 [R1-GE0/0/0] vrrp vrid 1 timer advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 timer advertise 1
+  ^
+
+[18/257] r1 [R1-GE0/0/0] vrrp vrid 1 authentication-mode md5 Vrrp@Key1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 authentication-mode md5 Vrrp@Key1
+  ^
+
+[19/257] r1 [R1-GE0/0/0] vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+  ^
+
+[20/257] r1 [R1-GE0/0/0] vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  ^
+
+[21/257] r1 [R1-GE0/0/0] vrrp vrid 1 description VRRP-GRP-1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 description VRRP-GRP-1
+  ^
+
+[22/257] r1 [R1-GE0/0/0] admin-vrrp vrid 1
+  % Invalid input detected at '^' marker.
+  admin-vrrp vrid 1
+  ^
+
+[23/257] r1 [R1-GE0/0/0] vrrp vrid 2 virtual-ip 192.168.1.2
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 virtual-ip 192.168.1.2
+  ^
+
+[24/257] r1 [R1-GE0/0/0] vrrp vrid 2 virtual-ip 192.168.1.102
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 virtual-ip 192.168.1.102
+  ^
+
+[25/257] r1 [R1-GE0/0/0] vrrp vrid 2 priority 120
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 priority 120
+  ^
+
+[26/257] r1 [R1-GE0/0/0] vrrp vrid 2 preempt-mode timer delay 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 preempt-mode timer delay 20
+  ^
+
+[27/257] r1 [R1-GE0/0/0] vrrp vrid 2 timer advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 timer advertise 1
+  ^
+
+[28/257] r1 [R1-GE0/0/0] vrrp vrid 2 authentication-mode md5 Vrrp@Key2
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 authentication-mode md5 Vrrp@Key2
+  ^
+
+[29/257] r1 [R1-GE0/0/0] vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+  ^
+
+[30/257] r1 [R1-GE0/0/0] vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  ^
+
+[31/257] r1 [R1-GE0/0/0] vrrp vrid 2 description VRRP-GRP-2
+  % Invalid input detected at '^' marker.
+  vrrp vrid 2 description VRRP-GRP-2
+  ^
+
+[32/257] r1 [R1-GE0/0/0] admin-vrrp vrid 2
+  % Invalid input detected at '^' marker.
+  admin-vrrp vrid 2
+  ^
+
+[33/257] r1 [R1-GE0/0/0] vrrp vrid 3 virtual-ip 192.168.1.3
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 virtual-ip 192.168.1.3
+  ^
+
+[34/257] r1 [R1-GE0/0/0] vrrp vrid 3 virtual-ip 192.168.1.103
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 virtual-ip 192.168.1.103
+  ^
+
+[35/257] r1 [R1-GE0/0/0] vrrp vrid 3 priority 130
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 priority 130
+  ^
+
+[36/257] r1 [R1-GE0/0/0] vrrp vrid 3 preempt-mode timer delay 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 preempt-mode timer delay 20
+  ^
+
+[37/257] r1 [R1-GE0/0/0] vrrp vrid 3 timer advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 timer advertise 1
+  ^
+
+[38/257] r1 [R1-GE0/0/0] vrrp vrid 3 authentication-mode md5 Vrrp@Key3
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 authentication-mode md5 Vrrp@Key3
+  ^
+
+[39/257] r1 [R1-GE0/0/0] vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+  ^
+
+[40/257] r1 [R1-GE0/0/0] vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  ^
+
+[41/257] r1 [R1-GE0/0/0] vrrp vrid 3 description VRRP-GRP-3
+  % Invalid input detected at '^' marker.
+  vrrp vrid 3 description VRRP-GRP-3
+  ^
+
+[42/257] r1 [R1-GE0/0/0] admin-vrrp vrid 3
+  % Invalid input detected at '^' marker.
+  admin-vrrp vrid 3
+  ^
+
+[43/257] r1 [R1-GE0/0/0] vrrp vrid 4 virtual-ip 192.168.1.4
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 virtual-ip 192.168.1.4
+  ^
+
+[44/257] r1 [R1-GE0/0/0] vrrp vrid 4 virtual-ip 192.168.1.104
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 virtual-ip 192.168.1.104
+  ^
+
+[45/257] r1 [R1-GE0/0/0] vrrp vrid 4 priority 140
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 priority 140
+  ^
+
+[46/257] r1 [R1-GE0/0/0] vrrp vrid 4 preempt-mode timer delay 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 preempt-mode timer delay 20
+  ^
+
+[47/257] r1 [R1-GE0/0/0] vrrp vrid 4 timer advertise 1
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 timer advertise 1
+  ^
+
+[48/257] r1 [R1-GE0/0/0] vrrp vrid 4 authentication-mode md5 Vrrp@Key4
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 authentication-mode md5 Vrrp@Key4
+  ^
+
+[49/257] r1 [R1-GE0/0/0] vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
+  ^
+
+[50/257] r1 [R1-GE0/0/0] vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  ^
+
+[51/257] r1 [R1-GE0/0/0] vrrp vrid 4 description VRRP-GRP-4
+  % Invalid input detected at '^' marker.
+  vrrp vrid 4 description VRRP-GRP-4
+  ^
+
+[52/257] r1 [R1-GE0/0/0] admin-vrrp vrid 4
+  % Invalid input detected at '^' marker.
+  admin-vrrp vrid 4
+  ^
+
+[53/257] r1 [R1-GE0/0/0] vrrp vrid 1 version 3
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 version 3
+  ^
+
+[54/257] r1 [R1-GE0/0/0] quit
+<empty>
+
+[55/257] r1 [R1] return
+<empty>
+
+[56/257] r1 <R1> display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[57/257] r1 <R1> display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[58/257] r1 <R1> display vrrp interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display vrrp interface GigabitEthernet0/0/0
+          ^
+
+[59/257] r1 <R1> display vrrp statistics
+  % Invalid input detected at '^' marker.
+  display vrrp statistics
+          ^
+
+
+--- [60] § BFD for VRRP ---
+[60/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[61/257] r1 [R1] bfd
+  % Invalid input detected at '^' marker.
+  bfd
+  ^
+
+[62/257] r1 [R1] quit
+<empty>
+
+[63/257] r1 <R1> bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+  % Invalid input detected at '^' marker.
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+  ^
+
+[64/257] r1 <R1> discriminator local 1
+  % Invalid input detected at '^' marker.
+  discriminator local 1
+  ^
+
+[65/257] r1 <R1> discriminator remote 2
+  % Invalid input detected at '^' marker.
+  discriminator remote 2
+  ^
+
+[66/257] r1 <R1> min-tx-interval 100
+  % Invalid input detected at '^' marker.
+  min-tx-interval 100
+  ^
+
+[67/257] r1 <R1> min-rx-interval 100
+  % Invalid input detected at '^' marker.
+  min-rx-interval 100
+  ^
+
+[68/257] r1 <R1> detect-multiplier 3
+  % Invalid input detected at '^' marker.
+  detect-multiplier 3
+  ^
+
+[69/257] r1 <R1> commit
+<empty>
+
+[70/257] r1 <R1> quit
+<empty>
+
+[71/257] r1 <R1> interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0/0
+  ^
+
+[72/257] r1 <R1> vrrp vrid 1 track bfd-session 1 reduced 50
+  % Invalid input detected at '^' marker.
+  vrrp vrid 1 track bfd-session 1 reduced 50
+  ^
+
+[73/257] r1 <R1> quit
+<empty>
+
+[74/257] r1 <R1> return
+<empty>
+
+[75/257] r1 <R1> display bfd configuration all
+  % Invalid input detected at '^' marker.
+  display bfd configuration all
+          ^
+
+[76/257] r1 <R1> display bfd session all
+  % Invalid input detected at '^' marker.
+  display bfd session all
+          ^
+
+
+--- [77] § QoS — classifier/behavior/policy ---
+[77/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[78/257] r1 [R1] acl 3000
+<empty>
+
+[79/257] r1 [R1-acl-adv-3000] rule 5 permit ip dscp ef
+  Error: Expected permit or deny.
+
+[80/257] r1 [R1-acl-adv-3000] quit
+<empty>
+
+[81/257] r1 [R1] traffic classifier VOICE operator or
+  % Invalid input detected at '^' marker.
+  traffic classifier VOICE operator or
+  ^
+
+[82/257] r1 [R1] if-match dscp ef
+  % Invalid input detected at '^' marker.
+  if-match dscp ef
+  ^
+
+[83/257] r1 [R1] if-match acl 3000
+  % Invalid input detected at '^' marker.
+  if-match acl 3000
+  ^
+
+[84/257] r1 [R1] if-match protocol rtp
+  % Invalid input detected at '^' marker.
+  if-match protocol rtp
+  ^
+
+[85/257] r1 [R1] if-match 8021p 5
+  % Invalid input detected at '^' marker.
+  if-match 8021p 5
+  ^
+
+[86/257] r1 [R1] quit
+<empty>
+
+[87/257] r1 <R1> traffic classifier VIDEO operator and
+  % Invalid input detected at '^' marker.
+  traffic classifier VIDEO operator and
+  ^
+
+[88/257] r1 <R1> if-match dscp af41
+  % Invalid input detected at '^' marker.
+  if-match dscp af41
+  ^
+
+[89/257] r1 <R1> quit
+<empty>
+
+[90/257] r1 <R1> traffic classifier CRITICAL
+  % Invalid input detected at '^' marker.
+  traffic classifier CRITICAL
+  ^
+
+[91/257] r1 <R1> if-match protocol ospf
+  % Invalid input detected at '^' marker.
+  if-match protocol ospf
+  ^
+
+[92/257] r1 <R1> if-match ip-precedence 6
+  % Invalid input detected at '^' marker.
+  if-match ip-precedence 6
+  ^
+
+[93/257] r1 <R1> quit
+<empty>
+
+[94/257] r1 <R1> traffic behavior B-VOICE
+  % Invalid input detected at '^' marker.
+  traffic behavior B-VOICE
+  ^
+
+[95/257] r1 <R1> remark dscp ef
+  % Invalid input detected at '^' marker.
+  remark dscp ef
+  ^
+
+[96/257] r1 <R1> queue ef bandwidth 2000
+  % Invalid input detected at '^' marker.
+  queue ef bandwidth 2000
+  ^
+
+[97/257] r1 <R1> car cir 2000 pir 4000 cbs 50000 pbs 100000
+  % Invalid input detected at '^' marker.
+  car cir 2000 pir 4000 cbs 50000 pbs 100000
+  ^
+
+[98/257] r1 <R1> statistics enable
+  % Invalid input detected at '^' marker.
+  statistics enable
+  ^
+
+[99/257] r1 <R1> quit
+<empty>
+
+[100/257] r1 <R1> traffic behavior B-VIDEO
+  % Invalid input detected at '^' marker.
+  traffic behavior B-VIDEO
+  ^
+
+[101/257] r1 <R1> remark dscp af41
+  % Invalid input detected at '^' marker.
+  remark dscp af41
+  ^
+
+[102/257] r1 <R1> queue af bandwidth pct 25
+  % Invalid input detected at '^' marker.
+  queue af bandwidth pct 25
+  ^
+
+[103/257] r1 <R1> quit
+<empty>
+
+[104/257] r1 <R1> traffic behavior B-CRIT
+  % Invalid input detected at '^' marker.
+  traffic behavior B-CRIT
+  ^
+
+[105/257] r1 <R1> remark 8021p 6
+  % Invalid input detected at '^' marker.
+  remark 8021p 6
+  ^
+
+[106/257] r1 <R1> queue af bandwidth pct 15
+  % Invalid input detected at '^' marker.
+  queue af bandwidth pct 15
+  ^
+
+[107/257] r1 <R1> quit
+<empty>
+
+[108/257] r1 <R1> traffic behavior B-DROP
+  % Invalid input detected at '^' marker.
+  traffic behavior B-DROP
+  ^
+
+[109/257] r1 <R1> deny
+  % Invalid input detected at '^' marker.
+  deny
+  ^
+
+[110/257] r1 <R1> quit
+<empty>
+
+[111/257] r1 <R1> traffic policy WAN-OUT
+  % Invalid input detected at '^' marker.
+  traffic policy WAN-OUT
+  ^
+
+[112/257] r1 <R1> classifier VOICE behavior B-VOICE
+  % Invalid input detected at '^' marker.
+  classifier VOICE behavior B-VOICE
+  ^
+
+[113/257] r1 <R1> classifier VIDEO behavior B-VIDEO
+  % Invalid input detected at '^' marker.
+  classifier VIDEO behavior B-VIDEO
+  ^
+
+[114/257] r1 <R1> classifier CRITICAL behavior B-CRIT
+  % Invalid input detected at '^' marker.
+  classifier CRITICAL behavior B-CRIT
+  ^
+
+[115/257] r1 <R1> quit
+<empty>
+
+[116/257] r1 <R1> return
+<empty>
+
+[117/257] r1 <R1> display traffic classifier user-defined
+  % Invalid input detected at '^' marker.
+  display traffic classifier user-defined
+          ^
+
+[118/257] r1 <R1> display traffic behavior user-defined
+  % Invalid input detected at '^' marker.
+  display traffic behavior user-defined
+          ^
+
+[119/257] r1 <R1> display traffic policy user-defined WAN-OUT
+  % Invalid input detected at '^' marker.
+  display traffic policy user-defined WAN-OUT
+          ^
+
+
+--- [120] § QoS apply / shaping ---
+[120/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[121/257] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[122/257] r1 [R1-GE0/0/1] traffic-policy WAN-OUT outbound
+  % Invalid input detected at '^' marker.
+  traffic-policy WAN-OUT outbound
+  ^
+
+[123/257] r1 [R1-GE0/0/1] qos lr outbound cir 100000 cbs 1875000
+  % Invalid input detected at '^' marker.
+  qos lr outbound cir 100000 cbs 1875000
+  ^
+
+[124/257] r1 [R1-GE0/0/1] qos gts dscp ef cir 2000 cbs 50000
+  % Invalid input detected at '^' marker.
+  qos gts dscp ef cir 2000 cbs 50000
+  ^
+
+[125/257] r1 [R1-GE0/0/1] qos queue 5 length packets 100
+  % Invalid input detected at '^' marker.
+  qos queue 5 length packets 100
+  ^
+
+[126/257] r1 [R1-GE0/0/1] qos wfq
+  % Invalid input detected at '^' marker.
+  qos wfq
+  ^
+
+[127/257] r1 [R1-GE0/0/1] qos wred dscp
+  % Invalid input detected at '^' marker.
+  qos wred dscp
+  ^
+
+[128/257] r1 [R1-GE0/0/1] trust dscp
+  % Invalid input detected at '^' marker.
+  trust dscp
+  ^
+
+[129/257] r1 [R1-GE0/0/1] trust 8021p
+  % Invalid input detected at '^' marker.
+  trust 8021p
+  ^
+
+[130/257] r1 [R1-GE0/0/1] qos queue-profile QP1
+  % Invalid input detected at '^' marker.
+  qos queue-profile QP1
+  ^
+
+[131/257] r1 [R1-GE0/0/1] quit
+<empty>
+
+[132/257] r1 [R1] qos queue-profile QP1
+  % Invalid input detected at '^' marker.
+  qos queue-profile QP1
+  ^
+
+[133/257] r1 [R1] schedule wfq 0 to 5
+  % Invalid input detected at '^' marker.
+  schedule wfq 0 to 5
+  ^
+
+[134/257] r1 [R1] quit
+<empty>
+
+[135/257] r1 <R1> return
+<empty>
+
+[136/257] r1 <R1> display traffic-policy applied-record
+  % Invalid input detected at '^' marker.
+  display traffic-policy applied-record
+          ^
+
+[137/257] r1 <R1> display qos configuration interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display qos configuration interface GigabitEthernet0/0/1
+          ^
+
+[138/257] r1 <R1> display qos queue statistics interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display qos queue statistics interface GigabitEthernet0/0/1
+          ^
+
+[139/257] r1 <R1> display qos map-table
+  % Invalid input detected at '^' marker.
+  display qos map-table
+          ^
+
+
+--- [140] § legacy QoS ---
+[140/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[141/257] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[142/257] r1 [R1-GE0/0/1] qos car inbound cir 8000 cbs 1500000
+  % Invalid input detected at '^' marker.
+  qos car inbound cir 8000 cbs 1500000
+  ^
+
+[143/257] r1 [R1-GE0/0/1] qos pq
+  % Invalid input detected at '^' marker.
+  qos pq
+  ^
+
+[144/257] r1 [R1-GE0/0/1] qos cq
+  % Invalid input detected at '^' marker.
+  qos cq
+  ^
+
+[145/257] r1 [R1-GE0/0/1] qos wrr
+  % Invalid input detected at '^' marker.
+  qos wrr
+  ^
+
+[146/257] r1 [R1-GE0/0/1] qos priority 5
+  % Invalid input detected at '^' marker.
+  qos priority 5
+  ^
+
+[147/257] r1 [R1-GE0/0/1] undo qos pq
+  Error: Unrecognized command "undo qos pq"
+
+[148/257] r1 [R1-GE0/0/1] quit
+<empty>
+
+[149/257] r1 [R1] return
+<empty>
+
+[150/257] r1 <R1> display qos pq interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display qos pq interface GigabitEthernet0/0/1
+          ^
+
+[151/257] r1 <R1> display qos cq interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display qos cq interface GigabitEthernet0/0/1
+          ^
+
+[152/257] r1 <R1> display qos car interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display qos car interface GigabitEthernet0/0/1
+          ^
+
+
+--- [153] § regression: display family ---
+[153/257] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[154/257] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[155/257] r1 [R1] display current-configuration
+  #
+  sysname R1
+  #
+  interface GE0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  #
+
+[156/257] r1 [R1] display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[157/257] r1 [R1] display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           192.168.1.2/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[158/257] r1 [R1] display interface
+  Error: Incomplete command.
+
+[159/257] r1 [R1] display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 2        Routes : 2
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+
+[160/257] r1 [R1] display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    2
+  --------------------
+  Total     2
+
+[161/257] r1 [R1] display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[162/257] r1 [R1] display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[163/257] r1 [R1] display ospf peer
+  Error: OSPF is not configured.
+
+[164/257] r1 [R1] display ospf interface
+  Error: OSPF is not configured.
+
+[165/257] r1 [R1] display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[166/257] r1 [R1] display ospf lsdb
+  Error: OSPF is not configured.
+
+[167/257] r1 [R1] display ospf brief
+  Error: OSPF is not configured.
+
+[168/257] r1 [R1] display rip
+  Info: RIP is not enabled.
+
+[169/257] r1 [R1] display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[170/257] r1 [R1] display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[171/257] r1 [R1] display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[172/257] r1 [R1] display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[173/257] r1 [R1] display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[174/257] r1 [R1] display ip pool
+  No DHCP pools configured.
+
+[175/257] r1 [R1] display acl all
+  Total 0 ACL(s)
+
+[176/257] r1 [R1] display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[177/257] r1 [R1] display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[178/257] r1 [R1] display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[179/257] r1 [R1] display ike sa
+  Info: No IPSec configuration.
+
+[180/257] r1 [R1] display ipsec sa
+  Info: No IPSec configuration.
+
+[181/257] r1 [R1] display ipsec policy
+  Info: No IPSec configuration.
+
+[182/257] r1 [R1] display ipsec proposal
+  Info: No IPSec configuration.
+
+[183/257] r1 [R1] display ike proposal
+  Info: No IPSec configuration.
+
+[184/257] r1 [R1] display ike peer
+  Info: No IKE peers configured.
+
+[185/257] r1 [R1] display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[186/257] r1 [R1] display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[187/257] r1 [R1] display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[188/257] r1 [R1] display clock
+  2026-05-18 04:43:34
+  Monday
+  Time Zone(UTC) : UTC
+
+[189/257] r1 [R1] display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[190/257] r1 [R1] display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[191/257] r1 [R1] display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:43:34
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[192/257] r1 [R1] display memory-usage
+  Memory utilization statistics at 2026-05-18 04:43:34
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[193/257] r1 [R1] display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[194/257] r1 [R1] display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[195/257] r1 [R1] display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[196/257] r1 [R1] display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:43:34 %01SRM/4/PORT_STATE: Port state changed.
+
+[197/257] r1 [R1] display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[198/257] r1 [R1] display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[199/257] r1 [R1] display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[200/257] r1 [R1] display patch-information
+  Info: No patch exists.
+
+[201/257] r1 [R1] display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[202/257] r1 [R1] display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[203/257] r1 [R1] display interface brief
+  Error: Wrong parameter found at '^' position.
+
+[204/257] r1 [R1] display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[205/257] r1 [R1] display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.2/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[206/257] r1 [R1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[207/257] r1 [R1] display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[208/257] r1 [R1] display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[209/257] r1 [R1] display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[210/257] r1 [R1] display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[211/257] r1 [R1] display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[212/257] r1 [R1] display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[213/257] r1 [R1] display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [214] § regression: pipe filters ---
+[214/257] r1 [R1] display current-configuration | include ospf
+<empty>
+
+[215/257] r1 [R1] display current-configuration | begin interface
+  interface GE0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  #
+
+[216/257] r1 [R1] display current-configuration | exclude #
+  sysname R1
+  interface GE0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+
+[217/257] r1 [R1] display ip routing-table | include Direct
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+
+[218/257] r1 [R1] display ip interface brief | include up
+  GE0/0/0                           192.168.1.2/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+
+
+--- [219] § regression: view nav + undo ---
+[219/257] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[220/257] r1 [R1] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[221/257] r1 [R1] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[222/257] r1 [R1] dhcp enable
+<empty>
+
+[223/257] r1 [R1] undo dhcp enable
+<empty>
+
+[224/257] r1 [R1] snmp-agent
+<empty>
+
+[225/257] r1 [R1] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[226/257] r1 [R1] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[227/257] r1 [R1] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[228/257] r1 [R1] telnet server enable
+<empty>
+
+[229/257] r1 [R1] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[230/257] r1 [R1] info-center enable
+<empty>
+
+[231/257] r1 [R1] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[232/257] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[233/257] r1 [R1] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[234/257] r1 [R1] ntp-service enable
+<empty>
+
+[235/257] r1 [R1] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[236/257] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[237/257] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[238/257] r1 [R1] sysname TEST
+<empty>
+
+[239/257] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[240/257] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[241/257] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[242/257] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[243/257] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[244/257] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[245/257] r1 [TEST] ospf 1
+<empty>
+
+[246/257] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[247/257] r1 [TEST-ospf-1] quit
+<empty>
+
+[248/257] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[249/257] r1 [TEST] quit
+<empty>
+
+[250/257] r1 <TEST> return
+<empty>
+
+
+--- [251] § regression: context help ---
+[251/257] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[252/257] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[253/257] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[254/257] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[255/257] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[256/257] r1 [TEST] return
+<empty>
+
+[257/257] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.

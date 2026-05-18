@@ -86,7 +86,7 @@ export interface IRouteEntry<TAddress> {
 /** IPv4 route extends base with subnet mask */
 export interface IIPv4Route extends IRouteEntry<IPAddress> {
   mask: SubnetMask;
-  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf';
+  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf' | 'eigrp' | 'bgp';
 }
 
 /** IPv6 route extends base with prefix length */

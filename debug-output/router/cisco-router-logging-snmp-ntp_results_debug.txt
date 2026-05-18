@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-17T18:13:58.411Z
+Generated: 2026-05-18T04:34:53.683Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -575,7 +575,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *18:13:58.000 UTC Sun May 17 2026
+  *04:34:53.000 UTC Mon May 18 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -583,7 +583,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  18:13:58 UTC Sun May 17 2026
+  04:34:53 UTC Mon May 18 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1198,7 +1198,7 @@ Total steps: 322
 
 [219/322] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   C    1.1.1.1/32 is directly connected, Loopback0
@@ -1330,7 +1330,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *18:13:58.000 UTC Sun May 17 2026
+  *04:34:53.000 UTC Mon May 18 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1514,7 +1514,7 @@ Total steps: 322
   Loopback0                  1.1.1.1         YES manual administratively down down
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
   
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   C    1.1.1.1/32 is directly connected, Loopback0

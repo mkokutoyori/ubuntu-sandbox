@@ -1,0 +1,1652 @@
+============================================================
+Router (L3) debug transcript — huawei-router-cli-basics
+Generated: 2026-05-18T04:47:34.126Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP router view nav, display family, pipes, undo, save
+Total steps: 304
+============================================================
+
+
+--- [1] § user-view display family ---
+[1/304] r1 <R1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[2/304] r1 <R1> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[3/304] r1 <R1> display clock
+  2026-05-18 04:47:34
+  Monday
+  Time Zone(UTC) : UTC
+
+[4/304] r1 <R1> display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[5/304] r1 <R1> display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[6/304] r1 <R1> display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[7/304] r1 <R1> display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:47:34
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[8/304] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-05-18 04:47:34
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[9/304] r1 <R1> display current-configuration
+  #
+  sysname R1
+  #
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   shutdown
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  #
+
+[10/304] r1 <R1> display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[11/304] r1 <R1> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[12/304] r1 <R1> display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[13/304] r1 <R1> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           unassigned           up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[14/304] r1 <R1> display interface
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[15/304] r1 <R1> display interface brief
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
+
+[16/304] r1 <R1> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 0        Routes : 0
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+
+[17/304] r1 <R1> display ip routing-table statistics
+  Proto     route
+  --------------------
+  --------------------
+  Total     0
+
+[18/304] r1 <R1> display ip routing-table protocol direct
+  % Invalid input detected at '^' marker.
+  display ip routing-table protocol direct
+                                    ^
+
+[19/304] r1 <R1> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[20/304] r1 <R1> display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[21/304] r1 <R1> display fib
+  % Invalid input detected at '^' marker.
+  display fib
+          ^
+
+[22/304] r1 <R1> display ip interface
+  % Incomplete command.
+
+[23/304] r1 <R1> display ospf peer
+  Error: OSPF is not configured.
+
+[24/304] r1 <R1> display ospf brief
+  Error: OSPF is not configured.
+
+[25/304] r1 <R1> display rip
+  Info: RIP is not enabled.
+
+[26/304] r1 <R1> display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[27/304] r1 <R1> display acl all
+  Total 0 ACL(s)
+
+[28/304] r1 <R1> display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[29/304] r1 <R1> display ip pool
+  No DHCP pools configured.
+
+[30/304] r1 <R1> display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[31/304] r1 <R1> display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[32/304] r1 <R1> display ike sa
+  Info: No IPSec configuration.
+
+[33/304] r1 <R1> display ipsec sa
+  Info: No IPSec configuration.
+
+[34/304] r1 <R1> display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[35/304] r1 <R1> display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[36/304] r1 <R1> display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[37/304] r1 <R1> display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[38/304] r1 <R1> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:47:34 %01SRM/4/PORT_STATE: Port state changed.
+
+[39/304] r1 <R1> display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[40/304] r1 <R1> display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[41/304] r1 <R1> display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[42/304] r1 <R1> display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[43/304] r1 <R1> display patch-information
+  Info: No patch exists.
+
+[44/304] r1 <R1> display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[45/304] r1 <R1> display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[46/304] r1 <R1> display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[47/304] r1 <R1> display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[48/304] r1 <R1> display port
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+[49/304] r1 <R1> display interface description
+  Interface                     PHY     Protocol Description
+  GE0/0/0                       up      up       
+  GE0/0/1                       up      up       
+  GE0/0/2                       down    down     
+  GE0/0/3                       down    down     
+
+[50/304] r1 <R1> display health
+  % Invalid input detected at '^' marker.
+  display health
+          ^
+
+[51/304] r1 <R1> display temperature all
+  % Invalid input detected at '^' marker.
+  display temperature all
+          ^
+
+[52/304] r1 <R1> display fan
+  % Invalid input detected at '^' marker.
+  display fan
+          ^
+
+[53/304] r1 <R1> display power
+  % Invalid input detected at '^' marker.
+  display power
+          ^
+
+[54/304] r1 <R1> display environment
+  % Invalid input detected at '^' marker.
+  display environment
+          ^
+
+[55/304] r1 <R1> display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[56/304] r1 <R1> display tcp status
+  % Invalid input detected at '^' marker.
+  display tcp status
+          ^
+
+[57/304] r1 <R1> display sockets
+  % Invalid input detected at '^' marker.
+  display sockets
+          ^
+
+[58/304] r1 <R1> display dns server
+  % Invalid input detected at '^' marker.
+  display dns server
+          ^
+
+[59/304] r1 <R1> ?
+    system-view    Enter system view
+    display        display
+    save           Save current configuration
+    reboot         Reboot the device
+    reset          reset
+    commit         Commit candidate configuration
+    screen-length  Set terminal screen length
+    header         Configure login/shell banner
+    debugging      debugging
+    undo           Undo configuration
+    ip             ip
+    rip            Configure RIP routing
+    tracert        Trace route to destination
+    ping           Send ICMP echo messages
+
+[60/304] r1 <R1> display ?
+    version                 Display version information
+    ip                      ip
+    arp                     Display ARP table
+    current-configuration   Display running configuration
+    counters                Display traffic counters
+    rip                     Display RIP information
+    debugging               Display active debugging flags
+    ipv6                    ipv6
+    interface               Display interface information
+    clock                   Display system clock
+    cpu-usage               Display CPU usage
+    memory-usage            Display memory usage
+    users                   Display user sessions
+    device                  Display device status
+    alarm                   Display alarm records
+    elabel                  Display electronic label
+    license                 Display license information
+    logbuffer               Display log buffer
+    trapbuffer              Display trap buffer
+    patch-information       Display patch information
+    diagnostic-information  Collect diagnostic information
+    local-user              Display local users
+    ssh                     Display SSH server status
+    snmp-agent              Display SNMP agent info
+    ntp-service             Display NTP status
+    dhcp                    Display DHCP snooping
+    port-security           Display port security
+    ospf                    ospf
+    ospfv3                  ospfv3
+    ike                     ike
+    ipsec                   ipsec
+    acl                     Display ACL configuration
+    nat                     nat
+    dhcp-server             dhcp-server
+    dhcp-snooping           dhcp-snooping
+
+[61/304] r1 <R1> ping 10.0.0.2
+  PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  
+  --- 10.0.0.2 ping statistics ---
+  5 packet(s) transmitted, 0 packet(s) received, 100% packet loss
+
+[62/304] r1 <R1> tracert 10.0.0.2
+  tracert to 10.0.0.2(10.0.0.2), max hops: 30, packet length: 40, press CTRL_C to break
+   Network is unreachable
+
+[63/304] r1 <R1> telnet 10.0.0.2
+  % Invalid input detected at '^' marker.
+  telnet 10.0.0.2
+  ^
+
+[64/304] r1 <R1> ssh client 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ssh client 10.0.0.2
+  ^
+
+[65/304] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+
+--- [66] § system-view / view nav ---
+[66/304] r1 [R1] sysname R1-CORE
+<empty>
+
+[67/304] r1 [R1-CORE] header shell information "Authorized only"
+<empty>
+
+[68/304] r1 [R1-CORE] header login information "Login banner"
+<empty>
+
+[69/304] r1 [R1-CORE] interface GigabitEthernet0/0/0
+<empty>
+
+[70/304] r1 [R1-CORE-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[71/304] r1 [R1-CORE-GE0/0/0] quit
+<empty>
+
+[72/304] r1 [R1-CORE] interface LoopBack0
+<empty>
+
+[73/304] r1 [R1-CORE-LoopBack0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[74/304] r1 [R1-CORE-LoopBack0] quit
+<empty>
+
+[75/304] r1 [R1-CORE] interface Tunnel0/0/0
+  Error: Wrong parameter found at '^' position.
+
+[76/304] r1 [R1-CORE] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[77/304] r1 [R1-CORE] quit
+<empty>
+
+[78/304] r1 <R1-CORE> ospf 1
+  % Invalid input detected at '^' marker.
+  ospf 1
+  ^
+
+[79/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[80/304] r1 <R1-CORE> quit
+<empty>
+
+[81/304] r1 <R1-CORE> rip 1
+<empty>
+
+[82/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[83/304] r1 <R1-CORE> quit
+<empty>
+
+[84/304] r1 <R1-CORE> bgp 65000
+  % Invalid input detected at '^' marker.
+  bgp 65000
+  ^
+
+[85/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[86/304] r1 <R1-CORE> quit
+<empty>
+
+[87/304] r1 <R1-CORE> isis 1
+  % Invalid input detected at '^' marker.
+  isis 1
+  ^
+
+[88/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[89/304] r1 <R1-CORE> quit
+<empty>
+
+[90/304] r1 <R1-CORE> acl 2000
+  % Invalid input detected at '^' marker.
+  acl 2000
+  ^
+
+[91/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[92/304] r1 <R1-CORE> quit
+<empty>
+
+[93/304] r1 <R1-CORE> acl name MGMT
+  % Invalid input detected at '^' marker.
+  acl name MGMT
+  ^
+
+[94/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[95/304] r1 <R1-CORE> quit
+<empty>
+
+[96/304] r1 <R1-CORE> ip pool LAN
+  % Invalid input detected at '^' marker.
+  ip pool LAN
+     ^
+
+[97/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[98/304] r1 <R1-CORE> quit
+<empty>
+
+[99/304] r1 <R1-CORE> aaa
+  % Invalid input detected at '^' marker.
+  aaa
+  ^
+
+[100/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[101/304] r1 <R1-CORE> quit
+<empty>
+
+[102/304] r1 <R1-CORE> user-interface console 0
+  % Invalid input detected at '^' marker.
+  user-interface console 0
+  ^
+
+[103/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[104/304] r1 <R1-CORE> quit
+<empty>
+
+[105/304] r1 <R1-CORE> user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[106/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[107/304] r1 <R1-CORE> quit
+<empty>
+
+[108/304] r1 <R1-CORE> route-policy RP permit node 10
+  % Invalid input detected at '^' marker.
+  route-policy RP permit node 10
+  ^
+
+[109/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[110/304] r1 <R1-CORE> quit
+<empty>
+
+[111/304] r1 <R1-CORE> ike proposal 1
+  % Invalid input detected at '^' marker.
+  ike proposal 1
+  ^
+
+[112/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[113/304] r1 <R1-CORE> quit
+<empty>
+
+[114/304] r1 <R1-CORE> ipsec proposal P1
+  % Invalid input detected at '^' marker.
+  ipsec proposal P1
+  ^
+
+[115/304] r1 <R1-CORE> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[116/304] r1 <R1-CORE> quit
+<empty>
+
+[117/304] r1 <R1-CORE> info-center enable
+  % Invalid input detected at '^' marker.
+  info-center enable
+  ^
+
+[118/304] r1 <R1-CORE> undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[119/304] r1 <R1-CORE> return
+<empty>
+
+[120/304] r1 <R1-CORE> display current-configuration
+  #
+  sysname R1-CORE
+  #
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   shutdown
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+
+
+--- [121] § abbreviations ---
+[121/304] r1 <R1-CORE> sys
+  Enter system view, return user view with return command.
+
+[122/304] r1 [R1-CORE] sysn R1-EDGE
+<empty>
+
+[123/304] r1 [R1-EDGE] dis th
+  % Invalid input detected at '^' marker.
+  dis th
+      ^
+
+[124/304] r1 [R1-EDGE] int g0/0/0
+  Error: Wrong parameter found at '^' position.
+
+[125/304] r1 [R1-EDGE] dis th
+  % Invalid input detected at '^' marker.
+  dis th
+      ^
+
+[126/304] r1 [R1-EDGE] q
+<empty>
+
+[127/304] r1 <R1-EDGE> return
+<empty>
+
+[128/304] r1 <R1-EDGE> dis cu
+  #
+  sysname R1-EDGE
+  #
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   shutdown
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+
+[129/304] r1 <R1-EDGE> dis ip int b
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           unassigned           up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+  LoopBack0                         unassigned           down       down
+
+[130/304] r1 <R1-EDGE> dis ip rou
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 0        Routes : 0
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+
+
+--- [131] § context help (?) ---
+[131/304] r1 <R1-EDGE> system-view
+  Enter system view, return user view with return command.
+
+[132/304] r1 [R1-EDGE] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[133/304] r1 [R1-EDGE] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[134/304] r1 [R1-EDGE] ospf ?
+    WORD  Configure OSPF protocol
+    <cr>  
+
+[135/304] r1 [R1-EDGE] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[136/304] r1 [R1-EDGE] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[137/304] r1 [R1-EDGE] aaa ?
+  Error: Unrecognized command
+
+[138/304] r1 [R1-EDGE] snmp-agent ?
+    WORD  snmp-agent configuration
+    <cr>  
+
+[139/304] r1 [R1-EDGE] ntp-service ?
+    WORD  ntp-service configuration
+    <cr>  
+
+[140/304] r1 [R1-EDGE] rip ?
+    WORD  Enter RIP view or configure RIP
+    <cr>  
+
+[141/304] r1 [R1-EDGE] bgp ?
+  Error: Unrecognized command
+
+[142/304] r1 [R1-EDGE] interface GigabitEthernet0/0/0
+<empty>
+
+[143/304] r1 [R1-EDGE-GE0/0/0] ip ?
+    address           Configure IP address
+    helper-address    Set DHCP relay helper address
+    forward-protocol  forward-protocol
+
+[144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
+    WORD  Configure IP address
+    <cr>  
+
+[145/304] r1 [R1-EDGE-GE0/0/0] quit
+<empty>
+
+[146/304] r1 [R1-EDGE] return
+<empty>
+
+
+--- [147] § undo / negation ---
+[147/304] r1 <R1-EDGE> system-view
+  Enter system view, return user view with return command.
+
+[148/304] r1 [R1-EDGE] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[149/304] r1 [R1-EDGE] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[150/304] r1 [R1-EDGE] telnet server enable
+<empty>
+
+[151/304] r1 [R1-EDGE] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[152/304] r1 [R1-EDGE] dhcp enable
+<empty>
+
+[153/304] r1 [R1-EDGE] undo dhcp enable
+<empty>
+
+[154/304] r1 [R1-EDGE] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[155/304] r1 [R1-EDGE] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[156/304] r1 [R1-EDGE] snmp-agent
+<empty>
+
+[157/304] r1 [R1-EDGE] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[158/304] r1 [R1-EDGE] ntp-service enable
+<empty>
+
+[159/304] r1 [R1-EDGE] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[160/304] r1 [R1-EDGE] ip route-static 1.1.1.0 24 10.0.0.2
+  Error: Invalid subnet mask: 24
+
+[161/304] r1 [R1-EDGE] undo ip route-static 1.1.1.0 24 10.0.0.2
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[162/304] r1 [R1-EDGE] sysname TEMP
+<empty>
+
+[163/304] r1 [TEMP] undo sysname
+  Error: Unrecognized command "undo sysname"
+
+[164/304] r1 [TEMP] interface GigabitEthernet0/0/0
+<empty>
+
+[165/304] r1 [TEMP-GE0/0/0] description WAN-LINK
+<empty>
+
+[166/304] r1 [TEMP-GE0/0/0] undo description
+<empty>
+
+[167/304] r1 [TEMP-GE0/0/0] shutdown
+<empty>
+
+[168/304] r1 [TEMP-GE0/0/0] undo shutdown
+<empty>
+
+[169/304] r1 [TEMP-GE0/0/0] quit
+<empty>
+
+[170/304] r1 [TEMP] return
+<empty>
+
+
+--- [171] § pipe filters ---
+[171/304] r1 <TEMP> display current-configuration | include ip
+  rip 1
+
+[172/304] r1 <TEMP> display current-configuration | exclude #
+  sysname TEMP
+  dhcp enable
+  interface GE0/0/0
+   shutdown
+  interface GE0/0/1
+   shutdown
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+  interface LoopBack0
+   shutdown
+  rip 1
+   version 2
+
+[173/304] r1 <TEMP> display current-configuration | begin interface
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   shutdown
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+
+[174/304] r1 <TEMP> display ip routing-table | include Direct
+<empty>
+
+[175/304] r1 <TEMP> display ip interface brief | include up
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           unassigned           up         up
+
+[176/304] r1 <TEMP> display interface | include line protocol
+  Line protocol current state : UP
+  Line protocol current state : UP
+  Line protocol current state : DOWN
+  Line protocol current state : DOWN
+  Line protocol current state : UP
+
+
+--- [177] § user-interface / screen ---
+[177/304] r1 <TEMP> screen-length 0 temporary
+<empty>
+
+[178/304] r1 <TEMP> screen-length 24 temporary
+<empty>
+
+[179/304] r1 <TEMP> system-view
+  Enter system view, return user view with return command.
+
+[180/304] r1 [TEMP] user-interface console 0
+  % Invalid input detected at '^' marker.
+  user-interface console 0
+  ^
+
+[181/304] r1 [TEMP] idle-timeout 0 0
+  % Invalid input detected at '^' marker.
+  idle-timeout 0 0
+  ^
+
+[182/304] r1 [TEMP] authentication-mode password
+  % Invalid input detected at '^' marker.
+  authentication-mode password
+  ^
+
+[183/304] r1 [TEMP] set authentication password cipher Huawei@123
+  % Invalid input detected at '^' marker.
+  set authentication password cipher Huawei@123
+  ^
+
+[184/304] r1 [TEMP] quit
+<empty>
+
+[185/304] r1 <TEMP> user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[186/304] r1 <TEMP> protocol inbound ssh
+  % Invalid input detected at '^' marker.
+  protocol inbound ssh
+  ^
+
+[187/304] r1 <TEMP> authentication-mode aaa
+  % Invalid input detected at '^' marker.
+  authentication-mode aaa
+  ^
+
+[188/304] r1 <TEMP> user privilege level 15
+  % Invalid input detected at '^' marker.
+  user privilege level 15
+  ^
+
+[189/304] r1 <TEMP> idle-timeout 5 0
+  % Invalid input detected at '^' marker.
+  idle-timeout 5 0
+  ^
+
+[190/304] r1 <TEMP> quit
+<empty>
+
+[191/304] r1 <TEMP> return
+<empty>
+
+
+--- [192] § save / reset / reboot ---
+[192/304] r1 <TEMP> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.
+
+[193/304] r1 <TEMP> save force
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.
+
+[194/304] r1 <TEMP> display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[195/304] r1 <TEMP> reset saved-configuration
+  Info: Succeeded in clearing the configuration in the device.
+
+[196/304] r1 <TEMP> compare configuration
+  % Invalid input detected at '^' marker.
+  compare configuration
+  ^
+
+[197/304] r1 <TEMP> startup saved-configuration vrpcfg.zip
+  % Invalid input detected at '^' marker.
+  startup saved-configuration vrpcfg.zip
+  ^
+
+[198/304] r1 <TEMP> reboot fast
+  % Invalid input detected at '^' marker.
+  reboot fast
+         ^
+
+[199/304] r1 <TEMP> reboot
+  Info: The system is now comparing the configuration, please wait.
+  Info: System will reboot.
+
+
+--- [200] § regression: display family ---
+[200/304] r1 <TEMP> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  TEMP uptime is 0 days, 0 hours, 0 minutes
+
+[201/304] r1 <TEMP> display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  TEMP uptime is 0 days, 0 hours, 0 minutes
+
+[202/304] r1 <TEMP> display current-configuration
+  #
+  sysname TEMP
+  #
+  dhcp enable
+  #
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   shutdown
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+
+[203/304] r1 <TEMP> display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[204/304] r1 <TEMP> display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           unassigned           up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+  LoopBack0                         unassigned           down       down
+
+[205/304] r1 <TEMP> display interface
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[206/304] r1 <TEMP> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 0        Routes : 0
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+
+[207/304] r1 <TEMP> display ip routing-table statistics
+  Proto     route
+  --------------------
+  --------------------
+  Total     0
+
+[208/304] r1 <TEMP> display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[209/304] r1 <TEMP> display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[210/304] r1 <TEMP> display ospf peer
+  Error: OSPF is not configured.
+
+[211/304] r1 <TEMP> display ospf interface
+  Error: OSPF is not configured.
+
+[212/304] r1 <TEMP> display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[213/304] r1 <TEMP> display ospf lsdb
+  Error: OSPF is not configured.
+
+[214/304] r1 <TEMP> display ospf brief
+  Error: OSPF is not configured.
+
+[215/304] r1 <TEMP> display rip
+  RIP process 1
+    Version: 2
+    Update timer: 30s
+    Timeout timer: 180s
+    Garbage-collect timer: 120s
+  
+    Networks:
+  
+    Routes: 0
+
+[216/304] r1 <TEMP> display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[217/304] r1 <TEMP> display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[218/304] r1 <TEMP> display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[219/304] r1 <TEMP> display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[220/304] r1 <TEMP> display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[221/304] r1 <TEMP> display ip pool
+  No DHCP pools configured.
+
+[222/304] r1 <TEMP> display acl all
+  Total 0 ACL(s)
+
+[223/304] r1 <TEMP> display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[224/304] r1 <TEMP> display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[225/304] r1 <TEMP> display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[226/304] r1 <TEMP> display ike sa
+  Info: No IPSec configuration.
+
+[227/304] r1 <TEMP> display ipsec sa
+  Info: No IPSec configuration.
+
+[228/304] r1 <TEMP> display ipsec policy
+  Info: No IPSec configuration.
+
+[229/304] r1 <TEMP> display ipsec proposal
+  Info: No IPSec configuration.
+
+[230/304] r1 <TEMP> display ike proposal
+  Info: No IPSec configuration.
+
+[231/304] r1 <TEMP> display ike peer
+  Info: No IKE peers configured.
+
+[232/304] r1 <TEMP> display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[233/304] r1 <TEMP> display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[234/304] r1 <TEMP> display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[235/304] r1 <TEMP> display clock
+  2026-05-18 04:47:34
+  Monday
+  Time Zone(UTC) : UTC
+
+[236/304] r1 <TEMP> display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[237/304] r1 <TEMP> display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[238/304] r1 <TEMP> display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:47:34
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[239/304] r1 <TEMP> display memory-usage
+  Memory utilization statistics at 2026-05-18 04:47:34
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[240/304] r1 <TEMP> display device
+  TEMP's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[241/304] r1 <TEMP> display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[242/304] r1 <TEMP> display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[243/304] r1 <TEMP> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:47:34 %01SRM/4/PORT_STATE: Port state changed.
+
+[244/304] r1 <TEMP> display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[245/304] r1 <TEMP> display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[246/304] r1 <TEMP> display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[247/304] r1 <TEMP> display patch-information
+  Info: No patch exists.
+
+[248/304] r1 <TEMP> display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235TEMP;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[249/304] r1 <TEMP> display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[250/304] r1 <TEMP> display interface brief
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
+  LoopBack0                   down    down      0%    0%       0          0
+
+[251/304] r1 <TEMP> display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[252/304] r1 <TEMP> display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[253/304] r1 <TEMP> display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[254/304] r1 <TEMP> display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[255/304] r1 <TEMP> display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[256/304] r1 <TEMP> display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[257/304] r1 <TEMP> display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[258/304] r1 <TEMP> display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[259/304] r1 <TEMP> display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[260/304] r1 <TEMP> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [261] § regression: pipe filters ---
+[261/304] r1 <TEMP> display current-configuration | include ospf
+<empty>
+
+[262/304] r1 <TEMP> display current-configuration | begin interface
+  interface GE0/0/0
+   shutdown
+  #
+  interface GE0/0/1
+   shutdown
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+
+[263/304] r1 <TEMP> display current-configuration | exclude #
+  sysname TEMP
+  dhcp enable
+  interface GE0/0/0
+   shutdown
+  interface GE0/0/1
+   shutdown
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+  interface LoopBack0
+   shutdown
+  rip 1
+   version 2
+
+[264/304] r1 <TEMP> display ip routing-table | include Direct
+<empty>
+
+[265/304] r1 <TEMP> display ip interface brief | include up
+  GE0/0/0                           unassigned           up         up
+  GE0/0/1                           unassigned           up         up
+
+
+--- [266] § regression: view nav + undo ---
+[266/304] r1 <TEMP> system-view
+  Enter system view, return user view with return command.
+
+[267/304] r1 [TEMP] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[268/304] r1 [TEMP] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[269/304] r1 [TEMP] dhcp enable
+<empty>
+
+[270/304] r1 [TEMP] undo dhcp enable
+<empty>
+
+[271/304] r1 [TEMP] snmp-agent
+<empty>
+
+[272/304] r1 [TEMP] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[273/304] r1 [TEMP] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[274/304] r1 [TEMP] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[275/304] r1 [TEMP] telnet server enable
+<empty>
+
+[276/304] r1 [TEMP] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[277/304] r1 [TEMP] info-center enable
+<empty>
+
+[278/304] r1 [TEMP] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[279/304] r1 [TEMP] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[280/304] r1 [TEMP] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[281/304] r1 [TEMP] ntp-service enable
+<empty>
+
+[282/304] r1 [TEMP] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[283/304] r1 [TEMP] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[284/304] r1 [TEMP] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[285/304] r1 [TEMP] sysname TEST
+<empty>
+
+[286/304] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[287/304] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[288/304] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[289/304] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[290/304] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[291/304] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[292/304] r1 [TEST] ospf 1
+<empty>
+
+[293/304] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[294/304] r1 [TEST-ospf-1] quit
+<empty>
+
+[295/304] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[296/304] r1 [TEST] quit
+<empty>
+
+[297/304] r1 <TEST> return
+<empty>
+
+
+--- [298] § regression: context help ---
+[298/304] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[299/304] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[300/304] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[301/304] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[302/304] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[303/304] r1 [TEST] return
+<empty>
+
+[304/304] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.

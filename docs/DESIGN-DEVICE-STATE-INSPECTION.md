@@ -264,8 +264,31 @@ Réactivité : chaque `converge()` re-projette les Signals ; un
 `RouterXxxEngine` adapte le moteur au RIB du Router via `pushRoute`
 (comme RIP/OSPF), et un `RoutingPeerLocator` concret lit la topologie.
 
-Lots : (1) fondation **[fait]** → (2) `EIGRPEngine` → (3) `BGPEngine`,
-chacun TDD, branché Router + CLI, transcripts régénérés, push.
+Lots : (1) fondation **[fait]** → (2) `EIGRPEngine` **[fait]** →
+(3) `BGPEngine` **[fait]** → (4) Router/CLI + data-path **[fait]** →
+(5) cohérence RIP/OSPF **[fait]**.
+
+### 11.1 Cohérence RIP/OSPF — pattern Adapter
+
+RIP et OSPF possèdent déjà un cœur **réel piloté par trames**
+(RIPv2 timers, OSPF Hello/LSA/SPF). Les réécrire sur le
+`AbstractRoutingProtocolEngine` (forme Template Method, pilotée par
+locator) **détruirait** ce comportement réel et des dizaines de tests
+— et violerait « pas de classes trop lourdes ».
+
+Décision d'ingénierie (Liskov-propre) : la **cohérence est obtenue au
+niveau du contrat + read-model**, pas en forçant une forme commune.
+`RipEngineAdapter` / `OspfEngineAdapter` (`src/network/routing/
+adapters/`) **enveloppent** les cœurs existants et exposent le même
+`IRoutingProtocolEngine` + `RoutingObservables` (l'adapter OSPF
+s'abonne aux Signals du moteur → réactif, zéro polling). Les seams
+locator/device-context sont des no-op (ces protocoles découvrent
+leurs voisins par trames réelles). Aucun changement du chemin de
+données RIP/OSPF.
+
+Résultat : `RouterDynamicRouting.allEngines()` renvoie les **quatre**
+protocoles via une interface unique ; le Router/CLI/UI les traite
+uniformément. État toujours réel (adjacence vraie ou rien).
 
 ---
 

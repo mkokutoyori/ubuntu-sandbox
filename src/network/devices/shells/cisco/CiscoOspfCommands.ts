@@ -1439,9 +1439,12 @@ function showIpOspfStatistics(router: Router): string {
 
 function showIpRouteAll(router: Router): string {
   router._ospfAutoConverge();
+  // Recompute live EIGRP/BGP adjacencies from the real topology so
+  // learned routes are reflected (config-driven, never fabricated).
+  router.convergeDynamicRouting();
   const rt = (router as any).routingTable as any[];
   const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
-    '       O E1 - OSPF external type 1, O E2 - OSPF external type 2',
+    '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
     ''];
   for (const r of rt) {
     const netStr = r.network.toString();
@@ -1454,6 +1457,10 @@ function showIpRouteAll(router: Router): string {
       lines.push(`${code}    ${netStr}/${cidr} [${r.ad ?? 1}/${r.metric ?? 0}] ${nh}`);
     } else if (r.type === 'rip') {
       lines.push(`R    ${netStr}/${cidr} [${r.ad ?? 120}/${r.metric ?? 1}] ${nh}, ${r.iface}`);
+    } else if (r.type === 'eigrp') {
+      lines.push(`D    ${netStr}/${cidr} [${r.ad ?? 90}/${r.metric ?? 0}] ${nh}, ${r.iface}`);
+    } else if (r.type === 'bgp') {
+      lines.push(`B    ${netStr}/${cidr} [${r.ad ?? 20}/${r.metric ?? 0}] ${nh}, ${r.iface}`);
     } else if (r.type === 'ospf') {
       const code = getOSPFRouteCode(router, netStr, cidr, r);
       lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] ${nh}, ${r.iface}`);
