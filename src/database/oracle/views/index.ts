@@ -47,6 +47,7 @@ import './dba_alert_arguments';
 import './dba_audit_session';
 import './dba_audit_object';
 import './dba_audit_statement';
+import './dba_fga_audit_trail';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
