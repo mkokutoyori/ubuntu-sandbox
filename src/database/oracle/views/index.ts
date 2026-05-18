@@ -39,6 +39,7 @@ import './dba_libraries';
 import './dba_resumable';
 import './dba_addm_findings';
 import './dba_advisor_findings';
+import './dba_advisor_recommendations';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
