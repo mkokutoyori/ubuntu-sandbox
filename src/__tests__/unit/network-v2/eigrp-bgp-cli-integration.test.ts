@@ -55,6 +55,14 @@ describe('EIGRP via CLI — real RIB integration', () => {
     expect(route1).toMatch(/D\s+192\.168\.2\.0\/24 \[90\/\d+\] via 10\.0\.0\.2/);
     const route2 = await r2.executeCommand('show ip route');
     expect(route2).toMatch(/D\s+192\.168\.1\.0\/24 \[90\/\d+\] via 10\.0\.0\.1/);
+
+    // Live show family reflects the real adjacency.
+    const nbr = await r1.executeCommand('show ip eigrp neighbors');
+    expect(nbr).toMatch(/AS\(100\)/);
+    expect(nbr).toContain('10.0.0.2');
+    expect(nbr).not.toMatch(/no real EIGRP peer/);
+    expect(await r1.executeCommand('show ip eigrp topology'))
+      .toMatch(/192\.168\.2\.0\/24, 1 successors/);
   });
 
   it('lone router with EIGRP learns nothing (true state)', async () => {
@@ -88,6 +96,12 @@ describe('BGP via CLI — real RIB integration', () => {
 
     const route1 = await r1.executeCommand('show ip route');
     expect(route1).toMatch(/B\s+192\.168\.2\.0\/24 \[20\/\d+\] via 10\.0\.0\.2/);
+
+    const sum = await r1.executeCommand('show ip bgp summary');
+    expect(sum).toMatch(/local AS number 65001/);
+    expect(sum).toMatch(/10\.0\.0\.2.*Established/);
+    expect(await r1.executeCommand('show ip bgp neighbors'))
+      .toMatch(/BGP state = Established/);
   });
 
   it('no reciprocal neighbour ⇒ no B route (true state)', async () => {
