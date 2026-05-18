@@ -71,4 +71,19 @@ export class OracleStorage extends BaseStorage {
   tablespaceExists(name: string): boolean {
     return this.tablespaces.has(name.toUpperCase());
   }
+
+  /**
+   * Rename a datafile path inside whichever tablespace owns it.
+   * @returns the tablespace name if the rename happened, `null` otherwise.
+   */
+  renameDatafile(oldPath: string, newPath: string): string | null {
+    for (const ts of this.tablespaces.values()) {
+      const df = ts.datafiles.find(d => d.path === oldPath);
+      if (df) {
+        df.path = newPath;
+        return ts.name;
+      }
+    }
+    return null;
+  }
 }

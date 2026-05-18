@@ -2749,7 +2749,41 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.action === 'OPEN') {
       return emptyResult('Database altered.');
     }
+    // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']
+    // MOVE DATAFILE 'old' TO 'new' [KEEP|REUSE]
+    const renameMatch = /^\s*(?:RENAME\s+FILE|MOVE\s+DATAFILE)\s+(.+)$/i.exec(stmt.action);
+    if (renameMatch) {
+      this.applyDatafileRename(renameMatch[1]);
+      return emptyResult('Database altered.');
+    }
     return emptyResult('Database altered.');
+  }
+
+  /**
+   * Parse the comma-separated FROM/TO lists in
+   *   ALTER DATABASE RENAME FILE 'a','b' TO 'c','d'
+   * and apply each rename through the storage layer, emitting one
+   * `oracle.storage.datafile-renamed` event per actual rename.
+   */
+  private applyDatafileRename(tail: string): void {
+    const [lhs, rhs] = tail.split(/\bTO\b/i);
+    const pick = (s: string | undefined): string[] =>
+      (s ?? '').match(/'([^']*)'/g)?.map(q => q.slice(1, -1)) ?? [];
+    const olds = pick(lhs);
+    const news = pick(rhs);
+    if (olds.length === 0) return;
+    const storage = this.storage as OracleStorage;
+    for (let i = 0; i < olds.length; i++) {
+      const oldPath = olds[i];
+      const newPath = news[i] ?? olds[i];
+      if (!newPath || newPath === oldPath) continue;
+      const ts = storage.renameDatafile(oldPath, newPath);
+      if (!ts) continue;
+      this.bus.publish({
+        topic: 'oracle.storage.datafile-renamed',
+        payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, oldPath, newPath },
+      });
+    }
   }
 
   private executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {

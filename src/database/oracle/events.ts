@@ -225,6 +225,12 @@ export interface OracleTablespaceDroppedPayload extends OracleDeviceRef {
   removeDatafiles: boolean;
 }
 
+export interface OracleDatafileRenamedPayload extends OracleDeviceRef {
+  tablespace: string;
+  oldPath: string;
+  newPath: string;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -255,4 +261,5 @@ export type OracleDomainEvent =
   | { topic: 'oracle.session.metric';                    payload: OracleSessionMetricPayload }
   | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload }
   | { topic: 'oracle.storage.tablespace-created';        payload: OracleTablespaceCreatedPayload }
-  | { topic: 'oracle.storage.tablespace-dropped';        payload: OracleTablespaceDroppedPayload };
+  | { topic: 'oracle.storage.tablespace-dropped';        payload: OracleTablespaceDroppedPayload }
+  | { topic: 'oracle.storage.datafile-renamed';          payload: OracleDatafileRenamedPayload };
