@@ -52,6 +52,7 @@ import './v_cluster_instance';
 import './v_db_object_cache';
 import './v_event_name';
 import './v_eventmetric';
+import './v_waitclassmetric';
 import './v_enqueue_lock';
 import './v_enqueue_stat';
 import './v_enqueue_statistics';
