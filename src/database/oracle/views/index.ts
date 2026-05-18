@@ -42,6 +42,7 @@ import './dba_advisor_findings';
 import './dba_advisor_recommendations';
 import './dba_advisor_actions';
 import './dba_outstanding_alerts';
+import './dba_alert_history';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
