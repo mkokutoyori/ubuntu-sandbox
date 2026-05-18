@@ -65,6 +65,7 @@ import './dba_tab_modifications';
 import './dba_rsrc_consumer_groups';
 import './dba_rsrc_plans';
 import './dba_rsrc_plan_directives';
+import './dba_rsrc_mappings';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
