@@ -248,4 +248,90 @@ import './v_rsrc_consumer_group_cpu_mth';
 import './v_rsrc_plan';
 import './v_rsrc_session_info';
 
+// Core V$ views migrated out of OracleCatalog (one file per view).
+import './v_version';
+import './v_instance';
+import './v_database';
+import './v_session';
+import './v_parameter';
+import './v_system_parameter';
+import './v_spparameter';
+import './v_sga';
+import './v_sgastat';
+import './v_tablespace';
+import './v_datafile';
+import './v_tempfile';
+import './v_log';
+import './v_logfile';
+import './v_process';
+import './v_controlfile';
+import './v_diag_info';
+import './v_lock';
+import './v_locked_object';
+import './v_transaction';
+import './v_sql';
+import './v_sqlarea';
+import './v_sysstat';
+import './v_sesstat';
+import './v_open_cursor';
+import './v_archived_log';
+import './v_recover_file';
+import './v_backup';
+import './v_option';
+import './v_nls_parameters';
+import './v_timezone_names';
+import './v_pga_target_advice';
+import './v_sql_plan';
+import './v_resource_limit';
+import './v_asm_diskgroup';
+
+// Core DBA_ views migrated out of OracleCatalog (one file per view).
+import './dba_users';
+import './dba_roles';
+import './dba_role_privs';
+import './dba_sys_privs';
+import './dba_tables';
+import './dba_tab_columns';
+import './dba_objects';
+import './dba_tablespaces';
+import './dba_data_files';
+import './dba_indexes';
+import './dba_constraints';
+import './dba_sequences';
+import './dba_views';
+import './dba_ind_columns';
+import './dba_cons_columns';
+import './dba_tab_privs';
+import './dba_source';
+import './dba_procedures';
+import './dba_triggers';
+import './dba_temp_files';
+import './dba_free_space';
+import './dba_segments';
+import './dba_extents';
+import './dba_audit_trail';
+import './dba_stmt_audit_opts';
+import './dba_profiles';
+import './dba_tab_statistics';
+import './dba_directories';
+import './dba_db_links';
+import './dba_jobs';
+import './dba_scheduler_jobs';
+import './dba_synonyms';
+
+// SYS.X$ base tables migrated out of OracleCatalog (one file per table).
+import './sys_obj';
+import './sys_tab';
+import './sys_col';
+import './sys_ind';
+import './sys_user';
+import './sys_ts';
+import './sys_aud';
+
+// Role / session access-control views.
+import './role_sys_privs';
+import './role_tab_privs';
+import './role_role_privs';
+import './session_roles';
+
 export { };

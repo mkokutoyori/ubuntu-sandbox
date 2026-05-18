@@ -701,16 +701,29 @@ export interface DropProfileStatement extends ASTNode {
 
 // ── AUDIT / NOAUDIT ──────────────────────────────────────────────────
 
+export interface AuditObjectTarget {
+  schema?: string;
+  name: string;
+}
+
 export interface AuditStatement extends ASTNode {
   type: 'AuditStatement';
+  /** First option — kept for backward compatibility. */
   auditOption: string;
+  /** All comma-separated options (e.g. AUDIT SELECT, UPDATE ON t). */
+  auditOptions?: string[];
+  /** Present for object-level auditing: AUDIT ... ON [schema.]object. */
+  onObject?: AuditObjectTarget;
   byUser?: string;
   byMode?: 'ACCESS' | 'SESSION';
+  whenever?: 'SUCCESSFUL' | 'NOT SUCCESSFUL';
 }
 
 export interface NoauditStatement extends ASTNode {
   type: 'NoauditStatement';
   auditOption: string;
+  auditOptions?: string[];
+  onObject?: AuditObjectTarget;
   byUser?: string;
 }
 

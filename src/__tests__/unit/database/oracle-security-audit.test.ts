@@ -518,6 +518,128 @@ describe('DBA_STMT_AUDIT_OPTS', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+// 9b. DBA_OBJ_AUDIT_OPTS — object-level audit options
+// ═══════════════════════════════════════════════════════════════════
+
+describe('DBA_OBJ_AUDIT_OPTS', () => {
+  test('AUDIT ... ON object populates DBA_OBJ_AUDIT_OPTS with real data', () => {
+    exec('CREATE TABLE hr.employees (id NUMBER, salary NUMBER)');
+    exec('AUDIT SELECT, UPDATE ON hr.employees');
+    const r = exec(
+      "SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, SEL, UPD, INS FROM DBA_OBJ_AUDIT_OPTS WHERE OBJECT_NAME = 'EMPLOYEES'"
+    );
+    expect(r.rows.length).toBe(1);
+    const [owner, name, type, sel, upd, ins] = r.rows[0];
+    expect(owner).toBe('HR');
+    expect(name).toBe('EMPLOYEES');
+    expect(type).toBe('TABLE');
+    expect(sel).toBe('A/A');   // BY ACCESS default for object auditing
+    expect(upd).toBe('A/A');
+    expect(ins).toBe('-/-');   // INSERT not audited
+  });
+
+  test('OBJECT_TYPE reflects a view, not hardcoded TABLE', () => {
+    exec('CREATE TABLE t_base (id NUMBER)');
+    exec('CREATE VIEW v_audit AS SELECT * FROM t_base');
+    exec('AUDIT SELECT ON v_audit');
+    const r = exec(
+      "SELECT OBJECT_TYPE FROM DBA_OBJ_AUDIT_OPTS WHERE OBJECT_NAME = 'V_AUDIT'"
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0][0]).toBe('VIEW');
+  });
+
+  test('BY SESSION and WHENEVER NOT SUCCESSFUL are reflected', () => {
+    exec('CREATE TABLE t_sess (id NUMBER)');
+    exec('AUDIT DELETE ON t_sess BY SESSION');
+    exec('AUDIT INSERT ON t_sess WHENEVER NOT SUCCESSFUL');
+    const r = exec(
+      "SELECT DEL, INS FROM DBA_OBJ_AUDIT_OPTS WHERE OBJECT_NAME = 'T_SESS'"
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0][0]).toBe('S/S');   // BY SESSION, both success+failure
+    expect(r.rows[0][1]).toBe('-/A');   // only failure audited, BY ACCESS
+  });
+
+  test('NOAUDIT ... ON object clears the option', () => {
+    exec('CREATE TABLE t_clear (id NUMBER)');
+    exec('AUDIT SELECT ON t_clear');
+    exec('NOAUDIT SELECT ON t_clear');
+    const r = exec(
+      "SELECT SEL FROM DBA_OBJ_AUDIT_OPTS WHERE OBJECT_NAME = 'T_CLEAR'"
+    );
+    // Row gone entirely once no action is audited.
+    expect(r.rows.length).toBe(0);
+  });
+
+  test('object audit options are NOT leaked into DBA_STMT_AUDIT_OPTS', () => {
+    exec('CREATE TABLE t_iso (id NUMBER)');
+    exec('AUDIT SELECT ON t_iso');
+    const stmt = exec(
+      "SELECT * FROM DBA_STMT_AUDIT_OPTS WHERE AUDIT_OPTION LIKE '%T_ISO%'"
+    );
+    expect(stmt.rows.length).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 9c. DBA_PRIV_AUDIT_OPTS — system-privilege audit options
+// ═══════════════════════════════════════════════════════════════════
+
+describe('DBA_PRIV_AUDIT_OPTS', () => {
+  test('AUDIT <system privilege> populates DBA_PRIV_AUDIT_OPTS', () => {
+    exec('AUDIT CREATE ANY TABLE');
+    const r = exec(
+      "SELECT USER_NAME, PRIVILEGE, SUCCESS, FAILURE FROM DBA_PRIV_AUDIT_OPTS WHERE PRIVILEGE = 'CREATE ANY TABLE'"
+    );
+    expect(r.rows.length).toBe(1);
+    const [user, priv, success, failure] = r.rows[0];
+    expect(user).toBeNull();              // not BY a specific user
+    expect(priv).toBe('CREATE ANY TABLE');
+    expect(success).toBe('BY ACCESS');
+    expect(failure).toBe('BY ACCESS');
+  });
+
+  test('AUDIT <privilege> BY user records USER_NAME', () => {
+    exec('CREATE USER priv_user IDENTIFIED BY pass');
+    exec('AUDIT CREATE SESSION BY priv_user');
+    const r = exec(
+      "SELECT USER_NAME, PRIVILEGE FROM DBA_PRIV_AUDIT_OPTS WHERE USER_NAME = 'PRIV_USER'"
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0][1]).toBe('CREATE SESSION');
+  });
+
+  test('WHENEVER SUCCESSFUL sets FAILURE to NOT SET', () => {
+    exec('AUDIT DROP ANY TABLE WHENEVER SUCCESSFUL');
+    const r = exec(
+      "SELECT SUCCESS, FAILURE FROM DBA_PRIV_AUDIT_OPTS WHERE PRIVILEGE = 'DROP ANY TABLE'"
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0][0]).toBe('BY ACCESS');
+    expect(r.rows[0][1]).toBe('NOT SET');
+  });
+
+  test('non-privilege statement options do NOT appear in DBA_PRIV_AUDIT_OPTS', () => {
+    exec('CREATE USER stmt_only IDENTIFIED BY pass');
+    exec('AUDIT SELECT TABLE BY stmt_only'); // statement shorthand, not a sys priv
+    const r = exec(
+      "SELECT PRIVILEGE FROM DBA_PRIV_AUDIT_OPTS WHERE PRIVILEGE = 'SELECT TABLE'"
+    );
+    expect(r.rows.length).toBe(0);
+  });
+
+  test('NOAUDIT removes the privilege audit option', () => {
+    exec('AUDIT CREATE ANY TABLE');
+    exec('NOAUDIT CREATE ANY TABLE');
+    const r = exec(
+      "SELECT * FROM DBA_PRIV_AUDIT_OPTS WHERE PRIVILEGE = 'CREATE ANY TABLE'"
+    );
+    expect(r.rows.length).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
 // 10. SYS.AUD$ — raw audit table
 // ═══════════════════════════════════════════════════════════════════
 

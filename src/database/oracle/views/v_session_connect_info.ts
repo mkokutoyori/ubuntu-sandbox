@@ -1,35 +1,35 @@
 /**
- * V$SESSION_CONNECT_INFO — connection metadata per session.
+ * V$SESSION_CONNECT_INFO — network/auth info per session.
  *
- * Reactively built from `runtime.sessions`, populated via
- * `oracle.session.connected`. Network properties are derived from the
- * runtime listener endpoint (also event-fed).
+ * Sourced from the SecurityEngine session tracker (real sid/serial/
+ * osuser) and the runtime listener endpoint for the network banner.
  */
 
-import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
+import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
 
 registerView({
   name: 'V$SESSION_CONNECT_INFO',
   comment: 'Network/auth info per session',
-  query({ runtime }) {
+  query({ catalog, runtime }) {
+    const sessions = catalog.getSecurityEngine()?.sessions.getAllSessions() ?? [];
     return queryResult(
       [
-        col.num('SID'),
-        col.num('SERIAL#'),
-        col.str('AUTHENTICATION_TYPE', 26),
-        col.str('OSUSER', 30),
-        col.str('NETWORK_SERVICE_BANNER', 256),
-        col.str('CLIENT_CHARSET', 30),
-        col.str('CLIENT_CONNECTION', 12),
-        col.str('CLIENT_OCI_LIBRARY', 30),
-        col.str('CLIENT_VERSION', 30),
+        { name: 'SID', dataType: oracleNumber(10) },
+        { name: 'SERIAL#', dataType: oracleNumber(10) },
+        { name: 'AUTHENTICATION_TYPE', dataType: oracleVarchar2(26) },
+        { name: 'OSUSER', dataType: oracleVarchar2(30) },
+        { name: 'NETWORK_SERVICE_BANNER', dataType: oracleVarchar2(256) },
+        { name: 'CLIENT_CHARSET', dataType: oracleVarchar2(30) },
+        { name: 'CLIENT_CONNECTION', dataType: oracleVarchar2(12) },
+        { name: 'CLIENT_OCI_LIBRARY', dataType: oracleVarchar2(30) },
+        { name: 'CLIENT_VERSION', dataType: oracleVarchar2(30) },
       ],
-      [...runtime.sessions.values()].map(s => [
+      sessions.map(s => [
         s.sid, s.serial,
         s.username === 'SYS' ? 'OS' : 'DATABASE',
-        'oracle',
+        s.osUser,
         runtime.listenerEndpoint || 'TCP loopback',
         'AL32UTF8', 'Heterogeneous', 'Linux Userspace', '19.3.0.0.0',
       ])

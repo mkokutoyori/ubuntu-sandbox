@@ -671,51 +671,84 @@ export class OracleParser extends BaseParser {
 
   // ── AUDIT / NOAUDIT ────────────────────────────────────────────
 
+  /**
+   * Parse one or more comma-separated audit options. Each option is a
+   * multi-word phrase (CREATE TABLE, SELECT, CREATE ANY TABLE, …). The
+   * list terminates at ON, BY, WHENEVER, ';' or EOF.
+   */
+  private parseAuditOptionList(): string[] {
+    const options: string[] = [];
+    do {
+      let opt = this.expectIdentifierOrKeyword();
+      while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+        const next = this.current().value.toUpperCase();
+        if (['BY', 'WHENEVER', 'ON'].includes(next)) break;
+        opt += ' ' + this.advance().value;
+      }
+      options.push(opt.toUpperCase());
+    } while (this.match(TokenType.COMMA));
+    return options;
+  }
+
+  /** Parse `ON [schema.]object` after the audit option list, if present. */
+  private parseAuditOnObject(): { schema?: string; name: string } | undefined {
+    if (!this.matchKeyword('ON')) return undefined;
+    const schema = this.parseSchemaPrefix();
+    const name = this.expectIdentifier();
+    return { schema: schema?.toUpperCase(), name: name.toUpperCase() };
+  }
+
   private parseAudit(): AuditStatement {
     const pos = this.current().position;
     this.expectKeyword('AUDIT');
-    // Parse audit option (multi-word: e.g., CREATE TABLE, SELECT TABLE)
-    let auditOption = this.expectIdentifierOrKeyword();
-    while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
-      const next = this.current().value.toUpperCase();
-      if (['BY', 'WHENEVER'].includes(next)) break;
-      auditOption += ' ' + this.advance().value;
-    }
+    const auditOptions = this.parseAuditOptionList();
+    const onObject = this.parseAuditOnObject();
+
     let byUser: string | undefined;
     let byMode: 'ACCESS' | 'SESSION' | undefined;
-    if (this.matchKeyword('BY')) {
-      const next = this.current().value.toUpperCase();
-      if (next === 'ACCESS') {
-        this.advance();
-        byMode = 'ACCESS';
-      } else if (next === 'SESSION') {
-        this.advance();
-        byMode = 'SESSION';
-      } else {
-        byUser = this.expectIdentifier();
-      }
-    }
-    if (this.matchKeyword('BY')) {
+    // `BY user` and `BY ACCESS|SESSION` can both appear, in either order.
+    for (let i = 0; i < 2 && this.matchKeyword('BY'); i++) {
       const next = this.current().value.toUpperCase();
       if (next === 'ACCESS') { this.advance(); byMode = 'ACCESS'; }
       else if (next === 'SESSION') { this.advance(); byMode = 'SESSION'; }
+      else byUser = this.expectIdentifier();
     }
-    return { type: 'AuditStatement', position: pos, auditOption: auditOption.toUpperCase(), byUser: byUser?.toUpperCase(), byMode };
+
+    let whenever: 'SUCCESSFUL' | 'NOT SUCCESSFUL' | undefined;
+    if (this.matchKeyword('WHENEVER')) {
+      whenever = this.matchKeyword('NOT') ? 'NOT SUCCESSFUL' : 'SUCCESSFUL';
+      this.expectKeyword('SUCCESSFUL');
+    }
+
+    return {
+      type: 'AuditStatement', position: pos,
+      auditOption: auditOptions[0], auditOptions, onObject,
+      byUser: byUser?.toUpperCase(), byMode, whenever,
+    };
   }
 
   private parseNoaudit(): NoauditStatement {
     const pos = this.current().position;
     this.expectKeyword('NOAUDIT');
-    let auditOption = this.expectIdentifierOrKeyword();
-    while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
-      const next = this.current().value.toUpperCase();
-      if (['BY', 'WHENEVER'].includes(next)) break;
-      auditOption += ' ' + this.advance().value;
-    }
+    const auditOptions = this.parseAuditOptionList();
+    const onObject = this.parseAuditOnObject();
+
     let byUser: string | undefined;
     if (this.matchKeyword('BY')) {
-      byUser = this.expectIdentifier();
+      const next = this.current().value.toUpperCase();
+      if (next === 'ACCESS' || next === 'SESSION') this.advance();
+      else byUser = this.expectIdentifier();
     }
-    return { type: 'NoauditStatement', position: pos, auditOption: auditOption.toUpperCase(), byUser: byUser?.toUpperCase() };
+    // Tolerate a trailing WHENEVER [NOT] SUCCESSFUL on NOAUDIT.
+    if (this.matchKeyword('WHENEVER')) {
+      this.matchKeyword('NOT');
+      this.expectKeyword('SUCCESSFUL');
+    }
+
+    return {
+      type: 'NoauditStatement', position: pos,
+      auditOption: auditOptions[0], auditOptions, onObject,
+      byUser: byUser?.toUpperCase(),
+    };
   }
 }

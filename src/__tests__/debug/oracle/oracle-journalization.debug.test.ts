@@ -161,6 +161,22 @@ describe('debug — Oracle journalization', () => {
       "SELECT * FROM fga_log$ WHERE rownum < 30;",
       "SELECT * FROM dba_fga_audit_trail ORDER BY timestamp DESC FETCH FIRST 30 ROWS ONLY;",
 
+      // ── 10b. AUDIT OPTIONS CONFIG (real, not stubbed) ─────────────
+      { section: 'audit options config', cmd: 'CREATE TABLE hr.salaries (id NUMBER, amount NUMBER);' },
+      'AUDIT SELECT, UPDATE ON hr.salaries;',
+      'AUDIT DELETE ON hr.salaries BY SESSION;',
+      'AUDIT INSERT ON hr.salaries WHENEVER NOT SUCCESSFUL;',
+      'AUDIT CREATE ANY TABLE;',
+      'AUDIT CREATE SESSION BY hr;',
+      'AUDIT DROP ANY TABLE WHENEVER SUCCESSFUL;',
+      "SELECT owner, object_name, object_type, sel, upd, ins, del FROM dba_obj_audit_opts ORDER BY object_name;",
+      "SELECT user_name, privilege, success, failure FROM dba_priv_audit_opts ORDER BY privilege;",
+      "SELECT user_name, audit_option, success, failure FROM dba_stmt_audit_opts ORDER BY audit_option;",
+      'NOAUDIT SELECT ON hr.salaries;',
+      'NOAUDIT CREATE ANY TABLE;',
+      "SELECT object_name, sel, upd FROM dba_obj_audit_opts WHERE object_name = 'SALARIES';",
+      "SELECT privilege FROM dba_priv_audit_opts ORDER BY privilege;",
+
       // ── 11. TRACE FILES ───────────────────────────────────────────
       { section: 'trace files', cmd: "SELECT * FROM v$diag_info WHERE name = 'Default Trace File';" },
       "ALTER SESSION SET SQL_TRACE=TRUE;",

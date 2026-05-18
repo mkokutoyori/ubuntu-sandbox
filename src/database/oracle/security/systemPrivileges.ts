@@ -1,0 +1,50 @@
+/**
+ * Canonical Oracle system privileges (subset of Oracle 19c's
+ * SYSTEM_PRIVILEGE_MAP). This is reference metadata — the same approach
+ * the simulator uses for other fixed Oracle catalogs (e.g. the built-in
+ * view list). It lets the audit subsystem tell a *system privilege*
+ * audit option (`AUDIT CREATE ANY TABLE`) apart from a *statement*
+ * shorthand option (`AUDIT TABLE`, `AUDIT SELECT TABLE`) so
+ * `DBA_PRIV_AUDIT_OPTS` reflects only true privilege auditing.
+ */
+
+export const ORACLE_SYSTEM_PRIVILEGES: ReadonlySet<string> = new Set([
+  // Session / connection
+  'CREATE SESSION', 'ALTER SESSION', 'RESTRICTED SESSION',
+  // Object creation in own schema
+  'CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE', 'CREATE SYNONYM',
+  'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE TYPE', 'CREATE OPERATOR',
+  'CREATE INDEXTYPE', 'CREATE CLUSTER', 'CREATE MATERIALIZED VIEW',
+  'CREATE DIMENSION', 'CREATE JOB', 'CREATE LIBRARY',
+  // ANY-object privileges
+  'CREATE ANY TABLE', 'ALTER ANY TABLE', 'DROP ANY TABLE',
+  'SELECT ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE',
+  'DELETE ANY TABLE', 'LOCK ANY TABLE', 'FLASHBACK ANY TABLE',
+  'COMMENT ANY TABLE', 'CREATE ANY INDEX', 'ALTER ANY INDEX',
+  'DROP ANY INDEX', 'CREATE ANY VIEW', 'DROP ANY VIEW',
+  'CREATE ANY SEQUENCE', 'ALTER ANY SEQUENCE', 'DROP ANY SEQUENCE',
+  'SELECT ANY SEQUENCE', 'CREATE ANY SYNONYM', 'DROP ANY SYNONYM',
+  'CREATE ANY PROCEDURE', 'ALTER ANY PROCEDURE', 'DROP ANY PROCEDURE',
+  'EXECUTE ANY PROCEDURE', 'CREATE ANY TRIGGER', 'ALTER ANY TRIGGER',
+  'DROP ANY TRIGGER', 'CREATE ANY TYPE', 'ALTER ANY TYPE',
+  'DROP ANY TYPE', 'EXECUTE ANY TYPE',
+  // User / role / profile administration
+  'CREATE USER', 'ALTER USER', 'DROP USER', 'BECOME USER',
+  'CREATE ROLE', 'ALTER ANY ROLE', 'DROP ANY ROLE', 'GRANT ANY ROLE',
+  'CREATE PROFILE', 'ALTER PROFILE', 'DROP PROFILE',
+  'GRANT ANY PRIVILEGE', 'GRANT ANY OBJECT PRIVILEGE',
+  // Storage / database administration
+  'CREATE TABLESPACE', 'ALTER TABLESPACE', 'DROP TABLESPACE',
+  'MANAGE TABLESPACE', 'UNLIMITED TABLESPACE',
+  'CREATE DATABASE LINK', 'CREATE PUBLIC SYNONYM', 'DROP PUBLIC SYNONYM',
+  'CREATE ANY DIRECTORY', 'DROP ANY DIRECTORY',
+  'ALTER SYSTEM', 'ALTER DATABASE', 'AUDIT SYSTEM', 'AUDIT ANY',
+  'ANALYZE ANY', 'BACKUP ANY TABLE', 'EXPORT FULL DATABASE',
+  'IMPORT FULL DATABASE', 'ADMINISTER DATABASE TRIGGER',
+  'SYSDBA', 'SYSOPER', 'SYSBACKUP', 'SYSDG', 'SYSKM',
+]);
+
+/** Case-insensitive membership test for a system privilege name. */
+export function isSystemPrivilege(name: string): boolean {
+  return ORACLE_SYSTEM_PRIVILEGES.has(name.trim().toUpperCase());
+}
