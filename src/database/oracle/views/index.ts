@@ -28,6 +28,7 @@ import './v_session_event';
 import './v_session_connect_info';
 import './v_session_wait';
 import './v_session_wait_history';
+import './v_sess_io';
 import './v_statname';
 import './v_services';
 import './v_session_wait_class';
