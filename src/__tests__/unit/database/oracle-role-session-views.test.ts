@@ -50,3 +50,25 @@ describe('ROLE_SYS_PRIVS', () => {
     expect(Number(r.rows[0][0])).toBeGreaterThan(0);
   });
 });
+
+describe('ROLE_TAB_PRIVS', () => {
+  test('reports object privileges granted to a role', () => {
+    exec('CREATE ROLE read_role');
+    exec('CREATE TABLE hr.employees (id NUMBER, salary NUMBER)');
+    exec('GRANT SELECT ON hr.employees TO read_role');
+
+    const r = exec(
+      "SELECT ROLE, OWNER, TABLE_NAME, PRIVILEGE, GRANTABLE FROM ROLE_TAB_PRIVS WHERE ROLE = 'READ_ROLE'"
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]).toEqual(['READ_ROLE', 'HR', 'EMPLOYEES', 'SELECT', 'NO']);
+  });
+
+  test('object privileges granted to users are excluded', () => {
+    exec('CREATE USER u2 IDENTIFIED BY p');
+    exec('CREATE TABLE hr.t2 (id NUMBER)');
+    exec('GRANT SELECT ON hr.t2 TO u2');
+    const r = exec("SELECT * FROM ROLE_TAB_PRIVS WHERE ROLE = 'U2'");
+    expect(r.rows.length).toBe(0);
+  });
+});

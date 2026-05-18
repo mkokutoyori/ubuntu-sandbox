@@ -330,5 +330,6 @@ import './sys_aud';
 
 // Role / session access-control views.
 import './role_sys_privs';
+import './role_tab_privs';
 
 export { };
