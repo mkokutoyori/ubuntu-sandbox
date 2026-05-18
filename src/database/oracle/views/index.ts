@@ -15,5 +15,6 @@ import './v_license';
 import './v_nodes';
 import './v_rac_global_view';
 import './v_thread';
+import './v_threads';
 
 export { };
