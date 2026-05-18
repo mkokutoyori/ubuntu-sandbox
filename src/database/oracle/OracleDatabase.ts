@@ -91,16 +91,45 @@ export class OracleDatabase {
     }
 
     const upperUser = username.toUpperCase();
-    // Full authentication via SecurityEngine: enforces lock, failed-login tracking, expiry
-    const storedPassword = this.catalog.getStoredPassword(upperUser);
-    const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
-    if (!authResult.success) {
-      // Record failed LOGON before rejecting. SESSIONID 0 is the
-      // canonical Oracle marker for "no session was ever opened".
-      this.catalog.recordLogon(upperUser, 0, authResult.errorCode || 1017, osCtx.osUser, osCtx.hostname, osCtx.terminal);
-      this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(authResult.errorCode || 1017).padStart(5, '0')}`);
-      throw new Error(authResult.message || ORACLE_ERRORS.ORA_01017);
+    const user = this.catalog.getUser(upperUser);
+
+    /**
+     * Wrap a failed-auth throw so every rejection path also leaves a
+     * trace in the audit trail and alert log. SESSIONID 0 is the
+     * canonical Oracle marker for "no session was ever opened".
+     */
+    const failLogon = (code: number, message: string): never => {
+      this.catalog.recordLogon(upperUser, 0, code, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+      this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(code).padStart(5, '0')}`);
+      throw new Error(message);
+    };
+
+    // Dispatch on AUTHENTICATION_TYPE recorded at CREATE USER time.
+    if (user?.authenticationType === 'EXTERNAL') {
+      // OS-authenticated user: name must match `<os_prefix><osUser>` (default OPS$).
+      // Real Oracle uses init parameter OS_AUTHENT_PREFIX; we simulate with 'OPS$'.
+      const expected = `OPS$${osCtx.osUser.toUpperCase()}`;
+      if (upperUser !== expected) {
+        failLogon(1017, ORACLE_ERRORS.ORA_01017);
+      }
+    } else if (user?.authenticationType === 'GLOBAL') {
+      // Directory-authenticated: no password path supported in this simulation.
+      failLogon(1017, ORACLE_ERRORS.ORA_01017);
+    } else {
+      // Standard password authentication via SecurityEngine:
+      // enforces lock, failed-login tracking, expiry.
+      const storedPassword = this.catalog.getStoredPassword(upperUser);
+      const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
+      if (!authResult.success) {
+        failLogon(authResult.errorCode || 1017, authResult.message || ORACLE_ERRORS.ORA_01017);
+      }
     }
+
+    // Enforce CREATE SESSION privilege (direct or via role)
+    if (!this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'CREATE SESSION')) {
+      failLogon(1045, 'ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
+    }
+
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -141,6 +170,10 @@ export class OracleDatabase {
    * Connect as SYSDBA (no password check, sets user to SYS).
    */
   connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
+    // OS-group enforcement: SYSDBA requires the OS user to be in the dba group.
+    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
+      throw new Error('ORA-01031: insufficient privileges');
+    }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -167,6 +200,44 @@ export class OracleDatabase {
     const context: ExecutionContext = {
       currentUser: 'SYS',
       currentSchema: 'SYS',
+      autoCommit: false,
+      serverOutput: false,
+      feedback: true,
+      timing: false,
+    };
+
+    const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    return { sid, executor };
+  }
+
+  /**
+   * Connect as SYSOPER — limited admin role (PUBLIC schema, no user-data access).
+   * Like SYSDBA, requires OS dba group membership.
+   */
+  connectAsSysoper(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
+    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
+      throw new Error('ORA-01031: insufficient privileges');
+    }
+    const sid = this.sidCounter++;
+    const serial = Math.floor(Math.random() * 50000) + 1;
+
+    const connInfo: ConnectionInfo = {
+      username: 'PUBLIC',
+      schema: 'PUBLIC',
+      connectedAt: new Date(),
+      sid,
+      serial,
+    };
+    this.connections.set(sid, connInfo);
+
+    const sessionId = String(sid);
+    this.securityEngine.openSession(sessionId, 'PUBLIC', 'PUBLIC',
+      { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+      this.catalog, sid, serial);
+
+    const context: ExecutionContext = {
+      currentUser: 'PUBLIC',
+      currentSchema: 'PUBLIC',
       autoCommit: false,
       serverOutput: false,
       feedback: true,
