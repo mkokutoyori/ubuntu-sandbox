@@ -57,6 +57,7 @@ import './v_java_pool_advice';
 import './v_active_services';
 import './v_cluster_instance';
 import './v_db_object_cache';
+import './v_dispatcher';
 import './v_event_name';
 import './v_eventmetric';
 import './v_waitclassmetric';
