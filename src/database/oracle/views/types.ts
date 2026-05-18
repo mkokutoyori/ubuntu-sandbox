@@ -32,6 +32,16 @@ export interface ViewDefinition {
   readonly name: string;
   /** Optional shared comment surfaced via DICT / DICTIONARY. */
   readonly comment?: string;
+  /**
+   * Optional synthetic `CREATE VIEW` text surfaced as the `TEXT` column
+   * of `DBA_VIEWS` / `ALL_VIEWS` / `USER_VIEWS`. Real Oracle stores the
+   * actual SQL behind dictionary/dynamic views; when a view file does
+   * not supply one the registry derives a faithful placeholder so the
+   * view still appears in the data dictionary. Keeping this here means
+   * everything about a view lives in its own file — no parallel catalog
+   * entry to maintain.
+   */
+  readonly text?: string;
   /** Materialise the view from current state. */
   query(ctx: ViewContext): ResultSet;
 }
