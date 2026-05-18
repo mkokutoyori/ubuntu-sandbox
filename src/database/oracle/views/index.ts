@@ -29,6 +29,7 @@ import './v_shared_pool_reserved';
 import './v_rowcache';
 import './v_rowcache_subordinate';
 import './v_rman_status';
+import './v_rman_output';
 import './v_java_pool_advice';
 import './v_active_services';
 import './v_cluster_instance';
