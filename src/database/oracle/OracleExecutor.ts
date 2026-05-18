@@ -2756,7 +2756,37 @@ export class OracleExecutor extends BaseExecutor {
       this.applyDatafileRename(renameMatch[1]);
       return emptyResult('Database altered.');
     }
+    // DATAFILE '…' RESIZE 200M
+    const resizeMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bRESIZE\s+(\d+\s*[KMGT]?)/i.exec(stmt.action);
+    if (resizeMatch) {
+      this.applyDatafileResize(resizeMatch[1], resizeMatch[2].replace(/\s+/g, ''));
+      return emptyResult('Database altered.');
+    }
+    // DATAFILE '…' AUTOEXTEND ON|OFF
+    const autoMatch = /^\s*DATAFILE\s+'([^']+)'\s+.*\bAUTOEXTEND\s+(ON|OFF)\b/i.exec(stmt.action);
+    if (autoMatch) {
+      this.applyDatafileAutoextend(autoMatch[1], autoMatch[2].toUpperCase() === 'ON');
+      return emptyResult('Database altered.');
+    }
     return emptyResult('Database altered.');
+  }
+
+  private applyDatafileResize(path: string, size: string): void {
+    const ts = (this.storage as OracleStorage).resizeDatafile(path, size);
+    if (!ts) return;
+    this.bus.publish({
+      topic: 'oracle.storage.datafile-resized',
+      payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, path, size },
+    });
+  }
+
+  private applyDatafileAutoextend(path: string, on: boolean): void {
+    const ts = (this.storage as OracleStorage).setDatafileAutoextend(path, on);
+    if (!ts) return;
+    this.bus.publish({
+      topic: 'oracle.storage.datafile-autoextend-changed',
+      payload: { deviceId: this.deviceId, sid: this.sid, tablespace: ts, path, autoextend: on },
+    });
   }
 
   /**

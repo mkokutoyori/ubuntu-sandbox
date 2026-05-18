@@ -73,6 +73,28 @@ export class OracleStorage extends BaseStorage {
   }
 
   /**
+   * Resize a datafile (no validation of MAXSIZE / autoextend bounds —
+   * the simulator doesn't allocate real bytes).
+   * @returns the owning tablespace name, or `null` if no datafile matched.
+   */
+  resizeDatafile(path: string, size: string): string | null {
+    for (const ts of this.tablespaces.values()) {
+      const df = ts.datafiles.find(d => d.path === path);
+      if (df) { df.size = size; return ts.name; }
+    }
+    return null;
+  }
+
+  /** Flip the AUTOEXTEND flag on a datafile. */
+  setDatafileAutoextend(path: string, on: boolean): string | null {
+    for (const ts of this.tablespaces.values()) {
+      const df = ts.datafiles.find(d => d.path === path);
+      if (df) { df.autoextend = on; return ts.name; }
+    }
+    return null;
+  }
+
+  /**
    * Rename a datafile path inside whichever tablespace owns it.
    * @returns the tablespace name if the rename happened, `null` otherwise.
    */

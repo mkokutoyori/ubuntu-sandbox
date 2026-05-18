@@ -137,6 +137,19 @@ export class OracleFilesystemSync {
         }
       }),
 
+      this.bus.subscribe('oracle.storage.datafile-resized', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        const storage = db?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined;
+        const ts = storage?.getTablespace(e.payload.tablespace);
+        const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
+        );
+      }),
+
       this.bus.subscribe('oracle.storage.datafile-renamed', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;

@@ -231,6 +231,18 @@ export interface OracleDatafileRenamedPayload extends OracleDeviceRef {
   newPath: string;
 }
 
+export interface OracleDatafileResizedPayload extends OracleDeviceRef {
+  tablespace: string;
+  path: string;
+  size: string;
+}
+
+export interface OracleDatafileAutoextendChangedPayload extends OracleDeviceRef {
+  tablespace: string;
+  path: string;
+  autoextend: boolean;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -262,4 +274,6 @@ export type OracleDomainEvent =
   | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload }
   | { topic: 'oracle.storage.tablespace-created';        payload: OracleTablespaceCreatedPayload }
   | { topic: 'oracle.storage.tablespace-dropped';        payload: OracleTablespaceDroppedPayload }
-  | { topic: 'oracle.storage.datafile-renamed';          payload: OracleDatafileRenamedPayload };
+  | { topic: 'oracle.storage.datafile-renamed';          payload: OracleDatafileRenamedPayload }
+  | { topic: 'oracle.storage.datafile-resized';          payload: OracleDatafileResizedPayload }
+  | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload };
