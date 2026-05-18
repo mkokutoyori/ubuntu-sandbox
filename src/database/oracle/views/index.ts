@@ -64,6 +64,7 @@ import './v_session_wait_history';
 import './v_sess_io';
 import './v_sess_time_model';
 import './v_statname';
+import './v_streams_pool_advice';
 import './v_services';
 import './v_sgainfo';
 import './v_sga_dynamic_components';
