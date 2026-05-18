@@ -251,8 +251,10 @@ export class SQLPlusSession {
     // SQL*Plus commands (case-insensitive)
     const upper = trimmed.toUpperCase();
 
-    // EXIT / QUIT
-    if (upper === 'EXIT' || upper === 'QUIT' || upper.startsWith('EXIT ') || upper.startsWith('QUIT ')) {
+    // EXIT / QUIT — accept trailing ';' which real SQL*Plus tolerates too.
+    if (upper === 'EXIT' || upper === 'QUIT'
+        || upper === 'EXIT;' || upper === 'QUIT;'
+        || upper.startsWith('EXIT ') || upper.startsWith('QUIT ')) {
       this.disconnect();
       return { output: ['Disconnected from Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production'], exit: true, needsMoreInput: false, prompt: '' };
     }

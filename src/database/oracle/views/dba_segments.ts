@@ -14,13 +14,17 @@ registerView({
       [
         { name: 'OWNER', dataType: oracleVarchar2(30) },
         { name: 'SEGMENT_NAME', dataType: oracleVarchar2(30) },
+        { name: 'PARTITION_NAME', dataType: oracleVarchar2(30) },
         { name: 'SEGMENT_TYPE', dataType: oracleVarchar2(18) },
         { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
         { name: 'BYTES', dataType: oracleNumber(20) },
         { name: 'BLOCKS', dataType: oracleNumber(20) },
         { name: 'EXTENTS', dataType: oracleNumber(10) },
       ],
-      storage.getAllTables().map(t => [t.schema, t.name, 'TABLE', t.tablespace ?? 'USERS', t.rowCount * 200, Math.ceil(t.rowCount * 200 / 8192), 1])
+      storage.getAllTables().map(t => [
+        t.schema, t.name, null, 'TABLE', t.tablespace ?? 'USERS',
+        t.rowCount * 200, Math.ceil(t.rowCount * 200 / 8192), 1,
+      ])
     );
   },
 });
