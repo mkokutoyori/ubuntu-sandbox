@@ -67,6 +67,7 @@ import './v_iofuncmetric';
 import './v_iofuncmetric_summary';
 import './v_enqueue_lock';
 import './v_encrypted_tablespaces';
+import './v_tablespace_thread';
 import './v_enqueue_stat';
 import './v_enqueue_statistics';
 import './v_transaction_enqueue';
