@@ -36,6 +36,7 @@ import './v_sql_shared_cursor';
 import './v_sql_shared_memory';
 import './v_sql_cursor';
 import './v_sql_monitor';
+import './v_sql_plan_monitor';
 import './v_session_connect_info';
 import './v_session_wait';
 import './v_session_wait_history';
