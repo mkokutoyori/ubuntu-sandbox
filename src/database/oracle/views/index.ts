@@ -7,6 +7,7 @@
  * for readability.
  */
 
+import './v_active_instances';
 import './v_instance_cache_transfer';
 import './v_instance_recovery';
 import './v_license';
