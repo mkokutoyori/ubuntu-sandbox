@@ -373,7 +373,7 @@ SELECT 'All objects recompiled successfully.' FROM DUAL;
     [`${oracleBase}/admin/${sid}/udump/.keep`]: '',
 
     // ── Diagnostic trace dir ──────────────────────────────────
-    [`${oracleBase}/diag/rdbms/orcl/${sid}/trace/alert_${sid}.log`]:
+    [`${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`]:
 `${new Date().toISOString().replace('T', ' ').slice(0, 19)}
 Starting ORACLE instance (normal)
 LICENSE_MAX_SESSION = 0
@@ -400,7 +400,7 @@ Database ${sid} opened.
 Completed: ALTER DATABASE OPEN
 `,
     // ── Diagnostic incident dir ───────────────────────────────
-    [`${oracleBase}/diag/rdbms/orcl/${sid}/incident/.keep`]: '',
+    [`${ORACLE_CONFIG.DIAG_HOME}/incident/.keep`]: '',
 
     // ── Archived redo logs dir ────────────────────────────────
     [`${oracleBase}/archivelog/.keep`]: '',
@@ -437,9 +437,8 @@ export function updateSpfileOnDevice(device: import('@/network').Equipment, para
  * Write updated alert log to the VFS.
  */
 export function syncAlertLogToDevice(device: import('@/network').Equipment, alertLogEntries: string[]): void {
-  const oracleBase = ORACLE_CONFIG.BASE;
   const sid = ORACLE_CONFIG.SID;
-  const path = `${oracleBase}/diag/rdbms/${sid.toLowerCase()}/${sid}/trace/alert_${sid}.log`;
+  const path = `${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`;
   device.writeFileFromEditor(path, alertLogEntries.join('\n') + '\n');
 }
 

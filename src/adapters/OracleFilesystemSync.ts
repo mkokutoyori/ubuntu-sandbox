@@ -74,7 +74,7 @@ export class OracleFilesystemSync {
         const { deviceId, sid, line } = e.payload;
         const dev = this.dev(deviceId);
         if (!dev) return;
-        const path = `${ORACLE_CONFIG.BASE}/diag/rdbms/${sid.toLowerCase()}/${sid}/trace/alert_${sid}.log`;
+        const path = `${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`;
         // Append to the existing log (we re-read from the in-memory accumulator —
         // the adapter doesn't keep history itself).
         const db = this.ctx.resolveDatabase(deviceId);
