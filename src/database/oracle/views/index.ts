@@ -7,6 +7,7 @@
  * for readability.
  */
 
+import './dba_tab_comments';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
