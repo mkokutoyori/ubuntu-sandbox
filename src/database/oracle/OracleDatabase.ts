@@ -90,12 +90,13 @@ export class OracleDatabase {
       throw new Error(ORACLE_ERRORS.ORA_01034);
     }
 
-    const authResult = this.catalog.authenticate(username, password);
-    if (!authResult) {
-      throw new Error(ORACLE_ERRORS.ORA_01017);
-    }
-
     const upperUser = username.toUpperCase();
+    // Full authentication via SecurityEngine: enforces lock, failed-login tracking, expiry
+    const storedPassword = this.catalog.getStoredPassword(upperUser);
+    const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
+    if (!authResult.success) {
+      throw new Error(authResult.message || ORACLE_ERRORS.ORA_01017);
+    }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -110,7 +111,11 @@ export class OracleDatabase {
 
     // Register session in SecurityEngine with the same sid/serial used by OracleDatabase
     const sessionId = String(sid);
-    this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
+    const sessionResult = this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
+    if (!sessionResult.ok) {
+      this.connections.delete(sid);
+      throw new Error(sessionResult.error ?? 'ORA-02391: exceeded simultaneous SESSIONS_PER_USER limit');
+    }
 
     const context: ExecutionContext = {
       currentUser: upperUser,

@@ -207,6 +207,10 @@ export class OracleCatalog extends BaseCatalog {
     return stored === password;
   }
 
+  getStoredPassword(username: string): string | undefined {
+    return this.passwords.get(username.toUpperCase());
+  }
+
   setPassword(username: string, password: string): void {
     this.passwords.set(username.toUpperCase(), password);
   }
