@@ -1,0 +1,1505 @@
+============================================================
+Router (L3) debug transcript — huawei-router-ipsec-vpn
+Generated: 2026-05-18T04:43:33.887Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
+Total steps: 279
+============================================================
+
+
+--- [1] § base addressing ---
+[1/279] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[2/279] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[3/279] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[4/279] r1 [R1-GE0/0/0] undo shutdown
+<empty>
+
+[5/279] r1 [R1-GE0/0/0] quit
+<empty>
+
+[6/279] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[7/279] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[8/279] r1 [R1-GE0/0/1] undo shutdown
+<empty>
+
+[9/279] r1 [R1-GE0/0/1] quit
+<empty>
+
+[10/279] r1 [R1] interface LoopBack0
+<empty>
+
+[11/279] r1 [R1-LoopBack0] ip address 1.1.1.1 255.255.255.255
+<empty>
+
+[12/279] r1 [R1-LoopBack0] quit
+<empty>
+
+[13/279] r1 [R1] return
+<empty>
+
+
+--- [14] § IKE proposal / peer ---
+[14/279] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[15/279] r1 [R1] ike proposal 1
+<empty>
+
+[16/279] r1 [R1-ike-proposal-1] encryption-algorithm aes-128
+<empty>
+
+[17/279] r1 [R1-ike-proposal-1] dh group14
+<empty>
+
+[18/279] r1 [R1-ike-proposal-1] authentication-algorithm sha2-256
+<empty>
+
+[19/279] r1 [R1-ike-proposal-1] authentication-method pre-share
+<empty>
+
+[20/279] r1 [R1-ike-proposal-1] integrity-algorithm hmac-sha2-256
+  % Invalid input detected at '^' marker.
+  integrity-algorithm hmac-sha2-256
+  ^
+
+[21/279] r1 [R1-ike-proposal-1] sa duration 3600
+<empty>
+
+[22/279] r1 [R1-ike-proposal-1] quit
+<empty>
+
+[23/279] r1 [R1] ike proposal 2
+<empty>
+
+[24/279] r1 [R1-ike-proposal-2] encryption-algorithm aes-192
+<empty>
+
+[25/279] r1 [R1-ike-proposal-2] dh group14
+<empty>
+
+[26/279] r1 [R1-ike-proposal-2] authentication-algorithm sha2-256
+<empty>
+
+[27/279] r1 [R1-ike-proposal-2] authentication-method pre-share
+<empty>
+
+[28/279] r1 [R1-ike-proposal-2] integrity-algorithm hmac-sha2-256
+  % Invalid input detected at '^' marker.
+  integrity-algorithm hmac-sha2-256
+  ^
+
+[29/279] r1 [R1-ike-proposal-2] sa duration 7200
+<empty>
+
+[30/279] r1 [R1-ike-proposal-2] quit
+<empty>
+
+[31/279] r1 [R1] ike proposal 3
+<empty>
+
+[32/279] r1 [R1-ike-proposal-3] encryption-algorithm aes-256
+<empty>
+
+[33/279] r1 [R1-ike-proposal-3] dh group14
+<empty>
+
+[34/279] r1 [R1-ike-proposal-3] authentication-algorithm sha2-256
+<empty>
+
+[35/279] r1 [R1-ike-proposal-3] authentication-method pre-share
+<empty>
+
+[36/279] r1 [R1-ike-proposal-3] integrity-algorithm hmac-sha2-256
+  % Invalid input detected at '^' marker.
+  integrity-algorithm hmac-sha2-256
+  ^
+
+[37/279] r1 [R1-ike-proposal-3] sa duration 10800
+<empty>
+
+[38/279] r1 [R1-ike-proposal-3] quit
+<empty>
+
+[39/279] r1 [R1] ike proposal 4
+<empty>
+
+[40/279] r1 [R1-ike-proposal-4] encryption-algorithm aes-256
+<empty>
+
+[41/279] r1 [R1-ike-proposal-4] dh group14
+<empty>
+
+[42/279] r1 [R1-ike-proposal-4] authentication-algorithm sha2-256
+<empty>
+
+[43/279] r1 [R1-ike-proposal-4] authentication-method pre-share
+<empty>
+
+[44/279] r1 [R1-ike-proposal-4] integrity-algorithm hmac-sha2-256
+  % Invalid input detected at '^' marker.
+  integrity-algorithm hmac-sha2-256
+  ^
+
+[45/279] r1 [R1-ike-proposal-4] sa duration 14400
+<empty>
+
+[46/279] r1 [R1-ike-proposal-4] quit
+<empty>
+
+[47/279] r1 [R1] ike peer PEER1 v2
+<empty>
+
+[48/279] r1 [R1-ike-peer-PEER1] pre-shared-key cipher MyKey@12345
+<empty>
+
+[49/279] r1 [R1-ike-peer-PEER1] ike-proposal 1
+<empty>
+
+[50/279] r1 [R1-ike-peer-PEER1] remote-address 10.0.0.2
+<empty>
+
+[51/279] r1 [R1-ike-peer-PEER1] local-address 10.0.0.1
+<empty>
+
+[52/279] r1 [R1-ike-peer-PEER1] remote-id-type ip
+  % Invalid input detected at '^' marker.
+  remote-id-type ip
+  ^
+
+[53/279] r1 [R1-ike-peer-PEER1] dpd type periodic
+<empty>
+
+[54/279] r1 [R1-ike-peer-PEER1] quit
+<empty>
+
+[55/279] r1 [R1] ike peer PEER2 v1
+<empty>
+
+[56/279] r1 [R1-ike-peer-PEER2] exchange-mode aggressive
+<empty>
+
+[57/279] r1 [R1-ike-peer-PEER2] pre-shared-key cipher Key2@12345
+<empty>
+
+[58/279] r1 [R1-ike-peer-PEER2] remote-address 10.0.0.6
+<empty>
+
+[59/279] r1 [R1-ike-peer-PEER2] quit
+<empty>
+
+[60/279] r1 [R1] return
+<empty>
+
+[61/279] r1 <R1> display ike proposal
+  Global IKE policy
+  Protection suite of priority 1
+  	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               3600 seconds, no volume limit
+  Protection suite of priority 2
+  	encryption algorithm:   AES - Advanced Encryption Standard (192 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               7200 seconds, no volume limit
+  Protection suite of priority 3
+  	encryption algorithm:   AES - Advanced Encryption Standard (256 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               10800 seconds, no volume limit
+  Protection suite of priority 4
+  	encryption algorithm:   AES - Advanced Encryption Standard (256 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               14400 seconds, no volume limit
+  Default protection suite
+  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #1 (768 bit)
+  	lifetime:               86400 seconds, no volume limit
+
+[62/279] r1 <R1> display ike peer
+  IKE Peer Configuration:
+    Peer name   : PEER1
+    Remote addr : 10.0.0.2
+    PSK         : ****
+  
+    Peer name   : PEER2
+    Remote addr : 10.0.0.6
+    PSK         : ****
+  
+
+[63/279] r1 <R1> display ike peer brief
+  % Invalid input detected at '^' marker.
+  display ike peer brief
+                   ^
+
+[64/279] r1 <R1> display ike sa
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
+
+
+--- [65] § IPsec proposal / policy ---
+[65/279] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[66/279] r1 [R1] ipsec proposal TP1
+<empty>
+
+[67/279] r1 [R1-ipsec-proposal-TP1] transform esp
+<empty>
+
+[68/279] r1 [R1-ipsec-proposal-TP1] encapsulation-mode tunnel
+<empty>
+
+[69/279] r1 [R1-ipsec-proposal-TP1] esp encryption-algorithm aes-256
+<empty>
+
+[70/279] r1 [R1-ipsec-proposal-TP1] esp authentication-algorithm sha2-256
+<empty>
+
+[71/279] r1 [R1-ipsec-proposal-TP1] quit
+<empty>
+
+[72/279] r1 [R1] ipsec proposal TP2
+<empty>
+
+[73/279] r1 [R1-ipsec-proposal-TP2] transform esp
+<empty>
+
+[74/279] r1 [R1-ipsec-proposal-TP2] encapsulation-mode tunnel
+<empty>
+
+[75/279] r1 [R1-ipsec-proposal-TP2] esp encryption-algorithm aes-256
+<empty>
+
+[76/279] r1 [R1-ipsec-proposal-TP2] esp authentication-algorithm sha2-256
+<empty>
+
+[77/279] r1 [R1-ipsec-proposal-TP2] quit
+<empty>
+
+[78/279] r1 [R1] ipsec proposal TP3
+<empty>
+
+[79/279] r1 [R1-ipsec-proposal-TP3] transform esp
+<empty>
+
+[80/279] r1 [R1-ipsec-proposal-TP3] encapsulation-mode tunnel
+<empty>
+
+[81/279] r1 [R1-ipsec-proposal-TP3] esp encryption-algorithm aes-256
+<empty>
+
+[82/279] r1 [R1-ipsec-proposal-TP3] esp authentication-algorithm sha2-256
+<empty>
+
+[83/279] r1 [R1-ipsec-proposal-TP3] quit
+<empty>
+
+[84/279] r1 [R1] acl 3100
+<empty>
+
+[85/279] r1 [R1-acl-adv-3100] rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  Error: Expected permit or deny.
+
+[86/279] r1 [R1-acl-adv-3100] quit
+<empty>
+
+[87/279] r1 [R1] ipsec policy MAP1 10 isakmp
+<empty>
+
+[88/279] r1 [R1-ipsec-policy-MAP1-10] security acl 3100
+<empty>
+
+[89/279] r1 [R1-ipsec-policy-MAP1-10] ike-peer PEER1
+<empty>
+
+[90/279] r1 [R1-ipsec-policy-MAP1-10] proposal TP1
+<empty>
+
+[91/279] r1 [R1-ipsec-policy-MAP1-10] pfs dh-group14
+<empty>
+
+[92/279] r1 [R1-ipsec-policy-MAP1-10] sa duration time-based 3600
+<empty>
+
+[93/279] r1 [R1-ipsec-policy-MAP1-10] quit
+<empty>
+
+[94/279] r1 [R1] ipsec policy MAP1 20 manual
+<empty>
+
+[95/279] r1 [R1-ipsec-policy-MAP1-20] security acl 3100
+<empty>
+
+[96/279] r1 [R1-ipsec-policy-MAP1-20] proposal TP2
+<empty>
+
+[97/279] r1 [R1-ipsec-policy-MAP1-20] tunnel local 10.0.0.1 remote 10.0.0.2
+  % Invalid input detected at '^' marker.
+  tunnel local 10.0.0.1 remote 10.0.0.2
+  ^
+
+[98/279] r1 [R1-ipsec-policy-MAP1-20] sa spi inbound esp 12345
+  % Invalid input detected at '^' marker.
+  sa spi inbound esp 12345
+     ^
+
+[99/279] r1 [R1-ipsec-policy-MAP1-20] sa spi outbound esp 54321
+  % Invalid input detected at '^' marker.
+  sa spi outbound esp 54321
+     ^
+
+[100/279] r1 [R1-ipsec-policy-MAP1-20] sa string-key inbound esp cipher InKey123
+  % Invalid input detected at '^' marker.
+  sa string-key inbound esp cipher InKey123
+     ^
+
+[101/279] r1 [R1-ipsec-policy-MAP1-20] sa string-key outbound esp cipher OutKey123
+  % Invalid input detected at '^' marker.
+  sa string-key outbound esp cipher OutKey123
+     ^
+
+[102/279] r1 [R1-ipsec-policy-MAP1-20] quit
+<empty>
+
+[103/279] r1 [R1] ipsec policy-template TPL1 1
+  % Invalid input detected at '^' marker.
+  ipsec policy-template TPL1 1
+        ^
+
+[104/279] r1 [R1] proposal TP1
+  % Invalid input detected at '^' marker.
+  proposal TP1
+  ^
+
+[105/279] r1 [R1] ike-peer PEER1
+  % Invalid input detected at '^' marker.
+  ike-peer PEER1
+  ^
+
+[106/279] r1 [R1] quit
+<empty>
+
+[107/279] r1 <R1> ipsec policy DYN1 100 isakmp template TPL1
+  % Invalid input detected at '^' marker.
+  ipsec policy DYN1 100 isakmp template TPL1
+  ^
+
+[108/279] r1 <R1> return
+<empty>
+
+[109/279] r1 <R1> display ipsec proposal
+  Transform set TP1: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+  Transform set TP2: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+  Transform set TP3: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+
+[110/279] r1 <R1> display ipsec policy
+  Crypto Map "MAP1" 10 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: dh-group14
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+  Crypto Map "MAP1" 20 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+
+[111/279] r1 <R1> display ipsec policy brief
+  Crypto Map "MAP1" 10 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: dh-group14
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+  Crypto Map "MAP1" 20 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+
+[112/279] r1 <R1> display ipsec sa
+  No IPSec SAs established.
+
+[113/279] r1 <R1> display ipsec statistics esp
+  % Invalid input detected at '^' marker.
+  display ipsec statistics esp
+                           ^
+
+
+--- [114] § apply policy / IPsec profile ---
+[114/279] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[115/279] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[116/279] r1 [R1-GE0/0/1] ipsec policy MAP1
+<empty>
+
+[117/279] r1 [R1-GE0/0/1] quit
+<empty>
+
+[118/279] r1 [R1] ipsec profile PROF1
+<empty>
+
+[119/279] r1 [R1-ipsec-policy-PROF1-0] ike-peer PEER1
+<empty>
+
+[120/279] r1 [R1-ipsec-policy-PROF1-0] proposal TP1
+<empty>
+
+[121/279] r1 [R1-ipsec-policy-PROF1-0] pfs dh-group19
+<empty>
+
+[122/279] r1 [R1-ipsec-policy-PROF1-0] quit
+<empty>
+
+[123/279] r1 [R1] interface Tunnel0/0/0
+  Error: Wrong parameter found at '^' position.
+
+[124/279] r1 [R1] tunnel-protocol ipsec
+  % Invalid input detected at '^' marker.
+  tunnel-protocol ipsec
+  ^
+
+[125/279] r1 [R1] ip address 172.16.0.1 255.255.255.252
+  % Invalid input detected at '^' marker.
+  ip address 172.16.0.1 255.255.255.252
+     ^
+
+[126/279] r1 [R1] source 10.0.0.1
+  % Invalid input detected at '^' marker.
+  source 10.0.0.1
+  ^
+
+[127/279] r1 [R1] destination 10.0.0.2
+  % Invalid input detected at '^' marker.
+  destination 10.0.0.2
+  ^
+
+[128/279] r1 [R1] ipsec profile PROF1
+<empty>
+
+[129/279] r1 [R1-ipsec-policy-PROF1-0] quit
+<empty>
+
+[130/279] r1 [R1] interface Tunnel0/0/1
+  Error: Wrong parameter found at '^' position.
+
+[131/279] r1 [R1] tunnel-protocol gre
+  % Invalid input detected at '^' marker.
+  tunnel-protocol gre
+  ^
+
+[132/279] r1 [R1] ip address 172.16.0.5 255.255.255.252
+  % Invalid input detected at '^' marker.
+  ip address 172.16.0.5 255.255.255.252
+     ^
+
+[133/279] r1 [R1] source LoopBack0
+  % Invalid input detected at '^' marker.
+  source LoopBack0
+  ^
+
+[134/279] r1 [R1] destination 10.0.0.2
+  % Invalid input detected at '^' marker.
+  destination 10.0.0.2
+  ^
+
+[135/279] r1 [R1] ipsec profile PROF1
+<empty>
+
+[136/279] r1 [R1-ipsec-policy-PROF1-0] quit
+<empty>
+
+[137/279] r1 [R1] return
+<empty>
+
+[138/279] r1 <R1> display ipsec policy interface GigabitEthernet0/0/1
+  % Invalid input detected at '^' marker.
+  display ipsec policy interface GigabitEthernet0/0/1
+                       ^
+
+[139/279] r1 <R1> display ipsec profile
+  IPsec Profile "PROF1"
+    Transform sets: { : {  } }
+    Mode: tunnel
+
+[140/279] r1 <R1> display interface Tunnel0/0/0
+  Error: Wrong parameter found at '^' position.
+
+
+--- [141] § IKEv2 ---
+[141/279] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[142/279] r1 [R1] ikev2 proposal IKEV2P
+  % Invalid input detected at '^' marker.
+  ikev2 proposal IKEV2P
+  ^
+
+[143/279] r1 [R1] encryption-algorithm aes-256
+  % Invalid input detected at '^' marker.
+  encryption-algorithm aes-256
+  ^
+
+[144/279] r1 [R1] integrity-algorithm hmac-sha2-256
+  % Invalid input detected at '^' marker.
+  integrity-algorithm hmac-sha2-256
+  ^
+
+[145/279] r1 [R1] dh group14
+  % Invalid input detected at '^' marker.
+  dh group14
+     ^
+
+[146/279] r1 [R1] prf hmac-sha2-256
+  % Invalid input detected at '^' marker.
+  prf hmac-sha2-256
+  ^
+
+[147/279] r1 [R1] quit
+<empty>
+
+[148/279] r1 <R1> ikev2 policy IKEV2POL
+  % Invalid input detected at '^' marker.
+  ikev2 policy IKEV2POL
+  ^
+
+[149/279] r1 <R1> match local-address 10.0.0.1
+  % Invalid input detected at '^' marker.
+  match local-address 10.0.0.1
+  ^
+
+[150/279] r1 <R1> proposal IKEV2P
+  % Invalid input detected at '^' marker.
+  proposal IKEV2P
+  ^
+
+[151/279] r1 <R1> quit
+<empty>
+
+[152/279] r1 <R1> ikev2 keychain KC1
+  % Invalid input detected at '^' marker.
+  ikev2 keychain KC1
+  ^
+
+[153/279] r1 <R1> peer P1
+  % Invalid input detected at '^' marker.
+  peer P1
+  ^
+
+[154/279] r1 <R1> address 10.0.0.2
+  % Invalid input detected at '^' marker.
+  address 10.0.0.2
+  ^
+
+[155/279] r1 <R1> pre-shared-key cipher V2Key@123
+  % Invalid input detected at '^' marker.
+  pre-shared-key cipher V2Key@123
+  ^
+
+[156/279] r1 <R1> quit
+<empty>
+
+[157/279] r1 <R1> quit
+<empty>
+
+[158/279] r1 <R1> ikev2 profile IKEV2PRF
+  % Invalid input detected at '^' marker.
+  ikev2 profile IKEV2PRF
+  ^
+
+[159/279] r1 <R1> authentication-method local pre-share
+  % Invalid input detected at '^' marker.
+  authentication-method local pre-share
+  ^
+
+[160/279] r1 <R1> keychain KC1
+  % Invalid input detected at '^' marker.
+  keychain KC1
+  ^
+
+[161/279] r1 <R1> quit
+<empty>
+
+[162/279] r1 <R1> return
+<empty>
+
+[163/279] r1 <R1> display ikev2 proposal
+  % Invalid input detected at '^' marker.
+  display ikev2 proposal
+          ^
+
+[164/279] r1 <R1> display ikev2 policy
+  % Invalid input detected at '^' marker.
+  display ikev2 policy
+          ^
+
+[165/279] r1 <R1> display ikev2 profile
+  % Invalid input detected at '^' marker.
+  display ikev2 profile
+          ^
+
+[166/279] r1 <R1> display ikev2 sa
+  % Invalid input detected at '^' marker.
+  display ikev2 sa
+          ^
+
+
+--- [167] § crypto reset / debug ---
+[167/279] r1 [R1] reset ike sa
+  Info: IKE SAs cleared.
+
+[168/279] r1 [R1] reset ipsec sa
+  Info: IPSec SAs cleared.
+
+[169/279] r1 [R1] reset ike sa remote 10.0.0.2
+  % Invalid input detected at '^' marker.
+  reset ike sa remote 10.0.0.2
+               ^
+
+[170/279] r1 [R1] debugging ike all
+  % Invalid input detected at '^' marker.
+  debugging ike all
+                ^
+
+[171/279] r1 [R1] debugging ipsec all
+  % Invalid input detected at '^' marker.
+  debugging ipsec all
+                  ^
+
+[172/279] r1 [R1] undo debugging all
+  Info: All debugging turned off.
+
+[173/279] r1 [R1] display ike error-info
+  % Invalid input detected at '^' marker.
+  display ike error-info
+              ^
+
+[174/279] r1 [R1] display ipsec sa brief
+  No IPSec SAs established.
+
+
+--- [175] § regression: display family ---
+[175/279] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[176/279] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[177/279] r1 [R1] display current-configuration
+  #
+  sysname R1
+  #
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   ipsec policy MAP1
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+  ike proposal 1
+   encryption-algorithm aes-128
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 2
+   encryption-algorithm aes-192
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 3
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 4
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike peer PEER1
+   remote-address 10.0.0.2
+   pre-shared-key simple MyKey@12345
+  #
+  ike peer PEER2
+   remote-address 10.0.0.6
+   pre-shared-key simple Key2@12345
+  #
+  ipsec proposal TP1
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP2
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP3
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec policy MAP1 10 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy MAP1 20 isakmp
+   proposal TP2
+  #
+  ipsec policy PROF1 0 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec profile PROF1
+  #
+
+[178/279] r1 [R1] display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[179/279] r1 [R1] display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           192.168.1.1/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+  LoopBack0                         1.1.1.1/255.255.255.255down       down
+
+[180/279] r1 [R1] display interface
+  Error: Incomplete command.
+
+[181/279] r1 [R1] display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 3        Routes : 3
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+
+[182/279] r1 [R1] display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    3
+  --------------------
+  Total     3
+
+[183/279] r1 [R1] display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[184/279] r1 [R1] display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[185/279] r1 [R1] display ospf peer
+  Error: OSPF is not configured.
+
+[186/279] r1 [R1] display ospf interface
+  Error: OSPF is not configured.
+
+[187/279] r1 [R1] display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[188/279] r1 [R1] display ospf lsdb
+  Error: OSPF is not configured.
+
+[189/279] r1 [R1] display ospf brief
+  Error: OSPF is not configured.
+
+[190/279] r1 [R1] display rip
+  Info: RIP is not enabled.
+
+[191/279] r1 [R1] display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[192/279] r1 [R1] display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[193/279] r1 [R1] display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[194/279] r1 [R1] display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[195/279] r1 [R1] display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[196/279] r1 [R1] display ip pool
+  No DHCP pools configured.
+
+[197/279] r1 [R1] display acl all
+  Total 0 ACL(s)
+
+[198/279] r1 [R1] display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[199/279] r1 [R1] display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[200/279] r1 [R1] display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[201/279] r1 [R1] display ike sa
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
+
+[202/279] r1 [R1] display ipsec sa
+  No IPSec SAs established.
+
+[203/279] r1 [R1] display ipsec policy
+  Crypto Map "MAP1" 10 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: dh-group14
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+  		GE0/0/1
+  Crypto Map "MAP1" 20 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 3100
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  		TP2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map MAP1:
+  		GE0/0/1
+  Crypto Map "PROF1" 0 ipsec-isakmp
+  	Peer = PEER1
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: dh-group19
+  	Transform sets={
+  		TP1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map PROF1:
+
+[204/279] r1 [R1] display ipsec proposal
+  Transform set TP1: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+  Transform set TP2: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+  Transform set TP3: { esp-aes 256 esp-sha256-hmac }
+     will negotiate = { Tunnel, },
+
+[205/279] r1 [R1] display ike proposal
+  Global IKE policy
+  Protection suite of priority 1
+  	encryption algorithm:   AES - Advanced Encryption Standard (128 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               3600 seconds, no volume limit
+  Protection suite of priority 2
+  	encryption algorithm:   AES - Advanced Encryption Standard (192 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               7200 seconds, no volume limit
+  Protection suite of priority 3
+  	encryption algorithm:   AES - Advanced Encryption Standard (256 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               10800 seconds, no volume limit
+  Protection suite of priority 4
+  	encryption algorithm:   AES - Advanced Encryption Standard (256 bit keys).
+  	hash algorithm:         Secure Hash Standard 2 (256 bit)
+  	authentication method:  Pre-Shared Key
+  	Diffie-Hellman group:   #14 (2048 bit)
+  	lifetime:               14400 seconds, no volume limit
+  Default protection suite
+  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #1 (768 bit)
+  	lifetime:               86400 seconds, no volume limit
+
+[206/279] r1 [R1] display ike peer
+  IKE Peer Configuration:
+    Peer name   : PEER1
+    Remote addr : 10.0.0.2
+    PSK         : ****
+  
+    Peer name   : PEER2
+    Remote addr : 10.0.0.6
+    PSK         : ****
+  
+
+[207/279] r1 [R1] display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[208/279] r1 [R1] display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[209/279] r1 [R1] display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[210/279] r1 [R1] display clock
+  2026-05-18 04:43:33
+  Monday
+  Time Zone(UTC) : UTC
+
+[211/279] r1 [R1] display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[212/279] r1 [R1] display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[213/279] r1 [R1] display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:43:33
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[214/279] r1 [R1] display memory-usage
+  Memory utilization statistics at 2026-05-18 04:43:33
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[215/279] r1 [R1] display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[216/279] r1 [R1] display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[217/279] r1 [R1] display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[218/279] r1 [R1] display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:43:33 %01SRM/4/PORT_STATE: Port state changed.
+
+[219/279] r1 [R1] display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[220/279] r1 [R1] display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[221/279] r1 [R1] display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[222/279] r1 [R1] display patch-information
+  Info: No patch exists.
+
+[223/279] r1 [R1] display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[224/279] r1 [R1] display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[225/279] r1 [R1] display interface brief
+  Error: Wrong parameter found at '^' position.
+
+[226/279] r1 [R1] display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[227/279] r1 [R1] display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[228/279] r1 [R1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[229/279] r1 [R1] display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[230/279] r1 [R1] display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[231/279] r1 [R1] display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[232/279] r1 [R1] display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[233/279] r1 [R1] display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[234/279] r1 [R1] display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[235/279] r1 [R1] display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [236] § regression: pipe filters ---
+[236/279] r1 [R1] display current-configuration | include ospf
+<empty>
+
+[237/279] r1 [R1] display current-configuration | begin interface
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   ipsec policy MAP1
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+  ike proposal 1
+   encryption-algorithm aes-128
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 2
+   encryption-algorithm aes-192
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 3
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 4
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike peer PEER1
+   remote-address 10.0.0.2
+   pre-shared-key simple MyKey@12345
+  #
+  ike peer PEER2
+   remote-address 10.0.0.6
+   pre-shared-key simple Key2@12345
+  #
+  ipsec proposal TP1
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP2
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP3
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec policy MAP1 10 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy MAP1 20 isakmp
+   proposal TP2
+  #
+  ipsec policy PROF1 0 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec profile PROF1
+  #
+
+[238/279] r1 [R1] display current-configuration | exclude #
+  sysname R1
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   ipsec policy MAP1
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  ike proposal 1
+   encryption-algorithm aes-128
+   authentication-algorithm sha256
+   dh group14
+  ike proposal 2
+   encryption-algorithm aes-192
+   authentication-algorithm sha256
+   dh group14
+  ike proposal 3
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  ike proposal 4
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  ike peer PEER1
+   remote-address 10.0.0.2
+   pre-shared-key simple MyKey@12345
+  ike peer PEER2
+   remote-address 10.0.0.6
+   pre-shared-key simple Key2@12345
+  ipsec proposal TP1
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  ipsec proposal TP2
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  ipsec proposal TP3
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  ipsec policy MAP1 10 isakmp
+   ike-peer PEER1
+   proposal TP1
+  ipsec policy MAP1 20 isakmp
+   proposal TP2
+  ipsec policy PROF1 0 isakmp
+   ike-peer PEER1
+   proposal TP1
+  ipsec profile PROF1
+
+[239/279] r1 [R1] display ip routing-table | include Direct
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+
+[240/279] r1 [R1] display ip interface brief | include up
+  GE0/0/0                           192.168.1.1/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+
+
+--- [241] § regression: view nav + undo ---
+[241/279] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[242/279] r1 [R1] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[243/279] r1 [R1] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[244/279] r1 [R1] dhcp enable
+<empty>
+
+[245/279] r1 [R1] undo dhcp enable
+<empty>
+
+[246/279] r1 [R1] snmp-agent
+<empty>
+
+[247/279] r1 [R1] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[248/279] r1 [R1] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[249/279] r1 [R1] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[250/279] r1 [R1] telnet server enable
+<empty>
+
+[251/279] r1 [R1] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[252/279] r1 [R1] info-center enable
+<empty>
+
+[253/279] r1 [R1] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[254/279] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[255/279] r1 [R1] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[256/279] r1 [R1] ntp-service enable
+<empty>
+
+[257/279] r1 [R1] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[258/279] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[259/279] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[260/279] r1 [R1] sysname TEST
+<empty>
+
+[261/279] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[262/279] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[263/279] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[264/279] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[265/279] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[266/279] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[267/279] r1 [TEST] ospf 1
+<empty>
+
+[268/279] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[269/279] r1 [TEST-ospf-1] quit
+<empty>
+
+[270/279] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[271/279] r1 [TEST] quit
+<empty>
+
+[272/279] r1 <TEST> return
+<empty>
+
+
+--- [273] § regression: context help ---
+[273/279] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[274/279] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[275/279] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[276/279] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[277/279] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[278/279] r1 [TEST] return
+<empty>
+
+[279/279] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.

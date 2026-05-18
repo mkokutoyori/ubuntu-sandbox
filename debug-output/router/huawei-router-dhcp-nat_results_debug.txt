@@ -1,0 +1,1531 @@
+============================================================
+Router (L3) debug transcript — huawei-router-dhcp-nat
+Generated: 2026-05-18T04:43:33.923Z
+Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
+focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
+Total steps: 288
+============================================================
+
+
+--- [1] § base addressing ---
+[1/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[2/288] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[3/288] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+<empty>
+
+[4/288] r1 [R1-GE0/0/0] undo shutdown
+<empty>
+
+[5/288] r1 [R1-GE0/0/0] quit
+<empty>
+
+[6/288] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[7/288] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+<empty>
+
+[8/288] r1 [R1-GE0/0/1] undo shutdown
+<empty>
+
+[9/288] r1 [R1-GE0/0/1] quit
+<empty>
+
+[10/288] r1 [R1] dhcp enable
+<empty>
+
+[11/288] r1 [R1] return
+<empty>
+
+
+--- [12] § DHCP global pools ---
+[12/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[13/288] r1 [R1] ip pool VLAN10
+<empty>
+
+[14/288] r1 [R1-ip-pool-VLAN10] network 192.168.1.0 mask 255.255.255.0
+<empty>
+
+[15/288] r1 [R1-ip-pool-VLAN10] gateway-list 192.168.1.1
+<empty>
+
+[16/288] r1 [R1-ip-pool-VLAN10] dns-list 8.8.8.8 8.8.4.4
+<empty>
+
+[17/288] r1 [R1-ip-pool-VLAN10] domain-name vlan10.lab
+<empty>
+
+[18/288] r1 [R1-ip-pool-VLAN10] lease day 1 hour 12 minute 30
+<empty>
+
+[19/288] r1 [R1-ip-pool-VLAN10] excluded-ip-address 192.168.1.1 192.168.1.10
+<empty>
+
+[20/288] r1 [R1-ip-pool-VLAN10] netbios-type h-node
+  % Invalid input detected at '^' marker.
+  netbios-type h-node
+  ^
+
+[21/288] r1 [R1-ip-pool-VLAN10] nbns-list 192.168.1.2
+  % Invalid input detected at '^' marker.
+  nbns-list 192.168.1.2
+  ^
+
+[22/288] r1 [R1-ip-pool-VLAN10] option 43 sub-option 3 ascii 10.1.1.1
+  % Invalid input detected at '^' marker.
+  option 43 sub-option 3 ascii 10.1.1.1
+  ^
+
+[23/288] r1 [R1-ip-pool-VLAN10] option 150 ip-address 192.168.1.3
+  % Invalid input detected at '^' marker.
+  option 150 ip-address 192.168.1.3
+  ^
+
+[24/288] r1 [R1-ip-pool-VLAN10] static-bind ip-address 192.168.1.50 mac-address 00e0-fc00-0001
+  % Invalid input detected at '^' marker.
+  static-bind ip-address 192.168.1.50 mac-address 00e0-fc00-0001
+  ^
+
+[25/288] r1 [R1-ip-pool-VLAN10] quit
+<empty>
+
+[26/288] r1 [R1] ip pool VLAN20
+<empty>
+
+[27/288] r1 [R1-ip-pool-VLAN20] network 192.168.2.0 mask 255.255.255.0
+<empty>
+
+[28/288] r1 [R1-ip-pool-VLAN20] gateway-list 192.168.2.1
+<empty>
+
+[29/288] r1 [R1-ip-pool-VLAN20] dns-list 8.8.8.8 8.8.4.4
+<empty>
+
+[30/288] r1 [R1-ip-pool-VLAN20] domain-name vlan20.lab
+<empty>
+
+[31/288] r1 [R1-ip-pool-VLAN20] lease day 2 hour 12 minute 30
+<empty>
+
+[32/288] r1 [R1-ip-pool-VLAN20] excluded-ip-address 192.168.2.1 192.168.2.10
+<empty>
+
+[33/288] r1 [R1-ip-pool-VLAN20] netbios-type h-node
+  % Invalid input detected at '^' marker.
+  netbios-type h-node
+  ^
+
+[34/288] r1 [R1-ip-pool-VLAN20] nbns-list 192.168.2.2
+  % Invalid input detected at '^' marker.
+  nbns-list 192.168.2.2
+  ^
+
+[35/288] r1 [R1-ip-pool-VLAN20] option 43 sub-option 3 ascii 10.1.1.2
+  % Invalid input detected at '^' marker.
+  option 43 sub-option 3 ascii 10.1.1.2
+  ^
+
+[36/288] r1 [R1-ip-pool-VLAN20] option 150 ip-address 192.168.2.3
+  % Invalid input detected at '^' marker.
+  option 150 ip-address 192.168.2.3
+  ^
+
+[37/288] r1 [R1-ip-pool-VLAN20] static-bind ip-address 192.168.2.50 mac-address 00e0-fc00-0002
+  % Invalid input detected at '^' marker.
+  static-bind ip-address 192.168.2.50 mac-address 00e0-fc00-0002
+  ^
+
+[38/288] r1 [R1-ip-pool-VLAN20] quit
+<empty>
+
+[39/288] r1 [R1] ip pool VLAN30
+<empty>
+
+[40/288] r1 [R1-ip-pool-VLAN30] network 192.168.3.0 mask 255.255.255.0
+<empty>
+
+[41/288] r1 [R1-ip-pool-VLAN30] gateway-list 192.168.3.1
+<empty>
+
+[42/288] r1 [R1-ip-pool-VLAN30] dns-list 8.8.8.8 8.8.4.4
+<empty>
+
+[43/288] r1 [R1-ip-pool-VLAN30] domain-name vlan30.lab
+<empty>
+
+[44/288] r1 [R1-ip-pool-VLAN30] lease day 3 hour 12 minute 30
+<empty>
+
+[45/288] r1 [R1-ip-pool-VLAN30] excluded-ip-address 192.168.3.1 192.168.3.10
+<empty>
+
+[46/288] r1 [R1-ip-pool-VLAN30] netbios-type h-node
+  % Invalid input detected at '^' marker.
+  netbios-type h-node
+  ^
+
+[47/288] r1 [R1-ip-pool-VLAN30] nbns-list 192.168.3.2
+  % Invalid input detected at '^' marker.
+  nbns-list 192.168.3.2
+  ^
+
+[48/288] r1 [R1-ip-pool-VLAN30] option 43 sub-option 3 ascii 10.1.1.3
+  % Invalid input detected at '^' marker.
+  option 43 sub-option 3 ascii 10.1.1.3
+  ^
+
+[49/288] r1 [R1-ip-pool-VLAN30] option 150 ip-address 192.168.3.3
+  % Invalid input detected at '^' marker.
+  option 150 ip-address 192.168.3.3
+  ^
+
+[50/288] r1 [R1-ip-pool-VLAN30] static-bind ip-address 192.168.3.50 mac-address 00e0-fc00-0003
+  % Invalid input detected at '^' marker.
+  static-bind ip-address 192.168.3.50 mac-address 00e0-fc00-0003
+  ^
+
+[51/288] r1 [R1-ip-pool-VLAN30] quit
+<empty>
+
+[52/288] r1 [R1] ip pool VLAN40
+<empty>
+
+[53/288] r1 [R1-ip-pool-VLAN40] network 192.168.4.0 mask 255.255.255.0
+<empty>
+
+[54/288] r1 [R1-ip-pool-VLAN40] gateway-list 192.168.4.1
+<empty>
+
+[55/288] r1 [R1-ip-pool-VLAN40] dns-list 8.8.8.8 8.8.4.4
+<empty>
+
+[56/288] r1 [R1-ip-pool-VLAN40] domain-name vlan40.lab
+<empty>
+
+[57/288] r1 [R1-ip-pool-VLAN40] lease day 4 hour 12 minute 30
+<empty>
+
+[58/288] r1 [R1-ip-pool-VLAN40] excluded-ip-address 192.168.4.1 192.168.4.10
+<empty>
+
+[59/288] r1 [R1-ip-pool-VLAN40] netbios-type h-node
+  % Invalid input detected at '^' marker.
+  netbios-type h-node
+  ^
+
+[60/288] r1 [R1-ip-pool-VLAN40] nbns-list 192.168.4.2
+  % Invalid input detected at '^' marker.
+  nbns-list 192.168.4.2
+  ^
+
+[61/288] r1 [R1-ip-pool-VLAN40] option 43 sub-option 3 ascii 10.1.1.4
+  % Invalid input detected at '^' marker.
+  option 43 sub-option 3 ascii 10.1.1.4
+  ^
+
+[62/288] r1 [R1-ip-pool-VLAN40] option 150 ip-address 192.168.4.3
+  % Invalid input detected at '^' marker.
+  option 150 ip-address 192.168.4.3
+  ^
+
+[63/288] r1 [R1-ip-pool-VLAN40] static-bind ip-address 192.168.4.50 mac-address 00e0-fc00-0004
+  % Invalid input detected at '^' marker.
+  static-bind ip-address 192.168.4.50 mac-address 00e0-fc00-0004
+  ^
+
+[64/288] r1 [R1-ip-pool-VLAN40] quit
+<empty>
+
+[65/288] r1 [R1] ip pool VLAN50
+<empty>
+
+[66/288] r1 [R1-ip-pool-VLAN50] network 192.168.5.0 mask 255.255.255.0
+<empty>
+
+[67/288] r1 [R1-ip-pool-VLAN50] gateway-list 192.168.5.1
+<empty>
+
+[68/288] r1 [R1-ip-pool-VLAN50] dns-list 8.8.8.8 8.8.4.4
+<empty>
+
+[69/288] r1 [R1-ip-pool-VLAN50] domain-name vlan50.lab
+<empty>
+
+[70/288] r1 [R1-ip-pool-VLAN50] lease day 5 hour 12 minute 30
+<empty>
+
+[71/288] r1 [R1-ip-pool-VLAN50] excluded-ip-address 192.168.5.1 192.168.5.10
+<empty>
+
+[72/288] r1 [R1-ip-pool-VLAN50] netbios-type h-node
+  % Invalid input detected at '^' marker.
+  netbios-type h-node
+  ^
+
+[73/288] r1 [R1-ip-pool-VLAN50] nbns-list 192.168.5.2
+  % Invalid input detected at '^' marker.
+  nbns-list 192.168.5.2
+  ^
+
+[74/288] r1 [R1-ip-pool-VLAN50] option 43 sub-option 3 ascii 10.1.1.5
+  % Invalid input detected at '^' marker.
+  option 43 sub-option 3 ascii 10.1.1.5
+  ^
+
+[75/288] r1 [R1-ip-pool-VLAN50] option 150 ip-address 192.168.5.3
+  % Invalid input detected at '^' marker.
+  option 150 ip-address 192.168.5.3
+  ^
+
+[76/288] r1 [R1-ip-pool-VLAN50] static-bind ip-address 192.168.5.50 mac-address 00e0-fc00-0005
+  % Invalid input detected at '^' marker.
+  static-bind ip-address 192.168.5.50 mac-address 00e0-fc00-0005
+  ^
+
+[77/288] r1 [R1-ip-pool-VLAN50] quit
+<empty>
+
+[78/288] r1 [R1] ip pool VLAN60
+<empty>
+
+[79/288] r1 [R1-ip-pool-VLAN60] network 192.168.6.0 mask 255.255.255.0
+<empty>
+
+[80/288] r1 [R1-ip-pool-VLAN60] gateway-list 192.168.6.1
+<empty>
+
+[81/288] r1 [R1-ip-pool-VLAN60] dns-list 8.8.8.8 8.8.4.4
+<empty>
+
+[82/288] r1 [R1-ip-pool-VLAN60] domain-name vlan60.lab
+<empty>
+
+[83/288] r1 [R1-ip-pool-VLAN60] lease day 6 hour 12 minute 30
+<empty>
+
+[84/288] r1 [R1-ip-pool-VLAN60] excluded-ip-address 192.168.6.1 192.168.6.10
+<empty>
+
+[85/288] r1 [R1-ip-pool-VLAN60] netbios-type h-node
+  % Invalid input detected at '^' marker.
+  netbios-type h-node
+  ^
+
+[86/288] r1 [R1-ip-pool-VLAN60] nbns-list 192.168.6.2
+  % Invalid input detected at '^' marker.
+  nbns-list 192.168.6.2
+  ^
+
+[87/288] r1 [R1-ip-pool-VLAN60] option 43 sub-option 3 ascii 10.1.1.6
+  % Invalid input detected at '^' marker.
+  option 43 sub-option 3 ascii 10.1.1.6
+  ^
+
+[88/288] r1 [R1-ip-pool-VLAN60] option 150 ip-address 192.168.6.3
+  % Invalid input detected at '^' marker.
+  option 150 ip-address 192.168.6.3
+  ^
+
+[89/288] r1 [R1-ip-pool-VLAN60] static-bind ip-address 192.168.6.50 mac-address 00e0-fc00-0006
+  % Invalid input detected at '^' marker.
+  static-bind ip-address 192.168.6.50 mac-address 00e0-fc00-0006
+  ^
+
+[90/288] r1 [R1-ip-pool-VLAN60] quit
+<empty>
+
+[91/288] r1 [R1] ip pool INFINITE
+<empty>
+
+[92/288] r1 [R1-ip-pool-INFINITE] network 172.16.0.0 mask 255.255.0.0
+<empty>
+
+[93/288] r1 [R1-ip-pool-INFINITE] lease unlimited
+<empty>
+
+[94/288] r1 [R1-ip-pool-INFINITE] quit
+<empty>
+
+[95/288] r1 [R1] return
+<empty>
+
+[96/288] r1 <R1> display ip pool
+  Pool-name      : VLAN10
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.1.1
+  Network        : 192.168.1.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan10.lab
+  Lease          : 1 day(s)
+  
+  Pool-name      : VLAN20
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.2.1
+  Network        : 192.168.2.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan20.lab
+  Lease          : 2 day(s)
+  
+  Pool-name      : VLAN30
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.3.1
+  Network        : 192.168.3.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan30.lab
+  Lease          : 3 day(s)
+  
+  Pool-name      : VLAN40
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.4.1
+  Network        : 192.168.4.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan40.lab
+  Lease          : 4 day(s)
+  
+  Pool-name      : VLAN50
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.5.1
+  Network        : 192.168.5.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan50.lab
+  Lease          : 5 day(s)
+  
+  Pool-name      : VLAN60
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.6.1
+  Network        : 192.168.6.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan60.lab
+  Lease          : 6 day(s)
+  
+  Pool-name      : INFINITE
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : not configured
+  Network        : 172.16.0.0
+  Mask           : 255.255.0.0
+  DNS-list       : not configured
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[97/288] r1 <R1> display ip pool name VLAN10
+  Pool-name      : VLAN10
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.1.1
+  Network        : 192.168.1.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan10.lab
+  Lease          : 1 day(s)
+
+[98/288] r1 <R1> display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[99/288] r1 <R1> display dhcp server conflict all
+  % Invalid input detected at '^' marker.
+  display dhcp server conflict all
+                      ^
+
+
+--- [100] § DHCP interface pool ---
+[100/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[101/288] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[102/288] r1 [R1-GE0/0/0] dhcp select interface
+  % Invalid input detected at '^' marker.
+  dhcp select interface
+              ^
+
+[103/288] r1 [R1-GE0/0/0] dhcp server dns-list 8.8.8.8
+  % Invalid input detected at '^' marker.
+  dhcp server dns-list 8.8.8.8
+       ^
+
+[104/288] r1 [R1-GE0/0/0] dhcp server lease day 1
+  % Invalid input detected at '^' marker.
+  dhcp server lease day 1
+       ^
+
+[105/288] r1 [R1-GE0/0/0] dhcp server excluded-ip-address 192.168.1.1 192.168.1.9
+  % Invalid input detected at '^' marker.
+  dhcp server excluded-ip-address 192.168.1.1 192.168.1.9
+       ^
+
+[106/288] r1 [R1-GE0/0/0] dhcp server static-bind ip-address 192.168.1.60 mac-address 00e0-fc11-2233
+  % Invalid input detected at '^' marker.
+  dhcp server static-bind ip-address 192.168.1.60 mac-address 00e0-fc11-2233
+       ^
+
+[107/288] r1 [R1-GE0/0/0] quit
+<empty>
+
+[108/288] r1 [R1] return
+<empty>
+
+[109/288] r1 <R1> display dhcp server interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display dhcp server interface GigabitEthernet0/0/0
+                      ^
+
+
+--- [110] § DHCP relay ---
+[110/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[111/288] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[112/288] r1 [R1-GE0/0/0] dhcp select relay
+<empty>
+
+[113/288] r1 [R1-GE0/0/0] dhcp relay server-ip 10.0.0.2
+<empty>
+
+[114/288] r1 [R1-GE0/0/0] dhcp relay server-ip 10.0.0.3
+<empty>
+
+[115/288] r1 [R1-GE0/0/0] dhcp relay information enable
+  % Invalid input detected at '^' marker.
+  dhcp relay information enable
+             ^
+
+[116/288] r1 [R1-GE0/0/0] dhcp relay information strategy keep
+  % Invalid input detected at '^' marker.
+  dhcp relay information strategy keep
+             ^
+
+[117/288] r1 [R1-GE0/0/0] quit
+<empty>
+
+[118/288] r1 [R1] return
+<empty>
+
+[119/288] r1 <R1> display dhcp relay all
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+[120/288] r1 <R1> display dhcp relay statistics
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+
+--- [121] § DHCPv6 ---
+[121/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[122/288] r1 [R1] dhcpv6 pool V6POOL
+  % Invalid input detected at '^' marker.
+  dhcpv6 pool V6POOL
+  ^
+
+[123/288] r1 [R1] address prefix 2001:db8:1::/64
+  % Invalid input detected at '^' marker.
+  address prefix 2001:db8:1::/64
+  ^
+
+[124/288] r1 [R1] dns-server 2001:4860:4860::8888
+  % Invalid input detected at '^' marker.
+  dns-server 2001:4860:4860::8888
+  ^
+
+[125/288] r1 [R1] dns-domain-name v6.lab
+  % Invalid input detected at '^' marker.
+  dns-domain-name v6.lab
+  ^
+
+[126/288] r1 [R1] quit
+<empty>
+
+[127/288] r1 <R1> interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  interface GigabitEthernet0/0/0
+  ^
+
+[128/288] r1 <R1> ipv6 enable
+  % Invalid input detected at '^' marker.
+  ipv6 enable
+  ^
+
+[129/288] r1 <R1> ipv6 address 2001:db8:1::1/64
+  % Invalid input detected at '^' marker.
+  ipv6 address 2001:db8:1::1/64
+  ^
+
+[130/288] r1 <R1> dhcpv6 server V6POOL
+  % Invalid input detected at '^' marker.
+  dhcpv6 server V6POOL
+  ^
+
+[131/288] r1 <R1> undo ipv6 nd ra halt
+  Error: Unrecognized command "undo ipv6 nd ra halt"
+
+[132/288] r1 <R1> quit
+<empty>
+
+[133/288] r1 <R1> return
+<empty>
+
+[134/288] r1 <R1> display dhcpv6 pool
+  % Invalid input detected at '^' marker.
+  display dhcpv6 pool
+          ^
+
+[135/288] r1 <R1> display dhcpv6 server
+  % Invalid input detected at '^' marker.
+  display dhcpv6 server
+          ^
+
+
+--- [136] § DHCP snooping ---
+[136/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[137/288] r1 [R1] dhcp snooping enable
+<empty>
+
+[138/288] r1 [R1] dhcp snooping enable ipv4
+  % Invalid input detected at '^' marker.
+  dhcp snooping enable ipv4
+                       ^
+
+[139/288] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[140/288] r1 [R1-GE0/0/1] dhcp snooping trusted
+  % Invalid input detected at '^' marker.
+  dhcp snooping trusted
+                ^
+
+[141/288] r1 [R1-GE0/0/1] dhcp snooping check dhcp-rate enable
+  % Invalid input detected at '^' marker.
+  dhcp snooping check dhcp-rate enable
+                ^
+
+[142/288] r1 [R1-GE0/0/1] dhcp snooping check dhcp-rate 100
+  % Invalid input detected at '^' marker.
+  dhcp snooping check dhcp-rate 100
+                ^
+
+[143/288] r1 [R1-GE0/0/1] quit
+<empty>
+
+[144/288] r1 [R1] return
+<empty>
+
+[145/288] r1 <R1> display dhcp snooping
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+[146/288] r1 <R1> display dhcp snooping interface GigabitEthernet0/0/1
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+
+--- [147] § NAT outbound / PAT ---
+[147/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[148/288] r1 [R1] acl 2000
+<empty>
+
+[149/288] r1 [R1-acl-basic-2000] rule 5 permit source 192.168.1.0 0.0.0.255
+  Error: Expected permit or deny.
+
+[150/288] r1 [R1-acl-basic-2000] quit
+<empty>
+
+[151/288] r1 [R1] acl 2001
+<empty>
+
+[152/288] r1 [R1-acl-basic-2001] rule 5 permit source 192.168.2.0 0.0.0.255
+  Error: Expected permit or deny.
+
+[153/288] r1 [R1-acl-basic-2001] quit
+<empty>
+
+[154/288] r1 [R1] nat address-group 1 10.0.0.50 10.0.0.60
+  % Invalid input detected at '^' marker.
+  nat address-group 1 10.0.0.50 10.0.0.60
+  ^
+
+[155/288] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[156/288] r1 [R1-GE0/0/1] nat outbound 2000
+<empty>
+
+[157/288] r1 [R1-GE0/0/1] nat outbound 2000 address-group 1
+<empty>
+
+[158/288] r1 [R1-GE0/0/1] nat outbound 2001 address-group 1 no-pat
+<empty>
+
+[159/288] r1 [R1-GE0/0/1] nat outbound 2000 interface GigabitEthernet0/0/1
+<empty>
+
+[160/288] r1 [R1-GE0/0/1] quit
+<empty>
+
+[161/288] r1 [R1] return
+<empty>
+
+[162/288] r1 <R1> display nat outbound
+   NAT Outbound:
+   ACL       Type      Pool
+   ----------------------------------------
+   2000      overload  ---
+   2000      pool      1
+   2001      pool      1
+   2000      overload  ---
+
+[163/288] r1 <R1> display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[164/288] r1 <R1> display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[165/288] r1 <R1> display nat session protocol tcp
+  % Invalid input detected at '^' marker.
+  display nat session protocol tcp
+                      ^
+
+
+--- [166] § NAT static / server ---
+[166/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[167/288] r1 [R1] nat static global 10.0.0.11 inside 192.168.1.11
+  % Invalid input detected at '^' marker.
+  nat static global 10.0.0.11 inside 192.168.1.11
+  ^
+
+[168/288] r1 [R1] nat static global 10.0.0.12 inside 192.168.1.12
+  % Invalid input detected at '^' marker.
+  nat static global 10.0.0.12 inside 192.168.1.12
+  ^
+
+[169/288] r1 [R1] nat static global 10.0.0.13 inside 192.168.1.13
+  % Invalid input detected at '^' marker.
+  nat static global 10.0.0.13 inside 192.168.1.13
+  ^
+
+[170/288] r1 [R1] nat static global 10.0.0.14 inside 192.168.1.14
+  % Invalid input detected at '^' marker.
+  nat static global 10.0.0.14 inside 192.168.1.14
+  ^
+
+[171/288] r1 [R1] nat static global 10.0.0.15 inside 192.168.1.15
+  % Invalid input detected at '^' marker.
+  nat static global 10.0.0.15 inside 192.168.1.15
+  ^
+
+[172/288] r1 [R1] nat static global 10.0.0.16 inside 192.168.1.16
+  % Invalid input detected at '^' marker.
+  nat static global 10.0.0.16 inside 192.168.1.16
+  ^
+
+[173/288] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[174/288] r1 [R1-GE0/0/1] nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
+<empty>
+
+[175/288] r1 [R1-GE0/0/1] nat server protocol tcp global current-interface 2222 inside 192.168.1.101 22
+<empty>
+
+[176/288] r1 [R1-GE0/0/1] nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
+<empty>
+
+[177/288] r1 [R1-GE0/0/1] nat dns-map example.com 10.0.0.100 80 tcp
+  % Invalid input detected at '^' marker.
+  nat dns-map example.com 10.0.0.100 80 tcp
+      ^
+
+[178/288] r1 [R1-GE0/0/1] quit
+<empty>
+
+[179/288] r1 [R1] nat static enable
+  % Invalid input detected at '^' marker.
+  nat static enable
+  ^
+
+[180/288] r1 [R1] return
+<empty>
+
+[181/288] r1 <R1> display nat static
+   Static NAT:
+   Global IP        Local IP          Protocol  GPort  LPort
+   ------------------------------------------------------------
+   10.0.0.100       192.168.1.100     tcp       80     8080
+   current-interface192.168.1.101     tcp       2222   22
+   10.0.0.100       192.168.1.102     udp       53     53
+
+[182/288] r1 <R1> display nat server
+  % Invalid input detected at '^' marker.
+  display nat server
+              ^
+
+[183/288] r1 <R1> reset nat session all
+  % Invalid input detected at '^' marker.
+  reset nat session all
+                    ^
+
+
+--- [184] § regression: display family ---
+[184/288] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[185/288] r1 [R1] display version
+  Huawei Versatile Routing Platform Software
+  VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
+  Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
+  
+  BOARD TYPE:          AR2220
+  BootROM Version:     1.0
+  R1 uptime is 0 days, 0 hours, 0 minutes
+
+[186/288] r1 [R1] display current-configuration
+  #
+  sysname R1
+  #
+  dhcp enable
+  #
+  dhcp snooping enable
+  #
+  ip pool VLAN10
+   network 192.168.1.0 mask 255.255.255.0
+   gateway-list 192.168.1.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan10.lab
+   lease day 1 hour 12 minute 30
+  #
+  ip pool VLAN20
+   network 192.168.2.0 mask 255.255.255.0
+   gateway-list 192.168.2.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan20.lab
+   lease day 2 hour 12 minute 30
+  #
+  ip pool VLAN30
+   network 192.168.3.0 mask 255.255.255.0
+   gateway-list 192.168.3.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan30.lab
+   lease day 3 hour 12 minute 30
+  #
+  ip pool VLAN40
+   network 192.168.4.0 mask 255.255.255.0
+   gateway-list 192.168.4.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan40.lab
+   lease day 4 hour 12 minute 30
+  #
+  ip pool VLAN50
+   network 192.168.5.0 mask 255.255.255.0
+   gateway-list 192.168.5.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan50.lab
+   lease day 5 hour 12 minute 30
+  #
+  ip pool VLAN60
+   network 192.168.6.0 mask 255.255.255.0
+   gateway-list 192.168.6.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan60.lab
+   lease day 6 hour 12 minute 30
+  #
+  ip pool INFINITE
+   network 172.16.0.0 mask 255.255.0.0
+  #
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.10
+  dhcp server forbidden-ip 192.168.2.1 192.168.2.10
+  dhcp server forbidden-ip 192.168.3.1 192.168.3.10
+  dhcp server forbidden-ip 192.168.4.1 192.168.4.10
+  dhcp server forbidden-ip 192.168.5.1 192.168.5.10
+  dhcp server forbidden-ip 192.168.6.1 192.168.6.10
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+   dhcp relay server-ip 10.0.0.2
+   dhcp relay server-ip 10.0.0.3
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  #
+
+[187/288] r1 [R1] display saved-configuration
+  % Invalid input detected at '^' marker.
+  display saved-configuration
+          ^
+
+[188/288] r1 [R1] display ip interface brief
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           192.168.1.1/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  GE0/0/2                           unassigned           down       down
+  GE0/0/3                           unassigned           down       down
+
+[189/288] r1 [R1] display interface
+  Error: Incomplete command.
+
+[190/288] r1 [R1] display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 2        Routes : 2
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+
+[191/288] r1 [R1] display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    2
+  --------------------
+  Total     2
+
+[192/288] r1 [R1] display arp
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
+
+[193/288] r1 [R1] display arp all
+  % Invalid input detected at '^' marker.
+  display arp all
+              ^
+
+[194/288] r1 [R1] display ospf peer
+  Error: OSPF is not configured.
+
+[195/288] r1 [R1] display ospf interface
+  Error: OSPF is not configured.
+
+[196/288] r1 [R1] display ospf routing
+  % Invalid input detected at '^' marker.
+  display ospf routing
+               ^
+
+[197/288] r1 [R1] display ospf lsdb
+  Error: OSPF is not configured.
+
+[198/288] r1 [R1] display ospf brief
+  Error: OSPF is not configured.
+
+[199/288] r1 [R1] display rip
+  Info: RIP is not enabled.
+
+[200/288] r1 [R1] display rip 1 route
+  % Invalid input detected at '^' marker.
+  display rip 1 route
+              ^
+
+[201/288] r1 [R1] display bgp peer
+  % Invalid input detected at '^' marker.
+  display bgp peer
+          ^
+
+[202/288] r1 [R1] display bgp routing-table
+  % Invalid input detected at '^' marker.
+  display bgp routing-table
+          ^
+
+[203/288] r1 [R1] display nat session all
+  % Invalid input detected at '^' marker.
+  display nat session all
+                      ^
+
+[204/288] r1 [R1] display nat address-group
+  % Invalid input detected at '^' marker.
+  display nat address-group
+              ^
+
+[205/288] r1 [R1] display ip pool
+  Pool-name      : VLAN10
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.1.1
+  Network        : 192.168.1.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan10.lab
+  Lease          : 1 day(s)
+  
+  Pool-name      : VLAN20
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.2.1
+  Network        : 192.168.2.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan20.lab
+  Lease          : 2 day(s)
+  
+  Pool-name      : VLAN30
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.3.1
+  Network        : 192.168.3.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan30.lab
+  Lease          : 3 day(s)
+  
+  Pool-name      : VLAN40
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.4.1
+  Network        : 192.168.4.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan40.lab
+  Lease          : 4 day(s)
+  
+  Pool-name      : VLAN50
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.5.1
+  Network        : 192.168.5.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan50.lab
+  Lease          : 5 day(s)
+  
+  Pool-name      : VLAN60
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 192.168.6.1
+  Network        : 192.168.6.0
+  Mask           : 255.255.255.0
+  DNS-list       : 8.8.8.8 8.8.4.4
+  Domain-name    : vlan60.lab
+  Lease          : 6 day(s)
+  
+  Pool-name      : INFINITE
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : not configured
+  Network        : 172.16.0.0
+  Mask           : 255.255.0.0
+  DNS-list       : not configured
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[206/288] r1 [R1] display acl all
+  Total 0 ACL(s)
+
+[207/288] r1 [R1] display dhcp server statistics
+  % Invalid input detected at '^' marker.
+  display dhcp server statistics
+                      ^
+
+[208/288] r1 [R1] display vrrp
+  % Invalid input detected at '^' marker.
+  display vrrp
+          ^
+
+[209/288] r1 [R1] display vrrp brief
+  % Invalid input detected at '^' marker.
+  display vrrp brief
+          ^
+
+[210/288] r1 [R1] display ike sa
+  Info: No IPSec configuration.
+
+[211/288] r1 [R1] display ipsec sa
+  Info: No IPSec configuration.
+
+[212/288] r1 [R1] display ipsec policy
+  Info: No IPSec configuration.
+
+[213/288] r1 [R1] display ipsec proposal
+  Info: No IPSec configuration.
+
+[214/288] r1 [R1] display ike proposal
+  Info: No IPSec configuration.
+
+[215/288] r1 [R1] display ike peer
+  Info: No IKE peers configured.
+
+[216/288] r1 [R1] display snmp-agent sys-info
+  The contact person for this managed node: R&D Beijing, Huawei
+  The physical location of this node: Beijing China
+  SNMP version running in the system: SNMPv2c SNMPv3
+
+[217/288] r1 [R1] display ntp status
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[218/288] r1 [R1] display ntp session
+   clock status: unsynchronized
+   clock stratum: 16
+   reference clock ID: none
+   nominal frequency: 100.0000 Hz
+   actual frequency: 100.0000 Hz
+   clock precision: 2^18
+   clock offset: 0.0000 ms
+
+[219/288] r1 [R1] display clock
+  2026-05-18 04:43:33
+  Monday
+  Time Zone(UTC) : UTC
+
+[220/288] r1 [R1] display lldp neighbor
+  % Invalid input detected at '^' marker.
+  display lldp neighbor
+          ^
+
+[221/288] r1 [R1] display lldp neighbor brief
+  % Invalid input detected at '^' marker.
+  display lldp neighbor brief
+          ^
+
+[222/288] r1 [R1] display cpu-usage
+  CPU Usage Stat. Cycle: 60 (Second)
+  CPU Usage            : 11% Max: 38%
+  CPU Usage Stat. Time : 2026-05-18 04:43:33
+  CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
+  
+  Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
+
+[223/288] r1 [R1] display memory-usage
+  Memory utilization statistics at 2026-05-18 04:43:33
+  System Total Memory Is: 536870912 bytes
+  Total Memory Used Is: 193273528 bytes
+  Memory Using Percentage Is: 36%
+
+[224/288] r1 [R1] display device
+  R1's Device status:
+  -------------------------------------------------------------------------------
+  Slot  Sub  Type            Online    Power    Register     Status   Role
+  -------------------------------------------------------------------------------
+  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  -------------------------------------------------------------------------------
+
+[225/288] r1 [R1] display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+[226/288] r1 [R1] display history-command
+  % Invalid input detected at '^' marker.
+  display history-command
+          ^
+
+[227/288] r1 [R1] display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 512
+  Actual buffer size : 512
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 1
+  2026-05-18 04:43:33 %01SRM/4/PORT_STATE: Port state changed.
+
+[228/288] r1 [R1] display trapbuffer
+  Trapping buffer configuration and contents: enabled
+  Allowed max buffer size : 256
+  Actual buffer size : 256
+  Channel number : 3 , Channel name : trapbuffer
+  Dropped messages : 0
+  Current messages : 0
+
+[229/288] r1 [R1] display alarm all
+  % Invalid input detected at '^' marker.
+  display alarm all
+                ^
+
+[230/288] r1 [R1] display startup
+  % Invalid input detected at '^' marker.
+  display startup
+          ^
+
+[231/288] r1 [R1] display patch-information
+  Info: No patch exists.
+
+[232/288] r1 [R1] display elabel
+  /$[ARCHIVES INFO VERSION]
+  /$ArchivesInfoVersion=3.0;
+  
+  [Slot_1]
+  /$[Board Integrated Component]
+  /$BoardType=S5720-28X-LI-AC;
+  /$BarCode=210235R1;
+  /$Item=02359556;
+  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$Manufactured=2024-01-01;
+  /$VendorName=Huawei;
+
+[233/288] r1 [R1] display license
+   Active License : default
+   License State  : Trial
+   Trial Days Left: 60
+
+[234/288] r1 [R1] display interface brief
+  Error: Wrong parameter found at '^' position.
+
+[235/288] r1 [R1] display ip interface GigabitEthernet0/0/0
+  % Invalid input detected at '^' marker.
+  display ip interface GigabitEthernet0/0/0
+                       ^
+
+[236/288] r1 [R1] display interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+
+[237/288] r1 [R1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[238/288] r1 [R1] display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[239/288] r1 [R1] display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[240/288] r1 [R1] display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[241/288] r1 [R1] display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[242/288] r1 [R1] display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[243/288] r1 [R1] display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[244/288] r1 [R1] display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [245] § regression: pipe filters ---
+[245/288] r1 [R1] display current-configuration | include ospf
+<empty>
+
+[246/288] r1 [R1] display current-configuration | begin interface
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+   dhcp relay server-ip 10.0.0.2
+   dhcp relay server-ip 10.0.0.3
+  #
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GE0/0/2
+   shutdown
+  #
+  interface GE0/0/3
+   shutdown
+  #
+  #
+
+[247/288] r1 [R1] display current-configuration | exclude #
+  sysname R1
+  dhcp enable
+  dhcp snooping enable
+  ip pool VLAN10
+   network 192.168.1.0 mask 255.255.255.0
+   gateway-list 192.168.1.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan10.lab
+   lease day 1 hour 12 minute 30
+  ip pool VLAN20
+   network 192.168.2.0 mask 255.255.255.0
+   gateway-list 192.168.2.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan20.lab
+   lease day 2 hour 12 minute 30
+  ip pool VLAN30
+   network 192.168.3.0 mask 255.255.255.0
+   gateway-list 192.168.3.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan30.lab
+   lease day 3 hour 12 minute 30
+  ip pool VLAN40
+   network 192.168.4.0 mask 255.255.255.0
+   gateway-list 192.168.4.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan40.lab
+   lease day 4 hour 12 minute 30
+  ip pool VLAN50
+   network 192.168.5.0 mask 255.255.255.0
+   gateway-list 192.168.5.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan50.lab
+   lease day 5 hour 12 minute 30
+  ip pool VLAN60
+   network 192.168.6.0 mask 255.255.255.0
+   gateway-list 192.168.6.1
+   dns-list 8.8.8.8 8.8.4.4
+   domain-name vlan60.lab
+   lease day 6 hour 12 minute 30
+  ip pool INFINITE
+   network 172.16.0.0 mask 255.255.0.0
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.10
+  dhcp server forbidden-ip 192.168.2.1 192.168.2.10
+  dhcp server forbidden-ip 192.168.3.1 192.168.3.10
+  dhcp server forbidden-ip 192.168.4.1 192.168.4.10
+  dhcp server forbidden-ip 192.168.5.1 192.168.5.10
+  dhcp server forbidden-ip 192.168.6.1 192.168.6.10
+  interface GE0/0/0
+   ip address 192.168.1.1 255.255.255.0
+   dhcp relay server-ip 10.0.0.2
+   dhcp relay server-ip 10.0.0.3
+  interface GE0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  interface GE0/0/2
+   shutdown
+  interface GE0/0/3
+   shutdown
+
+[248/288] r1 [R1] display ip routing-table | include Direct
+  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
+  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+
+[249/288] r1 [R1] display ip interface brief | include up
+  GE0/0/0                           192.168.1.1/255.255.255.0up         up
+  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+
+
+--- [250] § regression: view nav + undo ---
+[250/288] r1 <R1> system-view
+  Enter system view, return user view with return command.
+
+[251/288] r1 [R1] ip routing-table limit 1000
+  % Invalid input detected at '^' marker.
+  ip routing-table limit 1000
+     ^
+
+[252/288] r1 [R1] undo ip routing-table limit 1000
+  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+
+[253/288] r1 [R1] dhcp enable
+<empty>
+
+[254/288] r1 [R1] undo dhcp enable
+<empty>
+
+[255/288] r1 [R1] snmp-agent
+<empty>
+
+[256/288] r1 [R1] undo snmp-agent
+  Error: Unrecognized command "undo snmp-agent"
+
+[257/288] r1 [R1] ftp server enable
+  % Invalid input detected at '^' marker.
+  ftp server enable
+  ^
+
+[258/288] r1 [R1] undo ftp server enable
+  Error: Unrecognized command "undo ftp server enable"
+
+[259/288] r1 [R1] telnet server enable
+<empty>
+
+[260/288] r1 [R1] undo telnet server enable
+  Error: Unrecognized command "undo telnet server enable"
+
+[261/288] r1 [R1] info-center enable
+<empty>
+
+[262/288] r1 [R1] undo info-center enable
+  Error: Unrecognized command "undo info-center enable"
+
+[263/288] r1 [R1] lldp enable
+  % Invalid input detected at '^' marker.
+  lldp enable
+  ^
+
+[264/288] r1 [R1] undo lldp enable
+  Error: Unrecognized command "undo lldp enable"
+
+[265/288] r1 [R1] ntp-service enable
+<empty>
+
+[266/288] r1 [R1] undo ntp-service enable
+  Error: Unrecognized command "undo ntp-service enable"
+
+[267/288] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[268/288] r1 [R1] undo terminal monitor
+  Error: Unrecognized command "undo terminal monitor"
+
+[269/288] r1 [R1] sysname TEST
+<empty>
+
+[270/288] r1 [TEST] undo sysname TEST
+  Error: Unrecognized command "undo sysname TEST"
+
+[271/288] r1 [TEST] interface GigabitEthernet0/0/0
+<empty>
+
+[272/288] r1 [TEST-GE0/0/0] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[273/288] r1 [TEST-GE0/0/0] shutdown
+<empty>
+
+[274/288] r1 [TEST-GE0/0/0] undo shutdown
+<empty>
+
+[275/288] r1 [TEST-GE0/0/0] quit
+<empty>
+
+[276/288] r1 [TEST] ospf 1
+<empty>
+
+[277/288] r1 [TEST-ospf-1] display this
+  % Invalid input detected at '^' marker.
+  display this
+          ^
+
+[278/288] r1 [TEST-ospf-1] quit
+<empty>
+
+[279/288] r1 [TEST] user-interface vty 0 4
+  % Invalid input detected at '^' marker.
+  user-interface vty 0 4
+  ^
+
+[280/288] r1 [TEST] quit
+<empty>
+
+[281/288] r1 <TEST> return
+<empty>
+
+
+--- [282] § regression: context help ---
+[282/288] r1 <TEST> system-view
+  Enter system view, return user view with return command.
+
+[283/288] r1 [TEST] interface ?
+    WORD  Enter interface view
+    <cr>  
+
+[284/288] r1 [TEST] ip ?
+    route-static  Configure static route
+    pool          Enter DHCP pool view
+    routing       Enable IP routing
+
+[285/288] r1 [TEST] undo ?
+    ipv6       Disable IPv6
+    ospf       Remove OSPF protocol configuration
+    ospfv3     Remove OSPFv3 protocol configuration
+    ike        ike
+    ipsec      ipsec
+    debugging  debugging
+    acl        Delete Access Control List
+    <cr>       
+
+[286/288] r1 [TEST] acl ?
+    WORD  Configure Access Control List
+    <cr>  
+
+[287/288] r1 [TEST] return
+<empty>
+
+[288/288] r1 <TEST> save
+  The current configuration will be written to the device.
+  Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
+  Now saving the current configuration to the slot.
+  Save the configuration successfully.
