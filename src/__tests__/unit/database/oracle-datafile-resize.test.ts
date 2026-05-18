@@ -28,8 +28,9 @@ describe('ALTER DATABASE DATAFILE … RESIZE', () => {
 
     subShell.processLine("ALTER DATABASE DATAFILE '/u01/oradata/ORCL/app_data01.dbf' RESIZE 250M;");
 
+    // bytes is now numeric (so SUM(bytes)/1024/1024 works) — 250M = 262144000
     const v = subShell.processLine('SELECT name, bytes FROM v$datafile;').output.join('\n');
-    expect(v).toMatch(/app_data01\.dbf\s+250M/);
+    expect(v).toMatch(/app_data01\.dbf\s+262144000/);
 
     const content = subShell.processLine('HOST cat /u01/oradata/ORCL/app_data01.dbf').output.join('\n');
     expect(content).toContain('250M');
