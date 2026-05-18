@@ -17,5 +17,6 @@ import './v_nodes';
 import './v_rac_global_view';
 import './v_thread';
 import './v_threads';
+import './v_system_event';
 
 export { };
