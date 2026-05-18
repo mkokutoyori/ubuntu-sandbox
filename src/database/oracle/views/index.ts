@@ -7,5 +7,6 @@
  * for readability.
  */
 
-// Views are added below as individual files are implemented.
+import './v_license';
+
 export { };

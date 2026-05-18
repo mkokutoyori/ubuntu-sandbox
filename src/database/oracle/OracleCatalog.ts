@@ -274,6 +274,20 @@ export class OracleCatalog extends BaseCatalog {
       return this.queryVDollar(upper.replace('V_$', 'V$'), currentUser);
     }
 
+    // GV$ views — in a real RAC cluster, GV$X = UNION ALL of every
+    // instance's V$X with an extra INST_ID column. We simulate a
+    // single-instance database, so we delegate to the V$ equivalent and
+    // prepend INST_ID = 1.
+    if (upper.startsWith('GV$') || upper.startsWith('GV_$')) {
+      const vName = upper.replace(/^GV_?\$/, 'V$');
+      const base = this.queryVDollar(vName, currentUser);
+      if (!base || !base.isQuery) return base;
+      return queryResult(
+        [{ name: 'INST_ID', dataType: oracleNumber(10) }, ...base.columns],
+        base.rows.map(r => [1, ...r])
+      );
+    }
+
     // DBA_ views
     if (upper.startsWith('DBA_')) return this.queryDBA(upper, currentUser);
     // ALL_ views
