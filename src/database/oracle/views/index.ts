@@ -24,6 +24,7 @@ import './v_threads';
 import './v_system_event';
 import './v_system_wait_class';
 import './v_session_event';
+import './v_session_connect_info';
 import './v_session_wait';
 import './v_session_wait_history';
 import './v_services';
