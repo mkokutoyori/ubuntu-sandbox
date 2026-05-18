@@ -22,6 +22,7 @@ import './dba_part_tables';
 import './dba_part_indexes';
 import './dba_ind_partitions';
 import './dba_ind_subpartitions';
+import './dba_subpart_key_columns';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
