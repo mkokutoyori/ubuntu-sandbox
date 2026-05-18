@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-05-18T04:43:32.753Z
+Generated: 2026-05-18T04:47:34.126Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-05-18 04:43:32
+  2026-05-18 04:47:34
   Monday
   Time Zone(UTC) : UTC
 
@@ -53,13 +53,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-18 04:43:32
+  CPU Usage Stat. Time : 2026-05-18 04:47:34
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-05-18 04:43:32
+  Memory utilization statistics at 2026-05-18 04:47:34
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -105,10 +105,38 @@ Total steps: 304
   GE0/0/3                           unassigned           down       down
 
 [14/304] r1 <R1> display interface
-  Error: Incomplete command.
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [15/304] r1 <R1> display interface brief
-  Error: Wrong parameter found at '^' position.
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
 
 [16/304] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -219,7 +247,7 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-18 04:43:32 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-18 04:47:34 %01SRM/4/PORT_STATE: Port state changed.
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -286,7 +314,11 @@ Total steps: 304
    (configuration is recorded per interface; see display this)
 
 [49/304] r1 <R1> display interface description
-  Error: Wrong parameter found at '^' position.
+  Interface                     PHY     Protocol Description
+  GE0/0/0                       up      up       
+  GE0/0/1                       up      up       
+  GE0/0/2                       down    down     
+  GE0/0/3                       down    down     
 
 [50/304] r1 <R1> display health
   % Invalid input detected at '^' marker.
@@ -918,7 +950,11 @@ Total steps: 304
   GE0/0/1                           unassigned           up         up
 
 [176/304] r1 <TEMP> display interface | include line protocol
-  Error: Incomplete command.
+  Line protocol current state : UP
+  Line protocol current state : UP
+  Line protocol current state : DOWN
+  Line protocol current state : DOWN
+  Line protocol current state : UP
 
 
 --- [177] § user-interface / screen ---
@@ -1086,7 +1122,36 @@ Total steps: 304
   LoopBack0                         unassigned           down       down
 
 [205/304] r1 <TEMP> display interface
-  Error: Incomplete command.
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [206/304] r1 <TEMP> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1227,7 +1292,7 @@ Total steps: 304
    clock offset: 0.0000 ms
 
 [235/304] r1 <TEMP> display clock
-  2026-05-18 04:43:32
+  2026-05-18 04:47:34
   Monday
   Time Zone(UTC) : UTC
 
@@ -1244,13 +1309,13 @@ Total steps: 304
 [238/304] r1 <TEMP> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-18 04:43:32
+  CPU Usage Stat. Time : 2026-05-18 04:47:34
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <TEMP> display memory-usage
-  Memory utilization statistics at 2026-05-18 04:43:32
+  Memory utilization statistics at 2026-05-18 04:47:34
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1282,7 +1347,7 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-18 04:43:32 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-18 04:47:34 %01SRM/4/PORT_STATE: Port state changed.
 
 [244/304] r1 <TEMP> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1324,7 +1389,13 @@ Total steps: 304
    Trial Days Left: 60
 
 [250/304] r1 <TEMP> display interface brief
-  Error: Wrong parameter found at '^' position.
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
+  LoopBack0                   down    down      0%    0%       0          0
 
 [251/304] r1 <TEMP> display ip interface GigabitEthernet0/0/0
   % Invalid input detected at '^' marker.

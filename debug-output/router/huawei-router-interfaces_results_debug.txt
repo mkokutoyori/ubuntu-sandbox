@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-05-18T04:43:35.023Z
+Generated: 2026-05-18T04:47:34.130Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -698,7 +698,87 @@ Total steps: 286
 
 --- [166] § per-interface display family ---
 [166/286] r1 [R1] display interface
-  Error: Incomplete command.
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Description: ## LAN to L1 ##
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack1 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-1
+  Internet Address is 10.255.255.1/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack2 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-2
+  Internet Address is 10.255.255.2/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack3 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-3
+  Internet Address is 10.255.255.3/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack4 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-4
+  Internet Address is 10.255.255.4/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack5 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-5
+  Internet Address is 10.255.255.5/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack6 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-6
+  Internet Address is 10.255.255.6/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack7 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-7
+  Internet Address is 10.255.255.7/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack8 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-8
+  Internet Address is 10.255.255.8/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [167/286] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -756,10 +836,35 @@ Total steps: 286
   Error: Wrong parameter found at '^' position.
 
 [179/286] r1 [R1] display interface brief
-  Error: Wrong parameter found at '^' position.
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
+  LoopBack1                   down    down      0%    0%       0          0
+  LoopBack2                   down    down      0%    0%       0          0
+  LoopBack3                   down    down      0%    0%       0          0
+  LoopBack4                   down    down      0%    0%       0          0
+  LoopBack5                   down    down      0%    0%       0          0
+  LoopBack6                   down    down      0%    0%       0          0
+  LoopBack7                   down    down      0%    0%       0          0
+  LoopBack8                   down    down      0%    0%       0          0
 
 [180/286] r1 [R1] display interface description
-  Error: Wrong parameter found at '^' position.
+  Interface                     PHY     Protocol Description
+  GE0/0/0                       up      up       ## LAN to L1 ##
+  GE0/0/1                       up      up       
+  GE0/0/2                       down    down     
+  GE0/0/3                       down    down     
+  LoopBack1                     down    down     LOOP-1
+  LoopBack2                     down    down     LOOP-2
+  LoopBack3                     down    down     LOOP-3
+  LoopBack4                     down    down     LOOP-4
+  LoopBack5                     down    down     LOOP-5
+  LoopBack6                     down    down     LOOP-6
+  LoopBack7                     down    down     LOOP-7
+  LoopBack8                     down    down     LOOP-8
 
 [181/286] r1 [R1] display ip interface brief
   Interface                         IP Address/Mask      Physical   Protocol
@@ -869,7 +974,87 @@ Total steps: 286
   LoopBack8                         10.255.255.8/255.255.255.255down       down
 
 [187/286] r1 [R1] display interface
-  Error: Incomplete command.
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Description: ## LAN to L1 ##
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack1 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-1
+  Internet Address is 10.255.255.1/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack2 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-2
+  Internet Address is 10.255.255.2/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack3 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-3
+  Internet Address is 10.255.255.3/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack4 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-4
+  Internet Address is 10.255.255.4/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack5 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-5
+  Internet Address is 10.255.255.5/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack6 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-6
+  Internet Address is 10.255.255.6/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack7 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-7
+  Internet Address is 10.255.255.7/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack8 current state : UP
+  Line protocol current state : UP
+  Description: LOOP-8
+  Internet Address is 10.255.255.8/255.255.255.255
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [188/286] r1 [R1] display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1012,7 +1197,7 @@ Total steps: 286
    clock offset: 0.0000 ms
 
 [217/286] r1 [R1] display clock
-  2026-05-18 04:43:35
+  2026-05-18 04:47:34
   Monday
   Time Zone(UTC) : UTC
 
@@ -1029,13 +1214,13 @@ Total steps: 286
 [220/286] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-18 04:43:35
+  CPU Usage Stat. Time : 2026-05-18 04:47:34
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-18 04:43:35
+  Memory utilization statistics at 2026-05-18 04:47:34
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1067,7 +1252,7 @@ Total steps: 286
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-18 04:43:35 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-18 04:47:34 %01SRM/4/PORT_STATE: Port state changed.
 
 [226/286] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1109,7 +1294,20 @@ Total steps: 286
    Trial Days Left: 60
 
 [232/286] r1 [R1] display interface brief
-  Error: Wrong parameter found at '^' position.
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
+  LoopBack1                   down    down      0%    0%       0          0
+  LoopBack2                   down    down      0%    0%       0          0
+  LoopBack3                   down    down      0%    0%       0          0
+  LoopBack4                   down    down      0%    0%       0          0
+  LoopBack5                   down    down      0%    0%       0          0
+  LoopBack6                   down    down      0%    0%       0          0
+  LoopBack7                   down    down      0%    0%       0          0
+  LoopBack8                   down    down      0%    0%       0          0
 
 [233/286] r1 [R1] display ip interface GigabitEthernet0/0/0
   % Invalid input detected at '^' marker.
