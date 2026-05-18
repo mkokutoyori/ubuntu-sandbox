@@ -13,6 +13,7 @@ import './v_bgprocess';
 import './v_buffer_pool';
 import './v_buffer_pool_statistics';
 import './v_bh';
+import './v_backup_set';
 import './v_db_cache_advice';
 import './v_cache_stats';
 import './v_shared_pool_advice';
