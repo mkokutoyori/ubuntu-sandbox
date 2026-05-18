@@ -61,6 +61,7 @@ import './dba_col_statistics';
 import './dba_tab_histograms';
 import './dba_optstat_operations';
 import './dba_optstat_operation_tasks';
+import './dba_tab_modifications';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
