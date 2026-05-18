@@ -54,6 +54,7 @@ import './v_event_name';
 import './v_enqueue_lock';
 import './v_enqueue_stat';
 import './v_enqueue_statistics';
+import './v_transaction_enqueue';
 import './v_instance_cache_transfer';
 import './v_instance_recovery';
 import './v_license';
