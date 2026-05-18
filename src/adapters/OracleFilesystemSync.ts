@@ -131,6 +131,15 @@ export class OracleFilesystemSync {
         );
       }),
 
+      this.bus.subscribe('oracle.instance.parameter-file-requested', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        dev.writeFileFromEditor(
+          e.payload.outputPath,
+          renderParameterFile(e.payload.target, e.payload.params),
+        );
+      }),
+
       this.bus.subscribe('oracle.audit.recorded', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
@@ -245,6 +254,21 @@ export class OracleFilesystemSync {
       dev.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
   }
+}
+
+/**
+ * Render a parameter snapshot in either spfile (*.<param>=value) or
+ * pfile (<param>=value) format.
+ */
+function renderParameterFile(target: 'PFILE' | 'SPFILE', params: Record<string, string>): string {
+  const prefix = target === 'SPFILE' ? '*.' : '';
+  const lines: string[] = [];
+  for (const name of Object.keys(params).sort()) {
+    const value = params[name];
+    const needsQuote = /[^0-9.+-]/.test(value) && !value.startsWith("'");
+    lines.push(`${prefix}${name}=${needsQuote ? `'${value}'` : value}`);
+  }
+  return lines.join('\n') + '\n';
 }
 
 /**

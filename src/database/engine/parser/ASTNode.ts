@@ -599,6 +599,18 @@ export interface AlterTablespaceStatement extends ASTNode {
   action: AlterTablespaceAction;
 }
 
+export interface CreatePfileSpfileStatement extends ASTNode {
+  type: 'CreatePfileSpfileStatement';
+  /** What we're writing — PFILE or SPFILE. */
+  target: 'PFILE' | 'SPFILE';
+  /** Explicit output path; absent means the default $ORACLE_HOME/dbs/… location. */
+  outputPath?: string;
+  /** Where the parameters come from. MEMORY=current running values. */
+  source: 'PFILE' | 'SPFILE' | 'MEMORY';
+  /** Explicit source path when source=PFILE|SPFILE. */
+  sourcePath?: string;
+}
+
 // ── PL/SQL Blocks (basic) ───────────────────────────────────────────
 
 export interface PLSQLBlock extends ASTNode {
@@ -772,6 +784,7 @@ export type Statement =
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement
+  | CreatePfileSpfileStatement
   // Explain
   | ExplainPlanStatement
   // Triggers

@@ -191,6 +191,12 @@ export class OracleParser extends BaseParser {
 
   protected override parseDialectCreate(pos: SourcePosition, orReplace: boolean): Statement | null {
     if (this.matchKeyword('TABLESPACE')) return this.parseCreateTablespace(pos);
+    if (this.matchKeyword('BIGFILE') || this.matchKeyword('SMALLFILE')) {
+      // BIGFILE / SMALLFILE are pure metadata hints; treat as a plain
+      // CREATE TABLESPACE (the simulator doesn't enforce file-count limits).
+      this.expectKeyword('TABLESPACE');
+      return this.parseCreateTablespace(pos);
+    }
     if (this.matchKeyword('TEMPORARY')) {
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos, true);
@@ -199,6 +205,8 @@ export class OracleParser extends BaseParser {
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos, false, true);
     }
+    if (this.matchKeyword('PFILE')) return this.parseCreatePfileOrSpfile(pos, 'PFILE');
+    if (this.matchKeyword('SPFILE')) return this.parseCreatePfileOrSpfile(pos, 'SPFILE');
     if (this.matchKeyword('TRIGGER')) return this.parseCreateTrigger(pos, orReplace);
     if (this.matchKeyword('SYNONYM')) return this.parseCreateSynonym(pos, orReplace, false);
     if (this.matchKeyword('PUBLIC')) {
@@ -217,6 +225,40 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
     if (this.matchKeyword('TABLESPACE')) return this.parseAlterTablespace(pos);
     return null;
+  }
+
+  /**
+   * CREATE PFILE[=path] FROM SPFILE[=path]
+   * CREATE PFILE[=path] FROM MEMORY
+   * CREATE SPFILE[=path] FROM PFILE[=path]
+   * CREATE SPFILE[=path] FROM MEMORY
+   */
+  private parseCreatePfileOrSpfile(
+    pos: SourcePosition,
+    target: 'PFILE' | 'SPFILE',
+  ): import('../engine/parser/ASTNode').CreatePfileSpfileStatement {
+    const readQuoted = (): string => {
+      const raw = this.advance().value;
+      return raw.startsWith("'") ? raw.slice(1, -1) : raw;
+    };
+    let outputPath: string | undefined;
+    if (this.match(TokenType.COMPARISON_OP, '=')) outputPath = readQuoted();
+    this.expectKeyword('FROM');
+    let source: 'PFILE' | 'SPFILE' | 'MEMORY';
+    let sourcePath: string | undefined;
+    if (this.matchKeyword('MEMORY')) source = 'MEMORY';
+    else if (this.matchKeyword('PFILE')) {
+      source = 'PFILE';
+      if (this.match(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
+    } else {
+      this.expectKeyword('SPFILE');
+      source = 'SPFILE';
+      if (this.match(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
+    }
+    return {
+      type: 'CreatePfileSpfileStatement', position: pos,
+      target, outputPath, source, sourcePath,
+    };
   }
 
   private parseAlterTablespace(pos: SourcePosition): import('../engine/parser/ASTNode').AlterTablespaceStatement {
@@ -378,6 +420,14 @@ export class OracleParser extends BaseParser {
         value = raw.slice(1, -1);
       } else if (this.check(TokenType.NUMBER_LITERAL)) {
         value = this.advance().value;
+        // Size literals like 4G / 100M / 512K are tokenised as
+        // NUMBER + IDENTIFIER ("G"); re-glue the suffix.
+        if (this.check(TokenType.IDENTIFIER)) {
+          const suffix = this.current().value;
+          if (/^[KMGT]$/i.test(suffix)) {
+            value += this.advance().value;
+          }
+        }
       } else {
         value = this.expectIdentifier();
       }
@@ -547,6 +597,14 @@ export class OracleParser extends BaseParser {
         this.expectKeyword('DATAFILES');
         includeDatafiles = true;
       }
+    }
+    // Optional trailing CASCADE CONSTRAINTS — accepted, no effect in the simulator.
+    if (this.matchKeyword('CASCADE')) {
+      this.matchKeyword('CONSTRAINTS');
+    }
+    // KEEP DATAFILES (Oracle 12c+) — accepted for symmetry.
+    if (this.matchKeyword('KEEP')) {
+      this.matchKeyword('DATAFILES');
     }
     return {
       type: 'DropTablespaceStatement', position: pos, name,

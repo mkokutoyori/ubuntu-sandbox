@@ -13,7 +13,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
-  AlterTablespaceStatement, AlterTablespaceAction,
+  AlterTablespaceStatement, AlterTablespaceAction, CreatePfileSpfileStatement,
   MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
@@ -29,6 +29,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
 import { makeSqlId } from './views/sqlId';
 import { OracleParser } from './OracleParser';
+import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 
 /** Snapshot of table rows for transaction undo */
 interface TransactionSnapshot {
@@ -431,6 +432,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
       case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
+      case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
       case 'MergeStatement': return this.executeMerge(statement);
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
@@ -2880,6 +2882,29 @@ export class OracleExecutor extends BaseExecutor {
       },
     });
     return emptyResult('Tablespace dropped.');
+  }
+
+  private executeCreatePfileSpfile(stmt: CreatePfileSpfileStatement): ResultSet {
+    // We don't actually re-import parameters from disk — the instance
+    // is the single source of truth in the simulator. So `FROM MEMORY`
+    // and `FROM SPFILE/PFILE` all snapshot the current parameter set
+    // and just choose where to render it.
+    const params: Record<string, string> = {};
+    for (const [k, v] of this.instance.getAllParameters()) params[k] = v;
+    const sid = this.sid;
+    const defaultPath =
+      stmt.target === 'SPFILE'
+        ? `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`
+        : `${ORACLE_CONFIG.HOME}/dbs/init${sid}.ora`;
+    const outputPath = stmt.outputPath ?? defaultPath;
+    this.bus.publish({
+      topic: 'oracle.instance.parameter-file-requested',
+      payload: {
+        deviceId: this.deviceId, sid,
+        target: stmt.target, outputPath, params,
+      },
+    });
+    return emptyResult(`File created.`);
   }
 
   private executeAlterTablespace(stmt: AlterTablespaceStatement): ResultSet {
