@@ -58,6 +58,7 @@ import './v_services';
 import './v_sgainfo';
 import './v_sga_dynamic_components';
 import './v_sga_dynamic_free_memory';
+import './v_sga_resize_ops';
 import './v_pgastat';
 import './v_session_wait_class';
 
