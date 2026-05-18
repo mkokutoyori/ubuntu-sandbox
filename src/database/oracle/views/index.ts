@@ -33,6 +33,7 @@ import './v_sql_text';
 import './v_sql_text_with_newlines';
 import './v_sql_bind_capture';
 import './v_sql_shared_cursor';
+import './v_sql_shared_memory';
 import './v_session_connect_info';
 import './v_session_wait';
 import './v_session_wait_history';
