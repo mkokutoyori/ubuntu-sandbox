@@ -36,6 +36,7 @@ import './v_rman_status';
 import './v_rman_output';
 import './v_rman_backup_job_details';
 import './v_rman_backup_type';
+import './v_recovery_log';
 import './v_java_pool_advice';
 import './v_active_services';
 import './v_cluster_instance';
