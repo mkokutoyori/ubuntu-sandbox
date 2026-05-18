@@ -17,6 +17,7 @@ import {
 import { OracleSignalRefreshActor } from './actors/OracleSignalRefreshActor';
 import { OracleRuntimeState } from './views/OracleRuntimeState';
 import { OracleRuntimeStateActor } from './actors/OracleRuntimeStateActor';
+import { AsmManager } from './asm/AsmManager';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -72,6 +73,8 @@ export class OracleInstance {
    *  can hand it to view files at query time. */
   private readonly _runtimeState = new OracleRuntimeState();
   private _runtimeStateActor: OracleRuntimeStateActor | null = null;
+  /** Real ASM machinery — empty by default; CREATE DISKGROUP populates it. */
+  readonly asm: AsmManager = new AsmManager();
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };

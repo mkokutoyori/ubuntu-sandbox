@@ -14,6 +14,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
   AlterTablespaceStatement, AlterTablespaceAction, CreatePfileSpfileStatement,
+  CreateDiskgroupStatement, DropDiskgroupStatement, AlterDiskgroupStatement,
   MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
@@ -362,6 +363,9 @@ export class OracleExecutor extends BaseExecutor {
       CreateTablespaceStatement: 'CREATE TABLESPACE',
       DropTablespaceStatement: 'DROP TABLESPACE',
       AlterTablespaceStatement: 'ALTER TABLESPACE',
+      CreateDiskgroupStatement: 'CREATE DISKGROUP',
+      DropDiskgroupStatement: 'DROP DISKGROUP',
+      AlterDiskgroupStatement: 'ALTER DISKGROUP',
       AlterSystemStatement: 'ALTER SYSTEM',
       AlterDatabaseStatement: 'ALTER DATABASE',
       CreateProfileStatement: 'CREATE PROFILE',
@@ -433,6 +437,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
       case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
       case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
+      case 'CreateDiskgroupStatement': return this.executeCreateDiskgroup(statement);
+      case 'DropDiskgroupStatement': return this.executeDropDiskgroup(statement);
+      case 'AlterDiskgroupStatement': return this.executeAlterDiskgroup(statement);
       case 'MergeStatement': return this.executeMerge(statement);
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
@@ -2986,6 +2993,60 @@ export class OracleExecutor extends BaseExecutor {
       case 'BEGIN_BACKUP': case 'END_BACKUP':
       case 'SHRINK_SPACE': case 'COALESCE':
         return;
+    }
+  }
+
+  // ── ASM ──────────────────────────────────────────────────────────
+
+  private executeCreateDiskgroup(stmt: CreateDiskgroupStatement): ResultSet {
+    const asm = this.instance.asm;
+    const dg = asm.createDiskgroup(stmt.name, { redundancy: stmt.redundancy });
+    this.bus.publish({
+      topic: 'oracle.asm.diskgroup-created',
+      payload: { deviceId: this.deviceId, sid: this.sid, groupNumber: dg.groupNumber, name: dg.name, redundancy: dg.redundancy },
+    });
+    for (const d of stmt.disks) {
+      const { disk } = asm.addDisk(dg.name, d.path, { name: d.name, sizeMb: d.sizeMb });
+      this.bus.publish({
+        topic: 'oracle.asm.disk-added',
+        payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: dg.name, diskNumber: disk.diskNumber, diskName: disk.name, path: disk.path, sizeMb: disk.sizeMb },
+      });
+    }
+    return emptyResult('Diskgroup created.');
+  }
+
+  private executeDropDiskgroup(stmt: DropDiskgroupStatement): ResultSet {
+    const { diskPaths } = this.instance.asm.dropDiskgroup(stmt.name, stmt.includingContents);
+    this.bus.publish({
+      topic: 'oracle.asm.diskgroup-dropped',
+      payload: { deviceId: this.deviceId, sid: this.sid, name: stmt.name.toUpperCase(), diskPaths },
+    });
+    return emptyResult('Diskgroup dropped.');
+  }
+
+  private executeAlterDiskgroup(stmt: AlterDiskgroupStatement): ResultSet {
+    const asm = this.instance.asm;
+    switch (stmt.action.kind) {
+      case 'ADD_DISK':
+        for (const d of stmt.action.disks) {
+          const { diskgroup, disk } = asm.addDisk(stmt.name, d.path, { name: d.name, sizeMb: d.sizeMb, failgroup: d.failgroup });
+          this.bus.publish({
+            topic: 'oracle.asm.disk-added',
+            payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: diskgroup.name, diskNumber: disk.diskNumber, diskName: disk.name, path: disk.path, sizeMb: disk.sizeMb },
+          });
+        }
+        return emptyResult('Diskgroup altered.');
+      case 'DROP_DISK':
+        for (const id of stmt.action.identifiers) {
+          const { diskgroup, disk } = asm.dropDisk(stmt.name, id);
+          this.bus.publish({
+            topic: 'oracle.asm.disk-dropped',
+            payload: { deviceId: this.deviceId, sid: this.sid, diskgroup: diskgroup.name, diskName: disk.name, path: disk.path },
+          });
+        }
+        return emptyResult('Diskgroup altered.');
+      case 'REBALANCE': case 'MOUNT': case 'DISMOUNT':
+        return emptyResult('Diskgroup altered.');
     }
   }
 

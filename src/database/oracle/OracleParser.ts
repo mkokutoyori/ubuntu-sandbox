@@ -207,6 +207,7 @@ export class OracleParser extends BaseParser {
     }
     if (this.matchKeyword('PFILE')) return this.parseCreatePfileOrSpfile(pos, 'PFILE');
     if (this.matchKeyword('SPFILE')) return this.parseCreatePfileOrSpfile(pos, 'SPFILE');
+    if (this.matchKeyword('DISKGROUP')) return this.parseCreateDiskgroup(pos);
     if (this.matchKeyword('TRIGGER')) return this.parseCreateTrigger(pos, orReplace);
     if (this.matchKeyword('SYNONYM')) return this.parseCreateSynonym(pos, orReplace, false);
     if (this.matchKeyword('PUBLIC')) {
@@ -224,19 +225,7 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
     if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
     if (this.matchKeyword('TABLESPACE')) return this.parseAlterTablespace(pos);
-    if (this.matchKeyword('DISKGROUP')) {
-      // ALTER DISKGROUP <name> {ADD DISK '…' | DROP DISK '…' | REBALANCE POWER n | MOUNT | DISMOUNT | …}
-      // The simulator has no real ASM, so we just consume the rest and return success.
-      const name = this.expectIdentifier();
-      let action = '';
-      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
-        action += this.advance().value + ' ';
-      }
-      return {
-        type: 'AlterDatabaseStatement', position: pos,
-        action: `DISKGROUP ${name} ${action.trim()}`,
-      };
-    }
+    if (this.matchKeyword('DISKGROUP')) return this.parseAlterDiskgroup(pos);
     return null;
   }
 
@@ -272,6 +261,112 @@ export class OracleParser extends BaseParser {
       type: 'CreatePfileSpfileStatement', position: pos,
       target, outputPath, source, sourcePath,
     };
+  }
+
+  // ── CREATE / ALTER / DROP DISKGROUP ──────────────────────────────
+
+  private parseCreateDiskgroup(pos: SourcePosition): import('../engine/parser/ASTNode').CreateDiskgroupStatement {
+    const name = this.expectIdentifier();
+    let redundancy: 'EXTERNAL' | 'NORMAL' | 'HIGH' = 'EXTERNAL';
+    if (this.matchKeyword('EXTERNAL')) { redundancy = 'EXTERNAL'; this.matchKeyword('REDUNDANCY'); }
+    else if (this.matchKeyword('NORMAL')) { redundancy = 'NORMAL'; this.matchKeyword('REDUNDANCY'); }
+    else if (this.matchKeyword('HIGH')) { redundancy = 'HIGH'; this.matchKeyword('REDUNDANCY'); }
+    else if (this.matchKeyword('REDUNDANCY')) {
+      const r = this.expectIdentifier().toUpperCase();
+      if (r === 'EXTERNAL' || r === 'NORMAL' || r === 'HIGH') redundancy = r;
+    }
+    this.matchKeyword('DISK');
+    const disks: { path: string; name?: string; sizeMb?: number }[] = [];
+    do {
+      disks.push(this.parseDiskSpec());
+    } while (this.match(TokenType.COMMA));
+    // Optional ATTRIBUTE clause / FAILGROUP — swallow.
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'CreateDiskgroupStatement', position: pos, name, redundancy, disks };
+  }
+
+  private parseDropDiskgroup(pos: SourcePosition): import('../engine/parser/ASTNode').DropDiskgroupStatement {
+    const name = this.expectIdentifier();
+    let includingContents = false;
+    if (this.matchKeyword('INCLUDING')) { this.expectKeyword('CONTENTS'); includingContents = true; }
+    if (this.matchKeyword('FORCE')) { this.matchKeyword('INCLUDING'); this.matchKeyword('CONTENTS'); includingContents = true; }
+    return { type: 'DropDiskgroupStatement', position: pos, name, includingContents };
+  }
+
+  private parseAlterDiskgroup(pos: SourcePosition): import('../engine/parser/ASTNode').AlterDiskgroupStatement {
+    type Action = import('../engine/parser/ASTNode').AlterDiskgroupAction;
+    const name = this.expectIdentifier();
+    let action: Action;
+    if (this.matchKeyword('ADD')) {
+      // ADD [FAILGROUP fg] DISK 'path' [NAME x] [SIZE n M] [, …]
+      let failgroup: string | undefined;
+      if (this.matchKeyword('FAILGROUP')) failgroup = this.expectIdentifier();
+      this.expectKeyword('DISK');
+      const disks: { path: string; name?: string; sizeMb?: number; failgroup?: string }[] = [];
+      do {
+        const d = this.parseDiskSpec();
+        disks.push({ ...d, failgroup });
+      } while (this.match(TokenType.COMMA));
+      action = { kind: 'ADD_DISK', disks };
+    } else if (this.matchKeyword('DROP')) {
+      this.expectKeyword('DISK');
+      const ids: string[] = [];
+      do {
+        if (this.check(TokenType.STRING_LITERAL)) {
+          const raw = this.advance().value;
+          ids.push(raw.slice(1, -1));
+        } else {
+          ids.push(this.expectIdentifier());
+        }
+      } while (this.match(TokenType.COMMA));
+      action = { kind: 'DROP_DISK', identifiers: ids };
+    } else if (this.matchKeyword('REBALANCE')) {
+      let power: number | undefined;
+      if (this.matchKeyword('POWER')) power = Number(this.advance().value);
+      action = { kind: 'REBALANCE', power };
+    } else if (this.matchKeyword('MOUNT')) {
+      action = { kind: 'MOUNT' };
+    } else if (this.matchKeyword('DISMOUNT')) {
+      action = { kind: 'DISMOUNT' };
+    } else {
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+      action = { kind: 'REBALANCE' };
+    }
+    // Swallow optional trailing clauses (NOWAIT, WAIT, etc.)
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AlterDiskgroupStatement', position: pos, name, action };
+  }
+
+  private parseDiskSpec(): { path: string; name?: string; sizeMb?: number } {
+    let path = '';
+    if (this.check(TokenType.STRING_LITERAL)) {
+      const raw = this.advance().value;
+      path = raw.slice(1, -1);
+    } else {
+      path = this.expectIdentifier();
+    }
+    let name: string | undefined;
+    let sizeMb: number | undefined;
+    // Use matchKeyword (which also matches non-reserved IDENTIFIER tokens)
+    // in a loop until neither NAME nor SIZE is found.
+    for (;;) {
+      if (this.matchKeyword('NAME')) { name = this.expectIdentifier(); continue; }
+      if (this.matchKeyword('SIZE')) {
+        const n = Number(this.advance().value);
+        let mult = 1;
+        if (this.check(TokenType.IDENTIFIER) || this.check(TokenType.KEYWORD)) {
+          const u = this.current().value.toUpperCase();
+          if (u === 'M' || u === 'G' || u === 'K' || u === 'T') {
+            this.advance();
+            mult = u === 'K' ? 1 / 1024 : u === 'M' ? 1 : u === 'G' ? 1024 : 1024 * 1024;
+          }
+        }
+        sizeMb = n * mult;
+        continue;
+      }
+      break;
+    }
+    return { path, name, sizeMb };
   }
 
   private parseAlterTablespace(pos: SourcePosition): import('../engine/parser/ASTNode').AlterTablespaceStatement {
@@ -352,6 +447,7 @@ export class OracleParser extends BaseParser {
 
   protected override parseDialectDrop(pos: SourcePosition): Statement | null {
     if (this.matchKeyword('TABLESPACE')) return this.parseDropTablespace(pos);
+    if (this.matchKeyword('DISKGROUP')) return this.parseDropDiskgroup(pos);
     if (this.matchKeyword('TRIGGER')) {
       const schema = this.parseSchemaPrefix();
       const name = this.expectIdentifier();

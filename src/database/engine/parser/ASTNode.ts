@@ -605,6 +605,33 @@ export interface AlterTablespaceStatement extends ASTNode {
   action: AlterTablespaceAction;
 }
 
+export interface CreateDiskgroupStatement extends ASTNode {
+  type: 'CreateDiskgroupStatement';
+  name: string;
+  redundancy: 'EXTERNAL' | 'NORMAL' | 'HIGH';
+  /** Disks paired with their literal paths (and optional NAME / SIZE). */
+  disks: { path: string; name?: string; sizeMb?: number }[];
+}
+
+export interface DropDiskgroupStatement extends ASTNode {
+  type: 'DropDiskgroupStatement';
+  name: string;
+  includingContents: boolean;
+}
+
+export type AlterDiskgroupAction =
+  | { kind: 'ADD_DISK'; disks: { path: string; name?: string; sizeMb?: number; failgroup?: string }[] }
+  | { kind: 'DROP_DISK'; identifiers: string[] }
+  | { kind: 'REBALANCE'; power?: number }
+  | { kind: 'MOUNT' }
+  | { kind: 'DISMOUNT' };
+
+export interface AlterDiskgroupStatement extends ASTNode {
+  type: 'AlterDiskgroupStatement';
+  name: string;
+  action: AlterDiskgroupAction;
+}
+
 export interface CreatePfileSpfileStatement extends ASTNode {
   type: 'CreatePfileSpfileStatement';
   /** What we're writing — PFILE or SPFILE. */
@@ -791,6 +818,7 @@ export type Statement =
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement
   | CreatePfileSpfileStatement
+  | CreateDiskgroupStatement | DropDiskgroupStatement | AlterDiskgroupStatement
   // Explain
   | ExplainPlanStatement
   // Triggers

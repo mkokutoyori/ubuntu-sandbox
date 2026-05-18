@@ -1,14 +1,21 @@
 /**
- * V$ASM_CLIENT — DB instances connected to ASM.
+ * V$ASM_CLIENT — DB instances currently attached to the ASM instance.
+ * Driven by AsmManager.attachClient — empty until an instance attaches.
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
+
 registerView({
   name: 'V$ASM_CLIENT',
   comment: 'ASM clients',
-  query() {
+  query({ instance }) {
+    const rows: (string | number)[][] = [];
+    let groupNumber = 1;
+    for (const [instanceName, c] of instance.asm.getClients()) {
+      rows.push([groupNumber, instanceName, c.dbName, c.status, c.softwareVersion, c.compatibleVersion]);
+    }
     return queryResult(
       [
         { name: 'GROUP_NUMBER', dataType: oracleNumber(10) },
@@ -18,7 +25,7 @@ registerView({
         { name: 'SOFTWARE_VERSION', dataType: oracleVarchar2(60) },
         { name: 'COMPATIBLE_VERSION', dataType: oracleVarchar2(60) },
       ],
-      []
+      rows
     );
   },
 });

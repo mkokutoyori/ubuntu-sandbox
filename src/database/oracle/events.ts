@@ -262,6 +262,31 @@ export interface OracleTablespaceRenamedPayload extends OracleDeviceRef {
   newName: string;
 }
 
+export interface OracleAsmDiskgroupCreatedPayload extends OracleDeviceRef {
+  groupNumber: number;
+  name: string;
+  redundancy: 'EXTERNAL' | 'NORMAL' | 'HIGH';
+}
+
+export interface OracleAsmDiskgroupDroppedPayload extends OracleDeviceRef {
+  name: string;
+  diskPaths: string[];
+}
+
+export interface OracleAsmDiskAddedPayload extends OracleDeviceRef {
+  diskgroup: string;
+  diskNumber: number;
+  diskName: string;
+  path: string;
+  sizeMb: number;
+}
+
+export interface OracleAsmDiskDroppedPayload extends OracleDeviceRef {
+  diskgroup: string;
+  diskName: string;
+  path: string;
+}
+
 export interface OracleParameterFileRequestedPayload extends OracleDeviceRef {
   target: 'PFILE' | 'SPFILE';
   outputPath: string;
@@ -321,4 +346,8 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }
   | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload }
-  | { topic: 'oracle.instance.parameter-file-requested'; payload: OracleParameterFileRequestedPayload };
+  | { topic: 'oracle.instance.parameter-file-requested'; payload: OracleParameterFileRequestedPayload }
+  | { topic: 'oracle.asm.diskgroup-created';             payload: OracleAsmDiskgroupCreatedPayload }
+  | { topic: 'oracle.asm.diskgroup-dropped';             payload: OracleAsmDiskgroupDroppedPayload }
+  | { topic: 'oracle.asm.disk-added';                    payload: OracleAsmDiskAddedPayload }
+  | { topic: 'oracle.asm.disk-dropped';                  payload: OracleAsmDiskDroppedPayload };

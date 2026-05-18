@@ -131,6 +131,27 @@ export class OracleFilesystemSync {
         );
       }),
 
+      this.bus.subscribe('oracle.asm.disk-added', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ASM DISK ${e.payload.diskName} - diskgroup ${e.payload.diskgroup} - ${e.payload.sizeMb}M]`,
+        );
+      }),
+
+      this.bus.subscribe('oracle.asm.disk-dropped', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.deleteFileFromEditor) return;
+        dev.deleteFileFromEditor(e.payload.path);
+      }),
+
+      this.bus.subscribe('oracle.asm.diskgroup-dropped', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.deleteFileFromEditor) return;
+        for (const p of e.payload.diskPaths) dev.deleteFileFromEditor(p);
+      }),
+
       this.bus.subscribe('oracle.instance.parameter-file-requested', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
