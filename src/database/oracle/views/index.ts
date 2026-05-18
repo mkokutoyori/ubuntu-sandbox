@@ -56,6 +56,7 @@ import './v_libraryobj';
 import './v_log_history';
 import './v_logmnr_logs';
 import './v_logmnr_contents';
+import './v_logmnr_dictionary';
 import './v_libcache_locks';
 import './v_nodes';
 import './v_rac_global_view';
