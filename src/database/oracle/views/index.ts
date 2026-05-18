@@ -319,4 +319,13 @@ import './dba_jobs';
 import './dba_scheduler_jobs';
 import './dba_synonyms';
 
+// SYS.X$ base tables migrated out of OracleCatalog (one file per table).
+import './sys_obj';
+import './sys_tab';
+import './sys_col';
+import './sys_ind';
+import './sys_user';
+import './sys_ts';
+import './sys_aud';
+
 export { };
