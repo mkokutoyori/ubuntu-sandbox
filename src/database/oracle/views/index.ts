@@ -45,6 +45,7 @@ import './dba_outstanding_alerts';
 import './dba_alert_history';
 import './dba_alert_arguments';
 import './dba_audit_session';
+import './dba_audit_object';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
