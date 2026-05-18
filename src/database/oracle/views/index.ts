@@ -71,6 +71,7 @@ import './dba_hist_snapshot';
 import './dba_hist_database_instance';
 import './dba_hist_sysstat';
 import './dba_hist_sysmetric_summary';
+import './dba_hist_sysmetric_history';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
