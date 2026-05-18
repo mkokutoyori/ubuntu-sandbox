@@ -160,6 +160,7 @@ import './v_memory_resize_ops';
 import './v_memory_target_advice';
 import './v_pgastat';
 import './v_parameter2';
+import './v_system_parameter2';
 import './v_process_memory';
 import './v_process_memory_detail';
 import './v_session_wait_class';
