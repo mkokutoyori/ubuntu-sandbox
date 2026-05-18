@@ -328,4 +328,7 @@ import './sys_user';
 import './sys_ts';
 import './sys_aud';
 
+// Role / session access-control views.
+import './role_sys_privs';
+
 export { };
