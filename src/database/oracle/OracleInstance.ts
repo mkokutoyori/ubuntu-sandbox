@@ -15,6 +15,8 @@ import {
   type OracleObservables,
 } from './observables';
 import { OracleSignalRefreshActor } from './actors/OracleSignalRefreshActor';
+import { OracleRuntimeState } from './views/OracleRuntimeState';
+import { OracleRuntimeStateActor } from './actors/OracleRuntimeStateActor';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -65,6 +67,11 @@ export class OracleInstance {
   /** Refresh actor bridging oracle.* events → signal store. (Re-)attached
    *  whenever the bus or deviceId changes. */
   private _refreshActor: OracleSignalRefreshActor | null = null;
+  /** Runtime state feeding the dynamic V$/GV$ views, maintained by an
+   *  event-driven actor. Exposed via `getRuntimeState()` so the catalog
+   *  can hand it to view files at query time. */
+  private readonly _runtimeState = new OracleRuntimeState();
+  private _runtimeStateActor: OracleRuntimeStateActor | null = null;
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };
@@ -93,9 +100,18 @@ export class OracleInstance {
       this._refreshActor.stop();
       this._refreshActor = null;
     }
+    if (this._runtimeStateActor) {
+      this._runtimeStateActor.stop();
+      this._runtimeStateActor = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
+    this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
+    this._runtimeStateActor.start();
   }
+
+  /** Snapshot of the event-fed runtime state used by the V$/GV$ views. */
+  getRuntimeState(): OracleRuntimeState { return this._runtimeState; }
 
   /** Public bus accessor — used by OracleExecutor / SQLPlusSession to
    *  reuse the same bus binding as the instance. */
@@ -164,6 +180,18 @@ export class OracleInstance {
     this._redoLogGroups[0].status = 'CURRENT';
     output.push(`Database opened.`);
     this.logAlert('Database opened');
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: 'SYS$USERS', kind: 'started' },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: 'SYS$BACKGROUND', kind: 'started' },
+    });
 
     if (mode === 'RESTRICT') {
       output.push('Database opened in restricted mode.');
@@ -493,6 +521,15 @@ export class OracleInstance {
     }
     this._listenerState = 'running';
     this.logAlert('Listener LISTENER started successfully');
+    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT}))`;
+    this.getBus().publish({
+      topic: 'oracle.listener.event',
+      payload: { ...this.ref(), state: 'running', endpoint },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
+    });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
     const port = ORACLE_CONFIG.PORT;
     const sid = this.config.sid;
@@ -534,6 +571,14 @@ export class OracleInstance {
     }
     this._listenerState = 'stopped';
     this.logAlert('Listener LISTENER stopped');
+    this.getBus().publish({
+      topic: 'oracle.listener.event',
+      payload: { ...this.ref(), state: 'stopped', endpoint: '' },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: this.config.sid, kind: 'stopped' },
+    });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
     const port = ORACLE_CONFIG.PORT;
     return [

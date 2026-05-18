@@ -1,0 +1,58 @@
+============================================================
+RMAN debug transcript — rman-pitr-duplicate-phase2
+Generated: 2026-05-18T04:47:48.109Z
+Topology:  db-pitr — Oracle PITRDB SHUTDOWN (session should auto-dispose)
+Total commands: 7
+============================================================
+
+  
+  Recovery Manager: Release 19.0.0.0.0 - Production on 18-MAY-2026 04:47:48
+  
+  Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
+  
+  connected to target database: ORCL (DBID=1234567890)
+  
+
+
+--- [1] § 2.2 after shutdown — every verb against SHUTDOWN ---
+RMAN [1/7]> CONNECT TARGET /
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-04014: Oracle instance is not started
+
+RMAN [2/7]> SHOW ALL
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: target database is not connected
+
+RMAN [3/7]> REPORT SCHEMA
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: target database is not connected
+
+RMAN [4/7]> BACKUP DATABASE
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: target database is not connected
+
+RMAN [5/7]> RESTORE DATABASE
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: target database is not connected
+
+RMAN [6/7]> RECOVER DATABASE
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: target database is not connected
+
+RMAN [7/7]> LIST BACKUP
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03002: target database is not connected

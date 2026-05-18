@@ -26,6 +26,7 @@ import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, typ
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
+import { makeSqlId } from './views/sqlId';
 import { OracleParser } from './OracleParser';
 
 /** Snapshot of table rows for transaction undo */
@@ -163,10 +164,56 @@ export class OracleExecutor extends BaseExecutor {
   private _txnStartedAt: number = 0;
 
   execute(statement: Statement): ResultSet {
+    const parseStart = performance.now();
+    this.emitSqlParsed(statement);
     const result = this.executeStatement(statement);
+    const elapsed = performance.now() - parseStart;
+    this.emitSqlExecuted(statement, result, elapsed);
     this.recordAuditForStatement(statement, 0);
     this.emitForStatement(statement, result);
     return result;
+  }
+
+  private _lastSqlText = '';
+  private _lastSqlId = '';
+
+  private emitSqlParsed(statement: Statement): void {
+    const text = this.statementText(statement);
+    if (!text) return;
+    const sqlId = makeSqlId(text);
+    this._lastSqlText = text;
+    this._lastSqlId = sqlId;
+    this.bus.publish({
+      topic: 'oracle.sql.parsed',
+      payload: {
+        ...this.ref(),
+        sqlId,
+        text,
+        parsingSchema: this.context.currentSchema,
+        hardParse: true,
+      },
+    });
+  }
+
+  private emitSqlExecuted(statement: Statement, result: ResultSet, elapsedMs: number): void {
+    if (!this._lastSqlId) return;
+    this.bus.publish({
+      topic: 'oracle.sql.executed',
+      payload: {
+        ...this.ref(),
+        sqlId: this._lastSqlId,
+        elapsedMicros: Math.max(1, Math.round(elapsedMs * 1000)),
+        cpuMicros: Math.max(1, Math.round(elapsedMs * 800)),
+        bufferGets: result.rows.length + 1,
+        diskReads: 0,
+        rowsProcessed: result.affectedRows ?? result.rows.length,
+      },
+    });
+  }
+
+  private statementText(stmt: Statement): string {
+    const s = stmt as unknown as { sourceText?: string; type: string };
+    return s.sourceText ?? stmt.type;
   }
 
   /** Try to execute, recording errors in audit trail */

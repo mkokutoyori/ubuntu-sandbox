@@ -1,0 +1,2392 @@
+============================================================
+Oracle debug transcript — oracle-sql-dml-ddl
+Generated: 2026-05-18T09:49:14.504Z
+Topology:  LinuxServer ora-sql — Oracle ORCL OPEN
+Total commands: 461
+============================================================
+
+  
+  SQL*Plus: Release 19.0.0.0.0 - Production on Mon May 18 2026
+  Version 19.3.0.0.0
+  
+  Copyright (c) 1982, 2019, Oracle.  All rights reserved.
+  
+  Connected.
+
+
+--- [1] § setup schema ---
+SQL [1/461]> CREATE USER demo IDENTIFIED BY "Demo1#" QUOTA UNLIMITED ON users;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: QUOTA
+
+SQL [2/461]> GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE TRIGGER, CREATE TYPE, CREATE SYNONYM, UNLIMITED TABLESPACE TO demo;
+  
+  Grant succeeded.
+
+SQL [3/461]> ALTER SESSION SET CURRENT_SCHEMA = demo;
+  
+  ORA-02248: invalid option for ALTER SESSION
+
+
+--- [4] § CREATE TABLE basic ---
+SQL [4/461]> CREATE TABLE customers (id NUMBER PRIMARY KEY, name VARCHAR2(100) NOT NULL, email VARCHAR2(200) UNIQUE, created DATE DEFAULT SYSDATE);
+  
+  Table created.
+
+SQL [5/461]> CREATE TABLE products (id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, code VARCHAR2(20) UNIQUE NOT NULL, name VARCHAR2(200) NOT NULL, price NUMBER(10,2) CHECK (price >= 0), stock INTEGER DEFAULT 0, active CHAR(1) DEFAULT 'Y' CHECK (active IN ('Y','N')), created TIMESTAMP DEFAULT SYSTIMESTAMP);
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected RPAREN
+
+SQL [6/461]> CREATE TABLE orders (id NUMBER PRIMARY KEY, customer_id NUMBER NOT NULL, order_date DATE DEFAULT SYSDATE, status VARCHAR2(20) DEFAULT 'PENDING', total NUMBER(12,2) DEFAULT 0, CONSTRAINT fk_orders_cust FOREIGN KEY (customer_id) REFERENCES customers(id));
+  
+  Table created.
+
+SQL [7/461]> CREATE TABLE order_lines (order_id NUMBER, line_no NUMBER, product_id NUMBER, qty NUMBER NOT NULL CHECK (qty > 0), unit_price NUMBER(10,2) NOT NULL, CONSTRAINT pk_ol PRIMARY KEY (order_id, line_no), CONSTRAINT fk_ol_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE, CONSTRAINT fk_ol_prod FOREIGN KEY (product_id) REFERENCES products(id));
+  
+  Table created.
+
+SQL [8/461]> CREATE TABLE staging AS SELECT * FROM customers WHERE 1=0;
+  
+  Table created.
+
+SQL [9/461]> CREATE TABLE backup_customers AS SELECT * FROM customers;
+  
+  Table created.
+
+SQL [10/461]> CREATE GLOBAL TEMPORARY TABLE tmp_session (id NUMBER, payload VARCHAR2(4000)) ON COMMIT PRESERVE ROWS;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ON
+
+SQL [11/461]> CREATE GLOBAL TEMPORARY TABLE tmp_txn (id NUMBER) ON COMMIT DELETE ROWS;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ON
+
+SQL [12/461]> CREATE PRIVATE TEMPORARY TABLE ora$ptt_session (id NUMBER) ON COMMIT PRESERVE DEFINITION;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unsupported CREATE target: PRIVATE
+
+SQL [13/461]> CREATE TABLE sales (id NUMBER, sale_date DATE, region VARCHAR2(50), amount NUMBER(12,2)) PARTITION BY RANGE (sale_date) (PARTITION p2023 VALUES LESS THAN (DATE '2024-01-01'), PARTITION p2024 VALUES LESS THAN (DATE '2025-01-01'), PARTITION p2025 VALUES LESS THAN (DATE '2026-01-01'), PARTITION p_max VALUES LESS THAN (MAXVALUE));
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: PARTITION
+
+SQL [14/461]> CREATE TABLE customers_by_country (id NUMBER, name VARCHAR2(100), country VARCHAR2(2)) PARTITION BY LIST (country) (PARTITION p_us VALUES ('US'), PARTITION p_fr VALUES ('FR'), PARTITION p_other VALUES (DEFAULT));
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: PARTITION
+
+SQL [15/461]> CREATE TABLE customers_hash (id NUMBER, name VARCHAR2(100)) PARTITION BY HASH (id) PARTITIONS 4;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: PARTITION
+
+SQL [16/461]> CREATE TABLE iot_table (id NUMBER PRIMARY KEY, payload VARCHAR2(4000)) ORGANIZATION INDEX;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ORGANIZATION
+
+SQL [17/461]> CREATE TABLE ext_csv (id NUMBER, name VARCHAR2(100)) ORGANIZATION EXTERNAL (TYPE ORACLE_LOADER DEFAULT DIRECTORY data_dir ACCESS PARAMETERS (RECORDS DELIMITED BY NEWLINE FIELDS TERMINATED BY ',') LOCATION ('data.csv'));
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ORGANIZATION
+
+SQL [18/461]> CREATE TABLE compressed_t (id NUMBER, payload VARCHAR2(4000)) ROW STORE COMPRESS ADVANCED;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ROW
+
+SQL [19/461]> CREATE TABLE compressed_archive (id NUMBER) COMPRESS FOR QUERY HIGH;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: COMPRESS
+
+
+--- [20] § inspect schema ---
+SQL [20/461]> SELECT table_name, tablespace_name, temporary, partitioned FROM user_tables ORDER BY table_name;
+  ERROR:
+  ORA-00900: invalid SQL statement: "TEMPORARY": invalid identifier
+
+SQL [21/461]> SELECT COUNT(*) AS user_tables FROM user_tables;
+  
+  USER_TABLES
+  -----------
+  1          
+  1          
+  1          
+  1          
+  1          
+  1          
+  
+  6 rows selected.
+
+SQL [22/461]> SELECT table_name, column_name, data_type, data_length, nullable, data_default FROM user_tab_columns ORDER BY table_name, column_id;
+  ERROR:
+  ORA-00900: invalid SQL statement: "DATA_DEFAULT": invalid identifier
+
+SQL [23/461]> SELECT * FROM user_constraints WHERE table_name = 'CUSTOMERS';
+  
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS 
+  ----- --------------- --------------- ---------- -------
+  SYS   SYS_C010000     P               CUSTOMERS  ENABLED
+  SYS   SYS_C010001     O               CUSTOMERS  ENABLED
+  SYS   SYS_C010002     U               CUSTOMERS  ENABLED
+  
+  3 rows selected.
+
+SQL [24/461]> SELECT * FROM user_constraints WHERE table_name = 'PRODUCTS';
+  
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS
+  ----- --------------- --------------- ---------- ------
+
+SQL [25/461]> SELECT * FROM user_constraints WHERE table_name = 'ORDERS';
+  
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS 
+  ----- --------------- --------------- ---------- -------
+  SYS   SYS_C010000     P               ORDERS     ENABLED
+  SYS   SYS_C010001     O               ORDERS     ENABLED
+  SYS   fk_orders_cust  R               ORDERS     ENABLED
+  
+  3 rows selected.
+
+SQL [26/461]> SELECT * FROM user_indexes WHERE table_name IN ('CUSTOMERS','PRODUCTS','ORDERS');
+  
+  OWNER INDEX_NAME TABLE_NAME UNIQUENESS STATUS INDEX_TYPE
+  ----- ---------- ---------- ---------- ------ ----------
+
+SQL [27/461]> SELECT * FROM user_tab_partitions ORDER BY table_name, partition_position;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+
+--- [28] § ALTER TABLE ---
+SQL [28/461]> ALTER TABLE customers ADD phone VARCHAR2(30);
+  
+  Table altered.
+
+SQL [29/461]> ALTER TABLE customers ADD (address VARCHAR2(200), city VARCHAR2(100));
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected constraint type (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)
+
+SQL [30/461]> ALTER TABLE customers MODIFY name VARCHAR2(150) NOT NULL;
+  
+  Table altered.
+
+SQL [31/461]> ALTER TABLE customers MODIFY email NULL;
+  
+  Table altered.
+
+SQL [32/461]> ALTER TABLE customers RENAME COLUMN phone TO phone_number;
+  
+  Table altered.
+
+SQL [33/461]> ALTER TABLE customers DROP COLUMN address;
+  ERROR:
+  ORA-00900: invalid SQL statement: Column ADDRESS not found in CUSTOMERS
+
+SQL [34/461]> ALTER TABLE customers DROP (city);
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: (
+
+SQL [35/461]> ALTER TABLE customers SET UNUSED COLUMN created;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SET
+
+SQL [36/461]> ALTER TABLE customers DROP UNUSED COLUMNS;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: UNUSED
+
+SQL [37/461]> ALTER TABLE products MODIFY active DEFAULT 'A';
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: 'A'
+
+SQL [38/461]> ALTER TABLE orders ADD CONSTRAINT ck_status CHECK (status IN ('PENDING','PAID','SHIPPED','CANCELLED'));
+  
+  Table altered.
+
+SQL [39/461]> ALTER TABLE orders DROP CONSTRAINT ck_status;
+  
+  Table altered.
+
+SQL [40/461]> ALTER TABLE orders ADD CONSTRAINT uk_orders UNIQUE (id);
+  
+  Table altered.
+
+SQL [41/461]> ALTER TABLE orders DROP CONSTRAINT uk_orders;
+  
+  Table altered.
+
+SQL [42/461]> ALTER TABLE orders DISABLE CONSTRAINT fk_orders_cust;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: DISABLE
+
+SQL [43/461]> ALTER TABLE orders ENABLE CONSTRAINT fk_orders_cust;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ENABLE
+
+SQL [44/461]> ALTER TABLE orders ENABLE NOVALIDATE CONSTRAINT fk_orders_cust;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ENABLE
+
+SQL [45/461]> ALTER TABLE orders DROP CONSTRAINT fk_orders_cust CASCADE;
+  
+  Table altered.
+
+SQL [46/461]> ALTER TABLE orders ADD CONSTRAINT fk_orders_cust FOREIGN KEY (customer_id) REFERENCES customers(id);
+  
+  Table altered.
+
+SQL [47/461]> ALTER TABLE customers RENAME TO clients;
+  
+  Table altered.
+
+SQL [48/461]> RENAME clients TO customers;
+  SP2-0734: unknown command beginning "RENAME clients TO cu..." - rest of line ignored.
+
+SQL [49/461]> ALTER TABLE products MOVE TABLESPACE users;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+
+SQL [50/461]> ALTER TABLE products SHRINK SPACE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SHRINK
+
+SQL [51/461]> ALTER TABLE products SHRINK SPACE COMPACT;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SHRINK
+
+SQL [52/461]> ALTER TABLE products SHRINK SPACE CASCADE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SHRINK
+
+SQL [53/461]> ALTER TABLE customers ENABLE ROW MOVEMENT;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ENABLE
+
+SQL [54/461]> ALTER TABLE customers DISABLE ROW MOVEMENT;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: DISABLE
+
+SQL [55/461]> ALTER TABLE customers LOGGING;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: LOGGING
+
+SQL [56/461]> ALTER TABLE customers NOLOGGING;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: NOLOGGING
+
+SQL [57/461]> ALTER TABLE customers PCTFREE 20 PCTUSED 50;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: PCTFREE
+
+SQL [58/461]> ALTER TABLE customers ALLOCATE EXTENT (SIZE 10M);
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ALLOCATE
+
+SQL [59/461]> ALTER TABLE customers DEALLOCATE UNUSED;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: DEALLOCATE
+
+SQL [60/461]> ALTER TABLE sales SPLIT PARTITION p_max AT (DATE '2027-01-01') INTO (PARTITION p2026, PARTITION p_max);
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SPLIT
+
+SQL [61/461]> ALTER TABLE sales TRUNCATE PARTITION p2023;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected keyword 'TABLE'
+
+SQL [62/461]> ALTER TABLE sales DROP PARTITION p2023;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: PARTITION
+
+SQL [63/461]> ALTER TABLE sales ADD PARTITION p2027 VALUES LESS THAN (DATE '2028-01-01');
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: VALUES
+
+SQL [64/461]> ALTER TABLE sales MERGE PARTITIONS p2024, p2025 INTO PARTITION p2024_25;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected keyword 'INTO'
+
+SQL [65/461]> ALTER TABLE products COMPRESS FOR OLTP;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: COMPRESS
+
+SQL [66/461]> ALTER TABLE products MOVE COMPRESS FOR QUERY HIGH;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+
+SQL [67/461]> ALTER TABLE products NOCOMPRESS;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: NOCOMPRESS
+
+
+--- [68] § indexes ---
+SQL [68/461]> CREATE INDEX idx_cust_name ON customers (name);
+  
+  Index created.
+
+SQL [69/461]> CREATE UNIQUE INDEX uk_prod_code ON products (code);
+  
+  Index created.
+
+SQL [70/461]> CREATE INDEX idx_orders_cust ON orders (customer_id);
+  
+  Index created.
+
+SQL [71/461]> CREATE INDEX idx_orders_date ON orders (order_date) ONLINE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ONLINE
+
+SQL [72/461]> CREATE BITMAP INDEX bx_prod_active ON products (active);
+  
+  Index created.
+
+SQL [73/461]> CREATE INDEX idx_func_cust_upper ON customers (UPPER(name));
+  
+  Index created.
+
+SQL [74/461]> CREATE INDEX idx_ol_prod ON order_lines (product_id);
+  
+  Index created.
+
+SQL [75/461]> CREATE INDEX idx_orders_status_date ON orders (status, order_date);
+  
+  Index created.
+
+SQL [76/461]> CREATE INDEX idx_orders_total ON orders (total) COMPRESS;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: COMPRESS
+
+SQL [77/461]> CREATE INDEX idx_inv_prod ON products (name) INVISIBLE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: INVISIBLE
+
+SQL [78/461]> CREATE INDEX idx_sales_region ON sales (region) LOCAL;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: LOCAL
+
+SQL [79/461]> CREATE INDEX idx_sales_amount ON sales (amount) GLOBAL PARTITION BY HASH (amount) PARTITIONS 4;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: GLOBAL
+
+SQL [80/461]> ALTER INDEX idx_inv_prod VISIBLE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected REBUILD or RENAME after ALTER INDEX
+
+SQL [81/461]> ALTER INDEX idx_inv_prod INVISIBLE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected REBUILD or RENAME after ALTER INDEX
+
+SQL [82/461]> ALTER INDEX idx_inv_prod REBUILD ONLINE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: ONLINE
+
+SQL [83/461]> ALTER INDEX idx_inv_prod REBUILD TABLESPACE users;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: TABLESPACE
+
+SQL [84/461]> ALTER INDEX idx_inv_prod COALESCE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected REBUILD or RENAME after ALTER INDEX
+
+SQL [85/461]> ALTER INDEX idx_inv_prod MONITORING USAGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected REBUILD or RENAME after ALTER INDEX
+
+SQL [86/461]> ALTER INDEX idx_inv_prod NOMONITORING USAGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected REBUILD or RENAME after ALTER INDEX
+
+SQL [87/461]> ALTER INDEX idx_inv_prod UNUSABLE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected REBUILD or RENAME after ALTER INDEX
+
+SQL [88/461]> ALTER INDEX idx_inv_prod REBUILD;
+  ERROR:
+  ORA-00900: invalid SQL statement: specified index does not exist
+
+SQL [89/461]> DROP INDEX idx_func_cust_upper;
+  
+  Index dropped.
+
+
+--- [90] § INSERT ---
+SQL [90/461]> INSERT INTO customers (id, name, email) VALUES (1, 'Alice Dupont', 'alice@example.com');
+  
+  1 row inserted.
+
+SQL [91/461]> INSERT INTO customers (id, name, email) VALUES (2, 'Bob Martin', 'bob@example.com');
+  
+  1 row inserted.
+
+SQL [92/461]> INSERT INTO customers (id, name, email) VALUES (3, 'Carol Leroy', 'carol@example.com');
+  
+  1 row inserted.
+
+SQL [93/461]> INSERT INTO customers (id, name, email) VALUES (4, 'David Smith', 'david@example.com');
+  
+  1 row inserted.
+
+SQL [94/461]> INSERT INTO customers (id, name, email) VALUES (5, 'Eve Johnson', NULL);
+  
+  1 row inserted.
+
+SQL [95/461]> INSERT INTO customers VALUES (6, 'Frank Brown', 'frank@x.com', SYSDATE, NULL);
+  
+  1 row inserted.
+
+SQL [96/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-001', 'Widget', 9.99, 100);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [97/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-002', 'Gadget', 19.99, 50);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [98/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-003', 'Gizmo', 4.99, 200);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [99/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-004', 'Thingamajig', 29.99, 30);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [100/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-005', 'Doohickey', 14.99, 75);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [101/461]> INSERT INTO orders VALUES (101, 1, SYSDATE, 'PAID', 19.98);
+  
+  1 row inserted.
+
+SQL [102/461]> INSERT INTO orders VALUES (102, 2, SYSDATE - 1, 'SHIPPED', 39.98);
+  ERROR:
+  ORA-00900: invalid SQL statement: invalid number
+
+SQL [103/461]> INSERT INTO orders VALUES (103, 1, SYSDATE - 2, 'PENDING', 14.99);
+  ERROR:
+  ORA-00900: invalid SQL statement: invalid number
+
+SQL [104/461]> INSERT INTO order_lines VALUES (101, 1, 1, 2, 9.99);
+  
+  1 row inserted.
+
+SQL [105/461]> INSERT INTO order_lines VALUES (102, 1, 2, 2, 19.99);
+  ERROR:
+  ORA-00900: invalid SQL statement: integrity constraint (fk_ol_order) violated - parent key not found
+
+SQL [106/461]> INSERT INTO order_lines VALUES (103, 1, 5, 1, 14.99);
+  ERROR:
+  ORA-00900: invalid SQL statement: integrity constraint (fk_ol_order) violated - parent key not found
+
+SQL [107/461]> INSERT INTO orders SELECT 200 + level, 1, SYSDATE - level, 'PAID', 100 FROM dual CONNECT BY level <= 10;
+  ERROR:
+  ORA-00900: invalid SQL statement: cannot insert NULL into ("SYS"."ORDERS"."ID")
+
+SQL [108/461]> INSERT INTO sales VALUES (1, DATE '2024-06-15', 'EU', 1500);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [109/461]> INSERT INTO sales VALUES (2, DATE '2025-03-20', 'US', 2500);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [110/461]> INSERT INTO sales VALUES (3, DATE '2025-09-10', 'APAC', 1800);
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [111/461]> INSERT ALL INTO customers (id, name, email) VALUES (id, name, email) INTO staging (id, name, email) VALUES (id, name, email) SELECT 100 + level AS id, 'user_' || level AS name, 'user' || level || '@ex.com' AS email FROM dual CONNECT BY level <= 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected keyword 'INTO'
+
+SQL [112/461]> INSERT FIRST WHEN total > 50 THEN INTO big_orders WHEN total <= 50 THEN INTO small_orders SELECT id, total FROM orders;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected keyword 'INTO'
+
+SQL [113/461]> INSERT INTO customers (id, name) VALUES (7, 'Grace H');
+  ERROR:
+  ORA-00900: invalid SQL statement: unique constraint (SYS_C010002) violated
+
+SQL [114/461]> INSERT INTO customers SELECT 200, 'Henry I', 'h@x.com', SYSDATE, NULL FROM dual;
+  
+  1 row inserted.
+
+SQL [115/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+
+--- [116] § UPDATE ---
+SQL [116/461]> UPDATE customers SET phone_number = '555-0101' WHERE id = 1;
+  ERROR:
+  ORA-00900: invalid SQL statement: "PHONE_NUMBER": invalid identifier
+
+SQL [117/461]> UPDATE products SET price = price * 1.05 WHERE active = 'Y';
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [118/461]> UPDATE orders SET status = 'SHIPPED' WHERE order_date < SYSDATE - 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: invalid number
+
+SQL [119/461]> UPDATE customers c SET phone_number = (SELECT '555-' || LPAD(id,4,'0') FROM dual);
+  ERROR:
+  ORA-00900: invalid SQL statement: "PHONE_NUMBER": invalid identifier
+
+SQL [120/461]> UPDATE order_lines SET unit_price = unit_price * 1.10;
+  ERROR:
+  ORA-00900: invalid SQL statement: unique constraint (pk_ol) violated
+
+SQL [121/461]> UPDATE orders SET total = (SELECT NVL(SUM(qty * unit_price), 0) FROM order_lines WHERE order_lines.order_id = orders.id);
+  ERROR:
+  ORA-00900: invalid SQL statement: "ORDERS.ID": invalid identifier
+
+SQL [122/461]> UPDATE (SELECT * FROM products WHERE active = 'Y') SET stock = stock + 10;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected identifier
+
+SQL [123/461]> UPDATE customers SET name = 'Updated' WHERE 1=0;
+  
+  0 rows updated.
+
+SQL [124/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+
+--- [125] § DELETE ---
+SQL [125/461]> DELETE FROM customers WHERE id = 7;
+  
+  0 rows deleted.
+
+SQL [126/461]> DELETE FROM products WHERE stock = 0;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [127/461]> DELETE FROM orders WHERE status = 'CANCELLED';
+  
+  0 rows deleted.
+
+SQL [128/461]> DELETE FROM order_lines WHERE order_id IN (SELECT id FROM orders WHERE status = 'CANCELLED');
+  
+  0 rows deleted.
+
+SQL [129/461]> DELETE FROM customers WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id);
+  ERROR:
+  ORA-00900: invalid SQL statement: "CUSTOMERS.ID": invalid identifier
+
+SQL [130/461]> TRUNCATE TABLE staging;
+  
+  Table truncated.
+
+SQL [131/461]> TRUNCATE TABLE staging DROP STORAGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unsupported DROP target: STORAGE
+
+SQL [132/461]> TRUNCATE TABLE staging REUSE STORAGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: REUSE
+
+SQL [133/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+
+--- [134] § MERGE ---
+SQL [134/461]> MERGE INTO customers c USING (SELECT 1 AS id, 'Alice Updated' AS name, 'alice2@x.com' AS email FROM dual UNION ALL SELECT 999, 'New Customer', 'new@x.com' FROM dual) src ON (c.id = src.id) WHEN MATCHED THEN UPDATE SET c.name = src.name, c.email = src.email WHEN NOT MATCHED THEN INSERT (id, name, email) VALUES (src.id, src.name, src.email);
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected identifier
+
+SQL [135/461]> MERGE INTO products p USING (SELECT 'SKU-001' AS code, 50 AS new_stock FROM dual) src ON (p.code = src.code) WHEN MATCHED THEN UPDATE SET stock = stock + src.new_stock;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected identifier
+
+SQL [136/461]> MERGE INTO products p USING (SELECT 'SKU-DELETE' AS code FROM dual) src ON (p.code = src.code) WHEN MATCHED THEN UPDATE SET active = 'N' DELETE WHERE active = 'N';
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected identifier
+
+SQL [137/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+
+--- [138] § SELECT joins ---
+SQL [138/461]> SELECT * FROM customers ORDER BY id;
+  
+  ID  NAME         EMAIL             CREATED             PHONE
+  --- ------------ ----------------- ------------------- -----
+  1   Alice Dupont alice@example.com                          
+  2   Bob Martin   bob@example.com                            
+  3   Carol Leroy  carol@example.com                          
+  4   David Smith  david@example.com                          
+  5   Eve Johnson                                             
+  6   Frank Brown  frank@x.com       2026-05-18 09:49:14      
+  200 Henry I      h@x.com           2026-05-18 09:49:14      
+  
+  7 rows selected.
+
+SQL [139/461]> SELECT * FROM customers WHERE id IN (1,2,3);
+  
+  ID NAME         EMAIL             CREATED PHONE
+  -- ------------ ----------------- ------- -----
+  1  Alice Dupont alice@example.com              
+  2  Bob Martin   bob@example.com                
+  3  Carol Leroy  carol@example.com              
+  
+  3 rows selected.
+
+SQL [140/461]> SELECT * FROM customers WHERE name LIKE 'A%';
+  
+  ID NAME         EMAIL             CREATED PHONE
+  -- ------------ ----------------- ------- -----
+  1  Alice Dupont alice@example.com              
+  
+  1 row selected.
+
+SQL [141/461]> SELECT c.name, o.id, o.total FROM customers c JOIN orders o ON c.id = o.customer_id ORDER BY o.id;
+  
+  NAME         ID  TOTAL
+  ------------ --- -----
+  Alice Dupont 101 19.98
+  
+  1 row selected.
+
+SQL [142/461]> SELECT c.name, o.id FROM customers c LEFT JOIN orders o ON c.id = o.customer_id;
+  
+  NAME         ID 
+  ------------ ---
+  Alice Dupont 101
+  Bob Martin      
+  Carol Leroy     
+  David Smith     
+  Eve Johnson     
+  Frank Brown     
+  Henry I         
+  
+  7 rows selected.
+
+SQL [143/461]> SELECT c.name, o.id FROM customers c RIGHT JOIN orders o ON c.id = o.customer_id;
+  
+  NAME         ID 
+  ------------ ---
+  Alice Dupont 101
+  
+  1 row selected.
+
+SQL [144/461]> SELECT c.name, o.id FROM customers c FULL OUTER JOIN orders o ON c.id = o.customer_id;
+  
+  NAME         ID 
+  ------------ ---
+  Alice Dupont 101
+  Bob Martin      
+  Carol Leroy     
+  David Smith     
+  Eve Johnson     
+  Frank Brown     
+  Henry I         
+  
+  7 rows selected.
+
+SQL [145/461]> SELECT c.name, o.id FROM customers c CROSS JOIN orders o WHERE rownum < 10;
+  
+  NAME         ID 
+  ------------ ---
+  Alice Dupont 101
+  Bob Martin   101
+  Carol Leroy  101
+  David Smith  101
+  Eve Johnson  101
+  Frank Brown  101
+  Henry I      101
+  
+  7 rows selected.
+
+SQL [146/461]> SELECT c.name, o.id FROM customers c, orders o WHERE c.id = o.customer_id;
+  
+  NAME         ID 
+  ------------ ---
+  Alice Dupont 101
+  
+  1 row selected.
+
+SQL [147/461]> SELECT c.name, COUNT(o.id) AS orders_count, NVL(SUM(o.total), 0) AS total_spent FROM customers c LEFT JOIN orders o ON c.id = o.customer_id GROUP BY c.name ORDER BY total_spent DESC;
+  
+  NAME         ORDERS_COUNT TOTAL_SPENT
+  ------------ ------------ -----------
+  Alice Dupont 1            19.98      
+  Bob Martin   0            0          
+  Carol Leroy  0            0          
+  David Smith  0            0          
+  Eve Johnson  0            0          
+  Frank Brown  0            0          
+  Henry I      0            0          
+  
+  7 rows selected.
+
+SQL [148/461]> SELECT customer_id, COUNT(*), SUM(total) FROM orders GROUP BY customer_id HAVING COUNT(*) > 1;
+  
+  CUSTOMER_ID COUNT(...) SUM(...)
+  ----------- ---------- --------
+
+SQL [149/461]> SELECT customer_id, COUNT(*) FROM orders GROUP BY ROLLUP (customer_id);
+  ERROR:
+  ORA-00900: invalid SQL statement: not a GROUP BY expression
+
+SQL [150/461]> SELECT customer_id, status, COUNT(*) FROM orders GROUP BY CUBE (customer_id, status);
+  ERROR:
+  ORA-00900: invalid SQL statement: not a GROUP BY expression
+
+SQL [151/461]> SELECT customer_id, status, COUNT(*) FROM orders GROUP BY GROUPING SETS ((customer_id), (status), ());
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SETS
+
+SQL [152/461]> SELECT id, name, ROW_NUMBER() OVER (ORDER BY name) AS rn FROM customers;
+  
+  ID  NAME         RN
+  --- ------------ --
+  1   Alice Dupont 1 
+  2   Bob Martin   2 
+  3   Carol Leroy  3 
+  4   David Smith  4 
+  5   Eve Johnson  5 
+  6   Frank Brown  6 
+  200 Henry I      7 
+  
+  7 rows selected.
+
+SQL [153/461]> SELECT id, total, RANK() OVER (ORDER BY total DESC) AS rk FROM orders;
+  
+  ID  TOTAL RK
+  --- ----- --
+  101 19.98 1 
+  
+  1 row selected.
+
+SQL [154/461]> SELECT id, total, DENSE_RANK() OVER (ORDER BY total DESC) AS drk FROM orders;
+  
+  ID  TOTAL DRK
+  --- ----- ---
+  101 19.98 1  
+  
+  1 row selected.
+
+SQL [155/461]> SELECT customer_id, id, total, SUM(total) OVER (PARTITION BY customer_id) AS cust_total FROM orders;
+  
+  CUSTOMER_ID ID  TOTAL CUST_TOTAL
+  ----------- --- ----- ----------
+  1           101 19.98 19.98     
+  
+  1 row selected.
+
+SQL [156/461]> SELECT id, total, LAG(total) OVER (ORDER BY id) AS prev_total, LEAD(total) OVER (ORDER BY id) AS next_total FROM orders;
+  
+  ID  TOTAL PREV_TOTAL NEXT_TOTAL
+  --- ----- ---------- ----------
+  101 19.98                      
+  
+  1 row selected.
+
+SQL [157/461]> SELECT id, total, NTILE(4) OVER (ORDER BY total) AS quartile FROM orders;
+  
+  ID  TOTAL QUARTILE
+  --- ----- --------
+  101 19.98 1       
+  
+  1 row selected.
+
+SQL [158/461]> SELECT id, total, AVG(total) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS moving_avg FROM orders;
+  
+  ID  TOTAL MOVING_AVG
+  --- ----- ----------
+  101 19.98 19.98     
+  
+  1 row selected.
+
+SQL [159/461]> SELECT id, total, FIRST_VALUE(total) OVER (ORDER BY id ROWS UNBOUNDED PRECEDING) AS first_total FROM orders;
+  
+  ID  TOTAL FIRST_TOTAL
+  --- ----- -----------
+  101 19.98 19.98      
+  
+  1 row selected.
+
+SQL [160/461]> SELECT id, total, LAST_VALUE(total) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_total FROM orders;
+  
+  ID  TOTAL LAST_TOTAL
+  --- ----- ----------
+  101 19.98 19.98     
+  
+  1 row selected.
+
+SQL [161/461]> SELECT customer_id, LISTAGG(id, ',') WITHIN GROUP (ORDER BY id) AS order_ids FROM orders GROUP BY customer_id;
+  ERROR:
+  ORA-00900: invalid SQL statement: Expected keyword 'BY'
+
+SQL [162/461]> SELECT * FROM customers WHERE id IN (SELECT customer_id FROM orders WHERE total > 30);
+  
+  ID NAME EMAIL CREATED PHONE
+  -- ---- ----- ------- -----
+
+SQL [163/461]> SELECT * FROM customers c WHERE EXISTS (SELECT 1 FROM orders WHERE customer_id = c.id);
+  
+  ID NAME         EMAIL             CREATED PHONE
+  -- ------------ ----------------- ------- -----
+  1  Alice Dupont alice@example.com              
+  
+  1 row selected.
+
+SQL [164/461]> SELECT (SELECT name FROM customers WHERE id = o.customer_id) AS name, o.id FROM orders o;
+  
+  NAME         ID 
+  ------------ ---
+  Alice Dupont 101
+  
+  1 row selected.
+
+SQL [165/461]> SELECT * FROM (SELECT id, total FROM orders ORDER BY total DESC) WHERE rownum < 5;
+  
+  ID  TOTAL
+  --- -----
+  101 19.98
+  
+  1 row selected.
+
+SQL [166/461]> WITH top_orders AS (SELECT * FROM orders ORDER BY total DESC FETCH FIRST 5 ROWS ONLY) SELECT * FROM top_orders;
+  
+  ID  CUSTOMER_ID ORDER_DATE          STATUS TOTAL
+  --- ----------- ------------------- ------ -----
+  101 1           2026-05-18 09:49:14 PAID   19.98
+  
+  1 row selected.
+
+SQL [167/461]> WITH numbers (n) AS (SELECT 1 FROM dual UNION ALL SELECT n + 1 FROM numbers WHERE n < 10) SELECT * FROM numbers;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [168/461]> SELECT id FROM customers UNION SELECT customer_id FROM orders;
+  
+  ID 
+  ---
+  1  
+  2  
+  3  
+  4  
+  5  
+  6  
+  200
+  
+  7 rows selected.
+
+SQL [169/461]> SELECT id FROM customers UNION ALL SELECT customer_id FROM orders;
+  
+  ID 
+  ---
+  1  
+  2  
+  3  
+  4  
+  5  
+  6  
+  200
+  1  
+  
+  8 rows selected.
+
+SQL [170/461]> SELECT id FROM customers INTERSECT SELECT customer_id FROM orders;
+  
+  ID
+  --
+  1 
+  
+  1 row selected.
+
+SQL [171/461]> SELECT id FROM customers MINUS SELECT customer_id FROM orders;
+  
+  ID 
+  ---
+  2  
+  3  
+  4  
+  5  
+  6  
+  200
+  
+  6 rows selected.
+
+SQL [172/461]> SELECT * FROM (SELECT customer_id, status FROM orders) PIVOT (COUNT(*) FOR status IN ('PAID' AS paid, 'SHIPPED' AS shipped, 'PENDING' AS pending));
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: PIVOT
+
+SQL [173/461]> SELECT * FROM (SELECT 1 AS id, 100 AS jan, 200 AS feb, 300 AS mar FROM dual) UNPIVOT (amount FOR mn IN (jan, feb, mar));
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: UNPIVOT
+
+SQL [174/461]> SELECT level, name FROM customers START WITH id = 1 CONNECT BY PRIOR id = id - 1;
+  
+  __CONNECT_BY_LEVEL__ NAME        
+  -------------------- ------------
+  1                    Alice Dupont
+  2                    Bob Martin  
+  3                    Carol Leroy 
+  4                    David Smith 
+  5                    Eve Johnson 
+  6                    Frank Brown 
+  
+  6 rows selected.
+
+SQL [175/461]> SELECT SYS_CONNECT_BY_PATH(name, '/') FROM customers START WITH id = 1 CONNECT BY PRIOR id = id - 1;
+  ERROR:
+  ORA-00900: invalid SQL statement: "SYS_CONNECT_BY_PATH": invalid identifier
+
+SQL [176/461]> SELECT customer_id, status, COUNT(*) OVER (PARTITION BY customer_id) FROM orders;
+  
+  CUSTOMER_ID STATUS COUNT(...)
+  ----------- ------ ----------
+  1           PAID   1         
+  
+  1 row selected.
+
+SQL [177/461]> SELECT * FROM orders SAMPLE (50);
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SAMPLE
+
+SQL [178/461]> SELECT * FROM orders SAMPLE BLOCK (10) SEED (42);
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: SAMPLE
+
+SQL [179/461]> SELECT * FROM orders MODEL DIMENSION BY (id) MEASURES (total) RULES (total[ANY] = total[CV()] * 1.1);
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: DIMENSION
+
+
+--- [180] § views ---
+SQL [180/461]> CREATE OR REPLACE VIEW v_active_customers AS SELECT id, name, email FROM customers WHERE email IS NOT NULL;
+  
+  View created.
+
+SQL [181/461]> CREATE OR REPLACE VIEW v_top_orders AS SELECT * FROM orders WHERE total > 30;
+  
+  View created.
+
+SQL [182/461]> CREATE OR REPLACE VIEW v_orders_summary AS SELECT customer_id, COUNT(*) AS cnt, SUM(total) AS tot FROM orders GROUP BY customer_id;
+  
+  View created.
+
+SQL [183/461]> CREATE OR REPLACE FORCE VIEW v_future AS SELECT * FROM not_yet_existing;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unsupported CREATE target: FORCE
+
+SQL [184/461]> CREATE MATERIALIZED VIEW mv_orders_summary BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND AS SELECT customer_id, COUNT(*) AS cnt, SUM(total) AS tot FROM orders GROUP BY customer_id;
+  
+  Materialized view created.
+
+SQL [185/461]> EXEC DBMS_MVIEW.REFRESH('mv_orders_summary');
+  SP2-0734: unknown command beginning "EXEC DBMS_MVIEW.REFR..." - rest of line ignored.
+
+SQL [186/461]> EXEC DBMS_MVIEW.REFRESH('mv_orders_summary', 'C');
+  SP2-0734: unknown command beginning "EXEC DBMS_MVIEW.REFR..." - rest of line ignored.
+
+SQL [187/461]> EXEC DBMS_MVIEW.REFRESH('mv_orders_summary', 'F');
+  SP2-0734: unknown command beginning "EXEC DBMS_MVIEW.REFR..." - rest of line ignored.
+
+SQL [188/461]> DROP MATERIALIZED VIEW mv_orders_summary;
+  
+  Materialized view dropped.
+
+SQL [189/461]> SELECT * FROM v_active_customers;
+  
+  ID  NAME         EMAIL            
+  --- ------------ -----------------
+  1   Alice Dupont alice@example.com
+  2   Bob Martin   bob@example.com  
+  3   Carol Leroy  carol@example.com
+  4   David Smith  david@example.com
+  6   Frank Brown  frank@x.com      
+  200 Henry I      h@x.com          
+  
+  6 rows selected.
+
+SQL [190/461]> SELECT * FROM v_top_orders;
+  
+  ID CUSTOMER_ID ORDER_DATE STATUS TOTAL
+  -- ----------- ---------- ------ -----
+
+SQL [191/461]> SELECT * FROM v_orders_summary;
+  
+  CUSTOMER_ID CNT TOT  
+  ----------- --- -----
+  1           1   19.98
+  
+  1 row selected.
+
+SQL [192/461]> CREATE OR REPLACE VIEW v_complex AS SELECT c.id, c.name, COUNT(o.id) AS num_orders FROM customers c LEFT JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name;
+  
+  View created.
+
+SQL [193/461]> DROP VIEW v_future;
+  ERROR:
+  ORA-00900: invalid SQL statement: View SYS.V_FUTURE does not exist
+
+
+--- [194] § sequences ---
+SQL [194/461]> CREATE SEQUENCE seq_customer_id START WITH 1000 INCREMENT BY 1 NOCACHE NOCYCLE;
+  
+  Sequence created.
+
+SQL [195/461]> CREATE SEQUENCE seq_order_id START WITH 1 CACHE 100;
+  
+  Sequence created.
+
+SQL [196/461]> CREATE SEQUENCE seq_year MINVALUE 2020 MAXVALUE 2099 CYCLE INCREMENT BY 1;
+  ERROR:
+  ORA-00900: invalid SQL statement: Unexpected token: MINVALUE
+
+SQL [197/461]> SELECT seq_customer_id.NEXTVAL FROM dual;
+  
+  EXPR
+  ----
+  1000
+  
+  1 row selected.
+
+SQL [198/461]> SELECT seq_customer_id.NEXTVAL FROM dual;
+  
+  EXPR
+  ----
+  1001
+  
+  1 row selected.
+
+SQL [199/461]> SELECT seq_customer_id.CURRVAL FROM dual;
+  
+  EXPR
+  ----
+  1001
+  
+  1 row selected.
+
+SQL [200/461]> INSERT INTO customers (id, name) VALUES (seq_customer_id.NEXTVAL, 'Sequenced User');
+  ERROR:
+  ORA-00900: invalid SQL statement: unique constraint (SYS_C010002) violated
+
+SQL [201/461]> ALTER SEQUENCE seq_customer_id INCREMENT BY 10;
+  
+  Sequence altered.
+
+SQL [202/461]> ALTER SEQUENCE seq_customer_id CACHE 50;
+  
+  Sequence altered.
+
+SQL [203/461]> DROP SEQUENCE seq_customer_id;
+  
+  Sequence dropped.
+
+
+--- [204] § synonyms ---
+SQL [204/461]> CREATE SYNONYM cust FOR customers;
+  
+  Synonym created.
+
+SQL [205/461]> CREATE PUBLIC SYNONYM pub_cust FOR demo.customers;
+  
+  Synonym created.
+
+SQL [206/461]> CREATE OR REPLACE SYNONYM cust FOR demo.customers;
+  
+  Synonym created.
+
+SQL [207/461]> SELECT * FROM cust WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [208/461]> DROP SYNONYM cust;
+  
+  Synonym dropped.
+
+SQL [209/461]> DROP PUBLIC SYNONYM pub_cust;
+  
+  Synonym dropped.
+
+
+--- [210] § transactions ---
+SQL [210/461]> SAVEPOINT before_changes;
+  
+  Savepoint created.
+
+SQL [211/461]> INSERT INTO customers VALUES (8888, 'Volatile', 'v@x.com', SYSDATE, NULL);
+  
+  1 row inserted.
+
+SQL [212/461]> UPDATE customers SET name = 'Volatile2' WHERE id = 8888;
+  ERROR:
+  ORA-00900: invalid SQL statement: unique constraint (SYS_C010000) violated
+
+SQL [213/461]> ROLLBACK TO SAVEPOINT before_changes;
+  
+  Rollback to savepoint before_changes complete.
+
+SQL [214/461]> SELECT * FROM customers WHERE id = 8888;
+  
+  ID NAME EMAIL CREATED PHONE
+  -- ---- ----- ------- -----
+
+SQL [215/461]> INSERT INTO customers VALUES (8889, 'Persistent', 'p@x.com', SYSDATE, NULL);
+  
+  1 row inserted.
+
+SQL [216/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [217/461]> ROLLBACK;
+  SP2-0734: unknown command beginning "ROLLBACK;..." - rest of line ignored.
+
+SQL [218/461]> SET TRANSACTION READ ONLY;
+  SP2-0158: unknown SET option "TRANSACTION"
+
+SQL [219/461]> SELECT * FROM customers WHERE rownum < 3;
+  
+  ID NAME         EMAIL             CREATED PHONE
+  -- ------------ ----------------- ------- -----
+  1  Alice Dupont alice@example.com              
+  2  Bob Martin   bob@example.com                
+  
+  2 rows selected.
+
+SQL [220/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [221/461]> SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+  SP2-0158: unknown SET option "TRANSACTION"
+
+SQL [222/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [223/461]> SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+  SP2-0158: unknown SET option "TRANSACTION"
+
+SQL [224/461]> SET TRANSACTION NAME 'audit_session';
+  SP2-0158: unknown SET option "TRANSACTION"
+
+SQL [225/461]> BEGIN DBMS_TRANSACTION.SAVEPOINT('sp1'); END;
+  
+  PL/SQL procedure successfully completed.
+
+
+--- [226] § locks ---
+SQL [226/461]> LOCK TABLE customers IN SHARE MODE NOWAIT;
+  SP2-0734: unknown command beginning "LOCK TABLE customers..." - rest of line ignored.
+
+SQL [227/461]> LOCK TABLE customers IN EXCLUSIVE MODE;
+  SP2-0734: unknown command beginning "LOCK TABLE customers..." - rest of line ignored.
+
+SQL [228/461]> LOCK TABLE customers IN ROW SHARE MODE;
+  SP2-0734: unknown command beginning "LOCK TABLE customers..." - rest of line ignored.
+
+SQL [229/461]> LOCK TABLE customers IN ROW EXCLUSIVE MODE;
+  SP2-0734: unknown command beginning "LOCK TABLE customers..." - rest of line ignored.
+
+SQL [230/461]> LOCK TABLE customers IN SHARE ROW EXCLUSIVE MODE;
+  SP2-0734: unknown command beginning "LOCK TABLE customers..." - rest of line ignored.
+
+SQL [231/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [232/461]> SELECT * FROM customers FOR UPDATE;
+  
+  ID   NAME         EMAIL             CREATED             PHONE
+  ---- ------------ ----------------- ------------------- -----
+  1    Alice Dupont alice@example.com                          
+  2    Bob Martin   bob@example.com                            
+  3    Carol Leroy  carol@example.com                          
+  4    David Smith  david@example.com                          
+  5    Eve Johnson                                             
+  6    Frank Brown  frank@x.com       2026-05-18 09:49:14      
+  200  Henry I      h@x.com           2026-05-18 09:49:14      
+  8889 Persistent   p@x.com           2026-05-18 09:49:14      
+  
+  8 rows selected.
+
+SQL [233/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [234/461]> SELECT * FROM customers WHERE id = 1 FOR UPDATE NOWAIT;
+  
+  ID NAME         EMAIL             CREATED PHONE
+  -- ------------ ----------------- ------- -----
+  1  Alice Dupont alice@example.com              
+  
+  1 row selected.
+
+SQL [235/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [236/461]> SELECT * FROM customers FOR UPDATE WAIT 10;
+  
+  ID   NAME         EMAIL             CREATED             PHONE
+  ---- ------------ ----------------- ------------------- -----
+  1    Alice Dupont alice@example.com                          
+  2    Bob Martin   bob@example.com                            
+  3    Carol Leroy  carol@example.com                          
+  4    David Smith  david@example.com                          
+  5    Eve Johnson                                             
+  6    Frank Brown  frank@x.com       2026-05-18 09:49:14      
+  200  Henry I      h@x.com           2026-05-18 09:49:14      
+  8889 Persistent   p@x.com           2026-05-18 09:49:14      
+  
+  8 rows selected.
+
+SQL [237/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+SQL [238/461]> SELECT * FROM customers FOR UPDATE SKIP LOCKED;
+  
+  ID   NAME         EMAIL             CREATED             PHONE
+  ---- ------------ ----------------- ------------------- -----
+  1    Alice Dupont alice@example.com                          
+  2    Bob Martin   bob@example.com                            
+  3    Carol Leroy  carol@example.com                          
+  4    David Smith  david@example.com                          
+  5    Eve Johnson                                             
+  6    Frank Brown  frank@x.com       2026-05-18 09:49:14      
+  200  Henry I      h@x.com           2026-05-18 09:49:14      
+  8889 Persistent   p@x.com           2026-05-18 09:49:14      
+  
+  8 rows selected.
+
+SQL [239/461]> COMMIT;
+  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+
+
+--- [240] § cleanup ---
+SQL [240/461]> DROP VIEW v_active_customers;
+  
+  View dropped.
+
+SQL [241/461]> DROP VIEW v_top_orders;
+  
+  View dropped.
+
+SQL [242/461]> DROP VIEW v_orders_summary;
+  
+  View dropped.
+
+SQL [243/461]> DROP VIEW v_complex;
+  
+  View dropped.
+
+SQL [244/461]> DROP INDEX idx_cust_name;
+  
+  Index dropped.
+
+SQL [245/461]> DROP INDEX uk_prod_code;
+  
+  Index dropped.
+
+SQL [246/461]> DROP INDEX idx_orders_cust;
+  
+  Index dropped.
+
+SQL [247/461]> DROP INDEX idx_orders_date;
+  
+  Index dropped.
+
+SQL [248/461]> DROP INDEX bx_prod_active;
+  
+  Index dropped.
+
+SQL [249/461]> DROP INDEX idx_ol_prod;
+  
+  Index dropped.
+
+SQL [250/461]> DROP TABLE order_lines;
+  
+  Table dropped.
+
+SQL [251/461]> DROP TABLE orders;
+  
+  Table dropped.
+
+SQL [252/461]> DROP TABLE products PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [253/461]> DROP TABLE customers CASCADE CONSTRAINTS PURGE;
+  
+  Table dropped.
+
+SQL [254/461]> DROP TABLE staging PURGE;
+  
+  Table dropped.
+
+SQL [255/461]> DROP TABLE backup_customers PURGE;
+  
+  Table dropped.
+
+SQL [256/461]> DROP TABLE tmp_session;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [257/461]> DROP TABLE tmp_txn;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [258/461]> DROP TABLE sales PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [259/461]> DROP TABLE customers_by_country PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [260/461]> DROP TABLE customers_hash PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [261/461]> DROP TABLE iot_table PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [262/461]> DROP TABLE ext_csv PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [263/461]> DROP TABLE compressed_t PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [264/461]> DROP TABLE compressed_archive PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [265/461]> DROP TABLE big_orders PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [266/461]> DROP TABLE small_orders PURGE;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [267/461]> PURGE RECYCLEBIN;
+  SP2-0734: unknown command beginning "PURGE RECYCLEBIN;..." - rest of line ignored.
+
+SQL [268/461]> ALTER SESSION SET CURRENT_SCHEMA = SYS;
+  
+  Session altered.
+
+SQL [269/461]> DROP USER demo CASCADE;
+  ERROR:
+  ORA-00900: invalid SQL statement: user 'DEMO' does not exist
+
+
+--- [270] § closing ---
+SQL [270/461]> SELECT user FROM dual;
+  
+  USER
+  ----
+  SYS 
+  
+  1 row selected.
+
+
+--- [271] § monitoring sweep — sql-dml-ddl ---
+SQL [271/461]> SELECT * FROM v$instance WHERE rownum < 5;
+  
+  INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION STARTUP_TIME STATUS DATABASE_STATUS INSTANCE_ROLE
+  --------------- ------------- --------- ------- ------------ ------ --------------- -------------
+
+SQL [272/461]> SELECT * FROM v$database WHERE rownum < 5;
+  
+  DBID NAME CREATED LOG_MODE OPEN_MODE DATABASE_ROLE PLATFORM_NAME
+  ---- ---- ------- -------- --------- ------------- -------------
+
+SQL [273/461]> SELECT * FROM v$version WHERE rownum < 5;
+  
+  BANNER
+  ------
+
+SQL [274/461]> SELECT * FROM v$option WHERE rownum < 5;
+  
+  PARAMETER VALUE
+  --------- -----
+
+SQL [275/461]> SELECT * FROM v$license WHERE rownum < 5;
+  
+  View V$LICENSE not implemented
+
+SQL [276/461]> SELECT * FROM v$session WHERE rownum < 5;
+  
+  SID SERIAL# USERNAME STATUS OSUSER MACHINE PROGRAM TYPE LOGON_TIME SCHEMANAME COMMAND SQL_ID
+  --- ------- -------- ------ ------ ------- ------- ---- ---------- ---------- ------- ------
+
+SQL [277/461]> SELECT * FROM v$process WHERE rownum < 5;
+  
+  SPID PNAME DESCRIPTION
+  ---- ----- -----------
+
+SQL [278/461]> SELECT * FROM v$bgprocess WHERE rownum < 5;
+  
+  View V$BGPROCESS not implemented
+
+SQL [279/461]> SELECT * FROM v$parameter WHERE rownum < 5;
+  
+  NUM NAME TYPE VALUE DISPLAY_VALUE ISDEFAULT ISMODIFIED DESCRIPTION
+  --- ---- ---- ----- ------------- --------- ---------- -----------
+
+SQL [280/461]> SELECT * FROM v$spparameter WHERE rownum < 5;
+  
+  SID NAME TYPE VALUE DISPLAY_VALUE ISSPECIFIED
+  --- ---- ---- ----- ------------- -----------
+
+SQL [281/461]> SELECT * FROM v$system_parameter WHERE rownum < 5;
+  
+  NUM NAME TYPE VALUE DISPLAY_VALUE ISDEFAULT ISMODIFIED DESCRIPTION
+  --- ---- ---- ----- ------------- --------- ---------- -----------
+
+SQL [282/461]> SELECT * FROM v$nls_parameters WHERE rownum < 5;
+  
+  PARAMETER VALUE
+  --------- -----
+
+SQL [283/461]> SELECT * FROM v$sga WHERE rownum < 5;
+  
+  NAME VALUE
+  ---- -----
+
+SQL [284/461]> SELECT * FROM v$sgainfo WHERE rownum < 5;
+  
+  View V$SGAINFO not implemented
+
+SQL [285/461]> SELECT * FROM v$sgastat WHERE rownum < 5;
+  
+  POOL NAME BYTES
+  ---- ---- -----
+
+SQL [286/461]> SELECT * FROM v$pgastat WHERE rownum < 5;
+  
+  View V$PGASTAT not implemented
+
+SQL [287/461]> SELECT * FROM v$pga_target_advice WHERE rownum < 5;
+  
+  PGA_TARGET_FOR_ESTIMATE PGA_TARGET_FACTOR ESTD_PGA_CACHE_HIT_PERCENTAGE ESTD_OVERALLOC_COUNT
+  ----------------------- ----------------- ----------------------------- --------------------
+
+SQL [288/461]> SELECT * FROM v$sga_target_advice WHERE rownum < 5;
+  
+  View V$SGA_TARGET_ADVICE not implemented
+
+SQL [289/461]> SELECT * FROM v$memory_dynamic_components WHERE rownum < 5;
+  
+  View V$MEMORY_DYNAMIC_COMPONENTS not implemented
+
+SQL [290/461]> SELECT * FROM v$buffer_pool WHERE rownum < 5;
+  
+  View V$BUFFER_POOL not implemented
+
+SQL [291/461]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
+  
+  View V$BUFFER_POOL_STATISTICS not implemented
+
+SQL [292/461]> SELECT * FROM v$bh WHERE rownum < 5;
+  
+  View V$BH not implemented
+
+SQL [293/461]> SELECT * FROM v$db_cache_advice WHERE rownum < 5;
+  
+  View V$DB_CACHE_ADVICE not implemented
+
+SQL [294/461]> SELECT * FROM v$shared_pool_advice WHERE rownum < 5;
+  
+  View V$SHARED_POOL_ADVICE not implemented
+
+SQL [295/461]> SELECT * FROM v$librarycache WHERE rownum < 5;
+  
+  View V$LIBRARYCACHE not implemented
+
+SQL [296/461]> SELECT * FROM v$libcache_locks WHERE rownum < 5;
+  
+  View V$LIBCACHE_LOCKS not implemented
+
+SQL [297/461]> SELECT * FROM v$db_object_cache WHERE rownum < 5;
+  
+  View V$DB_OBJECT_CACHE not implemented
+
+SQL [298/461]> SELECT * FROM v$rowcache WHERE rownum < 5;
+  
+  View V$ROWCACHE not implemented
+
+SQL [299/461]> SELECT * FROM v$open_cursor WHERE rownum < 5;
+  
+  SID USER_NAME SQL_ID SQL_TEXT CURSOR_TYPE
+  --- --------- ------ -------- -----------
+
+SQL [300/461]> SELECT * FROM v$sqlarea WHERE rownum < 5;
+  
+  SQL_TEXT SQL_ID VERSION_COUNT EXECUTIONS SORTS DISK_READS BUFFER_GETS ROWS_PROCESSED
+  -------- ------ ------------- ---------- ----- ---------- ----------- --------------
+
+SQL [301/461]> SELECT * FROM v$sql WHERE rownum < 5;
+  
+  SQL_ID SQL_TEXT EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME
+  ------ -------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- ---------------
+
+SQL [302/461]> SELECT * FROM v$sqlstats WHERE rownum < 5;
+  
+  View V$SQLSTATS not implemented
+
+SQL [303/461]> SELECT * FROM v$sql_plan WHERE rownum < 5;
+  
+  SQL_ID PLAN_HASH_VALUE CHILD_NUMBER OPERATION OPTIONS OBJECT_NAME COST CARDINALITY BYTES
+  ------ --------------- ------------ --------- ------- ----------- ---- ----------- -----
+
+SQL [304/461]> SELECT * FROM v$sql_workarea WHERE rownum < 5;
+  
+  View V$SQL_WORKAREA not implemented
+
+SQL [305/461]> SELECT * FROM v$sysstat WHERE rownum < 5;
+  
+  STATISTIC# NAME CLASS VALUE
+  ---------- ---- ----- -----
+
+SQL [306/461]> SELECT * FROM v$sysmetric WHERE rownum < 5;
+  
+  View V$SYSMETRIC not implemented
+
+SQL [307/461]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
+  
+  View V$SYSMETRIC_HISTORY not implemented
+
+SQL [308/461]> SELECT * FROM v$system_event WHERE rownum < 5;
+  
+  View V$SYSTEM_EVENT not implemented
+
+SQL [309/461]> SELECT * FROM v$system_wait_class WHERE rownum < 5;
+  
+  View V$SYSTEM_WAIT_CLASS not implemented
+
+SQL [310/461]> SELECT * FROM v$active_session_history WHERE rownum < 5;
+  
+  View V$ACTIVE_SESSION_HISTORY not implemented
+
+SQL [311/461]> SELECT * FROM v$session_event WHERE rownum < 5;
+  
+  View V$SESSION_EVENT not implemented
+
+SQL [312/461]> SELECT * FROM v$session_wait WHERE rownum < 5;
+  
+  View V$SESSION_WAIT not implemented
+
+SQL [313/461]> SELECT * FROM v$session_wait_class WHERE rownum < 5;
+  
+  View V$SESSION_WAIT_CLASS not implemented
+
+SQL [314/461]> SELECT * FROM v$session_metric WHERE rownum < 5;
+  
+  View V$SESSION_METRIC not implemented
+
+SQL [315/461]> SELECT * FROM v$session_longops WHERE rownum < 5;
+  
+  View V$SESSION_LONGOPS not implemented
+
+SQL [316/461]> SELECT * FROM v$session_blockers WHERE rownum < 5;
+  
+  View V$SESSION_BLOCKERS not implemented
+
+SQL [317/461]> SELECT * FROM v$lock WHERE rownum < 5;
+  
+  ADDR SID TYPE ID1 ID2 LMODE REQUEST BLOCK
+  ---- --- ---- --- --- ----- ------- -----
+
+SQL [318/461]> SELECT * FROM v$locked_object WHERE rownum < 5;
+  
+  XIDUSN XIDSLOT XIDSQN OBJECT_ID SESSION_ID ORACLE_USERNAME LOCKED_MODE
+  ------ ------- ------ --------- ---------- --------------- -----------
+
+SQL [319/461]> SELECT * FROM v$transaction WHERE rownum < 5;
+  
+  ADDR XIDUSN XIDSLOT XIDSQN STATUS START_TIME USED_UBLK USED_UREC
+  ---- ------ ------- ------ ------ ---------- --------- ---------
+
+SQL [320/461]> SELECT * FROM v$tablespace WHERE rownum < 5;
+  
+  TS# NAME BIGFILE BLOCK_SIZE
+  --- ---- ------- ----------
+
+SQL [321/461]> SELECT * FROM v$datafile WHERE rownum < 5;
+  
+  FILE# NAME TS#_NAME BYTES AUTOEXTENSIBLE
+  ----- ---- -------- ----- --------------
+
+SQL [322/461]> SELECT * FROM v$tempfile WHERE rownum < 5;
+  
+  FILE# NAME TS#_NAME BYTES AUTOEXTENSIBLE
+  ----- ---- -------- ----- --------------
+
+SQL [323/461]> SELECT * FROM v$logfile WHERE rownum < 5;
+  
+  GROUP# MEMBER TYPE STATUS
+  ------ ------ ---- ------
+
+SQL [324/461]> SELECT * FROM v$log WHERE rownum < 5;
+  
+  GROUP# BYTES MEMBERS STATUS SEQUENCE#
+  ------ ----- ------- ------ ---------
+
+SQL [325/461]> SELECT * FROM v$log_history WHERE rownum < 5;
+  
+  View V$LOG_HISTORY not implemented
+
+SQL [326/461]> SELECT * FROM v$filestat WHERE rownum < 5;
+  
+  View V$FILESTAT not implemented
+
+SQL [327/461]> SELECT * FROM v$tempstat WHERE rownum < 5;
+  
+  View V$TEMPSTAT not implemented
+
+SQL [328/461]> SELECT * FROM v$controlfile WHERE rownum < 5;
+  
+  NAME STATUS
+  ---- ------
+
+SQL [329/461]> SELECT * FROM v$controlfile_record_section WHERE rownum < 5;
+  
+  View V$CONTROLFILE_RECORD_SECTION not implemented
+
+SQL [330/461]> SELECT * FROM v$archived_log WHERE rownum < 5;
+  
+  RECID NAME SEQUENCE# FIRST_TIME NEXT_TIME ARCHIVED DELETED STATUS
+  ----- ---- --------- ---------- --------- -------- ------- ------
+
+SQL [331/461]> SELECT * FROM v$archive_dest WHERE rownum < 5;
+  
+  View V$ARCHIVE_DEST not implemented
+
+SQL [332/461]> SELECT * FROM v$archive_processes WHERE rownum < 5;
+  
+  View V$ARCHIVE_PROCESSES not implemented
+
+SQL [333/461]> SELECT * FROM v$flashback_database_log WHERE rownum < 5;
+  
+  View V$FLASHBACK_DATABASE_LOG not implemented
+
+SQL [334/461]> SELECT * FROM v$flash_recovery_area_usage WHERE rownum < 5;
+  
+  View V$FLASH_RECOVERY_AREA_USAGE not implemented
+
+SQL [335/461]> SELECT * FROM v$recovery_file_dest WHERE rownum < 5;
+  
+  View V$RECOVERY_FILE_DEST not implemented
+
+SQL [336/461]> SELECT * FROM v$recovery_area_usage WHERE rownum < 5;
+  
+  View V$RECOVERY_AREA_USAGE not implemented
+
+SQL [337/461]> SELECT * FROM v$backup_set WHERE rownum < 5;
+  
+  View V$BACKUP_SET not implemented
+
+SQL [338/461]> SELECT * FROM v$backup_piece WHERE rownum < 5;
+  
+  View V$BACKUP_PIECE not implemented
+
+SQL [339/461]> SELECT * FROM v$rman_status WHERE rownum < 5;
+  
+  View V$RMAN_STATUS not implemented
+
+SQL [340/461]> SELECT * FROM v$diag_info WHERE rownum < 5;
+  
+  NAME VALUE
+  ---- -----
+
+SQL [341/461]> SELECT * FROM v$diag_problem WHERE rownum < 5;
+  
+  View V$DIAG_PROBLEM not implemented
+
+SQL [342/461]> SELECT * FROM v$diag_incident WHERE rownum < 5;
+  
+  View V$DIAG_INCIDENT not implemented
+
+SQL [343/461]> SELECT * FROM v$dispatcher WHERE rownum < 5;
+  
+  View V$DISPATCHER not implemented
+
+SQL [344/461]> SELECT * FROM v$shared_server WHERE rownum < 5;
+  
+  View V$SHARED_SERVER not implemented
+
+SQL [345/461]> SELECT * FROM v$queue WHERE rownum < 5;
+  
+  View V$QUEUE not implemented
+
+SQL [346/461]> SELECT * FROM v$services WHERE rownum < 5;
+  
+  View V$SERVICES not implemented
+
+SQL [347/461]> SELECT * FROM v$active_services WHERE rownum < 5;
+  
+  View V$ACTIVE_SERVICES not implemented
+
+SQL [348/461]> SELECT * FROM v$listener_network WHERE rownum < 5;
+  
+  View V$LISTENER_NETWORK not implemented
+
+SQL [349/461]> SELECT * FROM v$mystat WHERE rownum < 5;
+  
+  View V$MYSTAT not implemented
+
+SQL [350/461]> SELECT * FROM v$statname WHERE rownum < 5;
+  
+  View V$STATNAME not implemented
+
+SQL [351/461]> SELECT * FROM v$sess_io WHERE rownum < 5;
+  
+  View V$SESS_IO not implemented
+
+SQL [352/461]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
+  
+  View V$SESS_TIME_MODEL not implemented
+
+SQL [353/461]> SELECT * FROM v$latch WHERE rownum < 5;
+  
+  View V$LATCH not implemented
+
+SQL [354/461]> SELECT * FROM v$latchholder WHERE rownum < 5;
+  
+  View V$LATCHHOLDER not implemented
+
+SQL [355/461]> SELECT * FROM v$enqueue_stat WHERE rownum < 5;
+  
+  View V$ENQUEUE_STAT not implemented
+
+SQL [356/461]> SELECT * FROM dba_users WHERE rownum < 5;
+  
+  USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED PROFILE AUTHENTICATION_TYPE
+  -------- ------- -------------- --------- ----------- ------------------ -------------------- ------- ------- -------------------
+
+SQL [357/461]> SELECT * FROM dba_roles WHERE rownum < 5;
+  
+  ROLE PASSWORD_REQUIRED
+  ---- -----------------
+
+SQL [358/461]> SELECT * FROM dba_profiles WHERE rownum < 5;
+  
+  PROFILE RESOURCE_NAME RESOURCE_TYPE LIMIT
+  ------- ------------- ------------- -----
+
+SQL [359/461]> SELECT * FROM dba_role_privs WHERE rownum < 5;
+  
+  GRANTEE GRANTED_ROLE ADMIN_OPTION
+  ------- ------------ ------------
+
+SQL [360/461]> SELECT * FROM dba_sys_privs WHERE rownum < 5;
+  
+  GRANTEE PRIVILEGE ADMIN_OPTION
+  ------- --------- ------------
+
+SQL [361/461]> SELECT * FROM dba_tab_privs WHERE rownum < 5;
+  
+  GRANTEE OWNER TABLE_NAME PRIVILEGE GRANTABLE GRANTOR TYPE
+  ------- ----- ---------- --------- --------- ------- ----
+
+SQL [362/461]> SELECT * FROM dba_objects WHERE rownum < 5;
+  
+  OWNER OBJECT_NAME OBJECT_TYPE STATUS
+  ----- ----------- ----------- ------
+
+SQL [363/461]> SELECT * FROM dba_tables WHERE rownum < 5;
+  
+  OWNER TABLE_NAME TABLESPACE_NAME NUM_ROWS STATUS
+  ----- ---------- --------------- -------- ------
+
+SQL [364/461]> SELECT * FROM dba_views WHERE rownum < 5;
+  
+  OWNER VIEW_NAME TEXT_LENGTH TEXT
+  ----- --------- ----------- ----
+
+SQL [365/461]> SELECT * FROM dba_indexes WHERE rownum < 5;
+  
+  OWNER INDEX_NAME TABLE_NAME UNIQUENESS STATUS INDEX_TYPE
+  ----- ---------- ---------- ---------- ------ ----------
+
+SQL [366/461]> SELECT * FROM dba_tab_columns WHERE rownum < 5;
+  
+  OWNER TABLE_NAME COLUMN_NAME DATA_TYPE DATA_LENGTH DATA_SCALE NULLABLE COLUMN_ID
+  ----- ---------- ----------- --------- ----------- ---------- -------- ---------
+
+SQL [367/461]> SELECT * FROM dba_constraints WHERE rownum < 5;
+  
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS
+  ----- --------------- --------------- ---------- ------
+
+SQL [368/461]> SELECT * FROM dba_cons_columns WHERE rownum < 5;
+  
+  OWNER CONSTRAINT_NAME TABLE_NAME COLUMN_NAME POSITION
+  ----- --------------- ---------- ----------- --------
+
+SQL [369/461]> SELECT * FROM dba_sequences WHERE rownum < 5;
+  
+  SEQUENCE_OWNER SEQUENCE_NAME MIN_VALUE MAX_VALUE INCREMENT_BY LAST_NUMBER
+  -------------- ------------- --------- --------- ------------ -----------
+
+SQL [370/461]> SELECT * FROM dba_synonyms WHERE rownum < 5;
+  
+  OWNER SYNONYM_NAME TABLE_OWNER TABLE_NAME DB_LINK
+  ----- ------------ ----------- ---------- -------
+
+SQL [371/461]> SELECT * FROM dba_triggers WHERE rownum < 5;
+  
+  OWNER TRIGGER_NAME TRIGGER_TYPE TRIGGERING_EVENT TABLE_OWNER TABLE_NAME STATUS
+  ----- ------------ ------------ ---------------- ----------- ---------- ------
+
+SQL [372/461]> SELECT * FROM dba_procedures WHERE rownum < 5;
+  
+  OWNER OBJECT_NAME OBJECT_TYPE AGGREGATE PIPELINED DETERMINISTIC
+  ----- ----------- ----------- --------- --------- -------------
+
+SQL [373/461]> SELECT * FROM dba_source WHERE rownum < 5;
+  
+  OWNER NAME TYPE LINE TEXT
+  ----- ---- ---- ---- ----
+
+SQL [374/461]> SELECT * FROM dba_dependencies WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [375/461]> SELECT * FROM dba_errors WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [376/461]> SELECT * FROM dba_segments WHERE rownum < 5;
+  
+  OWNER SEGMENT_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
+  ----- ------------ ------------ --------------- ----- ------ -------
+
+SQL [377/461]> SELECT * FROM dba_extents WHERE rownum < 5;
+  
+  OWNER SEGMENT_NAME SEGMENT_TYPE TABLESPACE_NAME EXTENT_ID BYTES BLOCKS
+  ----- ------------ ------------ --------------- --------- ----- ------
+
+SQL [378/461]> SELECT * FROM dba_free_space WHERE rownum < 5;
+  
+  TABLESPACE_NAME FILE_ID BYTES BLOCKS
+  --------------- ------- ----- ------
+
+SQL [379/461]> SELECT * FROM dba_tablespaces WHERE rownum < 5;
+  
+  TABLESPACE_NAME STATUS CONTENTS BLOCK_SIZE
+  --------------- ------ -------- ----------
+
+SQL [380/461]> SELECT * FROM dba_data_files WHERE rownum < 5;
+  
+  FILE_ID FILE_NAME TABLESPACE_NAME BYTES AUTOEXTENSIBLE
+  ------- --------- --------------- ----- --------------
+
+SQL [381/461]> SELECT * FROM dba_temp_files WHERE rownum < 5;
+  
+  FILE_ID FILE_NAME TABLESPACE_NAME BYTES AUTOEXTENSIBLE
+  ------- --------- --------------- ----- --------------
+
+SQL [382/461]> SELECT * FROM dba_ts_quotas WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [383/461]> SELECT * FROM dba_recyclebin WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [384/461]> SELECT * FROM dba_tab_partitions WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [385/461]> SELECT * FROM dba_part_tables WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [386/461]> SELECT * FROM dba_mviews WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [387/461]> SELECT * FROM dba_db_links WHERE rownum < 5;
+  
+  OWNER DB_LINK USERNAME HOST CREATED
+  ----- ------- -------- ---- -------
+
+SQL [388/461]> SELECT * FROM dba_directories WHERE rownum < 5;
+  
+  OWNER DIRECTORY_NAME DIRECTORY_PATH
+  ----- -------------- --------------
+
+SQL [389/461]> SELECT * FROM dba_jobs WHERE rownum < 5;
+  
+  JOB LOG_USER SCHEMA_USER WHAT NEXT_DATE BROKEN
+  --- -------- ----------- ---- --------- ------
+
+SQL [390/461]> SELECT * FROM dba_scheduler_jobs WHERE rownum < 5;
+  
+  OWNER JOB_NAME JOB_TYPE STATE ENABLED NEXT_RUN_DATE
+  ----- -------- -------- ----- ------- -------------
+
+SQL [391/461]> SELECT * FROM dba_scheduler_job_log WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [392/461]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
+  
+  OS_USERNAME USERNAME USERHOST TIMESTAMP ACTION_NAME OBJ_NAME RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT STATEMENT_TYPE
+  ----------- -------- -------- --------- ----------- -------- ---------- --------- --------- --------- -------- --------------
+
+SQL [393/461]> SELECT * FROM dba_audit_session WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [394/461]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [395/461]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [396/461]> SELECT * FROM dba_alert_history WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [397/461]> SELECT * FROM dba_rsrc_consumer_groups WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [398/461]> SELECT * FROM dba_rsrc_plans WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [399/461]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [400/461]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [401/461]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [402/461]> SELECT * FROM dba_advisor_findings WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [403/461]> SELECT * FROM dba_advisor_recommendations WHERE rownum < 5;
+  ERROR:
+  ORA-00900: invalid SQL statement: table or view does not exist
+
+SQL [404/461]> SELECT count(*) AS users FROM dba_users;
+  
+  USERS
+  -----
+  1    
+  1    
+  1    
+  1    
+  1    
+  1    
+  
+  6 rows selected.
+
+SQL [405/461]> SELECT count(*) AS roles FROM dba_roles;
+  
+  ROLES
+  -----
+  1    
+  1    
+  1    
+  1    
+  1    
+  1    
+  1    
+  
+  7 rows selected.
+
+SQL [406/461]> SELECT count(*) AS profiles FROM dba_profiles;
+  
+  PROFILES
+  --------
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  1       
+  
+  PROFILES
+  --------
+  1       
+  1       
+  
+  16 rows selected.
+
+SQL [407/461]> SELECT count(*) AS tables FROM dba_tables;
+  
+  TABLES
+  ------
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  
+  TABLES
+  ------
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  1     
+  
+  25 rows selected.
+
+SQL [408/461]> SELECT count(*) AS indexes FROM dba_indexes;
+  
+  INDEXES
+  -------
+
+SQL [409/461]> SELECT count(*) AS views FROM dba_views;
+  
+  VIEWS
+  -----
+
+SQL [410/461]> SELECT count(*) AS triggers FROM dba_triggers;
+  
+  TRIGGERS
+  --------
+
+SQL [411/461]> SELECT count(*) AS procedures FROM dba_procedures;
+  
+  PROCEDURES
+  ----------
+
+SQL [412/461]> SELECT count(*) AS sequences FROM dba_sequences;
+  
+  SEQUENCES
+  ---------
+
+SQL [413/461]> SELECT count(*) AS synonyms FROM dba_synonyms;
+  
+  SYNONYMS
+  --------
+
+SQL [414/461]> SELECT count(*) AS sessions FROM v$session WHERE username IS NOT NULL;
+  
+  SESSIONS
+  --------
+  1       
+  1       
+  1       
+  1       
+  1       
+  
+  5 rows selected.
+
+SQL [415/461]> SELECT count(*) AS bgprocesses FROM v$bgprocess WHERE paddr != '00';
+  
+  View V$BGPROCESS not implemented
+
+SQL [416/461]> SELECT count(*) AS datafiles FROM dba_data_files;
+  
+  DATAFILES
+  ---------
+  1        
+  1        
+  1        
+  1        
+  
+  4 rows selected.
+
+SQL [417/461]> SELECT count(*) AS tablespaces FROM dba_tablespaces;
+  
+  TABLESPACES
+  -----------
+  1          
+  1          
+  1          
+  1          
+  1          
+  
+  5 rows selected.
+
+SQL [418/461]> SELECT count(*) AS tempfiles FROM dba_temp_files;
+  
+  TEMPFILES
+  ---------
+  1        
+  
+  1 row selected.
+
+SQL [419/461]> SELECT count(*) AS log_groups FROM v$log;
+  
+  LOG_GROUPS
+  ----------
+  1         
+  1         
+  1         
+  
+  3 rows selected.
+
+SQL [420/461]> SELECT count(*) AS controlfiles FROM v$controlfile;
+  
+  CONTROLFILES
+  ------------
+  1           
+  1           
+  
+  2 rows selected.
+
+SQL [421/461]> SELECT count(*) AS archived_logs FROM v$archived_log;
+  
+  ARCHIVED_LOGS
+  -------------
+
+SQL [422/461]> SELECT count(*) AS locks FROM v$lock;
+  
+  LOCKS
+  -----
+
+SQL [423/461]> SELECT count(*) AS transactions FROM v$transaction;
+  
+  TRANSACTIONS
+  ------------
+
+SQL [424/461]> SELECT count(*) AS open_cursors FROM v$open_cursor;
+  
+  OPEN_CURSORS
+  ------------
+  1           
+  
+  1 row selected.
+
+SQL [425/461]> SELECT name, value FROM v$sysstat WHERE name = 'user commits';
+  
+  NAME         VALUE
+  ------------ -----
+  user commits 0    
+  
+  1 row selected.
+
+SQL [426/461]> SELECT name, value FROM v$sysstat WHERE name = 'user rollbacks';
+  
+  NAME           VALUE
+  -------------- -----
+  user rollbacks 0    
+  
+  1 row selected.
+
+SQL [427/461]> SELECT name, value FROM v$sysstat WHERE name = 'session logical reads';
+  
+  NAME                  VALUE
+  --------------------- -----
+  session logical reads 500  
+  
+  1 row selected.
+
+SQL [428/461]> SELECT name, value FROM v$sysstat WHERE name = 'physical reads';
+  
+  NAME           VALUE
+  -------------- -----
+  physical reads 10   
+  
+  1 row selected.
+
+SQL [429/461]> SELECT name, value FROM v$sysstat WHERE name = 'redo size';
+  
+  NAME      VALUE
+  --------- -----
+  redo size 1024 
+  
+  1 row selected.
+
+SQL [430/461]> SELECT name, value FROM v$sysstat WHERE name = 'parse count (total)';
+  
+  NAME                VALUE
+  ------------------- -----
+  parse count (total) 15   
+  
+  1 row selected.
+
+SQL [431/461]> SELECT name, value FROM v$sysstat WHERE name = 'parse count (hard)';
+  
+  NAME               VALUE
+  ------------------ -----
+  parse count (hard) 5    
+  
+  1 row selected.
+
+SQL [432/461]> SELECT name, value FROM v$sysstat WHERE name = 'execute count';
+  
+  NAME          VALUE
+  ------------- -----
+  execute count 20   
+  
+  1 row selected.
+
+SQL [433/461]> SELECT name, value FROM v$sysstat WHERE name = 'CPU used by this session';
+  
+  NAME VALUE
+  ---- -----
+
+SQL [434/461]> SHOW USER;
+  SP2-0158: unknown SHOW option "USER;"
+
+SQL [435/461]> SHOW PARAMETER db_name;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [436/461]> SHOW PARAMETER instance_name;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [437/461]> SHOW PARAMETER service_names;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [438/461]> SHOW PARAMETER processes;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [439/461]> SHOW PARAMETER sessions;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [440/461]> SHOW PARAMETER sga_target;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [441/461]> SHOW PARAMETER pga_aggregate_target;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [442/461]> SHOW PARAMETER undo_tablespace;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [443/461]> SHOW PARAMETER undo_retention;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [444/461]> SHOW PARAMETER log_archive_dest;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [445/461]> SHOW PARAMETER log_archive_format;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [446/461]> SHOW PARAMETER db_recovery_file_dest;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [447/461]> SHOW PARAMETER db_recovery_file_dest_size;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [448/461]> SHOW PARAMETER control_files;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [449/461]> SHOW PARAMETER db_block_size;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [450/461]> SHOW PARAMETER db_cache_size;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [451/461]> SHOW PARAMETER shared_pool_size;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [452/461]> SHOW PARAMETER open_cursors;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [453/461]> SHOW PARAMETER cursor_sharing;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [454/461]> SHOW PARAMETER optimizer_mode;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [455/461]> SHOW PARAMETER nls_date_format;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [456/461]> SHOW PARAMETER timed_statistics;
+  
+  NAME                                        TYPE        VALUE
+  -------------------------------------------- ----------- ------------------------------
+
+SQL [457/461]> SELECT sysdate FROM dual;
+  
+  SYSDATE            
+  -------------------
+  2026-05-18 09:49:14
+  
+  1 row selected.
+
+SQL [458/461]> SELECT systimestamp FROM dual;
+  
+  SYSTIMESTAMP            
+  ------------------------
+  2026-05-18T09:49:14.584Z
+  
+  1 row selected.
+
+SQL [459/461]> SELECT user FROM dual;
+  
+  USER
+  ----
+  SYS 
+  
+  1 row selected.
+
+SQL [460/461]> SELECT 'monitoring sweep complete' AS status FROM dual;
+  
+  STATUS                   
+  -------------------------
+  monitoring sweep complete
+  
+  1 row selected.
+
+SQL [461/461]> EXIT;
+  SP2-0734: unknown command beginning "EXIT;..." - rest of line ignored.

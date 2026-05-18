@@ -105,6 +105,104 @@ export interface OracleErrorRaisedPayload extends OracleSessionRef {
   message: string;
 }
 
+// ── Wait, latch, lock, SQL parse, backup, service events ──────────────
+//
+// These are the canonical "view-feeding" events: the runtime-state actor
+// listens for them and updates the collections backing V$SESSION_WAIT,
+// V$LOCK, V$LATCHHOLDER, V$SQLSTATS, V$BACKUP_SET, V$ACTIVE_SERVICES,
+// etc. Emitters publish onto the same bus the instance owns.
+
+export interface OracleWaitRecordedPayload extends OracleDeviceRef {
+  sid: number;
+  sessionId?: string;
+  event: string;
+  waitClass: string;
+  waitTimeMicros: number;
+  /** Set when the wait is bound to a known SQL cursor. */
+  sqlId?: string;
+}
+
+export interface OracleLatchEventPayload extends OracleDeviceRef {
+  sid: number;
+  latch: string;
+  level: number;
+  /** acquired / released / sleep. */
+  kind: 'acquired' | 'released' | 'sleep';
+  spinCount?: number;
+}
+
+export interface OracleLockEventPayload extends OracleDeviceRef {
+  sid: number;
+  sessionId: string;
+  type: string;
+  id1: number;
+  id2: number;
+  lmode: number;
+  request: number;
+  schema?: string;
+  table?: string;
+  kind: 'acquired' | 'released' | 'wait';
+}
+
+export interface OracleSqlParsedPayload extends OracleSessionRef {
+  sqlId: string;
+  text: string;
+  parsingSchema: string;
+  hardParse: boolean;
+}
+
+export interface OracleSqlExecutedPayload extends OracleSessionRef {
+  sqlId: string;
+  elapsedMicros: number;
+  cpuMicros: number;
+  bufferGets: number;
+  diskReads: number;
+  rowsProcessed: number;
+}
+
+export interface OracleBackupRecordedPayload extends OracleDeviceRef {
+  /** RMAN-style identifiers carried for V$BACKUP_SET / V$BACKUP_PIECE. */
+  setId: number;
+  pieceId: number;
+  type: 'FULL' | 'INCREMENTAL' | 'ARCHIVELOG' | 'CONTROLFILE' | 'SPFILE';
+  handle: string;
+  bytes: number;
+  startedAt: number;
+  completedAt: number;
+  status: 'COMPLETED' | 'FAILED';
+}
+
+export interface OracleServiceEventPayload extends OracleDeviceRef {
+  name: string;
+  /** started → active, stopped → archived. */
+  kind: 'started' | 'stopped';
+}
+
+export interface OracleListenerEventPayload extends OracleDeviceRef {
+  state: 'running' | 'stopped';
+  endpoint: string;
+}
+
+export interface OracleSessionLongopsPayload extends OracleSessionRef {
+  opname: string;
+  target: string;
+  sofar: number;
+  totalwork: number;
+  units: string;
+}
+
+export interface OracleSessionMetricPayload extends OracleDeviceRef {
+  sid: number;
+  metricName: string;
+  value: number;
+}
+
+export interface OracleFlashbackEventPayload extends OracleDeviceRef {
+  kind: 'enabled' | 'disabled' | 'logged';
+  bytes?: number;
+  scn?: number;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -122,4 +220,15 @@ export type OracleDomainEvent =
   | { topic: 'oracle.transaction.rolled-back';           payload: OracleTxnRolledBackPayload }
   | { topic: 'oracle.dml.executed';                      payload: OracleDmlExecutedPayload }
   | { topic: 'oracle.ddl.executed';                      payload: OracleDdlExecutedPayload }
-  | { topic: 'oracle.error.raised';                      payload: OracleErrorRaisedPayload };
+  | { topic: 'oracle.error.raised';                      payload: OracleErrorRaisedPayload }
+  | { topic: 'oracle.wait.recorded';                     payload: OracleWaitRecordedPayload }
+  | { topic: 'oracle.latch.event';                       payload: OracleLatchEventPayload }
+  | { topic: 'oracle.lock.event';                        payload: OracleLockEventPayload }
+  | { topic: 'oracle.sql.parsed';                        payload: OracleSqlParsedPayload }
+  | { topic: 'oracle.sql.executed';                      payload: OracleSqlExecutedPayload }
+  | { topic: 'oracle.backup.recorded';                   payload: OracleBackupRecordedPayload }
+  | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }
+  | { topic: 'oracle.listener.event';                    payload: OracleListenerEventPayload }
+  | { topic: 'oracle.session.longops';                   payload: OracleSessionLongopsPayload }
+  | { topic: 'oracle.session.metric';                    payload: OracleSessionMetricPayload }
+  | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload };
