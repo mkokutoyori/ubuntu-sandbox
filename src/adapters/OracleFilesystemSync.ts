@@ -51,6 +51,8 @@ export class OracleFilesystemSync {
   private subs: Unsubscribe[] = [];
   /** Per-device accumulated spfile parameters, rendered atomically on each change. */
   private spfileParams: Map<string, Map<string, string>> = new Map();
+  /** Per-device monotonically increasing counter used in adump/*.aud filenames. */
+  private auditCounters: Map<string, number> = new Map();
 
   constructor(
     private readonly bus: IEventBus,
@@ -119,6 +121,18 @@ export class OracleFilesystemSync {
         }
       }),
 
+      this.bus.subscribe('oracle.audit.recorded', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
+        this.auditCounters.set(e.payload.deviceId, seq);
+        const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
+        dev.writeFileFromEditor(
+          `${ORACLE_CONFIG.AUDIT_DIR}/${fname}`,
+          renderAuditEntry(e.payload),
+        );
+      }),
+
       this.bus.subscribe('oracle.archive-log.created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
@@ -172,6 +186,7 @@ export class OracleFilesystemSync {
     for (const u of this.subs) u();
     this.subs.length = 0;
     this.spfileParams.clear();
+    this.auditCounters.clear();
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
@@ -220,4 +235,39 @@ export class OracleFilesystemSync {
       dev.writeFileFromEditor(f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
   }
+}
+
+/**
+ * Format a single audit entry the way the OS-level `.aud` files look
+ * under audit_file_dest. Kept as a free function to stay small and
+ * trivially testable without instantiating the adapter.
+ */
+function renderAuditEntry(p: import('@/database/oracle/events').OracleAuditRecordedPayload): string {
+  const lines: string[] = [];
+  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
+  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
+  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
+  lines.push(`System name:    Linux`);
+  lines.push(`Node name:      ${p.userhost}`);
+  lines.push(`Instance name:  ${p.sid}`);
+  lines.push(`Redo thread mounted by this instance: 1`);
+  lines.push(`Oracle process number: ${p.sessionId}`);
+  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
+  lines.push('');
+  lines.push(p.timestamp.toISOString());
+  lines.push(`LENGTH : '${(p.sqlText ?? '').length}'`);
+  lines.push(`ACTION : ${p.actionName}`);
+  lines.push(`DATABASE USER: ${p.username}`);
+  lines.push(`PRIVILEGE: ${p.username === 'SYS' ? 'SYSDBA' : '--'}`);
+  lines.push(`CLIENT USER: ${p.osUsername}`);
+  lines.push(`CLIENT TERMINAL: ${p.terminal}`);
+  lines.push(`STATUS: ${p.returncode}`);
+  if (p.objOwner || p.objName) {
+    lines.push(`OBJECT: ${p.objOwner ?? ''}.${p.objName ?? ''}`);
+  }
+  if (p.sqlText) {
+    lines.push(`STATEMENT TEXT:`);
+    lines.push(p.sqlText);
+  }
+  return lines.join('\n') + '\n';
 }

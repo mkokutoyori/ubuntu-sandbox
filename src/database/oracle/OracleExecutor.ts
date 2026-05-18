@@ -274,17 +274,37 @@ export class OracleExecutor extends BaseExecutor {
 
     const objInfo = this.getObjInfo(statement);
     const effectiveAction = actionName ?? dmlAction!;
-    const sqlText = this._lastSqlText || this.statementText(statement);
+    const fullSqlText = this._lastSqlText || this.statementText(statement);
+    const sqlText = fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText;
+    const sessionIdNum = parseInt(this._sessionId, 10) || 0;
     catalog.recordAudit({
-      sessionId: parseInt(this._sessionId, 10) || 0,
+      sessionId: sessionIdNum,
       username: this.context.currentSchema,
       actionName: effectiveAction,
       objName: objInfo.name,
       objOwner: objInfo.owner,
       returncode,
       privUsed: null,
-      sqlText: sqlText.length > 2000 ? sqlText.slice(0, 2000) : sqlText,
+      sqlText,
       statementType: effectiveAction,
+    });
+    this.bus.publish({
+      topic: 'oracle.audit.recorded',
+      payload: {
+        deviceId: this.deviceId,
+        sid: this.sid,
+        sessionId: sessionIdNum,
+        username: this.context.currentSchema,
+        actionName: effectiveAction,
+        objName: objInfo.name ?? null,
+        objOwner: objInfo.owner ?? null,
+        returncode,
+        sqlText,
+        timestamp: new Date(),
+        osUsername: 'oracle',
+        userhost: 'localhost',
+        terminal: 'pts/0',
+      },
     });
     if (dmlAction) {
       this.recordFgaForDml(statement, dmlAction as 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE');

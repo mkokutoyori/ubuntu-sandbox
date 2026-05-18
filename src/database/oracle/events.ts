@@ -243,6 +243,20 @@ export interface OracleDatafileAutoextendChangedPayload extends OracleDeviceRef 
   autoextend: boolean;
 }
 
+export interface OracleAuditRecordedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  actionName: string;
+  objOwner: string | null;
+  objName: string | null;
+  returncode: number;
+  sqlText: string | null;
+  timestamp: Date;
+  osUsername: string;
+  userhost: string;
+  terminal: string;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -276,4 +290,5 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.tablespace-dropped';        payload: OracleTablespaceDroppedPayload }
   | { topic: 'oracle.storage.datafile-renamed';          payload: OracleDatafileRenamedPayload }
   | { topic: 'oracle.storage.datafile-resized';          payload: OracleDatafileResizedPayload }
-  | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload };
+  | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
+  | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload };
