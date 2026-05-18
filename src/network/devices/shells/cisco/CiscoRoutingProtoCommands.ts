@@ -26,28 +26,41 @@ export function buildRoutingProtoConfig(
   ctx: CiscoShellContext, repo: RoutingConfigRepository,
 ): void {
   // ── process enters (router rip is in CiscoConfigCommands) ──
+  // Real engines (RIB-integrated, config-driven adjacency).
+  const eigrpEng = () => ctx.r().getEIGRPEngine();
+  const bgpEng = () => ctx.r().getBGPEngine();
+  const converge = () => ctx.r().convergeDynamicRouting();
+
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
     const asn = parseInt(a[0], 10);
     const named = Number.isNaN(asn);
     repo.ensureEigrp(named ? 0 : asn, named);
+    eigrpEng().enable({ asn: named ? 0 : asn });
     ctx.setSelectedRoutingProto({ proto: 'eigrp', asn: named ? 0 : asn });
     ctx.setMode('config-router');
+    converge();
     return '';
   });
   configTrie.registerGreedy('no router eigrp', 'Disable EIGRP', (a) => {
     repo.removeEigrp(parseInt(a[0], 10) || 0);
+    eigrpEng().disable();
+    converge();
     return '';
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
     repo.ensureBgp(parseInt(a[0], 10));
+    bgpEng().enable({ asn: parseInt(a[0], 10) });
     ctx.setSelectedRoutingProto({ proto: 'bgp', asn: parseInt(a[0], 10) });
     ctx.setMode('config-router');
+    converge();
     return '';
   });
   configTrie.registerGreedy('no router bgp', 'Disable BGP', () => {
     repo.removeBgp();
+    bgpEng().disable();
+    converge();
     return '';
   });
 
@@ -71,8 +84,18 @@ export function buildRoutingProtoConfig(
         return `% Invalid input: ${e instanceof Error ? e.message : e}`;
       }
     }
-    if (proto === 'eigrp') eigrp().networks.push(args.join(' '));
-    else bgp()?.networks.push(args.join(' '));
+    if (proto === 'eigrp') {
+      eigrp().networks.push(args.join(' '));
+      eigrpEng().getConfig().networks.push({
+        network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
+      });
+    } else {
+      bgp()?.networks.push(args.join(' '));
+      const mask = args[1] === 'mask' && args[2]
+        ? args[2] : String(classfulMask(new IPAddress(args[0])));
+      bgpEng().getConfig().networks.push({ network: args[0], mask });
+    }
+    converge();
     return '';
   });
 
@@ -107,7 +130,11 @@ export function buildRoutingProtoConfig(
     if (a[0] === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = true;
     } else if (p === 'rip') repo.rip.passive.add(tgt);
-    else if (p === 'eigrp') eigrp().passive.add(tgt);
+    else if (p === 'eigrp') {
+      eigrp().passive.add(tgt);
+      eigrpEng().getConfig().passive.add(tgt);
+      converge();
+    }
     return '';
   });
   routerTrie.registerGreedy('no passive-interface', 'Allow updates', (a) => {
@@ -162,18 +189,32 @@ export function buildRoutingProtoConfig(
         else if (a[1] === 'activate') n.activated = true;
         else n.attrs.push(raw ?? a.join(' '));
       }
+      // Drive the real BGP engine session config.
+      const ec = bgpEng().getConfig();
+      let bn = ec.neighbors.get(a[0]);
+      if (!bn) { bn = { ip: a[0], activated: false }; ec.neighbors.set(a[0], bn); }
+      if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
+      else if (a[1] === 'activate') bn.activated = true;
+      converge();
     }
     return '';
   });
   routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
     const p = curProto(ctx).proto;
-    if (p === 'eigrp') eigrp().routerId = a[0];
-    else if (p === 'bgp') { const b = bgp(); if (b) b.routerId = a[0]; }
+    if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
+    else if (p === 'bgp') {
+      const b = bgp(); if (b) b.routerId = a[0];
+      bgpEng().getConfig().routerId = a[0];
+    }
     return '';
   });
   routerTrie.registerGreedy('eigrp', 'EIGRP option', (a) => {
-    if (a[0] === 'router-id') eigrp().routerId = a[1];
-    else if (a[0] === 'stub') eigrp().stub = a.slice(1).join(' ') || 'connected summary';
+    if (a[0] === 'router-id') {
+      eigrp().routerId = a[1];
+      eigrpEng().getConfig().routerId = a[1];
+    } else if (a[0] === 'stub') {
+      eigrp().stub = a.slice(1).join(' ') || 'connected summary';
+    }
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
@@ -181,7 +222,10 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
-    if (a[0] === 'router-id') { const b = bgp(); if (b) b.routerId = a[1]; }
+    if (a[0] === 'router-id') {
+      const b = bgp(); if (b) b.routerId = a[1];
+      bgpEng().getConfig().routerId = a[1];
+    }
     return '';
   });
   routerTrie.registerGreedy('aggregate-address', 'BGP aggregate', (a, raw) => {

@@ -60,6 +60,7 @@ export type { RIPConfig } from './router/RouterRIPEngine';
 import { IPv6DataPlane } from './router/IPv6DataPlane';
 export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from './router/IPv6DataPlane';
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
+import { RouterDynamicRouting } from './router/RouterDynamicRouting';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
@@ -77,7 +78,7 @@ export interface RouteEntry {
   /** Outgoing interface name */
   iface: string;
   /** Route type for display */
-  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf';
+  type: 'connected' | 'static' | 'default' | 'rip' | 'ospf' | 'eigrp' | 'bgp';
   /** Administrative distance (lower = preferred) */
   ad: number;
   /** Metric (lower = preferred when prefix lengths and ADs are equal) */
@@ -165,6 +166,7 @@ export abstract class Router extends Equipment {
 
   // ── OSPF Integration (RFC 2328 / RFC 5340) — delegated to RouterOSPFIntegration ──
   private ospfIntegration!: RouterOSPFIntegration;
+  private dynamicRouting!: RouterDynamicRouting;
 
   // ── IPSec Engine ─────────────────────────────────────────────
   private ipsecEngine: IPSecEngine | null = null;
@@ -214,6 +216,12 @@ export abstract class Router extends Equipment {
       getACLEngine: () => this.aclEngine,
       getIPv6Engine: () => this.ipv6Engine,
       getIPv6AccessLists: () => (this as any).ipv6AccessLists,
+    });
+    this.dynamicRouting = new RouterDynamicRouting({
+      id: this.id,
+      getPorts: () => this.ports,
+      getRoutingTable: () => this.routingTable,
+      setRoutingTable: (table) => { this.routingTable = table; },
     });
     this.shell = this.createShell();
     this.natEngine.setACLMatchFn((aclId, srcIP) => {
@@ -550,6 +558,13 @@ export abstract class Router extends Equipment {
   getRIPConfig() { return this.ripEngine.getConfig(); }
   getRIPRoutes() { return this.ripEngine.getRoutes(); }
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
+
+  /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
+  getDynamicRouting() { return this.dynamicRouting; }
+  getEIGRPEngine() { return this.dynamicRouting.eigrp; }
+  getBGPEngine() { return this.dynamicRouting.bgp; }
+  /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
+  convergeDynamicRouting() { this.dynamicRouting.converge(); }
 
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 

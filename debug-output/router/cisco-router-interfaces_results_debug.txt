@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-05-17T18:13:56.830Z
+Generated: 2026-05-18T04:05:05.361Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1352,7 +1352,7 @@ Total steps: 343
 
 [240/343] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
   C    10.255.255.1/32 is directly connected, Loopback1
@@ -1487,7 +1487,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *18:13:56.000 UTC Sun May 17 2026
+  *04:05:05.000 UTC Mon May 18 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1763,7 +1763,7 @@ Total steps: 343
   Loopback100                172.31.0.1      YES manual administratively down down
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default
+  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
   
   C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
   C    10.255.255.1/32 is directly connected, Loopback1

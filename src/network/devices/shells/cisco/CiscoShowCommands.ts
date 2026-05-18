@@ -33,10 +33,13 @@ export function showVersion(router: Router): string {
 
 export function showIpRoute(router: Router): string {
   const table = router.getRoutingTable();
-  const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, * - candidate default', ''];
+  const lines = ['Codes: C - connected, S - static, R - RIP, O - OSPF, ' +
+    'D - EIGRP, B - BGP, * - candidate default', ''];
   const sorted = [...table].sort((a, b) => {
-    const order: Record<string, number> = { connected: 0, ospf: 1, rip: 2, static: 3, default: 4 };
-    return (order[a.type] ?? 5) - (order[b.type] ?? 5);
+    const order: Record<string, number> = {
+      connected: 0, ospf: 1, eigrp: 2, bgp: 3, rip: 4, static: 5, default: 6,
+    };
+    return (order[a.type] ?? 7) - (order[b.type] ?? 7);
   });
   for (const r of sorted) {
     let code: string;
@@ -44,11 +47,14 @@ export function showIpRoute(router: Router): string {
       case 'connected': code = 'C'; break;
       case 'rip': code = 'R'; break;
       case 'ospf': code = 'O'; break;
+      case 'eigrp': code = 'D'; break;
+      case 'bgp': code = 'B'; break;
       case 'default': code = 'S*'; break;
       default: code = 'S'; break;
     }
     const via = r.nextHop ? `via ${r.nextHop}` : 'is directly connected';
-    const metricStr = (r.type === 'rip' || r.type === 'ospf') ? ` [${r.ad}/${r.metric}]` : '';
+    const metricStr = (r.type === 'rip' || r.type === 'ospf'
+      || r.type === 'eigrp' || r.type === 'bgp') ? ` [${r.ad}/${r.metric}]` : '';
     lines.push(`${code}    ${r.network}/${r.mask.toCIDR()}${metricStr} ${via}, ${r.iface}`);
   }
   return lines.length > 2 ? lines.join('\n') : 'No routes configured.';
