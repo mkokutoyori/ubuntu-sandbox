@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-access-management
-Generated: 2026-05-18T19:35:41.870Z
+Generated: 2026-05-18T19:36:53.953Z
 Topology:  LinuxServer ora-access (10.0.0.10) — Oracle ORCL OPEN
 Total commands: 481
 ============================================================
@@ -81,7 +81,7 @@ SQL [7/481]> SELECT * FROM dba_users WHERE username = 'SYS';
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
+  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
   
   1 row selected.
 
@@ -89,7 +89,7 @@ SQL [8/481]> SELECT * FROM dba_users WHERE username = 'SYSTEM';
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
+  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
   
   1 row selected.
 
@@ -97,7 +97,7 @@ SQL [9/481]> SELECT * FROM dba_users WHERE username = 'HR';
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
+  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
   
   1 row selected.
 
@@ -105,12 +105,12 @@ SQL [10/481]> SELECT * FROM all_users ORDER BY created;
   
   USERNAME  USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   --------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYS       0       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  SYSTEM    1       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  DBSNMP    2       OPEN                                 SYSAUX             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  HR        3       OPEN                                 USERS              TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  SCOTT     4       OPEN                                 USERS              TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  FCUBSLIVE 5       OPEN                                 USERS              TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
+  SYS       0       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  SYSTEM    1       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  DBSNMP    2       OPEN                                 SYSAUX             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  HR        3       OPEN                                 USERS              TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  SCOTT     4       OPEN                                 USERS              TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  FCUBSLIVE 5       OPEN                                 USERS              TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
   
   6 rows selected.
 
@@ -935,8 +935,12 @@ SQL [128/481]> SELECT * FROM role_tab_privs WHERE role = 'READ_ONLY_ROLE';
   ---- ----- ---------- ----------- --------- --------- ------ ---------
 
 SQL [129/481]> SELECT * FROM session_roles;
-  ERROR:
-  ORA-00942: table or view does not exist
+  
+  ROLE
+  ----
+  DBA 
+  
+  1 row selected.
 
 SQL [130/481]> SET ROLE app_role;
   SP2-0158: unknown SET option "ROLE"
@@ -1357,10 +1361,10 @@ SQL [191/481]> SELECT * FROM dba_audit_session ORDER BY timestamp DESC FETCH FIR
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- --------- -------- ------------------------ ----------- --------- ----------- ----------
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.866Z LOGON       8                     0         
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.774Z LOGON       7                     0         
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.772Z LOGON       6                     0         
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.747Z LOGON       5                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.953Z LOGON       8                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.886Z LOGON       7                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.884Z LOGON       6                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.865Z LOGON       5                     0         
   
   4 rows selected.
 
@@ -1444,127 +1448,127 @@ SQL [205/481]> SELECT * FROM unified_audit_trail ORDER BY event_timestamp DESC F
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.896Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice QUOTA 100M ON users                                                                                                                                                                                                                              SYS           ALICE          ALTER USER                           141     
-  2026-05-18T19:35:41.896Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob QUOTA 500M ON users                                                                                                                                                                                                                                SYS           BOB            ALTER USER                           142     
-  2026-05-18T19:35:41.896Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER carol QUOTA UNLIMITED ON users                                                                                                                                                                                                                         SYS           CAROL          ALTER USER                           143     
-  2026-05-18T19:35:41.896Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER dave QUOTA 0 ON users                                                                                                                                                                                                                                  SYS           DAVE           ALTER USER                           144     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob ACCOUNT UNLOCK                                                                                                                                                                                                                                     SYS           BOB            ALTER USER                           130     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER eve PASSWORD EXPIRE                                                                                                                                                                                                                                    SYS           EVE            ALTER USER                           131     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE CREATE TABLE FROM alice                                                                                                                                                                                                                                    SYS                          REVOKE                               132     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE SELECT ANY TABLE FROM bob                                                                                                                                                                                                                                  SYS                          REVOKE                               133     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE ALL PRIVILEGES FROM dave                                                                                                                                                                                                                                   SYS                          REVOKE                               134     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE SELECT ON hr.employees FROM alice                                                                                                                                                                                                                          HR            EMPLOYEES      REVOKE                               135     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE app_role FROM bob                                                                                                                                                                                                                                          SYS                          REVOKE                               136     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE admin_role FROM ops_user                                                                                                                                                                                                                                   SYS                          REVOKE                               137     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE developer_role FROM carol                                                                                                                                                                                                                                  SYS                          REVOKE                               138     
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE EXECUTE ANY PROCEDURE FROM bob                                                                                                                                                                                                                             SYS                          REVOKE                               139     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE ALL PRIVILEGES FROM dave                                                                                                                                                                                                                                   SYS                          REVOKE                               134     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE SELECT ON hr.employees FROM alice                                                                                                                                                                                                                          HR            EMPLOYEES      REVOKE                               135     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE app_role FROM bob                                                                                                                                                                                                                                          SYS                          REVOKE                               136     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE admin_role FROM ops_user                                                                                                                                                                                                                                   SYS                          REVOKE                               137     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE developer_role FROM carol                                                                                                                                                                                                                                  SYS                          REVOKE                               138     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE EXECUTE ANY PROCEDURE FROM bob                                                                                                                                                                                                                             SYS                          REVOKE                               139     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE UNLIMITED TABLESPACE FROM app_user                                                                                                                                                                                                                         SYS                          REVOKE                               140     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice QUOTA 100M ON users                                                                                                                                                                                                                              SYS           ALICE          ALTER USER                           141     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob QUOTA 500M ON users                                                                                                                                                                                                                                SYS           BOB            ALTER USER                           142     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER carol QUOTA UNLIMITED ON users                                                                                                                                                                                                                         SYS           CAROL          ALTER USER                           143     
+  2026-05-18T19:36:53.981Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER dave QUOTA 0 ON users                                                                                                                                                                                                                                  SYS           DAVE           ALTER USER                           144     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER carol ACCOUNT UNLOCK                                                                                                                                                                                                                                   SYS           CAROL          ALTER USER                           127     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice ACCOUNT UNLOCK                                                                                                                                                                                                                                   SYS           ALICE          ALTER USER                           128     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER eve PASSWORD EXPIRE                                                                                                                                                                                                                                    SYS           EVE            ALTER USER                           129     
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.895Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE UNLIMITED TABLESPACE FROM app_user                                                                                                                                                                                                                         SYS                          REVOKE                               140     
-  2026-05-18T19:35:41.894Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice ACCOUNT LOCK                                                                                                                                                                                                                                     SYS           ALICE          ALTER USER                           125     
-  2026-05-18T19:35:41.894Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob ACCOUNT LOCK                                                                                                                                                                                                                                       SYS           BOB            ALTER USER                           126     
-  2026-05-18T19:35:41.894Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER carol ACCOUNT UNLOCK                                                                                                                                                                                                                                   SYS           CAROL          ALTER USER                           127     
-  2026-05-18T19:35:41.894Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice ACCOUNT UNLOCK                                                                                                                                                                                                                                   SYS           ALICE          ALTER USER                           128     
-  2026-05-18T19:35:41.894Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER eve PASSWORD EXPIRE                                                                                                                                                                                                                                    SYS           EVE            ALTER USER                           129     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE app_profile LIMIT SESSIONS_PER_USER 100 IDLE_TIME 60 CPU_PER_CALL UNLIMITED                                                                                                                                                                        SYS           APP_PROFILE    CREATE PROFILE                       118     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE batch_profile LIMIT SESSIONS_PER_USER 5 CONNECT_TIME UNLIMITED CPU_PER_CALL UNLIMITED                                                                                                                                                              SYS           BATCH_PROFILE  CREATE PROFILE                       119     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE strict_profile LIMIT FAILED_LOGIN_ATTEMPTS 3 PASSWORD_LIFE_TIME 30 PASSWORD_LOCK_TIME UNLIMITED                                                                                                                                                    SYS           STRICT_PROFILE CREATE PROFILE                       120     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice PROFILE secure_profile                                                                                                                                                                                                                           SYS           ALICE          ALTER USER                           121     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob PROFILE app_profile                                                                                                                                                                                                                                SYS           BOB            ALTER USER                           122     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER batch_user PROFILE batch_profile                                                                                                                                                                                                                       SYS           BATCH_USER     ALTER USER                           123     
-  2026-05-18T19:35:41.892Z Standard   8         SYS        localhost pts/0    oracle  ALTER PROFILE  0           ALTER PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 10                                                                                                                                                                                                       SYS           SECURE_PROFILE ALTER PROFILE                        124     
-  2026-05-18T19:35:41.891Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 5 PASSWORD_LIFE_TIME 90 PASSWORD_REUSE_TIME 365 PASSWORD_REUSE_MAX 5 PASSWORD_LOCK_TIME 1/24 PASSWORD_GRACE_TIME 7 SESSIONS_PER_USER 10 IDLE_TIME 30 CONNECT_TIME 240 LOGICAL_READS_PER_SESSION DEFAULT SYS           SECURE_PROFILE CREATE PROFILE                       117     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob ACCOUNT UNLOCK                                                                                                                                                                                                                                     SYS           BOB            ALTER USER                           130     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER eve PASSWORD EXPIRE                                                                                                                                                                                                                                    SYS           EVE            ALTER USER                           131     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE CREATE TABLE FROM alice                                                                                                                                                                                                                                    SYS                          REVOKE                               132     
+  2026-05-18T19:36:53.980Z Standard   8         SYS        localhost pts/0    oracle  REVOKE         0           REVOKE SELECT ANY TABLE FROM bob                                                                                                                                                                                                                                  SYS                          REVOKE                               133     
+  2026-05-18T19:36:53.979Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice ACCOUNT LOCK                                                                                                                                                                                                                                     SYS           ALICE          ALTER USER                           125     
+  2026-05-18T19:36:53.979Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob ACCOUNT LOCK                                                                                                                                                                                                                                       SYS           BOB            ALTER USER                           126     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE app_profile LIMIT SESSIONS_PER_USER 100 IDLE_TIME 60 CPU_PER_CALL UNLIMITED                                                                                                                                                                        SYS           APP_PROFILE    CREATE PROFILE                       118     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE batch_profile LIMIT SESSIONS_PER_USER 5 CONNECT_TIME UNLIMITED CPU_PER_CALL UNLIMITED                                                                                                                                                              SYS           BATCH_PROFILE  CREATE PROFILE                       119     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE strict_profile LIMIT FAILED_LOGIN_ATTEMPTS 3 PASSWORD_LIFE_TIME 30 PASSWORD_LOCK_TIME UNLIMITED                                                                                                                                                    SYS           STRICT_PROFILE CREATE PROFILE                       120     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice PROFILE secure_profile                                                                                                                                                                                                                           SYS           ALICE          ALTER USER                           121     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER bob PROFILE app_profile                                                                                                                                                                                                                                SYS           BOB            ALTER USER                           122     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER batch_user PROFILE batch_profile                                                                                                                                                                                                                       SYS           BATCH_USER     ALTER USER                           123     
+  2026-05-18T19:36:53.977Z Standard   8         SYS        localhost pts/0    oracle  ALTER PROFILE  0           ALTER PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 10                                                                                                                                                                                                       SYS           SECURE_PROFILE ALTER PROFILE                        124     
+  2026-05-18T19:36:53.976Z Standard   8         SYS        localhost pts/0    oracle  CREATE PROFILE 0           CREATE PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 5 PASSWORD_LIFE_TIME 90 PASSWORD_REUSE_TIME 365 PASSWORD_REUSE_MAX 5 PASSWORD_LOCK_TIME 1/24 PASSWORD_GRACE_TIME 7 SESSIONS_PER_USER 10 IDLE_TIME 30 CONNECT_TIME 240 LOGICAL_READS_PER_SESSION DEFAULT SYS           SECURE_PROFILE CREATE PROFILE                       117     
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE app_role                                                                                                                                                                                                                                              SYS           APP_ROLE       CREATE ROLE                          94      
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE read_only_role                                                                                                                                                                                                                                        SYS           READ_ONLY_ROLE CREATE ROLE                          95      
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE write_role                                                                                                                                                                                                                                            SYS           WRITE_ROLE     CREATE ROLE                          96      
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE manager_role                                                                                                                                                                                                                                          SYS           MANAGER_ROLE   CREATE ROLE                          97      
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE developer_role                                                                                                                                                                                                                                        SYS           DEVELOPER_ROLE CREATE ROLE                          98      
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE tester_role                                                                                                                                                                                                                                           SYS           TESTER_ROLE    CREATE ROLE                          99      
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE batch_role                                                                                                                                                                                                                                            SYS           BATCH_ROLE     CREATE ROLE                          100     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE etl_role                                                                                                                                                                                                                                              SYS           ETL_ROLE       CREATE ROLE                          101     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SESSION TO app_role                                                                                                                                                                                                                                  SYS                          GRANT                                102     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TABLE TO app_role                                                                                                                                                                                                                                    SYS                          GRANT                                103     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE VIEW TO app_role                                                                                                                                                                                                                                     SYS                          GRANT                                104     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE PROCEDURE TO app_role                                                                                                                                                                                                                                SYS                          GRANT                                105     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT SELECT ANY TABLE TO read_only_role                                                                                                                                                                                                                          SYS                          GRANT                                106     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE TO write_role                                                                                                                                                                                          SYS                          GRANT                                107     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE app_role                                                                                                                                                                                                                                              SYS           APP_ROLE       CREATE ROLE                          94      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE read_only_role                                                                                                                                                                                                                                        SYS           READ_ONLY_ROLE CREATE ROLE                          95      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE write_role                                                                                                                                                                                                                                            SYS           WRITE_ROLE     CREATE ROLE                          96      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE manager_role                                                                                                                                                                                                                                          SYS           MANAGER_ROLE   CREATE ROLE                          97      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE developer_role                                                                                                                                                                                                                                        SYS           DEVELOPER_ROLE CREATE ROLE                          98      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE tester_role                                                                                                                                                                                                                                           SYS           TESTER_ROLE    CREATE ROLE                          99      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE batch_role                                                                                                                                                                                                                                            SYS           BATCH_ROLE     CREATE ROLE                          100     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  CREATE ROLE    0           CREATE ROLE etl_role                                                                                                                                                                                                                                              SYS           ETL_ROLE       CREATE ROLE                          101     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SESSION TO app_role                                                                                                                                                                                                                                  SYS                          GRANT                                102     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TABLE TO app_role                                                                                                                                                                                                                                    SYS                          GRANT                                103     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE VIEW TO app_role                                                                                                                                                                                                                                     SYS                          GRANT                                104     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE PROCEDURE TO app_role                                                                                                                                                                                                                                SYS                          GRANT                                105     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT SELECT ANY TABLE TO read_only_role                                                                                                                                                                                                                          SYS                          GRANT                                106     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE TO write_role                                                                                                                                                                                          SYS                          GRANT                                107     
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALL PRIVILEGES TO admin_role                                                                                                                                                                                                                                SYS                          GRANT                                108     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT app_role TO bob                                                                                                                                                                                                                                             SYS                          GRANT                                109     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT read_only_role TO readonly                                                                                                                                                                                                                                  SYS                          GRANT                                110     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT write_role TO app_user                                                                                                                                                                                                                                      SYS                          GRANT                                111     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT admin_role TO ops_user                                                                                                                                                                                                                                      SYS                          GRANT                                112     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT app_role TO dev_team                                                                                                                                                                                                                                        SYS                          GRANT                                113     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT tester_role TO qa_team                                                                                                                                                                                                                                      SYS                          GRANT                                114     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT manager_role TO grace WITH ADMIN OPTION                                                                                                                                                                                                                     SYS                          GRANT                                115     
-  2026-05-18T19:35:41.889Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT read_only_role TO reporting_role                                                                                                                                                                                                                            SYS                          GRANT                                116     
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INSERT ON hr.employees TO bob                                                                                                                                                                                                                               HR            EMPLOYEES      GRANT                                85      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT UPDATE ON hr.employees TO bob                                                                                                                                                                                                                               HR            EMPLOYEES      GRANT                                86      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DELETE ON hr.employees TO bob                                                                                                                                                                                                                               HR            EMPLOYEES      GRANT                                87      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT REFERENCES ON hr.employees TO carol                                                                                                                                                                                                                         HR            EMPLOYEES      GRANT                                88      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALL ON hr.departments TO frank                                                                                                                                                                                                                              HR            DEPARTMENTS    GRANT                                89      
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALL PRIVILEGES TO admin_role                                                                                                                                                                                                                                SYS                          GRANT                                108     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT app_role TO bob                                                                                                                                                                                                                                             SYS                          GRANT                                109     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT read_only_role TO readonly                                                                                                                                                                                                                                  SYS                          GRANT                                110     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT write_role TO app_user                                                                                                                                                                                                                                      SYS                          GRANT                                111     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT admin_role TO ops_user                                                                                                                                                                                                                                      SYS                          GRANT                                112     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT app_role TO dev_team                                                                                                                                                                                                                                        SYS                          GRANT                                113     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT tester_role TO qa_team                                                                                                                                                                                                                                      SYS                          GRANT                                114     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT manager_role TO grace WITH ADMIN OPTION                                                                                                                                                                                                                     SYS                          GRANT                                115     
+  2026-05-18T19:36:53.974Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT read_only_role TO reporting_role                                                                                                                                                                                                                            SYS                          GRANT                                116     
+  2026-05-18T19:36:53.973Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALL ON hr.departments TO frank                                                                                                                                                                                                                              HR            DEPARTMENTS    GRANT                                89      
+  2026-05-18T19:36:53.973Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT EXECUTE ON hr.add_employee TO grace                                                                                                                                                                                                                         HR            ADD_EMPLOYEE   GRANT                                90      
+  2026-05-18T19:36:53.973Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER ON hr.employees TO ops_user                                                                                                                                                                                                                           HR            EMPLOYEES      GRANT                                91      
+  2026-05-18T19:36:53.973Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DEBUG ON hr.add_employee TO ops_user                                                                                                                                                                                                                        HR            ADD_EMPLOYEE   GRANT                                92      
+  2026-05-18T19:36:53.973Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INDEX ON hr.employees TO ops_user                                                                                                                                                                                                                           HR            EMPLOYEES      GRANT                                93      
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT EXECUTE ON hr.add_employee TO grace                                                                                                                                                                                                                         HR            ADD_EMPLOYEE   GRANT                                90      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER ON hr.employees TO ops_user                                                                                                                                                                                                                           HR            EMPLOYEES      GRANT                                91      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DEBUG ON hr.add_employee TO ops_user                                                                                                                                                                                                                        HR            ADD_EMPLOYEE   GRANT                                92      
-  2026-05-18T19:35:41.888Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INDEX ON hr.employees TO ops_user                                                                                                                                                                                                                           HR            EMPLOYEES      GRANT                                93      
-  2026-05-18T19:35:41.887Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT SELECT ON hr.employees TO alice                                                                                                                                                                                                                             HR            EMPLOYEES      GRANT                                84      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DELETE ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                69      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT EXECUTE ANY PROCEDURE TO bob                                                                                                                                                                                                                                SYS                          GRANT                                70      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE ANY VIEW TO carol                                                                                                                                                                                                                                    SYS                          GRANT                                71      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DROP ANY TABLE TO dave                                                                                                                                                                                                                                      SYS                          GRANT                                72      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER ANY TABLE TO dave                                                                                                                                                                                                                                     SYS                          GRANT                                73      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TABLESPACE TO ops_user                                                                                                                                                                                                                               SYS                          GRANT                                74      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DROP TABLESPACE TO ops_user                                                                                                                                                                                                                                 SYS                          GRANT                                75      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER TABLESPACE TO ops_user                                                                                                                                                                                                                                SYS                          GRANT                                76      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT MANAGE TABLESPACE TO ops_user                                                                                                                                                                                                                               SYS                          GRANT                                77      
+  2026-05-18T19:36:53.972Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT SELECT ON hr.employees TO alice                                                                                                                                                                                                                             HR            EMPLOYEES      GRANT                                84      
+  2026-05-18T19:36:53.972Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INSERT ON hr.employees TO bob                                                                                                                                                                                                                               HR            EMPLOYEES      GRANT                                85      
+  2026-05-18T19:36:53.972Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT UPDATE ON hr.employees TO bob                                                                                                                                                                                                                               HR            EMPLOYEES      GRANT                                86      
+  2026-05-18T19:36:53.972Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DELETE ON hr.employees TO bob                                                                                                                                                                                                                               HR            EMPLOYEES      GRANT                                87      
+  2026-05-18T19:36:53.972Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT REFERENCES ON hr.employees TO carol                                                                                                                                                                                                                         HR            EMPLOYEES      GRANT                                88      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE MATERIALIZED VIEW TO alice                                                                                                                                                                                                                           SYS                          GRANT                                64      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                65      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT SELECT ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                66      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INSERT ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                67      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT UPDATE ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                68      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DELETE ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                69      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT EXECUTE ANY PROCEDURE TO bob                                                                                                                                                                                                                                SYS                          GRANT                                70      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE ANY VIEW TO carol                                                                                                                                                                                                                                    SYS                          GRANT                                71      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DROP ANY TABLE TO dave                                                                                                                                                                                                                                      SYS                          GRANT                                72      
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE USER TO ops_user                                                                                                                                                                                                                                     SYS                          GRANT                                78      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER USER TO ops_user                                                                                                                                                                                                                                      SYS                          GRANT                                79      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DROP USER TO ops_user                                                                                                                                                                                                                                       SYS                          GRANT                                80      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER SYSTEM TO ops_user                                                                                                                                                                                                                                    SYS                          GRANT                                81      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER SESSION TO ops_user                                                                                                                                                                                                                                   SYS                          GRANT                                82      
-  2026-05-18T19:35:41.883Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT UNLIMITED TABLESPACE TO app_user                                                                                                                                                                                                                            SYS                          GRANT                                83      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice IDENTIFIED BY "NewPass1#"                                                                                                                                                                                                                        SYS           ALICE          ALTER USER                           54      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SESSION TO alice                                                                                                                                                                                                                                     SYS                          GRANT                                55      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TABLE TO alice                                                                                                                                                                                                                                       SYS                          GRANT                                56      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE VIEW TO alice                                                                                                                                                                                                                                        SYS                          GRANT                                57      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE PROCEDURE TO alice                                                                                                                                                                                                                                   SYS                          GRANT                                58      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SEQUENCE TO alice                                                                                                                                                                                                                                    SYS                          GRANT                                59      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SYNONYM TO alice                                                                                                                                                                                                                                     SYS                          GRANT                                60      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TRIGGER TO alice                                                                                                                                                                                                                                     SYS                          GRANT                                61      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER ANY TABLE TO dave                                                                                                                                                                                                                                     SYS                          GRANT                                73      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TABLESPACE TO ops_user                                                                                                                                                                                                                               SYS                          GRANT                                74      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DROP TABLESPACE TO ops_user                                                                                                                                                                                                                                 SYS                          GRANT                                75      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER TABLESPACE TO ops_user                                                                                                                                                                                                                                SYS                          GRANT                                76      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT MANAGE TABLESPACE TO ops_user                                                                                                                                                                                                                               SYS                          GRANT                                77      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE USER TO ops_user                                                                                                                                                                                                                                     SYS                          GRANT                                78      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER USER TO ops_user                                                                                                                                                                                                                                      SYS                          GRANT                                79      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT DROP USER TO ops_user                                                                                                                                                                                                                                       SYS                          GRANT                                80      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER SYSTEM TO ops_user                                                                                                                                                                                                                                    SYS                          GRANT                                81      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT ALTER SESSION TO ops_user                                                                                                                                                                                                                                   SYS                          GRANT                                82      
+  2026-05-18T19:36:53.968Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT UNLIMITED TABLESPACE TO app_user                                                                                                                                                                                                                            SYS                          GRANT                                83      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  ALTER USER     0           ALTER USER alice IDENTIFIED BY "NewPass1#"                                                                                                                                                                                                                        SYS           ALICE          ALTER USER                           54      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SESSION TO alice                                                                                                                                                                                                                                     SYS                          GRANT                                55      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TABLE TO alice                                                                                                                                                                                                                                       SYS                          GRANT                                56      
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TYPE TO alice                                                                                                                                                                                                                                        SYS                          GRANT                                62      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE INDEX TO alice                                                                                                                                                                                                                                       SYS                          GRANT                                63      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE MATERIALIZED VIEW TO alice                                                                                                                                                                                                                           SYS                          GRANT                                64      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                65      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT SELECT ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                66      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT INSERT ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                67      
-  2026-05-18T19:35:41.882Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT UPDATE ANY TABLE TO bob                                                                                                                                                                                                                                     SYS                          GRANT                                68      
-  2026-05-18T19:35:41.881Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER ops$oracle IDENTIFIED EXTERNALLY                                                                                                                                                                                                                      SYS           OPS$ORACLE     CREATE USER                          52      
-  2026-05-18T19:35:41.881Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER global_user IDENTIFIED GLOBALLY AS 'CN=global,O=Acme'                                                                                                                                                                                                 SYS           GLOBAL_USER    CREATE USER                          53      
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER app_user IDENTIFIED BY "AppUser123#" DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp                                                                                                                                                               SYS           APP_USER       CREATE USER                          42      
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER reporter IDENTIFIED BY "Reporter1#" DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp QUOTA 100M ON users                                                                                                                                            SYS           REPORTER       CREATE USER                          43      
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER analyst IDENTIFIED BY "Analyst1#" QUOTA UNLIMITED ON users                                                                                                                                                                                            SYS           ANALYST        CREATE USER                          44      
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER readonly IDENTIFIED BY "ReadOnly1#" PROFILE default                                                                                                                                                                                                   SYS           READONLY       CREATE USER                          45      
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER batch_user IDENTIFIED BY "Batch1#" QUOTA 500M ON users                                                                                                                                                                                                SYS           BATCH_USER     CREATE USER                          46      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE VIEW TO alice                                                                                                                                                                                                                                        SYS                          GRANT                                57      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE PROCEDURE TO alice                                                                                                                                                                                                                                   SYS                          GRANT                                58      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SEQUENCE TO alice                                                                                                                                                                                                                                    SYS                          GRANT                                59      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE SYNONYM TO alice                                                                                                                                                                                                                                     SYS                          GRANT                                60      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TRIGGER TO alice                                                                                                                                                                                                                                     SYS                          GRANT                                61      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE TYPE TO alice                                                                                                                                                                                                                                        SYS                          GRANT                                62      
+  2026-05-18T19:36:53.967Z Standard   8         SYS        localhost pts/0    oracle  GRANT          0           GRANT CREATE INDEX TO alice                                                                                                                                                                                                                                       SYS                          GRANT                                63      
+  2026-05-18T19:36:53.966Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER ops$oracle IDENTIFIED EXTERNALLY                                                                                                                                                                                                                      SYS           OPS$ORACLE     CREATE USER                          52      
+  2026-05-18T19:36:53.966Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER global_user IDENTIFIED GLOBALLY AS 'CN=global,O=Acme'                                                                                                                                                                                                 SYS           GLOBAL_USER    CREATE USER                          53      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER readonly IDENTIFIED BY "ReadOnly1#" PROFILE default                                                                                                                                                                                                   SYS           READONLY       CREATE USER                          45      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER batch_user IDENTIFIED BY "Batch1#" QUOTA 500M ON users                                                                                                                                                                                                SYS           BATCH_USER     CREATE USER                          46      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER schema_owner IDENTIFIED BY "Owner1#" QUOTA UNLIMITED ON users TEMPORARY TABLESPACE temp                                                                                                                                                               SYS           SCHEMA_OWNER   CREATE USER                          47      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER dev_team IDENTIFIED BY "DevTeam1#"                                                                                                                                                                                                                    SYS           DEV_TEAM       CREATE USER                          48      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER qa_team IDENTIFIED BY "QaTeam1#"                                                                                                                                                                                                                      SYS           QA_TEAM        CREATE USER                          49      
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME    RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                                          OBJECT_SCHEMA OBJECT_NAME    STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- -------------- ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- -------------- -------------- --------------------- --------
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER schema_owner IDENTIFIED BY "Owner1#" QUOTA UNLIMITED ON users TEMPORARY TABLESPACE temp                                                                                                                                                               SYS           SCHEMA_OWNER   CREATE USER                          47      
-  2026-05-18T19:35:41.880Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER dev_team IDENTIFIED BY "DevTeam1#"                                                                                                                                                                                                                    SYS           DEV_TEAM       CREATE USER                          48      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER ops_user IDENTIFIED BY "Ops1#"                                                                                                                                                                                                                        SYS           OPS_USER       CREATE USER                          50      
+  2026-05-18T19:36:53.965Z Standard   8         SYS        localhost pts/0    oracle  CREATE USER    0           CREATE USER monitor IDENTIFIED BY "Monitor1#"                                                                                                                                                                                                                     SYS           MONITOR        CREATE USER                          51      
   
   100 rows selected.
 
@@ -1669,10 +1673,10 @@ SQL [226/481]> SELECT sid, serial#, username, status, program, machine, osuser F
   2   1       SYS      ACTIVE oracle@localhost (SMON) localhost oracle
   3   1       SYS      ACTIVE oracle@localhost (DBW0) localhost oracle
   4   1       SYS      ACTIVE oracle@localhost (LGWR) localhost oracle
-  5   43733   SYS      ACTIVE sqlplus@localhost       localhost oracle
-  6   22740   SYS      ACTIVE sqlplus@localhost       localhost oracle
-  7   49817   SYS      ACTIVE sqlplus@localhost       localhost oracle
-  8   17248   SYS      ACTIVE sqlplus@localhost       localhost oracle
+  5   8052    SYS      ACTIVE sqlplus@localhost       localhost oracle
+  6   5211    SYS      ACTIVE sqlplus@localhost       localhost oracle
+  7   14760   SYS      ACTIVE sqlplus@localhost       localhost oracle
+  8   1129    SYS      ACTIVE sqlplus@localhost       localhost oracle
   
   8 rows selected.
 
@@ -1700,10 +1704,10 @@ SQL [229/481]> SELECT sid, serial#, username, status, last_call_et FROM v$sessio
   2   1       SYS      ACTIVE 0           
   3   1       SYS      ACTIVE 0           
   4   1       SYS      ACTIVE 0           
-  5   43733   SYS      ACTIVE 0           
-  6   22740   SYS      ACTIVE 0           
-  7   49817   SYS      ACTIVE 0           
-  8   17248   SYS      ACTIVE 0           
+  5   8052    SYS      ACTIVE 0           
+  6   5211    SYS      ACTIVE 0           
+  7   14760   SYS      ACTIVE 0           
+  8   1129    SYS      ACTIVE 0           
   
   8 rows selected.
 
@@ -1762,8 +1766,8 @@ SQL [242/481]> SELECT * FROM dba_audit_session WHERE returncode != 0 ORDER BY ti
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- --------- -------- ------------------------ ----------- --------- ----------- ----------
-  oracle      ALICE    localhost pts/0    2026-05-18T19:35:41.916Z LOGON       0                     1017      
-  oracle      BOB      localhost pts/0    2026-05-18T19:35:41.916Z LOGON       0                     1045      
+  oracle      BOB      localhost pts/0    2026-05-18T19:36:53.998Z LOGON       0                     1045      
+  oracle      ALICE    localhost pts/0    2026-05-18T19:36:53.997Z LOGON       0                     1017      
   
   2 rows selected.
 
@@ -1982,7 +1986,7 @@ SQL [291/481]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS DATABASE_STATUS INSTANCE_ROLE   
   --------------- ------------- --------- ---------- ------------------------ ------ --------------- ----------------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-18T19:35:41.731Z OPEN   ACTIVE          PRIMARY_INSTANCE
+  1               ORCL          localhost 19.0.0.0.0 2026-05-18T19:36:53.849Z OPEN   ACTIVE          PRIMARY_INSTANCE
   
   1 row selected.
 
@@ -1990,7 +1994,7 @@ SQL [292/481]> SELECT * FROM v$database WHERE rownum < 5;
   
   DBID       NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME   
   ---------- ---- ------------------------ ------------ ---------- ------------- ----------------
-  1234567890 ORCL 2026-05-18T19:35:41.919Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit
+  1234567890 ORCL 2026-05-18T19:36:54.001Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit
   
   1 row selected.
 
@@ -2026,10 +2030,10 @@ SQL [296/481]> SELECT * FROM v$session WHERE rownum < 5;
   
   SID SERIAL# USERNAME STATUS OSUSER MACHINE   PROGRAM                 TYPE       LOGON_TIME               SCHEMANAME COMMAND SQL_ID TERMINAL BLOCKING_SESSION SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID EVENT      WAIT_CLASS SECONDS_IN_WAIT STATE   LAST_CALL_ET SQL_TRACE RESOURCE_CONSUMER_GROUP SERVICE_NAME MODULE ACTION CLIENT_INFO PADDR TADDR LOCKWAIT
   --- ------- -------- ------ ------ --------- ----------------------- ---------- ------------------------ ---------- ------- ------ -------- ---------------- ---------------- -------------- ----------- ---------- ---------- --------------- ------- ------------ --------- ----------------------- ------------ ------ ------ ----------- ----- ----- --------
-  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-18T19:35:41.920Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-18T19:35:41.920Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-18T19:35:41.920Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-18T19:35:41.920Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-18T19:36:54.002Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-18T19:36:54.002Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-18T19:36:54.002Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-18T19:36:54.002Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
   
   4 rows selected.
 
@@ -2139,7 +2143,7 @@ SQL [306/481]> SELECT * FROM v$pgastat WHERE rownum < 5;
   aggregate PGA target parameter 134217728 bytes
   aggregate PGA auto target      120795955 bytes
   global memory bound            13421772  bytes
-  total PGA inuse                33292288  bytes
+  total PGA inuse                33357824  bytes
   
   4 rows selected.
 
@@ -2188,7 +2192,7 @@ SQL [311/481]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
   ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
   -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
-  3  DEFAULT 16384     0                0                0              0               1095          1095            285            
+  3  DEFAULT 16384     0                0                0              0               1098          1098            285            
   
   1 row selected.
 
@@ -2229,7 +2233,7 @@ SQL [315/481]> SELECT * FROM v$librarycache WHERE rownum < 5;
   
   NAMESPACE       GETS GETHITS GETHITRATIO PINS PINHITS PINHITRATIO RELOADS INVALIDATIONS
   --------------- ---- ------- ----------- ---- ------- ----------- ------- -------------
-  SQL AREA        585  0       0           562  562     1           0       0            
+  SQL AREA        585  0       0           563  563     1           0       0            
   TABLE/PROCEDURE 25   25      1           25   25      1           0       0            
   BODY            25   25      1           25   25      1           0       0            
   TRIGGER         25   25      1           25   25      1           0       0            
@@ -2283,7 +2287,7 @@ SQL [321/481]> SELECT * FROM v$sql WHERE rownum < 5;
   
   SQL_ID      SQL_TEXT           EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ----------- ------------------ ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  abc123def45 SELECT 1 FROM DUAL 1          100          50       1           0          1              SYS                 2026-05-18T19:35:41
+  abc123def45 SELECT 1 FROM DUAL 1          100          50       1           0          1              SYS                 2026-05-18T19:36:54
   
   1 row selected.
 
@@ -2291,10 +2295,10 @@ SQL [322/481]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  02nayffa3xqw0 0               1           1          1       11           9        1           0          1              SYS                 2026-05-18T19:35:41.768Z
-  1dgg3z8a3xqw0 0               1           1          1       38           31       1           0          1              SYS                 2026-05-18T19:35:41.768Z
-  1grudpwa3xqw0 0               1           1          1       20           16       1           0          1              SYS                 2026-05-18T19:35:41.768Z
-  1bfet7ya3xqw0 0               1           1          1       17           14       1           0          1              SYS                 2026-05-18T19:35:41.769Z
+  1hmjl9aa3xqw0 0               1           1          1       24           19       1           0          1              SYS                 2026-05-18T19:36:53.882Z
+  02nayffa3xqw0 0               1           1          1       20           16       1           0          1              SYS                 2026-05-18T19:36:53.882Z
+  1dgg3z8a3xqw0 0               1           1          1       29           23       1           0          1              SYS                 2026-05-18T19:36:53.882Z
+  1grudpwa3xqw0 0               1           1          1       20           16       1           0          1              SYS                 2026-05-18T19:36:53.882Z
   
   4 rows selected.
 
@@ -2307,10 +2311,10 @@ SQL [324/481]> SELECT * FROM v$sql_workarea WHERE rownum < 5;
   
   SQL_ID        CHILD_NUMBER OPERATION_TYPE OPTIMAL_EXECUTIONS ONEPASS_EXECUTIONS MULTIPASSES_EXECUTIONS ESTIMATED_OPTIMAL_SIZE LAST_MEMORY_USED
   ------------- ------------ -------------- ------------------ ------------------ ---------------------- ---------------------- ----------------
+  1hmjl9aa3xqw0 0            SORT           1                  0                  0                      65536                  65536           
   02nayffa3xqw0 0            SORT           1                  0                  0                      65536                  65536           
   1dgg3z8a3xqw0 0            SORT           1                  0                  0                      65536                  65536           
   1grudpwa3xqw0 0            SORT           1                  0                  0                      65536                  65536           
-  1bfet7ya3xqw0 0            SORT           1                  0                  0                      65536                  65536           
   
   4 rows selected.
 
@@ -2329,10 +2333,10 @@ SQL [326/481]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-18T19:35:26.933Z 2026-05-18T19:35:41.933Z 1500         2        2000      CPU Usage Per Sec    38    CentiSeconds Per Second
-  2026-05-18T19:35:26.933Z 2026-05-18T19:35:41.933Z 1500         2        2003      User Calls Per Sec   39    Calls Per Second       
-  2026-05-18T19:35:26.933Z 2026-05-18T19:35:41.933Z 1500         2        2007      Executions Per Sec   38    Executes Per Second    
-  2026-05-18T19:35:26.933Z 2026-05-18T19:35:41.933Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-18T19:36:39.015Z 2026-05-18T19:36:54.015Z 1500         2        2000      CPU Usage Per Sec    38    CentiSeconds Per Second
+  2026-05-18T19:36:39.015Z 2026-05-18T19:36:54.015Z 1500         2        2003      User Calls Per Sec   39    Calls Per Second       
+  2026-05-18T19:36:39.015Z 2026-05-18T19:36:54.015Z 1500         2        2007      Executions Per Sec   38    Executes Per Second    
+  2026-05-18T19:36:39.015Z 2026-05-18T19:36:54.015Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -2340,10 +2344,10 @@ SQL [327/481]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-18T19:34:41.934Z 2026-05-18T19:35:41.934Z 6000         2        2000      CPU Usage Per Sec    38    CentiSeconds Per Second
-  2026-05-18T19:34:41.934Z 2026-05-18T19:35:41.934Z 6000         2        2003      User Calls Per Sec   39    Calls Per Second       
-  2026-05-18T19:34:41.934Z 2026-05-18T19:35:41.934Z 6000         2        2007      Executions Per Sec   38    Executes Per Second    
-  2026-05-18T19:34:41.934Z 2026-05-18T19:35:41.934Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-18T19:35:54.015Z 2026-05-18T19:36:54.015Z 6000         2        2000      CPU Usage Per Sec    38    CentiSeconds Per Second
+  2026-05-18T19:35:54.015Z 2026-05-18T19:36:54.015Z 6000         2        2003      User Calls Per Sec   39    Calls Per Second       
+  2026-05-18T19:35:54.015Z 2026-05-18T19:36:54.015Z 6000         2        2007      Executions Per Sec   38    Executes Per Second    
+  2026-05-18T19:35:54.015Z 2026-05-18T19:36:54.015Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -2498,7 +2502,7 @@ SQL [347/481]> SELECT * FROM v$tempstat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM
   ----- ------ ------- -------- --------- ------- --------
-  1     594    594     4752     4752      2970    2970    
+  1     595    595     4760     4760      2975    2975    
   
   1 row selected.
 
@@ -2647,9 +2651,9 @@ SQL [366/481]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-  1          ORCL           ORCL           2026-05-18T19:35:41.746Z 1016481202        
-  2          SYS$USERS      SYS$USERS      2026-05-18T19:35:41.747Z 1016481203        
-  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-18T19:35:41.747Z 1016481203        
+  1          ORCL           ORCL           2026-05-18T19:36:53.864Z 1016553320        
+  2          SYS$USERS      SYS$USERS      2026-05-18T19:36:53.864Z 1016553320        
+  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-18T19:36:53.864Z 1016553320        
   
   3 rows selected.
 
@@ -2657,9 +2661,9 @@ SQL [367/481]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-  1          ORCL           ORCL           ORCL 2026-05-18T19:35:41.746Z
-  2          SYS$USERS      SYS$USERS      ORCL 2026-05-18T19:35:41.747Z
-  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-18T19:35:41.747Z
+  1          ORCL           ORCL           ORCL 2026-05-18T19:36:53.864Z
+  2          SYS$USERS      SYS$USERS      ORCL 2026-05-18T19:36:53.864Z
+  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-18T19:36:53.864Z
   
   3 rows selected.
 
@@ -2675,7 +2679,7 @@ SQL [369/481]> SELECT * FROM v$mystat WHERE rownum < 5;
   101 0          2    
   101 1          1    
   101 2          639  
-  101 3          571  
+  101 3          572  
   
   4 rows selected.
 
@@ -2694,7 +2698,7 @@ SQL [371/481]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  101 1279       1279            0              285           0                  0                       
+  101 1282       1282            0              285           0                  0                       
   
   1 row selected.
 
@@ -2702,10 +2706,10 @@ SQL [372/481]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID STAT_ID    STAT_NAME               VALUE
   --- ---------- ----------------------- -----
-  101 3649082374 DB time                 75885
-  101 3712030189 DB CPU                  60704
-  101 1561673735 background elapsed time 18971
-  101 4157170894 background cpu time     15176
+  101 3649082374 DB time                 59731
+  101 3712030189 DB CPU                  47774
+  101 1561673735 background elapsed time 14932
+  101 4157170894 background cpu time     11943
   
   4 rows selected.
 
@@ -2734,10 +2738,10 @@ SQL [376/481]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
-  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T19:35:41.730Z DEFAULT PASSWORD           
+  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
+  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T19:36:53.848Z DEFAULT PASSWORD           
   
   4 rows selected.
 
@@ -2800,10 +2804,10 @@ SQL [382/481]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                  100                      VIEW        2026-05-18T19:35:41.731Z 2026-05-18T19:35:41.731Z 2026-05-18:19:35:41 VALID  N         N         N         1         Y                
-  SYS   V$INSTANCE                 101                      VIEW        2026-05-18T19:35:41.731Z 2026-05-18T19:35:41.731Z 2026-05-18:19:35:41 VALID  N         N         N         1         Y                
-  SYS   V$DATABASE                 102                      VIEW        2026-05-18T19:35:41.731Z 2026-05-18T19:35:41.731Z 2026-05-18:19:35:41 VALID  N         N         N         1         Y                
-  SYS   V$SESSION                  103                      VIEW        2026-05-18T19:35:41.731Z 2026-05-18T19:35:41.731Z 2026-05-18:19:35:41 VALID  N         N         N         1         Y                
+  SYS   V$VERSION                  100                      VIEW        2026-05-18T19:36:53.848Z 2026-05-18T19:36:53.848Z 2026-05-18:19:36:53 VALID  N         N         N         1         Y                
+  SYS   V$INSTANCE                 101                      VIEW        2026-05-18T19:36:53.848Z 2026-05-18T19:36:53.848Z 2026-05-18:19:36:53 VALID  N         N         N         1         Y                
+  SYS   V$DATABASE                 102                      VIEW        2026-05-18T19:36:53.848Z 2026-05-18T19:36:53.848Z 2026-05-18:19:36:53 VALID  N         N         N         1         Y                
+  SYS   V$SESSION                  103                      VIEW        2026-05-18T19:36:53.848Z 2026-05-18T19:36:53.848Z 2026-05-18:19:36:53 VALID  N         N         N         1         Y                
   
   4 rows selected.
 
@@ -3022,17 +3026,17 @@ SQL [412/481]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                                                                                                                                                                                        STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-05-18T19:35:41.747Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                    LOGON         
-  oracle      SYS      localhost 2026-05-18T19:35:41.750Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-05-18T19:36:53.865Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                    LOGON         
+  oracle      SYS      localhost 2026-05-18T19:36:53.868Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) NOT NULL,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           CREATE TABLE  
-  oracle      SYS      localhost 2026-05-18T19:35:41.751Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-05-18T19:36:53.869Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) NOT NULL,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             CREATE TABLE  
-  oracle      SYS      localhost 2026-05-18T19:35:41.752Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-05-18T19:36:53.870Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) NOT NULL,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -3047,10 +3051,10 @@ SQL [413/481]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME              RETURNCODE
   ----------- -------- --------- -------- ------------------------ ----------- --------- ------------------------ ----------
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.747Z LOGON       5                                  0         
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.772Z LOGON       6                                  0         
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.774Z LOGON       7                                  0         
-  oracle      SYS      localhost pts/0    2026-05-18T19:35:41.866Z LOGON       8         2026-05-18T19:35:41.915Z 0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.865Z LOGON       5                                  0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.884Z LOGON       6                                  0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.886Z LOGON       7                                  0         
+  oracle      SYS      localhost pts/0    2026-05-18T19:36:53.953Z LOGON       8         2026-05-18T19:36:53.997Z 0         
   
   4 rows selected.
 
@@ -3058,17 +3062,17 @@ SQL [414/481]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                        OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-05-18T19:35:41.747Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                     LOGON          SYSDBA                1       
-  2026-05-18T19:35:41.750Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
+  2026-05-18T19:36:53.865Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                     LOGON          SYSDBA                1       
+  2026-05-18T19:36:53.868Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) NOT NULL,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           HR            REGIONS     CREATE TABLE                         2       
-  2026-05-18T19:35:41.751Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
+  2026-05-18T19:36:53.869Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) NOT NULL,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             HR            COUNTRIES   CREATE TABLE                         3       
-  2026-05-18T19:35:41.752Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
+  2026-05-18T19:36:53.870Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) NOT NULL,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -3083,8 +3087,8 @@ SQL [415/481]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID   SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                
   ----------- ----------- -------- ----------- ------------------------ -------------------------------------------------------
-  9           Outstanding CRITICAL Database    2026-05-18T19:35:41.916Z 2026-05-18 19:35:41: Failed logon: user=ALICE ORA-01017
-  10          Outstanding CRITICAL Database    2026-05-18T19:35:41.916Z 2026-05-18 19:35:41: Failed logon: user=BOB ORA-01045  
+  9           Outstanding CRITICAL Database    2026-05-18T19:36:53.997Z 2026-05-18 19:36:53: Failed logon: user=ALICE ORA-01017
+  10          Outstanding CRITICAL Database    2026-05-18T19:36:53.998Z 2026-05-18 19:36:53: Failed logon: user=BOB ORA-01045  
   
   2 rows selected.
 
@@ -3092,10 +3096,10 @@ SQL [416/481]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                               
   ----------- --------- -------- ------------------------ ------------------------ ------------------------------------------------------
-  1           Info      NORMAL   2026-05-18T19:35:41.731Z 2026-05-18T19:35:42.731Z 2026-05-18 19:35:41: Starting ORACLE instance (normal)
-  2           Info      NORMAL   2026-05-18T19:35:41.746Z 2026-05-18T19:35:42.746Z 2026-05-18 19:35:41: Database mounted                 
-  3           Info      NORMAL   2026-05-18T19:35:41.746Z 2026-05-18T19:35:42.746Z 2026-05-18 19:35:41: Database opened                  
-  4           Info      NORMAL   2026-05-18T19:35:41.747Z 2026-05-18T19:35:42.747Z 2026-05-18 19:35:41: Logon: user=SYS sid=5 as SYSDBA  
+  1           Info      NORMAL   2026-05-18T19:36:53.849Z 2026-05-18T19:36:54.849Z 2026-05-18 19:36:53: Starting ORACLE instance (normal)
+  2           Info      NORMAL   2026-05-18T19:36:53.864Z 2026-05-18T19:36:54.864Z 2026-05-18 19:36:53: Database mounted                 
+  3           Info      NORMAL   2026-05-18T19:36:53.864Z 2026-05-18T19:36:54.864Z 2026-05-18 19:36:53: Database opened                  
+  4           Info      NORMAL   2026-05-18T19:36:53.865Z 2026-05-18T19:36:54.865Z 2026-05-18 19:36:53: Logon: user=SYS sid=5 as SYSDBA  
   
   4 rows selected.
 
@@ -3125,7 +3129,7 @@ SQL [419/481]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-18T18:35:41.967Z 2026-05-18T19:35:41.967Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-18T18:36:54.039Z 2026-05-18T19:36:54.039Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 
@@ -3136,7 +3140,7 @@ SQL [420/481]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   1       1234567890 1               0       logons cumulative         2    
   1       1234567890 1               1       logons current            1    
   1       1234567890 1               2       opened cursors cumulative 690  
-  1       1234567890 1               3       opened cursors current    622  
+  1       1234567890 1               3       opened cursors current    623  
   
   4 rows selected.
 
@@ -3144,10 +3148,10 @@ SQL [421/481]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-  1       02nayffa3xqw0 0               1                11                 9              1                 0                1                   
-  1       1dgg3z8a3xqw0 0               1                38                 31             1                 0                1                   
+  1       1hmjl9aa3xqw0 0               1                24                 19             1                 0                1                   
+  1       02nayffa3xqw0 0               1                20                 16             1                 0                1                   
+  1       1dgg3z8a3xqw0 0               1                29                 23             1                 0                1                   
   1       1grudpwa3xqw0 0               1                20                 16             1                 0                1                   
-  1       1bfet7ya3xqw0 0               1                17                 14             1                 0                1                   
   
   4 rows selected.
 
@@ -3205,7 +3209,7 @@ SQL [429/481]> SELECT count(*) AS views FROM dba_views;
   
   VIEWS
   -----
-  316  
+  317  
   
   1 row selected.
 
@@ -3537,7 +3541,7 @@ SQL [477/481]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-05-18 19:35:41
+  2026-05-18 19:36:54
   
   1 row selected.
 
@@ -3545,7 +3549,7 @@ SQL [478/481]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-05-18T19:35:41.974Z
+  2026-05-18T19:36:54.046Z
   
   1 row selected.
 

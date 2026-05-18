@@ -332,5 +332,6 @@ import './sys_aud';
 import './role_sys_privs';
 import './role_tab_privs';
 import './role_role_privs';
+import './session_roles';
 
 export { };

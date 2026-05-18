@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-05-18T19:35:44.520Z
+Generated: 2026-05-18T19:36:59.791Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
@@ -15,12 +15,12 @@ Total commands: 31
 
 
 --- [1] § registry vs dictionary ---
--- registry=316 dba_views=316 all_views=316 dict=316
+-- registry=317 dba_views=317 all_views=317 dict=317
 SQL [1/31]> SELECT COUNT(*) AS dba_views FROM DBA_VIEWS;
   
   DBA_VIEWS
   ---------
-  316      
+  317      
   
   1 row selected.
 
@@ -28,7 +28,7 @@ SQL [2/31]> SELECT COUNT(*) AS all_views FROM ALL_VIEWS;
   
   ALL_VIEWS
   ---------
-  316      
+  317      
   
   1 row selected.
 
@@ -36,7 +36,7 @@ SQL [3/31]> SELECT COUNT(*) AS dict_entries FROM DICTIONARY;
   
   DICT_ENTRIES
   ------------
-  316         
+  317         
   
   1 row selected.
 
@@ -143,8 +143,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START           STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- ------------------------ --------- -------- ------------ -------- ----------- ---------- -------------------
-  1rcfn8ma3xqw0 1           2026-05-18T19:35:44.530Z EXECUTING SYS      0            0        0           0          0                  
-  13ipzqna3xqw0 2           2026-05-18T19:35:44.529Z DONE      SYS      1142         914      2           0          0                  
+  13ipzqna3xqw0 1           2026-05-18T19:36:59.802Z DONE      SYS      590          472      2           0          0                  
+  1rcfn8ma3xqw0 2           2026-05-18T19:36:59.802Z EXECUTING SYS      0            0        0           0          0                  
   
   2 rows selected.
 
@@ -168,7 +168,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-18T18:35:44.533Z 2026-05-18T19:35:44.533Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-18T18:36:59.805Z 2026-05-18T19:36:59.805Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 

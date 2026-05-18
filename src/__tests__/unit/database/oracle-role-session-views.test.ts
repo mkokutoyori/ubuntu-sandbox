@@ -94,3 +94,27 @@ describe('ROLE_ROLE_PRIVS', () => {
     expect(r.rows.length).toBe(0);
   });
 });
+
+describe('SESSION_ROLES', () => {
+  test('lists roles enabled for the current session (SYS has DBA)', () => {
+    const r = exec("SELECT ROLE FROM SESSION_ROLES");
+    const roles = r.rows.map(x => x[0]);
+    expect(roles).toContain('DBA');
+  });
+
+  test('reflects a freshly granted role, transitively', () => {
+    exec('CREATE ROLE r_parent');
+    exec('CREATE ROLE r_child');
+    exec('GRANT r_child TO r_parent');
+    exec('GRANT r_parent TO SYS');
+
+    const roles = exec("SELECT ROLE FROM SESSION_ROLES").rows.map(x => x[0]);
+    expect(roles).toContain('R_PARENT');
+    expect(roles).toContain('R_CHILD');   // transitive via r_parent
+  });
+
+  test('column is ROLE only', () => {
+    const r = exec('SELECT * FROM SESSION_ROLES');
+    expect(r.columns.map(c => c.name)).toEqual(['ROLE']);
+  });
+});
