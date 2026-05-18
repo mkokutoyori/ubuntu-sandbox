@@ -224,6 +224,19 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
     if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
     if (this.matchKeyword('TABLESPACE')) return this.parseAlterTablespace(pos);
+    if (this.matchKeyword('DISKGROUP')) {
+      // ALTER DISKGROUP <name> {ADD DISK '…' | DROP DISK '…' | REBALANCE POWER n | MOUNT | DISMOUNT | …}
+      // The simulator has no real ASM, so we just consume the rest and return success.
+      const name = this.expectIdentifier();
+      let action = '';
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+        action += this.advance().value + ' ';
+      }
+      return {
+        type: 'AlterDatabaseStatement', position: pos,
+        action: `DISKGROUP ${name} ${action.trim()}`,
+      };
+    }
     return null;
   }
 
@@ -572,8 +585,41 @@ export class OracleParser extends BaseParser {
       }
     }
 
-    // Consume remaining clauses (EXTENT MANAGEMENT, SEGMENT SPACE, etc.) — skip for now
-    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+    // Parse trailing storage-attribute clauses so they reach the meta.
+    let logging: boolean | undefined;
+    let extentManagement: 'LOCAL' | 'DICTIONARY' | undefined;
+    let segmentSpaceManagement: 'AUTO' | 'MANUAL' | undefined;
+    let allocationType: 'SYSTEM' | 'UNIFORM' | 'USER' | undefined;
+    let encrypted: boolean | undefined;
+    let safety = 200;
+    while (--safety > 0 && !this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('LOGGING')) { logging = true; continue; }
+      if (this.matchKeyword('NOLOGGING')) { logging = false; continue; }
+      if (this.matchKeyword('EXTENT')) {
+        this.expectKeyword('MANAGEMENT');
+        extentManagement = this.matchKeyword('DICTIONARY') ? 'DICTIONARY' : (this.matchKeyword('LOCAL'), 'LOCAL');
+        if (this.matchKeyword('UNIFORM')) {
+          allocationType = 'UNIFORM';
+          if (this.matchKeyword('SIZE')) { this.advance(); if (this.check(TokenType.IDENTIFIER)) this.advance(); }
+        } else if (this.matchKeyword('AUTOALLOCATE')) {
+          allocationType = 'SYSTEM';
+        }
+        continue;
+      }
+      if (this.matchKeyword('SEGMENT')) {
+        this.expectKeyword('SPACE'); this.expectKeyword('MANAGEMENT');
+        segmentSpaceManagement = this.matchKeyword('MANUAL') ? 'MANUAL' : (this.matchKeyword('AUTO'), 'AUTO');
+        continue;
+      }
+      if (this.matchKeyword('ENCRYPTION')) {
+        encrypted = true;
+        // USING 'algorithm' DEFAULT STORAGE (ENCRYPT) — swallow.
+        while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF) && !this.checkKeyword('LOGGING') && !this.checkKeyword('NOLOGGING')) {
+          this.advance();
+        }
+        continue;
+      }
+      // Unknown trailing clause — skip one token to make progress.
       this.advance();
     }
 
@@ -581,6 +627,7 @@ export class OracleParser extends BaseParser {
       type: 'CreateTablespaceStatement', position: pos,
       name, temporary: temporary || undefined, undo: undo || undefined,
       datafile, size, autoextend,
+      logging, extentManagement, segmentSpaceManagement, allocationType, encrypted,
     };
   }
 

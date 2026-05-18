@@ -2850,6 +2850,11 @@ export class OracleExecutor extends BaseExecutor {
       status: 'ONLINE',
       datafiles,
       blockSize: 8192,
+      logging: stmt.logging,
+      extentManagement: stmt.extentManagement,
+      segmentSpaceManagement: stmt.segmentSpaceManagement,
+      allocationType: stmt.allocationType,
+      encrypted: stmt.encrypted,
     });
     this.bus.publish({
       topic: 'oracle.storage.tablespace-created',
@@ -2971,11 +2976,14 @@ export class OracleExecutor extends BaseExecutor {
         });
         return;
       }
-      // Pure metadata flips with no FS side-effect in the simulator.
+      case 'LOGGING':         ts.logging = true; return;
+      case 'NOLOGGING':       ts.logging = false; return;
+      case 'FORCE_LOGGING':   ts.forceLogging = true; return;
+      case 'NO_FORCE_LOGGING':ts.forceLogging = false; return;
+      case 'FLASHBACK_ON':    ts.flashbackOn = true; return;
+      case 'FLASHBACK_OFF':   ts.flashbackOn = false; return;
+      // Operational verbs with no persisted metadata.
       case 'BEGIN_BACKUP': case 'END_BACKUP':
-      case 'LOGGING': case 'NOLOGGING':
-      case 'FORCE_LOGGING': case 'NO_FORCE_LOGGING':
-      case 'FLASHBACK_ON': case 'FLASHBACK_OFF':
       case 'SHRINK_SPACE': case 'COALESCE':
         return;
     }

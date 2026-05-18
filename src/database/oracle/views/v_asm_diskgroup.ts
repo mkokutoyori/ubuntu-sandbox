@@ -22,10 +22,11 @@ registerView({
         { name: 'TOTAL_MB', dataType: oracleNumber(20) },
         { name: 'FREE_MB', dataType: oracleNumber(20) },
       ],
-      [
-        [1, 'DATA', 512, 4096, 1048576, 'MOUNTED', 'EXTERN', 102400, 81920],
-        [2, 'FRA', 512, 4096, 1048576, 'MOUNTED', 'EXTERN', 51200, 40960],
-      ]
+      // The simulator does not run a real ASM instance — querying the
+      // dictionary should reflect that truthfully (empty) rather than
+      // advertise non-existent diskgroups. When ASM is implemented as
+      // a real OracleInstance feature, rows will be derived from it.
+      []
     );
   },
 });

@@ -565,6 +565,12 @@ export interface CreateTablespaceStatement extends ASTNode {
   datafile: string;
   size: string;
   autoextend?: { on: boolean; next?: string; maxSize?: string };
+  /** Optional storage-attribute clauses — propagated to TablespaceMeta. */
+  logging?: boolean;
+  extentManagement?: 'LOCAL' | 'DICTIONARY';
+  segmentSpaceManagement?: 'AUTO' | 'MANUAL';
+  allocationType?: 'SYSTEM' | 'UNIFORM' | 'USER';
+  encrypted?: boolean;
 }
 
 export interface DropTablespaceStatement extends ASTNode {
