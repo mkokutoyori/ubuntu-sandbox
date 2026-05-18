@@ -15,6 +15,7 @@ import './dba_errors';
 import './dba_arguments';
 import './dba_ts_quotas';
 import './dba_rollback_segs';
+import './dba_recyclebin';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
