@@ -19,5 +19,6 @@ import './v_thread';
 import './v_threads';
 import './v_system_event';
 import './v_session_event';
+import './v_session_wait';
 
 export { };
