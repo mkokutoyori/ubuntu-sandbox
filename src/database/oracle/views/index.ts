@@ -68,6 +68,7 @@ import './dba_rsrc_plan_directives';
 import './dba_rsrc_mappings';
 import './dba_rsrc_group_mappings';
 import './dba_hist_snapshot';
+import './dba_hist_database_instance';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
