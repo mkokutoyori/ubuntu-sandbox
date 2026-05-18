@@ -1,0 +1,240 @@
+============================================================
+RMAN debug transcript — rman-pitr-duplicate-phase1
+Generated: 2026-05-18T04:47:48.093Z
+Topology:  LinuxServer db-pitr — Oracle PITRDB OPEN baseline
+Total commands: 17
+============================================================
+
+  
+  Recovery Manager: Release 19.0.0.0.0 - Production on 18-MAY-2026 04:47:48
+  
+  Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
+  
+  connected to target database: ORCL (DBID=1234567890)
+  
+
+
+--- [1] § 1.1 baseline OPEN ---
+RMAN [1/17]> CONNECT TARGET /
+  connected to target database: ORCL (DBID=1234567890)
+
+RMAN [2/17]> REPORT SCHEMA
+  
+  Report of database schema for database with db_unique_name ORCL
+  
+  List of Permanent Datafiles
+  ===========================
+  File Size(MB) Tablespace           RB segs Datafile Name
+  ---- -------- -------------------- ------- ------------------------
+  1    800      SYSTEM               YES     /u01/app/oracle/oradata/ORCL/system01.dbf
+  2    550      SYSAUX               NO      /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+  3    200      UNDOTBS1             YES     /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+  4    100      USERS                NO      /u01/app/oracle/oradata/ORCL/users01.dbf
+  
+  List of Temporary Files
+  =======================
+  File Size(MB) Tablespace           Maxsize(MB) Tempfile Name
+  ---- -------- -------------------- ----------- --------------------
+  1    100      TEMP                 32768       /u01/app/oracle/oradata/ORCL/temp01.dbf
+  
+
+RMAN [3/17]> SHOW ALL
+  
+  RMAN configuration parameters for database with db_unique_name ORCL are:
+  CONFIGURE RETENTION POLICY TO REDUNDANCY 1;
+  CONFIGURE BACKUP OPTIMIZATION OFF;
+  CONFIGURE DEFAULT DEVICE TYPE TO DISK;
+  CONFIGURE CONTROLFILE AUTOBACKUP OFF;
+  CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '%F';
+  CONFIGURE DEVICE TYPE DISK PARALLELISM 1 BACKUP TYPE TO BACKUPSET;
+  CONFIGURE DATAFILE BACKUP COPIES FOR DEVICE TYPE DISK TO 1;
+  CONFIGURE ARCHIVELOG BACKUP COPIES FOR DEVICE TYPE DISK TO 1;
+  CONFIGURE MAXSETSIZE TO UNLIMITED;
+  CONFIGURE ENCRYPTION FOR DATABASE OFF;
+  CONFIGURE ENCRYPTION ALGORITHM 'AES128';
+  CONFIGURE COMPRESSION ALGORITHM 'BASIC' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;
+  CONFIGURE EXCLUDE FOR TABLESPACE TEMP; # default, cleared if explicit
+  CONFIGURE ARCHIVELOG DELETION POLICY TO NONE;
+  
+
+RMAN [4/17]> BACKUP DATABASE
+  
+  Starting backup at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=100 device type=DISK
+  channel ORA_DISK_1: starting full datafile backup set
+  channel ORA_DISK_1: specifying datafile(s) in backup set
+  channel ORA_DISK_1: backing up database
+  piece handle=/u01/backup/ORCL_6i5jp628.bkp tag=TAG20260518T044748
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 18-MAY-2026 04:47:48
+  
+
+RMAN [5/17]> BACKUP DATABASE TAG 'BL_OPEN_001'
+  
+  Starting backup at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=101 device type=DISK
+  channel ORA_DISK_1: starting full datafile backup set
+  channel ORA_DISK_1: specifying datafile(s) in backup set
+  channel ORA_DISK_1: backing up database
+  piece handle=/u01/backup/ORCL_7t7s3jdi.bkp tag=BL_OPEN_001
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 18-MAY-2026 04:47:48
+  
+
+RMAN [6/17]> BACKUP ARCHIVELOG ALL
+  
+  Starting backup at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=102 device type=DISK
+  channel ORA_DISK_1: starting archived log backup set
+  channel ORA_DISK_1: specifying archived log(s) in backup set
+  piece handle=/u01/backup/ORCL_nhhkis4r.bkp tag=TAG20260518T044748
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 18-MAY-2026 04:47:48
+  
+
+RMAN [7/17]> BACKUP CURRENT CONTROLFILE
+  
+  Starting backup at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=103 device type=DISK
+  channel ORA_DISK_1: starting full datafile backup set
+  including current control file in backup set
+  piece handle=/u01/backup/ORCL_ydommzih.bkp tag=TAG20260518T044748
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 18-MAY-2026 04:47:48
+  
+
+RMAN [8/17]> LIST BACKUP SUMMARY
+  
+  List of Backups
+  ===============
+  Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
+  ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
+  1       B  F  A DISK        18-MAY-2026 04:47:48  1       1       NO         TAG20260518T044748
+  2       B  F  A DISK        18-MAY-2026 04:47:48  1       1       NO         BL_OPEN_001
+  3       B  A  A DISK        18-MAY-2026 04:47:48  1       1       NO         TAG20260518T044748
+  4       B  F  A DISK        18-MAY-2026 04:47:48  1       1       NO         TAG20260518T044748
+  
+
+
+--- [9] § 1.2 RESTORE against OPEN (should fail) ---
+RMAN [9/17]> RESTORE DATABASE
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=104 device type=DISK
+  channel ORA_DISK_1: starting datafile backup set restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+RMAN [10/17]> RESTORE TABLESPACE USERS
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=105 device type=DISK
+  channel ORA_DISK_1: starting tablespace USERS restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+RMAN [11/17]> RESTORE DATAFILE 1
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=106 device type=DISK
+  channel ORA_DISK_1: starting datafile 1 restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+RMAN [12/17]> RESTORE DATAFILE 4
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=107 device type=DISK
+  channel ORA_DISK_1: starting datafile 4 restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+RMAN [13/17]> RESTORE DATABASE FROM TAG 'BL_OPEN_001'
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=108 device type=DISK
+  channel ORA_DISK_1: starting datafile backup set restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+RMAN [14/17]> RESTORE DATABASE PREVIEW
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=109 device type=DISK
+  channel ORA_DISK_1: starting datafile backup set restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+RMAN [15/17]> RESTORE DATABASE VALIDATE
+  
+  Starting restore at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=110 device type=DISK
+  channel ORA_DISK_1: starting datafile backup set restore
+  
+  RMAN-00571: ===========================================================
+  RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============
+  RMAN-00571: ===========================================================
+  RMAN-03014: RMAN-06403: database must be mounted (not open)
+
+
+--- [16] § 2.1 SHUTDOWN simulated ---
+RMAN [16/17]> SHOW ALL
+  
+  RMAN configuration parameters for database with db_unique_name ORCL are:
+  CONFIGURE RETENTION POLICY TO REDUNDANCY 1;
+  CONFIGURE BACKUP OPTIMIZATION OFF;
+  CONFIGURE DEFAULT DEVICE TYPE TO DISK;
+  CONFIGURE CONTROLFILE AUTOBACKUP OFF;
+  CONFIGURE CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE DISK TO '%F';
+  CONFIGURE DEVICE TYPE DISK PARALLELISM 1 BACKUP TYPE TO BACKUPSET;
+  CONFIGURE DATAFILE BACKUP COPIES FOR DEVICE TYPE DISK TO 1;
+  CONFIGURE ARCHIVELOG BACKUP COPIES FOR DEVICE TYPE DISK TO 1;
+  CONFIGURE MAXSETSIZE TO UNLIMITED;
+  CONFIGURE ENCRYPTION FOR DATABASE OFF;
+  CONFIGURE ENCRYPTION ALGORITHM 'AES128';
+  CONFIGURE COMPRESSION ALGORITHM 'BASIC' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;
+  CONFIGURE EXCLUDE FOR TABLESPACE TEMP; # default, cleared if explicit
+  CONFIGURE ARCHIVELOG DELETION POLICY TO NONE;
+  
+
+RMAN [17/17]> BACKUP DATABASE
+  
+  Starting backup at 18-MAY-2026 04:47:48
+  allocated channel: ORA_DISK_1
+  channel ORA_DISK_1: SID=111 device type=DISK
+  channel ORA_DISK_1: starting full datafile backup set
+  channel ORA_DISK_1: specifying datafile(s) in backup set
+  channel ORA_DISK_1: backing up database
+  piece handle=/u01/backup/ORCL_t6inofi1.bkp tag=TAG20260518T044748
+  channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
+  Finished backup at 18-MAY-2026 04:47:48
+  
