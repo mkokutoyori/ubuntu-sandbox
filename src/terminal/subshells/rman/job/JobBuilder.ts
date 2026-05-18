@@ -14,6 +14,7 @@ export const JobBuilder = {
     keepForever?: boolean; keepUntilTime?: string;
     maxPieceSize?: number; encrypted?: boolean;
     notBackedUpNTimes?: number;
+    excludeTablespaces?: ReadonlyArray<string>;
   } = {}): RmanJob {
     const params: Record<string, string> = {};
     if (opts.tag)              params.tag           = opts.tag;
@@ -24,6 +25,9 @@ export const JobBuilder = {
     if (opts.maxPieceSize !== undefined) params.maxPieceSize = String(opts.maxPieceSize);
     if (opts.encrypted)        params.encrypted     = 'true';
     if (opts.notBackedUpNTimes !== undefined) params.notBackedUpNTimes = String(opts.notBackedUpNTimes);
+    if (opts.excludeTablespaces && opts.excludeTablespaces.length > 0) {
+      params.excludeTablespaces = opts.excludeTablespaces.map(s => s.toUpperCase()).join(',');
+    }
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
       { name: 'specify_files', pct: 20, message: 'channel ORA_DISK_1: specifying datafile(s) in backup set' },
@@ -96,14 +100,16 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupDatafile(fileNo: number, opts: { tag?: string; format?: string; compressed?: boolean } = {}): RmanJob {
-    const params: Record<string, string> = { fileNo: String(fileNo) };
+  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean } = {}): RmanJob {
+    const list = Array.isArray(fileNos) ? fileNos : [fileNos as number];
+    const params: Record<string, string> = { fileNo: list.join(',') };
     if (opts.tag)        params.tag        = opts.tag;
     if (opts.format)     params.format     = opts.format;
     if (opts.compressed) params.compressed = 'true';
+    const label = list.length === 1 ? `datafile ${list[0]}` : `datafiles ${list.join(', ')}`;
     return _make('BACKUP_DATABASE', [
-      { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting datafile ${fileNo} backup set` },
-      { name: 'specify_file',  pct: 20, message: `channel ORA_DISK_1: specifying datafile ${fileNo}` },
+      { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting full ${label} backup set` },
+      { name: 'specify_file',  pct: 20, message: `channel ORA_DISK_1: specifying ${label}` },
     ], params);
   },
 
@@ -117,13 +123,27 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupTablespace(tsName: string, opts: { tag?: string; format?: string } = {}): RmanJob {
-    const params: Record<string, string> = { tablespace: tsName.toUpperCase() };
+  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string } = {}): RmanJob {
+    const list = (Array.isArray(tsName) ? tsName : [tsName as string]).map(s => s.toUpperCase());
+    const params: Record<string, string> = { tablespace: list.join(',') };
     if (opts.tag)    params.tag    = opts.tag;
     if (opts.format) params.format = opts.format;
+    const label = list.length === 1 ? `tablespace ${list[0]}` : `tablespaces ${list.join(', ')}`;
     return _make('BACKUP_TABLESPACE', [
       { name: 'start_backup', pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
-      { name: 'backup_ts',    pct: 50, message: `channel ORA_DISK_1: backing up tablespace ${tsName.toUpperCase()}` },
+      { name: 'backup_ts',    pct: 50, message: `channel ORA_DISK_1: backing up ${label}` },
+    ], params);
+  },
+
+  /** BACKUP RECOVERY AREA — sauve toute la FRA (FULL+archives+CF). */
+  backupRecoveryArea(opts: { tag?: string; format?: string } = {}): RmanJob {
+    const params: Record<string, string> = { what: 'recoveryArea' };
+    if (opts.tag)    params.tag    = opts.tag;
+    if (opts.format) params.format = opts.format;
+    return _make('BACKUP_DATABASE', [
+      { name: 'start_backup',    pct: 10, message: 'channel ORA_DISK_1: starting recovery area backup' },
+      { name: 'flash_recovery',  pct: 30, message: 'channel ORA_DISK_1: scanning recovery area' },
+      { name: 'backup_what',     pct: 60, message: 'channel ORA_DISK_1: backing up recovery area contents' },
     ], params);
   },
 

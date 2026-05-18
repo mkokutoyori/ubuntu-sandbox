@@ -127,10 +127,24 @@ export class RmanJobEngine implements IRmanJobEngine {
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
 
     const allDatafiles = this._ctx.getDatafiles();
-    const fileFilter = params.fileNo ? Number(params.fileNo) : undefined;
-    const datafiles = fileFilter !== undefined
-      ? allDatafiles.filter(df => df.fileNo === fileFilter)
-      : allDatafiles;
+    // Multi-fileNo : params.fileNo peut contenir "4" ou "1,2,3"
+    const fileFilters = params.fileNo
+      ? new Set(params.fileNo.split(',').map(s => Number(s.trim())).filter(Number.isFinite))
+      : null;
+    // Multi-tablespace : params.tablespace peut contenir "USERS" ou "SYSTEM,USERS"
+    const tsFilters = params.tablespace
+      ? new Set(params.tablespace.split(',').map(s => s.trim().toUpperCase()))
+      : null;
+    // Exclusions de CONFIGURE EXCLUDE FOR TABLESPACE name (CSV)
+    const tsExclusions = new Set(
+      (params.excludeTablespaces ?? '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+    );
+    const datafiles = allDatafiles.filter(df => {
+      if (tsExclusions.has(df.tablespace.toUpperCase())) return false;
+      if (fileFilters && !fileFilters.has(df.fileNo)) return false;
+      if (tsFilters   && !tsFilters.has(df.tablespace.toUpperCase())) return false;
+      return true;
+    });
     const totalSize = isControlfile
       ? 9_650_176
       : isSpfile

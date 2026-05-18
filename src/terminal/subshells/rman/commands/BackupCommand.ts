@@ -22,7 +22,7 @@ import { JobBuilder } from '../job/JobBuilder';
 
 export type BackupMode =
   | 'database' | 'archivelog' | 'tablespace' | 'incremental'
-  | 'controlfile' | 'validate' | 'datafile' | 'spfile';
+  | 'controlfile' | 'validate' | 'datafile' | 'spfile' | 'recoveryArea';
 
 export class BackupCommand implements IRmanCommand<void> {
   readonly name = 'BACKUP';
@@ -48,10 +48,14 @@ export class BackupCommand implements IRmanCommand<void> {
 
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
+    // Tablespaces exclus via CONFIGURE EXCLUDE FOR TABLESPACE — appliqués
+    // automatiquement à BACKUP DATABASE / INCREMENTAL DATABASE.
+    const excluded = [...(cmdCtx.config?.snapshot().excludedTablespaces ?? [])];
+
     let result: Result<void, RmanError>;
     switch (this.mode) {
       case 'database': {
-        const r = engine.run(JobBuilder.backupDatabase(opts));
+        const r = engine.run(JobBuilder.backupDatabase({ ...opts, excludeTablespaces: excluded }));
         if (!r.ok) return r;
         if (plusArchivelog) {
           const r2 = engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
@@ -63,9 +67,12 @@ export class BackupCommand implements IRmanCommand<void> {
       case 'archivelog':
         result = engine.run(JobBuilder.backupArchivelog(opts));
         break;
-      case 'tablespace':
-        result = engine.run(JobBuilder.backupTablespace(args[0] ?? 'USERS', opts));
+      case 'tablespace': {
+        // args[0] = "USERS" ou "SYSTEM, USERS, SYSAUX" (séparateur virgule)
+        const list = (args[0] ?? 'USERS').split(',').map(s => s.trim()).filter(Boolean);
+        result = engine.run(JobBuilder.backupTablespace(list, opts));
         break;
+      }
       case 'incremental': {
         const level = (args[0] === '0' ? 0 : 1) as 0 | 1;
         // args[1] = "CUMULATIVE" if present, args[2] = post-clauses
@@ -81,10 +88,16 @@ export class BackupCommand implements IRmanCommand<void> {
       case 'validate':
         return engine.run(JobBuilder.backupValidate());
       case 'datafile': {
-        const n = Number(args[0]);
-        result = engine.run(JobBuilder.backupDatafile(Number.isFinite(n) ? n : 1, opts));
+        // args[0] = "4" ou "1,2,3" (séparateur virgule)
+        const list = (args[0] ?? '1').split(',')
+          .map(s => Number(s.trim()))
+          .filter(n => Number.isFinite(n));
+        result = engine.run(JobBuilder.backupDatafile(list.length > 0 ? list : [1], opts));
         break;
       }
+      case 'recoveryArea':
+        result = engine.run(JobBuilder.backupRecoveryArea(opts));
+        break;
       case 'spfile':
         result = engine.run(JobBuilder.backupSpfile(opts));
         break;

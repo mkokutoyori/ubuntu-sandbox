@@ -111,9 +111,12 @@ export class RmanCommandDispatcher {
       { pattern: /^BACKUP DATABASE(.*)$/i,                         command: new BackupCommand('database') },
       { pattern: /^BACKUP ARCHIVELOG ALL(.*)$/i,                   command: new BackupCommand('archivelog') },
       { pattern: /^BACKUP ARCHIVELOG (FROM SCN \d+.*)$/i,          command: new BackupCommand('archivelog') },
-      { pattern: /^BACKUP TABLESPACE (\S+)(.*)$/i,                 command: new BackupCommand('tablespace') },
-      { pattern: /^BACKUP DATAFILE (\d+)(.*)$/i,                   command: new BackupCommand('datafile')   },
+      { pattern: /^BACKUP TABLESPACE ([\w, ]+?)(\s+TAG\b.*|\s+FORMAT\b.*|\s+COMPRESSED\b.*|\s+KEEP\b.*|)$/i,
+                                                                   command: new BackupCommand('tablespace') },
+      { pattern: /^BACKUP DATAFILE ([\d, ]+?)(\s+TAG\b.*|\s+FORMAT\b.*|\s+COMPRESSED\b.*|\s+KEEP\b.*|)$/i,
+                                                                   command: new BackupCommand('datafile')   },
       { pattern: /^BACKUP SPFILE(.*)$/i,                           command: new BackupCommand('spfile')     },
+      { pattern: /^BACKUP RECOVERY AREA(.*)$/i,                    command: new BackupCommand('recoveryArea') },
       // RESTORE CONTROLFILE / SPFILE — précédent les autres RESTORE pour ne pas
       // matcher la pattern DATABASE accidentellement
       { pattern: /^RESTORE CONTROLFILE FROM AUTOBACKUP$/i,           command: new RestoreSystemCommand('CONTROLFILE_AUTOBACKUP') },

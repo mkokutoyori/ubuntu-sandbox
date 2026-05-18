@@ -92,6 +92,13 @@ export class ConfigureCommand implements IRmanCommand<string[]> {
     // ENCRYPTION ALGORITHM ──────────────────────────────────────────
     const mEncAlg = upper.match(/^ENCRYPTION ALGORITHM '(AES128|AES192|AES256)'$/);
     if (mEncAlg) delta = cfg.setEncryptionAlgorithm(mEncAlg[1] as 'AES128' | 'AES192' | 'AES256');
+    // EXCLUDE FOR TABLESPACE ────────────────────────────────────────
+    //   CONFIGURE EXCLUDE FOR TABLESPACE <name>
+    //   CONFIGURE EXCLUDE FOR TABLESPACE <name> CLEAR
+    const mExcAdd = upper.match(/^EXCLUDE FOR TABLESPACE (\S+)$/);
+    if (mExcAdd) delta = cfg.addExcludedTablespace(mExcAdd[1]);
+    const mExcRem = upper.match(/^EXCLUDE FOR TABLESPACE (\S+) CLEAR$/);
+    if (mExcRem) delta = cfg.removeExcludedTablespace(mExcRem[1]);
     // DEFAULT DEVICE TYPE ───────────────────────────────────────────
     if (upper === 'DEFAULT DEVICE TYPE TO DISK') delta = cfg.setDefaultDeviceType('DISK');
     if (upper === 'DEFAULT DEVICE TYPE TO SBT')  delta = cfg.setDefaultDeviceType('SBT');
