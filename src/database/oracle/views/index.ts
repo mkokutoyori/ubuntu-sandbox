@@ -26,6 +26,7 @@ import './dba_subpart_key_columns';
 import './dba_part_key_columns';
 import './dba_mviews';
 import './dba_mview_logs';
+import './dba_mview_refresh_times';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
