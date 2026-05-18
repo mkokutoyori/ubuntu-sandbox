@@ -9,6 +9,7 @@
 
 import './v_active_instances';
 import './v_active_session_history';
+import './v_archive_dest';
 import './v_bgprocess';
 import './v_buffer_pool';
 import './v_buffer_pool_statistics';
