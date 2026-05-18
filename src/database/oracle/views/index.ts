@@ -18,5 +18,6 @@ import './v_rac_global_view';
 import './v_thread';
 import './v_threads';
 import './v_system_event';
+import './v_session_event';
 
 export { };
