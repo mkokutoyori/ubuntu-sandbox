@@ -21,6 +21,7 @@ import './v_mystat';
 import './v_listener_network';
 import './v_librarycache';
 import './v_libraryobj';
+import './v_libcache_locks';
 import './v_nodes';
 import './v_rac_global_view';
 import './v_thread';
