@@ -7,6 +7,7 @@
  * for readability.
  */
 
+import './v_instance_recovery';
 import './v_license';
 
 export { };
