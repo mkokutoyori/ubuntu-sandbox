@@ -30,6 +30,7 @@ import './v_datafile_header';
 import './v_datafile_copy';
 import './v_datafile_block_check';
 import './v_filestat';
+import './v_fixed_table';
 import './v_tempstat';
 import './v_filespace_usage';
 import './v_controlfile_record_section';
