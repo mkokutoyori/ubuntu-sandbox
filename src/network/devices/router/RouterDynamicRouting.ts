@@ -19,6 +19,11 @@ import type {
 import type {
   ConnectedNetwork,
 } from '../../routing/RoutingPeerLocator';
+import type { IRoutingProtocolEngine } from '../../routing/IRoutingProtocolEngine';
+import { RipEngineAdapter } from '../../routing/adapters/RipEngineAdapter';
+import { OspfEngineAdapter } from '../../routing/adapters/OspfEngineAdapter';
+import type { RouterRIPEngine } from './RouterRIPEngine';
+import type { RouterOSPFIntegration } from './RouterOSPFIntegration';
 import type { RouteEntry } from '../Router';
 
 export interface DynamicRoutingCtx {
@@ -26,6 +31,9 @@ export interface DynamicRoutingCtx {
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
   setRoutingTable(t: RouteEntry[]): void;
+  /** Existing frame-driven engines, exposed through the unified contract. */
+  getRipEngine(): RouterRIPEngine;
+  getOspfIntegration(): RouterOSPFIntegration;
 }
 
 function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
@@ -37,10 +45,15 @@ function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
 export class RouterDynamicRouting {
   readonly eigrp: EIGRPEngine;
   readonly bgp: BGPEngine;
+  /** RIP/OSPF exposed through the SAME contract (Adapter). */
+  readonly rip: RipEngineAdapter;
+  readonly ospf: OspfEngineAdapter;
 
   constructor(private readonly ctx: DynamicRoutingCtx) {
     this.eigrp = new EIGRPEngine(ctx.id);
     this.bgp = new BGPEngine(ctx.id);
+    this.rip = new RipEngineAdapter(ctx.getRipEngine());
+    this.ospf = new OspfEngineAdapter(() => ctx.getOspfIntegration());
     const deviceContext = { connectedNetworks: () => this.connected() };
     const peerLocator = { locatePeers: () => this.peers() };
     for (const e of [this.eigrp, this.bgp]) {
@@ -49,10 +62,19 @@ export class RouterDynamicRouting {
     }
   }
 
-  /** Engine accessor used by a peer's locator (duck-typed reach). */
-  engineFor(protocol: string): EIGRPEngine | BGPEngine | null {
+  /** Every routing protocol, uniformly (full consistency). */
+  allEngines(): IRoutingProtocolEngine<unknown>[] {
+    return [this.rip, this.ospf, this.eigrp, this.bgp] as
+      IRoutingProtocolEngine<unknown>[];
+  }
+
+  /** Engine accessor used by a peer's locator + uniform lookup. */
+  engineFor(protocol: string):
+    EIGRPEngine | BGPEngine | RipEngineAdapter | OspfEngineAdapter | null {
     if (protocol === 'eigrp') return this.eigrp;
     if (protocol === 'bgp') return this.bgp;
+    if (protocol === 'rip') return this.rip;
+    if (protocol === 'ospf') return this.ospf;
     return null;
   }
 

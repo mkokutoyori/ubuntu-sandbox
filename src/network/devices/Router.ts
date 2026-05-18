@@ -222,6 +222,8 @@ export abstract class Router extends Equipment {
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
+      getRipEngine: () => this.ripEngine,
+      getOspfIntegration: () => this.ospfIntegration,
     });
     this.shell = this.createShell();
     this.natEngine.setACLMatchFn((aclId, srcIP) => {
