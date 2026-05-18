@@ -450,6 +450,11 @@ export abstract class Router extends Equipment {
 
   /** Longest Prefix Match (LPM) — tiebreaking: prefix → AD → metric */
   private lookupRoute(destIP: IPAddress): RouteEntry | null {
+    // Keep EIGRP/BGP-learned routes fresh for the data path: a real
+    // adjacency over the live topology installs/withdraws routes
+    // before every forwarding decision (config-driven, reactive).
+    if (this.dynamicRouting?.hasActive()) this.dynamicRouting.converge();
+
     let bestRoute: RouteEntry | null = null;
     let bestPrefix = -1;
     const destInt = destIP.toUint32();

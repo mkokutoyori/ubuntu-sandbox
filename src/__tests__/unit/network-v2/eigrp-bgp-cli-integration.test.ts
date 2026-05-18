@@ -65,6 +65,26 @@ describe('EIGRP via CLI — real RIB integration', () => {
       .toMatch(/192\.168\.2\.0\/24, 1 successors/);
   });
 
+  it('data path forwards over an EIGRP-learned route (no static)', async () => {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    await baseAddrs(r1, '192.168.1.1', '10.0.0.1');
+    await baseAddrs(r2, '192.168.2.1', '10.0.0.2');
+    wire(r1, r2);
+    for (const [r, a] of [[r1, 100], [r2, 100]] as const) {
+      await r.executeCommand('configure terminal');
+      await r.executeCommand(`router eigrp ${a}`);
+      await r.executeCommand('network 192.168.0.0 0.0.255.255');
+      await r.executeCommand('network 10.0.0.0 0.0.0.3');
+      await r.executeCommand('end');
+    }
+    // 192.168.2.1 is reachable ONLY via the EIGRP-learned route.
+    await r1.executeCommand('enable');
+    const out = await r1.executeCommand('ping 192.168.2.1');
+    expect(out).toContain('Success rate is');
+    expect(out).toMatch(/[1-5]\/[1-5]/);
+  });
+
   it('lone router with EIGRP learns nothing (true state)', async () => {
     const r1 = new CiscoRouter('R1');
     await baseAddrs(r1, '192.168.1.1', '10.0.0.1');

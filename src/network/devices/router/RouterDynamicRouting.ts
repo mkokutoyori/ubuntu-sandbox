@@ -96,6 +96,11 @@ export class RouterDynamicRouting {
     return out;
   }
 
+  /** True if any dynamic engine is enabled (cheap forwarding guard). */
+  hasActive(): boolean {
+    return this.eigrp.isEnabled() || this.bgp.isEnabled();
+  }
+
   /** Recompute both engines and reflect their routes into the RIB. */
   converge(): void {
     this.eigrp.converge();
