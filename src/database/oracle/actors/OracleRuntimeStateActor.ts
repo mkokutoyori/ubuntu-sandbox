@@ -10,21 +10,45 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type { OracleRuntimeState } from '../views/OracleRuntimeState';
+import {
+  type OracleRuntimeState,
+  type RuntimeStateBudget,
+  DEFAULT_RUNTIME_BUDGET,
+} from '../views/OracleRuntimeState';
 import { makeSqlId } from '../views/sqlId';
 
-const MAX_WAIT_HISTORY = 1000;
-const MAX_ALERT_ENTRIES = 500;
+/** Trim an array in place to its budget (FIFO eviction). */
+function capArray<T>(arr: T[], max: number): void {
+  if (arr.length > max) arr.splice(0, arr.length - max);
+}
+
+/** LRU eviction on a Map keyed by `lastLoadTime`-style timestamp. */
+function capSqlCache<T extends { lastLoadTime: number }>(
+  cache: Map<string, T>, max: number,
+): void {
+  if (cache.size <= max) return;
+  // Sort entries by ascending lastLoadTime and drop the oldest.
+  const entries = [...cache.entries()].sort((a, b) => a[1].lastLoadTime - b[1].lastLoadTime);
+  const drop = cache.size - max;
+  for (let i = 0; i < drop; i++) cache.delete(entries[i][0]);
+}
 
 export class OracleRuntimeStateActor {
   private subs: Unsubscribe[] = [];
   private nextSid = 100;
   private nextSerial = 1;
+  /** Bus events processed since last drain — used to schedule drains
+   *  without needing a wall-clock timer. */
+  private eventsSinceLastDrain = 0;
+  /** How often to drain (in handled events). 256 means we sweep once
+   *  every ≈256 published events, which keeps drain cost amortised. */
+  private static readonly DRAIN_INTERVAL = 256;
 
   constructor(
     private readonly bus: IEventBus,
     private readonly deviceId: string,
     private readonly state: OracleRuntimeState,
+    private readonly budget: RuntimeStateBudget = DEFAULT_RUNTIME_BUDGET,
   ) {}
 
   start(): void {
@@ -36,9 +60,16 @@ export class OracleRuntimeStateActor {
         const p = event.payload as T;
         if (p.deviceId !== this.deviceId) return;
         handler(p);
+        this.tickDrain();
       };
 
     this.subs.push(
+      this.bus.subscribe('oracle.instance.state-changed', scoped<{
+        deviceId: string; sid: string; newState: 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
+      }>((p) => {
+        if (p.newState === 'SHUTDOWN') this.clearAll();
+      })),
+
       this.bus.subscribe('oracle.session.connected', scoped<{
         deviceId: string; sessionId: string; schema: string; role?: string;
       }>((p) => {
@@ -140,9 +171,7 @@ export class OracleRuntimeStateActor {
         deviceId: string; line: string;
       }>((p) => {
         this.state.alertEntries.push({ ts: Date.now(), line: p.line });
-        if (this.state.alertEntries.length > MAX_ALERT_ENTRIES) {
-          this.state.alertEntries.splice(0, this.state.alertEntries.length - MAX_ALERT_ENTRIES);
-        }
+        capArray(this.state.alertEntries, this.budget.alertEntries);
       })),
 
       this.bus.subscribe('oracle.wait.recorded', scoped<{
@@ -158,9 +187,7 @@ export class OracleRuntimeStateActor {
           waitTimeMicros: p.waitTimeMicros,
           timestamp: Date.now(),
         });
-        if (this.state.waitHistory.length > MAX_WAIT_HISTORY) {
-          this.state.waitHistory.splice(0, this.state.waitHistory.length - MAX_WAIT_HISTORY);
-        }
+        capArray(this.state.waitHistory, this.budget.waitHistory);
         if (p.sessionId) {
           const s = this.state.sessions.get(p.sessionId);
           if (s && p.sqlId) s.lastSqlId = p.sqlId;
@@ -175,9 +202,7 @@ export class OracleRuntimeStateActor {
           sid: p.sid, latch: p.latch, level: p.level,
           kind: p.kind, spinCount: p.spinCount ?? 0, ts: Date.now(),
         });
-        if (this.state.latches.length > 500) {
-          this.state.latches.splice(0, this.state.latches.length - 500);
-        }
+        capArray(this.state.latches, this.budget.latches);
       })),
 
       this.bus.subscribe('oracle.lock.event', scoped<{
@@ -315,9 +340,7 @@ export class OracleRuntimeStateActor {
         this.state.sessionMetrics.push({
           sid: p.sid, metric: p.metricName, value: p.value, ts: Date.now(),
         });
-        if (this.state.sessionMetrics.length > 1000) {
-          this.state.sessionMetrics.splice(0, this.state.sessionMetrics.length - 1000);
-        }
+        capArray(this.state.sessionMetrics, this.budget.sessionMetrics);
       })),
 
       this.bus.subscribe('oracle.flashback.event', scoped<{
@@ -338,4 +361,77 @@ export class OracleRuntimeStateActor {
     this.subs.length = 0;
   }
 
+  /** Called once per processed event. Triggers a sweep when the
+   *  amortised interval is reached. */
+  private tickDrain(): void {
+    this.eventsSinceLastDrain++;
+    if (this.eventsSinceLastDrain >= OracleRuntimeStateActor.DRAIN_INTERVAL) {
+      this.drain();
+    }
+  }
+
+  /**
+   * Memory drain — caps every collection and evicts anything older than
+   * the TTL window. Safe to call at any time; idempotent.
+   *
+   * The bus itself uses synchronous dispatch with a bounded re-entrance
+   * queue, so the only place memory grows is in the runtime-state
+   * collections. Capping them here is the canonical drain mechanism.
+   */
+  drain(now: number = Date.now()): void {
+    this.eventsSinceLastDrain = 0;
+    const ttl = this.budget.historyTtlMs;
+    const cutoff = now - ttl;
+
+    capArray(this.state.waitHistory, this.budget.waitHistory);
+    capArray(this.state.alertEntries, this.budget.alertEntries);
+    capArray(this.state.latches, this.budget.latches);
+    capArray(this.state.backups, this.budget.backups);
+    capArray(this.state.longops, this.budget.longops);
+    capArray(this.state.sessionMetrics, this.budget.sessionMetrics);
+    capArray(this.state.flashbackHistory, this.budget.flashbackHistory);
+    capArray(this.state.archivedLogs, this.budget.archivedLogs);
+
+    capSqlCache(this.state.sqlCache, this.budget.sqlCacheMaxEntries);
+
+    // TTL-based eviction (in-place filter, preserving the same array).
+    const ttlPrune = <T>(arr: T[], stamp: (e: T) => number) => {
+      let writeIdx = 0;
+      for (let i = 0; i < arr.length; i++) {
+        if (stamp(arr[i]) >= cutoff) arr[writeIdx++] = arr[i];
+      }
+      arr.length = writeIdx;
+    };
+    ttlPrune(this.state.waitHistory, e => e.timestamp);
+    ttlPrune(this.state.alertEntries, e => e.ts);
+    ttlPrune(this.state.latches, e => e.ts);
+    ttlPrune(this.state.longops, e => e.ts);
+    ttlPrune(this.state.sessionMetrics, e => e.ts);
+    ttlPrune(this.state.flashbackHistory, e => e.ts);
+
+    for (const [k, v] of this.state.sqlCache) {
+      if (v.lastLoadTime < cutoff) this.state.sqlCache.delete(k);
+    }
+  }
+
+  /** Reset all collections — called when the instance shuts down. */
+  clearAll(): void {
+    this.state.sessions.clear();
+    this.state.waitHistory.length = 0;
+    this.state.sqlCache.clear();
+    this.state.transactions.clear();
+    this.state.locks.length = 0;
+    this.state.archivedLogs.length = 0;
+    this.state.alertEntries.length = 0;
+    this.state.latches.length = 0;
+    this.state.backups.length = 0;
+    this.state.services.clear();
+    this.state.longops.length = 0;
+    this.state.sessionMetrics.length = 0;
+    this.state.flashbackHistory.length = 0;
+    const c = this.state.counters;
+    c.commits = c.rollbacks = c.dml = c.ddl = c.errors = 0;
+    c.redoSwitches = c.archiveLogs = c.logonsCumulative = 0;
+    c.parseTotal = c.parseHard = c.executions = 0;
+  }
 }

@@ -175,3 +175,39 @@ export class OracleRuntimeState {
   /** Time the actor first subscribed — used as a baseline for histories. */
   startedAt: number = Date.now();
 }
+
+/**
+ * Memory budget per collection. Picked to keep a long-lived simulator
+ * stable: a session that submits ≈100 queries/s will accumulate at most
+ * a few MB of runtime state, then plateau.
+ *
+ * `maxEntriesByCollection` caps array lengths and `sqlCacheMaxEntries`
+ * caps the SQL cache (LRU eviction). `historyTtlMs` is consulted by the
+ * actor's drain loop to evict anything older than the window.
+ */
+export interface RuntimeStateBudget {
+  readonly waitHistory: number;
+  readonly alertEntries: number;
+  readonly latches: number;
+  readonly backups: number;
+  readonly longops: number;
+  readonly sessionMetrics: number;
+  readonly flashbackHistory: number;
+  readonly archivedLogs: number;
+  readonly sqlCacheMaxEntries: number;
+  /** Drop anything older than this from time-stamped histories. */
+  readonly historyTtlMs: number;
+}
+
+export const DEFAULT_RUNTIME_BUDGET: RuntimeStateBudget = Object.freeze({
+  waitHistory: 1000,
+  alertEntries: 500,
+  latches: 500,
+  backups: 200,
+  longops: 200,
+  sessionMetrics: 1000,
+  flashbackHistory: 200,
+  archivedLogs: 500,
+  sqlCacheMaxEntries: 500,
+  historyTtlMs: 60 * 60 * 1000, // 1 hour
+});
