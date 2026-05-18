@@ -56,6 +56,7 @@ import './dba_audit_policies';
 import './unified_audit_trail';
 import './dba_2pc_pending';
 import './dba_2pc_neighbors';
+import './dba_ind_statistics';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
