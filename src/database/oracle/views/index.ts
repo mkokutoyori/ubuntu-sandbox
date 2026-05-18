@@ -32,6 +32,7 @@ import './v_datafile_block_check';
 import './v_filestat';
 import './v_tempstat';
 import './v_filespace_usage';
+import './v_controlfile_record_section';
 import './v_db_cache_advice';
 import './v_cache_stats';
 import './v_shared_pool_advice';
