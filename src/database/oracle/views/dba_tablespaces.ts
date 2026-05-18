@@ -18,6 +18,9 @@ registerView({
         { name: 'STATUS', dataType: oracleVarchar2(9) },
         { name: 'CONTENTS', dataType: oracleVarchar2(9) },
         { name: 'BLOCK_SIZE', dataType: oracleNumber(10) },
+        { name: 'INITIAL_EXTENT', dataType: oracleNumber(20) },
+        { name: 'NEXT_EXTENT', dataType: oracleNumber(20) },
+        { name: 'MIN_EXTLEN', dataType: oracleNumber(20) },
         { name: 'LOGGING', dataType: oracleVarchar2(9) },
         { name: 'FORCE_LOGGING', dataType: oracleVarchar2(3) },
         { name: 'EXTENT_MANAGEMENT', dataType: oracleVarchar2(10) },
@@ -29,6 +32,7 @@ registerView({
       ],
       storage.getAllTablespaces().map(ts => [
         ts.name, ts.status, ts.type, ts.blockSize,
+        ts.initialExtent, ts.nextExtent, ts.minExtentLength,
         ts.logging ? 'LOGGING' : 'NOLOGGING',
         ts.forceLogging ? 'YES' : 'NO',
         ts.extentManagement,

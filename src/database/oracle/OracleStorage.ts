@@ -30,6 +30,12 @@ export interface TablespaceMeta {
   encrypted: boolean;
   /** FLASHBACK ON | OFF — defaults to ON for permanent tablespaces. */
   flashbackOn: boolean;
+  /** Initial extent size in bytes (set at CREATE TABLESPACE time). */
+  initialExtent: number;
+  /** Next extent size in bytes (controls future allocations under DICTIONARY mgmt). */
+  nextExtent: number;
+  /** Minimum extent length in bytes. */
+  minExtentLength: number;
 }
 
 /**
@@ -54,6 +60,9 @@ export function normaliseTablespace(
     bigfile: ts.bigfile ?? false,
     encrypted: ts.encrypted ?? false,
     flashbackOn: ts.flashbackOn ?? (ts.type === 'PERMANENT'),
+    initialExtent: ts.initialExtent ?? 65536,
+    nextExtent: ts.nextExtent ?? 1048576,
+    minExtentLength: ts.minExtentLength ?? 65536,
   };
 }
 
