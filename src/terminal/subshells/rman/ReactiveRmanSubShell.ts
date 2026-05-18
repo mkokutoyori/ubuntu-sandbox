@@ -22,6 +22,7 @@ import { formatOracleDate } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
+import { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
 import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
@@ -77,7 +78,11 @@ export class ReactiveRmanSubShell implements ISubShell {
 
     const builder = new RmanSessionOptionsBuilder()
       .withDbId(ctx.dbId)
-      .withSharedBus(bus, sessionId);
+      .withSharedBus(bus, sessionId)
+      // Device-scoped catalog so backups survive an OracleInstanceWatcher
+      // disposal (shutdown → mount) and subsequent restore calls see the
+      // pieces that were already written.
+      .withCatalog(DeviceCatalogRegistry.get((device as { id?: string }).id ?? 'default'));
     const session = new RmanSession(builder.build(), ctx);
     const banner  = session.getBanner();
     const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
