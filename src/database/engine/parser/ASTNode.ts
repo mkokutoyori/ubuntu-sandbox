@@ -361,7 +361,11 @@ export type AlterTableAction =
   | { action: 'ADD_CONSTRAINT'; constraint: TableConstraint }
   | { action: 'DROP_CONSTRAINT'; constraintName: string; cascade?: boolean }
   | { action: 'RENAME_COLUMN'; oldName: string; newName: string }
-  | { action: 'RENAME_TABLE'; newName: string };
+  | { action: 'RENAME_TABLE'; newName: string }
+  | { action: 'MOVE_TABLESPACE'; tablespace: string }
+  | { action: 'MOVE_COMPRESS'; compressionLevel?: string }
+  | { action: 'SHRINK_SPACE'; compact?: boolean; cascade?: boolean }
+  | { action: 'ROW_MOVEMENT'; enabled: boolean };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';
@@ -632,6 +636,16 @@ export interface AlterDiskgroupStatement extends ASTNode {
   action: AlterDiskgroupAction;
 }
 
+export interface AnalyzeStatement extends ASTNode {
+  type: 'AnalyzeStatement';
+  /** TABLE | INDEX | CLUSTER. */
+  target: 'TABLE' | 'INDEX' | 'CLUSTER';
+  schema?: string;
+  name: string;
+  /** COMPUTE STATISTICS | ESTIMATE STATISTICS | VALIDATE STRUCTURE | DELETE STATISTICS. */
+  action: 'COMPUTE_STATISTICS' | 'ESTIMATE_STATISTICS' | 'VALIDATE_STRUCTURE' | 'DELETE_STATISTICS';
+}
+
 export interface CreatePfileSpfileStatement extends ASTNode {
   type: 'CreatePfileSpfileStatement';
   /** What we're writing — PFILE or SPFILE. */
@@ -817,7 +831,7 @@ export type Statement =
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement
-  | CreatePfileSpfileStatement
+  | CreatePfileSpfileStatement | AnalyzeStatement
   | CreateDiskgroupStatement | DropDiskgroupStatement | AlterDiskgroupStatement
   // Explain
   | ExplainPlanStatement

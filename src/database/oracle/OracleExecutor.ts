@@ -436,6 +436,17 @@ export class OracleExecutor extends BaseExecutor {
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
       case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
+      case 'AnalyzeStatement': {
+        const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
+        const schema = (s.schema || this.context.currentSchema).toUpperCase();
+        const name = s.name.toUpperCase();
+        if (s.target === 'TABLE' && !this.storage.tableExists(schema, name)) {
+          throw new OracleError(942, `table or view does not exist`);
+        }
+        // The simulator does not maintain CBO histograms, so ANALYZE is
+        // a no-op that returns the same success message real Oracle does.
+        return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
+      }
       case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
       case 'CreateDiskgroupStatement': return this.executeCreateDiskgroup(statement);
       case 'DropDiskgroupStatement': return this.executeDropDiskgroup(statement);
@@ -2250,6 +2261,19 @@ export class OracleExecutor extends BaseExecutor {
         }
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
+      } else if (action.action === 'MOVE_TABLESPACE') {
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const target = action.tablespace.toUpperCase();
+        if (target && !(this.storage as OracleStorage).tablespaceExists(target)) {
+          throw new OracleError(959, `tablespace '${target}' does not exist`);
+        }
+        if (target) meta.tablespace = target;
+      } else if (action.action === 'MOVE_COMPRESS') {
+        // Compression flag isn't tracked yet — accept silently.
+      } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
+        // No persisted state changes in the simulator; the operation
+        // succeeds the same way it does on a real instance with no rows.
       }
     }
 

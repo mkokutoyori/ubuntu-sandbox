@@ -324,6 +324,14 @@ export class SQLPlusSession {
       return this.handleHost(trimmed);
     }
 
+    // EXEC / EXECUTE … — short-hand for an anonymous PL/SQL block.
+    // We don't run PL/SQL, but accepting the syntax keeps DBA scripts
+    // from producing SP2-0734 noise.
+    if (upper.startsWith('EXEC ') || upper === 'EXEC' || upper === 'EXEC;'
+        || upper.startsWith('EXECUTE ') || upper === 'EXECUTE' || upper === 'EXECUTE;') {
+      return { output: ['PL/SQL procedure successfully completed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
     // @ / START — execute script (simulated)
     if (trimmed.startsWith('@') || upper.startsWith('START ')) {
       const scriptName = trimmed.startsWith('@') ? trimmed.substring(1).trim() : trimmed.substring(6).trim();
@@ -468,8 +476,14 @@ export class SQLPlusSession {
       'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER',
       'GRANT', 'REVOKE', 'TRUNCATE', 'MERGE', 'WITH', 'COMMIT', 'ROLLBACK',
       'SAVEPOINT', 'COMMENT', 'EXPLAIN', 'AUDIT', 'NOAUDIT',
+      'ANALYZE', 'LOCK', 'SET',
     ];
-    return sqlKeywords.some(kw => upper.startsWith(kw + ' ') || upper === kw);
+    // Match the keyword followed by a space, the bare keyword, or the
+    // keyword with a trailing semicolon (e.g. "COMMIT;" — real SQL*Plus
+    // executes it without complaint).
+    return sqlKeywords.some(kw =>
+      upper === kw || upper === kw + ';' || upper.startsWith(kw + ' '),
+    );
   }
 
   private executeBuffer(): SQLPlusResult {
