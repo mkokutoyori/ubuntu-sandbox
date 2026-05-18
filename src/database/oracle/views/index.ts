@@ -16,6 +16,7 @@ import './v_bh';
 import './v_db_cache_advice';
 import './v_cache_stats';
 import './v_shared_pool_advice';
+import './v_shared_pool_reserved';
 import './v_active_services';
 import './v_cluster_instance';
 import './v_db_object_cache';
