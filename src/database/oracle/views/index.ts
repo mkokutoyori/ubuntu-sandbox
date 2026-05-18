@@ -28,6 +28,7 @@ import './v_copy_corruption';
 import './v_database_block_corruption';
 import './v_datafile_header';
 import './v_datafile_copy';
+import './v_datafile_block_check';
 import './v_db_cache_advice';
 import './v_cache_stats';
 import './v_shared_pool_advice';
