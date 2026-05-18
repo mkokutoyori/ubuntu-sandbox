@@ -34,6 +34,7 @@ import './dba_scheduler_schedules';
 import './dba_scheduler_job_log';
 import './dba_scheduler_job_run_details';
 import './dba_scheduler_windows';
+import './dba_scheduler_credentials';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
