@@ -12,5 +12,6 @@ import './v_cluster_instance';
 import './v_instance_cache_transfer';
 import './v_instance_recovery';
 import './v_license';
+import './v_nodes';
 
 export { };
