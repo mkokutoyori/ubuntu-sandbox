@@ -17,6 +17,7 @@ import './v_backup_set';
 import './v_backup_piece';
 import './v_backup_files';
 import './v_backup_datafile';
+import './v_backup_redolog';
 import './v_db_cache_advice';
 import './v_cache_stats';
 import './v_shared_pool_advice';
