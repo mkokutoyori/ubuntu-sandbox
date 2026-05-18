@@ -55,6 +55,7 @@ import './v_eventmetric';
 import './v_waitclassmetric';
 import './v_waitclassmetric_history';
 import './v_filemetric';
+import './v_filemetric_history';
 import './v_enqueue_lock';
 import './v_enqueue_stat';
 import './v_enqueue_statistics';
