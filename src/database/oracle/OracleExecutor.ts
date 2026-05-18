@@ -2394,8 +2394,13 @@ export class OracleExecutor extends BaseExecutor {
     if (catalog.userExists(stmt.username)) {
       throw new OracleError(1920, `user name '${stmt.username.toUpperCase()}' conflicts with another user or role name`);
     }
+    const profileName = (stmt.profile || 'DEFAULT').toUpperCase();
+    if (stmt.profile && !catalog.profileExists(profileName)) {
+      throw new OracleError(2380, `profile ${profileName} does not exist`);
+    }
+    const username = stmt.username.toUpperCase();
     catalog.createUser({
-      username: stmt.username.toUpperCase(),
+      username,
       userId: catalog.allocateUserId(),
       defaultTablespace: stmt.defaultTablespace?.toUpperCase() || 'USERS',
       temporaryTablespace: stmt.temporaryTablespace?.toUpperCase() || 'TEMP',
@@ -2403,31 +2408,81 @@ export class OracleExecutor extends BaseExecutor {
       lockDate: stmt.accountLocked ? new Date() : null,
       expiryDate: null,
       created: new Date(),
-      profile: (stmt.profile || 'DEFAULT').toUpperCase(),
+      profile: profileName,
       authenticationType: 'PASSWORD',
     });
-    if (stmt.password) catalog.setPassword(stmt.username.toUpperCase(), stmt.password);
-    this.storage.ensureSchema(stmt.username.toUpperCase());
+    if (stmt.password) {
+      catalog.setPassword(username, stmt.password);
+      catalog.getSecurityEngine()?.passwords.setPassword(username, stmt.password);
+    }
+    if (stmt.passwordExpired) {
+      catalog.getSecurityEngine()?.passwords.expirePassword(username);
+    }
+    // Apply tablespace quotas
+    if (stmt.quota && stmt.quota.length > 0) {
+      catalog.getSecurityEngine()?.applyQuotas(username, stmt.quota);
+    }
+    this.storage.ensureSchema(username);
     return emptyResult('User created.');
   }
 
   private executeAlterUser(stmt: AlterUserStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
-    if (!catalog.userExists(stmt.username)) {
-      throw new OracleError(1917, `user or role '${stmt.username.toUpperCase()}' does not exist`);
+    const username = stmt.username.toUpperCase();
+    if (!catalog.userExists(username)) {
+      throw new OracleError(1917, `user or role '${username}' does not exist`);
     }
-    if (stmt.password) catalog.setPassword(stmt.username.toUpperCase(), stmt.password);
-    if (stmt.accountLock) catalog.lockUser(stmt.username);
-    if (stmt.accountUnlock) catalog.unlockUser(stmt.username);
+    const engine = catalog.getSecurityEngine();
+    const user = catalog.getUser(username);
+
+    if (stmt.password) {
+      const profileName = user?.profile ?? 'DEFAULT';
+      if (engine) {
+        const result = engine.changePassword(username, stmt.password, profileName);
+        if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
+      }
+      catalog.setPassword(username, stmt.password);
+    }
+    if (stmt.accountLock) {
+      catalog.lockUser(username);
+      engine?.loginTracker.lockAccount(username);
+    }
+    if (stmt.accountUnlock) {
+      catalog.unlockUser(username);
+      engine?.loginTracker.unlockAccount(username);
+    }
+    if (stmt.passwordExpire) {
+      engine?.passwords.expirePassword(username);
+      // Do NOT set accountStatus here — dbaUsers() derives the combined status
+      // from PasswordManager + lock state to handle EXPIRED & LOCKED correctly.
+    }
+    if (stmt.defaultTablespace && user) {
+      user.defaultTablespace = stmt.defaultTablespace.toUpperCase();
+    }
+    if (stmt.temporaryTablespace && user) {
+      user.temporaryTablespace = stmt.temporaryTablespace.toUpperCase();
+    }
+    if (stmt.profile) {
+      const profileName = stmt.profile.toUpperCase();
+      if (!catalog.profileExists(profileName)) {
+        throw new OracleError(2380, `profile ${profileName} does not exist`);
+      }
+      if (user) user.profile = profileName;
+    }
+    if (stmt.quota && stmt.quota.length > 0) {
+      engine?.applyQuotas(username, stmt.quota);
+    }
     return emptyResult('User altered.');
   }
 
   private executeDropUser(stmt: DropUserStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
-    if (!catalog.userExists(stmt.username)) {
-      throw new OracleError(1918, `user '${stmt.username.toUpperCase()}' does not exist`);
+    const username = stmt.username.toUpperCase();
+    if (!catalog.userExists(username)) {
+      throw new OracleError(1918, `user '${username}' does not exist`);
     }
-    catalog.dropUser(stmt.username);
+    catalog.getSecurityEngine()?.dropUserCleanup(username);
+    catalog.dropUser(username);
     return emptyResult('User dropped.');
   }
 
@@ -2461,10 +2516,30 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.action === 'SWITCH LOGFILE') {
       return emptyResult(this.instance.switchLogfile());
     }
-    if (stmt.action === 'CHECKPOINT') {
+    if (stmt.action === 'CHECKPOINT' || stmt.action === 'FLUSH') {
       return emptyResult('System altered.');
     }
-    if (stmt.action === 'FLUSH') {
+    if (stmt.action === 'KILL SESSION' || stmt.action === 'DISCONNECT SESSION') {
+      const sessionId = stmt.sessionId ?? '';
+      const parts = sessionId.split(',');
+      const sid = parseInt(parts[0] ?? '0', 10);
+      const serial = parseInt(parts[1] ?? '0', 10);
+      const engine = (this.catalog as import('./OracleCatalog').OracleCatalog).getSecurityEngine();
+      if (engine) {
+        const killed = engine.sessions.killSession(sid, serial);
+        if (!killed) {
+          throw new OracleError(31, `no such session: ${sessionId}`);
+        }
+      }
+      return emptyResult('System altered.');
+    }
+    if (stmt.action === 'ARCHIVE LOG') {
+      return emptyResult('Statement processed.');
+    }
+    if (stmt.action === 'ENABLE RESTRICTED SESSION' || stmt.action === 'DISABLE RESTRICTED SESSION') {
+      return emptyResult('System altered.');
+    }
+    if (stmt.action === 'RESET') {
       return emptyResult('System altered.');
     }
     return emptyResult('System altered.');

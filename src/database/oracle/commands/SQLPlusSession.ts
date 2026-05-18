@@ -680,7 +680,8 @@ export class SQLPlusSession {
   // ── SHOW command ─────────────────────────────────────────────────
 
   private handleShow(args: string): SQLPlusResult {
-    const option = args.trim().toUpperCase();
+    // Strip trailing semicolon (SHOW USER; is valid SQL*Plus syntax)
+    const option = args.trim().replace(/;+$/, '').toUpperCase();
     const output: string[] = [];
 
     switch (option) {

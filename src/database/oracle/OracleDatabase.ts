@@ -15,6 +15,8 @@ import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
 import { OracleExecutor } from './OracleExecutor';
+import { SecurityEngine } from './security/SecurityEngine';
+import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
@@ -57,9 +59,11 @@ export class OracleDatabase {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
   readonly catalog: OracleCatalog;
+  readonly securityEngine: SecurityEngine;
   private lexer: OracleLexer;
   private connections: Map<number, ConnectionInfo> = new Map();
-  private sidCounter: number = 1;
+  // SIDs 1-4 are reserved for simulated background processes (PMON/SMON/DBW0/LGWR)
+  private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
 
@@ -68,6 +72,8 @@ export class OracleDatabase {
     this.storage = new OracleStorage();
     this.catalog = new OracleCatalog(this.storage, this.instance);
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
+    this.securityEngine = new SecurityEngine(this.catalog);
+    this.catalog.setSecurityEngine(this.securityEngine);
     this.lexer = new OracleLexer();
   }
 
@@ -75,17 +81,22 @@ export class OracleDatabase {
    * Authenticate a user and create a new connection/session.
    * Returns a session ID or throws on auth failure.
    */
-  connect(username: string, password: string): { sid: number; executor: OracleExecutor } {
+  connect(
+    username: string,
+    password: string,
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT
+  ): { sid: number; executor: OracleExecutor } {
     if (!this.instance.isOpen) {
       throw new Error(ORACLE_ERRORS.ORA_01034);
     }
 
-    const authResult = this.catalog.authenticate(username, password);
-    if (!authResult) {
-      throw new Error(ORACLE_ERRORS.ORA_01017);
-    }
-
     const upperUser = username.toUpperCase();
+    // Full authentication via SecurityEngine: enforces lock, failed-login tracking, expiry
+    const storedPassword = this.catalog.getStoredPassword(upperUser);
+    const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
+    if (!authResult.success) {
+      throw new Error(authResult.message || ORACLE_ERRORS.ORA_01017);
+    }
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -97,6 +108,14 @@ export class OracleDatabase {
       serial,
     };
     this.connections.set(sid, connInfo);
+
+    // Register session in SecurityEngine with the same sid/serial used by OracleDatabase
+    const sessionId = String(sid);
+    const sessionResult = this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
+    if (!sessionResult.ok) {
+      this.connections.delete(sid);
+      throw new Error(sessionResult.error ?? 'ORA-02391: exceeded simultaneous SESSIONS_PER_USER limit');
+    }
 
     const context: ExecutionContext = {
       currentUser: upperUser,
@@ -114,7 +133,7 @@ export class OracleDatabase {
   /**
    * Connect as SYSDBA (no password check, sets user to SYS).
    */
-  connectAsSysdba(): { sid: number; executor: OracleExecutor } {
+  connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -126,6 +145,10 @@ export class OracleDatabase {
       serial,
     };
     this.connections.set(sid, connInfo);
+
+    // Register SYSDBA session with matching sid/serial
+    const sessionId = String(sid);
+    this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog, sid, serial);
 
     const context: ExecutionContext = {
       currentUser: 'SYS',
@@ -145,6 +168,7 @@ export class OracleDatabase {
    */
   disconnect(sid: number): void {
     this.connections.delete(sid);
+    this.securityEngine.closeSession(String(sid));
   }
 
   /**
