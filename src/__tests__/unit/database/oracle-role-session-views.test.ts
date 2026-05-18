@@ -72,3 +72,25 @@ describe('ROLE_TAB_PRIVS', () => {
     expect(r.rows.length).toBe(0);
   });
 });
+
+describe('ROLE_ROLE_PRIVS', () => {
+  test('reports roles granted to a role', () => {
+    exec('CREATE ROLE parent_role');
+    exec('CREATE ROLE child_role');
+    exec('GRANT child_role TO parent_role');
+
+    const r = exec(
+      "SELECT ROLE, GRANTED_ROLE, ADMIN_OPTION FROM ROLE_ROLE_PRIVS WHERE ROLE = 'PARENT_ROLE'"
+    );
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]).toEqual(['PARENT_ROLE', 'CHILD_ROLE', 'NO']);
+  });
+
+  test('role grants to users are excluded', () => {
+    exec('CREATE ROLE solo_role');
+    exec('CREATE USER u3 IDENTIFIED BY p');
+    exec('GRANT solo_role TO u3');
+    const r = exec("SELECT * FROM ROLE_ROLE_PRIVS WHERE ROLE = 'U3'");
+    expect(r.rows.length).toBe(0);
+  });
+});
