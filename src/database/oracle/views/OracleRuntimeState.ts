@@ -88,6 +88,57 @@ export interface RuntimeAlertRecord {
   line: string;
 }
 
+export interface RuntimeLatchRecord {
+  sid: number;
+  latch: string;
+  level: number;
+  kind: 'acquired' | 'released' | 'sleep';
+  spinCount: number;
+  ts: number;
+}
+
+export interface RuntimeBackupRecord {
+  setId: number;
+  pieceId: number;
+  type: string;
+  handle: string;
+  bytes: number;
+  startedAt: number;
+  completedAt: number;
+  status: string;
+}
+
+export interface RuntimeServiceRecord {
+  name: string;
+  startedAt: number;
+  active: boolean;
+}
+
+export interface RuntimeLongopsRecord {
+  sessionId: string;
+  sid: number;
+  opname: string;
+  target: string;
+  sofar: number;
+  totalwork: number;
+  units: string;
+  ts: number;
+}
+
+export interface RuntimeSessionMetricRecord {
+  sid: number;
+  metric: string;
+  value: number;
+  ts: number;
+}
+
+export interface RuntimeFlashbackRecord {
+  ts: number;
+  kind: string;
+  bytes: number;
+  scn: number;
+}
+
 export class OracleRuntimeState {
   readonly sessions = new Map<string, RuntimeSessionRecord>();
   readonly waitHistory: RuntimeWaitRecord[] = [];
@@ -96,6 +147,15 @@ export class OracleRuntimeState {
   readonly locks: RuntimeLockRecord[] = [];
   readonly archivedLogs: RuntimeArchivedLogRecord[] = [];
   readonly alertEntries: RuntimeAlertRecord[] = [];
+  readonly latches: RuntimeLatchRecord[] = [];
+  readonly backups: RuntimeBackupRecord[] = [];
+  readonly services = new Map<string, RuntimeServiceRecord>();
+  readonly longops: RuntimeLongopsRecord[] = [];
+  readonly sessionMetrics: RuntimeSessionMetricRecord[] = [];
+  readonly flashbackHistory: RuntimeFlashbackRecord[] = [];
+  /** Listener state mirrored from oracle.listener.event. */
+  listenerState: 'running' | 'stopped' = 'stopped';
+  listenerEndpoint = '';
 
   /** Aggregated counters maintained by the actor. */
   readonly counters = {

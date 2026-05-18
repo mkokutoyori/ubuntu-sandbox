@@ -167,6 +167,192 @@ export class OracleRuntimeStateActor {
           this.state.alertEntries.splice(0, this.state.alertEntries.length - MAX_ALERT_ENTRIES);
         }
       })),
+
+      this.bus.subscribe('oracle.wait.recorded', scoped<{
+        deviceId: string; sid: number; sessionId?: string; event: string;
+        waitClass: string; waitTimeMicros: number; sqlId?: string;
+      }>((p) => {
+        const seq = this.state.waitHistory.length + 1;
+        this.state.waitHistory.push({
+          sid: p.sid,
+          event: p.event,
+          waitClass: p.waitClass,
+          seq,
+          waitTimeMicros: p.waitTimeMicros,
+          timestamp: Date.now(),
+        });
+        if (this.state.waitHistory.length > MAX_WAIT_HISTORY) {
+          this.state.waitHistory.splice(0, this.state.waitHistory.length - MAX_WAIT_HISTORY);
+        }
+        if (p.sessionId) {
+          const s = this.state.sessions.get(p.sessionId);
+          if (s && p.sqlId) s.lastSqlId = p.sqlId;
+        }
+      })),
+
+      this.bus.subscribe('oracle.latch.event', scoped<{
+        deviceId: string; sid: number; latch: string; level: number;
+        kind: 'acquired' | 'released' | 'sleep'; spinCount?: number;
+      }>((p) => {
+        this.state.latches.push({
+          sid: p.sid, latch: p.latch, level: p.level,
+          kind: p.kind, spinCount: p.spinCount ?? 0, ts: Date.now(),
+        });
+        if (this.state.latches.length > 500) {
+          this.state.latches.splice(0, this.state.latches.length - 500);
+        }
+      })),
+
+      this.bus.subscribe('oracle.lock.event', scoped<{
+        deviceId: string; sid: number; sessionId: string; type: string;
+        id1: number; id2: number; lmode: number; request: number;
+        schema?: string; table?: string;
+        kind: 'acquired' | 'released' | 'wait';
+      }>((p) => {
+        if (p.kind === 'released') {
+          this.state.locks.splice(
+            0, this.state.locks.length,
+            ...this.state.locks.filter(l =>
+              !(l.sid === p.sid && l.type === p.type && l.id1 === p.id1 && l.id2 === p.id2)
+            )
+          );
+          return;
+        }
+        this.state.locks.push({
+          sid: p.sid,
+          sessionId: p.sessionId,
+          type: p.type,
+          id1: p.id1,
+          id2: p.id2,
+          lmode: p.lmode,
+          request: p.request,
+          block: p.kind === 'wait' ? 1 : 0,
+          schema: p.schema ?? '',
+          table: p.table ?? '',
+        });
+      })),
+
+      this.bus.subscribe('oracle.sql.parsed', scoped<{
+        deviceId: string; sessionId: string; sqlId: string; text: string;
+        parsingSchema: string; hardParse: boolean;
+      }>((p) => {
+        const now = Date.now();
+        const existing = this.state.sqlCache.get(p.sqlId);
+        if (existing) {
+          existing.lastLoadTime = now;
+        } else {
+          this.state.sqlCache.set(p.sqlId, {
+            sqlId: p.sqlId,
+            text: p.text,
+            parsingSchema: p.parsingSchema,
+            executions: 0,
+            elapsedMicros: 0,
+            cpuMicros: 0,
+            bufferGets: 0,
+            diskReads: 0,
+            rowsProcessed: 0,
+            firstLoadTime: now,
+            lastLoadTime: now,
+          });
+        }
+        this.state.counters.parseTotal++;
+        if (p.hardParse) this.state.counters.parseHard++;
+        const sess = this.state.sessions.get(p.sessionId);
+        if (sess) {
+          sess.lastSqlId = p.sqlId;
+          sess.lastSqlText = p.text;
+        }
+      })),
+
+      this.bus.subscribe('oracle.sql.executed', scoped<{
+        deviceId: string; sessionId: string; sqlId: string;
+        elapsedMicros: number; cpuMicros: number; bufferGets: number;
+        diskReads: number; rowsProcessed: number;
+      }>((p) => {
+        const e = this.state.sqlCache.get(p.sqlId);
+        if (e) {
+          e.executions++;
+          e.elapsedMicros += p.elapsedMicros;
+          e.cpuMicros += p.cpuMicros;
+          e.bufferGets += p.bufferGets;
+          e.diskReads += p.diskReads;
+          e.rowsProcessed += p.rowsProcessed;
+        }
+        this.state.counters.executions++;
+      })),
+
+      this.bus.subscribe('oracle.backup.recorded', scoped<{
+        deviceId: string; setId: number; pieceId: number; type: string;
+        handle: string; bytes: number; startedAt: number; completedAt: number;
+        status: string;
+      }>((p) => {
+        this.state.backups.push({
+          setId: p.setId,
+          pieceId: p.pieceId,
+          type: p.type,
+          handle: p.handle,
+          bytes: p.bytes,
+          startedAt: p.startedAt,
+          completedAt: p.completedAt,
+          status: p.status,
+        });
+      })),
+
+      this.bus.subscribe('oracle.service.event', scoped<{
+        deviceId: string; name: string; kind: 'started' | 'stopped';
+      }>((p) => {
+        const rec = this.state.services.get(p.name);
+        if (p.kind === 'started') {
+          this.state.services.set(p.name, {
+            name: p.name, startedAt: Date.now(), active: true,
+          });
+        } else if (rec) {
+          rec.active = false;
+        }
+      })),
+
+      this.bus.subscribe('oracle.listener.event', scoped<{
+        deviceId: string; state: 'running' | 'stopped'; endpoint: string;
+      }>((p) => {
+        this.state.listenerState = p.state;
+        this.state.listenerEndpoint = p.endpoint;
+      })),
+
+      this.bus.subscribe('oracle.session.longops', scoped<{
+        deviceId: string; sessionId: string; opname: string; target: string;
+        sofar: number; totalwork: number; units: string;
+      }>((p) => {
+        const sess = this.state.sessions.get(p.sessionId);
+        if (!sess) return;
+        this.state.longops.push({
+          sessionId: p.sessionId, sid: sess.sid,
+          opname: p.opname, target: p.target,
+          sofar: p.sofar, totalwork: p.totalwork, units: p.units,
+          ts: Date.now(),
+        });
+      })),
+
+      this.bus.subscribe('oracle.session.metric', scoped<{
+        deviceId: string; sid: number; metricName: string; value: number;
+      }>((p) => {
+        this.state.sessionMetrics.push({
+          sid: p.sid, metric: p.metricName, value: p.value, ts: Date.now(),
+        });
+        if (this.state.sessionMetrics.length > 1000) {
+          this.state.sessionMetrics.splice(0, this.state.sessionMetrics.length - 1000);
+        }
+      })),
+
+      this.bus.subscribe('oracle.flashback.event', scoped<{
+        deviceId: string; kind: string; bytes?: number; scn?: number;
+      }>((p) => {
+        this.state.flashbackHistory.push({
+          ts: Date.now(),
+          kind: p.kind,
+          bytes: p.bytes ?? 0,
+          scn: p.scn ?? 0,
+        });
+      })),
     );
   }
 
@@ -203,18 +389,4 @@ export class OracleRuntimeStateActor {
     this.state.counters.parseTotal++;
   }
 
-  recordWait(rec: { sid: number; event: string; waitClass: string; waitTimeMicros: number }): void {
-    const seq = this.state.waitHistory.length + 1;
-    this.state.waitHistory.push({
-      sid: rec.sid,
-      event: rec.event,
-      waitClass: rec.waitClass,
-      seq,
-      waitTimeMicros: rec.waitTimeMicros,
-      timestamp: Date.now(),
-    });
-    if (this.state.waitHistory.length > MAX_WAIT_HISTORY) {
-      this.state.waitHistory.splice(0, this.state.waitHistory.length - MAX_WAIT_HISTORY);
-    }
-  }
 }

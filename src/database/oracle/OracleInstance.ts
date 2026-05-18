@@ -180,6 +180,18 @@ export class OracleInstance {
     this._redoLogGroups[0].status = 'CURRENT';
     output.push(`Database opened.`);
     this.logAlert('Database opened');
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: 'SYS$USERS', kind: 'started' },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: 'SYS$BACKGROUND', kind: 'started' },
+    });
 
     if (mode === 'RESTRICT') {
       output.push('Database opened in restricted mode.');
@@ -509,6 +521,15 @@ export class OracleInstance {
     }
     this._listenerState = 'running';
     this.logAlert('Listener LISTENER started successfully');
+    const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${ORACLE_CONFIG.PORT}))`;
+    this.getBus().publish({
+      topic: 'oracle.listener.event',
+      payload: { ...this.ref(), state: 'running', endpoint },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: this.config.sid, kind: 'started' },
+    });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
     const port = ORACLE_CONFIG.PORT;
     const sid = this.config.sid;
@@ -550,6 +571,14 @@ export class OracleInstance {
     }
     this._listenerState = 'stopped';
     this.logAlert('Listener LISTENER stopped');
+    this.getBus().publish({
+      topic: 'oracle.listener.event',
+      payload: { ...this.ref(), state: 'stopped', endpoint: '' },
+    });
+    this.getBus().publish({
+      topic: 'oracle.service.event',
+      payload: { ...this.ref(), name: this.config.sid, kind: 'stopped' },
+    });
     const ver = `${ORACLE_CONFIG.VERSION}.0.0.0`;
     const port = ORACLE_CONFIG.PORT;
     return [
