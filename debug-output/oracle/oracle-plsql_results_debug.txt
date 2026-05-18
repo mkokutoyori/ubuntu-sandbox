@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-plsql
-Generated: 2026-05-18T09:49:16.994Z
+Generated: 2026-05-18T16:36:40.446Z
 Topology:  LinuxServer ora-plsql — Oracle ORCL OPEN
 Total commands: 350
 ============================================================
@@ -16,8 +16,8 @@ Total commands: 350
 
 --- [1] § setup ---
 SQL [1/350]> CREATE USER plsql IDENTIFIED BY "Plsql1#" QUOTA UNLIMITED ON users;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: QUOTA
+  
+  User created.
 
 SQL [2/350]> GRANT CREATE SESSION, CREATE TABLE, CREATE PROCEDURE, CREATE TRIGGER, CREATE TYPE, CREATE SEQUENCE TO plsql;
   
@@ -25,7 +25,7 @@ SQL [2/350]> GRANT CREATE SESSION, CREATE TABLE, CREATE PROCEDURE, CREATE TRIGGE
 
 SQL [3/350]> ALTER SESSION SET CURRENT_SCHEMA = plsql;
   
-  ORA-02248: invalid option for ALTER SESSION
+  Session altered.
 
 SQL [4/350]> SET SERVEROUTPUT ON;
 <empty>

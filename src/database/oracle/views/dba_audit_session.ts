@@ -1,8 +1,9 @@
 /**
- * DBA_AUDIT_SESSION — logon/logoff audit entries.
+ * DBA_AUDIT_SESSION — LOGON / LOGOFF audit entries.
  *
- * Derived from the runtime session table (oracle.session.connected /
- * disconnected). Each currently-known session produces a logon row.
+ * Pairs LOGON entries with their matching LOGOFF (by sessionId) so
+ * LOGOFF_TIME is populated for closed sessions and NULL for sessions
+ * still active. Failed logons appear with RETURNCODE != 0.
  */
 
 import { col } from './_columns';
@@ -12,7 +13,30 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_AUDIT_SESSION',
   comment: 'Session-level audit trail',
-  query({ runtime }) {
+  query({ catalog }) {
+    const trail = catalog.getAuditTrail();
+    const logoffs = new Map<number, typeof trail[number]>();
+    for (const e of trail) if (e.actionName === 'LOGOFF') logoffs.set(e.sessionId, e);
+
+    const rows: (string | number | null)[][] = [];
+    for (const e of trail) {
+      if (e.actionName !== 'LOGON') continue;
+      const off = logoffs.get(e.sessionId);
+      rows.push([
+        e.osUsername, e.username, e.userhost, e.terminal,
+        e.timestamp.toISOString(), 'LOGON', e.sessionId,
+        off ? off.timestamp.toISOString() : null,
+        e.returncode,
+      ]);
+    }
+    for (const off of logoffs.values()) {
+      rows.push([
+        off.osUsername, off.username, off.userhost, off.terminal,
+        off.timestamp.toISOString(), 'LOGOFF', off.sessionId,
+        off.timestamp.toISOString(),
+        off.returncode,
+      ]);
+    }
     return queryResult(
       [
         col.str('OS_USERNAME', 30),
@@ -22,13 +46,10 @@ registerView({
         col.date('TIMESTAMP'),
         col.str('ACTION_NAME', 28),
         col.num('SESSIONID'),
-        col.num('LOGOFF_TIME'),
+        col.date('LOGOFF_TIME'),
         col.num('RETURNCODE'),
       ],
-      [...runtime.sessions.values()].map(s => [
-        'oracle', s.username, 'localhost', 'pts/0',
-        new Date(s.logonTime).toISOString(), 'LOGON', s.sid, 0, 0,
-      ])
+      rows
     );
   },
 });

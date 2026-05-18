@@ -250,18 +250,68 @@ export class OracleExecutor extends BaseExecutor {
   private recordAuditForStatement(statement: Statement, returncode: number): void {
     const catalog = this.catalog as OracleCatalog;
     const actionName = this.getActionName(statement);
-    if (!actionName) return; // DML/select not audited by default
+
+    // Statement-level audit options (AUDIT CREATE TABLE, ...) trigger
+    // recording for DML / SELECT too. Honour them by checking the
+    // configured options; otherwise we only record DDL/DCL.
+    const stmtType = statement.type;
+    const dmlMap: Record<string, string> = {
+      SelectStatement: 'SELECT',
+      InsertStatement: 'INSERT',
+      UpdateStatement: 'UPDATE',
+      DeleteStatement: 'DELETE',
+    };
+    const dmlAction = dmlMap[stmtType];
+    const audited = dmlAction
+      ? catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
+      : !!actionName;
+    if (!audited) {
+      // Even when not audited at the statement level, fine-grained
+      // audit may still apply to this object.
+      if (dmlAction) this.recordFgaForDml(statement, dmlAction as 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE');
+      return;
+    }
+
     const objInfo = this.getObjInfo(statement);
+    const effectiveAction = actionName ?? dmlAction!;
+    const sqlText = this._lastSqlText || this.statementText(statement);
     catalog.recordAudit({
+      sessionId: parseInt(this._sessionId, 10) || 0,
       username: this.context.currentSchema,
-      actionName,
+      actionName: effectiveAction,
       objName: objInfo.name,
       objOwner: objInfo.owner,
       returncode,
       privUsed: null,
-      sqlText: null,
-      statementType: actionName,
+      sqlText: sqlText.length > 2000 ? sqlText.slice(0, 2000) : sqlText,
+      statementType: effectiveAction,
     });
+    if (dmlAction) {
+      this.recordFgaForDml(statement, dmlAction as 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE');
+    }
+  }
+
+  /** Apply matching FGA policies against a DML/SELECT statement. */
+  private recordFgaForDml(statement: Statement, action: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'): void {
+    const catalog = this.catalog as OracleCatalog;
+    const policies = catalog.getFgaPolicies();
+    if (policies.length === 0) return;
+    const obj = this.getObjInfo(statement);
+    if (!obj.name) return;
+    const matched = catalog.matchFgaPolicies(obj.owner ?? this.context.currentSchema, obj.name, action);
+    for (const p of matched) {
+      catalog.recordFgaAudit({
+        sessionId: parseInt(this._sessionId, 10) || 0,
+        timestamp: new Date(),
+        dbUser: this.context.currentSchema,
+        osUser: 'oracle',
+        objectSchema: p.objectSchema,
+        objectName: p.objectName,
+        policyName: p.policyName,
+        sqlText: this._lastSqlText || this.statementText(statement),
+        statementType: action,
+      });
+    }
   }
 
   private getActionName(stmt: Statement): string | null {
@@ -300,10 +350,29 @@ export class OracleExecutor extends BaseExecutor {
 
   private getObjInfo(stmt: Statement): { name: string | null; owner: string | null } {
     const s = stmt as Record<string, unknown>;
-    const name = (s['tableName'] ?? s['indexName'] ?? s['viewName'] ?? s['sequenceName']
+    let name = (s['tableName'] ?? s['indexName'] ?? s['viewName'] ?? s['sequenceName']
       ?? s['username'] ?? s['roleName'] ?? s['triggerName'] ?? s['synonymName']
       ?? s['objectName'] ?? s['profileName'] ?? s['name'] ?? null) as string | null;
-    const owner = (s['objectSchema'] ?? s['schema'] ?? this.context.currentSchema) as string | null;
+    let owner = (s['objectSchema'] ?? s['schema'] ?? this.context.currentSchema) as string | null;
+
+    // UPDATE/DELETE wrap their target in `table: TableRef`. SELECT uses
+    // a `from` array. Reach into those shapes so audit/FGA records the
+    // actual object instead of falling back to a synthetic name.
+    if (!name && (stmt.type === 'UpdateStatement' || stmt.type === 'DeleteStatement')) {
+      const table = s['table'] as { schema?: string; name?: string } | undefined;
+      if (table?.name) {
+        name = table.name;
+        if (table.schema) owner = table.schema;
+      }
+    }
+    if (!name && stmt.type === 'SelectStatement') {
+      const from = (s['from'] as Array<{ type: string; schema?: string; name?: string }> | undefined);
+      const first = from?.find(t => t.type === 'TableRef');
+      if (first?.name) {
+        name = first.name;
+        if (first.schema) owner = first.schema;
+      }
+    }
     return { name: name?.toUpperCase() ?? null, owner: owner?.toUpperCase() ?? null };
   }
 
@@ -487,26 +556,19 @@ export class OracleExecutor extends BaseExecutor {
       return this.executeSetOperation(stmt);
     }
 
-    // Check for system catalog view queries
+    // DUAL has its own minimal pipeline (no JOIN/GROUP BY etc.)
     if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef') {
-      const tableRef = stmt.from[0];
-      const tableName = tableRef.name.toUpperCase();
-
-      // DUAL
-      if (tableName === 'DUAL') {
+      const firstName = stmt.from[0].name.toUpperCase();
+      if (firstName === 'DUAL') {
         return this.executeSelectFromDual(stmt);
-      }
-
-      // V$ views, DBA_ views, etc.
-      // Handle SYS-prefixed internal tables (SYS.OBJ$, SYS.TAB$, etc.)
-      const catalogViewName = (tableRef.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName);
-      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogViewName, this.context.currentUser);
-      if (catalogResult) {
-        return this.applySelectClauses(catalogResult, stmt);
       }
     }
 
-    // Regular table query
+    // Every other table reference — catalog dictionary views included —
+    // flows through `executeSelectFromTable`, which knows about JOIN,
+    // GROUP BY, aggregates, HAVING, DISTINCT, ORDER BY, and FETCH.
+    // `loadTable` materialises catalog views as virtual row sources so
+    // `SELECT COUNT(*) FROM v$log` etc. evaluate correctly.
     return this.executeSelectFromTable(stmt);
   }
 
@@ -778,6 +840,25 @@ export class OracleExecutor extends BaseExecutor {
     const viewMeta = this.storage.getViewMeta(schema, tableName);
     if (viewMeta) {
       return this.loadView(viewMeta, alias || tableName);
+    }
+
+    // Catalog dictionary views (DBA_*, ALL_*, USER_*, V$*, GV$*,
+    // UNIFIED_AUDIT_TRAIL, SYS.OBJ$, …). They are materialised as
+    // virtual row sources here so the rest of the SELECT pipeline
+    // (JOIN, GROUP BY, aggregates, HAVING, ORDER BY) can operate on
+    // them exactly like a real table.
+    const catalogName = ref.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName;
+    const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogName, this.context.currentUser);
+    if (catalogResult && catalogResult.isQuery) {
+      const prefix = alias || tableName;
+      const columns: StorageColMeta[] = catalogResult.columns.map((c, i) => ({
+        name: c.name,
+        dataType: c.dataType,
+        ordinalPosition: i,
+        _qualifiedNames: [c.name, `${prefix}.${c.name}`],
+      } as StorageColMeta & { _qualifiedNames: string[] }));
+      const rows: StorageRow[] = catalogResult.rows.map(r => [...r] as StorageRow);
+      return { rows, columns };
     }
 
     if (!this.storage.tableExists(schema, tableName)) {

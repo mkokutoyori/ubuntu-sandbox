@@ -93,29 +93,41 @@ export class OracleDatabase {
     const upperUser = username.toUpperCase();
     const user = this.catalog.getUser(upperUser);
 
+    /**
+     * Wrap a failed-auth throw so every rejection path also leaves a
+     * trace in the audit trail and alert log. SESSIONID 0 is the
+     * canonical Oracle marker for "no session was ever opened".
+     */
+    const failLogon = (code: number, message: string): never => {
+      this.catalog.recordLogon(upperUser, 0, code, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+      this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(code).padStart(5, '0')}`);
+      throw new Error(message);
+    };
+
     // Dispatch on AUTHENTICATION_TYPE recorded at CREATE USER time.
     if (user?.authenticationType === 'EXTERNAL') {
       // OS-authenticated user: name must match `<os_prefix><osUser>` (default OPS$).
       // Real Oracle uses init parameter OS_AUTHENT_PREFIX; we simulate with 'OPS$'.
       const expected = `OPS$${osCtx.osUser.toUpperCase()}`;
       if (upperUser !== expected) {
-        throw new Error(ORACLE_ERRORS.ORA_01017);
+        failLogon(1017, ORACLE_ERRORS.ORA_01017);
       }
     } else if (user?.authenticationType === 'GLOBAL') {
       // Directory-authenticated: no password path supported in this simulation.
-      throw new Error(ORACLE_ERRORS.ORA_01017);
+      failLogon(1017, ORACLE_ERRORS.ORA_01017);
     } else {
-      // Standard password authentication
+      // Standard password authentication via SecurityEngine:
+      // enforces lock, failed-login tracking, expiry.
       const storedPassword = this.catalog.getStoredPassword(upperUser);
       const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
       if (!authResult.success) {
-        throw new Error(authResult.message || ORACLE_ERRORS.ORA_01017);
+        failLogon(authResult.errorCode || 1017, authResult.message || ORACLE_ERRORS.ORA_01017);
       }
     }
 
     // Enforce CREATE SESSION privilege (direct or via role)
     if (!this.securityEngine.privileges.hasSystemPrivilege(upperUser, 'CREATE SESSION')) {
-      throw new Error('ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
+      failLogon(1045, 'ORA-01045: user ' + upperUser + ' lacks CREATE SESSION privilege; logon denied');
     }
 
     const sid = this.sidCounter++;
@@ -135,8 +147,11 @@ export class OracleDatabase {
     const sessionResult = this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
     if (!sessionResult.ok) {
       this.connections.delete(sid);
+      this.catalog.recordLogon(upperUser, sid, 2391, osCtx.osUser, osCtx.hostname, osCtx.terminal);
       throw new Error(sessionResult.error ?? 'ORA-02391: exceeded simultaneous SESSIONS_PER_USER limit');
     }
+    this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+    this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
 
     const context: ExecutionContext = {
       currentUser: upperUser,
@@ -174,6 +189,13 @@ export class OracleDatabase {
     // Register SYSDBA session with matching sid/serial
     const sessionId = String(sid);
     this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog, sid, serial);
+    // Record audit + alert log — SYSDBA logons are first-class events.
+    this.catalog.recordAudit({
+      sessionId: sid, username: 'SYS', actionName: 'LOGON', returncode: 0,
+      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+      privUsed: 'SYSDBA', statementType: 'LOGON',
+    });
+    this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
 
     const context: ExecutionContext = {
       currentUser: 'SYS',
@@ -230,6 +252,11 @@ export class OracleDatabase {
    * Disconnect a session.
    */
   disconnect(sid: number): void {
+    const conn = this.connections.get(sid);
+    if (conn) {
+      this.catalog.recordLogoff(conn.username, sid);
+      this.instance.logAlertEvent(`Logoff: user=${conn.username} sid=${sid}`);
+    }
     this.connections.delete(sid);
     this.securityEngine.closeSession(String(sid));
   }
@@ -307,6 +334,9 @@ export class OracleDatabase {
 
     let result: ResultSet = emptyResult();
     for (const stmt of statements) {
+      // Attach the source SQL so audit/journaling records the original
+      // user text — the AST type alone is useless to a DBA.
+      (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
       result = executor.execute(stmt);
     }
     return result;
