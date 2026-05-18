@@ -74,6 +74,7 @@ import './v_latch_parent';
 import './v_latch_children';
 import './v_latchholder';
 import './v_mutex_sleep';
+import './v_mutex_sleep_history';
 import './v_nodes';
 import './v_rac_global_view';
 import './v_thread';
