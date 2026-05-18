@@ -78,6 +78,7 @@ import './dba_hist_wr_control';
 import './dba_hist_baseline';
 import './nls_database_parameters';
 import './nls_instance_parameters';
+import './nls_session_parameters';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
