@@ -11,6 +11,7 @@ import './v_active_instances';
 import './v_active_session_history';
 import './v_bgprocess';
 import './v_buffer_pool';
+import './v_buffer_pool_statistics';
 import './v_active_services';
 import './v_cluster_instance';
 import './v_db_object_cache';
