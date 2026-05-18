@@ -23,6 +23,7 @@ import './v_system_wait_class';
 import './v_session_event';
 import './v_session_wait';
 import './v_session_wait_history';
+import './v_services';
 import './v_session_wait_class';
 
 export { };
