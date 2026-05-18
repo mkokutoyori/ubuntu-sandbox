@@ -19,6 +19,7 @@ import './dba_recyclebin';
 import './dba_tab_partitions';
 import './dba_tab_subpartitions';
 import './dba_part_tables';
+import './dba_part_indexes';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
