@@ -11,6 +11,11 @@ import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/Data
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
+import { queryView } from './views/registry';
+// Side-effect import: each file under `views/` self-registers its
+// definition. Adding a new view requires only creating a new file there
+// and adding it to `views/index.ts` — no edits to the catalog.
+import './views';
 
 /** Stored PL/SQL unit shape (avoids circular import with OracleDatabase) */
 interface StoredUnit {
@@ -284,6 +289,16 @@ export class OracleCatalog extends BaseCatalog {
     // SYS internal tables (SYS.OBJ$, SYS.TAB$, etc.)
     if (upper.startsWith('SYS.')) return this.querySysInternal(upper.substring(4));
 
+    // Generic catalog views registered by `views/*.ts` (PRODUCT_COMPONENT_VERSION,
+    // NLS_DATABASE_PARAMETERS, UNIFIED_AUDIT_TRAIL, …).
+    const fromRegistry = queryView(upper, {
+      instance: this.instance,
+      storage: this.storage,
+      runtime: this.instance.getRuntimeState(),
+      currentUser,
+    });
+    if (fromRegistry) return fromRegistry;
+
     return null;
   }
 
@@ -333,7 +348,16 @@ export class OracleCatalog extends BaseCatalog {
       case 'V$SQL_PLAN': return this.vSqlPlan();
       case 'V$RESOURCE_LIMIT': return this.vResourceLimit();
       case 'V$ASM_DISKGROUP': return this.vAsmDiskgroup();
-      default: return emptyResult(`View ${name} not implemented`);
+      default: {
+        const fromRegistry = queryView(name, {
+          instance: this.instance,
+          storage: this.storage,
+          runtime: this.instance.getRuntimeState(),
+          currentUser: _currentUser,
+        });
+        if (fromRegistry) return fromRegistry;
+        return emptyResult(`View ${name} not implemented`);
+      }
     }
   }
 
@@ -1017,7 +1041,15 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_JOBS': return this.dbaJobs();
       case 'DBA_SCHEDULER_JOBS': return this.dbaSchedulerJobs();
       case 'DBA_SYNONYMS': return this.dbaSynonyms();
-      default: return null;  // Unknown view — fall through to table lookup
+      default: {
+        const fromRegistry = queryView(viewName, {
+          instance: this.instance,
+          storage: this.storage,
+          runtime: this.instance.getRuntimeState(),
+          currentUser: _currentUser,
+        });
+        return fromRegistry ?? null; // Unknown view — fall through to table lookup
+      }
     }
   }
 

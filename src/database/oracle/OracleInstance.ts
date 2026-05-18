@@ -15,6 +15,8 @@ import {
   type OracleObservables,
 } from './observables';
 import { OracleSignalRefreshActor } from './actors/OracleSignalRefreshActor';
+import { OracleRuntimeState } from './views/OracleRuntimeState';
+import { OracleRuntimeStateActor } from './actors/OracleRuntimeStateActor';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -65,6 +67,11 @@ export class OracleInstance {
   /** Refresh actor bridging oracle.* events → signal store. (Re-)attached
    *  whenever the bus or deviceId changes. */
   private _refreshActor: OracleSignalRefreshActor | null = null;
+  /** Runtime state feeding the dynamic V$/GV$ views, maintained by an
+   *  event-driven actor. Exposed via `getRuntimeState()` so the catalog
+   *  can hand it to view files at query time. */
+  private readonly _runtimeState = new OracleRuntimeState();
+  private _runtimeStateActor: OracleRuntimeStateActor | null = null;
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };
@@ -93,9 +100,18 @@ export class OracleInstance {
       this._refreshActor.stop();
       this._refreshActor = null;
     }
+    if (this._runtimeStateActor) {
+      this._runtimeStateActor.stop();
+      this._runtimeStateActor = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
+    this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
+    this._runtimeStateActor.start();
   }
+
+  /** Snapshot of the event-fed runtime state used by the V$/GV$ views. */
+  getRuntimeState(): OracleRuntimeState { return this._runtimeState; }
 
   /** Public bus accessor — used by OracleExecutor / SQLPlusSession to
    *  reuse the same bus binding as the instance. */
