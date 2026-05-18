@@ -73,6 +73,7 @@ import './dba_hist_sysstat';
 import './dba_hist_sysmetric_summary';
 import './dba_hist_sysmetric_history';
 import './dba_hist_sqlstat';
+import './dba_hist_active_sess_history';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
