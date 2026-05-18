@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-sql-dml-ddl
-Generated: 2026-05-18T09:49:14.504Z
+Generated: 2026-05-18T16:36:37.128Z
 Topology:  LinuxServer ora-sql — Oracle ORCL OPEN
 Total commands: 461
 ============================================================
@@ -16,8 +16,8 @@ Total commands: 461
 
 --- [1] § setup schema ---
 SQL [1/461]> CREATE USER demo IDENTIFIED BY "Demo1#" QUOTA UNLIMITED ON users;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: QUOTA
+  
+  User created.
 
 SQL [2/461]> GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE TRIGGER, CREATE TYPE, CREATE SYNONYM, UNLIMITED TABLESPACE TO demo;
   
@@ -25,7 +25,7 @@ SQL [2/461]> GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, C
 
 SQL [3/461]> ALTER SESSION SET CURRENT_SCHEMA = demo;
   
-  ORA-02248: invalid option for ALTER SESSION
+  Session altered.
 
 
 --- [4] § CREATE TABLE basic ---
@@ -97,34 +97,24 @@ SQL [19/461]> CREATE TABLE compressed_archive (id NUMBER) COMPRESS FOR QUERY HIG
 --- [20] § inspect schema ---
 SQL [20/461]> SELECT table_name, tablespace_name, temporary, partitioned FROM user_tables ORDER BY table_name;
   ERROR:
-  ORA-00900: invalid SQL statement: "TEMPORARY": invalid identifier
+  ORA-00904: "TEMPORARY": invalid identifier
 
 SQL [21/461]> SELECT COUNT(*) AS user_tables FROM user_tables;
   
   USER_TABLES
   -----------
   1          
-  1          
-  1          
-  1          
-  1          
-  1          
   
-  6 rows selected.
+  1 row selected.
 
 SQL [22/461]> SELECT table_name, column_name, data_type, data_length, nullable, data_default FROM user_tab_columns ORDER BY table_name, column_id;
   ERROR:
-  ORA-00900: invalid SQL statement: "DATA_DEFAULT": invalid identifier
+  ORA-00904: "DATA_DEFAULT": invalid identifier
 
 SQL [23/461]> SELECT * FROM user_constraints WHERE table_name = 'CUSTOMERS';
   
-  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS 
-  ----- --------------- --------------- ---------- -------
-  SYS   SYS_C010000     P               CUSTOMERS  ENABLED
-  SYS   SYS_C010001     O               CUSTOMERS  ENABLED
-  SYS   SYS_C010002     U               CUSTOMERS  ENABLED
-  
-  3 rows selected.
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS
+  ----- --------------- --------------- ---------- ------
 
 SQL [24/461]> SELECT * FROM user_constraints WHERE table_name = 'PRODUCTS';
   
@@ -133,13 +123,8 @@ SQL [24/461]> SELECT * FROM user_constraints WHERE table_name = 'PRODUCTS';
 
 SQL [25/461]> SELECT * FROM user_constraints WHERE table_name = 'ORDERS';
   
-  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS 
-  ----- --------------- --------------- ---------- -------
-  SYS   SYS_C010000     P               ORDERS     ENABLED
-  SYS   SYS_C010001     O               ORDERS     ENABLED
-  SYS   fk_orders_cust  R               ORDERS     ENABLED
-  
-  3 rows selected.
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS
+  ----- --------------- --------------- ---------- ------
 
 SQL [26/461]> SELECT * FROM user_indexes WHERE table_name IN ('CUSTOMERS','PRODUCTS','ORDERS');
   
@@ -147,8 +132,9 @@ SQL [26/461]> SELECT * FROM user_indexes WHERE table_name IN ('CUSTOMERS','PRODU
   ----- ---------- ---------- ---------- ------ ----------
 
 SQL [27/461]> SELECT * FROM user_tab_partitions ORDER BY table_name, partition_position;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  TABLE_OWNER TABLE_NAME PARTITION_NAME SUBPARTITION_COUNT HIGH_VALUE PARTITION_POSITION TABLESPACE_NAME NUM_ROWS
+  ----------- ---------- -------------- ------------------ ---------- ------------------ --------------- --------
 
 
 --- [28] § ALTER TABLE ---
@@ -395,7 +381,7 @@ SQL [87/461]> ALTER INDEX idx_inv_prod UNUSABLE;
 
 SQL [88/461]> ALTER INDEX idx_inv_prod REBUILD;
   ERROR:
-  ORA-00900: invalid SQL statement: specified index does not exist
+  ORA-01418: specified index does not exist
 
 SQL [89/461]> DROP INDEX idx_func_cust_upper;
   
@@ -429,23 +415,23 @@ SQL [95/461]> INSERT INTO customers VALUES (6, 'Frank Brown', 'frank@x.com', SYS
 
 SQL [96/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-001', 'Widget', 9.99, 100);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [97/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-002', 'Gadget', 19.99, 50);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [98/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-003', 'Gizmo', 4.99, 200);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [99/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-004', 'Thingamajig', 29.99, 30);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [100/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-005', 'Doohickey', 14.99, 75);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [101/461]> INSERT INTO orders VALUES (101, 1, SYSDATE, 'PAID', 19.98);
   
@@ -453,11 +439,11 @@ SQL [101/461]> INSERT INTO orders VALUES (101, 1, SYSDATE, 'PAID', 19.98);
 
 SQL [102/461]> INSERT INTO orders VALUES (102, 2, SYSDATE - 1, 'SHIPPED', 39.98);
   ERROR:
-  ORA-00900: invalid SQL statement: invalid number
+  ORA-01722: invalid number
 
 SQL [103/461]> INSERT INTO orders VALUES (103, 1, SYSDATE - 2, 'PENDING', 14.99);
   ERROR:
-  ORA-00900: invalid SQL statement: invalid number
+  ORA-01722: invalid number
 
 SQL [104/461]> INSERT INTO order_lines VALUES (101, 1, 1, 2, 9.99);
   
@@ -465,27 +451,27 @@ SQL [104/461]> INSERT INTO order_lines VALUES (101, 1, 1, 2, 9.99);
 
 SQL [105/461]> INSERT INTO order_lines VALUES (102, 1, 2, 2, 19.99);
   ERROR:
-  ORA-00900: invalid SQL statement: integrity constraint (fk_ol_order) violated - parent key not found
+  ORA-02291: integrity constraint (fk_ol_order) violated - parent key not found
 
 SQL [106/461]> INSERT INTO order_lines VALUES (103, 1, 5, 1, 14.99);
   ERROR:
-  ORA-00900: invalid SQL statement: integrity constraint (fk_ol_order) violated - parent key not found
+  ORA-02291: integrity constraint (fk_ol_order) violated - parent key not found
 
 SQL [107/461]> INSERT INTO orders SELECT 200 + level, 1, SYSDATE - level, 'PAID', 100 FROM dual CONNECT BY level <= 10;
   ERROR:
-  ORA-00900: invalid SQL statement: cannot insert NULL into ("SYS"."ORDERS"."ID")
+  ORA-01400: cannot insert NULL into ("DEMO"."ORDERS"."ID")
 
 SQL [108/461]> INSERT INTO sales VALUES (1, DATE '2024-06-15', 'EU', 1500);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [109/461]> INSERT INTO sales VALUES (2, DATE '2025-03-20', 'US', 2500);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [110/461]> INSERT INTO sales VALUES (3, DATE '2025-09-10', 'APAC', 1800);
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [111/461]> INSERT ALL INTO customers (id, name, email) VALUES (id, name, email) INTO staging (id, name, email) VALUES (id, name, email) SELECT 100 + level AS id, 'user_' || level AS name, 'user' || level || '@ex.com' AS email FROM dual CONNECT BY level <= 5;
   ERROR:
@@ -497,7 +483,7 @@ SQL [112/461]> INSERT FIRST WHEN total > 50 THEN INTO big_orders WHEN total <= 5
 
 SQL [113/461]> INSERT INTO customers (id, name) VALUES (7, 'Grace H');
   ERROR:
-  ORA-00900: invalid SQL statement: unique constraint (SYS_C010002) violated
+  ORA-00001: unique constraint (SYS_C010002) violated
 
 SQL [114/461]> INSERT INTO customers SELECT 200, 'Henry I', 'h@x.com', SYSDATE, NULL FROM dual;
   
@@ -510,27 +496,27 @@ SQL [115/461]> COMMIT;
 --- [116] § UPDATE ---
 SQL [116/461]> UPDATE customers SET phone_number = '555-0101' WHERE id = 1;
   ERROR:
-  ORA-00900: invalid SQL statement: "PHONE_NUMBER": invalid identifier
+  ORA-00904: "PHONE_NUMBER": invalid identifier
 
 SQL [117/461]> UPDATE products SET price = price * 1.05 WHERE active = 'Y';
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [118/461]> UPDATE orders SET status = 'SHIPPED' WHERE order_date < SYSDATE - 5;
   ERROR:
-  ORA-00900: invalid SQL statement: invalid number
+  ORA-01722: invalid number
 
 SQL [119/461]> UPDATE customers c SET phone_number = (SELECT '555-' || LPAD(id,4,'0') FROM dual);
   ERROR:
-  ORA-00900: invalid SQL statement: "PHONE_NUMBER": invalid identifier
+  ORA-00904: "PHONE_NUMBER": invalid identifier
 
 SQL [120/461]> UPDATE order_lines SET unit_price = unit_price * 1.10;
   ERROR:
-  ORA-00900: invalid SQL statement: unique constraint (pk_ol) violated
+  ORA-00001: unique constraint (pk_ol) violated
 
 SQL [121/461]> UPDATE orders SET total = (SELECT NVL(SUM(qty * unit_price), 0) FROM order_lines WHERE order_lines.order_id = orders.id);
   ERROR:
-  ORA-00900: invalid SQL statement: "ORDERS.ID": invalid identifier
+  ORA-00904: "ORDERS.ID": invalid identifier
 
 SQL [122/461]> UPDATE (SELECT * FROM products WHERE active = 'Y') SET stock = stock + 10;
   ERROR:
@@ -551,7 +537,7 @@ SQL [125/461]> DELETE FROM customers WHERE id = 7;
 
 SQL [126/461]> DELETE FROM products WHERE stock = 0;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [127/461]> DELETE FROM orders WHERE status = 'CANCELLED';
   
@@ -563,7 +549,7 @@ SQL [128/461]> DELETE FROM order_lines WHERE order_id IN (SELECT id FROM orders 
 
 SQL [129/461]> DELETE FROM customers WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.customer_id = customers.id);
   ERROR:
-  ORA-00900: invalid SQL statement: "CUSTOMERS.ID": invalid identifier
+  ORA-00904: "CUSTOMERS.ID": invalid identifier
 
 SQL [130/461]> TRUNCATE TABLE staging;
   
@@ -608,8 +594,8 @@ SQL [138/461]> SELECT * FROM customers ORDER BY id;
   3   Carol Leroy  carol@example.com                          
   4   David Smith  david@example.com                          
   5   Eve Johnson                                             
-  6   Frank Brown  frank@x.com       2026-05-18 09:49:14      
-  200 Henry I      h@x.com           2026-05-18 09:49:14      
+  6   Frank Brown  frank@x.com       2026-05-18 16:36:37      
+  200 Henry I      h@x.com           2026-05-18 16:36:37      
   
   7 rows selected.
 
@@ -718,11 +704,11 @@ SQL [148/461]> SELECT customer_id, COUNT(*), SUM(total) FROM orders GROUP BY cus
 
 SQL [149/461]> SELECT customer_id, COUNT(*) FROM orders GROUP BY ROLLUP (customer_id);
   ERROR:
-  ORA-00900: invalid SQL statement: not a GROUP BY expression
+  ORA-00979: not a GROUP BY expression
 
 SQL [150/461]> SELECT customer_id, status, COUNT(*) FROM orders GROUP BY CUBE (customer_id, status);
   ERROR:
-  ORA-00900: invalid SQL statement: not a GROUP BY expression
+  ORA-00979: not a GROUP BY expression
 
 SQL [151/461]> SELECT customer_id, status, COUNT(*) FROM orders GROUP BY GROUPING SETS ((customer_id), (status), ());
   ERROR:
@@ -843,13 +829,13 @@ SQL [166/461]> WITH top_orders AS (SELECT * FROM orders ORDER BY total DESC FETC
   
   ID  CUSTOMER_ID ORDER_DATE          STATUS TOTAL
   --- ----------- ------------------- ------ -----
-  101 1           2026-05-18 09:49:14 PAID   19.98
+  101 1           2026-05-18 16:36:37 PAID   19.98
   
   1 row selected.
 
 SQL [167/461]> WITH numbers (n) AS (SELECT 1 FROM dual UNION ALL SELECT n + 1 FROM numbers WHERE n < 10) SELECT * FROM numbers;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [168/461]> SELECT id FROM customers UNION SELECT customer_id FROM orders;
   
@@ -924,7 +910,7 @@ SQL [174/461]> SELECT level, name FROM customers START WITH id = 1 CONNECT BY PR
 
 SQL [175/461]> SELECT SYS_CONNECT_BY_PATH(name, '/') FROM customers START WITH id = 1 CONNECT BY PRIOR id = id - 1;
   ERROR:
-  ORA-00900: invalid SQL statement: "SYS_CONNECT_BY_PATH": invalid identifier
+  ORA-00904: "SYS_CONNECT_BY_PATH": invalid identifier
 
 SQL [176/461]> SELECT customer_id, status, COUNT(*) OVER (PARTITION BY customer_id) FROM orders;
   
@@ -1013,7 +999,7 @@ SQL [192/461]> CREATE OR REPLACE VIEW v_complex AS SELECT c.id, c.name, COUNT(o.
 
 SQL [193/461]> DROP VIEW v_future;
   ERROR:
-  ORA-00900: invalid SQL statement: View SYS.V_FUTURE does not exist
+  ORA-00900: invalid SQL statement: View DEMO.V_FUTURE does not exist
 
 
 --- [194] § sequences ---
@@ -1055,7 +1041,7 @@ SQL [199/461]> SELECT seq_customer_id.CURRVAL FROM dual;
 
 SQL [200/461]> INSERT INTO customers (id, name) VALUES (seq_customer_id.NEXTVAL, 'Sequenced User');
   ERROR:
-  ORA-00900: invalid SQL statement: unique constraint (SYS_C010002) violated
+  ORA-00001: unique constraint (SYS_C010002) violated
 
 SQL [201/461]> ALTER SEQUENCE seq_customer_id INCREMENT BY 10;
   
@@ -1085,7 +1071,7 @@ SQL [206/461]> CREATE OR REPLACE SYNONYM cust FOR demo.customers;
 
 SQL [207/461]> SELECT * FROM cust WHERE rownum < 5;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [208/461]> DROP SYNONYM cust;
   
@@ -1107,7 +1093,7 @@ SQL [211/461]> INSERT INTO customers VALUES (8888, 'Volatile', 'v@x.com', SYSDAT
 
 SQL [212/461]> UPDATE customers SET name = 'Volatile2' WHERE id = 8888;
   ERROR:
-  ORA-00900: invalid SQL statement: unique constraint (SYS_C010000) violated
+  ORA-00001: unique constraint (SYS_C010000) violated
 
 SQL [213/461]> ROLLBACK TO SAVEPOINT before_changes;
   
@@ -1188,9 +1174,9 @@ SQL [232/461]> SELECT * FROM customers FOR UPDATE;
   3    Carol Leroy  carol@example.com                          
   4    David Smith  david@example.com                          
   5    Eve Johnson                                             
-  6    Frank Brown  frank@x.com       2026-05-18 09:49:14      
-  200  Henry I      h@x.com           2026-05-18 09:49:14      
-  8889 Persistent   p@x.com           2026-05-18 09:49:14      
+  6    Frank Brown  frank@x.com       2026-05-18 16:36:37      
+  200  Henry I      h@x.com           2026-05-18 16:36:37      
+  8889 Persistent   p@x.com           2026-05-18 16:36:37      
   
   8 rows selected.
 
@@ -1217,9 +1203,9 @@ SQL [236/461]> SELECT * FROM customers FOR UPDATE WAIT 10;
   3    Carol Leroy  carol@example.com                          
   4    David Smith  david@example.com                          
   5    Eve Johnson                                             
-  6    Frank Brown  frank@x.com       2026-05-18 09:49:14      
-  200  Henry I      h@x.com           2026-05-18 09:49:14      
-  8889 Persistent   p@x.com           2026-05-18 09:49:14      
+  6    Frank Brown  frank@x.com       2026-05-18 16:36:37      
+  200  Henry I      h@x.com           2026-05-18 16:36:37      
+  8889 Persistent   p@x.com           2026-05-18 16:36:37      
   
   8 rows selected.
 
@@ -1235,9 +1221,9 @@ SQL [238/461]> SELECT * FROM customers FOR UPDATE SKIP LOCKED;
   3    Carol Leroy  carol@example.com                          
   4    David Smith  david@example.com                          
   5    Eve Johnson                                             
-  6    Frank Brown  frank@x.com       2026-05-18 09:49:14      
-  200  Henry I      h@x.com           2026-05-18 09:49:14      
-  8889 Persistent   p@x.com           2026-05-18 09:49:14      
+  6    Frank Brown  frank@x.com       2026-05-18 16:36:37      
+  200  Henry I      h@x.com           2026-05-18 16:36:37      
+  8889 Persistent   p@x.com           2026-05-18 16:36:37      
   
   8 rows selected.
 
@@ -1296,7 +1282,7 @@ SQL [251/461]> DROP TABLE orders;
 
 SQL [252/461]> DROP TABLE products PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [253/461]> DROP TABLE customers CASCADE CONSTRAINTS PURGE;
   
@@ -1312,47 +1298,47 @@ SQL [255/461]> DROP TABLE backup_customers PURGE;
 
 SQL [256/461]> DROP TABLE tmp_session;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [257/461]> DROP TABLE tmp_txn;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [258/461]> DROP TABLE sales PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [259/461]> DROP TABLE customers_by_country PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [260/461]> DROP TABLE customers_hash PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [261/461]> DROP TABLE iot_table PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [262/461]> DROP TABLE ext_csv PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [263/461]> DROP TABLE compressed_t PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [264/461]> DROP TABLE compressed_archive PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [265/461]> DROP TABLE big_orders PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [266/461]> DROP TABLE small_orders PURGE;
   ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  ORA-00942: table or view does not exist
 
 SQL [267/461]> PURGE RECYCLEBIN;
   SP2-0734: unknown command beginning "PURGE RECYCLEBIN;..." - rest of line ignored.
@@ -1362,8 +1348,8 @@ SQL [268/461]> ALTER SESSION SET CURRENT_SCHEMA = SYS;
   Session altered.
 
 SQL [269/461]> DROP USER demo CASCADE;
-  ERROR:
-  ORA-00900: invalid SQL statement: user 'DEMO' does not exist
+  
+  User dropped.
 
 
 --- [270] § closing ---
@@ -1379,133 +1365,299 @@ SQL [270/461]> SELECT user FROM dual;
 --- [271] § monitoring sweep — sql-dml-ddl ---
 SQL [271/461]> SELECT * FROM v$instance WHERE rownum < 5;
   
-  INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION STARTUP_TIME STATUS DATABASE_STATUS INSTANCE_ROLE
-  --------------- ------------- --------- ------- ------------ ------ --------------- -------------
+  INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS DATABASE_STATUS INSTANCE_ROLE   
+  --------------- ------------- --------- ---------- ------------------------ ------ --------------- ----------------
+  1               ORCL          localhost 19.0.0.0.0 2026-05-18T16:36:37.003Z OPEN   ACTIVE          PRIMARY_INSTANCE
+  
+  1 row selected.
 
 SQL [272/461]> SELECT * FROM v$database WHERE rownum < 5;
   
-  DBID NAME CREATED LOG_MODE OPEN_MODE DATABASE_ROLE PLATFORM_NAME
-  ---- ---- ------- -------- --------- ------------- -------------
+  DBID       NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME   
+  ---------- ---- ------------------------ ------------ ---------- ------------- ----------------
+  1234567890 ORCL 2026-05-18T16:36:37.186Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit
+  
+  1 row selected.
 
 SQL [273/461]> SELECT * FROM v$version WHERE rownum < 5;
   
-  BANNER
-  ------
+  BANNER                                                                
+  ----------------------------------------------------------------------
+  Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production
+  Version 19.3.0.0.0                                                    
+  
+  2 rows selected.
 
 SQL [274/461]> SELECT * FROM v$option WHERE rownum < 5;
   
-  PARAMETER VALUE
-  --------- -----
+  PARAMETER                 VALUE
+  ------------------------- -----
+  Partitioning              TRUE 
+  Objects                   TRUE 
+  Real Application Clusters FALSE
+  Advanced replication      TRUE 
+  
+  4 rows selected.
 
 SQL [275/461]> SELECT * FROM v$license WHERE rownum < 5;
   
-  View V$LICENSE not implemented
+  SESSIONS_MAX SESSIONS_WARNING SESSIONS_CURRENT SESSIONS_HIGHWATER USERS_MAX CPU_COUNT_CURRENT CPU_CORE_COUNT_CURRENT CPU_SOCKET_COUNT_CURRENT CPU_COUNT_HIGHWATER CPU_CORE_COUNT_HIGHWATER CPU_SOCKET_COUNT_HIGHWATER
+  ------------ ---------------- ---------------- ------------------ --------- ----------------- ---------------------- ------------------------ ------------------- ------------------------ --------------------------
+  472          0                1                1                  0         1                 1                      1                        1                   1                        1                         
+  
+  1 row selected.
 
 SQL [276/461]> SELECT * FROM v$session WHERE rownum < 5;
   
-  SID SERIAL# USERNAME STATUS OSUSER MACHINE PROGRAM TYPE LOGON_TIME SCHEMANAME COMMAND SQL_ID
-  --- ------- -------- ------ ------ ------- ------- ---- ---------- ---------- ------- ------
+  SID SERIAL# USERNAME STATUS OSUSER MACHINE   PROGRAM                 TYPE       LOGON_TIME               SCHEMANAME COMMAND SQL_ID TERMINAL BLOCKING_SESSION SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID EVENT      WAIT_CLASS SECONDS_IN_WAIT STATE   LAST_CALL_ET SQL_TRACE RESOURCE_CONSUMER_GROUP SERVICE_NAME MODULE ACTION CLIENT_INFO PADDR TADDR LOCKWAIT
+  --- ------- -------- ------ ------ --------- ----------------------- ---------- ------------------------ ---------- ------- ------ -------- ---------------- ---------------- -------------- ----------- ---------- ---------- --------------- ------- ------------ --------- ----------------------- ------------ ------ ------ ----------- ----- ----- --------
+  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-18T16:36:37.186Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-18T16:36:37.186Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-18T16:36:37.186Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-18T16:36:37.186Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  
+  4 rows selected.
 
 SQL [277/461]> SELECT * FROM v$process WHERE rownum < 5;
   
-  SPID PNAME DESCRIPTION
-  ---- ----- -----------
+  SPID PNAME DESCRIPTION      
+  ---- ----- -----------------
+  1000 PMON  Process Monitor  
+  1001 SMON  System Monitor   
+  1002 DBW0  Database Writer 0
+  1003 LGWR  Log Writer       
+  
+  4 rows selected.
 
 SQL [278/461]> SELECT * FROM v$bgprocess WHERE rownum < 5;
   
-  View V$BGPROCESS not implemented
+  PADDR PSERIAL# NAME DESCRIPTION       ERROR
+  ----- -------- ---- ----------------- -----
+  1000  1000     PMON Process Monitor   Y    
+  1001  1001     SMON System Monitor    Y    
+  1002  1002     DBW0 Database Writer 0 Y    
+  1003  1003     LGWR Log Writer        Y    
+  
+  4 rows selected.
 
 SQL [279/461]> SELECT * FROM v$parameter WHERE rownum < 5;
   
-  NUM NAME TYPE VALUE DISPLAY_VALUE ISDEFAULT ISMODIFIED DESCRIPTION
-  --- ---- ---- ----- ------------- --------- ---------- -----------
+  NUM NAME           TYPE VALUE       DISPLAY_VALUE ISDEFAULT ISMODIFIED DESCRIPTION                                   
+  --- -------------- ---- ----------- ------------- --------- ---------- ----------------------------------------------
+  1   db_name        2    ORCL        ORCL          TRUE      FALSE      Database name specified in CREATE DATABASE    
+  2   db_domain      2    localdomain localdomain   TRUE      FALSE      Directory path prefix for global database name
+  3   db_unique_name 2    ORCL        ORCL          TRUE      FALSE      Unique database name                          
+  4   instance_name  2    ORCL        ORCL          TRUE      FALSE      Instance name for Oracle instance             
+  
+  4 rows selected.
 
 SQL [280/461]> SELECT * FROM v$spparameter WHERE rownum < 5;
   
-  SID NAME TYPE VALUE DISPLAY_VALUE ISSPECIFIED
-  --- ---- ---- ----- ------------- -----------
+  SID NAME           TYPE VALUE       DISPLAY_VALUE ISSPECIFIED
+  --- -------------- ---- ----------- ------------- -----------
+  *   db_name        2    ORCL        ORCL          TRUE       
+  *   db_domain      2    localdomain localdomain   TRUE       
+  *   db_unique_name 2    ORCL        ORCL          TRUE       
+  *   instance_name  2    ORCL        ORCL          TRUE       
+  
+  4 rows selected.
 
 SQL [281/461]> SELECT * FROM v$system_parameter WHERE rownum < 5;
   
-  NUM NAME TYPE VALUE DISPLAY_VALUE ISDEFAULT ISMODIFIED DESCRIPTION
-  --- ---- ---- ----- ------------- --------- ---------- -----------
+  NUM NAME           TYPE VALUE       DISPLAY_VALUE ISDEFAULT ISMODIFIED DESCRIPTION                                   
+  --- -------------- ---- ----------- ------------- --------- ---------- ----------------------------------------------
+  1   db_name        2    ORCL        ORCL          TRUE      FALSE      Database name specified in CREATE DATABASE    
+  2   db_domain      2    localdomain localdomain   TRUE      FALSE      Directory path prefix for global database name
+  3   db_unique_name 2    ORCL        ORCL          TRUE      FALSE      Unique database name                          
+  4   instance_name  2    ORCL        ORCL          TRUE      FALSE      Instance name for Oracle instance             
+  
+  4 rows selected.
 
 SQL [282/461]> SELECT * FROM v$nls_parameters WHERE rownum < 5;
   
-  PARAMETER VALUE
-  --------- -----
+  PARAMETER        VALUE   
+  ---------------- --------
+  NLS_LANGUAGE     AMERICAN
+  NLS_TERRITORY    AMERICA 
+  NLS_CURRENCY     $       
+  NLS_ISO_CURRENCY AMERICA 
+  
+  4 rows selected.
 
 SQL [283/461]> SELECT * FROM v$sga WHERE rownum < 5;
   
-  NAME VALUE
-  ---- -----
+  NAME                     VALUE
+  ------------------------ -----
+  Total System Global Area 512M 
+  Fixed Size               2M   
+  Variable Size            256M 
+  Database Buffers         128M 
+  
+  4 rows selected.
 
 SQL [284/461]> SELECT * FROM v$sgainfo WHERE rownum < 5;
   
-  View V$SGAINFO not implemented
+  NAME             BYTES     RESIZEABLE
+  ---------------- --------- ----------
+  Fixed SGA Size   2097152   No        
+  Variable Size    268435456 Yes       
+  Database Buffers 134217728 Yes       
+  Redo Buffers     16777216  No        
+  
+  4 rows selected.
 
 SQL [285/461]> SELECT * FROM v$sgastat WHERE rownum < 5;
   
-  POOL NAME BYTES
-  ---- ---- -----
+  POOL        NAME             BYTES   
+  ----------- ---------------- --------
+  shared pool library cache    67108864
+  shared pool dictionary cache 33554432
+  shared pool sql area         50331648
+  shared pool free memory      16777216
+  
+  4 rows selected.
 
 SQL [286/461]> SELECT * FROM v$pgastat WHERE rownum < 5;
   
-  View V$PGASTAT not implemented
+  NAME                           VALUE     UNIT 
+  ------------------------------ --------- -----
+  aggregate PGA target parameter 134217728 bytes
+  aggregate PGA auto target      120795955 bytes
+  global memory bound            13421772  bytes
+  total PGA inuse                32702464  bytes
+  
+  4 rows selected.
 
 SQL [287/461]> SELECT * FROM v$pga_target_advice WHERE rownum < 5;
   
   PGA_TARGET_FOR_ESTIMATE PGA_TARGET_FACTOR ESTD_PGA_CACHE_HIT_PERCENTAGE ESTD_OVERALLOC_COUNT
   ----------------------- ----------------- ----------------------------- --------------------
+  33554432                0.25              55                            5                   
+  67108864                0.5               72                            2                   
+  100663296               0.75              89                            0                   
+  134217728               1                 100                           0                   
+  
+  4 rows selected.
 
 SQL [288/461]> SELECT * FROM v$sga_target_advice WHERE rownum < 5;
   
-  View V$SGA_TARGET_ADVICE not implemented
+  SGA_SIZE  SGA_SIZE_FACTOR ESTD_DB_TIME ESTD_DB_TIME_FACTOR ESTD_PHYSICAL_READS
+  --------- --------------- ------------ ------------------- -------------------
+  134217728 0.25            4000         4                   4000               
+  268435456 0.5             2000         2                   2000               
+  402653184 0.75            1333         1.3333333333333333  1333               
+  536870912 1               1000         1                   1000               
+  
+  4 rows selected.
 
 SQL [289/461]> SELECT * FROM v$memory_dynamic_components WHERE rownum < 5;
   
-  View V$MEMORY_DYNAMIC_COMPONENTS not implemented
+  COMPONENT    CURRENT_SIZE MIN_SIZE  MAX_SIZE  USER_SPECIFIED_SIZE OPER_COUNT GRANULE_SIZE
+  ------------ ------------ --------- --------- ------------------- ---------- ------------
+  shared pool  268435456    268435456 268435456 268435456           0          4194304     
+  large pool   33554432     33554432  33554432  33554432            0          4194304     
+  java pool    67108864     67108864  67108864  67108864            0          4194304     
+  streams pool 0            0         0         0                   0          4194304     
+  
+  4 rows selected.
 
 SQL [290/461]> SELECT * FROM v$buffer_pool WHERE rownum < 5;
   
-  View V$BUFFER_POOL not implemented
+  ID NAME    BLOCK_SIZE CURRENT_SIZE BUFFERS TARGET_SIZE TARGET_BUFFERS
+  -- ------- ---------- ------------ ------- ----------- --------------
+  3  DEFAULT 8192       134217728    16384   134217728   16384         
+  
+  1 row selected.
 
 SQL [291/461]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
-  View V$BUFFER_POOL_STATISTICS not implemented
+  ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
+  -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
+  3  DEFAULT 16384     0                0                0              8               653           653             300            
+  
+  1 row selected.
 
 SQL [292/461]> SELECT * FROM v$bh WHERE rownum < 5;
   
-  View V$BH not implemented
+  FILE# BLOCK# CLASS# STATUS OBJD TS#
+  ----- ------ ------ ------ ---- ---
+  1     100    1      xcur   1000 0  
+  1     101    1      xcur   1001 0  
+  1     102    1      xcur   1002 0  
+  1     103    1      xcur   1003 0  
+  
+  4 rows selected.
 
 SQL [293/461]> SELECT * FROM v$db_cache_advice WHERE rownum < 5;
   
-  View V$DB_CACHE_ADVICE not implemented
+  ID NAME    BLOCK_SIZE ADVICE_STATUS SIZE_FOR_ESTIMATE SIZE_FACTOR BUFFERS_FOR_ESTIMATE ESTD_PHYSICAL_READ_FACTOR ESTD_PHYSICAL_READS
+  -- ------- ---------- ------------- ----------------- ----------- -------------------- ------------------------- -------------------
+  3  DEFAULT 8192       1             13421772.8        0.1         1638                 10                        0                  
+  3  DEFAULT 8192       1             33554432          0.25        4096                 4                         0                  
+  3  DEFAULT 8192       1             67108864          0.5         8192                 2                         0                  
+  3  DEFAULT 8192       1             100663296         0.75        12288                1.3333333333333333        0                  
+  
+  4 rows selected.
 
 SQL [294/461]> SELECT * FROM v$shared_pool_advice WHERE rownum < 5;
   
-  View V$SHARED_POOL_ADVICE not implemented
+  SHARED_POOL_SIZE_FOR_ESTIMATE SHARED_POOL_SIZE_FACTOR ESTD_LC_SIZE ESTD_LC_MEMORY_OBJECTS ESTD_LC_TIME_SAVED ESTD_LC_TIME_SAVED_FACTOR
+  ----------------------------- ----------------------- ------------ ---------------------- ------------------ -------------------------
+  134217728                     0.5                     33554432     16384                  2540               0.5                      
+  201326592                     0.75                    50331648     24576                  3810               0.75                     
+  268435456                     1                       67108864     32768                  5080               1                        
+  335544320                     1.25                    83886080     40960                  5080               1                        
+  
+  4 rows selected.
 
 SQL [295/461]> SELECT * FROM v$librarycache WHERE rownum < 5;
   
-  View V$LIBRARYCACHE not implemented
+  NAMESPACE       GETS GETHITS GETHITRATIO PINS PINHITS PINHITRATIO RELOADS INVALIDATIONS
+  --------------- ---- ------- ----------- ---- ------- ----------- ------- -------------
+  SQL AREA        509  0       0           462  462     1           0       0            
+  TABLE/PROCEDURE 25   25      1           25   25      1           0       0            
+  BODY            25   25      1           25   25      1           0       0            
+  TRIGGER         25   25      1           25   25      1           0       0            
+  
+  4 rows selected.
 
 SQL [296/461]> SELECT * FROM v$libcache_locks WHERE rownum < 5;
   
-  View V$LIBCACHE_LOCKS not implemented
+  SID SQL_ID        LOCK_MODE_HELD LOCK_MODE_REQUESTED WAIT_TIME STATE  
+  --- ------------- -------------- ------------------- --------- -------
+  100 0k7hdbta3xqw0 NULL           NULL                0         GRANTED
+  
+  1 row selected.
 
 SQL [297/461]> SELECT * FROM v$db_object_cache WHERE rownum < 5;
   
-  View V$DB_OBJECT_CACHE not implemented
+  OWNER NAME      TYPE  STATUS EXECUTIONS LOADS SHARABLE_MEM
+  ----- --------- ----- ------ ---------- ----- ------------
+  SYS   DUAL      TABLE VALID  1          1     0           
+  HR    REGIONS   TABLE VALID  1          1     0           
+  HR    COUNTRIES TABLE VALID  1          1     0           
+  HR    LOCATIONS TABLE VALID  1          1     0           
+  
+  4 rows selected.
 
 SQL [298/461]> SELECT * FROM v$rowcache WHERE rownum < 5;
   
-  View V$ROWCACHE not implemented
+  CACHE# TYPE   PARAMETER      COUNT USAGE FIXED GETS GETMISSES SCANS SCANMISSES MODIFICATIONS FLUSHES
+  ------ ------ -------------- ----- ----- ----- ---- --------- ----- ---------- ------------- -------
+  0      PARENT dc_users       100   80    16    46   46        0     0          0             0      
+  1      PARENT dc_objects     100   80    16    46   46        0     0          0             0      
+  2      PARENT dc_segments    100   80    16    46   46        0     0          0             0      
+  3      PARENT dc_tablespaces 100   80    16    46   46        0     0          0             0      
+  
+  4 rows selected.
 
 SQL [299/461]> SELECT * FROM v$open_cursor WHERE rownum < 5;
   
-  SID USER_NAME SQL_ID SQL_TEXT CURSOR_TYPE
-  --- --------- ------ -------- -----------
+  SID USER_NAME SQL_ID      SQL_TEXT           CURSOR_TYPE
+  --- --------- ----------- ------------------ -----------
+  10  SYS       abc123def45 SELECT 1 FROM DUAL OPEN       
+  
+  1 row selected.
 
 SQL [300/461]> SELECT * FROM v$sqlarea WHERE rownum < 5;
   
@@ -1514,12 +1666,22 @@ SQL [300/461]> SELECT * FROM v$sqlarea WHERE rownum < 5;
 
 SQL [301/461]> SELECT * FROM v$sql WHERE rownum < 5;
   
-  SQL_ID SQL_TEXT EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME
-  ------ -------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- ---------------
+  SQL_ID      SQL_TEXT           EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
+  ----------- ------------------ ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
+  abc123def45 SELECT 1 FROM DUAL 1          100          50       1           0          1              SYS                 2026-05-18T16:36:37
+  
+  1 row selected.
 
 SQL [302/461]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
-  View V$SQLSTATS not implemented
+  SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
+  ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
+  0xu46pua3xqw0 0               1           1          1       656          525      1           0          0              SYS                 2026-05-18T16:36:37.021Z
+  1rncocva3xqw0 0               1           1          1       102          81       1           0          0              SYS                 2026-05-18T16:36:37.022Z
+  1cz97fza3xqw0 0               1           1          1       166          132      1           0          0              SYS                 2026-05-18T16:36:37.023Z
+  0u6sevoa3xqw0 0               1           1          1       158          126      1           0          0              SYS                 2026-05-18T16:36:37.023Z
+  
+  4 rows selected.
 
 SQL [303/461]> SELECT * FROM v$sql_plan WHERE rownum < 5;
   
@@ -1528,56 +1690,113 @@ SQL [303/461]> SELECT * FROM v$sql_plan WHERE rownum < 5;
 
 SQL [304/461]> SELECT * FROM v$sql_workarea WHERE rownum < 5;
   
-  View V$SQL_WORKAREA not implemented
+  SQL_ID        CHILD_NUMBER OPERATION_TYPE OPTIMAL_EXECUTIONS ONEPASS_EXECUTIONS MULTIPASSES_EXECUTIONS ESTIMATED_OPTIMAL_SIZE LAST_MEMORY_USED
+  ------------- ------------ -------------- ------------------ ------------------ ---------------------- ---------------------- ----------------
+  0xu46pua3xqw0 0            SORT           1                  0                  0                      65536                  65536           
+  1rncocva3xqw0 0            SORT           1                  0                  0                      65536                  65536           
+  1cz97fza3xqw0 0            SORT           1                  0                  0                      65536                  65536           
+  0u6sevoa3xqw0 0            SORT           1                  0                  0                      65536                  65536           
+  
+  4 rows selected.
 
 SQL [305/461]> SELECT * FROM v$sysstat WHERE rownum < 5;
   
-  STATISTIC# NAME CLASS VALUE
-  ---------- ---- ----- -----
+  STATISTIC# NAME                      CLASS VALUE
+  ---------- ------------------------- ----- -----
+  0          logons cumulative         1     5    
+  1          logons current            1     1    
+  2          opened cursors cumulative 1     10   
+  3          opened cursors current    1     1    
+  
+  4 rows selected.
 
 SQL [306/461]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
-  View V$SYSMETRIC not implemented
+  BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
+  ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
+  2026-05-18T16:36:22.198Z 2026-05-18T16:36:37.198Z 1500         2        2000      CPU Usage Per Sec    31    CentiSeconds Per Second
+  2026-05-18T16:36:22.198Z 2026-05-18T16:36:37.198Z 1500         2        2003      User Calls Per Sec   34    Calls Per Second       
+  2026-05-18T16:36:22.198Z 2026-05-18T16:36:37.198Z 1500         2        2007      Executions Per Sec   31    Executes Per Second    
+  2026-05-18T16:36:22.198Z 2026-05-18T16:36:37.198Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
+  
+  4 rows selected.
 
 SQL [307/461]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
-  View V$SYSMETRIC_HISTORY not implemented
+  BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
+  ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
+  2026-05-18T16:35:37.199Z 2026-05-18T16:36:37.199Z 6000         2        2000      CPU Usage Per Sec    31    CentiSeconds Per Second
+  2026-05-18T16:35:37.199Z 2026-05-18T16:36:37.199Z 6000         2        2003      User Calls Per Sec   34    Calls Per Second       
+  2026-05-18T16:35:37.199Z 2026-05-18T16:36:37.199Z 6000         2        2007      Executions Per Sec   31    Executes Per Second    
+  2026-05-18T16:35:37.199Z 2026-05-18T16:36:37.199Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
+  
+  4 rows selected.
 
 SQL [308/461]> SELECT * FROM v$system_event WHERE rownum < 5;
   
-  View V$SYSTEM_EVENT not implemented
+  EVENT                       TOTAL_WAITS TOTAL_TIMEOUTS TIME_WAITED AVERAGE_WAIT TIME_WAITED_MICRO AVERAGE_WAIT_MICRO WAIT_CLASS
+  --------------------------- ----------- -------------- ----------- ------------ ----------------- ------------------ ----------
+  rdbms ipc message           0           0              0           0            0                 0                  Idle      
+  SQL*Net message from client 0           0              0           0            0                 0                  Idle      
+  pmon timer                  0           0              0           0            0                 0                  Idle      
+  smon timer                  0           0              0           0            0                 0                  Idle      
+  
+  4 rows selected.
 
 SQL [309/461]> SELECT * FROM v$system_wait_class WHERE rownum < 5;
   
-  View V$SYSTEM_WAIT_CLASS not implemented
+  WAIT_CLASS# WAIT_CLASS_ID WAIT_CLASS TOTAL_WAITS TIME_WAITED
+  ----------- ------------- ---------- ----------- -----------
+  0           0             Idle       0           0          
+  1           1             User I/O   0           0          
+  2           2             System I/O 0           0          
+  3           3             Commit     0           0          
+  
+  4 rows selected.
 
 SQL [310/461]> SELECT * FROM v$active_session_history WHERE rownum < 5;
   
-  View V$ACTIVE_SESSION_HISTORY not implemented
+  SAMPLE_TIME SAMPLE_ID SESSION_ID SESSION_SERIAL# USER_ID SQL_ID EVENT WAIT_CLASS TIME_WAITED SESSION_STATE
+  ----------- --------- ---------- --------------- ------- ------ ----- ---------- ----------- -------------
 
 SQL [311/461]> SELECT * FROM v$session_event WHERE rownum < 5;
   
-  View V$SESSION_EVENT not implemented
+  SID EVENT TOTAL_WAITS TOTAL_TIMEOUTS TIME_WAITED AVERAGE_WAIT MAX_WAIT TIME_WAITED_MICRO WAIT_CLASS
+  --- ----- ----------- -------------- ----------- ------------ -------- ----------------- ----------
 
 SQL [312/461]> SELECT * FROM v$session_wait WHERE rownum < 5;
   
-  View V$SESSION_WAIT not implemented
+  SID SEQ# EVENT                       WAIT_TIME_MICRO TIME_WAITED_MICRO STATE   WAIT_CLASS
+  --- ---- --------------------------- --------------- ----------------- ------- ----------
+  100 0    SQL*Net message from client 0               0                 WAITING Idle      
+  
+  1 row selected.
 
 SQL [313/461]> SELECT * FROM v$session_wait_class WHERE rownum < 5;
   
-  View V$SESSION_WAIT_CLASS not implemented
+  SID SERIAL# WAIT_CLASS# WAIT_CLASS_ID WAIT_CLASS TOTAL_WAITS TIME_WAITED
+  --- ------- ----------- ------------- ---------- ----------- -----------
+  100 1       0           0             Idle       0           0          
+  100 1       1           1             User I/O   0           0          
+  100 1       2           2             System I/O 0           0          
+  100 1       3           3             Commit     0           0          
+  
+  4 rows selected.
 
 SQL [314/461]> SELECT * FROM v$session_metric WHERE rownum < 5;
   
-  View V$SESSION_METRIC not implemented
+  SID BEGIN_TIME END_TIME INTSIZE METRIC_NAME METRIC_ID VALUE METRIC_UNIT
+  --- ---------- -------- ------- ----------- --------- ----- -----------
 
 SQL [315/461]> SELECT * FROM v$session_longops WHERE rownum < 5;
   
-  View V$SESSION_LONGOPS not implemented
+  SID SERIAL# OPNAME TARGET SOFAR TOTALWORK UNITS TIME_REMAINING ELAPSED_SECONDS MESSAGE
+  --- ------- ------ ------ ----- --------- ----- -------------- --------------- -------
 
 SQL [316/461]> SELECT * FROM v$session_blockers WHERE rownum < 5;
   
-  View V$SESSION_BLOCKERS not implemented
+  SID BLOCKER_SID TYPE ID1 ID2
+  --- ----------- ---- --- ---
 
 SQL [317/461]> SELECT * FROM v$lock WHERE rownum < 5;
   
@@ -1596,49 +1815,97 @@ SQL [319/461]> SELECT * FROM v$transaction WHERE rownum < 5;
 
 SQL [320/461]> SELECT * FROM v$tablespace WHERE rownum < 5;
   
-  TS# NAME BIGFILE BLOCK_SIZE
-  --- ---- ------- ----------
+  TS# NAME     BIGFILE BLOCK_SIZE
+  --- -------- ------- ----------
+  0   SYSTEM   NO      8192      
+  1   SYSAUX   NO      8192      
+  2   UNDOTBS1 NO      8192      
+  3   USERS    NO      8192      
+  
+  4 rows selected.
 
 SQL [321/461]> SELECT * FROM v$datafile WHERE rownum < 5;
   
-  FILE# NAME TS#_NAME BYTES AUTOEXTENSIBLE
-  ----- ---- -------- ----- --------------
+  FILE# NAME                                       TS#_NAME BYTES AUTOEXTENSIBLE
+  ----- ------------------------------------------ -------- ----- --------------
+  1     /u01/app/oracle/oradata/ORCL/system01.dbf  SYSTEM   800M  YES           
+  2     /u01/app/oracle/oradata/ORCL/sysaux01.dbf  SYSAUX   550M  YES           
+  3     /u01/app/oracle/oradata/ORCL/undotbs01.dbf UNDOTBS1 200M  YES           
+  4     /u01/app/oracle/oradata/ORCL/users01.dbf   USERS    100M  YES           
+  
+  4 rows selected.
 
 SQL [322/461]> SELECT * FROM v$tempfile WHERE rownum < 5;
   
-  FILE# NAME TS#_NAME BYTES AUTOEXTENSIBLE
-  ----- ---- -------- ----- --------------
+  FILE# NAME                                    TS#_NAME BYTES AUTOEXTENSIBLE
+  ----- --------------------------------------- -------- ----- --------------
+  1     /u01/app/oracle/oradata/ORCL/temp01.dbf TEMP     100M  YES           
+  
+  1 row selected.
 
 SQL [323/461]> SELECT * FROM v$logfile WHERE rownum < 5;
   
-  GROUP# MEMBER TYPE STATUS
-  ------ ------ ---- ------
+  GROUP# MEMBER                                  TYPE   STATUS 
+  ------ --------------------------------------- ------ -------
+  1      /u01/app/oracle/oradata/ORCL/redo01.log ONLINE CURRENT
+  2      /u01/app/oracle/oradata/ORCL/redo02.log ONLINE UNUSED 
+  3      /u01/app/oracle/oradata/ORCL/redo03.log ONLINE UNUSED 
+  
+  3 rows selected.
 
 SQL [324/461]> SELECT * FROM v$log WHERE rownum < 5;
   
-  GROUP# BYTES MEMBERS STATUS SEQUENCE#
-  ------ ----- ------- ------ ---------
+  GROUP# BYTES    MEMBERS STATUS  SEQUENCE#
+  ------ -------- ------- ------- ---------
+  1      52428800 1       CURRENT 0        
+  2      52428800 1       UNUSED  0        
+  3      52428800 1       UNUSED  0        
+  
+  3 rows selected.
 
 SQL [325/461]> SELECT * FROM v$log_history WHERE rownum < 5;
   
-  View V$LOG_HISTORY not implemented
+  RECID STAMP THREAD# SEQUENCE# FIRST_TIME FIRST_CHANGE# NEXT_CHANGE#
+  ----- ----- ------- --------- ---------- ------------- ------------
 
 SQL [326/461]> SELECT * FROM v$filestat WHERE rownum < 5;
   
-  View V$FILESTAT not implemented
+  FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM AVGIOTIM
+  ----- ------ ------- -------- --------- ------- -------- --------
+  1     0      98      152      98        0       980      100     
+  1     0      98      152      98        0       980      100     
+  1     0      98      152      98        0       980      100     
+  1     0      98      152      98        0       980      100     
+  
+  4 rows selected.
 
 SQL [327/461]> SELECT * FROM v$tempstat WHERE rownum < 5;
   
-  View V$TEMPSTAT not implemented
+  FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM
+  ----- ------ ------- -------- --------- ------- --------
+  1     494    494     3952     3952      2470    2470    
+  
+  1 row selected.
 
 SQL [328/461]> SELECT * FROM v$controlfile WHERE rownum < 5;
   
-  NAME STATUS
-  ---- ------
+  NAME                                       STATUS
+  ------------------------------------------ ------
+  /u01/app/oracle/oradata/ORCL/control01.ctl VALID 
+  /u01/app/oracle/oradata/ORCL/control02.ctl VALID 
+  
+  2 rows selected.
 
 SQL [329/461]> SELECT * FROM v$controlfile_record_section WHERE rownum < 5;
   
-  View V$CONTROLFILE_RECORD_SECTION not implemented
+  TYPE          RECORD_SIZE RECORDS_TOTAL RECORDS_USED FIRST_INDEX LAST_INDEX LAST_RECID
+  ------------- ----------- ------------- ------------ ----------- ---------- ----------
+  DATABASE      316         1             0            0           0          0         
+  CKPT PROGRESS 8180        5             0            0           0          0         
+  REDO THREAD   256         8             0            0           0          0         
+  REDO LOG      56          16            1            0           0          0         
+  
+  4 rows selected.
 
 SQL [330/461]> SELECT * FROM v$archived_log WHERE rownum < 5;
   
@@ -1647,129 +1914,261 @@ SQL [330/461]> SELECT * FROM v$archived_log WHERE rownum < 5;
 
 SQL [331/461]> SELECT * FROM v$archive_dest WHERE rownum < 5;
   
-  View V$ARCHIVE_DEST not implemented
+  DEST_ID STATUS   DESTINATION                BINDING   LOG_SEQUENCE REOPEN_SECS TARGET                              VALID_TYPE VALID_ROLE
+  ------- -------- -------------------------- --------- ------------ ----------- ----------------------------------- ---------- ----------
+  1       VALID    /u01/app/oracle/archivelog MANDATORY 0            0           LOCATION=/u01/app/oracle/archivelog VALID      PRIMARY   
+  2       INACTIVE                            OPTIONAL  0            0                                               VALID      PRIMARY   
+  3       INACTIVE                            OPTIONAL  0            0                                               VALID      PRIMARY   
+  4       INACTIVE                            OPTIONAL  0            0                                               VALID      PRIMARY   
+  
+  4 rows selected.
 
 SQL [332/461]> SELECT * FROM v$archive_processes WHERE rownum < 5;
   
-  View V$ARCHIVE_PROCESSES not implemented
+  PROCESS STATUS  LOG_SEQUENCE PROCESS_NAME SPID
+  ------- ------- ------------ ------------ ----
+  0       STOPPED IDLE                      0   
+  1       STOPPED IDLE                      0   
+  2       STOPPED IDLE                      0   
+  3       STOPPED IDLE                      0   
+  
+  4 rows selected.
 
 SQL [333/461]> SELECT * FROM v$flashback_database_log WHERE rownum < 5;
   
-  View V$FLASHBACK_DATABASE_LOG not implemented
+  OLDEST_FLASHBACK_SCN OLDEST_FLASHBACK_TIME RETENTION_TARGET FLASHBACK_SIZE ESTIMATED_FLASHBACK_SIZE
+  -------------------- --------------------- ---------------- -------------- ------------------------
+  0                                          1440             0              0                       
+  
+  1 row selected.
 
 SQL [334/461]> SELECT * FROM v$flash_recovery_area_usage WHERE rownum < 5;
   
-  View V$FLASH_RECOVERY_AREA_USAGE not implemented
+  FILE_TYPE    PERCENT_SPACE_USED PERCENT_SPACE_RECLAIMABLE NUMBER_OF_FILES
+  ------------ ------------------ ------------------------- ---------------
+  CONTROL FILE 0                  0                         0              
+  REDO LOG     0                  0                         0              
+  ARCHIVED LOG 0                  0                         0              
+  BACKUP PIECE 0                  0                         0              
+  
+  4 rows selected.
 
 SQL [335/461]> SELECT * FROM v$recovery_file_dest WHERE rownum < 5;
   
-  View V$RECOVERY_FILE_DEST not implemented
+  NAME                               SPACE_LIMIT SPACE_USED SPACE_RECLAIMABLE NUMBER_OF_FILES
+  ---------------------------------- ----------- ---------- ----------------- ---------------
+  /u01/app/oracle/fast_recovery_area 4294967296  0          0                 0              
+  
+  1 row selected.
 
 SQL [336/461]> SELECT * FROM v$recovery_area_usage WHERE rownum < 5;
   
-  View V$RECOVERY_AREA_USAGE not implemented
+  FILE_TYPE    PERCENT_SPACE_USED PERCENT_SPACE_RECLAIMABLE NUMBER_OF_FILES
+  ------------ ------------------ ------------------------- ---------------
+  CONTROL FILE 0                  0                         0              
+  REDO LOG     0                  0                         0              
+  ARCHIVED LOG 0                  0                         0              
+  BACKUP PIECE 0                  0                         0              
+  
+  4 rows selected.
 
 SQL [337/461]> SELECT * FROM v$backup_set WHERE rownum < 5;
   
-  View V$BACKUP_SET not implemented
+  SET_STAMP SET_COUNT BACKUP_TYPE CONTROLFILE_INCLUDED INCREMENTAL_LEVEL PIECES START_TIME COMPLETION_TIME BLOCK_SIZE STATUS
+  --------- --------- ----------- -------------------- ----------------- ------ ---------- --------------- ---------- ------
 
 SQL [338/461]> SELECT * FROM v$backup_piece WHERE rownum < 5;
   
-  View V$BACKUP_PIECE not implemented
+  SET_STAMP SET_COUNT PIECE# HANDLE BYTES START_TIME COMPLETION_TIME STATUS DEVICE_TYPE
+  --------- --------- ------ ------ ----- ---------- --------------- ------ -----------
 
 SQL [339/461]> SELECT * FROM v$rman_status WHERE rownum < 5;
   
-  View V$RMAN_STATUS not implemented
+  SESSION_KEY SESSION_RECID SESSION_STAMP OPERATION STATUS OBJECT_TYPE START_TIME END_TIME INPUT_BYTES OUTPUT_BYTES
+  ----------- ------------- ------------- --------- ------ ----------- ---------- -------- ----------- ------------
 
 SQL [340/461]> SELECT * FROM v$diag_info WHERE rownum < 5;
   
-  NAME VALUE
-  ---- -----
+  NAME          VALUE                                        
+  ------------- ---------------------------------------------
+  Diag Trace    /u01/app/oracle/diag/rdbms/orcl/ORCL/trace   
+  Diag Alert    /u01/app/oracle/diag/rdbms/orcl/ORCL/trace   
+  Diag Incident /u01/app/oracle/diag/rdbms/orcl/ORCL/incident
+  ADR Base      /u01/app/oracle                              
+  
+  4 rows selected.
 
 SQL [341/461]> SELECT * FROM v$diag_problem WHERE rownum < 5;
-  
-  View V$DIAG_PROBLEM not implemented
+  ERROR:
+  ORA-00942: table or view does not exist
 
 SQL [342/461]> SELECT * FROM v$diag_incident WHERE rownum < 5;
-  
-  View V$DIAG_INCIDENT not implemented
+  ERROR:
+  ORA-00942: table or view does not exist
 
 SQL [343/461]> SELECT * FROM v$dispatcher WHERE rownum < 5;
   
-  View V$DISPATCHER not implemented
+  NAME NETWORK STATUS ACCEPT MESSAGES BYTES OWNED CREATED IDLE BUSY LISTENER CONF_INDX
+  ---- ------- ------ ------ -------- ----- ----- ------- ---- ---- -------- ---------
+  D000 TCP     BREAK  0      0        0     0     0       100  0    0        0        
+  
+  1 row selected.
 
 SQL [344/461]> SELECT * FROM v$shared_server WHERE rownum < 5;
   
-  View V$SHARED_SERVER not implemented
+  NAME STATUS REQUESTS IDLE BUSY
+  ---- ------ -------- ---- ----
 
 SQL [345/461]> SELECT * FROM v$queue WHERE rownum < 5;
   
-  View V$QUEUE not implemented
+  PADDR TYPE     QUEUED WAIT TOTALQ
+  ----- -------- ------ ---- ------
+  0     COMMON   NONE   0    0     
+  0     OUTBOUND NONE   0    0     
+  
+  2 rows selected.
 
 SQL [346/461]> SELECT * FROM v$services WHERE rownum < 5;
   
-  View V$SERVICES not implemented
+  SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
+  ---------- -------------- -------------- ------------------------ ------------------
+  1          ORCL           ORCL           2026-05-18T16:36:37.018Z 1005736474        
+  2          SYS$USERS      SYS$USERS      2026-05-18T16:36:37.018Z 1005736474        
+  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-18T16:36:37.018Z 1005736474        
+  
+  3 rows selected.
 
 SQL [347/461]> SELECT * FROM v$active_services WHERE rownum < 5;
   
-  View V$ACTIVE_SERVICES not implemented
+  SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
+  ---------- -------------- -------------- ---- ------------------------
+  1          ORCL           ORCL           ORCL 2026-05-18T16:36:37.018Z
+  2          SYS$USERS      SYS$USERS      ORCL 2026-05-18T16:36:37.018Z
+  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-18T16:36:37.018Z
+  
+  3 rows selected.
 
 SQL [348/461]> SELECT * FROM v$listener_network WHERE rownum < 5;
   
-  View V$LISTENER_NETWORK not implemented
+  TYPE VALUE NETWORK
+  ---- ----- -------
 
 SQL [349/461]> SELECT * FROM v$mystat WHERE rownum < 5;
   
-  View V$MYSTAT not implemented
+  SID STATISTIC# VALUE
+  --- ---------- -----
+  100 0          1    
+  100 1          1    
+  100 2          563  
+  100 3          562  
+  
+  4 rows selected.
 
 SQL [350/461]> SELECT * FROM v$statname WHERE rownum < 5;
   
-  View V$STATNAME not implemented
+  STATISTIC# NAME                      CLASS STAT_ID
+  ---------- ------------------------- ----- -------
+  0          logons cumulative         1     0      
+  1          logons current            1     1      
+  2          opened cursors cumulative 1     2      
+  3          opened cursors current    1     3      
+  
+  4 rows selected.
 
 SQL [351/461]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
-  View V$SESS_IO not implemented
+  SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
+  --- ---------- --------------- -------------- ------------- ------------------ ------------------------
+  100 837        837             0              300           2                  0                       
+  
+  1 row selected.
 
 SQL [352/461]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
-  View V$SESS_TIME_MODEL not implemented
+  SID STAT_ID    STAT_NAME               VALUE
+  --- ---------- ----------------------- -----
+  100 3649082374 DB time                 61198
+  100 3712030189 DB CPU                  48956
+  100 1561673735 background elapsed time 15299
+  100 4157170894 background cpu time     12239
+  
+  4 rows selected.
 
 SQL [353/461]> SELECT * FROM v$latch WHERE rownum < 5;
   
-  View V$LATCH not implemented
+  ADDR LATCH# LEVEL# NAME                    GETS MISSES SLEEPS IMMEDIATE_GETS IMMEDIATE_MISSES SPIN_GETS
+  ---- ------ ------ ----------------------- ---- ------ ------ -------------- ---------------- ---------
+  1    1      7      shared pool             0    0      0      0              0                0        
+  2    2      5      library cache           0    0      0      0              0                0        
+  3    3      1      cache buffers chains    0    0      0      0              0                0        
+  4    4      3      cache buffers lru chain 0    0      0      0              0                0        
+  
+  4 rows selected.
 
 SQL [354/461]> SELECT * FROM v$latchholder WHERE rownum < 5;
   
-  View V$LATCHHOLDER not implemented
+  PID SID LADDR NAME GETS
+  --- --- ----- ---- ----
 
 SQL [355/461]> SELECT * FROM v$enqueue_stat WHERE rownum < 5;
   
-  View V$ENQUEUE_STAT not implemented
+  EQ_TYPE REQ_REASON TOTAL_REQ# SUCC_REQ# FAILED_REQ# CUM_WAIT_TIME EVENT#
+  ------- ---------- ---------- --------- ----------- ------------- ------
 
 SQL [356/461]> SELECT * FROM dba_users WHERE rownum < 5;
   
-  USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED PROFILE AUTHENTICATION_TYPE
-  -------- ------- -------------- --------- ----------- ------------------ -------------------- ------- ------- -------------------
+  USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
+  -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
+  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T16:36:37.002Z DEFAULT PASSWORD           
+  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T16:36:37.002Z DEFAULT PASSWORD           
+  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-18T16:36:37.002Z DEFAULT PASSWORD           
+  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T16:36:37.002Z DEFAULT PASSWORD           
+  
+  4 rows selected.
 
 SQL [357/461]> SELECT * FROM dba_roles WHERE rownum < 5;
   
-  ROLE PASSWORD_REQUIRED
-  ---- -----------------
+  ROLE                PASSWORD_REQUIRED
+  ------------------- -----------------
+  CONNECT             NO               
+  RESOURCE            NO               
+  DBA                 NO               
+  SELECT_CATALOG_ROLE NO               
+  
+  4 rows selected.
 
 SQL [358/461]> SELECT * FROM dba_profiles WHERE rownum < 5;
   
-  PROFILE RESOURCE_NAME RESOURCE_TYPE LIMIT
-  ------- ------------- ------------- -----
+  PROFILE RESOURCE_NAME     RESOURCE_TYPE LIMIT    
+  ------- ----------------- ------------- ---------
+  DEFAULT SESSIONS_PER_USER KERNEL        UNLIMITED
+  DEFAULT CPU_PER_SESSION   KERNEL        UNLIMITED
+  DEFAULT CPU_PER_CALL      KERNEL        UNLIMITED
+  DEFAULT CONNECT_TIME      KERNEL        UNLIMITED
+  
+  4 rows selected.
 
 SQL [359/461]> SELECT * FROM dba_role_privs WHERE rownum < 5;
   
   GRANTEE GRANTED_ROLE ADMIN_OPTION
   ------- ------------ ------------
+  SYS     DBA          YES         
+  SYSTEM  DBA          YES         
+  HR      CONNECT      NO          
+  HR      RESOURCE     NO          
+  
+  4 rows selected.
 
 SQL [360/461]> SELECT * FROM dba_sys_privs WHERE rownum < 5;
   
-  GRANTEE PRIVILEGE ADMIN_OPTION
-  ------- --------- ------------
+  GRANTEE PRIVILEGE      ADMIN_OPTION
+  ------- -------------- ------------
+  SYS     CREATE SESSION YES         
+  SYSTEM  CREATE SESSION YES         
+  SYS     CREATE TABLE   YES         
+  SYSTEM  CREATE TABLE   YES         
+  
+  4 rows selected.
 
 SQL [361/461]> SELECT * FROM dba_tab_privs WHERE rownum < 5;
   
@@ -1778,18 +2177,36 @@ SQL [361/461]> SELECT * FROM dba_tab_privs WHERE rownum < 5;
 
 SQL [362/461]> SELECT * FROM dba_objects WHERE rownum < 5;
   
-  OWNER OBJECT_NAME OBJECT_TYPE STATUS
-  ----- ----------- ----------- ------
+  OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
+  ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
+  SYS   V$VERSION                  100                      VIEW        2026-05-18T16:36:37.003Z 2026-05-18T16:36:37.003Z 2026-05-18:16:36:37 VALID  N         N         N         1         Y                
+  SYS   V$INSTANCE                 101                      VIEW        2026-05-18T16:36:37.003Z 2026-05-18T16:36:37.003Z 2026-05-18:16:36:37 VALID  N         N         N         1         Y                
+  SYS   V$DATABASE                 102                      VIEW        2026-05-18T16:36:37.003Z 2026-05-18T16:36:37.003Z 2026-05-18:16:36:37 VALID  N         N         N         1         Y                
+  SYS   V$SESSION                  103                      VIEW        2026-05-18T16:36:37.003Z 2026-05-18T16:36:37.003Z 2026-05-18:16:36:37 VALID  N         N         N         1         Y                
+  
+  4 rows selected.
 
 SQL [363/461]> SELECT * FROM dba_tables WHERE rownum < 5;
   
   OWNER TABLE_NAME TABLESPACE_NAME NUM_ROWS STATUS
   ----- ---------- --------------- -------- ------
+  SYS   DUAL       SYSTEM          1        VALID 
+  HR    REGIONS    USERS           4        VALID 
+  HR    COUNTRIES  USERS           10       VALID 
+  HR    LOCATIONS  USERS           8        VALID 
+  
+  4 rows selected.
 
 SQL [364/461]> SELECT * FROM dba_views WHERE rownum < 5;
   
-  OWNER VIEW_NAME TEXT_LENGTH TEXT
-  ----- --------- ----------- ----
+  OWNER VIEW_NAME  TEXT_LENGTH TEXT                                     TYPE_TEXT_LENGTH TYPE_TEXT OID_TEXT_LENGTH OID_TEXT VIEW_TYPE_OWNER VIEW_TYPE SUPERVIEW_NAME EDITIONING_VIEW READ_ONLY BEQUEATH     ORIGIN_CON_ID DEFAULT_COLLATION CONTAINER_DATA
+  ----- ---------- ----------- ---------------------------------------- ---------------- --------- --------------- -------- --------------- --------- -------------- --------------- --------- ------------ ------------- ----------------- --------------
+  SYS   V$VERSION  40          select * from X$VERSION /* fixed view */ 0                          0                                                                 N               N         CURRENT_USER 1             USING_NLS_COMP    N             
+  SYS   V$INSTANCE 40          select * from X$KSUSGIF /* fixed view */ 0                          0                                                                 N               N         CURRENT_USER 1             USING_NLS_COMP    N             
+  SYS   V$DATABASE 38          select * from X$KCCDI /* fixed view */   0                          0                                                                 N               N         CURRENT_USER 1             USING_NLS_COMP    N             
+  SYS   V$SESSION  38          select * from X$KSUSE /* fixed view */   0                          0                                                                 N               N         CURRENT_USER 1             USING_NLS_COMP    N             
+  
+  4 rows selected.
 
 SQL [365/461]> SELECT * FROM dba_indexes WHERE rownum < 5;
   
@@ -1800,16 +2217,34 @@ SQL [366/461]> SELECT * FROM dba_tab_columns WHERE rownum < 5;
   
   OWNER TABLE_NAME COLUMN_NAME DATA_TYPE DATA_LENGTH DATA_SCALE NULLABLE COLUMN_ID
   ----- ---------- ----------- --------- ----------- ---------- -------- ---------
+  SYS   DUAL       DUMMY       VARCHAR2  1                      Y        1        
+  HR    REGIONS    REGION_ID   NUMBER    2                      N        1        
+  HR    REGIONS    REGION_NAME VARCHAR2  25                     Y        2        
+  HR    COUNTRIES  COUNTRY_ID  CHAR      2                      N        1        
+  
+  4 rows selected.
 
 SQL [367/461]> SELECT * FROM dba_constraints WHERE rownum < 5;
   
-  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS
-  ----- --------------- --------------- ---------- ------
+  OWNER CONSTRAINT_NAME CONSTRAINT_TYPE TABLE_NAME STATUS 
+  ----- --------------- --------------- ---------- -------
+  HR    SYS_C010000     O               REGIONS    ENABLED
+  HR    SYS_C010000     O               COUNTRIES  ENABLED
+  HR    SYS_C010000     O               LOCATIONS  ENABLED
+  HR    SYS_C010001     O               LOCATIONS  ENABLED
+  
+  4 rows selected.
 
 SQL [368/461]> SELECT * FROM dba_cons_columns WHERE rownum < 5;
   
   OWNER CONSTRAINT_NAME TABLE_NAME COLUMN_NAME POSITION
   ----- --------------- ---------- ----------- --------
+  HR    SYS_C010000     REGIONS    REGION_ID   1       
+  HR    SYS_C010000     COUNTRIES  COUNTRY_ID  1       
+  HR    SYS_C010000     LOCATIONS  LOCATION_ID 1       
+  HR    SYS_C010001     LOCATIONS  CITY        1       
+  
+  4 rows selected.
 
 SQL [369/461]> SELECT * FROM dba_sequences WHERE rownum < 5;
   
@@ -1837,62 +2272,102 @@ SQL [373/461]> SELECT * FROM dba_source WHERE rownum < 5;
   ----- ---- ---- ---- ----
 
 SQL [374/461]> SELECT * FROM dba_dependencies WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER NAME TYPE REFERENCED_OWNER REFERENCED_NAME REFERENCED_TYPE REFERENCED_LINK_NAME DEPENDENCY_TYPE
+  ----- ---- ---- ---------------- --------------- --------------- -------------------- ---------------
 
 SQL [375/461]> SELECT * FROM dba_errors WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER NAME TYPE SEQUENCE LINE TEXT POSITION ATTRIBUTE
+  ----- ---- ---- -------- ---- ---- -------- ---------
 
 SQL [376/461]> SELECT * FROM dba_segments WHERE rownum < 5;
   
   OWNER SEGMENT_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
   ----- ------------ ------------ --------------- ----- ------ -------
+  SYS   DUAL         TABLE        SYSTEM          200   1      1      
+  HR    REGIONS      TABLE        USERS           800   1      1      
+  HR    COUNTRIES    TABLE        USERS           2000  1      1      
+  HR    LOCATIONS    TABLE        USERS           1600  1      1      
+  
+  4 rows selected.
 
 SQL [377/461]> SELECT * FROM dba_extents WHERE rownum < 5;
   
   OWNER SEGMENT_NAME SEGMENT_TYPE TABLESPACE_NAME EXTENT_ID BYTES BLOCKS
   ----- ------------ ------------ --------------- --------- ----- ------
+  SYS   DUAL         TABLE        SYSTEM          0         65536 8     
+  HR    REGIONS      TABLE        USERS           0         65536 8     
+  HR    COUNTRIES    TABLE        USERS           0         65536 8     
+  HR    LOCATIONS    TABLE        USERS           0         65536 8     
+  
+  4 rows selected.
 
 SQL [378/461]> SELECT * FROM dba_free_space WHERE rownum < 5;
   
   TABLESPACE_NAME FILE_ID BYTES BLOCKS
   --------------- ------- ----- ------
+  SYSTEM          1       560   1     
+  SYSAUX          2       385   1     
+  UNDOTBS1        3       140   1     
+  USERS           4       70    1     
+  
+  4 rows selected.
 
 SQL [379/461]> SELECT * FROM dba_tablespaces WHERE rownum < 5;
   
-  TABLESPACE_NAME STATUS CONTENTS BLOCK_SIZE
-  --------------- ------ -------- ----------
+  TABLESPACE_NAME STATUS CONTENTS  BLOCK_SIZE
+  --------------- ------ --------- ----------
+  SYSTEM          ONLINE PERMANENT 8192      
+  SYSAUX          ONLINE PERMANENT 8192      
+  UNDOTBS1        ONLINE UNDO      8192      
+  USERS           ONLINE PERMANENT 8192      
+  
+  4 rows selected.
 
 SQL [380/461]> SELECT * FROM dba_data_files WHERE rownum < 5;
   
-  FILE_ID FILE_NAME TABLESPACE_NAME BYTES AUTOEXTENSIBLE
-  ------- --------- --------------- ----- --------------
+  FILE_ID FILE_NAME                                  TABLESPACE_NAME BYTES AUTOEXTENSIBLE
+  ------- ------------------------------------------ --------------- ----- --------------
+  1       /u01/app/oracle/oradata/ORCL/system01.dbf  SYSTEM          800M  YES           
+  2       /u01/app/oracle/oradata/ORCL/sysaux01.dbf  SYSAUX          550M  YES           
+  3       /u01/app/oracle/oradata/ORCL/undotbs01.dbf UNDOTBS1        200M  YES           
+  4       /u01/app/oracle/oradata/ORCL/users01.dbf   USERS           100M  YES           
+  
+  4 rows selected.
 
 SQL [381/461]> SELECT * FROM dba_temp_files WHERE rownum < 5;
   
-  FILE_ID FILE_NAME TABLESPACE_NAME BYTES AUTOEXTENSIBLE
-  ------- --------- --------------- ----- --------------
+  FILE_ID FILE_NAME                               TABLESPACE_NAME BYTES AUTOEXTENSIBLE
+  ------- --------------------------------------- --------------- ----- --------------
+  1       /u01/app/oracle/oradata/ORCL/temp01.dbf TEMP            100M  YES           
+  
+  1 row selected.
 
 SQL [382/461]> SELECT * FROM dba_ts_quotas WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  USERNAME TABLESPACE_NAME BYTES MAX_BYTES BLOCKS MAX_BLOCKS DROPPED
+  -------- --------------- ----- --------- ------ ---------- -------
 
 SQL [383/461]> SELECT * FROM dba_recyclebin WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER OBJECT_NAME ORIGINAL_NAME OPERATION TYPE TS_NAME CREATETIME DROPTIME SPACE
+  ----- ----------- ------------- --------- ---- ------- ---------- -------- -----
 
 SQL [384/461]> SELECT * FROM dba_tab_partitions WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  TABLE_OWNER TABLE_NAME PARTITION_NAME SUBPARTITION_COUNT HIGH_VALUE PARTITION_POSITION TABLESPACE_NAME NUM_ROWS
+  ----------- ---------- -------------- ------------------ ---------- ------------------ --------------- --------
 
 SQL [385/461]> SELECT * FROM dba_part_tables WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER TABLE_NAME PARTITIONING_TYPE SUBPARTITIONING_TYPE PARTITION_COUNT DEF_SUBPARTITION_COUNT PARTITIONING_KEY_COUNT
+  ----- ---------- ----------------- -------------------- --------------- ---------------------- ----------------------
 
 SQL [386/461]> SELECT * FROM dba_mviews WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER MVIEW_NAME CONTAINER_NAME REFRESH_MODE REFRESH_METHOD BUILD_MODE STALENESS
+  ----- ---------- -------------- ------------ -------------- ---------- ---------
 
 SQL [387/461]> SELECT * FROM dba_db_links WHERE rownum < 5;
   
@@ -1901,8 +2376,11 @@ SQL [387/461]> SELECT * FROM dba_db_links WHERE rownum < 5;
 
 SQL [388/461]> SELECT * FROM dba_directories WHERE rownum < 5;
   
-  OWNER DIRECTORY_NAME DIRECTORY_PATH
-  ----- -------------- --------------
+  OWNER DIRECTORY_NAME DIRECTORY_PATH                    
+  ----- -------------- ----------------------------------
+  SYS   DATA_PUMP_DIR  /u01/app/oracle/admin/ORCL/dpdump/
+  
+  1 row selected.
 
 SQL [389/461]> SELECT * FROM dba_jobs WHERE rownum < 5;
   
@@ -1915,214 +2393,260 @@ SQL [390/461]> SELECT * FROM dba_scheduler_jobs WHERE rownum < 5;
   ----- -------- -------- ----- ------- -------------
 
 SQL [391/461]> SELECT * FROM dba_scheduler_job_log WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  LOG_ID LOG_DATE OWNER JOB_NAME STATUS USER_NAME ADDITIONAL_INFO
+  ------ -------- ----- -------- ------ --------- ---------------
 
 SQL [392/461]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
-  OS_USERNAME USERNAME USERHOST TIMESTAMP ACTION_NAME OBJ_NAME RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT STATEMENT_TYPE
-  ----------- -------- -------- --------- ----------- -------- ---------- --------- --------- --------- -------- --------------
+  OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                                                                                                                                                                                        STATEMENT_TYPE
+  ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------
+  oracle      SYS      localhost 2026-05-18T16:36:37.019Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                    LOGON         
+  oracle      SYS      localhost 2026-05-18T16:36:37.022Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
+         REGION_ID NUMBER(2) NOT NULL,
+         REGION_NAME VARCHAR2(25)
+       )                                                                                                                                           CREATE TABLE  
+  oracle      SYS      localhost 2026-05-18T16:36:37.022Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
+         COUNTRY_ID CHAR(2) NOT NULL,
+         COUNTRY_NAME VARCHAR2(40),
+         REGION_ID NUMBER(2)
+       )                                                                                                             CREATE TABLE  
+  oracle      SYS      localhost 2026-05-18T16:36:37.023Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
+         LOCATION_ID NUMBER(4) NOT NULL,
+         STREET_ADDRESS VARCHAR2(40),
+         POSTAL_CODE VARCHAR2(12),
+         CITY VARCHAR2(30) NOT NULL,
+         STATE_PROVINCE VARCHAR2(25),
+         COUNTRY_ID CHAR(2)
+       ) CREATE TABLE  
+  
+  4 rows selected.
 
 SQL [393/461]> SELECT * FROM dba_audit_session WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
+  ----------- -------- --------- -------- ------------------------ ----------- --------- ----------- ----------
+  oracle      SYS      localhost pts/0    2026-05-18T16:36:37.019Z LOGON       5                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T16:36:37.041Z LOGON       6                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T16:36:37.044Z LOGON       7                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T16:36:37.127Z LOGON       8                     0         
+  
+  4 rows selected.
 
 SQL [394/461]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                        OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
+  ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
+  2026-05-18T16:36:37.019Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                     LOGON          SYSDBA                1       
+  2026-05-18T16:36:37.022Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
+         REGION_ID NUMBER(2) NOT NULL,
+         REGION_NAME VARCHAR2(25)
+       )                                                                                                                                           HR            REGIONS     CREATE TABLE                         2       
+  2026-05-18T16:36:37.022Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
+         COUNTRY_ID CHAR(2) NOT NULL,
+         COUNTRY_NAME VARCHAR2(40),
+         REGION_ID NUMBER(2)
+       )                                                                                                             HR            COUNTRIES   CREATE TABLE                         3       
+  2026-05-18T16:36:37.023Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
+         LOCATION_ID NUMBER(4) NOT NULL,
+         STREET_ADDRESS VARCHAR2(40),
+         POSTAL_CODE VARCHAR2(12),
+         CITY VARCHAR2(30) NOT NULL,
+         STATE_PROVINCE VARCHAR2(25),
+         COUNTRY_ID CHAR(2)
+       ) HR            LOCATIONS   CREATE TABLE                         4       
+  
+  4 rows selected.
 
 SQL [395/461]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  SEQUENCE_ID REASON_ID SEVERITY OBJECT_TYPE CREATION_TIME MESSAGE
+  ----------- --------- -------- ----------- ------------- -------
 
 SQL [396/461]> SELECT * FROM dba_alert_history WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                               
+  ----------- --------- -------- ------------------------ ------------------------ ------------------------------------------------------
+  1           Info      NORMAL   2026-05-18T16:36:37.004Z 2026-05-18T16:36:38.004Z 2026-05-18 16:36:37: Starting ORACLE instance (normal)
+  2           Info      NORMAL   2026-05-18T16:36:37.018Z 2026-05-18T16:36:38.018Z 2026-05-18 16:36:37: Database mounted                 
+  3           Info      NORMAL   2026-05-18T16:36:37.018Z 2026-05-18T16:36:38.018Z 2026-05-18 16:36:37: Database opened                  
+  4           Info      NORMAL   2026-05-18T16:36:37.019Z 2026-05-18T16:36:38.019Z 2026-05-18 16:36:37: Logon: user=SYS sid=5 as SYSDBA  
+  
+  4 rows selected.
 
 SQL [397/461]> SELECT * FROM dba_rsrc_consumer_groups WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  CONSUMER_GROUP         CPU_METHOD  STATUS COMMENTS                             
+  ---------------------- ----------- ------ -------------------------------------
+  SYS_GROUP              ROUND-ROBIN ACTIVE SYS_GROUP consumer group             
+  OTHER_GROUPS           ROUND-ROBIN ACTIVE OTHER_GROUPS consumer group          
+  DEFAULT_CONSUMER_GROUP ROUND-ROBIN ACTIVE DEFAULT_CONSUMER_GROUP consumer group
+  ORA$AUTOTASK           ROUND-ROBIN ACTIVE ORA$AUTOTASK consumer group          
+  
+  4 rows selected.
 
 SQL [398/461]> SELECT * FROM dba_rsrc_plans WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  PLAN                     CPU_METHOD STATUS COMMENTS                     
+  ------------------------ ---------- ------ -----------------------------
+  DEFAULT_PLAN             EMPHASIS   ACTIVE DEFAULT_PLAN plan            
+  DEFAULT_MAINTENANCE_PLAN EMPHASIS   ACTIVE DEFAULT_MAINTENANCE_PLAN plan
+  INTERNAL_PLAN            EMPHASIS   ACTIVE INTERNAL_PLAN plan           
+  INTERNAL_QUIESCE         EMPHASIS   ACTIVE INTERNAL_QUIESCE plan        
+  
+  4 rows selected.
 
 SQL [399/461]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
+  ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
+  1       1    1               1          2026-05-18T15:36:37.221Z 2026-05-18T16:36:37.221Z COMPLETED YES          TYPICAL    
+  
+  1 row selected.
 
 SQL [400/461]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  SNAP_ID DBID       INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
+  ------- ---------- --------------- ------- ------------------------- -----
+  1       1234567890 1               0       logons cumulative         1    
+  1       1234567890 1               1       logons current            1    
+  1       1234567890 1               2       opened cursors cumulative 614  
+  1       1234567890 1               3       opened cursors current    523  
+  
+  4 rows selected.
 
 SQL [401/461]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
+  ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
+  1       11gji3sa3xqw0 0               1                13                 10             1                 0                0                   
+  1       0azyg74a3xqw0 0               1                112                90             1                 0                1                   
+  1       048esvfa3xqw0 0               1                14                 11             1                 0                1                   
+  1       057neima3xqw0 0               1                9                  8              1                 0                1                   
+  
+  4 rows selected.
 
 SQL [402/461]> SELECT * FROM dba_advisor_findings WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER TASK_ID TASK_NAME FINDING_ID IMPACT MESSAGE
+  ----- ------- --------- ---------- ------ -------
 
 SQL [403/461]> SELECT * FROM dba_advisor_recommendations WHERE rownum < 5;
-  ERROR:
-  ORA-00900: invalid SQL statement: table or view does not exist
+  
+  OWNER TASK_ID REC_ID FINDING_ID TYPE RANK BENEFIT
+  ----- ------- ------ ---------- ---- ---- -------
 
 SQL [404/461]> SELECT count(*) AS users FROM dba_users;
   
   USERS
   -----
-  1    
-  1    
-  1    
-  1    
-  1    
-  1    
+  6    
   
-  6 rows selected.
+  1 row selected.
 
 SQL [405/461]> SELECT count(*) AS roles FROM dba_roles;
   
   ROLES
   -----
-  1    
-  1    
-  1    
-  1    
-  1    
-  1    
-  1    
+  7    
   
-  7 rows selected.
+  1 row selected.
 
 SQL [406/461]> SELECT count(*) AS profiles FROM dba_profiles;
   
   PROFILES
   --------
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
-  1       
+  16      
   
-  PROFILES
-  --------
-  1       
-  1       
-  
-  16 rows selected.
+  1 row selected.
 
 SQL [407/461]> SELECT count(*) AS tables FROM dba_tables;
   
   TABLES
   ------
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
+  25    
   
-  TABLES
-  ------
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  1     
-  
-  25 rows selected.
+  1 row selected.
 
 SQL [408/461]> SELECT count(*) AS indexes FROM dba_indexes;
   
   INDEXES
   -------
+  0      
+  
+  1 row selected.
 
 SQL [409/461]> SELECT count(*) AS views FROM dba_views;
   
   VIEWS
   -----
+  101  
+  
+  1 row selected.
 
 SQL [410/461]> SELECT count(*) AS triggers FROM dba_triggers;
   
   TRIGGERS
   --------
+  0       
+  
+  1 row selected.
 
 SQL [411/461]> SELECT count(*) AS procedures FROM dba_procedures;
   
   PROCEDURES
   ----------
+  0         
+  
+  1 row selected.
 
 SQL [412/461]> SELECT count(*) AS sequences FROM dba_sequences;
   
   SEQUENCES
   ---------
+  0        
+  
+  1 row selected.
 
 SQL [413/461]> SELECT count(*) AS synonyms FROM dba_synonyms;
   
   SYNONYMS
   --------
+  0       
+  
+  1 row selected.
 
 SQL [414/461]> SELECT count(*) AS sessions FROM v$session WHERE username IS NOT NULL;
   
   SESSIONS
   --------
-  1       
-  1       
-  1       
-  1       
-  1       
+  8       
   
-  5 rows selected.
+  1 row selected.
 
 SQL [415/461]> SELECT count(*) AS bgprocesses FROM v$bgprocess WHERE paddr != '00';
   
-  View V$BGPROCESS not implemented
+  BGPROCESSES
+  -----------
+  8          
+  
+  1 row selected.
 
 SQL [416/461]> SELECT count(*) AS datafiles FROM dba_data_files;
   
   DATAFILES
   ---------
-  1        
-  1        
-  1        
-  1        
+  4        
   
-  4 rows selected.
+  1 row selected.
 
 SQL [417/461]> SELECT count(*) AS tablespaces FROM dba_tablespaces;
   
   TABLESPACES
   -----------
-  1          
-  1          
-  1          
-  1          
-  1          
+  5          
   
-  5 rows selected.
+  1 row selected.
 
 SQL [418/461]> SELECT count(*) AS tempfiles FROM dba_temp_files;
   
@@ -2136,35 +2660,41 @@ SQL [419/461]> SELECT count(*) AS log_groups FROM v$log;
   
   LOG_GROUPS
   ----------
-  1         
-  1         
-  1         
+  3         
   
-  3 rows selected.
+  1 row selected.
 
 SQL [420/461]> SELECT count(*) AS controlfiles FROM v$controlfile;
   
   CONTROLFILES
   ------------
-  1           
-  1           
+  2           
   
-  2 rows selected.
+  1 row selected.
 
 SQL [421/461]> SELECT count(*) AS archived_logs FROM v$archived_log;
   
   ARCHIVED_LOGS
   -------------
+  0            
+  
+  1 row selected.
 
 SQL [422/461]> SELECT count(*) AS locks FROM v$lock;
   
   LOCKS
   -----
+  0    
+  
+  1 row selected.
 
 SQL [423/461]> SELECT count(*) AS transactions FROM v$transaction;
   
   TRANSACTIONS
   ------------
+  0           
+  
+  1 row selected.
 
 SQL [424/461]> SELECT count(*) AS open_cursors FROM v$open_cursor;
   
@@ -2244,112 +2774,134 @@ SQL [433/461]> SELECT name, value FROM v$sysstat WHERE name = 'CPU used by this 
   ---- -----
 
 SQL [434/461]> SHOW USER;
-  SP2-0158: unknown SHOW option "USER;"
+  USER is "SYS"
 
 SQL [435/461]> SHOW PARAMETER db_name;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  db_name                                     string      ORCL
 
 SQL [436/461]> SHOW PARAMETER instance_name;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  instance_name                               string      ORCL
 
 SQL [437/461]> SHOW PARAMETER service_names;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  service_names                               string      ORCL
 
 SQL [438/461]> SHOW PARAMETER processes;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  processes                                   integer     300
 
 SQL [439/461]> SHOW PARAMETER sessions;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  sessions                                    integer     472
 
 SQL [440/461]> SHOW PARAMETER sga_target;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  sga_target                                  big integer 512M
 
 SQL [441/461]> SHOW PARAMETER pga_aggregate_target;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  pga_aggregate_target                        big integer 128M
 
 SQL [442/461]> SHOW PARAMETER undo_tablespace;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  undo_tablespace                             string      UNDOTBS1
 
 SQL [443/461]> SHOW PARAMETER undo_retention;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  undo_retention                              integer     900
 
 SQL [444/461]> SHOW PARAMETER log_archive_dest;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  log_archive_dest_1                          string      LOCATION=/u01/app/oracle/archivelog
 
 SQL [445/461]> SHOW PARAMETER log_archive_format;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  log_archive_format                          string      arch_%t_%s_%r.arc
 
 SQL [446/461]> SHOW PARAMETER db_recovery_file_dest;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  db_recovery_file_dest                       string      /u01/app/oracle/fast_recovery_area
+  db_recovery_file_dest_size                  big integer 4G
 
 SQL [447/461]> SHOW PARAMETER db_recovery_file_dest_size;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  db_recovery_file_dest_size                  big integer 4G
 
 SQL [448/461]> SHOW PARAMETER control_files;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  control_files                               string      /u01/app/oracle/oradata/ORCL/control01.ctl, /u01/app/oracle/oradata/ORCL/control02.ctl
 
 SQL [449/461]> SHOW PARAMETER db_block_size;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  db_block_size                               integer     8192
 
 SQL [450/461]> SHOW PARAMETER db_cache_size;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  db_cache_size                               big integer 128M
 
 SQL [451/461]> SHOW PARAMETER shared_pool_size;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  shared_pool_size                            big integer 256M
 
 SQL [452/461]> SHOW PARAMETER open_cursors;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  open_cursors                                integer     300
 
 SQL [453/461]> SHOW PARAMETER cursor_sharing;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  cursor_sharing                              string      EXACT
 
 SQL [454/461]> SHOW PARAMETER optimizer_mode;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  optimizer_mode                              string      ALL_ROWS
 
 SQL [455/461]> SHOW PARAMETER nls_date_format;
   
   NAME                                        TYPE        VALUE
   -------------------------------------------- ----------- ------------------------------
+  nls_date_format                             string      DD-MON-RR
 
 SQL [456/461]> SHOW PARAMETER timed_statistics;
   
@@ -2360,7 +2912,7 @@ SQL [457/461]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-05-18 09:49:14
+  2026-05-18 16:36:37
   
   1 row selected.
 
@@ -2368,7 +2920,7 @@ SQL [458/461]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-05-18T09:49:14.584Z
+  2026-05-18T16:36:37.233Z
   
   1 row selected.
 

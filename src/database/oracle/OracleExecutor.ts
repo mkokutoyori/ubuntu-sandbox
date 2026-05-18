@@ -556,26 +556,19 @@ export class OracleExecutor extends BaseExecutor {
       return this.executeSetOperation(stmt);
     }
 
-    // Check for system catalog view queries
+    // DUAL has its own minimal pipeline (no JOIN/GROUP BY etc.)
     if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef') {
-      const tableRef = stmt.from[0];
-      const tableName = tableRef.name.toUpperCase();
-
-      // DUAL
-      if (tableName === 'DUAL') {
+      const firstName = stmt.from[0].name.toUpperCase();
+      if (firstName === 'DUAL') {
         return this.executeSelectFromDual(stmt);
-      }
-
-      // V$ views, DBA_ views, etc.
-      // Handle SYS-prefixed internal tables (SYS.OBJ$, SYS.TAB$, etc.)
-      const catalogViewName = (tableRef.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName);
-      const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogViewName, this.context.currentUser);
-      if (catalogResult) {
-        return this.applySelectClauses(catalogResult, stmt);
       }
     }
 
-    // Regular table query
+    // Every other table reference — catalog dictionary views included —
+    // flows through `executeSelectFromTable`, which knows about JOIN,
+    // GROUP BY, aggregates, HAVING, DISTINCT, ORDER BY, and FETCH.
+    // `loadTable` materialises catalog views as virtual row sources so
+    // `SELECT COUNT(*) FROM v$log` etc. evaluate correctly.
     return this.executeSelectFromTable(stmt);
   }
 
@@ -847,6 +840,25 @@ export class OracleExecutor extends BaseExecutor {
     const viewMeta = this.storage.getViewMeta(schema, tableName);
     if (viewMeta) {
       return this.loadView(viewMeta, alias || tableName);
+    }
+
+    // Catalog dictionary views (DBA_*, ALL_*, USER_*, V$*, GV$*,
+    // UNIFIED_AUDIT_TRAIL, SYS.OBJ$, …). They are materialised as
+    // virtual row sources here so the rest of the SELECT pipeline
+    // (JOIN, GROUP BY, aggregates, HAVING, ORDER BY) can operate on
+    // them exactly like a real table.
+    const catalogName = ref.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName;
+    const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogName, this.context.currentUser);
+    if (catalogResult && catalogResult.isQuery) {
+      const prefix = alias || tableName;
+      const columns: StorageColMeta[] = catalogResult.columns.map((c, i) => ({
+        name: c.name,
+        dataType: c.dataType,
+        ordinalPosition: i,
+        _qualifiedNames: [c.name, `${prefix}.${c.name}`],
+      } as StorageColMeta & { _qualifiedNames: string[] }));
+      const rows: StorageRow[] = catalogResult.rows.map(r => [...r] as StorageRow);
+      return { rows, columns };
     }
 
     if (!this.storage.tableExists(schema, tableName)) {

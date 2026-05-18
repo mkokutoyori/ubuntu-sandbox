@@ -107,6 +107,34 @@ describe('DBA_VIEWS — built-in dictionary views', () => {
     const result = exec('SELECT VIEW_NAME FROM DBA_VIEWS');
     expect(result.rows.length).toBeGreaterThan(50);
   });
+
+  test('COUNT(*) aggregates correctly on DBA_VIEWS', () => {
+    const all = exec('SELECT VIEW_NAME FROM DBA_VIEWS').rows.length;
+    const result = exec('SELECT COUNT(*) FROM DBA_VIEWS');
+    expect(result.rows.length).toBe(1);
+    expect(Number(result.rows[0][0])).toBe(all);
+  });
+
+  test('GROUP BY works on DBA_VIEWS', () => {
+    const result = exec('SELECT OWNER, COUNT(*) AS N FROM DBA_VIEWS GROUP BY OWNER');
+    expect(result.rows.length).toBeGreaterThan(0);
+    const sysRow = result.rows.find(r => r[0] === 'SYS');
+    expect(sysRow).toBeDefined();
+    expect(Number(sysRow![1])).toBeGreaterThan(50);
+  });
+
+  test('COUNT(*) on V$LOG returns redo group count', () => {
+    const groups = exec('SELECT GROUP# FROM V$LOG').rows.length;
+    const result = exec('SELECT COUNT(*) FROM V$LOG');
+    expect(result.rows.length).toBe(1);
+    expect(Number(result.rows[0][0])).toBe(groups);
+  });
+
+  test('aggregate functions over catalog views (SUM/MAX)', () => {
+    const result = exec('SELECT MAX(GROUP#) AS MAX_GRP FROM V$LOG');
+    expect(result.rows.length).toBe(1);
+    expect(Number(result.rows[0][0])).toBeGreaterThan(0);
+  });
 });
 
 describe('USER_VIEWS', () => {
