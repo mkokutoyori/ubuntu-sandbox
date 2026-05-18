@@ -3838,18 +3838,52 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeAudit(stmt: AuditStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
-    catalog.addStmtAuditOption({
-      auditOption: stmt.auditOption,
-      userName: stmt.byUser ?? null,
-      success: stmt.byMode ?? 'BY ACCESS',
-      failure: stmt.byMode ?? 'BY ACCESS',
-    });
+    const options = stmt.auditOptions ?? [stmt.auditOption];
+    const byCode = stmt.byMode === 'SESSION' ? 'S' : 'A';
+    // WHENEVER [NOT] SUCCESSFUL scopes which half is audited.
+    const objSuccess = stmt.whenever === 'NOT SUCCESSFUL' ? '-' : byCode;
+    const objFailure = stmt.whenever === 'SUCCESSFUL' ? '-' : byCode;
+
+    if (stmt.onObject) {
+      const schema = (stmt.onObject.schema ?? this.context.currentUser).toUpperCase();
+      const object = stmt.onObject.name.toUpperCase();
+      for (const action of options) {
+        catalog.setObjectAuditOption(schema, object, action, {
+          success: objSuccess as 'A' | 'S' | '-',
+          failure: objFailure as 'A' | 'S' | '-',
+        });
+      }
+      return emptyResult('Audit succeeded.');
+    }
+
+    const mode = stmt.byMode === 'SESSION' ? 'BY SESSION' : 'BY ACCESS';
+    const success = stmt.whenever === 'NOT SUCCESSFUL' ? 'NOT SET' : mode;
+    const failure = stmt.whenever === 'SUCCESSFUL' ? 'NOT SET' : mode;
+    for (const auditOption of options) {
+      catalog.addStmtAuditOption({
+        auditOption,
+        userName: stmt.byUser ?? null,
+        success,
+        failure,
+      });
+    }
     return emptyResult('Audit succeeded.');
   }
 
   private executeNoaudit(stmt: NoauditStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
-    catalog.removeStmtAuditOption(stmt.auditOption, stmt.byUser ?? null);
+    const options = stmt.auditOptions ?? [stmt.auditOption];
+    if (stmt.onObject) {
+      const schema = (stmt.onObject.schema ?? this.context.currentUser).toUpperCase();
+      const object = stmt.onObject.name.toUpperCase();
+      for (const action of options) {
+        catalog.clearObjectAuditOption(schema, object, action);
+      }
+      return emptyResult('Noaudit succeeded.');
+    }
+    for (const auditOption of options) {
+      catalog.removeStmtAuditOption(auditOption, stmt.byUser ?? null);
+    }
     return emptyResult('Noaudit succeeded.');
   }
 }

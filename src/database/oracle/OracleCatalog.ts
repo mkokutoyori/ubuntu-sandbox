@@ -48,8 +48,23 @@ export interface AuditEntry {
 export interface StmtAuditOption {
   auditOption: string;
   userName: string | null; // null = all users
-  success: string; // BY ACCESS or BY SESSION
-  failure: string; // BY ACCESS or BY SESSION
+  success: string; // 'BY ACCESS' | 'BY SESSION' | 'NOT SET'
+  failure: string; // 'BY ACCESS' | 'BY SESSION' | 'NOT SET'
+}
+
+/** Per-action audit mode for an object option ('-' = not audited). */
+export interface ObjectAuditMode {
+  success: 'A' | 'S' | '-';
+  failure: 'A' | 'S' | '-';
+}
+
+/** A flattened object-level audit option row. */
+export interface ObjectAuditOption {
+  schema: string;
+  object: string;
+  action: string;
+  success: 'A' | 'S' | '-';
+  failure: 'A' | 'S' | '-';
 }
 
 /** Fine-grained audit policy */
@@ -196,8 +211,12 @@ export class OracleCatalog extends BaseCatalog {
   /** Maximum size of the audit trail before FIFO eviction. */
   private static readonly MAX_AUDIT_ENTRIES = 5000;
 
-  /** Object-level audit options keyed by `${schema}.${object}` */
-  private objAuditOpts: Map<string, Set<string>> = new Map();
+  /**
+   * Object-level audit options keyed by `${schema}.${object}`, then by
+   * action (SELECT, UPDATE, …). Each action records the success/failure
+   * audit mode so DBA_OBJ_AUDIT_OPTS reports real `S/A/-` values.
+   */
+  private objAuditOpts: Map<string, Map<string, ObjectAuditMode>> = new Map();
 
   /** Custom profiles (name → resource overrides) */
   private profiles: Map<string, Map<string, string>> = new Map();
@@ -386,17 +405,53 @@ export class OracleCatalog extends BaseCatalog {
     );
   }
 
-  /** Add an object-level audit option (AUDIT priv ON schema.obj). */
-  addObjectAuditOption(schema: string, object: string, action: string): void {
+  /** Add/replace an object-level audit option (AUDIT action ON obj). */
+  setObjectAuditOption(
+    schema: string, object: string, action: string, mode: ObjectAuditMode,
+  ): void {
     const key = `${schema.toUpperCase()}.${object.toUpperCase()}`;
-    const set = this.objAuditOpts.get(key) ?? new Set<string>();
-    set.add(action.toUpperCase());
-    this.objAuditOpts.set(key, set);
+    const actions = this.objAuditOpts.get(key) ?? new Map<string, ObjectAuditMode>();
+    actions.set(action.toUpperCase(), mode);
+    this.objAuditOpts.set(key, actions);
   }
 
-  /** Get the object audit options map (read-only view). */
-  getObjectAuditOpts(): ReadonlyMap<string, ReadonlySet<string>> {
-    return this.objAuditOpts;
+  /** Remove an object-level audit option; drops the object once empty. */
+  clearObjectAuditOption(schema: string, object: string, action: string): void {
+    const key = `${schema.toUpperCase()}.${object.toUpperCase()}`;
+    const actions = this.objAuditOpts.get(key);
+    if (!actions) return;
+    actions.delete(action.toUpperCase());
+    if (actions.size === 0) this.objAuditOpts.delete(key);
+  }
+
+  /** Flattened, read-only snapshot of every object audit option. */
+  getObjectAuditOptions(): ObjectAuditOption[] {
+    const out: ObjectAuditOption[] = [];
+    for (const [key, actions] of this.objAuditOpts) {
+      const dot = key.indexOf('.');
+      const schema = key.slice(0, dot);
+      const object = key.slice(dot + 1);
+      for (const [action, mode] of actions) {
+        out.push({ schema, object, action, success: mode.success, failure: mode.failure });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Resolve the Oracle object type (TABLE / VIEW / SEQUENCE / …) for an
+   * owner.object pair from real storage, so DBA_OBJ_AUDIT_OPTS never
+   * hardcodes a type. Falls back to a name-only match, then 'TABLE'
+   * (Oracle keeps the audit option even after the object is dropped).
+   */
+  resolveObjectType(schema: string, object: string): string {
+    const owner = schema.toUpperCase();
+    const name = object.toUpperCase();
+    const objs = this.enumerateObjects();
+    const exact = objs.find(o => o.owner.toUpperCase() === owner && o.name.toUpperCase() === name);
+    if (exact) return exact.type;
+    const byName = objs.find(o => o.name.toUpperCase() === name);
+    return byName ? byName.type : 'TABLE';
   }
 
   // ── Fine-grained auditing ────────────────────────────────────────

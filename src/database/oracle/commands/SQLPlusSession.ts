@@ -457,7 +457,7 @@ export class SQLPlusSession {
     const sqlKeywords = [
       'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER',
       'GRANT', 'REVOKE', 'TRUNCATE', 'MERGE', 'WITH', 'COMMIT', 'ROLLBACK',
-      'SAVEPOINT', 'COMMENT', 'EXPLAIN',
+      'SAVEPOINT', 'COMMENT', 'EXPLAIN', 'AUDIT', 'NOAUDIT',
     ];
     return sqlKeywords.some(kw => upper.startsWith(kw + ' ') || upper === kw);
   }
