@@ -16,6 +16,7 @@ import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
+import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
@@ -79,7 +80,11 @@ export class OracleDatabase {
    * Authenticate a user and create a new connection/session.
    * Returns a session ID or throws on auth failure.
    */
-  connect(username: string, password: string): { sid: number; executor: OracleExecutor } {
+  connect(
+    username: string,
+    password: string,
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT
+  ): { sid: number; executor: OracleExecutor } {
     if (!this.instance.isOpen) {
       throw new Error(ORACLE_ERRORS.ORA_01034);
     }
@@ -102,6 +107,10 @@ export class OracleDatabase {
     };
     this.connections.set(sid, connInfo);
 
+    // Register session in SecurityEngine
+    const sessionId = String(sid);
+    this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog);
+
     const context: ExecutionContext = {
       currentUser: upperUser,
       currentSchema: upperUser,
@@ -118,7 +127,7 @@ export class OracleDatabase {
   /**
    * Connect as SYSDBA (no password check, sets user to SYS).
    */
-  connectAsSysdba(): { sid: number; executor: OracleExecutor } {
+  connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -130,6 +139,10 @@ export class OracleDatabase {
       serial,
     };
     this.connections.set(sid, connInfo);
+
+    // Register SYSDBA session
+    const sessionId = String(sid);
+    this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog);
 
     const context: ExecutionContext = {
       currentUser: 'SYS',
@@ -149,6 +162,7 @@ export class OracleDatabase {
    */
   disconnect(sid: number): void {
     this.connections.delete(sid);
+    this.securityEngine.closeSession(String(sid));
   }
 
   /**

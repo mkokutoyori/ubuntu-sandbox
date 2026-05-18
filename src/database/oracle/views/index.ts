@@ -243,4 +243,9 @@ import './v_process_memory';
 import './v_process_memory_detail';
 import './v_session_wait_class';
 
+import './v_rsrc_consumer_group';
+import './v_rsrc_consumer_group_cpu_mth';
+import './v_rsrc_plan';
+import './v_rsrc_session_info';
+
 export { };

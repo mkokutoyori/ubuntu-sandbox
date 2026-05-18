@@ -1807,6 +1807,33 @@ export class OracleCatalog extends BaseCatalog {
   // ── USER_ views (current user's objects) ─────────────────────────
 
   private queryUSER(viewName: string, currentUser: string): ResultSet | null {
+    // Special cases for USER_ views that differ structurally from DBA_ equivalents
+    if (viewName === 'USER_TS_QUOTAS') {
+      if (!this.securityEngine) return queryResult([
+        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
+        { name: 'BYTES', dataType: oracleNumber(20) },
+        { name: 'MAX_BYTES', dataType: oracleNumber(20) },
+        { name: 'BLOCKS', dataType: oracleNumber(20) },
+        { name: 'MAX_BLOCKS', dataType: oracleNumber(20) },
+        { name: 'DROPPED', dataType: oracleVarchar2(3) },
+      ], []);
+      const quotas = this.securityEngine.quotas.getUserQuotas(currentUser);
+      const blockSize = 8192;
+      return queryResult([
+        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
+        { name: 'BYTES', dataType: oracleNumber(20) },
+        { name: 'MAX_BYTES', dataType: oracleNumber(20) },
+        { name: 'BLOCKS', dataType: oracleNumber(20) },
+        { name: 'MAX_BLOCKS', dataType: oracleNumber(20) },
+        { name: 'DROPPED', dataType: oracleVarchar2(3) },
+      ], quotas.map(q => {
+        const maxBytes = q.maxBytes === -1 ? -1 : q.maxBytes;
+        return [q.tablespace, q.bytesUsed, maxBytes,
+          Math.ceil(q.bytesUsed / blockSize),
+          maxBytes === -1 ? -1 : Math.ceil(maxBytes / blockSize), 'NO'];
+      }));
+    }
+
     // USER_ views show objects owned by the current user
     const dbaName = viewName.replace('USER_', 'DBA_');
     const result = this.queryDBA(dbaName, currentUser);

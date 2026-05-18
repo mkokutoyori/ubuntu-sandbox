@@ -1057,7 +1057,7 @@ export abstract class BaseParser {
       if (this.check(TokenType.NUMBER_LITERAL)) {
         value = this.advance().value;
         // Check for optional division suffix: 1/24, 1/1440, etc.
-        if (this.check(TokenType.ARITHMETIC_OP) && this.current().value === '/') {
+        if (this.check(TokenType.SLASH)) {
           this.advance(); // consume /
           if (this.check(TokenType.NUMBER_LITERAL)) {
             const den = this.advance().value;
