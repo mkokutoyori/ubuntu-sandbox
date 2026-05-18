@@ -28,6 +28,7 @@ import './v_session_event';
 import './v_session_longops';
 import './v_session_metric';
 import './v_session_metric_history';
+import './v_sqlstats';
 import './v_session_connect_info';
 import './v_session_wait';
 import './v_session_wait_history';
