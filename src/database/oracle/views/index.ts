@@ -12,6 +12,7 @@ import './v_active_session_history';
 import './v_archive_dest';
 import './v_archive_dest_status';
 import './v_archive_gap';
+import './v_archive_processes';
 import './v_bgprocess';
 import './v_buffer_pool';
 import './v_buffer_pool_statistics';
