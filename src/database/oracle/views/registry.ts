@@ -40,3 +40,28 @@ export function queryView(name: string, ctx: ViewContext): ResultSet | undefined
 export function listRegisteredViews(): ViewDefinition[] {
   return [...registry.values()];
 }
+
+export interface CatalogViewEntry {
+  /** Canonical Oracle name, uppercased. */
+  readonly name: string;
+  /** Synthetic SELECT used as the TEXT column of *_VIEWS rows. */
+  readonly text: string;
+  /** Optional short comment for DICTIONARY / DICT views. */
+  readonly comment?: string;
+}
+
+/**
+ * Catalog metadata for every self-registered view. This is what makes a
+ * `registerView(...)` call automatically surface in `DBA_VIEWS`,
+ * `ALL_VIEWS`, `USER_VIEWS`, `DBA_OBJECTS` and `DICTIONARY` — the view's
+ * own file is the single source of truth, no parallel catalog list to
+ * keep in sync. When a view does not declare its own `text`, a faithful
+ * placeholder is synthesised so it still appears in the dictionary.
+ */
+export function listCatalogViewEntries(): CatalogViewEntry[] {
+  return [...registry.values()].map(def => ({
+    name: def.name.toUpperCase(),
+    text: def.text ?? `select * from ${def.name.toUpperCase()} /* registered view */`,
+    comment: def.comment,
+  }));
+}

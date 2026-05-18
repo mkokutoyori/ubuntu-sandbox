@@ -11,8 +11,8 @@ import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/Data
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
-import { queryView } from './views/registry';
-import { BUILTIN_VIEWS, BUILTIN_VIEW_BY_NAME } from './views/builtinCatalog';
+import { queryView, listCatalogViewEntries, type CatalogViewEntry } from './views/registry';
+import { BUILTIN_VIEWS } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
@@ -456,7 +456,7 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Is `name` a known built-in dictionary view? */
   isBuiltinCatalogView(name: string): boolean {
-    return BUILTIN_VIEW_BY_NAME.has(name.toUpperCase());
+    return this.mergedCatalogViews().has(name.toUpperCase());
   }
 
   /**
@@ -1615,12 +1615,12 @@ export class OracleCatalog extends BaseCatalog {
     // Use the instance's runtime startedAt as the creation timestamp so
     // it matches V$INSTANCE.STARTUP_TIME on a real database.
     const builtinCreated = new Date(this.instance.getRuntimeState().startedAt);
-    for (let i = 0; i < BUILTIN_VIEWS.length; i++) {
-      const v = BUILTIN_VIEWS[i];
+    let viewIdx = 0;
+    for (const v of this.mergedCatalogViews().values()) {
       const created = builtinCreated;
       out.push({
         owner: 'SYS', name: v.name, subobject: null,
-        objectId: allocId(100 + i), dataObjectId: null,
+        objectId: allocId(100 + viewIdx++), dataObjectId: null,
         type: 'VIEW', created, lastDdl: created,
         timestamp: ts(created), status: 'VALID',
         temporary: 'N', generated: 'N', secondary: 'N',
@@ -1845,6 +1845,32 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   /**
+   * Every SYS-owned dictionary / dynamic view the simulator exposes,
+   * keyed by uppercase name. The self-registering view files (each
+   * `registerView(...)` under `views/`) are the single source of truth:
+   * registering a view automatically surfaces it in DBA_VIEWS /
+   * ALL_VIEWS / USER_VIEWS / DBA_OBJECTS / DICTIONARY with no parallel
+   * catalog entry to maintain.
+   *
+   * `BUILTIN_VIEWS` is merged in only to cover the handful of views
+   * still served by hardcoded methods in this class (DBA_USERS,
+   * V$SESSION, …) which are not self-registered. When a name exists in
+   * both places the registered definition wins.
+   */
+  private mergedCatalogViews(): Map<string, CatalogViewEntry> {
+    const merged = new Map<string, CatalogViewEntry>();
+    for (const v of BUILTIN_VIEWS) {
+      merged.set(v.name.toUpperCase(), { name: v.name.toUpperCase(), text: v.text, comment: v.comment });
+    }
+    // Registered views take precedence — everything about the view
+    // (including its catalog text/comment) lives in its own file.
+    for (const e of listCatalogViewEntries()) {
+      merged.set(e.name, e);
+    }
+    return merged;
+  }
+
+  /**
    * Build the rows that back DBA_VIEWS / ALL_VIEWS / USER_VIEWS.
    * Reusing the same enumerator guarantees the three views stay
    * consistent — they differ only in filtering.
@@ -1852,10 +1878,9 @@ export class OracleCatalog extends BaseCatalog {
   private collectViewRows(): (string | number | null)[][] {
     const rows: (string | number | null)[][] = [];
 
-    // SYS-owned built-in dictionary views.
-    for (const v of BUILTIN_VIEWS) {
-      const text = v.text;
-      rows.push(viewRow('SYS', v.name, text));
+    // SYS-owned dictionary / dynamic views (registered + hardcoded).
+    for (const v of this.mergedCatalogViews().values()) {
+      rows.push(viewRow('SYS', v.name, v.text));
     }
 
     // User-defined views — text is the original CREATE VIEW query.
@@ -2582,77 +2607,11 @@ export class OracleCatalog extends BaseCatalog {
   // ── DICTIONARY view ──────────────────────────────────────────────
 
   private queryDictionary(): ResultSet {
-    const views = [
-      // V$ dynamic performance views
-      ['V$VERSION', 'Oracle version information'],
-      ['V$INSTANCE', 'Instance information'],
-      ['V$DATABASE', 'Database information'],
-      ['V$SESSION', 'Active sessions'],
-      ['V$PARAMETER', 'System parameters'],
-      ['V$SPPARAMETER', 'Server parameter file parameters'],
-      ['V$SYSTEM_PARAMETER', 'System parameters (alias of V$PARAMETER)'],
-      ['V$SGA', 'SGA memory areas'],
-      ['V$SGASTAT', 'SGA detailed statistics'],
-      ['V$TABLESPACE', 'Tablespace information'],
-      ['V$DATAFILE', 'Data file information'],
-      ['V$TEMPFILE', 'Temporary file information'],
-      ['V$LOG', 'Redo log groups'],
-      ['V$LOGFILE', 'Redo log members'],
-      ['V$ARCHIVED_LOG', 'Archived log information'],
-      ['V$PROCESS', 'Background processes'],
-      ['V$CONTROLFILE', 'Control files'],
-      ['V$DIAG_INFO', 'Diagnostic repository info'],
-      ['V$LOCK', 'Active locks'],
-      ['V$LOCKED_OBJECT', 'Locked objects'],
-      ['V$TRANSACTION', 'Active transactions'],
-      ['V$SQL', 'SQL statements in cache'],
-      ['V$SQLAREA', 'Shared SQL area statistics'],
-      ['V$SQL_PLAN', 'SQL execution plans'],
-      ['V$SYSSTAT', 'System statistics'],
-      ['V$SESSTAT', 'Session statistics'],
-      ['V$OPEN_CURSOR', 'Open cursors'],
-      ['V$OPTION', 'Database options'],
-      ['V$NLS_PARAMETERS', 'NLS parameters'],
-      ['V$TIMEZONE_NAMES', 'Time zone names'],
-      ['V$PGA_TARGET_ADVICE', 'PGA advisory information'],
-      ['V$RESOURCE_LIMIT', 'Resource limits'],
-      ['V$RECOVER_FILE', 'Files needing media recovery'],
-      ['V$BACKUP', 'Online backup status'],
-      // DBA_ dictionary views
-      ['DBA_USERS', 'Database users'],
-      ['DBA_ROLES', 'Database roles'],
-      ['DBA_ROLE_PRIVS', 'Role privileges'],
-      ['DBA_SYS_PRIVS', 'System privileges'],
-      ['DBA_TAB_PRIVS', 'Object privileges'],
-      ['DBA_TABLES', 'Database tables'],
-      ['DBA_TAB_COLUMNS', 'Table columns'],
-      ['DBA_OBJECTS', 'Database objects'],
-      ['DBA_TABLESPACES', 'Tablespaces'],
-      ['DBA_DATA_FILES', 'Data files'],
-      ['DBA_TEMP_FILES', 'Temporary data files'],
-      ['DBA_FREE_SPACE', 'Free extents in tablespaces'],
-      ['DBA_INDEXES', 'Indexes'],
-      ['DBA_IND_COLUMNS', 'Index columns'],
-      ['DBA_CONSTRAINTS', 'Constraints'],
-      ['DBA_CONS_COLUMNS', 'Constraint columns'],
-      ['DBA_SEQUENCES', 'Sequences'],
-      ['DBA_VIEWS', 'Views'],
-      ['DBA_SOURCE', 'PL/SQL source code'],
-      ['DBA_PROCEDURES', 'Stored procedures and functions'],
-      ['DBA_TRIGGERS', 'Database triggers'],
-      ['DBA_SEGMENTS', 'Storage segments'],
-      ['DBA_EXTENTS', 'Data extents'],
-      ['DBA_AUDIT_TRAIL', 'Audit trail entries'],
-      ['DBA_STMT_AUDIT_OPTS', 'Auditing options for statements'],
-      ['DBA_PROFILES', 'Resource limit profiles'],
-      ['DBA_TAB_STATISTICS', 'Table statistics'],
-      ['DBA_DIRECTORIES', 'Directory objects'],
-      ['DBA_DB_LINKS', 'Database links'],
-      ['DBA_JOBS', 'DBMS_JOB scheduled jobs'],
-      ['DBA_SCHEDULER_JOBS', 'DBMS_SCHEDULER jobs'],
-      ['DBA_SYNONYMS', 'Synonyms'],
-      ['V$ASM_DISKGROUP', 'ASM disk groups'],
-    ];
+    // Derived from the same merged catalog used by DBA_VIEWS — a
+    // self-registered view automatically appears in DICTIONARY / DICT.
+    const views = [...this.mergedCatalogViews().values()]
+      .map(v => [v.name, v.comment ?? `${v.name} (catalog view)`] as [string, string])
+      .sort((a, b) => a[0].localeCompare(b[0]));
     return queryResult(
       [
         { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
