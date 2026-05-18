@@ -51,6 +51,7 @@ import './dba_fga_audit_trail';
 import './dba_priv_audit_opts';
 import './dba_obj_audit_opts';
 import './dba_policies';
+import './dba_policy_groups';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
