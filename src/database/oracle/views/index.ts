@@ -127,6 +127,7 @@ import './v_system_metric';
 import './v_system_metric_history';
 import './v_services';
 import './v_service_stats';
+import './v_servicemetric';
 import './v_sgainfo';
 import './v_sga_dynamic_components';
 import './v_sga_dynamic_free_memory';
