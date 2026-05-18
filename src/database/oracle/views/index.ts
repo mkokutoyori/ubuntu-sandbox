@@ -285,4 +285,38 @@ import './v_sql_plan';
 import './v_resource_limit';
 import './v_asm_diskgroup';
 
+// Core DBA_ views migrated out of OracleCatalog (one file per view).
+import './dba_users';
+import './dba_roles';
+import './dba_role_privs';
+import './dba_sys_privs';
+import './dba_tables';
+import './dba_tab_columns';
+import './dba_objects';
+import './dba_tablespaces';
+import './dba_data_files';
+import './dba_indexes';
+import './dba_constraints';
+import './dba_sequences';
+import './dba_views';
+import './dba_ind_columns';
+import './dba_cons_columns';
+import './dba_tab_privs';
+import './dba_source';
+import './dba_procedures';
+import './dba_triggers';
+import './dba_temp_files';
+import './dba_free_space';
+import './dba_segments';
+import './dba_extents';
+import './dba_audit_trail';
+import './dba_stmt_audit_opts';
+import './dba_profiles';
+import './dba_tab_statistics';
+import './dba_directories';
+import './dba_db_links';
+import './dba_jobs';
+import './dba_scheduler_jobs';
+import './dba_synonyms';
+
 export { };

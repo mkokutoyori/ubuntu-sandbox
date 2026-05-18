@@ -5,13 +5,14 @@
  * Queries against these views return simulated metadata from the storage layer.
  */
 
-import { BaseCatalog, type CatalogUser } from '../engine/catalog/BaseCatalog';
+import { BaseCatalog, type CatalogUser, type CatalogPrivilege } from '../engine/catalog/BaseCatalog';
 import { type ResultSet, queryResult, emptyResult } from '../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../engine/catalog/DataType';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { queryView, listCatalogViewEntries, type CatalogViewEntry } from './views/registry';
+import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
 // Side-effect import: each file under `views/` self-registers its
@@ -20,11 +21,21 @@ import type { SecurityEngine } from './security/SecurityEngine';
 import './views';
 
 /** Stored PL/SQL unit shape (avoids circular import with OracleDatabase) */
-interface StoredUnit {
+export interface StoredUnit {
   schema: string; name: string; type: string;
   parameters: Array<{ name: string; mode: string; dataType: string }>;
   returnType?: string; body: string; sourceLines: string[];
   created: Date; status: string;
+}
+
+/** A single row produced by `enumerateObjects` (DBA_OBJECTS source). */
+export interface EnumeratedObject {
+  owner: string; name: string; subobject: string | null;
+  objectId: number; dataObjectId: number | null;
+  type: string; created: Date; lastDdl: Date;
+  timestamp: string; status: 'VALID' | 'INVALID';
+  temporary: 'Y' | 'N'; generated: 'Y' | 'N'; secondary: 'N';
+  namespace: number; oracleMaintained: 'Y' | 'N';
 }
 
 /** Audit trail entry shape */
@@ -99,26 +110,6 @@ export interface FgaAuditRecord {
 // Shared by DBA_VIEWS, ALL_VIEWS, and USER_VIEWS. The order and types
 // match Oracle 19c so audit scripts that SELECT explicit columns work
 // without modification.
-const VIEW_COLUMNS = [
-  { name: 'OWNER', dataType: oracleVarchar2(128) },
-  { name: 'VIEW_NAME', dataType: oracleVarchar2(128) },
-  { name: 'TEXT_LENGTH', dataType: oracleNumber(10) },
-  { name: 'TEXT', dataType: oracleVarchar2(4000) },
-  { name: 'TYPE_TEXT_LENGTH', dataType: oracleNumber(10) },
-  { name: 'TYPE_TEXT', dataType: oracleVarchar2(4000) },
-  { name: 'OID_TEXT_LENGTH', dataType: oracleNumber(10) },
-  { name: 'OID_TEXT', dataType: oracleVarchar2(4000) },
-  { name: 'VIEW_TYPE_OWNER', dataType: oracleVarchar2(128) },
-  { name: 'VIEW_TYPE', dataType: oracleVarchar2(128) },
-  { name: 'SUPERVIEW_NAME', dataType: oracleVarchar2(128) },
-  { name: 'EDITIONING_VIEW', dataType: oracleVarchar2(1) },
-  { name: 'READ_ONLY', dataType: oracleVarchar2(1) },
-  { name: 'BEQUEATH', dataType: oracleVarchar2(12) },
-  { name: 'ORIGIN_CON_ID', dataType: oracleVarchar2(256) },
-  { name: 'DEFAULT_COLLATION', dataType: oracleVarchar2(100) },
-  { name: 'CONTAINER_DATA', dataType: oracleVarchar2(1) },
-];
-
 function viewRow(owner: string, name: string, text: string): (string | number | null)[] {
   return [
     owner, name, text.length, text,
@@ -180,6 +171,22 @@ export class OracleCatalog extends BaseCatalog {
   setStoredUnitsProvider(provider: () => StoredUnit[]): void {
     this.storedUnitsProvider = provider;
   }
+
+  // ── Public read accessors for self-registered DBA_ view files ────
+  /** Stored PL/SQL units (DBA_SOURCE / DBA_PROCEDURES). */
+  getStoredUnits(): StoredUnit[] { return this.storedUnitsProvider?.() ?? []; }
+  /** Custom profile overrides (legacy DBA_PROFILES fallback). */
+  getProfiles(): ReadonlyMap<string, Map<string, string>> { return this.profiles; }
+  /** Role grants (DBA_ROLE_PRIVS). */
+  getRoleGrants(): ReadonlyArray<{ grantee: string; role: string; adminOption: boolean }> {
+    return this.roleGrants;
+  }
+  /** System privilege grants (DBA_SYS_PRIVS). */
+  getSysPrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.sysPrivileges; }
+  /** Object privilege grants (DBA_TAB_PRIVS). */
+  getTablePrivilegeGrants(): ReadonlyArray<CatalogPrivilege> { return this.tabPrivileges; }
+  /** Rows backing DBA_VIEWS / ALL_VIEWS / USER_VIEWS. */
+  getCatalogViewRows(): (string | number | null)[][] { return this.collectViewRows(); }
 
   /** Wire in the SecurityEngine after construction. */
   setSecurityEngine(engine: SecurityEngine): void {
@@ -608,229 +615,19 @@ export class OracleCatalog extends BaseCatalog {
   // ── DBA_ views ───────────────────────────────────────────────────
 
   private queryDBA(viewName: string, _currentUser: string): ResultSet | null {
-    switch (viewName) {
-      case 'DBA_USERS': return this.dbaUsers();
-      case 'DBA_ROLES': return this.dbaRoles();
-      case 'DBA_ROLE_PRIVS': return this.dbaRolePrivs();
-      case 'DBA_SYS_PRIVS': return this.dbaSysPrivs();
-      case 'DBA_TABLES': return this.dbaTables();
-      case 'DBA_TAB_COLUMNS': return this.dbaTabColumns();
-      case 'DBA_OBJECTS': return this.dbaObjects();
-      case 'DBA_TABLESPACES': return this.dbaTablespaces();
-      case 'DBA_DATA_FILES': return this.dbaDataFiles();
-      case 'DBA_INDEXES': return this.dbaIndexes();
-      case 'DBA_CONSTRAINTS': return this.dbaConstraints();
-      case 'DBA_SEQUENCES': return this.dbaSequences();
-      case 'DBA_VIEWS': return this.dbaViews();
-      case 'DBA_IND_COLUMNS': return this.dbaIndColumns();
-      case 'DBA_CONS_COLUMNS': return this.dbaConsColumns();
-      case 'DBA_TAB_PRIVS': return this.dbaTabPrivs();
-      case 'DBA_SOURCE': return this.dbaSource();
-      case 'DBA_PROCEDURES': return this.dbaProcedures();
-      case 'DBA_TRIGGERS': return this.dbaTriggers();
-      case 'DBA_TEMP_FILES': return this.dbaTempFiles();
-      case 'DBA_FREE_SPACE': return this.dbaFreeSpace();
-      case 'DBA_SEGMENTS': return this.dbaSegments();
-      case 'DBA_EXTENTS': return this.dbaExtents();
-      case 'DBA_AUDIT_TRAIL': return this.dbaAuditTrail();
-      case 'DBA_STMT_AUDIT_OPTS': return this.dbaStmtAuditOpts();
-      // DBA_AUDIT_SESSION, DBA_AUDIT_OBJECT, DBA_AUDIT_STATEMENT are
-      // served by registered views under `views/dba_audit_*.ts`.
-      case 'DBA_PROFILES': return this.dbaProfiles();
-      case 'DBA_TS_QUOTAS': return this.dbaTsQuotas();
-      case 'DBA_TAB_STATISTICS': return this.dbaTabStatistics();
-      case 'DBA_DIRECTORIES': return this.dbaDirectories();
-      case 'DBA_DB_LINKS': return this.dbaDbLinks();
-      case 'DBA_JOBS': return this.dbaJobs();
-      case 'DBA_SCHEDULER_JOBS': return this.dbaSchedulerJobs();
-      case 'DBA_SYNONYMS': return this.dbaSynonyms();
-      default: {
-        const fromRegistry = queryView(viewName, {
-          instance: this.instance,
-          storage: this.storage,
-          runtime: this.instance.getRuntimeState(),
-          catalog: this,
-          currentUser: _currentUser,
-        });
-        return fromRegistry ?? null; // Unknown view — fall through to table lookup
-      }
-    }
+    // Every DBA_ dictionary view is self-registered under views/*.ts.
+    const fromRegistry = queryView(viewName, {
+      instance: this.instance,
+      storage: this.storage,
+      runtime: this.instance.getRuntimeState(),
+      catalog: this,
+      currentUser: _currentUser,
+    });
+    return fromRegistry ?? null; // Unknown view — fall through to table lookup
   }
 
-  private dbaUsers(): ResultSet {
-    const users = this.getAllUsers();
-    const engine = this.securityEngine;
 
-    return queryResult(
-      [
-        { name: 'USERNAME', dataType: oracleVarchar2(128) },
-        { name: 'USER_ID', dataType: oracleNumber(10) },
-        { name: 'ACCOUNT_STATUS', dataType: oracleVarchar2(32) },
-        { name: 'LOCK_DATE', dataType: oracleDate() },
-        { name: 'EXPIRY_DATE', dataType: oracleDate() },
-        { name: 'DEFAULT_TABLESPACE', dataType: oracleVarchar2(30) },
-        { name: 'TEMPORARY_TABLESPACE', dataType: oracleVarchar2(30) },
-        { name: 'CREATED', dataType: oracleDate() },
-        { name: 'PROFILE', dataType: oracleVarchar2(128) },
-        { name: 'AUTHENTICATION_TYPE', dataType: oracleVarchar2(8) },
-      ],
-      users.map(u => {
-        // Compute live expiry date from PasswordManager
-        let expiryDate: Date | null = u.expiryDate;
-        let accountStatus: string = u.accountStatus;
-
-        if (engine) {
-          const lifetimeDays = engine.profiles.resolvePasswordLifetimeDays(u.profile);
-          expiryDate = engine.passwords.computeExpiryDate(u.username, lifetimeDays);
-
-          // Derive authoritative account status from actual state
-          const isLocked = u.accountStatus === 'LOCKED' || u.accountStatus === 'EXPIRED & LOCKED';
-          const pwStatus = engine.passwords.getPasswordStatus(
-            u.username,
-            lifetimeDays,
-            engine.profiles.resolvePasswordGraceDays(u.profile)
-          );
-          const isExpired = pwStatus === 'EXPIRED' || pwStatus === 'EXPIRED(GRACE)';
-
-          if (isLocked && isExpired) {
-            accountStatus = 'EXPIRED & LOCKED';
-          } else if (isLocked) {
-            accountStatus = 'LOCKED';
-          } else if (isExpired) {
-            accountStatus = pwStatus === 'EXPIRED(GRACE)' ? 'EXPIRED(GRACE)' : 'EXPIRED';
-          } else {
-            accountStatus = 'OPEN';
-          }
-        }
-
-        return [
-          u.username,
-          u.userId,
-          accountStatus,
-          u.lockDate ? u.lockDate.toISOString() : null,
-          expiryDate ? expiryDate.toISOString() : null,
-          u.defaultTablespace,
-          u.temporaryTablespace,
-          u.created.toISOString(),
-          u.profile,
-          u.authenticationType,
-        ];
-      })
-    );
-  }
-
-  private dbaRoles(): ResultSet {
-    const roles = this.getAllRoles();
-    return queryResult(
-      [
-        { name: 'ROLE', dataType: oracleVarchar2(30) },
-        { name: 'PASSWORD_REQUIRED', dataType: oracleVarchar2(8) },
-      ],
-      roles.map(r => [r.name, r.passwordRequired ? 'YES' : 'NO'])
-    );
-  }
-
-  private dbaRolePrivs(): ResultSet {
-    return queryResult(
-      [
-        { name: 'GRANTEE', dataType: oracleVarchar2(30) },
-        { name: 'GRANTED_ROLE', dataType: oracleVarchar2(30) },
-        { name: 'ADMIN_OPTION', dataType: oracleVarchar2(3) },
-      ],
-      this.roleGrants.map(rg => [rg.grantee, rg.role, rg.adminOption ? 'YES' : 'NO'])
-    );
-  }
-
-  private dbaSysPrivs(): ResultSet {
-    return queryResult(
-      [
-        { name: 'GRANTEE', dataType: oracleVarchar2(30) },
-        { name: 'PRIVILEGE', dataType: oracleVarchar2(40) },
-        { name: 'ADMIN_OPTION', dataType: oracleVarchar2(3) },
-      ],
-      this.sysPrivileges.map(p => [p.grantee, p.privilege, p.grantable ? 'YES' : 'NO'])
-    );
-  }
-
-  private dbaTables(): ResultSet {
-    const tables = this.storage.getAllTables();
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'NUM_ROWS', dataType: oracleNumber(20) },
-        { name: 'STATUS', dataType: oracleVarchar2(8) },
-      ],
-      tables.map(t => [t.schema, t.name, t.tablespace ?? 'USERS', t.rowCount, 'VALID'])
-    );
-  }
-
-  private dbaTabColumns(): ResultSet {
-    const tables = this.storage.getAllTables();
-    const rows: (string | number | null)[][] = [];
-    for (const t of tables) {
-      for (const c of t.columns) {
-        rows.push([t.schema, t.name, c.name, c.dataType.name, c.dataType.precision ?? null, c.dataType.scale ?? null, c.dataType.nullable ? 'Y' : 'N', c.ordinalPosition + 1]);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'COLUMN_NAME', dataType: oracleVarchar2(30) },
-        { name: 'DATA_TYPE', dataType: oracleVarchar2(30) },
-        { name: 'DATA_LENGTH', dataType: oracleNumber(10) },
-        { name: 'DATA_SCALE', dataType: oracleNumber(10) },
-        { name: 'NULLABLE', dataType: oracleVarchar2(1) },
-        { name: 'COLUMN_ID', dataType: oracleNumber(10) },
-      ],
-      rows
-    );
-  }
-
-  private dbaObjects(): ResultSet {
-    const rows = this.enumerateObjects().map(o => [
-      o.owner, o.name, o.subobject, o.objectId, o.dataObjectId,
-      o.type, o.created.toISOString(), o.lastDdl.toISOString(),
-      o.timestamp, o.status, o.temporary, o.generated, o.secondary,
-      o.namespace, o.oracleMaintained,
-    ]);
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(128) },
-        { name: 'OBJECT_NAME', dataType: oracleVarchar2(128) },
-        { name: 'SUBOBJECT_NAME', dataType: oracleVarchar2(128) },
-        { name: 'OBJECT_ID', dataType: oracleNumber(10) },
-        { name: 'DATA_OBJECT_ID', dataType: oracleNumber(10) },
-        { name: 'OBJECT_TYPE', dataType: oracleVarchar2(23) },
-        { name: 'CREATED', dataType: oracleDate() },
-        { name: 'LAST_DDL_TIME', dataType: oracleDate() },
-        { name: 'TIMESTAMP', dataType: oracleVarchar2(19) },
-        { name: 'STATUS', dataType: oracleVarchar2(7) },
-        { name: 'TEMPORARY', dataType: oracleVarchar2(1) },
-        { name: 'GENERATED', dataType: oracleVarchar2(1) },
-        { name: 'SECONDARY', dataType: oracleVarchar2(1) },
-        { name: 'NAMESPACE', dataType: oracleNumber(10) },
-        { name: 'ORACLE_MAINTAINED', dataType: oracleVarchar2(1) },
-      ],
-      rows
-    );
-  }
-
-  /**
-   * Single source of truth for all database objects. DBA_OBJECTS,
-   * ALL_OBJECTS, USER_OBJECTS, TAB and CAT all share the same
-   * enumeration; the views differ only in filtering.
-   */
-  private enumerateObjects(): Array<{
-    owner: string; name: string; subobject: string | null;
-    objectId: number; dataObjectId: number | null;
-    type: string; created: Date; lastDdl: Date;
-    timestamp: string; status: 'VALID' | 'INVALID';
-    temporary: 'Y' | 'N'; generated: 'Y' | 'N'; secondary: 'N';
-    namespace: number; oracleMaintained: 'Y' | 'N';
-  }> {
+  enumerateObjects(): EnumeratedObject[] {
     const SYS_SCHEMAS = new Set(['SYS', 'SYSTEM', 'XDB', 'OUTLN', 'WMSYS', 'CTXSYS', 'MDSYS', 'ORDSYS', 'DBSNMP']);
     const ts = (d: Date) => d.toISOString().replace('T', ':').slice(0, 19);
     const seenIds = new Set<number>();
@@ -960,130 +757,6 @@ export class OracleCatalog extends BaseCatalog {
     return out;
   }
 
-  private dbaTablespaces(): ResultSet {
-    const tss = this.storage.getAllTablespaces();
-    return queryResult(
-      [
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'STATUS', dataType: oracleVarchar2(9) },
-        { name: 'CONTENTS', dataType: oracleVarchar2(9) },
-        { name: 'BLOCK_SIZE', dataType: oracleNumber(10) },
-      ],
-      tss.map(ts => [ts.name, ts.status, ts.type, ts.blockSize])
-    );
-  }
-
-  private dbaDataFiles(): ResultSet {
-    const tss = this.storage.getAllTablespaces();
-    const rows: (string | number)[][] = [];
-    let fileId = 1;
-    for (const ts of tss) {
-      if (ts.type === 'TEMPORARY') continue;
-      for (const df of ts.datafiles) {
-        rows.push([fileId++, df.path, ts.name, df.size, df.autoextend ? 'YES' : 'NO']);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'FILE_ID', dataType: oracleNumber(10) },
-        { name: 'FILE_NAME', dataType: oracleVarchar2(513) },
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'BYTES', dataType: oracleVarchar2(20) },
-        { name: 'AUTOEXTENSIBLE', dataType: oracleVarchar2(3) },
-      ],
-      rows
-    );
-  }
-
-  private dbaIndexes(): ResultSet {
-    const rows: (string | number)[][] = [];
-    for (const schema of this.storage.getSchemas()) {
-      for (const idx of this.storage.getIndexes(schema)) {
-        const isFunctionBased = idx.expressions?.some(e => e !== null) ?? false;
-        const indexType = isFunctionBased ? 'FUNCTION-BASED NORMAL' : 'NORMAL';
-        rows.push([schema, idx.name, idx.tableName, idx.unique ? 'UNIQUE' : 'NONUNIQUE', 'VALID', indexType]);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'INDEX_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'UNIQUENESS', dataType: oracleVarchar2(9) },
-        { name: 'STATUS', dataType: oracleVarchar2(8) },
-        { name: 'INDEX_TYPE', dataType: oracleVarchar2(27) },
-      ],
-      rows
-    );
-  }
-
-  private dbaConstraints(): ResultSet {
-    const tables = this.storage.getAllTables();
-    const rows: (string | null)[][] = [];
-    for (const t of tables) {
-      for (const c of t.constraints) {
-        const typeCode = c.type === 'PRIMARY_KEY' ? 'P' : c.type === 'UNIQUE' ? 'U' : c.type === 'FOREIGN_KEY' ? 'R' : c.type === 'CHECK' ? 'C' : 'O';
-        rows.push([t.schema, c.name, typeCode, t.name, 'ENABLED']);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'CONSTRAINT_NAME', dataType: oracleVarchar2(30) },
-        { name: 'CONSTRAINT_TYPE', dataType: oracleVarchar2(1) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'STATUS', dataType: oracleVarchar2(8) },
-      ],
-      rows
-    );
-  }
-
-  private dbaSequences(): ResultSet {
-    const rows: (string | number | null)[][] = [];
-    for (const schema of this.storage.getSchemas()) {
-      const tableNames = this.storage.getTableNames(schema);
-      // Sequences are separate but we check via storage
-      // For now just return empty — will be enhanced
-    }
-    return queryResult(
-      [
-        { name: 'SEQUENCE_OWNER', dataType: oracleVarchar2(30) },
-        { name: 'SEQUENCE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'MIN_VALUE', dataType: oracleNumber(28) },
-        { name: 'MAX_VALUE', dataType: oracleNumber(28) },
-        { name: 'INCREMENT_BY', dataType: oracleNumber(28) },
-        { name: 'LAST_NUMBER', dataType: oracleNumber(28) },
-      ],
-      rows
-    );
-  }
-
-  /**
-   * DBA_VIEWS — every view in the database, regardless of owner.
-   *
-   * Reports both user-defined views (from `OracleStorage.getAllViews`)
-   * and the SYS-owned dictionary views surfaced via `BUILTIN_VIEWS`.
-   * The full Oracle 19c column set is returned so tooling (sqldeveloper,
-   * DBA scripts, our own DESC command) treats it the same way it would
-   * on a real instance.
-   */
-  private dbaViews(): ResultSet {
-    return queryResult(VIEW_COLUMNS, this.collectViewRows());
-  }
-
-  /**
-   * Every SYS-owned dictionary / dynamic view the simulator exposes,
-   * keyed by uppercase name. The self-registering view files (each
-   * `registerView(...)` under `views/`) are the single source of truth:
-   * registering a view automatically surfaces it in DBA_VIEWS /
-   * ALL_VIEWS / USER_VIEWS / DBA_OBJECTS / DICTIONARY with no parallel
-   * catalog entry to maintain.
-   *
-   * `BUILTIN_VIEWS` is merged in only to cover the handful of views
-   * still served by hardcoded methods in this class (DBA_USERS,
-   * V$SESSION, …) which are not self-registered. When a name exists in
-   * both places the registered definition wins.
-   */
   private mergedCatalogViews(): Map<string, CatalogViewEntry> {
     const merged = new Map<string, CatalogViewEntry>();
     for (const v of BUILTIN_VIEWS) {
@@ -1097,11 +770,6 @@ export class OracleCatalog extends BaseCatalog {
     return merged;
   }
 
-  /**
-   * Build the rows that back DBA_VIEWS / ALL_VIEWS / USER_VIEWS.
-   * Reusing the same enumerator guarantees the three views stay
-   * consistent — they differ only in filtering.
-   */
   private collectViewRows(): (string | number | null)[][] {
     const rows: (string | number | null)[][] = [];
 
@@ -1118,444 +786,6 @@ export class OracleCatalog extends BaseCatalog {
     return rows;
   }
 
-  private dbaIndColumns(): ResultSet {
-    const rows: (string | number | null)[][] = [];
-    for (const schema of this.storage.getSchemas()) {
-      for (const idx of this.storage.getIndexes(schema)) {
-        for (let i = 0; i < idx.columns.length; i++) {
-          const expr = idx.expressions?.[i] ?? null;
-          rows.push([schema, idx.name, idx.tableName, idx.columns[i], i + 1, expr]);
-        }
-      }
-    }
-    return queryResult(
-      [
-        { name: 'INDEX_OWNER', dataType: oracleVarchar2(30) },
-        { name: 'INDEX_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'COLUMN_NAME', dataType: oracleVarchar2(30) },
-        { name: 'COLUMN_POSITION', dataType: oracleNumber(10) },
-        { name: 'COLUMN_EXPRESSION', dataType: oracleVarchar2(4000) },
-      ],
-      rows
-    );
-  }
-
-  private dbaConsColumns(): ResultSet {
-    const tables = this.storage.getAllTables();
-    const rows: (string | null)[][] = [];
-    for (const t of tables) {
-      for (const c of t.constraints) {
-        const cols = c.columns ?? [];
-        for (let i = 0; i < cols.length; i++) {
-          rows.push([t.schema, c.name, t.name, cols[i], String(i + 1)]);
-        }
-      }
-    }
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'CONSTRAINT_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'COLUMN_NAME', dataType: oracleVarchar2(30) },
-        { name: 'POSITION', dataType: oracleNumber(10) },
-      ],
-      rows
-    );
-  }
-
-  private dbaTabPrivs(): ResultSet {
-    const rows: (string | number | null)[][] = this.tabPrivileges.map(p => [
-      p.grantee,
-      p.objectSchema ?? 'SYS',
-      p.objectName ?? '',
-      p.privilege,
-      p.grantable ? 'YES' : 'NO',
-      'SYS', // GRANTOR — defaults to SYS in our simulation
-      'OBJECT', // TYPE
-    ]);
-    return queryResult(
-      [
-        { name: 'GRANTEE', dataType: oracleVarchar2(128) },
-        { name: 'OWNER', dataType: oracleVarchar2(128) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(128) },
-        { name: 'PRIVILEGE', dataType: oracleVarchar2(40) },
-        { name: 'GRANTABLE', dataType: oracleVarchar2(3) },
-        { name: 'GRANTOR', dataType: oracleVarchar2(128) },
-        { name: 'TYPE', dataType: oracleVarchar2(24) },
-      ],
-      rows
-    );
-  }
-
-  private dbaSource(): ResultSet {
-    const units = this.storedUnitsProvider?.() ?? [];
-    const rows: (string | number)[][] = [];
-    for (const u of units) {
-      for (let i = 0; i < u.sourceLines.length; i++) {
-        rows.push([u.schema, u.name, u.type, i + 1, u.sourceLines[i]]);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'NAME', dataType: oracleVarchar2(30) },
-        { name: 'TYPE', dataType: oracleVarchar2(12) },
-        { name: 'LINE', dataType: oracleNumber(10) },
-        { name: 'TEXT', dataType: oracleVarchar2(4000) },
-      ],
-      rows
-    );
-  }
-
-  private dbaProcedures(): ResultSet {
-    const units = this.storedUnitsProvider?.() ?? [];
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'OBJECT_NAME', dataType: oracleVarchar2(30) },
-        { name: 'OBJECT_TYPE', dataType: oracleVarchar2(13) },
-        { name: 'AGGREGATE', dataType: oracleVarchar2(3) },
-        { name: 'PIPELINED', dataType: oracleVarchar2(3) },
-        { name: 'DETERMINISTIC', dataType: oracleVarchar2(3) },
-      ],
-      units.filter(u => u.type === 'PROCEDURE' || u.type === 'FUNCTION')
-           .map(u => [u.schema, u.name, u.type, 'NO', 'NO', 'NO'])
-    );
-  }
-
-  private dbaTriggers(): ResultSet {
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TRIGGER_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TRIGGER_TYPE', dataType: oracleVarchar2(16) },
-        { name: 'TRIGGERING_EVENT', dataType: oracleVarchar2(227) },
-        { name: 'TABLE_OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'STATUS', dataType: oracleVarchar2(8) },
-      ],
-      []
-    );
-  }
-
-  private dbaTempFiles(): ResultSet {
-    const tss = this.storage.getAllTablespaces();
-    const rows: (string | number)[][] = [];
-    let fileId = 1;
-    for (const ts of tss) {
-      if (ts.type !== 'TEMPORARY') continue;
-      for (const df of ts.datafiles) {
-        rows.push([fileId++, df.path, ts.name, df.size, df.autoextend ? 'YES' : 'NO']);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'FILE_ID', dataType: oracleNumber(10) },
-        { name: 'FILE_NAME', dataType: oracleVarchar2(513) },
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'BYTES', dataType: oracleVarchar2(20) },
-        { name: 'AUTOEXTENSIBLE', dataType: oracleVarchar2(3) },
-      ],
-      rows
-    );
-  }
-
-  private dbaFreeSpace(): ResultSet {
-    const tss = this.storage.getAllTablespaces();
-    const rows: (string | number)[][] = [];
-    let fileId = 1;
-    for (const ts of tss) {
-      for (const df of ts.datafiles) {
-        const freeBytes = Math.floor(parseInt(String(df.size)) * 0.7);
-        rows.push([ts.name, fileId++, freeBytes, 1]);
-      }
-    }
-    return queryResult(
-      [
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'FILE_ID', dataType: oracleNumber(10) },
-        { name: 'BYTES', dataType: oracleNumber(20) },
-        { name: 'BLOCKS', dataType: oracleNumber(20) },
-      ],
-      rows
-    );
-  }
-
-  private dbaSegments(): ResultSet {
-    const tables = this.storage.getAllTables();
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'SEGMENT_NAME', dataType: oracleVarchar2(30) },
-        { name: 'SEGMENT_TYPE', dataType: oracleVarchar2(18) },
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'BYTES', dataType: oracleNumber(20) },
-        { name: 'BLOCKS', dataType: oracleNumber(20) },
-        { name: 'EXTENTS', dataType: oracleNumber(10) },
-      ],
-      tables.map(t => [t.schema, t.name, 'TABLE', t.tablespace ?? 'USERS', t.rowCount * 200, Math.ceil(t.rowCount * 200 / 8192), 1])
-    );
-  }
-
-  private dbaExtents(): ResultSet {
-    const tables = this.storage.getAllTables();
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'SEGMENT_NAME', dataType: oracleVarchar2(30) },
-        { name: 'SEGMENT_TYPE', dataType: oracleVarchar2(18) },
-        { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'EXTENT_ID', dataType: oracleNumber(10) },
-        { name: 'BYTES', dataType: oracleNumber(20) },
-        { name: 'BLOCKS', dataType: oracleNumber(20) },
-      ],
-      tables.map(t => [t.schema, t.name, 'TABLE', t.tablespace ?? 'USERS', 0, 65536, 8])
-    );
-  }
-
-  private dbaAuditTrail(): ResultSet {
-    return queryResult(
-      [
-        { name: 'OS_USERNAME', dataType: oracleVarchar2(255) },
-        { name: 'USERNAME', dataType: oracleVarchar2(128) },
-        { name: 'USERHOST', dataType: oracleVarchar2(128) },
-        { name: 'TIMESTAMP', dataType: oracleDate() },
-        { name: 'ACTION_NAME', dataType: oracleVarchar2(28) },
-        { name: 'OBJ_NAME', dataType: oracleVarchar2(128) },
-        { name: 'RETURNCODE', dataType: oracleNumber(10) },
-        { name: 'OBJ_OWNER', dataType: oracleVarchar2(128) },
-        { name: 'SESSIONID', dataType: oracleNumber(10) },
-        { name: 'PRIV_USED', dataType: oracleVarchar2(40) },
-        { name: 'SQL_TEXT', dataType: oracleVarchar2(2000) },
-        { name: 'STATEMENT_TYPE', dataType: oracleVarchar2(28) },
-      ],
-      this.auditTrail.map(e => [
-        e.osUsername,
-        e.username,
-        e.userhost,
-        e.timestamp.toISOString(),
-        e.actionName,
-        e.objName,
-        e.returncode,
-        e.objOwner,
-        e.sessionId,
-        e.privUsed,
-        e.sqlText,
-        e.statementType,
-      ])
-    );
-  }
-
-  private dbaAuditSession(): ResultSet {
-    // Pair LOGON entries with their matching LOGOFF (by sessionId) so
-    // LOGOFF_TIME is populated for closed sessions and NULL for active ones.
-    const logons = this.auditTrail.filter(e => e.actionName === 'LOGON');
-    const logoffs = new Map<number, AuditEntry>();
-    for (const e of this.auditTrail) {
-      if (e.actionName === 'LOGOFF') logoffs.set(e.sessionId, e);
-    }
-    const rows = logons.map(e => {
-      const off = logoffs.get(e.sessionId);
-      return [
-        e.osUsername, e.username, e.userhost, e.terminal,
-        e.timestamp.toISOString(), 'LOGON', e.sessionId,
-        off ? off.timestamp.toISOString() : null,
-        e.returncode,
-      ];
-    });
-    // Include LOGOFF rows too — Oracle's DBA_AUDIT_SESSION reports both.
-    for (const off of logoffs.values()) {
-      rows.push([
-        off.osUsername, off.username, off.userhost, off.terminal,
-        off.timestamp.toISOString(), 'LOGOFF', off.sessionId,
-        off.timestamp.toISOString(),
-        off.returncode,
-      ]);
-    }
-    return queryResult(
-      [
-        { name: 'OS_USERNAME', dataType: oracleVarchar2(30) },
-        { name: 'USERNAME', dataType: oracleVarchar2(128) },
-        { name: 'USERHOST', dataType: oracleVarchar2(128) },
-        { name: 'TERMINAL', dataType: oracleVarchar2(128) },
-        { name: 'TIMESTAMP', dataType: oracleDate() },
-        { name: 'ACTION_NAME', dataType: oracleVarchar2(28) },
-        { name: 'SESSIONID', dataType: oracleNumber(10) },
-        { name: 'LOGOFF_TIME', dataType: oracleDate() },
-        { name: 'RETURNCODE', dataType: oracleNumber(10) },
-      ],
-      rows
-    );
-  }
-
-  private dbaStmtAuditOpts(): ResultSet {
-    return queryResult(
-      [
-        { name: 'USER_NAME', dataType: oracleVarchar2(128) },
-        { name: 'AUDIT_OPTION', dataType: oracleVarchar2(40) },
-        { name: 'SUCCESS', dataType: oracleVarchar2(10) },
-        { name: 'FAILURE', dataType: oracleVarchar2(10) },
-      ],
-      this.stmtAuditOpts.map(o => [o.userName, o.auditOption, o.success, o.failure])
-    );
-  }
-
-  /** All resource limits with their types for profile generation */
-  private static readonly PROFILE_RESOURCES: [string, string, string][] = [
-    ['COMPOSITE_LIMIT', 'KERNEL', 'UNLIMITED'],
-    ['SESSIONS_PER_USER', 'KERNEL', 'UNLIMITED'],
-    ['CPU_PER_SESSION', 'KERNEL', 'UNLIMITED'],
-    ['CPU_PER_CALL', 'KERNEL', 'UNLIMITED'],
-    ['LOGICAL_READS_PER_SESSION', 'KERNEL', 'UNLIMITED'],
-    ['LOGICAL_READS_PER_CALL', 'KERNEL', 'UNLIMITED'],
-    ['IDLE_TIME', 'KERNEL', 'UNLIMITED'],
-    ['CONNECT_TIME', 'KERNEL', 'UNLIMITED'],
-    ['PRIVATE_SGA', 'KERNEL', 'UNLIMITED'],
-    ['FAILED_LOGIN_ATTEMPTS', 'PASSWORD', '10'],
-    ['PASSWORD_LIFE_TIME', 'PASSWORD', '180'],
-    ['PASSWORD_REUSE_TIME', 'PASSWORD', 'UNLIMITED'],
-    ['PASSWORD_REUSE_MAX', 'PASSWORD', 'UNLIMITED'],
-    ['PASSWORD_LOCK_TIME', 'PASSWORD', '1'],
-    ['PASSWORD_GRACE_TIME', 'PASSWORD', '7'],
-    ['PASSWORD_VERIFY_FUNCTION', 'PASSWORD', 'NULL'],
-  ];
-
-  private dbaProfiles(): ResultSet {
-    const cols = [
-      { name: 'PROFILE', dataType: oracleVarchar2(128) },
-      { name: 'RESOURCE_NAME', dataType: oracleVarchar2(32) },
-      { name: 'RESOURCE_TYPE', dataType: oracleVarchar2(8) },
-      { name: 'LIMIT', dataType: oracleVarchar2(128) },
-    ];
-
-    // Prefer SecurityEngine's ProfileManager (authoritative)
-    if (this.securityEngine) {
-      const profileRows = this.securityEngine.profiles.getAllProfileRows();
-      return queryResult(cols, profileRows.map(r => [r.profile, r.resourceName, r.resourceType, r.limit]));
-    }
-
-    // Legacy fallback (no SecurityEngine wired yet)
-    const rows: (string | number | null)[][] = [];
-    for (const [resName, resType, defaultLimit] of OracleCatalog.PROFILE_RESOURCES) {
-      rows.push(['DEFAULT', resName, resType, defaultLimit]);
-    }
-    for (const [profileName, overrides] of this.profiles) {
-      for (const [resName, resType] of OracleCatalog.PROFILE_RESOURCES) {
-        const limit = overrides.get(resName) ?? 'DEFAULT';
-        rows.push([profileName, resName, resType, limit]);
-      }
-    }
-    return queryResult(cols, rows);
-  }
-
-  private dbaTsQuotas(): ResultSet {
-    const cols = [
-      { name: 'USERNAME', dataType: oracleVarchar2(128) },
-      { name: 'TABLESPACE_NAME', dataType: oracleVarchar2(30) },
-      { name: 'BYTES', dataType: oracleNumber(20) },
-      { name: 'MAX_BYTES', dataType: oracleNumber(20) },
-      { name: 'BLOCKS', dataType: oracleNumber(20) },
-      { name: 'MAX_BLOCKS', dataType: oracleNumber(20) },
-      { name: 'DROPPED', dataType: oracleVarchar2(3) },
-    ];
-    if (!this.securityEngine) return queryResult(cols, []);
-    const quotas = this.securityEngine.quotas.getAllQuotas();
-    const blockSize = 8192;
-    return queryResult(cols, quotas.map(q => {
-      const maxBytes = q.maxBytes === -1 ? -1 : q.maxBytes;
-      return [
-        q.username, q.tablespace, q.bytesUsed, maxBytes,
-        Math.ceil(q.bytesUsed / blockSize),
-        maxBytes === -1 ? -1 : Math.ceil(maxBytes / blockSize),
-        'NO',
-      ];
-    }));
-  }
-
-  private dbaTabStatistics(): ResultSet {
-    const tables = this.storage.getAllTables();
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'NUM_ROWS', dataType: oracleNumber(20) },
-        { name: 'BLOCKS', dataType: oracleNumber(20) },
-        { name: 'AVG_ROW_LEN', dataType: oracleNumber(20) },
-        { name: 'LAST_ANALYZED', dataType: oracleDate() },
-        { name: 'STALE_STATS', dataType: oracleVarchar2(3) },
-      ],
-      tables.map(t => [t.schema, t.name, t.rowCount, Math.ceil(t.rowCount * 200 / 8192), 200, new Date().toISOString(), 'NO'])
-    );
-  }
-
-  private dbaDirectories(): ResultSet {
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'DIRECTORY_NAME', dataType: oracleVarchar2(30) },
-        { name: 'DIRECTORY_PATH', dataType: oracleVarchar2(4000) },
-      ],
-      [
-        ['SYS', 'DATA_PUMP_DIR', '/u01/app/oracle/admin/ORCL/dpdump/'],
-      ]
-    );
-  }
-
-  private dbaDbLinks(): ResultSet {
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'DB_LINK', dataType: oracleVarchar2(128) },
-        { name: 'USERNAME', dataType: oracleVarchar2(30) },
-        { name: 'HOST', dataType: oracleVarchar2(2000) },
-        { name: 'CREATED', dataType: oracleDate() },
-      ],
-      []
-    );
-  }
-
-  private dbaJobs(): ResultSet {
-    return queryResult(
-      [
-        { name: 'JOB', dataType: oracleNumber(10) },
-        { name: 'LOG_USER', dataType: oracleVarchar2(30) },
-        { name: 'SCHEMA_USER', dataType: oracleVarchar2(30) },
-        { name: 'WHAT', dataType: oracleVarchar2(4000) },
-        { name: 'NEXT_DATE', dataType: oracleDate() },
-        { name: 'BROKEN', dataType: oracleVarchar2(1) },
-      ],
-      []
-    );
-  }
-
-  private dbaSchedulerJobs(): ResultSet {
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'JOB_NAME', dataType: oracleVarchar2(30) },
-        { name: 'JOB_TYPE', dataType: oracleVarchar2(16) },
-        { name: 'STATE', dataType: oracleVarchar2(15) },
-        { name: 'ENABLED', dataType: oracleVarchar2(5) },
-        { name: 'NEXT_RUN_DATE', dataType: oracleDate() },
-      ],
-      []
-    );
-  }
-
-  private dbaSynonyms(): ResultSet {
-    const synonyms = this.storage.getAllSynonyms();
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'SYNONYM_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_OWNER', dataType: oracleVarchar2(30) },
-        { name: 'TABLE_NAME', dataType: oracleVarchar2(30) },
-        { name: 'DB_LINK', dataType: oracleVarchar2(128) },
-      ],
-      synonyms.map(s => [s.owner, s.name, s.tableOwner, s.tableName, s.dbLink ?? null])
-    );
-  }
 
   // ── ALL_ views (user-accessible objects) ─────────────────────────
 
@@ -1574,7 +804,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // ALL_OBJECTS — same scoping as ALL_VIEWS.
     if (viewName === 'ALL_OBJECTS') {
-      const dba = this.dbaObjects();
+      const dba = this.queryDBA('DBA_OBJECTS', currentUser)!;
       const upper = currentUser.toUpperCase();
       dba.rows = dba.rows.filter(r => {
         const owner = String(r[0]).toUpperCase();
@@ -1605,7 +835,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // USER_OBJECTS — objects owned by the current user; drops OWNER.
     if (viewName === 'USER_OBJECTS') {
-      const dba = this.dbaObjects();
+      const dba = this.queryDBA('DBA_OBJECTS', currentUser)!;
       const ownerIdx = dba.columns.findIndex(c => c.name === 'OWNER');
       const filtered = dba.rows.filter(r => String(r[ownerIdx]).toUpperCase() === upper);
       const cols = dba.columns.filter((_, i) => i !== ownerIdx);
