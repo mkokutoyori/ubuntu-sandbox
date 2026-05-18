@@ -114,6 +114,7 @@ import './v_sess_time_model';
 import './v_statname';
 import './v_streams_pool_advice';
 import './v_sysmetric';
+import './v_sysmetric_history';
 import './v_services';
 import './v_sgainfo';
 import './v_sga_dynamic_components';
