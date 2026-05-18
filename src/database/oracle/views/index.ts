@@ -41,6 +41,7 @@ import './v_sql_plan_statistics';
 import './v_sql_plan_statistics_all';
 import './v_sql_workarea';
 import './v_sql_workarea_active';
+import './v_sql_workarea_histogram';
 import './v_session_connect_info';
 import './v_session_wait';
 import './v_session_wait_history';
