@@ -59,6 +59,7 @@ import './dba_2pc_neighbors';
 import './dba_ind_statistics';
 import './dba_col_statistics';
 import './dba_tab_histograms';
+import './dba_optstat_operations';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
