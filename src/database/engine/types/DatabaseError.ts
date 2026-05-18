@@ -25,7 +25,10 @@ export class DatabaseError extends Error {
 export class OracleError extends DatabaseError {
   constructor(code: number, message: string, position?: number) {
     const oraCode = `ORA-${String(code).padStart(5, '0')}`;
-    super(oraCode, message, position);
+    // Real SQL*Plus prefixes the code on the message line; keep `.message` in sync
+    // so callers that surface `err.message` (terminal, tests) see "ORA-XXXXX: …".
+    const prefixed = message.startsWith('ORA-') ? message : `${oraCode}: ${message}`;
+    super(oraCode, prefixed, position);
     this.name = 'OracleError';
   }
 }

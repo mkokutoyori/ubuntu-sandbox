@@ -462,6 +462,10 @@ export interface CreateUserStatement extends ASTNode {
   type: 'CreateUserStatement';
   username: string;
   password?: string;
+  /** EXTERNAL: OS-authenticated; GLOBAL: directory-authenticated. */
+  authenticationKind?: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
+  /** Distinguished name for GLOBAL auth (IDENTIFIED GLOBALLY AS '...'). */
+  externalName?: string;
   defaultTablespace?: string;
   temporaryTablespace?: string;
   quota?: { size: string; tablespace: string }[];
