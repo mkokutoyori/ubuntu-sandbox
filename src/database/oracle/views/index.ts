@@ -69,6 +69,7 @@ import './v_enqueue_lock';
 import './v_encrypted_tablespaces';
 import './v_tablespace_thread';
 import './v_temp_extent_map';
+import './v_temp_extent_pool';
 import './v_enqueue_stat';
 import './v_enqueue_statistics';
 import './v_transaction_enqueue';
