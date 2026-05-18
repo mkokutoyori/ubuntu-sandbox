@@ -43,6 +43,7 @@ import './v_recovery_area_usage';
 import './v_flash_recovery_area_usage';
 import './v_flashback_database_log';
 import './v_flashback_database_logfile';
+import './v_flashback_database_stat';
 import './v_java_pool_advice';
 import './v_active_services';
 import './v_cluster_instance';
