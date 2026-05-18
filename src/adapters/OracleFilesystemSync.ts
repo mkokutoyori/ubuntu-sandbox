@@ -121,6 +121,16 @@ export class OracleFilesystemSync {
         }
       }),
 
+      this.bus.subscribe('oracle.storage.datafile-added', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
+        );
+      }),
+
       this.bus.subscribe('oracle.audit.recorded', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;

@@ -72,6 +72,40 @@ export class OracleStorage extends BaseStorage {
     return this.tablespaces.has(name.toUpperCase());
   }
 
+  /** Append a datafile to an existing tablespace. */
+  addDatafileToTablespace(
+    tablespaceName: string,
+    datafile: { path: string; size: string; autoextend: boolean },
+  ): TablespaceMeta | null {
+    const ts = this.tablespaces.get(tablespaceName.toUpperCase());
+    if (!ts) return null;
+    ts.datafiles.push(datafile);
+    return ts;
+  }
+
+  /** Update a tablespace status (ONLINE / OFFLINE / READ ONLY). */
+  setTablespaceStatus(name: string, status: TablespaceMeta['status']): TablespaceMeta | null {
+    const ts = this.tablespaces.get(name.toUpperCase());
+    if (!ts) return null;
+    ts.status = status;
+    return ts;
+  }
+
+  /** Rename a tablespace (keys + meta name). */
+  renameTablespace(oldName: string, newName: string): TablespaceMeta | null {
+    const key = oldName.toUpperCase();
+    const ts = this.tablespaces.get(key);
+    if (!ts) return null;
+    const newKey = newName.toUpperCase();
+    if (this.tablespaces.has(newKey)) {
+      throw new Error(`Tablespace ${newName} already exists`);
+    }
+    ts.name = newKey;
+    this.tablespaces.delete(key);
+    this.tablespaces.set(newKey, ts);
+    return ts;
+  }
+
   /**
    * Resize a datafile (no validation of MAXSIZE / autoextend bounds —
    * the simulator doesn't allocate real bytes).

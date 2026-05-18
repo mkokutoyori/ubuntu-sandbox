@@ -13,6 +13,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
   CreateUserStatement, AlterUserStatement, DropUserStatement, CreateRoleStatement, DropRoleStatement,
   CommitStatement, RollbackStatement, StartupStatement, ShutdownStatement,
   AlterSystemStatement, AlterDatabaseStatement, CreateTablespaceStatement, DropTablespaceStatement,
+  AlterTablespaceStatement, AlterTablespaceAction,
   MergeStatement, WithClause, ConnectByClause, ExplainPlanStatement, CreateTriggerStatement, DropTriggerStatement,
   Expression, IdentifierExpr, LiteralExpr, BinaryExpr, UnaryExpr, FunctionCallExpr,
   StarExpr, IsNullExpr, BetweenExpr, InExpr, LikeExpr, CaseExpr, SelectItem, SubqueryExpr,
@@ -359,6 +360,7 @@ export class OracleExecutor extends BaseExecutor {
       DropSynonymStatement: 'DROP SYNONYM',
       CreateTablespaceStatement: 'CREATE TABLESPACE',
       DropTablespaceStatement: 'DROP TABLESPACE',
+      AlterTablespaceStatement: 'ALTER TABLESPACE',
       AlterSystemStatement: 'ALTER SYSTEM',
       AlterDatabaseStatement: 'ALTER DATABASE',
       CreateProfileStatement: 'CREATE PROFILE',
@@ -428,6 +430,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'AlterDatabaseStatement': return this.executeAlterDatabase(statement);
       case 'CreateTablespaceStatement': return this.executeCreateTablespace(statement);
       case 'DropTablespaceStatement': return this.executeDropTablespace(statement);
+      case 'AlterTablespaceStatement': return this.executeAlterTablespace(statement);
       case 'MergeStatement': return this.executeMerge(statement);
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
@@ -2877,6 +2880,80 @@ export class OracleExecutor extends BaseExecutor {
       },
     });
     return emptyResult('Tablespace dropped.');
+  }
+
+  private executeAlterTablespace(stmt: AlterTablespaceStatement): ResultSet {
+    const storage = this.storage as OracleStorage;
+    const ts = storage.getTablespace(stmt.name);
+    if (!ts) throw new OracleError(959, `tablespace '${stmt.name}' does not exist`);
+    this.applyAlterTablespaceAction(ts.name, stmt.action);
+    return emptyResult('Tablespace altered.');
+  }
+
+  private applyAlterTablespaceAction(name: string, action: AlterTablespaceAction): void {
+    const storage = this.storage as OracleStorage;
+    const ts = storage.getTablespace(name)!;
+    const publishStatus = (oldStatus: typeof ts.status, newStatus: typeof ts.status) =>
+      this.bus.publish({
+        topic: 'oracle.storage.tablespace-status-changed',
+        payload: { deviceId: this.deviceId, sid: this.sid, name: ts.name, oldStatus, newStatus },
+      });
+    switch (action.kind) {
+      case 'ADD_DATAFILE': {
+        const df = { path: action.path, size: action.size, autoextend: action.autoextend ?? false };
+        const updated = storage.addDatafileToTablespace(name, df);
+        if (!updated) return;
+        this.bus.publish({
+          topic: 'oracle.storage.datafile-added',
+          payload: {
+            deviceId: this.deviceId, sid: this.sid,
+            tablespace: ts.name, type: ts.type,
+            path: df.path, size: df.size, autoextend: df.autoextend,
+          },
+        });
+        return;
+      }
+      case 'ONLINE': case 'READ_WRITE': {
+        const old = ts.status;
+        if (storage.setTablespaceStatus(name, 'ONLINE')) publishStatus(old, 'ONLINE');
+        return;
+      }
+      case 'OFFLINE': {
+        const old = ts.status;
+        if (storage.setTablespaceStatus(name, 'OFFLINE')) publishStatus(old, 'OFFLINE');
+        return;
+      }
+      case 'READ_ONLY': {
+        const old = ts.status;
+        if (storage.setTablespaceStatus(name, 'READ ONLY')) publishStatus(old, 'READ ONLY');
+        return;
+      }
+      case 'RENAME_TO': {
+        const oldName = ts.name;
+        storage.renameTablespace(name, action.newName);
+        this.bus.publish({
+          topic: 'oracle.storage.tablespace-renamed',
+          payload: { deviceId: this.deviceId, sid: this.sid, oldName, newName: action.newName.toUpperCase() },
+        });
+        return;
+      }
+      case 'RENAME_DATAFILE': {
+        const owner = storage.renameDatafile(action.oldPath, action.newPath);
+        if (!owner) return;
+        this.bus.publish({
+          topic: 'oracle.storage.datafile-renamed',
+          payload: { deviceId: this.deviceId, sid: this.sid, tablespace: owner, oldPath: action.oldPath, newPath: action.newPath },
+        });
+        return;
+      }
+      // Pure metadata flips with no FS side-effect in the simulator.
+      case 'BEGIN_BACKUP': case 'END_BACKUP':
+      case 'LOGGING': case 'NOLOGGING':
+      case 'FORCE_LOGGING': case 'NO_FORCE_LOGGING':
+      case 'FLASHBACK_ON': case 'FLASHBACK_OFF':
+      case 'SHRINK_SPACE': case 'COALESCE':
+        return;
+    }
   }
 
   // ── Expression evaluation ─────────────────────────────────────────

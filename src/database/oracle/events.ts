@@ -243,6 +243,25 @@ export interface OracleDatafileAutoextendChangedPayload extends OracleDeviceRef 
   autoextend: boolean;
 }
 
+export interface OracleDatafileAddedPayload extends OracleDeviceRef {
+  tablespace: string;
+  type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
+  path: string;
+  size: string;
+  autoextend: boolean;
+}
+
+export interface OracleTablespaceStatusChangedPayload extends OracleDeviceRef {
+  name: string;
+  oldStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
+  newStatus: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
+}
+
+export interface OracleTablespaceRenamedPayload extends OracleDeviceRef {
+  oldName: string;
+  newName: string;
+}
+
 export interface OracleAuditRecordedPayload extends OracleDeviceRef {
   sessionId: number;
   username: string;
@@ -291,4 +310,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-renamed';          payload: OracleDatafileRenamedPayload }
   | { topic: 'oracle.storage.datafile-resized';          payload: OracleDatafileResizedPayload }
   | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
+  | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
+  | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }
   | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload };

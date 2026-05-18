@@ -574,6 +574,31 @@ export interface DropTablespaceStatement extends ASTNode {
   includeDatafiles?: boolean;
 }
 
+export type AlterTablespaceAction =
+  | { kind: 'ADD_DATAFILE'; path: string; size: string; autoextend?: boolean }
+  | { kind: 'ONLINE' }
+  | { kind: 'OFFLINE'; mode?: 'NORMAL' | 'TEMPORARY' | 'IMMEDIATE' }
+  | { kind: 'READ_ONLY' }
+  | { kind: 'READ_WRITE' }
+  | { kind: 'RENAME_TO'; newName: string }
+  | { kind: 'BEGIN_BACKUP' }
+  | { kind: 'END_BACKUP' }
+  | { kind: 'LOGGING' }
+  | { kind: 'NOLOGGING' }
+  | { kind: 'FORCE_LOGGING' }
+  | { kind: 'NO_FORCE_LOGGING' }
+  | { kind: 'FLASHBACK_ON' }
+  | { kind: 'FLASHBACK_OFF' }
+  | { kind: 'SHRINK_SPACE' }
+  | { kind: 'COALESCE' }
+  | { kind: 'RENAME_DATAFILE'; oldPath: string; newPath: string };
+
+export interface AlterTablespaceStatement extends ASTNode {
+  type: 'AlterTablespaceStatement';
+  name: string;
+  action: AlterTablespaceAction;
+}
+
 // ── PL/SQL Blocks (basic) ───────────────────────────────────────────
 
 export interface PLSQLBlock extends ASTNode {
@@ -746,7 +771,7 @@ export type Statement =
   | CommitStatement | RollbackStatement | SavepointStatement | SetTransactionStatement
   // Oracle admin
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
-  | CreateTablespaceStatement | DropTablespaceStatement
+  | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement
   // Explain
   | ExplainPlanStatement
   // Triggers

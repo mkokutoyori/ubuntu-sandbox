@@ -215,7 +215,84 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
     if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
+    if (this.matchKeyword('TABLESPACE')) return this.parseAlterTablespace(pos);
     return null;
+  }
+
+  private parseAlterTablespace(pos: SourcePosition): import('../engine/parser/ASTNode').AlterTablespaceStatement {
+    const name = this.expectIdentifier();
+    type Action = import('../engine/parser/ASTNode').AlterTablespaceAction;
+    const action: Action = this.parseAlterTablespaceAction();
+    return { type: 'AlterTablespaceStatement', position: pos, name, action };
+  }
+
+  private parseAlterTablespaceAction(): import('../engine/parser/ASTNode').AlterTablespaceAction {
+    type A = import('../engine/parser/ASTNode').AlterTablespaceAction;
+    const readQuoted = (): string => {
+      const raw = this.advance().value;
+      return raw.startsWith("'") ? raw.slice(1, -1) : raw;
+    };
+    const readSize = (): string => {
+      let s = this.advance().value;
+      if (this.check(TokenType.IDENTIFIER)) s += this.advance().value;
+      return s;
+    };
+    if (this.matchKeyword('ADD')) {
+      this.expectKeyword('DATAFILE');
+      const path = readQuoted();
+      this.expectKeyword('SIZE');
+      const size = readSize();
+      let autoextend: boolean | undefined;
+      if (this.matchKeyword('AUTOEXTEND')) {
+        if (this.matchKeyword('ON')) autoextend = true;
+        else if (this.matchKeyword('OFF')) autoextend = false;
+        // Optional NEXT/MAXSIZE clauses are accepted but not parsed in detail.
+        while (this.matchKeyword('NEXT') || this.matchKeyword('MAXSIZE')) {
+          if (this.matchKeyword('UNLIMITED')) continue;
+          readSize();
+        }
+      }
+      return { kind: 'ADD_DATAFILE', path, size, autoextend } as A;
+    }
+    if (this.matchKeyword('ONLINE')) return { kind: 'ONLINE' };
+    if (this.matchKeyword('OFFLINE')) {
+      let mode: 'NORMAL' | 'TEMPORARY' | 'IMMEDIATE' | undefined;
+      if (this.matchKeyword('NORMAL')) mode = 'NORMAL';
+      else if (this.matchKeyword('TEMPORARY')) mode = 'TEMPORARY';
+      else if (this.matchKeyword('IMMEDIATE')) mode = 'IMMEDIATE';
+      return { kind: 'OFFLINE', mode };
+    }
+    if (this.matchKeyword('READ')) {
+      if (this.matchKeyword('ONLY')) return { kind: 'READ_ONLY' };
+      if (this.matchKeyword('WRITE')) return { kind: 'READ_WRITE' };
+    }
+    if (this.matchKeyword('RENAME')) {
+      if (this.matchKeyword('TO')) {
+        const newName = this.expectIdentifier();
+        return { kind: 'RENAME_TO', newName };
+      }
+      if (this.matchKeyword('DATAFILE')) {
+        const oldPath = readQuoted();
+        this.expectKeyword('TO');
+        const newPath = readQuoted();
+        return { kind: 'RENAME_DATAFILE', oldPath, newPath };
+      }
+    }
+    if (this.matchKeyword('BEGIN')) { this.expectKeyword('BACKUP'); return { kind: 'BEGIN_BACKUP' }; }
+    if (this.matchKeyword('END')) { this.expectKeyword('BACKUP'); return { kind: 'END_BACKUP' }; }
+    if (this.matchKeyword('NOLOGGING')) return { kind: 'NOLOGGING' };
+    if (this.matchKeyword('LOGGING')) return { kind: 'LOGGING' };
+    if (this.matchKeyword('FORCE')) { this.expectKeyword('LOGGING'); return { kind: 'FORCE_LOGGING' }; }
+    if (this.matchKeyword('NO')) { this.expectKeyword('FORCE'); this.expectKeyword('LOGGING'); return { kind: 'NO_FORCE_LOGGING' }; }
+    if (this.matchKeyword('FLASHBACK')) {
+      if (this.matchKeyword('ON')) return { kind: 'FLASHBACK_ON' };
+      if (this.matchKeyword('OFF')) return { kind: 'FLASHBACK_OFF' };
+    }
+    if (this.matchKeyword('SHRINK')) { this.matchKeyword('SPACE'); return { kind: 'SHRINK_SPACE' }; }
+    if (this.matchKeyword('COALESCE')) return { kind: 'COALESCE' };
+    // Fallback: swallow the rest so we don't choke on unknown clauses.
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { kind: 'LOGGING' };
   }
 
   protected override parseDialectDrop(pos: SourcePosition): Statement | null {
