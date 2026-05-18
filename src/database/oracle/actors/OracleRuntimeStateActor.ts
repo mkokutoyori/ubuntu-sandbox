@@ -11,20 +11,10 @@
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { OracleRuntimeState } from '../views/OracleRuntimeState';
+import { makeSqlId } from '../views/sqlId';
 
 const MAX_WAIT_HISTORY = 1000;
 const MAX_ALERT_ENTRIES = 500;
-
-/** FNV-1a 32-bit, lowered to a 13-char base36 sql_id. */
-function makeSqlId(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  const base = h.toString(36).padStart(7, '0');
-  return (base + 'a3xqw0kz').slice(0, 13);
-}
 
 export class OracleRuntimeStateActor {
   private subs: Unsubscribe[] = [];
@@ -112,28 +102,15 @@ export class OracleRuntimeStateActor {
       })),
 
       this.bus.subscribe('oracle.dml.executed', scoped<{
-        deviceId: string; sessionId: string; schema: string; table: string;
+        deviceId: string; sessionId: string;
       }>((p) => {
         this.state.counters.dml++;
-        this.state.counters.executions++;
         const sess = this.state.sessions.get(p.sessionId);
-        if (sess) {
-          sess.status = 'ACTIVE';
-          const text = `DML on ${p.schema}.${p.table}`;
-          this.recordSql(text, sess.schema);
-        }
+        if (sess) sess.status = 'ACTIVE';
       })),
 
-      this.bus.subscribe('oracle.ddl.executed', scoped<{
-        deviceId: string; sessionId: string; schema: string; kind: string; name: string;
-      }>((p) => {
+      this.bus.subscribe('oracle.ddl.executed', scoped(() => {
         this.state.counters.ddl++;
-        this.state.counters.executions++;
-        const sess = this.state.sessions.get(p.sessionId);
-        if (sess) {
-          const text = `${p.kind} ${p.schema}.${p.name}`;
-          this.recordSql(text, sess.schema);
-        }
       })),
 
       this.bus.subscribe('oracle.error.raised', scoped(() => {
@@ -359,34 +336,6 @@ export class OracleRuntimeStateActor {
   stop(): void {
     for (const u of this.subs) u();
     this.subs.length = 0;
-  }
-
-  private recordSql(text: string, schema: string): void {
-    const sqlId = makeSqlId(text);
-    const existing = this.state.sqlCache.get(sqlId);
-    const now = Date.now();
-    if (existing) {
-      existing.executions++;
-      existing.lastLoadTime = now;
-      existing.bufferGets += 5;
-      existing.rowsProcessed += 1;
-    } else {
-      this.state.sqlCache.set(sqlId, {
-        sqlId,
-        text,
-        parsingSchema: schema,
-        executions: 1,
-        elapsedMicros: 100,
-        cpuMicros: 50,
-        bufferGets: 5,
-        diskReads: 0,
-        rowsProcessed: 1,
-        firstLoadTime: now,
-        lastLoadTime: now,
-      });
-      this.state.counters.parseHard++;
-    }
-    this.state.counters.parseTotal++;
   }
 
 }
