@@ -47,12 +47,17 @@ export class SessionLimitTracker {
     username: string,
     schema: string,
     osCtx: OsSecurityContext,
-    type: 'USER' | 'BACKGROUND' = 'USER'
+    type: 'USER' | 'BACKGROUND' = 'USER',
+    overrideSid?: number,
+    overrideSerial?: number,
   ): ActiveSessionInfo {
+    const numericId = parseInt(sessionId, 10);
+    const resolvedSid = overrideSid ?? (!isNaN(numericId) ? numericId : this.nextSid++);
+    const resolvedSerial = overrideSerial ?? this.nextSerial++;
     const info: ActiveSessionInfo = {
       sessionId,
-      sid: this.nextSid++,
-      serial: this.nextSerial++,
+      sid: resolvedSid,
+      serial: resolvedSerial,
       username: username.toUpperCase(),
       schema: schema.toUpperCase(),
       osUser: osCtx.osUser,

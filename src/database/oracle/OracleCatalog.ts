@@ -391,6 +391,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'V$SQL_PLAN': return this.vSqlPlan();
       case 'V$RESOURCE_LIMIT': return this.vResourceLimit();
       case 'V$ASM_DISKGROUP': return this.vAsmDiskgroup();
+      case 'V$SESSION_CONNECT_INFO': return this.vSessionConnectInfo();
       default: {
         const fromRegistry = queryView(name, {
           instance: this.instance,
@@ -491,10 +492,26 @@ export class OracleCatalog extends BaseCatalog {
 
     const engine = this.securityEngine;
     const activeSessions = engine?.sessions.getAllSessions() ?? [];
+    const now = new Date().toISOString();
+
+    // Always include Oracle background processes (PMON, SMON, DBW0, LGWR).
+    const bgRow = (sid: number, prog: string): (string | number | null)[] => [
+      sid, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', prog, 'BACKGROUND',
+      now, 'SYS', 0, null,
+      'UNKNOWN', null, null, null, null,
+      'pmon timer', 'Idle', 0, 'WAITING', 0, 'DISABLED',
+      'SYS_GROUP', 'orcl', null, null, null, null, null, null,
+    ];
+    const bgRows: (string | number | null)[][] = [
+      bgRow(1, 'oracle@localhost (PMON)'),
+      bgRow(2, 'oracle@localhost (SMON)'),
+      bgRow(3, 'oracle@localhost (DBW0)'),
+      bgRow(4, 'oracle@localhost (LGWR)'),
+    ];
 
     if (activeSessions.length > 0) {
-      // Use real tracked sessions from SecurityEngine
-      const rows = activeSessions.map(s => [
+      // Use real tracked sessions from SecurityEngine, prepend background rows
+      const userRows = activeSessions.map(s => [
         s.sid, s.serial, s.username, s.status,
         s.osUser, s.machine, s.program, s.type,
         s.logonTime.toISOString(), s.schema,
@@ -518,24 +535,13 @@ export class OracleCatalog extends BaseCatalog {
         s.clientInfo,
         null, null, null,
       ]);
-      return queryResult(cols, rows);
+      return queryResult(cols, [...bgRows, ...userRows]);
     }
 
-    // Fallback: static simulation (no sessions registered yet)
-    const now = new Date().toISOString();
-    const bgRow = (sid: number, prog: string): (string | number | null)[] => [
-      sid, 1, 'SYS', 'ACTIVE', 'oracle', 'localhost', prog, 'BACKGROUND',
-      now, 'SYS', 0, null,
-      'UNKNOWN', null, null, null, null,
-      'pmon timer', 'Idle', 0, 'WAITING', 0, 'DISABLED',
-      'SYS_GROUP', 'orcl', null, null, null, null, null, null,
-    ];
+    // Fallback when no sessions registered: show background + a synthetic user session
     const upper = currentUser.toUpperCase();
     return queryResult(cols, [
-      bgRow(1, 'oracle@localhost (PMON)'),
-      bgRow(2, 'oracle@localhost (SMON)'),
-      bgRow(3, 'oracle@localhost (DBW0)'),
-      bgRow(4, 'oracle@localhost (LGWR)'),
+      ...bgRows,
       [
         10, 100, upper, 'ACTIVE', 'oracle', 'localhost',
         'sqlplus@localhost', 'USER', now, upper, 3, null,
@@ -544,6 +550,32 @@ export class OracleCatalog extends BaseCatalog {
         'DEFAULT_CONSUMER_GROUP', 'orcl', null, null, null, null, null, null,
       ],
     ]);
+  }
+
+  private vSessionConnectInfo(): ResultSet {
+    const engine = this.securityEngine;
+    const sessions = engine?.sessions.getAllSessions() ?? [];
+    const runtime = this.instance.getRuntimeState();
+    return queryResult(
+      [
+        { name: 'SID', dataType: oracleNumber(10) },
+        { name: 'SERIAL#', dataType: oracleNumber(10) },
+        { name: 'AUTHENTICATION_TYPE', dataType: oracleVarchar2(26) },
+        { name: 'OSUSER', dataType: oracleVarchar2(30) },
+        { name: 'NETWORK_SERVICE_BANNER', dataType: oracleVarchar2(256) },
+        { name: 'CLIENT_CHARSET', dataType: oracleVarchar2(30) },
+        { name: 'CLIENT_CONNECTION', dataType: oracleVarchar2(12) },
+        { name: 'CLIENT_OCI_LIBRARY', dataType: oracleVarchar2(30) },
+        { name: 'CLIENT_VERSION', dataType: oracleVarchar2(30) },
+      ],
+      sessions.map(s => [
+        s.sid, s.serial,
+        s.username === 'SYS' ? 'OS' : 'DATABASE',
+        s.osUser,
+        runtime.listenerEndpoint || 'TCP loopback',
+        'AL32UTF8', 'Heterogeneous', 'Linux Userspace', '19.3.0.0.0',
+      ])
+    );
   }
 
   private vParameter(): ResultSet {
@@ -1141,6 +1173,7 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_SEGMENTS': return this.dbaSegments();
       case 'DBA_EXTENTS': return this.dbaExtents();
       case 'DBA_AUDIT_TRAIL': return this.dbaAuditTrail();
+      case 'DBA_AUDIT_SESSION': return this.dbaAuditSession();
       case 'DBA_STMT_AUDIT_OPTS': return this.dbaStmtAuditOpts();
       case 'DBA_PROFILES': return this.dbaProfiles();
       case 'DBA_TS_QUOTAS': return this.dbaTsQuotas();
@@ -1164,6 +1197,8 @@ export class OracleCatalog extends BaseCatalog {
 
   private dbaUsers(): ResultSet {
     const users = this.getAllUsers();
+    const engine = this.securityEngine;
+
     return queryResult(
       [
         { name: 'USERNAME', dataType: oracleVarchar2(128) },
@@ -1177,18 +1212,48 @@ export class OracleCatalog extends BaseCatalog {
         { name: 'PROFILE', dataType: oracleVarchar2(128) },
         { name: 'AUTHENTICATION_TYPE', dataType: oracleVarchar2(8) },
       ],
-      users.map(u => [
-        u.username,
-        u.userId,
-        u.accountStatus,
-        u.lockDate ? u.lockDate.toISOString() : null,
-        u.expiryDate ? u.expiryDate.toISOString() : null,
-        u.defaultTablespace,
-        u.temporaryTablespace,
-        u.created.toISOString(),
-        u.profile,
-        u.authenticationType,
-      ])
+      users.map(u => {
+        // Compute live expiry date from PasswordManager
+        let expiryDate: Date | null = u.expiryDate;
+        let accountStatus: string = u.accountStatus;
+
+        if (engine) {
+          const lifetimeDays = engine.profiles.resolvePasswordLifetimeDays(u.profile);
+          expiryDate = engine.passwords.computeExpiryDate(u.username, lifetimeDays);
+
+          // Derive authoritative account status from actual state
+          const isLocked = u.accountStatus === 'LOCKED' || u.accountStatus === 'EXPIRED & LOCKED';
+          const pwStatus = engine.passwords.getPasswordStatus(
+            u.username,
+            lifetimeDays,
+            engine.profiles.resolvePasswordGraceDays(u.profile)
+          );
+          const isExpired = pwStatus === 'EXPIRED' || pwStatus === 'EXPIRED(GRACE)';
+
+          if (isLocked && isExpired) {
+            accountStatus = 'EXPIRED & LOCKED';
+          } else if (isLocked) {
+            accountStatus = 'LOCKED';
+          } else if (isExpired) {
+            accountStatus = pwStatus === 'EXPIRED(GRACE)' ? 'EXPIRED(GRACE)' : 'EXPIRED';
+          } else {
+            accountStatus = 'OPEN';
+          }
+        }
+
+        return [
+          u.username,
+          u.userId,
+          accountStatus,
+          u.lockDate ? u.lockDate.toISOString() : null,
+          expiryDate ? expiryDate.toISOString() : null,
+          u.defaultTablespace,
+          u.temporaryTablespace,
+          u.created.toISOString(),
+          u.profile,
+          u.authenticationType,
+        ];
+      })
     );
   }
 
@@ -1623,6 +1688,28 @@ export class OracleCatalog extends BaseCatalog {
         e.privUsed,
         e.sqlText,
         e.statementType,
+      ])
+    );
+  }
+
+  private dbaAuditSession(): ResultSet {
+    const engine = this.securityEngine;
+    const sessions = engine?.sessions.getAllSessions() ?? [];
+    return queryResult(
+      [
+        { name: 'OS_USERNAME', dataType: oracleVarchar2(30) },
+        { name: 'USERNAME', dataType: oracleVarchar2(128) },
+        { name: 'USERHOST', dataType: oracleVarchar2(128) },
+        { name: 'TERMINAL', dataType: oracleVarchar2(128) },
+        { name: 'TIMESTAMP', dataType: oracleDate() },
+        { name: 'ACTION_NAME', dataType: oracleVarchar2(28) },
+        { name: 'SESSIONID', dataType: oracleNumber(10) },
+        { name: 'LOGOFF_TIME', dataType: oracleNumber(10) },
+        { name: 'RETURNCODE', dataType: oracleNumber(10) },
+      ],
+      sessions.map(s => [
+        s.osUser, s.username, s.machine, s.terminal,
+        s.logonTime.toISOString(), 'LOGON', s.sid, 0, 0,
       ])
     );
   }

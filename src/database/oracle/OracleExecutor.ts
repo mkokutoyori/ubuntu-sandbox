@@ -2453,7 +2453,8 @@ export class OracleExecutor extends BaseExecutor {
     }
     if (stmt.passwordExpire) {
       engine?.passwords.expirePassword(username);
-      if (user) user.accountStatus = 'EXPIRED';
+      // Do NOT set accountStatus here — dbaUsers() derives the combined status
+      // from PasswordManager + lock state to handle EXPIRED & LOCKED correctly.
     }
     if (stmt.defaultTablespace && user) {
       user.defaultTablespace = stmt.defaultTablespace.toUpperCase();

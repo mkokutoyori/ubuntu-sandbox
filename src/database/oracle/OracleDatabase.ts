@@ -62,7 +62,8 @@ export class OracleDatabase {
   readonly securityEngine: SecurityEngine;
   private lexer: OracleLexer;
   private connections: Map<number, ConnectionInfo> = new Map();
-  private sidCounter: number = 1;
+  // SIDs 1-4 are reserved for simulated background processes (PMON/SMON/DBW0/LGWR)
+  private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
 
@@ -107,9 +108,9 @@ export class OracleDatabase {
     };
     this.connections.set(sid, connInfo);
 
-    // Register session in SecurityEngine
+    // Register session in SecurityEngine with the same sid/serial used by OracleDatabase
     const sessionId = String(sid);
-    this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog);
+    this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
 
     const context: ExecutionContext = {
       currentUser: upperUser,
@@ -140,9 +141,9 @@ export class OracleDatabase {
     };
     this.connections.set(sid, connInfo);
 
-    // Register SYSDBA session
+    // Register SYSDBA session with matching sid/serial
     const sessionId = String(sid);
-    this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog);
+    this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog, sid, serial);
 
     const context: ExecutionContext = {
       currentUser: 'SYS',

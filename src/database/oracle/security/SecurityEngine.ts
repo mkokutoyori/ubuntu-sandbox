@@ -129,7 +129,9 @@ export class SecurityEngine {
     username: string,
     schema: string,
     osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
-    catalog?: BaseCatalog
+    catalog?: BaseCatalog,
+    sid?: number,
+    serial?: number,
   ): { ok: boolean; error?: string; info?: ActiveSessionInfo } {
     const upper = username.toUpperCase();
 
@@ -145,7 +147,7 @@ export class SecurityEngine {
       }
     }
 
-    const info = this.sessions.registerSession(sessionId, username, schema, osCtx);
+    const info = this.sessions.registerSession(sessionId, username, schema, osCtx, 'USER', sid, serial);
     return { ok: true, info };
   }
 
