@@ -16,12 +16,14 @@
 import type { ResultSet } from '../../engine/executor/ResultSet';
 import type { OracleInstance } from '../OracleInstance';
 import type { OracleStorage } from '../OracleStorage';
+import type { OracleCatalog } from '../OracleCatalog';
 import type { OracleRuntimeState } from './OracleRuntimeState';
 
 export interface ViewContext {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
   readonly runtime: OracleRuntimeState;
+  readonly catalog: OracleCatalog;
   readonly currentUser: string;
 }
 

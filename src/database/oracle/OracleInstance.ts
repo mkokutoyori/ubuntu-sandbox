@@ -482,6 +482,15 @@ export class OracleInstance {
     });
   }
 
+  /**
+   * Publicly-callable wrapper around `logAlert`. Used by audit hooks
+   * (logon/logoff/error) to surface user activity in the alert log,
+   * matching the way a real Oracle instance writes to `alert.log`.
+   */
+  logAlertEvent(message: string): void {
+    this.logAlert(message);
+  }
+
   getAlertLog(): string[] {
     return [...this._alertLog];
   }

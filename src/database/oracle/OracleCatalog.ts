@@ -12,6 +12,7 @@ import type { OracleStorage } from './OracleStorage';
 import type { OracleInstance } from './OracleInstance';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 import { queryView } from './views/registry';
+import { BUILTIN_VIEWS, BUILTIN_VIEW_BY_NAME } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
@@ -27,11 +28,12 @@ interface StoredUnit {
 }
 
 /** Audit trail entry shape */
-interface AuditEntry {
+export interface AuditEntry {
   sessionId: number;
   osUsername: string;
   username: string;
   userhost: string;
+  terminal: string;
   timestamp: Date;
   actionName: string;
   objName: string | null;
@@ -43,11 +45,38 @@ interface AuditEntry {
 }
 
 /** Statement-level audit option shape */
-interface StmtAuditOption {
+export interface StmtAuditOption {
   auditOption: string;
   userName: string | null; // null = all users
   success: string; // BY ACCESS or BY SESSION
   failure: string; // BY ACCESS or BY SESSION
+}
+
+/** Fine-grained audit policy */
+export interface FgaPolicy {
+  objectSchema: string;
+  objectName: string;
+  policyOwner: string;
+  policyName: string;
+  policyText: string;
+  enabled: boolean;
+  select: boolean;
+  insert: boolean;
+  update: boolean;
+  delete: boolean;
+}
+
+/** Fine-grained audit trail record */
+export interface FgaAuditRecord {
+  sessionId: number;
+  timestamp: Date;
+  dbUser: string;
+  osUser: string;
+  objectSchema: string;
+  objectName: string;
+  policyName: string;
+  sqlText: string;
+  statementType: string;
 }
 
 /** Parameter descriptions for V$PARAMETER.DESCRIPTION column */
@@ -100,6 +129,46 @@ const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   sec_case_sensitive_logon: 'Case sensitive logon enabled',
 };
 
+// ── *_VIEWS columns ──────────────────────────────────────────────────
+//
+// Shared by DBA_VIEWS, ALL_VIEWS, and USER_VIEWS. The order and types
+// match Oracle 19c so audit scripts that SELECT explicit columns work
+// without modification.
+const VIEW_COLUMNS = [
+  { name: 'OWNER', dataType: oracleVarchar2(128) },
+  { name: 'VIEW_NAME', dataType: oracleVarchar2(128) },
+  { name: 'TEXT_LENGTH', dataType: oracleNumber(10) },
+  { name: 'TEXT', dataType: oracleVarchar2(4000) },
+  { name: 'TYPE_TEXT_LENGTH', dataType: oracleNumber(10) },
+  { name: 'TYPE_TEXT', dataType: oracleVarchar2(4000) },
+  { name: 'OID_TEXT_LENGTH', dataType: oracleNumber(10) },
+  { name: 'OID_TEXT', dataType: oracleVarchar2(4000) },
+  { name: 'VIEW_TYPE_OWNER', dataType: oracleVarchar2(128) },
+  { name: 'VIEW_TYPE', dataType: oracleVarchar2(128) },
+  { name: 'SUPERVIEW_NAME', dataType: oracleVarchar2(128) },
+  { name: 'EDITIONING_VIEW', dataType: oracleVarchar2(1) },
+  { name: 'READ_ONLY', dataType: oracleVarchar2(1) },
+  { name: 'BEQUEATH', dataType: oracleVarchar2(12) },
+  { name: 'ORIGIN_CON_ID', dataType: oracleVarchar2(256) },
+  { name: 'DEFAULT_COLLATION', dataType: oracleVarchar2(100) },
+  { name: 'CONTAINER_DATA', dataType: oracleVarchar2(1) },
+];
+
+function viewRow(owner: string, name: string, text: string): (string | number | null)[] {
+  return [
+    owner, name, text.length, text,
+    0, null,                  // TYPE_TEXT — for object-views (none here)
+    0, null,                  // OID_TEXT
+    null, null,               // VIEW_TYPE_OWNER, VIEW_TYPE
+    null,                     // SUPERVIEW_NAME
+    'N', 'N',                 // EDITIONING_VIEW, READ_ONLY
+    'CURRENT_USER',           // BEQUEATH
+    '1',                      // ORIGIN_CON_ID — single-tenant simulator
+    'USING_NLS_COMP',         // DEFAULT_COLLATION
+    'N',                      // CONTAINER_DATA
+  ];
+}
+
 export class OracleCatalog extends BaseCatalog {
   private storage: OracleStorage;
   private instance: OracleInstance;
@@ -117,6 +186,18 @@ export class OracleCatalog extends BaseCatalog {
 
   /** Statement-level audit options (DBA_STMT_AUDIT_OPTS) */
   private stmtAuditOpts: StmtAuditOption[] = [];
+
+  /** Fine-grained audit policies (DBA_AUDIT_POLICIES) */
+  private fgaPolicies: FgaPolicy[] = [];
+
+  /** Fine-grained audit records (DBA_FGA_AUDIT_TRAIL) */
+  private fgaTrail: FgaAuditRecord[] = [];
+
+  /** Maximum size of the audit trail before FIFO eviction. */
+  private static readonly MAX_AUDIT_ENTRIES = 5000;
+
+  /** Object-level audit options keyed by `${schema}.${object}` */
+  private objAuditOpts: Map<string, Set<string>> = new Map();
 
   /** Custom profiles (name → resource overrides) */
   private profiles: Map<string, Map<string, string>> = new Map();
@@ -223,15 +304,50 @@ export class OracleCatalog extends BaseCatalog {
   // ── Audit trail recording ──────────────────────────────────────
 
   /** Record an audit trail entry */
-  recordAudit(entry: Omit<AuditEntry, 'sessionId' | 'osUsername' | 'userhost' | 'timestamp'>): void {
+  recordAudit(entry: Partial<AuditEntry> & Pick<AuditEntry, 'username' | 'actionName' | 'returncode'>): void {
     this.auditTrail.push({
-      sessionId: this.sessionId,
-      osUsername: 'oracle',
-      userhost: 'localhost',
-      timestamp: new Date(),
-      ...entry,
+      sessionId: entry.sessionId ?? this.sessionId,
+      osUsername: entry.osUsername ?? 'oracle',
+      userhost: entry.userhost ?? 'localhost',
+      terminal: entry.terminal ?? 'pts/0',
+      timestamp: entry.timestamp ?? new Date(),
+      username: entry.username,
+      actionName: entry.actionName,
+      objName: entry.objName ?? null,
+      objOwner: entry.objOwner ?? null,
+      returncode: entry.returncode,
+      privUsed: entry.privUsed ?? null,
+      sqlText: entry.sqlText ?? null,
+      statementType: entry.statementType ?? entry.actionName,
+    });
+    if (this.auditTrail.length > OracleCatalog.MAX_AUDIT_ENTRIES) {
+      this.auditTrail.splice(0, this.auditTrail.length - OracleCatalog.MAX_AUDIT_ENTRIES);
+    }
+  }
+
+  /** Record a successful or failed LOGON */
+  recordLogon(username: string, sessionId: number, returncode: number, osUsername = 'oracle', userhost = 'localhost', terminal = 'pts/0'): void {
+    this.recordAudit({
+      sessionId, username: username.toUpperCase(), actionName: 'LOGON',
+      returncode, osUsername, userhost, terminal,
+      statementType: 'LOGON',
     });
   }
+
+  /** Record a LOGOFF */
+  recordLogoff(username: string, sessionId: number, osUsername = 'oracle', userhost = 'localhost', terminal = 'pts/0'): void {
+    this.recordAudit({
+      sessionId, username: username.toUpperCase(), actionName: 'LOGOFF',
+      returncode: 0, osUsername, userhost, terminal,
+      statementType: 'LOGOFF',
+    });
+  }
+
+  /** Read-only snapshot of the audit trail (most recent last). */
+  getAuditTrail(): readonly AuditEntry[] { return this.auditTrail; }
+
+  /** Read-only snapshot of statement audit options. */
+  getStmtAuditOpts(): readonly StmtAuditOption[] { return this.stmtAuditOpts; }
 
   /** Add a statement-level audit option */
   addStmtAuditOption(option: StmtAuditOption): void {
@@ -246,6 +362,97 @@ export class OracleCatalog extends BaseCatalog {
   removeStmtAuditOption(auditOption: string, userName: string | null): void {
     this.stmtAuditOpts = this.stmtAuditOpts.filter(o =>
       !(o.auditOption === auditOption && o.userName === userName)
+    );
+  }
+
+  /** Add an object-level audit option (AUDIT priv ON schema.obj). */
+  addObjectAuditOption(schema: string, object: string, action: string): void {
+    const key = `${schema.toUpperCase()}.${object.toUpperCase()}`;
+    const set = this.objAuditOpts.get(key) ?? new Set<string>();
+    set.add(action.toUpperCase());
+    this.objAuditOpts.set(key, set);
+  }
+
+  /** Get the object audit options map (read-only view). */
+  getObjectAuditOpts(): ReadonlyMap<string, ReadonlySet<string>> {
+    return this.objAuditOpts;
+  }
+
+  // ── Fine-grained auditing ────────────────────────────────────────
+
+  /** Register a new FGA policy. */
+  addFgaPolicy(policy: FgaPolicy): void {
+    this.fgaPolicies = this.fgaPolicies.filter(p =>
+      !(p.objectSchema === policy.objectSchema && p.objectName === policy.objectName && p.policyName === policy.policyName)
+    );
+    this.fgaPolicies.push(policy);
+  }
+
+  /** Drop an FGA policy by name (and object). */
+  dropFgaPolicy(objectSchema: string, objectName: string, policyName: string): void {
+    this.fgaPolicies = this.fgaPolicies.filter(p =>
+      !(p.objectSchema.toUpperCase() === objectSchema.toUpperCase()
+        && p.objectName.toUpperCase() === objectName.toUpperCase()
+        && p.policyName.toUpperCase() === policyName.toUpperCase())
+    );
+  }
+
+  getFgaPolicies(): readonly FgaPolicy[] { return this.fgaPolicies; }
+
+  /** Record an FGA audit hit (matching policy executed). */
+  recordFgaAudit(rec: FgaAuditRecord): void {
+    this.fgaTrail.push(rec);
+    if (this.fgaTrail.length > OracleCatalog.MAX_AUDIT_ENTRIES) {
+      this.fgaTrail.splice(0, this.fgaTrail.length - OracleCatalog.MAX_AUDIT_ENTRIES);
+    }
+  }
+
+  getFgaTrail(): readonly FgaAuditRecord[] { return this.fgaTrail; }
+
+  /**
+   * Resolve a dictionary view to its column metadata — used by DESC
+   * so `DESC ALL_VIEWS` succeeds even with no user views in storage.
+   *
+   * Returns null when the name is not a known catalog view. The schema
+   * is taken from the empty `ResultSet` produced by `queryCatalogView`
+   * — we never actually scan rows for DESC.
+   */
+  describeCatalogView(name: string, currentUser: string): { name: string; nullable: boolean; type: string; precision?: number; scale?: number }[] | null {
+    const upper = name.toUpperCase();
+    // First, treat the well-known dictionary views uniformly via the
+    // existing query path. Many of these return an empty result when
+    // there is no data — that's fine; we only need the columns.
+    const rs = this.queryCatalogView(upper, currentUser);
+    if (!rs || !rs.isQuery) return null;
+    return rs.columns.map(c => ({
+      name: c.name,
+      nullable: c.dataType.nullable !== false,
+      type: c.dataType.name,
+      precision: c.dataType.precision,
+      scale: c.dataType.scale,
+    }));
+  }
+
+  /** Is `name` a known built-in dictionary view? */
+  isBuiltinCatalogView(name: string): boolean {
+    return BUILTIN_VIEW_BY_NAME.has(name.toUpperCase());
+  }
+
+  /**
+   * Match a DML statement against any FGA policy. Returns matching
+   * policies (empty if none). Called by the executor before/after a
+   * statement to trigger fine-grained audit recording.
+   */
+  matchFgaPolicies(schema: string, object: string, action: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'): FgaPolicy[] {
+    const sUpper = schema.toUpperCase();
+    const oUpper = object.toUpperCase();
+    return this.fgaPolicies.filter(p =>
+      p.enabled && p.objectSchema.toUpperCase() === sUpper
+        && p.objectName.toUpperCase() === oUpper
+        && ((action === 'SELECT' && p.select) ||
+            (action === 'INSERT' && p.insert) ||
+            (action === 'UPDATE' && p.update) ||
+            (action === 'DELETE' && p.delete))
     );
   }
 
@@ -342,6 +549,7 @@ export class OracleCatalog extends BaseCatalog {
       instance: this.instance,
       storage: this.storage,
       runtime: this.instance.getRuntimeState(),
+      catalog: this,
       currentUser,
     });
     if (fromRegistry) return fromRegistry;
@@ -1177,8 +1385,9 @@ export class OracleCatalog extends BaseCatalog {
       case 'DBA_SEGMENTS': return this.dbaSegments();
       case 'DBA_EXTENTS': return this.dbaExtents();
       case 'DBA_AUDIT_TRAIL': return this.dbaAuditTrail();
-      case 'DBA_AUDIT_SESSION': return this.dbaAuditSession();
       case 'DBA_STMT_AUDIT_OPTS': return this.dbaStmtAuditOpts();
+      // DBA_AUDIT_SESSION, DBA_AUDIT_OBJECT, DBA_AUDIT_STATEMENT are
+      // served by registered views under `views/dba_audit_*.ts`.
       case 'DBA_PROFILES': return this.dbaProfiles();
       case 'DBA_TS_QUOTAS': return this.dbaTsQuotas();
       case 'DBA_TAB_STATISTICS': return this.dbaTabStatistics();
@@ -1192,6 +1401,7 @@ export class OracleCatalog extends BaseCatalog {
           instance: this.instance,
           storage: this.storage,
           runtime: this.instance.getRuntimeState(),
+          catalog: this,
           currentUser: _currentUser,
         });
         return fromRegistry ?? null; // Unknown view — fall through to table lookup
@@ -1332,28 +1542,174 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private dbaObjects(): ResultSet {
-    const tables = this.storage.getAllTables();
-    const rows: (string | number | null)[][] = tables.map(t => [t.schema, t.name, 'TABLE', 'VALID']);
-    // Add indexes
-    for (const schema of this.storage.getSchemas()) {
-      for (const idx of this.storage.getIndexes(schema)) {
-        rows.push([schema, idx.name, 'INDEX', 'VALID']);
-      }
-    }
-    // Add stored PL/SQL units
-    const units = this.storedUnitsProvider?.() ?? [];
-    for (const u of units) {
-      rows.push([u.schema, u.name, u.type, u.status]);
-    }
+    const rows = this.enumerateObjects().map(o => [
+      o.owner, o.name, o.subobject, o.objectId, o.dataObjectId,
+      o.type, o.created.toISOString(), o.lastDdl.toISOString(),
+      o.timestamp, o.status, o.temporary, o.generated, o.secondary,
+      o.namespace, o.oracleMaintained,
+    ]);
     return queryResult(
       [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
+        { name: 'OWNER', dataType: oracleVarchar2(128) },
         { name: 'OBJECT_NAME', dataType: oracleVarchar2(128) },
+        { name: 'SUBOBJECT_NAME', dataType: oracleVarchar2(128) },
+        { name: 'OBJECT_ID', dataType: oracleNumber(10) },
+        { name: 'DATA_OBJECT_ID', dataType: oracleNumber(10) },
         { name: 'OBJECT_TYPE', dataType: oracleVarchar2(23) },
+        { name: 'CREATED', dataType: oracleDate() },
+        { name: 'LAST_DDL_TIME', dataType: oracleDate() },
+        { name: 'TIMESTAMP', dataType: oracleVarchar2(19) },
         { name: 'STATUS', dataType: oracleVarchar2(7) },
+        { name: 'TEMPORARY', dataType: oracleVarchar2(1) },
+        { name: 'GENERATED', dataType: oracleVarchar2(1) },
+        { name: 'SECONDARY', dataType: oracleVarchar2(1) },
+        { name: 'NAMESPACE', dataType: oracleNumber(10) },
+        { name: 'ORACLE_MAINTAINED', dataType: oracleVarchar2(1) },
       ],
       rows
     );
+  }
+
+  /**
+   * Single source of truth for all database objects. DBA_OBJECTS,
+   * ALL_OBJECTS, USER_OBJECTS, TAB and CAT all share the same
+   * enumeration; the views differ only in filtering.
+   */
+  private enumerateObjects(): Array<{
+    owner: string; name: string; subobject: string | null;
+    objectId: number; dataObjectId: number | null;
+    type: string; created: Date; lastDdl: Date;
+    timestamp: string; status: 'VALID' | 'INVALID';
+    temporary: 'Y' | 'N'; generated: 'Y' | 'N'; secondary: 'N';
+    namespace: number; oracleMaintained: 'Y' | 'N';
+  }> {
+    const SYS_SCHEMAS = new Set(['SYS', 'SYSTEM', 'XDB', 'OUTLN', 'WMSYS', 'CTXSYS', 'MDSYS', 'ORDSYS', 'DBSNMP']);
+    const ts = (d: Date) => d.toISOString().replace('T', ':').slice(0, 19);
+    const seenIds = new Set<number>();
+    const allocId = (seed: number) => { let v = seed; while (seenIds.has(v)) v++; seenIds.add(v); return v; };
+    const out: ReturnType<typeof this.enumerateObjects> = [];
+    let nextId = 1000;
+
+    // Built-in catalog views — SYS-owned, marked ORACLE_MAINTAINED.
+    // Use the instance's runtime startedAt as the creation timestamp so
+    // it matches V$INSTANCE.STARTUP_TIME on a real database.
+    const builtinCreated = new Date(this.instance.getRuntimeState().startedAt);
+    for (let i = 0; i < BUILTIN_VIEWS.length; i++) {
+      const v = BUILTIN_VIEWS[i];
+      const created = builtinCreated;
+      out.push({
+        owner: 'SYS', name: v.name, subobject: null,
+        objectId: allocId(100 + i), dataObjectId: null,
+        type: 'VIEW', created, lastDdl: created,
+        timestamp: ts(created), status: 'VALID',
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 1, oracleMaintained: 'Y',
+      });
+    }
+
+    // Tables.
+    for (const t of this.storage.getAllTables()) {
+      const created = new Date();
+      const id = allocId(nextId++);
+      out.push({
+        owner: t.schema, name: t.name, subobject: null,
+        objectId: id, dataObjectId: id,
+        type: 'TABLE', created, lastDdl: created,
+        timestamp: ts(created), status: 'VALID',
+        temporary: t.temporary ? 'Y' : 'N', generated: 'N', secondary: 'N',
+        namespace: 1, oracleMaintained: SYS_SCHEMAS.has(t.schema) ? 'Y' : 'N',
+      });
+    }
+
+    // User-defined views.
+    for (const v of this.storage.getAllViews()) {
+      const created = new Date();
+      out.push({
+        owner: v.schema, name: v.name, subobject: null,
+        objectId: allocId(nextId++), dataObjectId: null,
+        type: 'VIEW', created, lastDdl: created,
+        timestamp: ts(created), status: 'VALID',
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 1, oracleMaintained: SYS_SCHEMAS.has(v.schema) ? 'Y' : 'N',
+      });
+    }
+
+    // Indexes.
+    for (const schema of this.storage.getSchemas()) {
+      for (const idx of this.storage.getIndexes(schema)) {
+        const created = new Date();
+        const id = allocId(nextId++);
+        out.push({
+          owner: schema, name: idx.name, subobject: null,
+          objectId: id, dataObjectId: id,
+          type: 'INDEX', created, lastDdl: created,
+          timestamp: ts(created), status: 'VALID',
+          temporary: 'N', generated: 'N', secondary: 'N',
+          namespace: 4, oracleMaintained: SYS_SCHEMAS.has(schema) ? 'Y' : 'N',
+        });
+      }
+    }
+
+    // Sequences.
+    for (const schema of this.storage.getSchemas()) {
+      // BaseStorage exposes sequences indirectly — use getSequence per name
+      // by trying known names from getTableNames. To stay correct we expose
+      // them via a public helper if available, otherwise skip silently.
+      const seqs = (this.storage as unknown as { sequences?: Map<string, Map<string, unknown>> }).sequences;
+      const map = seqs?.get(schema);
+      if (!map) continue;
+      for (const seqName of map.keys()) {
+        const created = new Date();
+        out.push({
+          owner: schema, name: seqName, subobject: null,
+          objectId: allocId(nextId++), dataObjectId: null,
+          type: 'SEQUENCE', created, lastDdl: created,
+          timestamp: ts(created), status: 'VALID',
+          temporary: 'N', generated: 'N', secondary: 'N',
+          namespace: 1, oracleMaintained: SYS_SCHEMAS.has(schema) ? 'Y' : 'N',
+        });
+      }
+    }
+
+    // Synonyms.
+    for (const s of this.storage.getAllSynonyms()) {
+      const created = new Date();
+      out.push({
+        owner: s.owner, name: s.name, subobject: null,
+        objectId: allocId(nextId++), dataObjectId: null,
+        type: 'SYNONYM', created, lastDdl: created,
+        timestamp: ts(created), status: 'VALID',
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 1, oracleMaintained: s.owner === 'PUBLIC' || SYS_SCHEMAS.has(s.owner) ? 'Y' : 'N',
+      });
+    }
+
+    // Triggers.
+    for (const t of this.storage.getAllTriggers()) {
+      const created = new Date();
+      out.push({
+        owner: t.schema, name: t.name, subobject: null,
+        objectId: allocId(nextId++), dataObjectId: null,
+        type: 'TRIGGER', created, lastDdl: created,
+        timestamp: ts(created), status: 'VALID',
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 1, oracleMaintained: SYS_SCHEMAS.has(t.schema) ? 'Y' : 'N',
+      });
+    }
+
+    // Stored PL/SQL units.
+    const units = this.storedUnitsProvider?.() ?? [];
+    for (const u of units) {
+      out.push({
+        owner: u.schema, name: u.name, subobject: null,
+        objectId: allocId(nextId++), dataObjectId: null,
+        type: u.type, created: u.created, lastDdl: u.created,
+        timestamp: ts(u.created), status: u.status,
+        temporary: 'N', generated: 'N', secondary: 'N',
+        namespace: 1, oracleMaintained: SYS_SCHEMAS.has(u.schema) ? 'Y' : 'N',
+      });
+    }
+    return out;
   }
 
   private dbaTablespaces(): ResultSet {
@@ -1454,17 +1810,39 @@ export class OracleCatalog extends BaseCatalog {
     );
   }
 
+  /**
+   * DBA_VIEWS — every view in the database, regardless of owner.
+   *
+   * Reports both user-defined views (from `OracleStorage.getAllViews`)
+   * and the SYS-owned dictionary views surfaced via `BUILTIN_VIEWS`.
+   * The full Oracle 19c column set is returned so tooling (sqldeveloper,
+   * DBA scripts, our own DESC command) treats it the same way it would
+   * on a real instance.
+   */
   private dbaViews(): ResultSet {
-    const views = this.storage.getAllViews?.() ?? [];
-    return queryResult(
-      [
-        { name: 'OWNER', dataType: oracleVarchar2(30) },
-        { name: 'VIEW_NAME', dataType: oracleVarchar2(30) },
-        { name: 'TEXT_LENGTH', dataType: oracleNumber(10) },
-        { name: 'TEXT', dataType: oracleVarchar2(4000) },
-      ],
-      views.map((v: any) => [v.schema, v.name, v.text?.length ?? 0, v.text ?? ''])
-    );
+    return queryResult(VIEW_COLUMNS, this.collectViewRows());
+  }
+
+  /**
+   * Build the rows that back DBA_VIEWS / ALL_VIEWS / USER_VIEWS.
+   * Reusing the same enumerator guarantees the three views stay
+   * consistent — they differ only in filtering.
+   */
+  private collectViewRows(): (string | number | null)[][] {
+    const rows: (string | number | null)[][] = [];
+
+    // SYS-owned built-in dictionary views.
+    for (const v of BUILTIN_VIEWS) {
+      const text = v.text;
+      rows.push(viewRow('SYS', v.name, text));
+    }
+
+    // User-defined views — text is the original CREATE VIEW query.
+    for (const v of this.storage.getAllViews()) {
+      const text = v.queryText ?? '';
+      rows.push(viewRow(v.schema, v.name, text));
+    }
+    return rows;
   }
 
   private dbaIndColumns(): ResultSet {
@@ -1697,8 +2075,31 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   private dbaAuditSession(): ResultSet {
-    const engine = this.securityEngine;
-    const sessions = engine?.sessions.getAllSessions() ?? [];
+    // Pair LOGON entries with their matching LOGOFF (by sessionId) so
+    // LOGOFF_TIME is populated for closed sessions and NULL for active ones.
+    const logons = this.auditTrail.filter(e => e.actionName === 'LOGON');
+    const logoffs = new Map<number, AuditEntry>();
+    for (const e of this.auditTrail) {
+      if (e.actionName === 'LOGOFF') logoffs.set(e.sessionId, e);
+    }
+    const rows = logons.map(e => {
+      const off = logoffs.get(e.sessionId);
+      return [
+        e.osUsername, e.username, e.userhost, e.terminal,
+        e.timestamp.toISOString(), 'LOGON', e.sessionId,
+        off ? off.timestamp.toISOString() : null,
+        e.returncode,
+      ];
+    });
+    // Include LOGOFF rows too — Oracle's DBA_AUDIT_SESSION reports both.
+    for (const off of logoffs.values()) {
+      rows.push([
+        off.osUsername, off.username, off.userhost, off.terminal,
+        off.timestamp.toISOString(), 'LOGOFF', off.sessionId,
+        off.timestamp.toISOString(),
+        off.returncode,
+      ]);
+    }
     return queryResult(
       [
         { name: 'OS_USERNAME', dataType: oracleVarchar2(30) },
@@ -1708,13 +2109,10 @@ export class OracleCatalog extends BaseCatalog {
         { name: 'TIMESTAMP', dataType: oracleDate() },
         { name: 'ACTION_NAME', dataType: oracleVarchar2(28) },
         { name: 'SESSIONID', dataType: oracleNumber(10) },
-        { name: 'LOGOFF_TIME', dataType: oracleNumber(10) },
+        { name: 'LOGOFF_TIME', dataType: oracleDate() },
         { name: 'RETURNCODE', dataType: oracleNumber(10) },
       ],
-      sessions.map(s => [
-        s.osUser, s.username, s.machine, s.terminal,
-        s.logonTime.toISOString(), 'LOGON', s.sid, 0, 0,
-      ])
+      rows
     );
   }
 
@@ -1889,6 +2287,29 @@ export class OracleCatalog extends BaseCatalog {
   // ── ALL_ views (user-accessible objects) ─────────────────────────
 
   private queryALL(viewName: string, currentUser: string): ResultSet | null {
+    // ALL_VIEWS — every view accessible to the current user. In our
+    // simulator, the catalog dictionary views are world-readable and
+    // user-defined views are accessible to their owner. SYS sees all.
+    if (viewName === 'ALL_VIEWS') {
+      const upper = currentUser.toUpperCase();
+      const rows = this.collectViewRows().filter(r => {
+        const owner = String(r[0]).toUpperCase();
+        return owner === 'SYS' || owner === upper;
+      });
+      return queryResult(VIEW_COLUMNS, rows);
+    }
+
+    // ALL_OBJECTS — same scoping as ALL_VIEWS.
+    if (viewName === 'ALL_OBJECTS') {
+      const dba = this.dbaObjects();
+      const upper = currentUser.toUpperCase();
+      dba.rows = dba.rows.filter(r => {
+        const owner = String(r[0]).toUpperCase();
+        return owner === 'SYS' || owner === upper || owner === 'PUBLIC';
+      });
+      return dba;
+    }
+
     // ALL_ views show objects accessible to the current user
     // For simplicity, show same as DBA_ for now (will filter later)
     const dbaName = viewName.replace('ALL_', 'DBA_');
@@ -1898,6 +2319,27 @@ export class OracleCatalog extends BaseCatalog {
   // ── USER_ views (current user's objects) ─────────────────────────
 
   private queryUSER(viewName: string, currentUser: string): ResultSet | null {
+    const upper = currentUser.toUpperCase();
+
+    // USER_VIEWS — views owned by the current user. Note: USER_VIEWS
+    // does NOT include the OWNER column (real Oracle drops it).
+    if (viewName === 'USER_VIEWS') {
+      const rows = this.collectViewRows()
+        .filter(r => String(r[0]).toUpperCase() === upper)
+        .map(r => r.slice(1)); // drop OWNER
+      return queryResult(VIEW_COLUMNS.slice(1), rows);
+    }
+
+    // USER_OBJECTS — objects owned by the current user; drops OWNER.
+    if (viewName === 'USER_OBJECTS') {
+      const dba = this.dbaObjects();
+      const ownerIdx = dba.columns.findIndex(c => c.name === 'OWNER');
+      const filtered = dba.rows.filter(r => String(r[ownerIdx]).toUpperCase() === upper);
+      const cols = dba.columns.filter((_, i) => i !== ownerIdx);
+      const rows = filtered.map(r => r.filter((_, i) => i !== ownerIdx));
+      return queryResult(cols, rows);
+    }
+
     // Special cases for USER_ views that differ structurally from DBA_ equivalents
     if (viewName === 'USER_TS_QUOTAS') {
       if (!this.securityEngine) return queryResult([

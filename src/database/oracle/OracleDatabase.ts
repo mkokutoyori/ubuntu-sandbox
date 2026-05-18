@@ -95,6 +95,10 @@ export class OracleDatabase {
     const storedPassword = this.catalog.getStoredPassword(upperUser);
     const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
     if (!authResult.success) {
+      // Record failed LOGON before rejecting. SESSIONID 0 is the
+      // canonical Oracle marker for "no session was ever opened".
+      this.catalog.recordLogon(upperUser, 0, authResult.errorCode || 1017, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+      this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(authResult.errorCode || 1017).padStart(5, '0')}`);
       throw new Error(authResult.message || ORACLE_ERRORS.ORA_01017);
     }
     const sid = this.sidCounter++;
@@ -114,8 +118,11 @@ export class OracleDatabase {
     const sessionResult = this.securityEngine.openSession(sessionId, upperUser, upperUser, osCtx, this.catalog, sid, serial);
     if (!sessionResult.ok) {
       this.connections.delete(sid);
+      this.catalog.recordLogon(upperUser, sid, 2391, osCtx.osUser, osCtx.hostname, osCtx.terminal);
       throw new Error(sessionResult.error ?? 'ORA-02391: exceeded simultaneous SESSIONS_PER_USER limit');
     }
+    this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+    this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
 
     const context: ExecutionContext = {
       currentUser: upperUser,
@@ -149,6 +156,13 @@ export class OracleDatabase {
     // Register SYSDBA session with matching sid/serial
     const sessionId = String(sid);
     this.securityEngine.openSession(sessionId, 'SYS', 'SYS', { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' }, this.catalog, sid, serial);
+    // Record audit + alert log — SYSDBA logons are first-class events.
+    this.catalog.recordAudit({
+      sessionId: sid, username: 'SYS', actionName: 'LOGON', returncode: 0,
+      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+      privUsed: 'SYSDBA', statementType: 'LOGON',
+    });
+    this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
 
     const context: ExecutionContext = {
       currentUser: 'SYS',
@@ -167,6 +181,11 @@ export class OracleDatabase {
    * Disconnect a session.
    */
   disconnect(sid: number): void {
+    const conn = this.connections.get(sid);
+    if (conn) {
+      this.catalog.recordLogoff(conn.username, sid);
+      this.instance.logAlertEvent(`Logoff: user=${conn.username} sid=${sid}`);
+    }
     this.connections.delete(sid);
     this.securityEngine.closeSession(String(sid));
   }
@@ -244,6 +263,9 @@ export class OracleDatabase {
 
     let result: ResultSet = emptyResult();
     for (const stmt of statements) {
+      // Attach the source SQL so audit/journaling records the original
+      // user text — the AST type alone is useless to a DBA.
+      (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
       result = executor.execute(stmt);
     }
     return result;

@@ -821,7 +821,6 @@ export class SQLPlusSession {
       return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    const output: string[] = [];
     const upper = objectName.toUpperCase().replace(/;$/, '');
 
     // Parse schema.object
@@ -833,28 +832,65 @@ export class SQLPlusSession {
       name = parts[1];
     }
 
+    // 1. Plain table.
     const tableMeta = this.db.storage.getTableMeta(schema, name);
-    if (!tableMeta) {
-      output.push(`ERROR:`);
-      output.push(`${ORACLE_ERRORS.ORA_04043}: ${upper}`);
-      return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    if (tableMeta) {
+      return this.formatDescribe(tableMeta.columns.map(c => ({
+        name: c.name,
+        nullable: c.dataType.nullable !== false,
+        type: c.dataType.name,
+        precision: c.dataType.precision,
+        scale: c.dataType.scale,
+      })));
     }
 
+    // 2. User-defined view — execute its stored query and describe the
+    //    resulting columns. Views are SELECT-driven so we cannot inspect
+    //    them statically without running their AST.
+    const viewMeta = this.db.storage.getViewMeta(schema, name);
+    if (viewMeta) {
+      try {
+        const rs = this.db.executeSql(this.executor, `SELECT * FROM ${schema}.${name} WHERE 1=0`);
+        if (rs.isQuery && rs.columns.length) {
+          return this.formatDescribe(rs.columns.map(c => ({
+            name: c.name,
+            nullable: c.dataType?.nullable !== false,
+            type: c.dataType?.name ?? 'VARCHAR2',
+            precision: c.dataType?.precision,
+            scale: c.dataType?.scale,
+          })));
+        }
+      } catch { /* fall through to ORA-04043 */ }
+    }
+
+    // 3. Dictionary view (DBA_*/ALL_*/USER_*/V$*/UNIFIED_AUDIT_TRAIL …).
+    //    These live in the catalog rather than storage; resolve them
+    //    via the catalog so DESC ALL_VIEWS et al. work out of the box.
+    const dictCols = this.db.catalog.describeCatalogView(name, this.executor.getContext().currentSchema);
+    if (dictCols && dictCols.length) {
+      return this.formatDescribe(dictCols);
+    }
+
+    return {
+      output: [`ERROR:`, `${ORACLE_ERRORS.ORA_04043}: ${upper}`],
+      exit: false, needsMoreInput: false, prompt: this.getPrompt(),
+    };
+  }
+
+  /** Render a column list in classic SQL*Plus DESCRIBE format. */
+  private formatDescribe(cols: ReadonlyArray<{ name: string; nullable: boolean; type: string; precision?: number; scale?: number }>): SQLPlusResult {
+    const output: string[] = [];
     output.push(` Name                                      Null?    Type`);
     output.push(` ----------------------------------------- -------- ----------------------------`);
-    for (const col of tableMeta.columns) {
-      const nullable = col.dataType.nullable === false ? 'NOT NULL' : '';
-      let typeStr = col.dataType.name;
-      if (col.dataType.precision !== undefined) {
-        if (col.dataType.scale !== undefined && col.dataType.scale > 0) {
-          typeStr += `(${col.dataType.precision},${col.dataType.scale})`;
-        } else {
-          typeStr += `(${col.dataType.precision})`;
-        }
+    for (const col of cols) {
+      const nullable = col.nullable ? '' : 'NOT NULL';
+      let typeStr = col.type;
+      if (col.precision !== undefined) {
+        if (col.scale !== undefined && col.scale > 0) typeStr += `(${col.precision},${col.scale})`;
+        else typeStr += `(${col.precision})`;
       }
       output.push(` ${col.name.padEnd(42)}${nullable.padEnd(9)}${typeStr}`);
     }
-
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 

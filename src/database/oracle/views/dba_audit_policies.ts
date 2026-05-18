@@ -1,5 +1,6 @@
 /**
- * DBA_AUDIT_POLICIES — fine-grained audit policies.
+ * DBA_AUDIT_POLICIES — fine-grained audit policies registered with
+ * DBMS_FGA.ADD_POLICY (or via our catalog API).
  */
 
 import { col } from './_columns';
@@ -9,7 +10,7 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_AUDIT_POLICIES',
   comment: 'FGA policies',
-  query() {
+  query({ catalog }) {
     return queryResult(
       [
         col.str('OBJECT_SCHEMA', 30),
@@ -23,7 +24,14 @@ registerView({
         col.str('UPD', 3),
         col.str('DEL', 3),
       ],
-      []
+      catalog.getFgaPolicies().map(p => [
+        p.objectSchema, p.objectName, p.policyOwner, p.policyName, p.policyText,
+        p.enabled ? 'YES' : 'NO',
+        p.select ? 'YES' : 'NO',
+        p.insert ? 'YES' : 'NO',
+        p.update ? 'YES' : 'NO',
+        p.delete ? 'YES' : 'NO',
+      ])
     );
   },
 });
