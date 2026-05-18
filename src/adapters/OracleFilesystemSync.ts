@@ -41,6 +41,7 @@ export interface OracleFilesystemSyncCtx {
  */
 interface FsEquipment {
   writeFileFromEditor(path: string, content: string): void;
+  deleteFileFromEditor?: (path: string) => boolean;
   registerProcess?: (pid: number, user: string, cmd: string) => void;
   unregisterProcess?: (pid: number) => void;
   clearSystemProcesses?: () => void;
@@ -104,6 +105,27 @@ export class OracleFilesystemSync {
         const dev = this.dev(e.payload.deviceId);
         if (!dev?.unregisterProcess) return;
         dev.unregisterProcess(e.payload.pid);
+      }),
+
+      this.bus.subscribe('oracle.storage.tablespace-created', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const typeLabel = e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
+        for (const df of e.payload.datafiles) {
+          dev.writeFileFromEditor(
+            df.path,
+            `[ORACLE ${typeLabel} - ${e.payload.name} tablespace - ${df.size}]`,
+          );
+        }
+      }),
+
+      this.bus.subscribe('oracle.storage.tablespace-dropped', (e) => {
+        if (!e.payload.removeDatafiles) return;
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev?.deleteFileFromEditor) return;
+        for (const path of e.payload.datafiles) {
+          dev.deleteFileFromEditor(path);
+        }
       }),
     );
   }

@@ -2753,18 +2753,45 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateTablespace(stmt: CreateTablespaceStatement): ResultSet {
+    const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT';
+    const datafiles = [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }];
     (this.storage as OracleStorage).createTablespace({
       name: stmt.name.toUpperCase(),
-      type: stmt.temporary ? 'TEMPORARY' : stmt.undo ? 'UNDO' : 'PERMANENT',
+      type,
       status: 'ONLINE',
-      datafiles: [{ path: stmt.datafile, size: stmt.size, autoextend: stmt.autoextend?.on ?? false }],
+      datafiles,
       blockSize: 8192,
+    });
+    this.bus.publish({
+      topic: 'oracle.storage.tablespace-created',
+      payload: {
+        deviceId: this.deviceId,
+        sid: this.sid,
+        name: stmt.name.toUpperCase(),
+        type,
+        datafiles,
+      },
     });
     return emptyResult('Tablespace created.');
   }
 
   private executeDropTablespace(stmt: DropTablespaceStatement): ResultSet {
-    (this.storage as OracleStorage).dropTablespace(stmt.name);
+    const storage = this.storage as OracleStorage;
+    const ts = storage.getTablespace(stmt.name);
+    const datafiles = ts ? ts.datafiles.map(d => d.path) : [];
+    const type: 'PERMANENT' | 'TEMPORARY' | 'UNDO' = ts?.type ?? 'PERMANENT';
+    storage.dropTablespace(stmt.name);
+    this.bus.publish({
+      topic: 'oracle.storage.tablespace-dropped',
+      payload: {
+        deviceId: this.deviceId,
+        sid: this.sid,
+        name: stmt.name.toUpperCase(),
+        type,
+        datafiles,
+        removeDatafiles: stmt.includeDatafiles ?? false,
+      },
+    });
     return emptyResult('Tablespace dropped.');
   }
 

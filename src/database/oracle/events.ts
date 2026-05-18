@@ -203,6 +203,28 @@ export interface OracleFlashbackEventPayload extends OracleDeviceRef {
   scn?: number;
 }
 
+/** Logical storage events — emitted whenever the on-disk layout changes. */
+export interface OracleTablespaceDatafile {
+  path: string;
+  size: string;
+  autoextend: boolean;
+}
+
+export interface OracleTablespaceCreatedPayload extends OracleDeviceRef {
+  name: string;
+  type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
+  datafiles: OracleTablespaceDatafile[];
+}
+
+export interface OracleTablespaceDroppedPayload extends OracleDeviceRef {
+  name: string;
+  type: 'PERMANENT' | 'TEMPORARY' | 'UNDO';
+  /** Datafile paths that were attached to the tablespace at DROP time. */
+  datafiles: string[];
+  /** Whether the DROP included `INCLUDING DATAFILES` — drives FS removal. */
+  removeDatafiles: boolean;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -231,4 +253,6 @@ export type OracleDomainEvent =
   | { topic: 'oracle.listener.event';                    payload: OracleListenerEventPayload }
   | { topic: 'oracle.session.longops';                   payload: OracleSessionLongopsPayload }
   | { topic: 'oracle.session.metric';                    payload: OracleSessionMetricPayload }
-  | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload };
+  | { topic: 'oracle.flashback.event';                   payload: OracleFlashbackEventPayload }
+  | { topic: 'oracle.storage.tablespace-created';        payload: OracleTablespaceCreatedPayload }
+  | { topic: 'oracle.storage.tablespace-dropped';        payload: OracleTablespaceDroppedPayload };
