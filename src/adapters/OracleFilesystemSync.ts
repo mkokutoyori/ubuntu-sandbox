@@ -119,6 +119,15 @@ export class OracleFilesystemSync {
         }
       }),
 
+      this.bus.subscribe('oracle.archive-log.created', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        dev.writeFileFromEditor(
+          e.payload.path,
+          `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
+        );
+      }),
+
       this.bus.subscribe('oracle.storage.tablespace-dropped', (e) => {
         if (!e.payload.removeDatafiles) return;
         const dev = this.dev(e.payload.deviceId);
