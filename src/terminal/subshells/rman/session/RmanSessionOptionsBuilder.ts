@@ -15,7 +15,7 @@ export class RmanSessionOptionsBuilder {
   private _dbId: DbId = DbId.DEFAULT;
   private _channelConfigs: ReadonlyArray<ChannelConfig> = DEFAULT_CHANNEL_CONFIGS;
   private _retentionPolicy: IRetentionPolicy = new RedundancyPolicy(1);
-  private _autobackupCf = true;
+  private _autobackupCf = false;
   private _debugMode = false;
   private _sharedBus?: IEventBus;
   private _sessionId?: string;

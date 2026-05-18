@@ -33,7 +33,8 @@ export class BackupCommand implements IRmanCommand<void> {
     private readonly notBackedUpFromArg0 = false,
   ) {}
 
-  execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
+    const { engine } = cmdCtx;
     // Parse options against every captured fragment so trailing TAG / FORMAT /
     // DELETE INPUT / COMPRESSED / FROM SCN clauses are picked up regardless of
     // where the dispatcher pattern slotted them.
@@ -47,38 +48,57 @@ export class BackupCommand implements IRmanCommand<void> {
 
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
+    let result: Result<void, RmanError>;
     switch (this.mode) {
       case 'database': {
         const r = engine.run(JobBuilder.backupDatabase(opts));
         if (!r.ok) return r;
         if (plusArchivelog) {
-          return engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
+          const r2 = engine.run(JobBuilder.backupArchivelog({ deleteInput: opts.deleteInput }));
+          if (!r2.ok) return r2;
         }
-        return r;
+        result = r;
+        break;
       }
       case 'archivelog':
-        return engine.run(JobBuilder.backupArchivelog(opts));
+        result = engine.run(JobBuilder.backupArchivelog(opts));
+        break;
       case 'tablespace':
-        return engine.run(JobBuilder.backupTablespace(args[0] ?? 'USERS', opts));
+        result = engine.run(JobBuilder.backupTablespace(args[0] ?? 'USERS', opts));
+        break;
       case 'incremental': {
         const level = (args[0] === '0' ? 0 : 1) as 0 | 1;
         // args[1] = "CUMULATIVE" if present, args[2] = post-clauses
         const cumulative = (args[1] ?? '').toUpperCase() === 'CUMULATIVE';
         const clauseOpts = parseBackupOptions(args.slice(1).join(' '));
         clauseOpts.cumulative = cumulative || clauseOpts.cumulative;
-        return engine.run(JobBuilder.backupIncremental(level, clauseOpts));
+        result = engine.run(JobBuilder.backupIncremental(level, clauseOpts));
+        break;
       }
       case 'controlfile':
+        // Explicit BACKUP CURRENT CONTROLFILE — never re-triggers autobackup
         return engine.run(JobBuilder.backupControlfile(opts));
       case 'validate':
         return engine.run(JobBuilder.backupValidate());
       case 'datafile': {
         const n = Number(args[0]);
-        return engine.run(JobBuilder.backupDatafile(Number.isFinite(n) ? n : 1, opts));
+        result = engine.run(JobBuilder.backupDatafile(Number.isFinite(n) ? n : 1, opts));
+        break;
       }
       case 'spfile':
-        return engine.run(JobBuilder.backupSpfile(opts));
+        result = engine.run(JobBuilder.backupSpfile(opts));
+        break;
     }
+
+    // Controlfile autobackup — fires automatically after a successful
+    // BACKUP DATABASE / TABLESPACE / DATAFILE / ARCHIVELOG / INCREMENTAL
+    // when CONFIGURE CONTROLFILE AUTOBACKUP ON. Mirrors real Oracle's
+    // behaviour. Self-trigger is guarded by `params.what === 'controlfile'`
+    // so the autobackup doesn't recurse.
+    if (result.ok && cmdCtx.config?.snapshot().controlfileAutobackup === true) {
+      engine.run(JobBuilder.backupControlfile({ tag: 'AUTOBACKUP' }));
+    }
+    return result;
   }
 }
 

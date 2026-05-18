@@ -35,6 +35,7 @@ import {
   SwitchDatafileCommand, ResetDatabaseCommand, SqlMacroCommand,
 } from './RecoveryCatalogCommands';
 import { BlockRecoverCommand } from './BlockRecoverCommand';
+import { RestoreSystemCommand } from './RestoreSystemCommands';
 import {
   CreateScriptCommand, ReplaceScriptCommand, DeleteScriptCommand,
   PrintScriptCommand, ExecuteScriptCommand, ListScriptNamesCommand,
@@ -113,6 +114,12 @@ export class RmanCommandDispatcher {
       { pattern: /^BACKUP TABLESPACE (\S+)(.*)$/i,                 command: new BackupCommand('tablespace') },
       { pattern: /^BACKUP DATAFILE (\d+)(.*)$/i,                   command: new BackupCommand('datafile')   },
       { pattern: /^BACKUP SPFILE(.*)$/i,                           command: new BackupCommand('spfile')     },
+      // RESTORE CONTROLFILE / SPFILE — précédent les autres RESTORE pour ne pas
+      // matcher la pattern DATABASE accidentellement
+      { pattern: /^RESTORE CONTROLFILE FROM AUTOBACKUP$/i,           command: new RestoreSystemCommand('CONTROLFILE_AUTOBACKUP') },
+      { pattern: /^RESTORE CONTROLFILE FROM ('[^']+')$/i,            command: new RestoreSystemCommand('CONTROLFILE_FROM') },
+      { pattern: /^RESTORE SPFILE FROM AUTOBACKUP$/i,                command: new RestoreSystemCommand('SPFILE_AUTOBACKUP') },
+      { pattern: /^RESTORE SPFILE TO ('[^']+')$/i,                   command: new RestoreSystemCommand('SPFILE_TO') },
       { pattern: /^RESTORE (DATABASE)(?:\s+(.*))?$/i,     command: new RestoreCommand() },
       { pattern: /^RESTORE (TABLESPACE) (\S+)(?:\s+(.*))?$/i, command: new RestoreCommand() },
       { pattern: /^RESTORE (DATAFILE) (\d+)(?:\s+(.*))?$/i,   command: new RestoreCommand() },
