@@ -20,6 +20,7 @@ import { OracleDatabase } from '../OracleDatabase';
 import { OracleExecutor } from '../OracleExecutor';
 import type { ResultSet, ColumnMeta } from '../../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../../terminal/commands/OracleConfig';
+import type { HostCommandRunner } from './HostCommandRunner';
 
 export interface ColumnFormat {
   name: string;
@@ -76,6 +77,8 @@ export class SQLPlusSession {
   private bindVariables: Map<string, { type: string; value: unknown }> = new Map();
   /** Column formatting rules (COLUMN ... FORMAT) */
   private columnFormats: Map<string, ColumnFormat> = new Map();
+  /** Optional host-shell executor for HOST / `!` commands. */
+  private hostRunner: HostCommandRunner | null = null;
 
   constructor(db: OracleDatabase) {
     this.db = db;
@@ -108,6 +111,11 @@ export class SQLPlusSession {
   /** Access the underlying OracleDatabase for VFS sync. */
   getDatabase(): OracleDatabase | null {
     return this.connected ? this.db : null;
+  }
+
+  /** Wire a HOST executor (typically delegated to the underlying device). */
+  setHostCommandRunner(runner: HostCommandRunner | null): void {
+    this.hostRunner = runner;
   }
 
   /**
@@ -309,9 +317,9 @@ export class SQLPlusSession {
       return { output: [text], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // HOST / ! — shell command (not supported in simulator)
+    // HOST / ! — delegate to host shell when a runner is wired.
     if (upper.startsWith('HOST ') || upper === 'HOST' || upper.startsWith('!')) {
-      return { output: ['SP2-0734: HOST command is not available in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+      return this.handleHost(trimmed);
     }
 
     // @ / START — execute script (simulated)
@@ -968,6 +976,24 @@ export class SQLPlusSession {
   }
 
   // ── SPOOL ────────────────────────────────────────────────────────
+
+  // ── HOST / ! ────────────────────────────────────────────────────
+
+  private handleHost(line: string): SQLPlusResult {
+    let cmd: string;
+    if (line.startsWith('!')) cmd = line.substring(1).trim();
+    else if (line.length <= 4) cmd = '';
+    else cmd = line.substring(5).trim();
+
+    if (!this.hostRunner) {
+      return { output: ['SP2-0734: HOST command is not available in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (!cmd) {
+      // Real SQL*Plus drops to a subshell here — not supported.
+      return { output: ['SP2-0738: interactive HOST subshell is not supported in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    return { output: this.hostRunner.execute(cmd), exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
 
   private handleSpool(args: string): SQLPlusResult {
     const upper = args.toUpperCase();
