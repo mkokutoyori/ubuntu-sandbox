@@ -9,6 +9,7 @@
 
 import './v_active_instances';
 import './v_active_session_history';
+import './v_bgprocess';
 import './v_active_services';
 import './v_cluster_instance';
 import './v_event_name';
