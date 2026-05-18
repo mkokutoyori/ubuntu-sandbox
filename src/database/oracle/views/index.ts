@@ -12,6 +12,7 @@ import './v_active_session_history';
 import './v_bgprocess';
 import './v_active_services';
 import './v_cluster_instance';
+import './v_db_object_cache';
 import './v_event_name';
 import './v_instance_cache_transfer';
 import './v_instance_recovery';
