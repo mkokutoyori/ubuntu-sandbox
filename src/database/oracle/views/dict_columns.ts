@@ -15,6 +15,14 @@ registerView({
   query(ctx) {
     const rows: (string | null)[][] = [];
     for (const def of listRegisteredViews()) {
+      // Skip self to avoid infinite recursion and skip heavy historical
+      // / synthesised views whose introspection only needs their column
+      // shape, not their data.
+      if (def.name === 'DICT_COLUMNS') continue;
+      if (def.name.startsWith('DBA_HIST_')) continue;
+      if (def.name === 'V$ACTIVE_SESSION_HISTORY') continue;
+      if (def.name === 'V$SYSMETRIC_HISTORY') continue;
+      if (def.name === 'V$SESSION_METRIC_HISTORY') continue;
       try {
         const sample = def.query(ctx);
         for (const c of sample.columns) {
