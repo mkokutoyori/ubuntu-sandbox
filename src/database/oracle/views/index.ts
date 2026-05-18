@@ -12,6 +12,7 @@ import './dba_col_comments';
 import './dba_col_privs';
 import './dba_dependencies';
 import './dba_errors';
+import './dba_arguments';
 import './v_active_instances';
 import './v_active_session_history';
 import './v_archive_dest';
