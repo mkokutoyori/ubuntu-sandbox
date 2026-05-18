@@ -62,6 +62,7 @@ import './v_dispatcher_config';
 import './v_dispatcher_rate';
 import './v_shared_server';
 import './v_shared_server_monitor';
+import './v_queue';
 import './v_event_name';
 import './v_eventmetric';
 import './v_waitclassmetric';
