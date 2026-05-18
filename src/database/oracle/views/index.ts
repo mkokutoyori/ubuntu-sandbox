@@ -162,6 +162,7 @@ import './v_pgastat';
 import './v_parameter2';
 import './v_system_parameter2';
 import './v_obsolete_parameter';
+import './v_nls_valid_values';
 import './v_process_memory';
 import './v_process_memory_detail';
 import './v_session_wait_class';
