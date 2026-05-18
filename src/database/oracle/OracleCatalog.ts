@@ -225,6 +225,17 @@ export class OracleCatalog extends BaseCatalog {
     this.passwords.set(username.toUpperCase(), password);
   }
 
+  /** Distinguished name registered for IDENTIFIED GLOBALLY users. */
+  private externalNames: Map<string, string> = new Map();
+
+  setExternalName(username: string, dn: string): void {
+    this.externalNames.set(username.toUpperCase(), dn);
+  }
+
+  getExternalName(username: string): string | undefined {
+    return this.externalNames.get(username.toUpperCase());
+  }
+
   /** Allocate a unique user ID for new users */
   allocateUserId(): number {
     return this.nextUserId++;

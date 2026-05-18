@@ -367,6 +367,15 @@ export class OracleExecutor extends BaseExecutor {
   private requireSystemPrivilege(...privileges: string[]): void {
     const user = this.context.currentUser;
     if (user === 'SYS') return; // SYSDBA bypass
+    // SYSOPER (PUBLIC schema) is permitted instance-management privileges only.
+    if (user === 'PUBLIC') {
+      const sysoperAllowed = new Set([
+        'ALTER SYSTEM', 'ALTER DATABASE', 'CREATE SESSION',
+        'RESTRICTED SESSION', 'ALTER TABLESPACE',
+      ]);
+      for (const p of privileges) if (sysoperAllowed.has(p.toUpperCase())) return;
+      throw new OracleError(1031, 'insufficient privileges');
+    }
     const engine = (this.catalog as OracleCatalog).getSecurityEngine();
     if (!engine) return;
     const checker = engine.privileges;
@@ -2485,6 +2494,7 @@ export class OracleExecutor extends BaseExecutor {
       throw new OracleError(2380, `profile ${profileName} does not exist`);
     }
     const username = stmt.username.toUpperCase();
+    const authType = stmt.authenticationKind ?? (stmt.password ? 'PASSWORD' : 'PASSWORD');
     catalog.createUser({
       username,
       userId: catalog.allocateUserId(),
@@ -2495,11 +2505,14 @@ export class OracleExecutor extends BaseExecutor {
       expiryDate: null,
       created: new Date(),
       profile: profileName,
-      authenticationType: 'PASSWORD',
+      authenticationType: authType,
     });
-    if (stmt.password) {
+    if (authType === 'PASSWORD' && stmt.password) {
       catalog.setPassword(username, stmt.password);
       catalog.getSecurityEngine()?.passwords.setPassword(username, stmt.password);
+    }
+    if (authType === 'GLOBAL' && stmt.externalName) {
+      catalog.setExternalName(username, stmt.externalName);
     }
     if (stmt.passwordExpired) {
       catalog.getSecurityEngine()?.passwords.expirePassword(username);
@@ -2608,6 +2621,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeAlterSystem(stmt: AlterSystemStatement): ResultSet {
+    this.requireSystemPrivilege('ALTER SYSTEM');
     if (stmt.action === 'SET' && stmt.parameter && stmt.value) {
       this.instance.setParameter(stmt.parameter, stmt.value, stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined);
       return emptyResult('System altered.');

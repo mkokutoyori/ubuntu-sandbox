@@ -813,9 +813,23 @@ export abstract class BaseParser {
   protected parseCreateUser(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').CreateUserStatement {
     const username = this.expectIdentifier();
     let password: string | undefined;
+    let authenticationKind: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL' | undefined;
+    let externalName: string | undefined;
     if (this.matchKeyword('IDENTIFIED')) {
-      this.expectKeyword('BY');
-      password = this.expectIdentifierOrString();
+      if (this.matchKeyword('BY')) {
+        authenticationKind = 'PASSWORD';
+        password = this.expectIdentifierOrString();
+      } else if (this.matchKeyword('EXTERNALLY')) {
+        authenticationKind = 'EXTERNAL';
+      } else if (this.matchKeyword('GLOBALLY')) {
+        authenticationKind = 'GLOBAL';
+        // Optional `AS '<dn>'`
+        if (this.matchKeyword('AS')) {
+          externalName = this.expectIdentifierOrString();
+        }
+      } else {
+        throw this.error('Expected BY, EXTERNALLY or GLOBALLY after IDENTIFIED');
+      }
     }
     let defaultTablespace: string | undefined;
     let temporaryTablespace: string | undefined;
@@ -839,7 +853,7 @@ export abstract class BaseParser {
       }
       else break;
     }
-    return { type: 'CreateUserStatement', position: pos, username, password, defaultTablespace, temporaryTablespace, profile, accountLocked, passwordExpired, quota: quota.length > 0 ? quota : undefined };
+    return { type: 'CreateUserStatement', position: pos, username, password, authenticationKind, externalName, defaultTablespace, temporaryTablespace, profile, accountLocked, passwordExpired, quota: quota.length > 0 ? quota : undefined };
   }
 
   private parseQuotaSize(): string {
