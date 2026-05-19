@@ -4062,6 +4062,29 @@ export class OracleExecutor extends BaseExecutor {
   private applyBinaryOp(op: string, left: CellValue, right: CellValue): CellValue {
     if (op === '||') return (left != null ? String(left) : '') + (right != null ? String(right) : '');
     if (left == null || right == null) return null;
+    // Date arithmetic: DATE ± NUMBER → DATE, DATE − DATE → NUMBER (days).
+    // Cheaper than wrapping every cell in a Date object — detect ISO-shaped
+    // strings (what SYSDATE / CURRENT_DATE produce) and operate in ms.
+    if (op === '+' || op === '-') {
+      const lDate = this.coerceToDateMs(left);
+      const rDate = this.coerceToDateMs(right);
+      const DAY = 86_400_000;
+      if (lDate !== null && rDate !== null) {
+        if (op === '-') return (lDate - rDate) / DAY;
+        // DATE + DATE is not legal in Oracle (ORA-00975) — fall through.
+      } else if (lDate !== null && typeof right !== 'string') {
+        const days = Number(right);
+        if (!Number.isNaN(days)) {
+          const out = op === '+' ? lDate + days * DAY : lDate - days * DAY;
+          return new Date(out).toISOString().slice(0, 19).replace('T', ' ');
+        }
+      } else if (rDate !== null && typeof left !== 'string' && op === '+') {
+        const days = Number(left);
+        if (!Number.isNaN(days)) {
+          return new Date(rDate + days * DAY).toISOString().slice(0, 19).replace('T', ' ');
+        }
+      }
+    }
     const l = this.toNumber(left);
     const r = this.toNumber(right);
     switch (op) {
@@ -4071,6 +4094,20 @@ export class OracleExecutor extends BaseExecutor {
       case '/': if (r === 0) throw new OracleError(1476, 'divisor is equal to zero'); return l / r;
       default: return this.applyComparison(op, left, right) ? 1 : 0;
     }
+  }
+
+  /**
+   * Detects an Oracle-shaped date scalar — either a JS `Date` or an
+   * ISO-ish string `YYYY-MM-DD[ T]HH:MM:SS[.fff[Z]]`. Returns its epoch
+   * milliseconds, or `null` if the value is not a date.
+   */
+  private coerceToDateMs(value: CellValue): number | null {
+    if (value instanceof Date) return value.getTime();
+    if (typeof value !== 'string') return null;
+    // Reject pure numeric strings ("1", "100") that just happen to parse.
+    if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return null;
+    const ms = Date.parse(value.replace(' ', 'T'));
+    return Number.isNaN(ms) ? null : ms;
   }
 
   private applyComparison(op: string, left: CellValue, right: CellValue): boolean {

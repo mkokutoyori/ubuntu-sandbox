@@ -229,3 +229,33 @@ describe('GRANT / REVOKE — column-level privileges', () => {
     expect(r.rows[0][0]).toBe(0);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// Date arithmetic — SYSDATE ± n  (transcript line 33)
+// ──────────────────────────────────────────────────────────────────────
+
+describe('Expressions — date ± number', () => {
+  test('SYSDATE - 1 returns a date one day earlier (no ORA-01722)', () => {
+    const r = exec("SELECT SYSDATE - 1 FROM dual");
+    expect(r.rows).toHaveLength(1);
+    const before = String(r.rows[0][0]);
+    expect(before).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    const now = Date.now();
+    const got = Date.parse(before.replace(' ', 'T'));
+    // Should be within a 2-day window of now-1d (loose to avoid flakes).
+    expect(now - got).toBeGreaterThan(20 * 3600_000);
+    expect(now - got).toBeLessThan(2 * 86400_000);
+  });
+
+  test('SYSDATE + 7 returns a date one week in the future', () => {
+    const r = exec("SELECT SYSDATE + 7 FROM dual");
+    const next = Date.parse(String(r.rows[0][0]).replace(' ', 'T'));
+    expect(next - Date.now()).toBeGreaterThan(6 * 86400_000);
+  });
+
+  test('WHERE created > SYSDATE - 1 does not raise ORA-01722', () => {
+    exec("CREATE USER alice IDENTIFIED BY p1");
+    const r = exec("SELECT username FROM dba_users WHERE created > SYSDATE - 1 ORDER BY username");
+    expect(r.rows.map(row => row[0])).toContain('ALICE');
+  });
+});
