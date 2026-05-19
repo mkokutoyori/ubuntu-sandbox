@@ -1164,6 +1164,7 @@ export abstract class BaseParser {
     let profile: string | undefined;
     let authenticationKind: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL' | undefined;
     let externalName: string | undefined;
+    let defaultRoleSpec: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] } | undefined;
     const quota: { size: string; tablespace: string }[] = [];
 
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
@@ -1186,7 +1187,14 @@ export abstract class BaseParser {
         else { this.expectKeyword('UNLOCK'); accountUnlock = true; }
       }
       else if (this.matchKeyword('PASSWORD')) { this.expectKeyword('EXPIRE'); passwordExpire = true; }
-      else if (this.matchKeyword('DEFAULT')) { this.expectKeyword('TABLESPACE'); defaultTablespace = this.expectIdentifier(); }
+      else if (this.matchKeyword('DEFAULT')) {
+        if (this.matchKeyword('ROLE')) {
+          defaultRoleSpec = this.parseDefaultRoleClause();
+        } else {
+          this.expectKeyword('TABLESPACE');
+          defaultTablespace = this.expectIdentifier();
+        }
+      }
       else if (this.matchKeyword('TEMPORARY')) { this.expectKeyword('TABLESPACE'); temporaryTablespace = this.expectIdentifier(); }
       else if (this.matchKeyword('PROFILE')) { profile = this.expectIdentifier(); }
       else if (this.matchKeyword('QUOTA')) {
@@ -1197,7 +1205,23 @@ export abstract class BaseParser {
       }
       else break;
     }
-    return { type: 'AlterUserStatement', position: pos, username, password, authenticationKind, externalName, accountLock, accountUnlock, passwordExpire, defaultTablespace, temporaryTablespace, profile, quota: quota.length > 0 ? quota : undefined };
+    return { type: 'AlterUserStatement', position: pos, username, password, authenticationKind, externalName, accountLock, accountUnlock, passwordExpire, defaultTablespace, temporaryTablespace, profile, quota: quota.length > 0 ? quota : undefined, defaultRoleSpec };
+  }
+
+  /**
+   * Parses the body of an ALTER USER `DEFAULT ROLE …` clause (with `DEFAULT
+   * ROLE` already consumed). Accepts `ALL`, `ALL EXCEPT r1, r2`, `NONE`,
+   * or an explicit comma-separated role list.
+   */
+  protected parseDefaultRoleClause(): { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] } {
+    if (this.matchKeyword('ALL')) {
+      if (this.matchKeyword('EXCEPT')) {
+        return { mode: 'EXCEPT', roles: this.parseIdentifierList() };
+      }
+      return { mode: 'ALL', roles: [] };
+    }
+    if (this.matchKeyword('NONE')) return { mode: 'NONE', roles: [] };
+    return { mode: 'LIST', roles: this.parseIdentifierList() };
   }
 
   // ── DROP ──────────────────────────────────────────────────────────
@@ -1462,7 +1486,7 @@ export abstract class BaseParser {
   protected parseGrant(): import('./ASTNode').GrantStatement {
     const pos = this.current().position;
     this.expectKeyword('GRANT');
-    const privileges = this.parsePrivilegeList();
+    const { privileges, privilegeColumns } = this.parsePrivilegeListWithColumns();
     let objectName: string | undefined;
     let objectSchema: string | undefined;
     if (this.matchKeyword('ON')) {
@@ -1482,13 +1506,13 @@ export abstract class BaseParser {
         withAdminOption = true;
       }
     }
-    return { type: 'GrantStatement', position: pos, privileges, objectSchema, objectName, grantees, grantee: grantees[0], withGrantOption: withGrantOption || undefined, withAdminOption: withAdminOption || undefined };
+    return { type: 'GrantStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0], withGrantOption: withGrantOption || undefined, withAdminOption: withAdminOption || undefined };
   }
 
   protected parseRevoke(): import('./ASTNode').RevokeStatement {
     const pos = this.current().position;
     this.expectKeyword('REVOKE');
-    const privileges = this.parsePrivilegeList();
+    const { privileges, privilegeColumns } = this.parsePrivilegeListWithColumns();
     let objectName: string | undefined;
     let objectSchema: string | undefined;
     if (this.matchKeyword('ON')) {
@@ -1497,7 +1521,32 @@ export abstract class BaseParser {
     }
     this.expectKeyword('FROM');
     const grantees = this.parseIdentifierList();
-    return { type: 'RevokeStatement', position: pos, privileges, objectSchema, objectName, grantees, grantee: grantees[0] };
+    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0] };
+  }
+
+  /**
+   * Like {@link parsePrivilegeList} but also captures `priv(col1, col2)`
+   * column lists for column-level GRANT/REVOKE.
+   */
+  protected parsePrivilegeListWithColumns(): { privileges: string[]; privilegeColumns?: Record<string, string[]> } {
+    const privileges: string[] = [];
+    const cols: Record<string, string[]> = {};
+    do {
+      let priv = this.expectIdentifierOrKeyword();
+      while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+        const next = this.current().value.toUpperCase();
+        if (['ON', 'TO', 'FROM', 'WITH'].includes(next)) break;
+        priv += ' ' + this.advance().value;
+      }
+      if (this.match(TokenType.LPAREN)) {
+        const list: string[] = [this.expectIdentifier()];
+        while (this.match(TokenType.COMMA)) list.push(this.expectIdentifier());
+        this.expect(TokenType.RPAREN);
+        cols[priv.toUpperCase()] = list;
+      }
+      privileges.push(priv);
+    } while (this.match(TokenType.COMMA));
+    return { privileges, privilegeColumns: Object.keys(cols).length > 0 ? cols : undefined };
   }
 
   /** Comma-separated identifier list (`a, b, c`). At least one identifier required. */

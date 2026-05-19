@@ -340,6 +340,81 @@ export class OracleCatalog extends BaseCatalog {
     return this.rolePasswords.get(role.toUpperCase());
   }
 
+  // ── Column-level privileges (DBA_COL_PRIVS backing store) ─────────
+
+  private colPrivileges: Array<{
+    grantee: string;
+    grantor: string;
+    objectSchema: string;
+    objectName: string;
+    columnName: string;
+    privilege: string;
+    grantable: boolean;
+  }> = [];
+
+  grantColumnPrivilege(
+    grantee: string, privilege: string, objectSchema: string, objectName: string,
+    columnName: string, grantor: string = 'SYS', grantable: boolean = false,
+  ): void {
+    const upper = {
+      grantee: grantee.toUpperCase(),
+      privilege: privilege.toUpperCase(),
+      objectSchema: objectSchema.toUpperCase(),
+      objectName: objectName.toUpperCase(),
+      columnName: columnName.toUpperCase(),
+    };
+    // Idempotent: identical grant collapses to one row (Oracle behavior).
+    const exists = this.colPrivileges.some(p =>
+      p.grantee === upper.grantee && p.privilege === upper.privilege &&
+      p.objectSchema === upper.objectSchema && p.objectName === upper.objectName &&
+      p.columnName === upper.columnName);
+    if (exists) return;
+    this.colPrivileges.push({ ...upper, grantor: grantor.toUpperCase(), grantable });
+  }
+
+  revokeColumnPrivilege(
+    grantee: string, privilege: string, objectSchema: string, objectName: string,
+    columnName: string,
+  ): void {
+    const g = grantee.toUpperCase(), p = privilege.toUpperCase();
+    const os = objectSchema.toUpperCase(), on = objectName.toUpperCase(), c = columnName.toUpperCase();
+    this.colPrivileges = this.colPrivileges.filter(row =>
+      !(row.grantee === g && row.privilege === p
+        && row.objectSchema === os && row.objectName === on && row.columnName === c));
+  }
+
+  getColumnPrivileges(): ReadonlyArray<{
+    grantee: string; grantor: string; objectSchema: string; objectName: string;
+    columnName: string; privilege: string; grantable: boolean;
+  }> {
+    return this.colPrivileges;
+  }
+
+  // ── Default role specification (per-user) ─────────────────────────
+
+  private defaultRoleSpecs: Map<string, { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] }>
+    = new Map();
+
+  setDefaultRoleSpec(username: string, spec: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] }): void {
+    this.defaultRoleSpecs.set(username.toUpperCase(), {
+      mode: spec.mode,
+      roles: spec.roles.map(r => r.toUpperCase()),
+    });
+  }
+
+  /** Whether `role` is enabled by default for `username`. ALL is the implicit fallback. */
+  isDefaultRole(username: string, role: string): boolean {
+    const spec = this.defaultRoleSpecs.get(username.toUpperCase());
+    if (!spec) return true;                            // implicit ALL
+    const r = role.toUpperCase();
+    switch (spec.mode) {
+      case 'ALL':    return true;
+      case 'NONE':   return false;
+      case 'LIST':   return spec.roles.includes(r);
+      case 'EXCEPT': return !spec.roles.includes(r);
+    }
+  }
+
   /** Allocate a unique user ID for new users */
   allocateUserId(): number {
     return this.nextUserId++;

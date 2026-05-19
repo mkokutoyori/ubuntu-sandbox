@@ -144,3 +144,88 @@ describe('CREATE ROLE — identification clauses', () => {
     expect(r.rows[0][0]).toBe('EXTERNAL');
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// ALTER USER … DEFAULT ROLE …  (lines 134–138 of the transcript)
+// ──────────────────────────────────────────────────────────────────────
+
+describe('ALTER USER — DEFAULT ROLE clause', () => {
+  beforeEach(() => {
+    exec("CREATE USER alice IDENTIFIED BY p1");
+    exec("CREATE USER bob IDENTIFIED BY p2");
+    exec("CREATE USER carol IDENTIFIED BY p3");
+    exec("CREATE USER dave IDENTIFIED BY p4");
+    exec("CREATE ROLE app_role");
+    exec("CREATE ROLE developer_role");
+    exec("CREATE ROLE admin_role");
+    exec("GRANT app_role TO bob");
+    exec("GRANT app_role, developer_role, admin_role TO alice");
+    exec("GRANT app_role, developer_role TO dave");
+  });
+
+  test('DEFAULT ROLE <name> marks only that role as default', () => {
+    exec("ALTER USER bob DEFAULT ROLE app_role");
+    const r = exec("SELECT granted_role, default_role FROM dba_role_privs WHERE grantee = 'BOB'");
+    expect(r.rows).toEqual([['APP_ROLE', 'YES']]);
+  });
+
+  test('DEFAULT ROLE ALL EXCEPT <name> marks the excluded role NO', () => {
+    exec("ALTER USER alice DEFAULT ROLE ALL EXCEPT admin_role");
+    const r = exec("SELECT granted_role, default_role FROM dba_role_privs WHERE grantee = 'ALICE' ORDER BY granted_role");
+    expect(r.rows).toEqual([
+      ['ADMIN_ROLE', 'NO'],
+      ['APP_ROLE', 'YES'],
+      ['DEVELOPER_ROLE', 'YES'],
+    ]);
+  });
+
+  test('DEFAULT ROLE NONE marks every grant NO', () => {
+    exec("ALTER USER carol DEFAULT ROLE NONE");
+    exec("GRANT app_role TO carol");
+    const r = exec("SELECT default_role FROM dba_role_privs WHERE grantee = 'CAROL'");
+    expect(r.rows.map(row => row[0])).toEqual(['NO']);
+  });
+
+  test('DEFAULT ROLE list with several roles', () => {
+    exec("ALTER USER dave DEFAULT ROLE app_role, developer_role");
+    const r = exec("SELECT granted_role, default_role FROM dba_role_privs WHERE grantee = 'DAVE' ORDER BY granted_role");
+    expect(r.rows).toEqual([
+      ['APP_ROLE', 'YES'],
+      ['DEVELOPER_ROLE', 'YES'],
+    ]);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Column-level GRANT / REVOKE  (lines 84–85, 165 of the transcript)
+// ──────────────────────────────────────────────────────────────────────
+
+describe('GRANT / REVOKE — column-level privileges', () => {
+  beforeEach(() => {
+    exec("CREATE USER dave IDENTIFIED BY p1");
+    exec("CREATE USER eve IDENTIFIED BY p2");
+    exec("CREATE TABLE sys.employees (employee_id NUMBER, first_name VARCHAR2(50), salary NUMBER)");
+  });
+
+  test('GRANT SELECT (col1, col2) ON tbl TO user populates DBA_COL_PRIVS', () => {
+    exec("GRANT SELECT (employee_id, first_name) ON sys.employees TO dave");
+    const r = exec("SELECT grantee, owner, table_name, column_name, privilege FROM dba_col_privs WHERE grantee = 'DAVE' ORDER BY column_name");
+    expect(r.rows).toEqual([
+      ['DAVE', 'SYS', 'EMPLOYEES', 'EMPLOYEE_ID', 'SELECT'],
+      ['DAVE', 'SYS', 'EMPLOYEES', 'FIRST_NAME', 'SELECT'],
+    ]);
+  });
+
+  test('GRANT UPDATE (col) ON tbl TO user', () => {
+    exec("GRANT UPDATE (salary) ON sys.employees TO eve");
+    const r = exec("SELECT grantee, column_name, privilege FROM dba_col_privs WHERE grantee = 'EVE'");
+    expect(r.rows).toEqual([['EVE', 'SALARY', 'UPDATE']]);
+  });
+
+  test('REVOKE UPDATE (col) ON tbl FROM user removes the column grant', () => {
+    exec("GRANT UPDATE (salary) ON sys.employees TO eve");
+    exec("REVOKE UPDATE (salary) ON sys.employees FROM eve");
+    const r = exec("SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'EVE'");
+    expect(r.rows[0][0]).toBe(0);
+  });
+});

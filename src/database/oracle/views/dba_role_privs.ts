@@ -27,7 +27,7 @@ registerView({
         rg.grantee, rg.role,
         rg.adminOption ? 'YES' : 'NO',
         'NO',
-        'YES',                 // DEFAULT_ROLE — all grants default-on until SET ROLE changes it
+        catalog.isDefaultRole(rg.grantee, rg.role) ? 'YES' : 'NO',
         'NO',
         'NO',
         'NO',

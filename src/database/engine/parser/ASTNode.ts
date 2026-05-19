@@ -468,6 +468,12 @@ export interface GrantStatement extends ASTNode {
   grantees: string[];
   /** Convenience alias for grantees[0]; preserved for legacy consumers. */
   grantee: string;
+  /**
+   * Column list collected from `priv(col1, col2, …)` clauses. Keyed by the
+   * upper-cased privilege name so `GRANT SELECT(a), UPDATE(b)` round-trips
+   * cleanly. Absent entries denote a whole-table grant.
+   */
+  privilegeColumns?: Record<string, string[]>;
   withGrantOption?: boolean;
   withAdminOption?: boolean;
 }
@@ -480,6 +486,7 @@ export interface RevokeStatement extends ASTNode {
   objectName?: string;
   grantees: string[];
   grantee: string;
+  privilegeColumns?: Record<string, string[]>;
 }
 
 // ── User/Role Management ────────────────────────────────────────────
@@ -515,6 +522,14 @@ export interface AlterUserStatement extends ASTNode {
   accountLock?: boolean;
   accountUnlock?: boolean;
   passwordExpire?: boolean;
+  /**
+   * `DEFAULT ROLE …` clause. Mirrors Oracle's modes:
+   *   ALL                 → every granted role default-on (the implicit default)
+   *   NONE                → no role default-on
+   *   LIST {r1, r2, …}    → only the named roles default-on
+   *   EXCEPT {r1, …}      → every role default-on except the named ones
+   */
+  defaultRoleSpec?: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] };
 }
 
 export interface DropUserStatement extends ASTNode {

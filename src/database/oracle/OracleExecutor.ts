@@ -2738,7 +2738,15 @@ export class OracleExecutor extends BaseExecutor {
       }
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
-          catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+          const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
+          if (cols && cols.length > 0) {
+            // Column-level grant: only DBA_COL_PRIVS, not DBA_TAB_PRIVS.
+            for (const c of cols) {
+              catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
+            }
+          } else {
+            catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+          }
         }
       }
     } else {
@@ -2763,7 +2771,12 @@ export class OracleExecutor extends BaseExecutor {
       const schema = stmt.objectSchema || this.context.currentSchema;
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
-          catalog.revokeTablePrivilege(grantee, priv, schema, stmt.objectName);
+          const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
+          if (cols && cols.length > 0) {
+            for (const c of cols) catalog.revokeColumnPrivilege(grantee, priv, schema, stmt.objectName, c);
+          } else {
+            catalog.revokeTablePrivilege(grantee, priv, schema, stmt.objectName);
+          }
         }
       }
     } else {
@@ -2895,6 +2908,9 @@ export class OracleExecutor extends BaseExecutor {
     }
     if (stmt.quota && stmt.quota.length > 0) {
       engine?.applyQuotas(username, stmt.quota);
+    }
+    if (stmt.defaultRoleSpec) {
+      catalog.setDefaultRoleSpec(username, stmt.defaultRoleSpec);
     }
     return emptyResult('User altered.');
   }
