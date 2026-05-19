@@ -65,6 +65,10 @@ export interface TableMeta {
   rowCount: number;
   /** Partitioning configuration, populated by CREATE TABLE … PARTITION BY. */
   partitioning?: PartitioningMeta;
+  /** Last time stats were gathered (ANALYZE / DBMS_STATS) — null before any. */
+  lastAnalyzed?: Date | null;
+  /** Compression state mutated by ALTER TABLE … MOVE COMPRESS / NOCOMPRESS. */
+  compression?: { enabled: boolean; for?: string };
 }
 
 export interface PartitioningMeta {

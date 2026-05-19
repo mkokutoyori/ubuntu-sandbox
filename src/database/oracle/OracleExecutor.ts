@@ -30,6 +30,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
 import { makeSqlId } from './views/sqlId';
 import { OracleParser } from './OracleParser';
+import { Equipment } from '../../network/equipment/Equipment';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 
 /** Snapshot of table rows for transaction undo */
@@ -444,11 +445,19 @@ export class OracleExecutor extends BaseExecutor {
         const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
         const schema = (s.schema || this.context.currentSchema).toUpperCase();
         const name = s.name.toUpperCase();
-        if (s.target === 'TABLE' && !this.storage.tableExists(schema, name)) {
-          throw new OracleError(942, `table or view does not exist`);
+        if (s.target === 'TABLE') {
+          if (!this.storage.tableExists(schema, name)) {
+            throw new OracleError(942, `table or view does not exist`);
+          }
+          if (s.action === 'COMPUTE_STATISTICS' || s.action === 'ESTIMATE_STATISTICS') {
+            // Stamp the table with a real LAST_ANALYZED timestamp.
+            const meta = this.storage.getTableMeta(schema, name)!;
+            meta.lastAnalyzed = new Date();
+          } else if (s.action === 'DELETE_STATISTICS') {
+            const meta = this.storage.getTableMeta(schema, name)!;
+            meta.lastAnalyzed = null;
+          }
         }
-        // The simulator does not maintain CBO histograms, so ANALYZE is
-        // a no-op that returns the same success message real Oracle does.
         return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
       }
       case 'FlashbackStatement': {
@@ -2382,7 +2391,15 @@ export class OracleExecutor extends BaseExecutor {
         }
         if (target) meta.tablespace = target;
       } else if (action.action === 'MOVE_COMPRESS') {
-        // Compression flag isn't tracked yet — accept silently.
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (meta) {
+          const level = action.compressionLevel?.trim().toUpperCase();
+          // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
+          const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
+          meta.compression = off
+            ? { enabled: false }
+            : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
+        }
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.
@@ -3053,14 +3070,26 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Tablespace dropped.');
   }
 
+  /** No-op helper — see file-scope `parseInitParameters` below. */
   private executeCreatePfileSpfile(stmt: CreatePfileSpfileStatement): ResultSet {
-    // We don't actually re-import parameters from disk — the instance
-    // is the single source of truth in the simulator. So `FROM MEMORY`
-    // and `FROM SPFILE/PFILE` all snapshot the current parameter set
-    // and just choose where to render it.
+    const sid = this.sid;
+    // FROM PFILE='path' / FROM SPFILE[='path'] — load the source file
+    // from the device VFS and apply its parameters before we render
+    // the output file. FROM MEMORY snapshots the live parameter set.
+    if (stmt.source === 'PFILE' || stmt.source === 'SPFILE') {
+      const srcDefault = stmt.source === 'PFILE'
+        ? `${ORACLE_CONFIG.HOME}/dbs/init${sid}.ora`
+        : `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`;
+      const src = stmt.sourcePath ?? srcDefault;
+      const content = this.readDeviceFile(src);
+      if (content !== null) {
+        for (const [k, v] of parseInitParameters(content)) {
+          this.instance.setParameter(k, v, 'BOTH');
+        }
+      }
+    }
     const params: Record<string, string> = {};
     for (const [k, v] of this.instance.getAllParameters()) params[k] = v;
-    const sid = this.sid;
     const defaultPath =
       stmt.target === 'SPFILE'
         ? `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`
@@ -3074,6 +3103,18 @@ export class OracleExecutor extends BaseExecutor {
       },
     });
     return emptyResult(`File created.`);
+  }
+
+  /**
+   * Look up the device by id (via the global registry) and read the
+   * given path through the VFS-backed editor accessor. Returns null
+   * if the device or file cannot be reached — callers fall back to
+   * the in-memory parameter set so behaviour is graceful.
+   */
+  private readDeviceFile(path: string): string | null {
+    const dev = Equipment.getById(this.deviceId);
+    const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | undefined)?.readFileForEditor;
+    return typeof read === 'function' ? read.call(dev, path) ?? null : null;
   }
 
   private executeAlterTablespace(stmt: AlterTablespaceStatement): ResultSet {
@@ -4325,4 +4366,24 @@ export class OracleExecutor extends BaseExecutor {
     }
     return emptyResult('Noaudit succeeded.');
   }
+}
+
+/**
+ * Parse the `*.<name>=value` (spfile) and bare `<name>=value` (pfile)
+ * lines from an init.ora-style file into a plain (name, value) map.
+ * Comment lines (#) and blank lines are skipped; surrounding single
+ * quotes on the value are stripped.
+ */
+function parseInitParameters(content: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = /^(?:\*\.)?([a-zA-Z0-9_]+)\s*=\s*(.+)$/.exec(line);
+    if (!m) continue;
+    let value = m[2].trim();
+    if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+    out.set(m[1].toLowerCase(), value);
+  }
+  return out;
 }
