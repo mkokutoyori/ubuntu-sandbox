@@ -15,6 +15,10 @@ export interface EnvironmentOptions {
   scriptName?: string;
   /** Positional arguments ($1, $2, ...). */
   positionalArgs?: string[];
+  /** Shell PID ($$). Defaults to a stable random value when omitted. */
+  pid?: number;
+  /** Parent PID ($PPID). */
+  ppid?: number;
 }
 
 export class Environment {
@@ -30,9 +34,12 @@ export class Environment {
   private _lastExitCode: number = 0;
   /** Process ID ($$) — simulated. */
   private readonly pid: number;
+  /** Parent process ID ($PPID) — simulated. */
+  private readonly ppid: number | undefined;
 
   constructor(options: EnvironmentOptions = {}) {
-    this.pid = Math.floor(Math.random() * 30000) + 1000;
+    this.pid = options.pid ?? Math.floor(Math.random() * 30000) + 1000;
+    this.ppid = options.ppid;
 
     if (options.variables) {
       for (const [k, v] of Object.entries(options.variables)) {
@@ -144,7 +151,8 @@ export class Environment {
 
   /** Create a child scope (for function calls). */
   createChild(): Environment {
-    const child = new Environment();
+    // Functions / subshells keep the parent shell's $$ and $PPID.
+    const child = new Environment({ pid: this.pid, ppid: this.ppid });
     child.parent = this;
     // Inherit PID and script name
     child.vars.set('0', this.get('0') ?? '');
@@ -163,6 +171,8 @@ export class Environment {
       case '?': return String(this._lastExitCode);
       case '$': return String(this.pid);
       case '!': return this.vars.get('!') ?? '';
+      case 'PPID':
+        return this.ppid !== undefined ? String(this.ppid) : undefined;
       default: return undefined;
     }
   }

@@ -56,6 +56,10 @@ export interface InterpreterOptions {
   positionalArgs?: string[];
   /** IO context for file redirections. Optional — if missing, redirections are ignored. */
   io?: IOContext;
+  /** Shell PID ($$). */
+  pid?: number;
+  /** Parent PID ($PPID). */
+  ppid?: number;
 }
 
 export class BashInterpreter {
@@ -72,6 +76,8 @@ export class BashInterpreter {
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
       positionalArgs: options.positionalArgs,
+      pid: options.pid,
+      ppid: options.ppid,
     });
   }
 

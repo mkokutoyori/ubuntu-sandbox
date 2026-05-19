@@ -6,9 +6,10 @@
  * scripts that parse the output keep working.
  */
 
-import type { LinuxProcessManager, ProcessInfo, Signal } from './LinuxProcessManager';
+import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
+import { runPs } from './ps/PsCommand';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
@@ -17,80 +18,19 @@ export interface ProcessCmdContext {
   currentUid: number;
   /** TTY of the current shell session, e.g. "pts/0". */
   tty: string;
+  /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
+  shellPid?: number;
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────
 
-/** Format a duration in milliseconds as HH:MM:SS for ps STIME. */
-function formatStartTime(d: Date): string {
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return `${h}:${m}`;
-}
-
-/** Format CPU time in milliseconds as MM:SS.cs for ps TIME. */
-function formatCpuTime(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-/** Render the long BSD-style ps aux line for one process. */
-function renderAuxLine(p: ProcessInfo): string {
-  const cpu = '0.0';
-  const mem = ((p.rss / 4_000_000) * 100).toFixed(1);
-  return [
-    p.user.padEnd(8),
-    String(p.pid).padStart(5),
-    cpu.padStart(4),
-    mem.padStart(4),
-    String(p.vsize).padStart(7),
-    String(p.rss).padStart(6),
-    p.tty.padEnd(8),
-    `${p.state}s`.padEnd(4),
-    formatStartTime(p.startTime).padStart(5),
-    formatCpuTime(p.cpuTime).padStart(6),
-    p.command,
-  ].join(' ');
-}
-
-/** Render the short SysV-style "ps" line. */
-function renderShortLine(p: ProcessInfo): string {
-  return [
-    String(p.pid).padStart(5),
-    p.tty.padEnd(8),
-    formatCpuTime(p.cpuTime).padStart(8),
-    p.comm,
-  ].join(' ');
-}
-
+/**
+ * `ps` delegates to the modular selection/format engine in
+ * {@link runPs}. The engine handles selection (-e/-p/-C/-u/--ppid),
+ * formats (default/-f/-l/aux/-o), --sort and error reporting.
+ */
 export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
-  // Argument parsing — accept both BSD (no dash) and POSIX styles.
-  const joined = args.join(' ');
-  const isAux = /\b(aux|axu)\b/.test(joined) || args.includes('-aux');
-  const isEf = args.includes('-ef') || (args.includes('-e') && args.includes('-f'));
-  const isE = args.includes('-e') || args.includes('-A');
-  const longFormat = isAux || isEf;
-
-  let processes = ctx.pm.list();
-
-  // Without -e/-A/aux, ps shows only the calling user's processes on this tty.
-  if (!isE && !isAux && !isEf) {
-    processes = processes.filter(
-      p => p.user === ctx.currentUser && (p.tty === ctx.tty || p.tty === '?'),
-    );
-  }
-
-  const lines: string[] = [];
-  if (longFormat) {
-    lines.push('USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND');
-    for (const p of processes) lines.push(renderAuxLine(p));
-  } else {
-    lines.push('  PID TTY          TIME CMD');
-    for (const p of processes) lines.push(renderShortLine(p));
-  }
-  return lines.join('\n');
+  return runPs(args, ctx);
 }
 
 // ─── top ──────────────────────────────────────────────────────────────

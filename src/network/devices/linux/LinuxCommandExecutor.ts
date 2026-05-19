@@ -55,6 +55,10 @@ export class LinuxCommandExecutor {
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
   private commandHistory: string[] = [];
+  /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
+  private shellPid = 0;
+  /** Parent PID of the interactive shell; backs `$PPID`. */
+  private shellPpid = 0;
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -91,15 +95,21 @@ export class LinuxCommandExecutor {
     // real login shell. Server profiles run as root.
     const shellUser = !isServer ? 'user' : 'root';
     const shellUid = !isServer ? 1000 : 0;
-    this.processMgr.spawn({
+    // A login shell is a child of sshd when one is running, else of init.
+    const sshd = this.processMgr.list({ comm: 'sshd' })[0];
+    const shellPpid = sshd?.pid ?? 1;
+    const shell = this.processMgr.spawn({
       command: '-bash',
       comm: '-bash',
       user: shellUser,
       uid: shellUid,
       gid: shellUid,
+      ppid: shellPpid,
       tty: 'pts/0',
       cwd: this.cwd,
     });
+    this.shellPid = shell.pid;
+    this.shellPpid = shell.ppid;
   }
 
   /** Set the network context for ip command support */
@@ -137,6 +147,7 @@ export class LinuxCommandExecutor {
       currentUser: this.userMgr.currentUser,
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',
+      shellPid: this.shellPid,
     };
   }
 
@@ -173,6 +184,7 @@ export class LinuxCommandExecutor {
       (argv) => this.dispatchFromInterpreter(argv),
       initialVars,
       io,
+      { pid: this.shellPid, ppid: this.shellPpid },
     );
 
     // Sync interpreter state back to executor
