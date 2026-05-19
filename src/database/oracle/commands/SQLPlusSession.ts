@@ -267,8 +267,17 @@ export class SQLPlusSession {
       return { output: ['SP2-0103: Nothing in SQL buffer to run.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // SET commands
+    // SET commands. Most are SQL*Plus settings (SET LINESIZE …), but
+    // a handful are real SQL statements: SET TRANSACTION, SET ROLE,
+    // SET CONSTRAINT[S]. Route those to the SQL engine.
     if (upper.startsWith('SET ')) {
+      const sqlSet = /^SET\s+(TRANSACTION|ROLE|CONSTRAINTS?)\b/i.exec(trimmed);
+      if (sqlSet) {
+        if (trimmed.endsWith(';')) return this.executeSql(trimmed.slice(0, -1));
+        this.sqlBuffer = trimmed;
+        this.lineNumber = 2;
+        return { output: [], exit: false, needsMoreInput: true, prompt: '  2  ' };
+      }
       return this.handleSet(trimmed.substring(4).trim());
     }
 

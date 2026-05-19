@@ -312,6 +312,13 @@ import './v_rollname';
 import './fga_log';
 import './v_recovery_status';
 import './v_timezone_file';
+import './dba_services';
+import './_parallel_query';
+import './_scheduler_extras';
+import './dba_dml_locks';
+import './dba_ddl_locks';
+import './v_recovery_file_status';
+import './v_dblink';
 
 // Core DBA_ views migrated out of OracleCatalog (one file per view).
 import './dba_users';

@@ -83,6 +83,7 @@ export abstract class BaseParser {
         case 'ANALYZE': return this.parseAnalyze();
         case 'FLASHBACK': return this.parseFlashback();
         case 'PURGE': return this.parsePurge();
+        case 'SET': return this.parseSetStatement();
       }
     }
 
@@ -1227,6 +1228,24 @@ export abstract class BaseParser {
     // Swallow trailing options (FOR TABLE / FOR ALL COLUMNS / SAMPLE n PERCENT / ONLINE).
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
     return { type: 'AnalyzeStatement', position: pos, target, schema, name, action };
+  }
+
+  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement {
+    const pos = this.current().position;
+    this.expectKeyword('SET');
+    // SET TRANSACTION [READ ONLY|READ WRITE] [ISOLATION LEVEL …] [NAME 'x']
+    // SET ROLE r [, r2…] | SET ROLE NONE | SET ROLE ALL [EXCEPT …]
+    // SET CONSTRAINT[S] {ALL | name [,…]} {DEFERRED | IMMEDIATE}
+    if (this.matchKeyword('TRANSACTION')
+        || this.matchKeyword('ROLE')
+        || this.matchKeyword('CONSTRAINTS')
+        || this.matchKeyword('CONSTRAINT')) {
+      // The simulator doesn't track transaction isolation / role state
+      // changes — accept and no-op.
+      this.consumeRestOfStatement();
+      return { type: 'SetTransactionStatement', position: pos } as import('./ASTNode').SetTransactionStatement;
+    }
+    throw this.error(`Unsupported SET target: ${this.current().value}`);
   }
 
   protected parseFlashback(): import('./ASTNode').FlashbackStatement {

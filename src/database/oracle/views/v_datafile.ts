@@ -54,8 +54,9 @@ registerView({
         { name: 'CHECKPOINT_CHANGE#', dataType: oracleNumber(20) },
         { name: 'CHECKPOINT_TIME', dataType: oracleDate() },
         { name: 'AUTOEXTENSIBLE', dataType: oracleVarchar2(3) },
+        { name: 'RECOVER', dataType: oracleVarchar2(3) },
       ],
-      rows
+      rows.map(r => [...r, 'NO'])
     );
   },
 });

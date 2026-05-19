@@ -429,6 +429,10 @@ export class OracleExecutor extends BaseExecutor {
       case 'CommitStatement': return this.executeCommit();
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
+      case 'SetTransactionStatement':
+        // The simulator does not differentiate transaction isolation
+        // levels — accept silently like a real ROLE / CONSTRAINTS toggle.
+        return emptyResult('Transaction set.');
       case 'StartupStatement': return this.executeStartup(statement);
       case 'ShutdownStatement': return this.executeShutdown(statement);
       case 'AlterSystemStatement': return this.executeAlterSystem(statement);
