@@ -22,11 +22,15 @@ registerView({
         col.date('FIRST_TIME'),
         col.num('FIRST_CHANGE#'),
         col.num('NEXT_CHANGE#'),
+        col.str('ARCHIVED', 3),
+        col.num('RESETLOGS_CHANGE#'),
+        col.date('RESETLOGS_TIME'),
       ],
       runtime.archivedLogs.map((l, idx) => [
         l.recid, l.firstTime, 1, l.sequence,
         new Date(l.firstTime).toISOString(),
         100 + idx, 100 + idx + 1,
+        'YES', 1, new Date('2026-01-01T00:00:00Z'),
       ])
     );
   },

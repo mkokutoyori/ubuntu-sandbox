@@ -324,6 +324,11 @@ export class SQLPlusSession {
       return this.handleHost(trimmed);
     }
 
+    // ARCHIVE LOG LIST — SQL*Plus status report on log mode + sequence.
+    if (upper === 'ARCHIVE LOG LIST' || upper === 'ARCHIVE LOG LIST;' || upper.startsWith('ARCHIVE LOG LIST ')) {
+      return this.handleArchiveLogList();
+    }
+
     // EXEC / EXECUTE … — short-hand for an anonymous PL/SQL block.
     // We don't run PL/SQL, but accepting the syntax keeps DBA scripts
     // from producing SP2-0734 noise.
@@ -992,6 +997,28 @@ export class SQLPlusSession {
   }
 
   // ── SPOOL ────────────────────────────────────────────────────────
+
+  // ── ARCHIVE LOG LIST ─────────────────────────────────────────────
+
+  private handleArchiveLogList(): SQLPlusResult {
+    const inst = this.db.instance;
+    const params = inst.getAllParameters();
+    const dest = params.get('log_archive_dest') ?? params.get('log_archive_dest_1') ?? 'USE_DB_RECOVERY_FILE_DEST';
+    const format = params.get('log_archive_format') ?? 'arch_%t_%s_%r.arc';
+    const groups = inst.getRedoLogGroups();
+    const current = groups.find(g => g.status === 'CURRENT') ?? groups[0];
+    const currentSeq = current?.sequence ?? 1;
+    const lines = [
+      `Database log mode              ${inst.archiveLogMode ? 'Archive Mode' : 'No Archive Mode'}`,
+      `Automatic archival             ${inst.archiveLogMode ? 'Enabled' : 'Disabled'}`,
+      `Archive destination            ${dest}`,
+      `Archive format                 ${format}`,
+      `Oldest online log sequence     ${Math.max(1, currentSeq - groups.length + 1)}`,
+      `Next log sequence to archive   ${currentSeq}`,
+      `Current log sequence           ${currentSeq}`,
+    ];
+    return { output: lines, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
 
   // ── HOST / ! ────────────────────────────────────────────────────
 

@@ -303,6 +303,9 @@ import './dba_free_space_coalesced';
 import './dba_lobs';
 import './dba_lob_partitions';
 import './dba_lob_subpartitions';
+import './x_dbgalertext';
+import './dba_log_groups';
+import './dba_log_group_columns';
 
 // Core DBA_ views migrated out of OracleCatalog (one file per view).
 import './dba_users';

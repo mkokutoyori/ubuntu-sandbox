@@ -18,6 +18,7 @@ registerView({
         { name: 'FIRSTINC_TIME', dataType: oracleDate() },
         { name: 'LAST_INCIDENT', dataType: oracleNumber(20) },
         { name: 'LASTINC_TIME', dataType: oracleDate() },
+        { name: 'INCIDENT_COUNT', dataType: oracleNumber(10) },
         { name: 'IMPACT', dataType: oracleNumber(20) },
         { name: 'SERVICE_REQUEST', dataType: oracleVarchar2(64) },
         { name: 'BUG_NUMBER', dataType: oracleVarchar2(64) },

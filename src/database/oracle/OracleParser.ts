@@ -565,6 +565,8 @@ export class OracleParser extends BaseParser {
       return { type: 'AlterSystemStatement', position: pos, action: 'SWITCH LOGFILE' };
     }
     if (this.matchKeyword('CHECKPOINT')) {
+      // ALTER SYSTEM CHECKPOINT [GLOBAL | LOCAL] — both accepted.
+      this.matchKeyword('GLOBAL') || this.matchKeyword('LOCAL');
       return { type: 'AlterSystemStatement', position: pos, action: 'CHECKPOINT' };
     }
     if (this.matchKeyword('KILL')) {
@@ -589,6 +591,8 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('ALL')) target = 'ALL';
       else if (this.matchKeyword('CURRENT')) target = 'CURRENT';
       else if (this.matchKeyword('NEXT')) target = 'NEXT';
+      else if (this.matchKeyword('START')) target = 'START';
+      else if (this.matchKeyword('STOP')) target = 'STOP';
       return { type: 'AlterSystemStatement', position: pos, action: 'ARCHIVE LOG', parameter: target };
     }
     if (this.matchKeyword('ENABLE')) {

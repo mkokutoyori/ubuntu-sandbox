@@ -923,7 +923,11 @@ export abstract class BaseParser {
     const actions: import('./ASTNode').AlterTableAction[] = [];
 
     if (this.matchKeyword('ADD')) {
-      if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
+      if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
+        // ADD SUPPLEMENTAL LOG {DATA (…) COLUMNS | GROUP name (…) ALWAYS}
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
         const hadParen = this.tokens[this.pos - 1]?.type === TokenType.LPAREN;
         const constraint = this.parseTableConstraint();
         if (hadParen) this.expect(TokenType.RPAREN);
@@ -952,6 +956,10 @@ export abstract class BaseParser {
         actions.push({ action: 'DROP_CONSTRAINT', constraintName, cascade: cascade || undefined });
       } else if (this.matchKeyword('PARTITION') || this.matchKeyword('SUBPARTITION')) {
         // DROP [SUB]PARTITION p0 [UPDATE INDEXES] — metadata-only no-op.
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
+        // DROP SUPPLEMENTAL LOG GROUP name — metadata-only no-op.
         this.consumeRestOfStatement();
         actions.push({ action: 'SHRINK_SPACE' });
       }
