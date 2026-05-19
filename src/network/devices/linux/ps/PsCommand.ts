@@ -17,6 +17,7 @@
  */
 
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
+import { formatClock, formatCpuTime, memPercent } from '../system/ProcFormat';
 
 /** Context describing the calling interactive shell. */
 export interface PsContext {
@@ -71,16 +72,9 @@ interface Column {
   num?(p: ProcessInfo): number;
 }
 
-function fmtClock(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-function fmtCpu(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-}
-function memPct(rss: number): string {
-  return ((rss / 4_000_000) * 100).toFixed(1);
-}
+const fmtClock = formatClock;
+const fmtCpu = formatCpuTime;
+const memPct = memPercent;
 
 const COLUMN_REGISTRY: Record<string, Column> = {
   pid: { header: 'PID', align: 'r', width: 5, value: p => String(p.pid), num: p => p.pid },

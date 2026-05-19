@@ -17,6 +17,7 @@
 
 import type { IEventBus } from '@/events/EventBus';
 import type { LinuxProcessServiceDomainEvent } from './events';
+import { LinuxProcess } from './process/LinuxProcess';
 
 /** Linux process states as reported by ps. */
 export type ProcessState =
@@ -167,7 +168,7 @@ export class LinuxProcessManager {
     const ppid = opts.ppid ?? INIT_PID;
     const parent = this.processes.get(ppid);
 
-    const proc: ProcessInfo = {
+    const proc = new LinuxProcess({
       pid,
       ppid,
       pgid: parent?.pgid ?? pid,
@@ -189,7 +190,7 @@ export class LinuxProcessManager {
       cwd: opts.cwd ?? '/',
       exe: argv0,
       serviceName: opts.serviceName,
-    };
+    });
     this.processes.set(pid, proc);
     this.publish({
       topic: 'linux.process.spawned',
@@ -357,7 +358,7 @@ export class LinuxProcessManager {
   // ─── private helpers ────────────────────────────────────────────────
 
   private bootstrapInit(): void {
-    const init: ProcessInfo = {
+    const init = new LinuxProcess({
       pid: INIT_PID,
       ppid: 0,
       pgid: 1,
@@ -378,7 +379,7 @@ export class LinuxProcessManager {
       priority: 20,
       cwd: '/',
       exe: '/lib/systemd/systemd',
-    };
+    });
     this.processes.set(INIT_PID, init);
   }
 

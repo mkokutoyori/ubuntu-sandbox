@@ -15,6 +15,7 @@
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
+import { LinuxService } from './service/LinuxService';
 
 /** systemd-equivalent activation state for a unit. */
 export type ServiceState =
@@ -470,7 +471,7 @@ export class LinuxServiceManager {
     for (const [name, src] of merged) {
       const parsed = parseUnitFile(src.content);
       const previous = this.units.get(name);
-      const unit: ServiceUnit = {
+      const unit = new LinuxService({
         name,
         description: parsed.description ?? name,
         type: parsed.type ?? 'simple',
@@ -489,7 +490,7 @@ export class LinuxServiceManager {
         enabled: this.computeEnabledState(name),
         mainPid: previous?.mainPid,
         activeSince: previous?.activeSince,
-      };
+      });
       this.units.set(name, unit);
     }
 

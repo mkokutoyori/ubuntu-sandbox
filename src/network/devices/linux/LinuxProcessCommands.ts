@@ -10,6 +10,7 @@ import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import { runPs } from './ps/PsCommand';
+import { memPercent, kbToMiB } from './system/ProcFormat';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
@@ -63,15 +64,15 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
 
   for (const p of procs) {
     const cpu = '0.0';
-    const mem = ((p.rss / 4_000_000) * 100).toFixed(1);
+    const mem = memPercent(p.rss);
     lines.push(
       [
         String(p.pid).padStart(7),
         p.user.padEnd(9),
         String(p.priority).padStart(3),
         String(p.nice).padStart(4),
-        `${Math.floor(p.vsize / 1024)}M`.padStart(7),
-        `${Math.floor(p.rss / 1024)}M`.padStart(6),
+        `${kbToMiB(p.vsize)}M`.padStart(7),
+        `${kbToMiB(p.rss)}M`.padStart(6),
         '4M'.padStart(6),
         p.state,
         cpu.padStart(5),
