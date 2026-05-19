@@ -555,7 +555,28 @@ export abstract class BaseParser {
     this.expect(TokenType.RPAREN);
 
     let tablespace: string | undefined;
-    if (this.matchKeyword('TABLESPACE')) tablespace = this.expectIdentifier();
+    // Walk any number of trailing storage / partition / LOB / compression
+    // clauses. We don't model their effects, but the simulator must let
+    // DBA-grade DDL pass without choking.
+    let safety = 1000;
+    while (--safety > 0 && !this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('TABLESPACE')) { tablespace = this.expectIdentifier(); continue; }
+      // PARTITION BY {RANGE|LIST|HASH|REFERENCE|SYSTEM} (cols) [INTERVAL (…)] [(part_specs)]
+      // SUBPARTITION BY … (subpart_template)
+      // LOB (col) STORE AS {SECUREFILE|BASICFILE} (clauses…)
+      // COMPRESS / NOCOMPRESS / ROW STORE COMPRESS … / PCTFREE n / PCTUSED n / …
+      // Skip a single token; balanced parentheses count as one logical group.
+      if (this.match(TokenType.LPAREN)) {
+        let depth = 1;
+        while (depth > 0 && !this.check(TokenType.EOF)) {
+          if (this.match(TokenType.LPAREN)) depth++;
+          else if (this.match(TokenType.RPAREN)) depth--;
+          else this.advance();
+        }
+        continue;
+      }
+      this.advance();
+    }
 
     return { type: 'CreateTableStatement', position: pos, schema, name, columns, constraints, tablespace };
   }
@@ -911,7 +932,17 @@ export abstract class BaseParser {
         actions.push({ action: 'ADD_COLUMN', column: this.parseColumnDefinition() });
       }
     } else if (this.matchKeyword('MODIFY')) {
-      actions.push({ action: 'MODIFY_COLUMN', column: this.parseColumnDefinition() });
+      // MODIFY PARTITION / SUBPARTITION / LOB (…) — administrative
+      // clauses not modeled, swallowed as a no-op. Otherwise it's a
+      // standard MODIFY column.
+      if (this.checkIdentifierOrKeyword('PARTITION')
+          || this.checkIdentifierOrKeyword('SUBPARTITION')
+          || this.checkIdentifierOrKeyword('LOB')) {
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else {
+        actions.push({ action: 'MODIFY_COLUMN', column: this.parseColumnDefinition() });
+      }
     } else if (this.matchKeyword('DROP')) {
       if (this.matchKeyword('COLUMN')) {
         actions.push({ action: 'DROP_COLUMN', columnName: this.expectIdentifier() });
@@ -919,6 +950,10 @@ export abstract class BaseParser {
         const constraintName = this.expectIdentifier();
         const cascade = this.matchKeyword('CASCADE');
         actions.push({ action: 'DROP_CONSTRAINT', constraintName, cascade: cascade || undefined });
+      } else if (this.matchKeyword('PARTITION') || this.matchKeyword('SUBPARTITION')) {
+        // DROP [SUB]PARTITION p0 [UPDATE INDEXES] — metadata-only no-op.
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
       }
     } else if (this.matchKeyword('RENAME')) {
       if (this.matchKeyword('COLUMN')) {
@@ -933,7 +968,13 @@ export abstract class BaseParser {
       }
     } else if (this.matchKeyword('MOVE')) {
       // MOVE TABLESPACE x | MOVE COMPRESS [FOR QUERY|ARCHIVE LOW|HIGH]
-      if (this.matchKeyword('TABLESPACE')) {
+      // MOVE PARTITION … / MOVE LOB (…) — metadata-only no-op.
+      if (this.checkIdentifierOrKeyword('PARTITION')
+          || this.checkIdentifierOrKeyword('LOB')
+          || this.checkIdentifierOrKeyword('SUBPARTITION')) {
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.matchKeyword('TABLESPACE')) {
         actions.push({ action: 'MOVE_TABLESPACE', tablespace: this.expectIdentifier() });
       } else if (this.matchKeyword('COMPRESS')) {
         let level: string | undefined;
@@ -974,6 +1015,15 @@ export abstract class BaseParser {
       const parts: string[] = [];
       while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) parts.push(this.advance().value);
       actions.push({ action: 'MOVE_COMPRESS', compressionLevel: parts.join(' ') || undefined });
+    } else if (
+      this.matchKeyword('TRUNCATE') ||
+      this.matchKeyword('SPLIT')    || this.matchKeyword('MERGE') ||
+      this.matchKeyword('EXCHANGE')
+    ) {
+      // Partition / sub-partition administrative clauses — metadata-only
+      // no-ops since the simulator does not implement partitioning.
+      this.consumeRestOfStatement();
+      actions.push({ action: 'SHRINK_SPACE' });
     }
 
     return { type: 'AlterTableStatement', position: pos, schema, name, actions };
@@ -1779,9 +1829,32 @@ export abstract class BaseParser {
     return this.current().type === TokenType.KEYWORD && this.current().value === keyword;
   }
 
+  /**
+   * Same as `checkKeyword` but also matches IDENTIFIER tokens whose
+   * uppercased value equals the target — useful for words like LOB or
+   * PARTITION that aren't always reserved.
+   */
+  protected checkIdentifierOrKeyword(keyword: string): boolean {
+    const cur = this.current();
+    if (cur.type === TokenType.KEYWORD && cur.value === keyword) return true;
+    if (cur.type === TokenType.IDENTIFIER && cur.value.toUpperCase() === keyword) return true;
+    return false;
+  }
+
   protected match(type: TokenType): boolean {
     if (this.check(type)) { this.advance(); return true; }
     return false;
+  }
+
+  /**
+   * Consume every remaining token up to (but not including) the next
+   * SEMICOLON / EOF. Handy when a DDL clause is recognised but the
+   * simulator has no use for its details (partitioning, LOB storage…).
+   */
+  protected consumeRestOfStatement(): void {
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      this.advance();
+    }
   }
 
   protected matchKeyword(keyword: string): boolean {
