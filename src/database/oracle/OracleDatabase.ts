@@ -16,6 +16,7 @@ import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
+import { provisionPredefinedProfiles } from './security/classicProfiles';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
@@ -74,6 +75,9 @@ export class OracleDatabase {
     this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
     this.securityEngine = new SecurityEngine(this.catalog);
     this.catalog.setSecurityEngine(this.securityEngine);
+    // Provision the predefined non-DEFAULT profiles (MONITORING_PROFILE,
+    // ORA_STIG_PROFILE) so a fresh instance matches a real 19c install.
+    provisionPredefinedProfiles(this.securityEngine.profiles);
     this.lexer = new OracleLexer();
   }
 
