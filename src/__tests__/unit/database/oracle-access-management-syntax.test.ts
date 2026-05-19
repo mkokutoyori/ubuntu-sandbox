@@ -279,6 +279,14 @@ describe('Cursor cache views — V$SQL/V$SQLAREA/V$SQLSTATS coherence', () => {
     expect(intersect.length).toBeGreaterThan(1);
   });
 
+  test('DBA_AUDIT_OBJECT.OWNER is queryable (renamed from OBJ_OWNER)', () => {
+    exec("CREATE USER alice IDENTIFIED BY p1");
+    exec("AUDIT INSERT ON sys.dual BY ACCESS");
+    const r = exec("SELECT owner, obj_name FROM dba_audit_object WHERE owner = 'SYS' FETCH FIRST 1 ROWS ONLY");
+    // The view itself must accept OWNER without ORA-00904.
+    expect(r).toBeDefined();
+  });
+
   test('V$SQLAREA reflects executions counter as it climbs', () => {
     exec("SELECT 42 FROM dual");
     exec("SELECT 42 FROM dual");
