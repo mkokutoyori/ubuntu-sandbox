@@ -501,6 +501,12 @@ export class OracleParser extends BaseParser {
     else if (this.matchKeyword('MOUNT')) mode = 'MOUNT';
     else if (this.matchKeyword('RESTRICT')) mode = 'RESTRICT';
     else if (this.matchKeyword('FORCE')) mode = 'FORCE';
+    else if (this.matchKeyword('UPGRADE') || this.matchKeyword('DOWNGRADE')) mode = 'MOUNT';
+    else if (this.matchKeyword('OPEN')) mode = undefined; // explicit OPEN — same as default
+    // Allow trailing optional clauses: RESTRICT, EXCLUSIVE, RECOVER,
+    // PFILE='…', etc. They have no effect on the simulator but should
+    // not break the parse.
+    this.consumeRestOfStatement();
     return { type: 'StartupStatement', position: pos, mode };
   }
 
@@ -530,6 +536,14 @@ export class OracleParser extends BaseParser {
     // ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION
     if (this.matchKeyword('SET')) {
       const parameter = this.expectIdentifier();
+      // ALTER SYSTEM SET EVENTS '…'  — the EVENTS variant accepts a
+      // bare string literal (no `=`).
+      if (parameter.toUpperCase() === 'EVENTS' && this.check(TokenType.STRING_LITERAL)) {
+        const raw = this.advance().value;
+        const value = raw.slice(1, -1);
+        this.consumeRestOfStatement();
+        return { type: 'AlterSystemStatement', position: pos, action: 'SET', parameter, value };
+      }
       this.expect(TokenType.COMPARISON_OP, '=');
       let value: string;
       if (this.check(TokenType.STRING_LITERAL)) {

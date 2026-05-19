@@ -138,6 +138,14 @@ export class OracleInstance {
 
   get state(): InstanceState { return this._state; }
   get startupTime(): Date | null { return this._startupTime; }
+  /** RESTRICTED SESSION mode (ALTER SYSTEM ENABLE RESTRICTED SESSION). */
+  private _restrictedSession = false;
+  get restrictedSession(): boolean { return this._restrictedSession; }
+  setRestrictedSession(on: boolean): void { this._restrictedSession = on; }
+  /** Whether a SHUTDOWN is in progress (no new logins). */
+  private _shutdownPending = false;
+  get shutdownPending(): boolean { return this._shutdownPending; }
+  setShutdownPending(on: boolean): void { this._shutdownPending = on; }
   get isOpen(): boolean { return this._state === 'OPEN'; }
 
   startup(mode?: 'NOMOUNT' | 'MOUNT' | 'RESTRICT' | 'FORCE'): string[] {

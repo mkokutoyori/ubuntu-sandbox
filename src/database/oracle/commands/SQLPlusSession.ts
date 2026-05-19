@@ -324,6 +324,14 @@ export class SQLPlusSession {
       return this.handleHost(trimmed);
     }
 
+    // ORADEBUG — internal diagnostic shell. The simulator emits a
+    // canned acknowledgement and returns a stub trace file name so
+    // DBA scripts that probe with `ORADEBUG SETMYPID; ORADEBUG DUMP …`
+    // don't drown in SP2-0734 noise.
+    if (upper.startsWith('ORADEBUG ') || upper === 'ORADEBUG' || upper === 'ORADEBUG;') {
+      return this.handleOradebug(trimmed);
+    }
+
     // ARCHIVE LOG LIST — SQL*Plus status report on log mode + sequence.
     if (upper === 'ARCHIVE LOG LIST' || upper === 'ARCHIVE LOG LIST;' || upper.startsWith('ARCHIVE LOG LIST ')) {
       return this.handleArchiveLogList();
@@ -998,6 +1006,30 @@ export class SQLPlusSession {
   }
 
   // ── SPOOL ────────────────────────────────────────────────────────
+
+  // ── ORADEBUG ─────────────────────────────────────────────────────
+
+  private handleOradebug(line: string): SQLPlusResult {
+    const rest = line.replace(/;\s*$/, '').replace(/^ORADEBUG\s*/i, '').trim();
+    const upper = rest.toUpperCase();
+    const inst = this.db.instance;
+    if (upper === 'TRACEFILE_NAME') {
+      const path = `${inst.config.diagDest ?? '/u01/app/oracle'}/diag/rdbms/${inst.config.sid.toLowerCase()}/${inst.config.sid}/trace/${inst.config.sid.toLowerCase()}_ora_${process.pid ?? 1000}.trc`;
+      return { output: [path], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (upper.startsWith('SETMYPID')) {
+      return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (upper.startsWith('SETOSPID') || upper.startsWith('SETORAPID')) {
+      return { output: ['Oracle pid: 1, Unix process pid: 1000, image: oracle@localhost'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (upper.startsWith('DUMP ') || upper.startsWith('EVENT ') || upper.startsWith('SESSION_EVENT')
+        || upper.startsWith('SHORT_STACK') || upper.startsWith('UNLIMIT') || upper.startsWith('SUSPEND')
+        || upper.startsWith('RESUME')) {
+      return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
 
   // ── ARCHIVE LOG LIST ─────────────────────────────────────────────
 

@@ -310,6 +310,8 @@ import './v_undostat';
 import './v_rollstat';
 import './v_rollname';
 import './fga_log';
+import './v_recovery_status';
+import './v_timezone_file';
 
 // Core DBA_ views migrated out of OracleCatalog (one file per view).
 import './dba_users';
