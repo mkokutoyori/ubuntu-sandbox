@@ -71,6 +71,7 @@ export function runScriptContent(
   executeCommand: (args: string[]) => { output: string; exitCode: number },
   variables?: Record<string, string>,
   io?: IOContext,
+  identity?: { pid?: number; ppid?: number },
 ): ScriptResult {
   // Strip shebang, then preprocess heredocs
   const source = preprocessHeredocs(stripShebang(content));
@@ -88,6 +89,8 @@ export function runScriptContent(
       scriptName,
       positionalArgs: scriptArgs,
       io,
+      pid: identity?.pid,
+      ppid: identity?.ppid,
     });
 
     const result = interp.execute(ast);

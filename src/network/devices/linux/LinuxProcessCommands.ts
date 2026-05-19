@@ -6,9 +6,12 @@
  * scripts that parse the output keep working.
  */
 
-import type { LinuxProcessManager, ProcessInfo, Signal } from './LinuxProcessManager';
+import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
+import { runPs } from './ps/PsCommand';
+import { memPercent, kbToMiB } from './system/ProcFormat';
+import { LinuxService } from './service/LinuxService';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
@@ -17,80 +20,19 @@ export interface ProcessCmdContext {
   currentUid: number;
   /** TTY of the current shell session, e.g. "pts/0". */
   tty: string;
+  /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
+  shellPid?: number;
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────
 
-/** Format a duration in milliseconds as HH:MM:SS for ps STIME. */
-function formatStartTime(d: Date): string {
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return `${h}:${m}`;
-}
-
-/** Format CPU time in milliseconds as MM:SS.cs for ps TIME. */
-function formatCpuTime(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-/** Render the long BSD-style ps aux line for one process. */
-function renderAuxLine(p: ProcessInfo): string {
-  const cpu = '0.0';
-  const mem = ((p.rss / 4_000_000) * 100).toFixed(1);
-  return [
-    p.user.padEnd(8),
-    String(p.pid).padStart(5),
-    cpu.padStart(4),
-    mem.padStart(4),
-    String(p.vsize).padStart(7),
-    String(p.rss).padStart(6),
-    p.tty.padEnd(8),
-    `${p.state}s`.padEnd(4),
-    formatStartTime(p.startTime).padStart(5),
-    formatCpuTime(p.cpuTime).padStart(6),
-    p.command,
-  ].join(' ');
-}
-
-/** Render the short SysV-style "ps" line. */
-function renderShortLine(p: ProcessInfo): string {
-  return [
-    String(p.pid).padStart(5),
-    p.tty.padEnd(8),
-    formatCpuTime(p.cpuTime).padStart(8),
-    p.comm,
-  ].join(' ');
-}
-
+/**
+ * `ps` delegates to the modular selection/format engine in
+ * {@link runPs}. The engine handles selection (-e/-p/-C/-u/--ppid),
+ * formats (default/-f/-l/aux/-o), --sort and error reporting.
+ */
 export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
-  // Argument parsing — accept both BSD (no dash) and POSIX styles.
-  const joined = args.join(' ');
-  const isAux = /\b(aux|axu)\b/.test(joined) || args.includes('-aux');
-  const isEf = args.includes('-ef') || (args.includes('-e') && args.includes('-f'));
-  const isE = args.includes('-e') || args.includes('-A');
-  const longFormat = isAux || isEf;
-
-  let processes = ctx.pm.list();
-
-  // Without -e/-A/aux, ps shows only the calling user's processes on this tty.
-  if (!isE && !isAux && !isEf) {
-    processes = processes.filter(
-      p => p.user === ctx.currentUser && (p.tty === ctx.tty || p.tty === '?'),
-    );
-  }
-
-  const lines: string[] = [];
-  if (longFormat) {
-    lines.push('USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND');
-    for (const p of processes) lines.push(renderAuxLine(p));
-  } else {
-    lines.push('  PID TTY          TIME CMD');
-    for (const p of processes) lines.push(renderShortLine(p));
-  }
-  return lines.join('\n');
+  return runPs(args, ctx);
 }
 
 // ─── top ──────────────────────────────────────────────────────────────
@@ -123,15 +65,15 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
 
   for (const p of procs) {
     const cpu = '0.0';
-    const mem = ((p.rss / 4_000_000) * 100).toFixed(1);
+    const mem = memPercent(p.rss);
     lines.push(
       [
         String(p.pid).padStart(7),
         p.user.padEnd(9),
         String(p.priority).padStart(3),
         String(p.nice).padStart(4),
-        `${Math.floor(p.vsize / 1024)}M`.padStart(7),
-        `${Math.floor(p.rss / 1024)}M`.padStart(6),
+        `${kbToMiB(p.vsize)}M`.padStart(7),
+        `${kbToMiB(p.rss)}M`.padStart(6),
         '4M'.padStart(6),
         p.state,
         cpu.padStart(5),
@@ -322,8 +264,35 @@ function renderUnitStatus(u: ServiceUnit): string {
   return lines.join('\n');
 }
 
+/**
+ * Validate a `systemctl set-property` assignment. Returns an error
+ * string for an unknown key or malformed value, else null.
+ */
+function validateUnitProperty(key: string, val: string): string | null {
+  const validators: Record<string, RegExp> = {
+    CPUQuota: /^\d+%$/,
+    CPUWeight: /^\d+$/,
+    MemoryMax: /^(\d+[KMG]?|infinity)$/,
+    MemoryHigh: /^(\d+[KMG]?|infinity)$/,
+    MemoryLimit: /^(\d+[KMG]?|infinity)$/,
+    TasksMax: /^(\d+|infinity)$/,
+    IOWeight: /^\d+$/,
+  };
+  const rule = validators[key];
+  if (!rule) {
+    return `Cannot set property ${key}, or unknown property.`;
+  }
+  if (!rule.test(val)) {
+    return `Failed to parse ${key}= setting "${val}".`;
+  }
+  return null;
+}
+
 export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlResult {
-  const sub = (args[0] || '').toLowerCase();
+  let sub = (args[0] || '').toLowerCase();
+  // Bare option invocations (`systemctl --failed`, `--type=service`,
+  // `-t service`) are listing requests in real systemd.
+  if (sub.startsWith('-') && sub !== '--version') sub = 'list-units';
   const unit = (args[1] || '').replace(/\.service$/, '');
 
   if (!sub) {
@@ -424,8 +393,110 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
     }
 
     case 'daemon-reload':
+    case 'daemon-reexec':
       sm.daemonReload();
       return { output: '', exitCode: 0 };
+
+    case '--version':
+    case 'version':
+      return {
+        output: 'systemd 249 (249.11-0ubuntu3)\n+PAM +AUDIT +SELINUX +APPARMOR +SYSVINIT',
+        exitCode: 0,
+      };
+
+    case 'get-default':
+      return { output: sm.defaultTarget(), exitCode: 0 };
+
+    case 'is-failed': {
+      const u = sm.status(unit);
+      const failed = u?.state === 'failed';
+      return { output: failed ? 'failed' : 'active', exitCode: failed ? 0 : 1 };
+    }
+
+    case 'mask':
+    case 'unmask': {
+      if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
+      const r = sub === 'mask' ? sm.mask(unit) : sm.unmask(unit);
+      if (!r.ok) return { output: `Failed to ${sub} unit: ${r.error}`, exitCode: 1 };
+      const verb = sub === 'mask' ? 'Created' : 'Removed';
+      return {
+        output: `${verb} symlink /etc/systemd/system/${unit}.service${sub === 'mask' ? ' → /dev/null' : ''}.`,
+        exitCode: 0,
+      };
+    }
+
+    case 'reset-failed':
+      sm.resetFailed(unit || undefined);
+      return { output: '', exitCode: 0 };
+
+    case 'show': {
+      const props: string[] = [];
+      let target = '';
+      for (let i = 1; i < args.length; i++) {
+        const a = args[i];
+        if (a === '-p' || a === '--property') {
+          props.push(...(args[++i] ?? '').split(',').filter(Boolean));
+        } else if (a.startsWith('--property=')) {
+          props.push(...a.slice('--property='.length).split(',').filter(Boolean));
+        } else if (a === '-a' || a === '--all') {
+          /* show all: ignored, we print the default set */
+        } else if (!a.startsWith('-')) {
+          target = a.replace(/\.service$/, '');
+        }
+      }
+      if (!target) {
+        return {
+          output: [
+            `Version=249`,
+            `Architecture=x86-64`,
+            `NNames=1`,
+            `DefaultTimeoutStartUSec=1min 30s`,
+          ].join('\n'),
+          exitCode: 0,
+        };
+      }
+      const u = sm.status(target);
+      if (!u) {
+        // systemd prints empty values for unknown units, exit 0.
+        return { output: props.map(p => `${p}=`).join('\n'), exitCode: 0 };
+      }
+      const keys = props.length > 0 ? props : LinuxService.DEFAULT_SHOW_KEYS;
+      return {
+        output: keys.map(k => `${k}=${u.effectiveProp(k)}`).join('\n'),
+        exitCode: 0,
+      };
+    }
+
+    case 'set-property': {
+      if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
+      const u = sm.status(unit);
+      if (!u) return { output: `Unit ${unit}.service not loaded.`, exitCode: 1 };
+      const pairs = args.slice(2).filter(a => a.includes('='));
+      if (pairs.length === 0) return { output: 'Too few arguments.', exitCode: 1 };
+      for (const pair of pairs) {
+        const eq = pair.indexOf('=');
+        const key = pair.slice(0, eq);
+        const val = pair.slice(eq + 1);
+        const err = validateUnitProperty(key, val);
+        if (err) return { output: err, exitCode: 1 };
+        u.setProperty(key, val);
+      }
+      return { output: '', exitCode: 0 };
+    }
+
+    case 'list-timers':
+      return { output: 'NEXT LEFT LAST PASSED UNIT ACTIVATES\n\n0 timers listed.', exitCode: 0 };
+
+    case 'list-sockets':
+      return { output: 'LISTEN UNIT ACTIVATES\n\n0 sockets listed.', exitCode: 0 };
+
+    case 'list-dependencies': {
+      const u = unit ? sm.status(unit) : null;
+      if (unit && !u) return { output: `Failed to get dependencies: Unit ${unit}.service not found.`, exitCode: 1 };
+      const head = unit ? `${unit}.service` : sm.defaultTarget();
+      const deps = u ? u.after : [];
+      return { output: [head, ...deps.map(d => `● └─${d}`)].join('\n'), exitCode: 0 };
+    }
 
     case 'cat': {
       if (!unit) return { output: 'Too few arguments.', exitCode: 1 };

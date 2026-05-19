@@ -7,7 +7,17 @@
  *
  * Not a real scheduler — processes do not consume CPU time on their own.
  * State transitions are driven by explicit calls (spawn, kill, setState).
+ *
+ * Every mutation also publishes a deviceId-scoped domain event on the
+ * injected {@link IEventBus} (no-op until a bus is attached), so the
+ * process table can drive a live UI panel, supervisors, or telemetry
+ * without the manager knowing those consumers exist (Dependency
+ * Inversion + Observer).
  */
+
+import type { IEventBus } from '@/events/EventBus';
+import type { LinuxProcessServiceDomainEvent } from './events';
+import { LinuxProcess } from './process/LinuxProcess';
 
 /** Linux process states as reported by ps. */
 export type ProcessState =
@@ -78,6 +88,16 @@ export interface ProcessInfo {
   exe: string;
   /** Service unit that owns this process, if any. */
   serviceName?: string;
+  /** Scheduling policy (chrt). Defaults to SCHED_OTHER. */
+  schedPolicy?: string;
+  /** Real-time scheduling priority (chrt). 0 for SCHED_OTHER. */
+  rtPriority?: number;
+  /** I/O scheduling class (ionice). Defaults to best-effort. */
+  ioClass?: string;
+  /** I/O scheduling class data 0..7 (ionice). */
+  ioClassData?: number;
+  /** CPU affinity mask as a list of CPU indices (taskset). */
+  cpuAffinity?: number[];
 }
 
 /** Options for spawning a new process. */
@@ -120,9 +140,25 @@ const PID_MAX = 32768;
 export class LinuxProcessManager {
   private processes = new Map<number, ProcessInfo>();
   private nextPid = 2;
+  /** Reactive sink — null until a device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
 
   constructor() {
     this.bootstrapInit();
+  }
+
+  /**
+   * Attach the owning device's event bus so process mutations become
+   * observable. Idempotent; safe to call before or after bootstrap.
+   */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
+
+  private publish(event: LinuxProcessServiceDomainEvent): void {
+    this.bus?.publish(event);
   }
 
   /** Reset to initial state (only PID 1 running). Used by tests / reboot. */
@@ -142,7 +178,7 @@ export class LinuxProcessManager {
     const ppid = opts.ppid ?? INIT_PID;
     const parent = this.processes.get(ppid);
 
-    const proc: ProcessInfo = {
+    const proc = new LinuxProcess({
       pid,
       ppid,
       pgid: parent?.pgid ?? pid,
@@ -164,8 +200,16 @@ export class LinuxProcessManager {
       cwd: opts.cwd ?? '/',
       exe: argv0,
       serviceName: opts.serviceName,
-    };
+    });
     this.processes.set(pid, proc);
+    this.publish({
+      topic: 'linux.process.spawned',
+      payload: {
+        deviceId: this.deviceId, pid, comm, ppid,
+        command: proc.command, user: proc.user, uid: proc.uid,
+        serviceName: proc.serviceName,
+      },
+    });
     return proc;
   }
 
@@ -193,7 +237,33 @@ export class LinuxProcessManager {
   setState(pid: number, state: ProcessState): boolean {
     const p = this.processes.get(pid);
     if (!p) return false;
+    const from = p.state;
     p.state = state;
+    if (from !== state) {
+      this.publish({
+        topic: 'linux.process.state-changed',
+        payload: { deviceId: this.deviceId, pid, comm: p.comm, from, to: state },
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Change a process's nice value (and derived priority), publishing a
+   * priority-changed event. Backs `renice` and `nice`.
+   */
+  renice(pid: number, nice: number): boolean {
+    const p = this.processes.get(pid);
+    if (!p) return false;
+    const oldNice = p.nice;
+    p.nice = nice;
+    p.priority = 20 + nice;
+    if (oldNice !== nice) {
+      this.publish({
+        topic: 'linux.process.priority-changed',
+        payload: { deviceId: this.deviceId, pid, comm: p.comm, oldNice, newNice: nice },
+      });
+    }
     return true;
   }
 
@@ -205,15 +275,20 @@ export class LinuxProcessManager {
    */
   kill(pid: number, signal: Signal): boolean {
     const p = this.processes.get(pid);
+    const delivered = !!p && pid !== INIT_PID;
+    this.publish({
+      topic: 'linux.process.signalled',
+      payload: { deviceId: this.deviceId, pid, comm: p?.comm ?? '', signal, delivered },
+    });
     if (!p) return false;
     if (pid === INIT_PID) return false;
 
     switch (signal) {
       case 'SIGSTOP':
-        p.state = 'T';
+        this.transition(p, 'T');
         return true;
       case 'SIGCONT':
-        if (p.state === 'T') p.state = 'S';
+        if (p.state === 'T') this.transition(p, 'S');
         return true;
       case 'SIGCHLD':
       case 'SIGUSR1':
@@ -227,10 +302,26 @@ export class LinuxProcessManager {
       case 'SIGINT':
       case 'SIGQUIT':
       case 'SIGTERM':
-      case 'SIGKILL':
-        this.terminate(pid);
+      case 'SIGKILL': {
+        const reparented = this.terminate(pid);
+        this.publish({
+          topic: 'linux.process.exited',
+          payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, reparented },
+        });
         return true;
+      }
     }
+  }
+
+  /** Apply a state transition and publish the state-changed event. */
+  private transition(p: ProcessInfo, to: ProcessState): void {
+    const from = p.state;
+    if (from === to) return;
+    p.state = to;
+    this.publish({
+      topic: 'linux.process.state-changed',
+      payload: { deviceId: this.deviceId, pid: p.pid, comm: p.comm, from, to },
+    });
   }
 
   /** Reap a zombie process (remove from table). Returns true on success. */
@@ -238,6 +329,10 @@ export class LinuxProcessManager {
     const p = this.processes.get(pid);
     if (!p || p.state !== 'Z') return false;
     this.processes.delete(pid);
+    this.publish({
+      topic: 'linux.process.reaped',
+      payload: { deviceId: this.deviceId, pid, comm: p.comm },
+    });
     return true;
   }
 
@@ -273,7 +368,7 @@ export class LinuxProcessManager {
   // ─── private helpers ────────────────────────────────────────────────
 
   private bootstrapInit(): void {
-    const init: ProcessInfo = {
+    const init = new LinuxProcess({
       pid: INIT_PID,
       ppid: 0,
       pgid: 1,
@@ -294,7 +389,7 @@ export class LinuxProcessManager {
       priority: 20,
       cwd: '/',
       exe: '/lib/systemd/systemd',
-    };
+    });
     this.processes.set(INIT_PID, init);
   }
 
@@ -313,13 +408,20 @@ export class LinuxProcessManager {
     throw new Error('No free PIDs available');
   }
 
-  /** Terminate a process and reparent its children to init. */
-  private terminate(pid: number): void {
-    // Reparent children to PID 1 before removing.
+  /**
+   * Terminate a process and reparent its children to init.
+   * Returns the number of children reparented.
+   */
+  private terminate(pid: number): number {
+    let reparented = 0;
     for (const child of this.processes.values()) {
-      if (child.ppid === pid) child.ppid = INIT_PID;
+      if (child.ppid === pid) {
+        child.ppid = INIT_PID;
+        reparented++;
+      }
     }
     this.processes.delete(pid);
+    return reparented;
   }
 }
 

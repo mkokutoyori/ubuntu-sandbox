@@ -22,6 +22,10 @@ import type { SocketTable } from '../../core/SocketTable';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
+import type { IEventBus } from '@/events/EventBus';
+import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
+import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -55,6 +59,12 @@ export class LinuxCommandExecutor {
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
   private commandHistory: string[] = [];
+  /** Reactive service supervisor (auto-restart per Restart= policy). */
+  private supervisor: LinuxServiceSupervisor | null = null;
+  /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
+  private shellPid = 0;
+  /** Parent PID of the interactive shell; backs `$PPID`. */
+  private shellPpid = 0;
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -91,15 +101,32 @@ export class LinuxCommandExecutor {
     // real login shell. Server profiles run as root.
     const shellUser = !isServer ? 'user' : 'root';
     const shellUid = !isServer ? 1000 : 0;
-    this.processMgr.spawn({
+    // A login shell is a child of sshd when one is running, else of init.
+    const sshd = this.processMgr.list({ comm: 'sshd' })[0];
+    const shellPpid = sshd?.pid ?? 1;
+    const shell = this.processMgr.spawn({
       command: '-bash',
       comm: '-bash',
       user: shellUser,
       uid: shellUid,
       gid: shellUid,
+      ppid: shellPpid,
       tty: 'pts/0',
       cwd: this.cwd,
     });
+    this.shellPid = shell.pid;
+    this.shellPpid = shell.ppid;
+  }
+
+  /**
+   * Attach the owning device's event bus so the process table and
+   * service layer publish deviceId-scoped domain events.
+   */
+  attachEventBus(bus: IEventBus, deviceId: string): void {
+    this.processMgr.attachBus(bus, deviceId);
+    this.serviceMgr.attachBus(bus, deviceId);
+    this.supervisor?.dispose();
+    this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
   }
 
   /** Set the network context for ip command support */
@@ -137,6 +164,7 @@ export class LinuxCommandExecutor {
       currentUser: this.userMgr.currentUser,
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',
+      shellPid: this.shellPid,
     };
   }
 
@@ -173,6 +201,7 @@ export class LinuxCommandExecutor {
       (argv) => this.dispatchFromInterpreter(argv),
       initialVars,
       io,
+      { pid: this.shellPid, ppid: this.shellPpid },
     );
 
     // Sync interpreter state back to executor
@@ -198,7 +227,10 @@ export class LinuxCommandExecutor {
       }
     }
 
-    return result.output;
+    // A terminal does not echo a trailing blank line after a command
+    // (e.g. `echo x` shows one line, not two). Drop a single trailing
+    // newline so output is consistent across builtins and externals.
+    return result.output.replace(/\n$/, '');
   }
 
   /**
@@ -633,16 +665,25 @@ export class LinuxCommandExecutor {
         return r;
       }
 
+      // Priorities / scheduling — set with one cmd, read back with another
+      case 'nice': return cmdNice(args, this.processCmdContext());
+      case 'renice': return cmdRenice(args, this.processCmdContext());
+      case 'chrt': return cmdChrt(args, this.processCmdContext());
+      case 'ionice': return cmdIonice(args, this.processCmdContext());
+      case 'taskset': return cmdTaskset(args, this.processCmdContext());
+
       // ps — process listing backed by ProcessManager
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
-      // date, uptime, uname - basic system info
-      case 'date': return { output: new Date().toString(), exitCode: 0 };
-      case 'uptime': return { output: ' ' + new Date().toLocaleTimeString() + ' up 0 min,  1 user,  load average: 0.00, 0.00, 0.00', exitCode: 0 };
-      case 'uname': {
-        if (args.includes('-a')) return { output: 'Linux localhost 5.15.0-generic #1 SMP x86_64 GNU/Linux', exitCode: 0 };
-        if (args.includes('-r')) return { output: '5.15.0-generic', exitCode: 0 };
-        return { output: 'Linux', exitCode: 0 };
+      // date, uptime, uname, tty, runlevel, hostnamectl — system info
+      case 'date': return { output: cmdDate(args), exitCode: 0 };
+      case 'uptime': return { output: cmdUptime(args), exitCode: 0 };
+      case 'uname': return { output: cmdUname(args), exitCode: 0 };
+      case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
+      case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
+      case 'hostnamectl': {
+        const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        return { output: cmdHostnamectl(hn), exitCode: 0 };
       }
 
       // true/false

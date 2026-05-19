@@ -34,7 +34,7 @@ export type DebugCommandInput = string | DebugCommand;
  * with any executor that can run a single line and return its stdout.
  */
 export interface ShellRunner {
-  readonly kind: 'powershell' | 'cmd';
+  readonly kind: 'powershell' | 'cmd' | 'linux';
   execute(line: string): Promise<string | null>;
 }
 
@@ -65,6 +65,23 @@ export function createCmdRunner(device: Equipment): ShellRunner {
 }
 
 /**
+ * Wrap a Linux device's bash terminal as a {@link ShellRunner}.
+ *
+ * Drives `LinuxMachine.executeCommand` directly — exactly what an
+ * end-user types into the in-browser bash session on a `LinuxPC` /
+ * `LinuxServer` device.
+ */
+export function createLinuxRunner(device: Equipment): ShellRunner {
+  return {
+    kind: 'linux',
+    async execute(line: string): Promise<string | null> {
+      const out = await device.executeCommand(line);
+      return out ?? '';
+    },
+  };
+}
+
+/**
  * Replay `commands` on the given shell runner and write the transcript.
  *
  * `subdir` writes under `debug-output/<subdir>/` instead of the flat
@@ -90,7 +107,8 @@ export async function runAndDump(
   lines.push('============================================================');
   lines.push('');
 
-  const promptPrefix = shell.kind === 'powershell' ? 'PS' : 'CMD';
+  const promptPrefix =
+    shell.kind === 'powershell' ? 'PS' : shell.kind === 'linux' ? '$' : 'CMD';
   let index = 0;
   for (const entry of commands) {
     index += 1;

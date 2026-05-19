@@ -1,0 +1,2582 @@
+============================================================
+Shell debug transcript — linux-pc-services-processes
+Generated: 2026-05-19T17:54:56.450Z
+Engine: linux
+host=L-PC-SP-DBG (linux-pc) — focus: processus & services
+Total commands: 512
+============================================================
+
+
+--- [1] § environnement & identité ---
+$ [1/512]> whoami
+  user
+
+$ [2/512]> id
+  uid=1000(user) gid=1000(user) groups=4(adm),27(sudo),1000(user)
+
+$ [3/512]> id -u
+  1000
+
+$ [4/512]> id -un
+  user
+
+$ [5/512]> hostname
+  linux-pc
+
+$ [6/512]> hostnamectl
+     Static hostname: linux-pc
+           Icon name: computer-vm
+             Chassis: vm
+          Machine ID: 0a1b2c3d4e5f60718293a4b5c6d7e8f9
+             Boot ID: f9e8d7c6b5a4039281706f5e4d3c2b1a
+      Virtualization: kvm
+    Operating System: Ubuntu 22.04.4 LTS
+              Kernel: Linux 5.15.0-130-generic
+        Architecture: x86_64
+
+$ [7/512]> uname -a
+  Linux localhost 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+
+$ [8/512]> uname -r
+  5.15.0-130-generic
+
+$ [9/512]> uname -s -n -m
+  Linux localhost x86_64
+
+$ [10/512]> cat /etc/os-release
+  PRETTY_NAME="Ubuntu 22.04.4 LTS"
+  NAME="Ubuntu"
+  VERSION_ID="22.04"
+  VERSION="22.04.4 LTS (Jammy Jellyfish)"
+  VERSION_CODENAME=jammy
+  ID=ubuntu
+  ID_LIKE=debian
+  HOME_URL="https://www.ubuntu.com/"
+  SUPPORT_URL="https://help.ubuntu.com/"
+  BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+  UBUNTU_CODENAME=jammy
+
+$ [11/512]> cat /etc/hostname
+  linux-pc
+
+$ [12/512]> echo $SHELL
+  /bin/bash
+
+$ [13/512]> echo $$
+  12
+
+$ [14/512]> echo "shell pid=$$ ppid=$PPID"
+  shell pid=12 ppid=2
+
+$ [15/512]> tty
+  /dev/pts/0
+
+$ [16/512]> pwd
+  /home/user
+
+$ [17/512]> date
+  Tue May 19 17:54:56 UTC 2026
+
+$ [18/512]> date -u
+  Tue May 19 17:54:56 UTC 2026
+
+$ [19/512]> uptime
+   17:54:56 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05
+
+$ [20/512]> uptime -p
+  up 17 minutes
+
+$ [21/512]> runlevel
+  N 5
+
+$ [22/512]> who
+  user  pts/0  2026-05-19 17:54
+
+$ [23/512]> w
+   17:54:56 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05
+  USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+  user     pts/0    -                17:54:56  0.00s  0.00s  0.00s -bash
+
+
+--- [24] § inventaire ps ---
+$ [24/512]> ps
+  PID   TTY      TIME     CMD
+     12 pts/0       00:00 -bash
+
+$ [25/512]> ps aux
+  USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+  root         1  0.0  0.3  169000  13000 ?        S    17:54       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    17:54       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/apparmor/apparmor.systemd reload
+  user        12  0.0  0.1   10240   4096 pts/0    S    17:54       00:00 -bash
+
+$ [26/512]> ps -ef
+  UID      PID   PPID  C  STIME TTY      TIME     CMD
+  root         1     0  0 17:54 ?           00:00 /sbin/init
+  root         2     1  0 17:54 ?           00:00 /usr/sbin/sshd -D
+  root         3     1  0 17:54 ?           00:00 /usr/sbin/cron -f
+  root         4     1  0 17:54 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5     1  0 17:54 ?           00:00 /lib/systemd/systemd-resolved
+  root         6     1  0 17:54 ?           00:00 /lib/systemd/systemd-journald
+  root         7     1  0 17:54 ?           00:00 /lib/systemd/systemd-logind
+  messagebus     8     1  0 17:54 ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9     1  0 17:54 ?           00:00 /sbin/ifup -a --read-environment
+  root        10     1  0 17:54 ?           00:00 /lib/ufw/ufw-init start quiet
+  root        11     1  0 17:54 ?           00:00 /lib/apparmor/apparmor.systemd reload
+  user        12     2  0 17:54 pts/0       00:00 -bash
+
+$ [27/512]> ps -e
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+     12 pts/0       00:00 -bash
+
+$ [28/512]> ps -A
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+     12 pts/0       00:00 -bash
+
+$ [29/512]> ps -el
+  F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
+  4 S     0     1     0  0  20   0 -         42250 -      ?           00:00 /sbin/init
+  4 S     0     2     1  0  20   0 -         20000 -      ?           00:00 /usr/sbin/sshd -D
+  4 S     0     3     1  0  20   0 -         20000 -      ?           00:00 /usr/sbin/cron -f
+  4 S     0     4     1  0  20   0 -         20000 -      ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  0 S     1     5     1  0  20   0 -         20000 -      ?           00:00 /lib/systemd/systemd-resolved
+  4 S     0     6     1  0  20   0 -         20000 -      ?           00:00 /lib/systemd/systemd-journald
+  4 S     0     7     1  0  20   0 -         20000 -      ?           00:00 /lib/systemd/systemd-logind
+  0 S     1     8     1  0  20   0 -         20000 -      ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  4 S     0     9     1  0  20   0 -         20000 -      ?           00:00 /sbin/ifup -a --read-environment
+  4 S     0    10     1  0  20   0 -         20000 -      ?           00:00 /lib/ufw/ufw-init start quiet
+  4 S     0    11     1  0  20   0 -         20000 -      ?           00:00 /lib/apparmor/apparmor.systemd reload
+  0 S  1000    12     2  0  20   0 -          2560 -      pts/0       00:00 -bash
+
+$ [30/512]> ps -ely
+  F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
+  4 S     0     1     0  0  20   0 -         42250 -      ?           00:00 /sbin/init
+  4 S     0     2     1  0  20   0 -         20000 -      ?           00:00 /usr/sbin/sshd -D
+  4 S     0     3     1  0  20   0 -         20000 -      ?           00:00 /usr/sbin/cron -f
+  4 S     0     4     1  0  20   0 -         20000 -      ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  0 S     1     5     1  0  20   0 -         20000 -      ?           00:00 /lib/systemd/systemd-resolved
+  4 S     0     6     1  0  20   0 -         20000 -      ?           00:00 /lib/systemd/systemd-journald
+  4 S     0     7     1  0  20   0 -         20000 -      ?           00:00 /lib/systemd/systemd-logind
+  0 S     1     8     1  0  20   0 -         20000 -      ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  4 S     0     9     1  0  20   0 -         20000 -      ?           00:00 /sbin/ifup -a --read-environment
+  4 S     0    10     1  0  20   0 -         20000 -      ?           00:00 /lib/ufw/ufw-init start quiet
+  4 S     0    11     1  0  20   0 -         20000 -      ?           00:00 /lib/apparmor/apparmor.systemd reload
+  0 S  1000    12     2  0  20   0 -          2560 -      pts/0       00:00 -bash
+
+$ [31/512]> ps -f
+  UID      PID   PPID  C  STIME TTY      TIME     CMD
+  user        12     2  0 17:54 pts/0       00:00 -bash
+
+$ [32/512]> ps -fl
+  F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
+  0 S  1000    12     2  0  20   0 -          2560 -      pts/0       00:00 -bash
+
+$ [33/512]> ps ax
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+     12 pts/0       00:00 -bash
+
+$ [34/512]> ps axu
+  USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+  root         1  0.0  0.3  169000  13000 ?        S    17:54       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    17:54       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/apparmor/apparmor.systemd reload
+  user        12  0.0  0.1   10240   4096 pts/0    S    17:54       00:00 -bash
+
+$ [35/512]> ps -e f
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00   \_ sshd
+      3 ?           00:00   \_ cron
+      4 ?           00:00   \_ rsyslogd
+      5 ?           00:00   \_ systemd-resolved
+      6 ?           00:00   \_ systemd-journald
+      7 ?           00:00   \_ systemd-logind
+      8 ?           00:00   \_ dbus-daemon
+      9 ?           00:00   \_ ifup
+     10 ?           00:00   \_ ufw-init
+     11 ?           00:00   \_ apparmor.systemd
+     12 pts/0       00:00     \_ -bash
+
+$ [36/512]> ps --forest
+  PID   TTY      TIME     CMD
+     12 pts/0       00:00 -bash
+
+$ [37/512]> ps -ejH
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00   \_ sshd
+      3 ?           00:00   \_ cron
+      4 ?           00:00   \_ rsyslogd
+      5 ?           00:00   \_ systemd-resolved
+      6 ?           00:00   \_ systemd-journald
+      7 ?           00:00   \_ systemd-logind
+      8 ?           00:00   \_ dbus-daemon
+      9 ?           00:00   \_ ifup
+     10 ?           00:00   \_ ufw-init
+     11 ?           00:00   \_ apparmor.systemd
+     12 pts/0       00:00     \_ -bash
+
+$ [38/512]> ps axjf
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00   \_ sshd
+      3 ?           00:00   \_ cron
+      4 ?           00:00   \_ rsyslogd
+      5 ?           00:00   \_ systemd-resolved
+      6 ?           00:00   \_ systemd-journald
+      7 ?           00:00   \_ systemd-logind
+      8 ?           00:00   \_ dbus-daemon
+      9 ?           00:00   \_ ifup
+     10 ?           00:00   \_ ufw-init
+     11 ?           00:00   \_ apparmor.systemd
+     12 pts/0       00:00     \_ -bash
+
+$ [39/512]> ps -p 1
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+
+$ [40/512]> ps -p 1,2
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+
+$ [41/512]> ps -p $$
+  PID   TTY      TIME     CMD
+     12 pts/0       00:00 -bash
+
+$ [42/512]> ps --pid 1
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+
+$ [43/512]> ps -C bash
+  PID   TTY      TIME     CMD
+     12 pts/0       00:00 -bash
+
+$ [44/512]> ps -C systemd
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+
+$ [45/512]> ps -u root
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+
+$ [46/512]> ps -U root
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+
+$ [47/512]> ps --ppid 1
+  PID   TTY      TIME     CMD
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+
+$ [48/512]> ps -o pid,ppid,user,stat,pcpu,pmem,comm
+  PID   PPID  USER     STAT %CPU %MEM COMMAND
+     12     2 user     S     0.0  0.1 -bash
+
+$ [49/512]> ps -o pid=,comm=
+     12 -bash
+
+$ [50/512]> ps -eo pid,ni,pri,comm
+  PID   NI  PRI COMMAND
+      1   0  20 systemd
+      2   0  20 sshd
+      3   0  20 cron
+      4   0  20 rsyslogd
+      5   0  20 systemd-resolved
+      6   0  20 systemd-journald
+      7   0  20 systemd-logind
+      8   0  20 dbus-daemon
+      9   0  20 ifup
+     10   0  20 ufw-init
+     11   0  20 apparmor.systemd
+     12   0  20 -bash
+
+$ [51/512]> ps -eo pid,tty,time,cmd
+  PID   TTY      TIME     CMD
+      1 ?           00:00 /sbin/init
+      2 ?           00:00 /usr/sbin/sshd -D
+      3 ?           00:00 /usr/sbin/cron -f
+      4 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+      5 ?           00:00 /lib/systemd/systemd-resolved
+      6 ?           00:00 /lib/systemd/systemd-journald
+      7 ?           00:00 /lib/systemd/systemd-logind
+      8 ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+      9 ?           00:00 /sbin/ifup -a --read-environment
+     10 ?           00:00 /lib/ufw/ufw-init start quiet
+     11 ?           00:00 /lib/apparmor/apparmor.systemd reload
+     12 pts/0       00:00 -bash
+
+$ [52/512]> ps axo pid,stat,euser,cmd --sort=-pcpu
+  ps: error: improper list
+  Usage:
+   ps [options]
+
+$ [53/512]> ps aux --sort=-%mem
+  USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+  root         1  0.0  0.3  169000  13000 ?        S    17:54       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    17:54       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/apparmor/apparmor.systemd reload
+  user        12  0.0  0.1   10240   4096 pts/0    S    17:54       00:00 -bash
+
+$ [54/512]> ps aux --sort=-%cpu
+  USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+  root         1  0.0  0.3  169000  13000 ?        S    17:54       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    17:54       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/apparmor/apparmor.systemd reload
+  user        12  0.0  0.1   10240   4096 pts/0    S    17:54       00:00 -bash
+
+$ [55/512]> ps -e --sort=start_time
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+     12 pts/0       00:00 -bash
+
+$ [56/512]> ps -e --sort=-rss
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+     12 pts/0       00:00 -bash
+
+$ [57/512]> ps h -e -o pid
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  11
+  12
+
+$ [58/512]> ps -e --no-headers
+      1 ?           00:00 systemd
+      2 ?           00:00 sshd
+      3 ?           00:00 cron
+      4 ?           00:00 rsyslogd
+      5 ?           00:00 systemd-resolved
+      6 ?           00:00 systemd-journald
+      7 ?           00:00 systemd-logind
+      8 ?           00:00 dbus-daemon
+      9 ?           00:00 ifup
+     10 ?           00:00 ufw-init
+     11 ?           00:00 apparmor.systemd
+     12 pts/0       00:00 -bash
+
+$ [59/512]> ps -L -p 1
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+
+$ [60/512]> ps -T -p 1
+  PID   TTY      TIME     CMD
+      1 ?           00:00 systemd
+
+$ [61/512]> ps -e -o pid,nlwp,comm
+  PID   NLWP COMMAND
+      1    1 systemd
+      2    1 sshd
+      3    1 cron
+      4    1 rsyslogd
+      5    1 systemd-resolved
+      6    1 systemd-journald
+      7    1 systemd-logind
+      8    1 dbus-daemon
+      9    1 ifup
+     10    1 ufw-init
+     11    1 apparmor.systemd
+     12    1 -bash
+
+$ [62/512]> ps --version
+  ps from procps-ng 3.3.17
+
+$ [63/512]> ps w
+  PID   TTY      TIME     CMD
+     12 pts/0       00:00 -bash
+
+$ [64/512]> ps ww aux
+  USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+  root         1  0.0  0.3  169000  13000 ?        S    17:54       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    17:54       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    17:54       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    17:54       00:00 /lib/apparmor/apparmor.systemd reload
+  user        12  0.0  0.1   10240   4096 pts/0    S    17:54       00:00 -bash
+
+$ [65/512]> ps -e | wc -l
+  13
+
+$ [66/512]> ps aux | grep bash | grep -v grep
+  user        12  0.0  0.1   10240   4096 pts/0    S    17:54       00:00 -bash
+
+$ [67/512]> ps -Z
+  ps: invalid option -- 'Z'
+  Usage:
+   ps [options]
+
+$ [68/512]> ps --zorglub
+  ps: unrecognized option '--zorglub'
+  Usage:
+   ps [options]
+
+$ [69/512]> ps -p abc
+  PID   TTY      TIME     CMD
+
+$ [70/512]> ps -p 999999
+  PID   TTY      TIME     CMD
+
+$ [71/512]> ps -C processus_inexistant_xyz
+  PID   TTY      TIME     CMD
+
+
+--- [72] § pstree ---
+$ [72/512]> pstree
+  pstree: command not found
+
+$ [73/512]> pstree -p
+  pstree: command not found
+
+$ [74/512]> pstree -a
+  pstree: command not found
+
+$ [75/512]> pstree -n
+  pstree: command not found
+
+$ [76/512]> pstree -A
+  pstree: command not found
+
+$ [77/512]> pstree -p 1
+  pstree: command not found
+
+$ [78/512]> pstree -s $$
+  pstree: command not found
+
+$ [79/512]> pstree -u
+  pstree: command not found
+
+$ [80/512]> pstree -h
+  pstree: command not found
+
+$ [81/512]> pstree root
+  pstree: command not found
+
+$ [82/512]> pstree -p abc
+  pstree: command not found
+
+$ [83/512]> pstree 999999
+  pstree: command not found
+
+
+--- [84] § pgrep / pidof ---
+$ [84/512]> pidof systemd
+  1
+
+$ [85/512]> pidof bash
+<empty>
+
+$ [86/512]> pidof init
+<empty>
+
+$ [87/512]> pidof -s bash
+<empty>
+
+$ [88/512]> pgrep bash
+  12
+
+$ [89/512]> pgrep -l bash
+  12 -bash
+
+$ [90/512]> pgrep -a bash
+  8
+  9
+
+$ [91/512]> pgrep -f bash
+  3
+
+$ [92/512]> pgrep -u root
+  pgrep: no matching criteria specified
+
+$ [93/512]> pgrep -u root -l
+  pgrep: no matching criteria specified
+
+$ [94/512]> pgrep -c bash
+<empty>
+
+$ [95/512]> pgrep -n bash
+  4
+  8
+
+$ [96/512]> pgrep -o bash
+  8
+
+$ [97/512]> pgrep -x bash
+<empty>
+
+$ [98/512]> pgrep -d, bash
+<empty>
+
+$ [99/512]> pgrep -x ba
+<empty>
+
+$ [100/512]> pgrep processus_inexistant_xyz
+<empty>
+
+$ [101/512]> pidof processus_inexistant_xyz
+<empty>
+
+$ [102/512]> pgrep
+  pgrep: no matching criteria specified
+
+$ [103/512]> pgrep -Z bash
+<empty>
+
+
+--- [104] § top / vmstat / free ---
+$ [104/512]> top -b -n 1
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [105/512]> top -b -n 1 | head -20
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [106/512]> top -b -n 1 -o %CPU
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [107/512]> top -b -n 1 -o %MEM
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [108/512]> top -b -n 1 -p 1
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [109/512]> top -b -n 1 -u root
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [110/512]> top -H -b -n 1
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [111/512]> vmstat
+  vmstat: command not found
+
+$ [112/512]> vmstat 1 3
+  vmstat: command not found
+
+$ [113/512]> vmstat -s
+  vmstat: command not found
+
+$ [114/512]> free
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [115/512]> free -h
+                 total        used        free      shared  buff/cache   available
+  Mem:           3.8Gi       1.2Gi       1.4Gi        24Mi       1.2Gi       2.4Gi
+  Swap:          2.0Gi          0B       2.0Gi
+
+$ [116/512]> free -m
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [117/512]> free -g
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [118/512]> free -k
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [119/512]> free -b
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [120/512]> free -t
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [121/512]> free -w
+                 total        used        free      shared     buffers       cache   available
+  Mem:         3981312     1258496     1468416       24576      204800     1049600     2519040
+  Swap:        2097152           0     2097152
+
+$ [122/512]> mpstat
+  mpstat: command not found
+
+$ [123/512]> mpstat -P ALL
+  mpstat: command not found
+
+$ [124/512]> iostat
+  iostat: command not found
+
+$ [125/512]> iostat -x
+  iostat: command not found
+
+$ [126/512]> top -z
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+$ [127/512]> top -b -n abc
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        3 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+        4 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+
+
+--- [128] § /proc ---
+$ [128/512]> ls /proc
+<empty>
+
+$ [129/512]> cat /proc/cpuinfo
+  cat: /proc/cpuinfo: No such file or directory
+
+$ [130/512]> cat /proc/meminfo
+  cat: /proc/meminfo: No such file or directory
+
+$ [131/512]> cat /proc/loadavg
+  cat: /proc/loadavg: No such file or directory
+
+$ [132/512]> cat /proc/uptime
+  cat: /proc/uptime: No such file or directory
+
+$ [133/512]> cat /proc/version
+  cat: /proc/version: No such file or directory
+
+$ [134/512]> cat /proc/stat | head
+  cat: /proc/stat: No such file or directory
+
+$ [135/512]> cat /proc/1/status
+  cat: /proc/1/status: No such file or directory
+
+$ [136/512]> cat /proc/1/cmdline
+  cat: /proc/1/cmdline: No such file or directory
+
+$ [137/512]> cat /proc/1/comm
+  cat: /proc/1/comm: No such file or directory
+
+$ [138/512]> cat /proc/self/status
+  cat: /proc/self/status: No such file or directory
+
+$ [139/512]> cat /proc/self/cmdline
+  cat: /proc/self/cmdline: No such file or directory
+
+$ [140/512]> cat /proc/self/limits
+  cat: /proc/self/limits: No such file or directory
+
+$ [141/512]> ls /proc/1
+  ls: cannot access '/proc/1': No such file or directory
+
+$ [142/512]> ls /proc/1/fd
+  ls: cannot access '/proc/1/fd': No such file or directory
+
+$ [143/512]> cat /proc/sys/kernel/hostname
+  cat: /proc/sys/kernel/hostname: No such file or directory
+
+$ [144/512]> cat /proc/sys/kernel/ostype
+  cat: /proc/sys/kernel/ostype: No such file or directory
+
+$ [145/512]> cat /proc/sys/kernel/pid_max
+  cat: /proc/sys/kernel/pid_max: No such file or directory
+
+$ [146/512]> cat /proc/sys/fs/file-max
+  cat: /proc/sys/fs/file-max: No such file or directory
+
+$ [147/512]> cat /proc/999999/status
+  cat: /proc/999999/status: No such file or directory
+
+$ [148/512]> cat /proc/inexistant
+  cat: /proc/inexistant: No such file or directory
+
+
+--- [149] § priorités (nice/renice/chrt/ionice) ---
+$ [149/512]> nice
+  0
+
+$ [150/512]> nice -n 10 sleep 30 &
+<empty>
+
+$ [151/512]> ps -o pid,ni,comm -C sleep
+  PID   NI  COMMAND
+
+$ [152/512]> nice -n 19 sleep 30 &
+<empty>
+
+$ [153/512]> ps -o pid,ni,comm -C sleep
+  PID   NI  COMMAND
+
+$ [154/512]> nice --adjustment=5 sleep 30 &
+<empty>
+
+$ [155/512]> ps -o pid,ni,comm -C sleep
+  PID   NI  COMMAND
+
+$ [156/512]> renice 5 -p $$
+  12 (process ID) old priority 0, new priority 5
+
+$ [157/512]> ps -o pid,ni,comm -p $$
+  PID   NI  COMMAND
+     12   5 -bash
+
+$ [158/512]> renice -n 8 -p $$
+  12 (process ID) old priority 5, new priority 8
+
+$ [159/512]> ps -o pid,ni,comm -p $$
+  PID   NI  COMMAND
+     12   8 -bash
+
+$ [160/512]> renice 0 -p $$
+  12 (process ID) old priority 8, new priority 0
+
+$ [161/512]> ps -o pid,ni,comm -p $$
+  PID   NI  COMMAND
+     12   0 -bash
+
+$ [162/512]> renice -10 -p $$
+  12 (process ID) old priority 0, new priority -10
+
+$ [163/512]> ps -o pid,ni,comm -p $$
+  PID   NI  COMMAND
+     12 -10 -bash
+
+$ [164/512]> renice 5 -u root
+  1 (process ID) old priority 0, new priority 5
+  2 (process ID) old priority 0, new priority 5
+  3 (process ID) old priority 0, new priority 5
+  4 (process ID) old priority 0, new priority 5
+  6 (process ID) old priority 0, new priority 5
+  7 (process ID) old priority 0, new priority 5
+  9 (process ID) old priority 0, new priority 5
+  10 (process ID) old priority 0, new priority 5
+  11 (process ID) old priority 0, new priority 5
+
+$ [165/512]> chrt -p $$
+  pid 12's current scheduling policy: SCHED_OTHER
+  pid 12's current scheduling priority: 0
+
+$ [166/512]> chrt -m
+  SCHED_OTHER min/max priority	: 0/0
+  SCHED_FIFO min/max priority	: 1/99
+  SCHED_RR min/max priority	: 1/99
+  SCHED_BATCH min/max priority	: 0/0
+  SCHED_IDLE min/max priority	: 0/0
+
+$ [167/512]> chrt -p 1
+  pid 1's current scheduling policy: SCHED_OTHER
+  pid 1's current scheduling priority: 0
+
+$ [168/512]> ionice -p $$
+  best-effort: prio 4
+
+$ [169/512]> ionice -c 2 -n 0 -p $$
+<empty>
+
+$ [170/512]> ionice -p $$
+  best-effort: prio 0
+
+$ [171/512]> taskset -p $$
+  pid 12's current affinity mask: f
+
+$ [172/512]> taskset -pc $$
+  pid 12's current affinity list: 0-3
+
+$ [173/512]> nice -n abc sleep 1
+  nice: invalid adjustment 'abc'
+
+$ [174/512]> renice abc -p $$
+  renice: invalid priority 'abc'
+
+$ [175/512]> renice 5 -p 999999
+  renice: failed to set priority for 999999 (process ID): No such process
+
+$ [176/512]> renice 5
+  renice: usage: renice [-n] priority [-p|--pid] pid...
+
+$ [177/512]> chrt -p abc
+  chrt: failed to get pid abc's policy: No such process
+
+$ [178/512]> ionice -c 9 -p $$
+  ionice: invalid class: 9
+
+
+--- [179] § ulimit ---
+$ [179/512]> ulimit -a
+  ulimit: command not found
+
+$ [180/512]> ulimit -n
+  ulimit: command not found
+
+$ [181/512]> ulimit -u
+  ulimit: command not found
+
+$ [182/512]> ulimit -f
+  ulimit: command not found
+
+$ [183/512]> ulimit -s
+  ulimit: command not found
+
+$ [184/512]> ulimit -c
+  ulimit: command not found
+
+$ [185/512]> ulimit -t
+  ulimit: command not found
+
+$ [186/512]> ulimit -v
+  ulimit: command not found
+
+$ [187/512]> ulimit -l
+  ulimit: command not found
+
+$ [188/512]> ulimit -Hn
+  ulimit: command not found
+
+$ [189/512]> ulimit -Sn
+  ulimit: command not found
+
+$ [190/512]> ulimit -n 4096
+  ulimit: command not found
+
+$ [191/512]> ulimit -n
+  ulimit: command not found
+
+$ [192/512]> ulimit -S -n 2048
+  ulimit: command not found
+
+$ [193/512]> ulimit -S -n
+  ulimit: command not found
+
+$ [194/512]> ulimit -c unlimited
+  ulimit: command not found
+
+$ [195/512]> ulimit -c
+  ulimit: command not found
+
+$ [196/512]> ulimit -f 1000000
+  ulimit: command not found
+
+$ [197/512]> ulimit -f
+  ulimit: command not found
+
+$ [198/512]> ulimit -a
+  ulimit: command not found
+
+$ [199/512]> ulimit -n abc
+  ulimit: command not found
+
+$ [200/512]> ulimit -x
+  ulimit: command not found
+
+$ [201/512]> ulimit -n -5
+  ulimit: command not found
+
+
+--- [202] § sysctl ---
+$ [202/512]> sysctl -a | head -20
+<empty>
+
+$ [203/512]> sysctl kernel.hostname
+<empty>
+
+$ [204/512]> sysctl kernel.pid_max
+<empty>
+
+$ [205/512]> sysctl kernel.threads-max
+<empty>
+
+$ [206/512]> sysctl fs.file-max
+<empty>
+
+$ [207/512]> sysctl vm.swappiness
+<empty>
+
+$ [208/512]> sysctl net.ipv4.ip_forward
+  net.ipv4.ip_forward = 0
+
+$ [209/512]> sysctl -w vm.swappiness=30
+<empty>
+
+$ [210/512]> sysctl vm.swappiness
+<empty>
+
+$ [211/512]> sysctl -w net.ipv4.ip_forward=1
+  net.ipv4.ip_forward = 1
+
+$ [212/512]> sysctl net.ipv4.ip_forward
+  net.ipv4.ip_forward = 1
+
+$ [213/512]> sysctl -w kernel.pid_max=99999
+<empty>
+
+$ [214/512]> sysctl kernel.pid_max
+<empty>
+
+$ [215/512]> cat /proc/sys/kernel/pid_max
+  cat: /proc/sys/kernel/pid_max: No such file or directory
+
+$ [216/512]> sysctl -w net.ipv4.ip_forward=0
+  net.ipv4.ip_forward = 0
+
+$ [217/512]> sysctl net.ipv4.ip_forward
+  net.ipv4.ip_forward = 0
+
+$ [218/512]> sysctl -p
+<empty>
+
+$ [219/512]> sysctl --system
+<empty>
+
+$ [220/512]> sysctl kernel.cle_inexistante
+<empty>
+
+$ [221/512]> sysctl -w kernel.cle_inexistante=1
+<empty>
+
+$ [222/512]> sysctl -w vm.swappiness
+<empty>
+
+$ [223/512]> sysctl -w vm.swappiness=abc
+<empty>
+
+$ [224/512]> sysctl
+<empty>
+
+
+--- [225] § jobs / bg / fg / nohup ---
+$ [225/512]> sleep 60 &
+<empty>
+
+$ [226/512]> jobs
+  jobs: command not found
+
+$ [227/512]> jobs -l
+  jobs: command not found
+
+$ [228/512]> jobs -p
+  jobs: command not found
+
+$ [229/512]> sleep 90 &
+<empty>
+
+$ [230/512]> jobs
+  jobs: command not found
+
+$ [231/512]> sleep 120 &
+<empty>
+
+$ [232/512]> jobs -l
+  jobs: command not found
+
+$ [233/512]> kill %1
+  kill: %1: arguments must be process or job IDs
+
+$ [234/512]> jobs
+  jobs: command not found
+
+$ [235/512]> fg %2
+  fg: command not found
+
+$ [236/512]> bg %2
+  bg: command not found
+
+$ [237/512]> disown %2
+  disown: command not found
+
+$ [238/512]> jobs
+  jobs: command not found
+
+$ [239/512]> nohup sleep 200 &
+  nohup: command not found
+
+$ [240/512]> jobs
+  jobs: command not found
+
+$ [241/512]> ps -C sleep -o pid,ppid,stat,comm
+  PID   PPID  STAT COMMAND
+
+$ [242/512]> wait
+  wait: command not found
+
+$ [243/512]> fg %99
+  fg: command not found
+
+$ [244/512]> bg %99
+  bg: command not found
+
+$ [245/512]> kill %99
+  kill: %99: arguments must be process or job IDs
+
+$ [246/512]> disown %99
+  disown: command not found
+
+$ [247/512]> fg
+  fg: command not found
+
+$ [248/512]> jobs %abc
+  jobs: command not found
+
+
+--- [249] § kill / killall / pkill / timeout ---
+$ [249/512]> sleep 300 &
+<empty>
+
+$ [250/512]> ps -C sleep -o pid,comm
+  PID   COMMAND
+
+$ [251/512]> kill -l
+  1) SIGHUP
+  2) SIGINT
+  3) SIGQUIT
+  9) SIGKILL
+  10) SIGUSR1
+  12) SIGUSR2
+  13) SIGPIPE
+  14) SIGALRM
+  15) SIGTERM
+  17) SIGCHLD
+  18) SIGCONT
+  19) SIGSTOP
+
+$ [252/512]> kill -l 9
+  1) SIGHUP
+  2) SIGINT
+  3) SIGQUIT
+  9) SIGKILL
+  10) SIGUSR1
+  12) SIGUSR2
+  13) SIGPIPE
+  14) SIGALRM
+  15) SIGTERM
+  17) SIGCHLD
+  18) SIGCONT
+  19) SIGSTOP
+
+$ [253/512]> kill -l SIGTERM
+  1) SIGHUP
+  2) SIGINT
+  3) SIGQUIT
+  9) SIGKILL
+  10) SIGUSR1
+  12) SIGUSR2
+  13) SIGPIPE
+  14) SIGALRM
+  15) SIGTERM
+  17) SIGCHLD
+  18) SIGCONT
+  19) SIGSTOP
+
+$ [254/512]> kill -0 $$
+  kill: 0: invalid signal specification
+
+$ [255/512]> kill -SIGTERM %1
+  kill: %1: arguments must be process or job IDs
+
+$ [256/512]> sleep 300 &
+<empty>
+
+$ [257/512]> kill -15 $!
+  kill: : arguments must be process or job IDs
+
+$ [258/512]> sleep 300 &
+<empty>
+
+$ [259/512]> kill -9 $!
+  kill: : arguments must be process or job IDs
+
+$ [260/512]> sleep 300 &
+<empty>
+
+$ [261/512]> kill -TERM $!
+  kill: : arguments must be process or job IDs
+
+$ [262/512]> sleep 300 &
+<empty>
+
+$ [263/512]> pkill sleep
+<empty>
+
+$ [264/512]> pgrep sleep
+<empty>
+
+$ [265/512]> sleep 300 &
+<empty>
+
+$ [266/512]> killall sleep
+  killall: command not found
+
+$ [267/512]> sleep 300 &
+<empty>
+
+$ [268/512]> killall -9 sleep
+  killall: command not found
+
+$ [269/512]> killall -v sleep
+  killall: command not found
+
+$ [270/512]> pkill -f "sleep 300"
+<empty>
+
+$ [271/512]> pkill -u root sleep
+<empty>
+
+$ [272/512]> timeout 1 sleep 5
+  timeout: command not found
+
+$ [273/512]> timeout 2 sleep 1
+  timeout: command not found
+
+$ [274/512]> timeout --signal=KILL 1 sleep 5
+  timeout: command not found
+
+$ [275/512]> timeout -s TERM 1 sleep 5
+  timeout: command not found
+
+$ [276/512]> kill
+  kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]
+
+$ [277/512]> kill abc
+  kill: abc: arguments must be process or job IDs
+
+$ [278/512]> kill -99 1
+  kill: 99: invalid signal specification
+
+$ [279/512]> kill -SIGFOO 1
+  kill: SIGFOO: invalid signal specification
+
+$ [280/512]> kill 999999
+  kill: (999999) - No such process
+
+$ [281/512]> kill -9 999999
+  kill: (999999) - No such process
+
+$ [282/512]> killall
+  killall: command not found
+
+$ [283/512]> killall processus_inexistant_xyz
+  killall: command not found
+
+$ [284/512]> pkill
+  pkill: no matching criteria specified
+
+$ [285/512]> pkill processus_inexistant_xyz
+<empty>
+
+$ [286/512]> kill -9 1
+  kill: (1) - Operation not permitted
+
+$ [287/512]> kill 1
+  kill: (1) - Operation not permitted
+
+
+--- [288] § systemctl inventaire ---
+$ [288/512]> systemctl
+  systemctl [OPTIONS...] COMMAND ...
+  
+  Query or send control commands to the system manager.
+  
+  Common commands: start stop restart reload status enable disable
+                   is-active is-enabled list-units list-unit-files
+                   daemon-reload
+
+$ [289/512]> systemctl --version
+  systemd 249 (249.11-0ubuntu3)
+  +PAM +AUDIT +SELINUX +APPARMOR +SYSVINIT
+
+$ [290/512]> systemctl status
+  ● localhost
+      State: running
+       Jobs: 0 queued
+     Failed: 0 units
+     Since: Tue, 19 May 2026 17:54:56 GMT
+     CGroup: /
+
+$ [291/512]> systemctl is-system-running
+  Unknown command verb is-system-running.
+
+$ [292/512]> systemctl list-units
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [293/512]> systemctl list-units --type=service
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [294/512]> systemctl list-units --type=service --state=running
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [295/512]> systemctl list-units --type=service --all
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [296/512]> systemctl list-units --state=failed
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [297/512]> systemctl list-unit-files
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [298/512]> systemctl list-unit-files --type=service
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [299/512]> systemctl list-unit-files --state=enabled
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [300/512]> systemctl --failed
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+  
+  0 loaded units listed.
+
+$ [301/512]> systemctl --type=service
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [302/512]> systemctl get-default
+  graphical.target
+
+$ [303/512]> systemctl status cron
+  ● cron.service - Regular background program processing daemon
+       Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 13 (cron)
+        Tasks: 1
+       CGroup: /system.slice/cron.service
+               └─13 /usr/sbin/cron -f
+
+$ [304/512]> systemctl status ssh
+  ● ssh.service - OpenBSD Secure Shell server
+       Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 2 (ssh)
+        Tasks: 1
+       CGroup: /system.slice/ssh.service
+               └─2 /usr/sbin/sshd -D
+
+$ [305/512]> systemctl status sshd
+  Unit sshd.service could not be found.
+
+$ [306/512]> systemctl status systemd-journald
+  ● systemd-journald.service - Journal Service
+       Loaded: loaded (/usr/lib/systemd/system/systemd-journald.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 6 (systemd-journald)
+        Tasks: 1
+       CGroup: /system.slice/systemd-journald.service
+               └─6 /lib/systemd/systemd-journald
+
+$ [307/512]> systemctl status systemd-logind
+  ● systemd-logind.service - User Login Management
+       Loaded: loaded (/usr/lib/systemd/system/systemd-logind.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 7 (systemd-logind)
+        Tasks: 1
+       CGroup: /system.slice/systemd-logind.service
+               └─7 /lib/systemd/systemd-logind
+
+$ [308/512]> systemctl status dbus
+  ● dbus.service - D-Bus System Message Bus
+       Loaded: loaded (/usr/lib/systemd/system/dbus.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 8 (dbus)
+        Tasks: 1
+       CGroup: /system.slice/dbus.service
+               └─8 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+
+$ [309/512]> systemctl cat cron
+  # /usr/lib/systemd/system/cron.service
+  [Unit]
+  Description=Regular background program processing daemon
+  
+  [Service]
+  Type=forking
+  ExecStart=/usr/sbin/cron -f
+  User=root
+  
+  [Install]
+  WantedBy=multi-user.target
+
+$ [310/512]> systemctl show cron
+  Id=cron.service
+  Description=Regular background program processing daemon
+  LoadState=loaded
+  ActiveState=active
+  SubState=running
+  UnitFileState=enabled
+  MainPID=13
+  Type=forking
+  User=root
+  ExecStart=/usr/sbin/cron -f
+  Restart=on-failure
+  FragmentPath=/usr/lib/systemd/system/cron.service
+
+$ [311/512]> systemctl show -p MainPID cron
+  MainPID=13
+
+$ [312/512]> systemctl show -p ActiveState,SubState cron
+  ActiveState=active
+  SubState=running
+
+$ [313/512]> systemctl list-dependencies cron
+  cron.service
+  ● └─network.target
+
+$ [314/512]> systemctl list-sockets
+  LISTEN UNIT ACTIVATES
+  
+  0 sockets listed.
+
+$ [315/512]> systemctl list-timers
+  NEXT LEFT LAST PASSED UNIT ACTIVATES
+  
+  0 timers listed.
+
+$ [316/512]> systemctl status service_inexistant_xyz
+  Unit service_inexistant_xyz.service could not be found.
+
+$ [317/512]> systemctl statuss cron
+  Unknown command verb statuss.
+
+$ [318/512]> systemctl --type=truc
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [319/512]> systemctl show -p CleInconnue cron
+  CleInconnue=
+
+
+--- [320] § enable/disable/mask ---
+$ [320/512]> systemctl is-enabled cron
+  enabled
+
+$ [321/512]> systemctl is-active cron
+  active
+
+$ [322/512]> systemctl is-failed cron
+  active
+
+$ [323/512]> systemctl disable cron
+  Removed /etc/systemd/system/multi-user.target.wants/cron.service.
+
+$ [324/512]> systemctl is-enabled cron
+  disabled
+
+$ [325/512]> systemctl enable cron
+  Created symlink /etc/systemd/system/multi-user.target.wants/cron.service → /usr/lib/systemd/system/cron.service.
+
+$ [326/512]> systemctl is-enabled cron
+  enabled
+
+$ [327/512]> systemctl enable --now cron
+  Failed to enable unit: Unit --now.service not found.
+
+$ [328/512]> systemctl is-active cron
+  active
+
+$ [329/512]> systemctl mask cron
+  Created symlink /etc/systemd/system/cron.service → /dev/null.
+
+$ [330/512]> systemctl is-enabled cron
+  masked
+
+$ [331/512]> systemctl status cron
+  ● cron.service - Regular background program processing daemon
+       Loaded: loaded (/usr/lib/systemd/system/cron.service; masked; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 13 (cron)
+        Tasks: 1
+       CGroup: /system.slice/cron.service
+               └─13 /usr/sbin/cron -f
+
+$ [332/512]> systemctl unmask cron
+  Removed symlink /etc/systemd/system/cron.service.
+
+$ [333/512]> systemctl is-enabled cron
+  enabled
+
+$ [334/512]> systemctl preset cron
+  Unknown command verb preset.
+
+$ [335/512]> systemctl enable ssh
+  Created symlink /etc/systemd/system/multi-user.target.wants/ssh.service → /usr/lib/systemd/system/ssh.service.
+
+$ [336/512]> systemctl is-enabled ssh
+  enabled
+
+$ [337/512]> systemctl disable --now ssh
+  Failed to disable unit: Unit --now.service not found.
+
+$ [338/512]> systemctl is-active ssh
+  active
+
+$ [339/512]> systemctl enable --now ssh
+  Failed to enable unit: Unit --now.service not found.
+
+$ [340/512]> systemctl enable service_inexistant_xyz
+  Failed to enable unit: Unit service_inexistant_xyz.service not found.
+
+$ [341/512]> systemctl disable service_inexistant_xyz
+  Failed to disable unit: Unit service_inexistant_xyz.service not found.
+
+$ [342/512]> systemctl is-enabled service_inexistant_xyz
+  disabled
+
+$ [343/512]> systemctl mask
+  Too few arguments.
+
+$ [344/512]> systemctl enable
+  Too few arguments.
+
+
+--- [345] § start/stop/restart + journalctl ---
+$ [345/512]> systemctl start cron
+<empty>
+
+$ [346/512]> systemctl is-active cron
+  active
+
+$ [347/512]> systemctl status cron
+  ● cron.service - Regular background program processing daemon
+       Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 13 (cron)
+        Tasks: 1
+       CGroup: /system.slice/cron.service
+               └─13 /usr/sbin/cron -f
+
+$ [348/512]> systemctl stop cron
+<empty>
+
+$ [349/512]> systemctl is-active cron
+  inactive
+
+$ [350/512]> systemctl start cron
+<empty>
+
+$ [351/512]> systemctl restart cron
+<empty>
+
+$ [352/512]> systemctl is-active cron
+  active
+
+$ [353/512]> systemctl reload cron
+  Failed to reload cron.service: cron.service: Refusing to reload: ExecReload= is not set.
+
+$ [354/512]> systemctl reload-or-restart cron
+  Unknown command verb reload-or-restart.
+
+$ [355/512]> systemctl try-restart cron
+  Unknown command verb try-restart.
+
+$ [356/512]> systemctl kill cron
+  Unknown command verb kill.
+
+$ [357/512]> systemctl kill -s SIGTERM cron
+  Unknown command verb kill.
+
+$ [358/512]> systemctl reset-failed cron
+<empty>
+
+$ [359/512]> systemctl daemon-reload
+<empty>
+
+$ [360/512]> journalctl
+  -- Logs begin at Tue May 19 17:54:56 2026, end at Tue May 19 17:54:59 2026. --
+  May 19 17:54:56 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 19 17:54:56 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 19 17:54:56 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 19 17:54:56 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 19 17:54:56 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 19 17:54:56 localhost kernel: NET: Registered PF_INET protocol family
+  May 19 17:54:57 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 19 17:54:58 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 19 17:54:58 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 19 17:54:58 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 19 17:54:58 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 19 17:54:58 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 19 17:54:59 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on :: port 22.
+  May 19 17:54:59 localhost systemd-logind[456]: New seat seat0.
+  May 19 17:54:59 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+
+$ [361/512]> journalctl -n 20
+  -- Logs begin at Tue May 19 17:54:56 2026, end at Tue May 19 17:54:59 2026. --
+  May 19 17:54:56 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 19 17:54:56 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 19 17:54:56 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 19 17:54:56 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 19 17:54:56 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 19 17:54:56 localhost kernel: NET: Registered PF_INET protocol family
+  May 19 17:54:57 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 19 17:54:58 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 19 17:54:58 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 19 17:54:58 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 19 17:54:58 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 19 17:54:58 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 19 17:54:59 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on :: port 22.
+  May 19 17:54:59 localhost systemd-logind[456]: New seat seat0.
+  May 19 17:54:59 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+
+$ [362/512]> journalctl -n 50 --no-pager
+  -- Logs begin at Tue May 19 17:54:56 2026, end at Tue May 19 17:54:59 2026. --
+  May 19 17:54:56 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 19 17:54:56 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 19 17:54:56 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 19 17:54:56 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 19 17:54:56 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 19 17:54:56 localhost kernel: NET: Registered PF_INET protocol family
+  May 19 17:54:57 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 19 17:54:58 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 19 17:54:58 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 19 17:54:58 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 19 17:54:58 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 19 17:54:58 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 19 17:54:59 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on :: port 22.
+  May 19 17:54:59 localhost systemd-logind[456]: New seat seat0.
+  May 19 17:54:59 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+
+$ [363/512]> journalctl -u cron
+  -- No entries --
+
+$ [364/512]> journalctl -u cron -n 20
+  -- No entries --
+
+$ [365/512]> journalctl -u cron --since "today"
+  -- No entries --
+
+$ [366/512]> journalctl -p err
+  -- No entries --
+
+$ [367/512]> journalctl -p err -n 10
+  -- No entries --
+
+$ [368/512]> journalctl -k
+  -- Logs begin at Tue May 19 17:54:56 2026, end at Tue May 19 17:54:59 2026. --
+  May 19 17:54:56 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 19 17:54:56 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 19 17:54:56 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 19 17:54:56 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 19 17:54:56 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 19 17:54:56 localhost kernel: NET: Registered PF_INET protocol family
+  May 19 17:54:57 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 19 17:54:58 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 19 17:54:58 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 19 17:54:58 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 19 17:54:58 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 19 17:54:58 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 19 17:54:59 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on :: port 22.
+  May 19 17:54:59 localhost systemd-logind[456]: New seat seat0.
+  May 19 17:54:59 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+
+$ [369/512]> journalctl -b
+  -- Logs begin at Tue May 19 17:54:56 2026, end at Tue May 19 17:54:59 2026. --
+  May 19 17:54:56 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 19 17:54:56 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 19 17:54:56 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 19 17:54:56 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 19 17:54:56 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 19 17:54:56 localhost kernel: NET: Registered PF_INET protocol family
+  May 19 17:54:57 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 19 17:54:58 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 19 17:54:58 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 19 17:54:58 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 19 17:54:58 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 19 17:54:58 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 19 17:54:59 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on :: port 22.
+  May 19 17:54:59 localhost systemd-logind[456]: New seat seat0.
+  May 19 17:54:59 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+
+$ [370/512]> journalctl --disk-usage
+  Archived and active journals take up 2.4K in the file system.
+
+$ [371/512]> journalctl --list-boots
+   0 5ea5ecf0-5eaa-5139-011e-046b933a4afa Tue May 19 17:54:56 2026—Tue May 19 17:54:56 2026
+
+$ [372/512]> systemctl start service_inexistant_xyz
+  Failed to start service_inexistant_xyz.service: Unit service_inexistant_xyz.service not found.
+
+$ [373/512]> systemctl stop service_inexistant_xyz
+  Failed to stop service_inexistant_xyz.service: Unit service_inexistant_xyz.service not found.
+
+$ [374/512]> systemctl restart service_inexistant_xyz
+  Failed to restart service_inexistant_xyz.service: Unit service_inexistant_xyz.service not found.
+
+$ [375/512]> journalctl -u service_inexistant_xyz
+  -- No entries --
+
+$ [376/512]> journalctl -p truc
+  Invalid priority: truc
+
+$ [377/512]> systemctl start
+  Too few arguments.
+
+
+--- [378] § créer une unité systemd ---
+$ [378/512]> mkdir -p /etc/systemd/system
+<empty>
+
+$ [379/512]> printf "[Unit]\nDescription=Service demo debug\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/sleep 3600\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n" > /etc/systemd/system/debugdemo.service
+<empty>
+
+$ [380/512]> cat /etc/systemd/system/debugdemo.service
+  [Unit]
+  Description=Service demo debug
+  After=network.target
+  
+  [Service]
+  Type=simple
+  ExecStart=/bin/sleep 3600
+  Restart=on-failure
+  
+  [Install]
+  WantedBy=multi-user.target
+
+$ [381/512]> ls -l /etc/systemd/system/
+  total 16
+  -rw-r--r-- 1 user user 165 May 19 17:54 debugdemo.service
+  drwxr-xr-x 2 root root   0 May 19 17:54 [1;34mmulti-user.target.wants[0m
+
+$ [382/512]> systemctl daemon-reload
+<empty>
+
+$ [383/512]> systemctl cat debugdemo
+  # /etc/systemd/system/debugdemo.service
+  [Unit]
+  Description=Service demo debug
+  
+  [Service]
+  Type=simple
+  ExecStart=/bin/sleep 3600
+  User=root
+  
+  [Install]
+  WantedBy=multi-user.target
+
+$ [384/512]> systemctl status debugdemo
+  ○ debugdemo.service - Service demo debug
+       Loaded: loaded (/etc/systemd/system/debugdemo.service; disabled; vendor preset: enabled)
+       Active: inactive (dead)
+
+$ [385/512]> systemctl enable debugdemo
+  Created symlink /etc/systemd/system/multi-user.target.wants/debugdemo.service → /usr/lib/systemd/system/debugdemo.service.
+
+$ [386/512]> systemctl is-enabled debugdemo
+  enabled
+
+$ [387/512]> systemctl start debugdemo
+<empty>
+
+$ [388/512]> systemctl is-active debugdemo
+  active
+
+$ [389/512]> systemctl show -p ExecStart debugdemo
+  ExecStart=/bin/sleep 3600
+
+$ [390/512]> systemctl show -p Description debugdemo
+  Description=Service demo debug
+
+$ [391/512]> systemctl restart debugdemo
+<empty>
+
+$ [392/512]> systemctl stop debugdemo
+<empty>
+
+$ [393/512]> systemctl is-active debugdemo
+  inactive
+
+$ [394/512]> systemctl disable debugdemo
+  Removed /etc/systemd/system/multi-user.target.wants/debugdemo.service.
+
+$ [395/512]> systemctl is-enabled debugdemo
+  disabled
+
+$ [396/512]> rm /etc/systemd/system/debugdemo.service
+<empty>
+
+$ [397/512]> systemctl daemon-reload
+<empty>
+
+$ [398/512]> systemctl status debugdemo
+  Unit debugdemo.service could not be found.
+
+
+--- [399] § service / SysV ---
+$ [399/512]> service --status-all
+   [ + ]  apparmor
+   [ + ]  cron
+   [ + ]  dbus
+   [ + ]  networking
+   [ + ]  rsyslog
+   [ + ]  ssh
+   [ + ]  systemd-journald
+   [ + ]  systemd-logind
+   [ + ]  systemd-resolved
+   [ + ]  ufw
+
+$ [400/512]> service cron status
+   * cron is running
+
+$ [401/512]> service cron stop
+<empty>
+
+$ [402/512]> service cron status
+   * cron is not running
+
+$ [403/512]> service cron start
+<empty>
+
+$ [404/512]> service cron restart
+<empty>
+
+$ [405/512]> service cron reload
+  cron.service: Refusing to reload: ExecReload= is not set.
+
+$ [406/512]> runlevel
+  N 5
+
+$ [407/512]> who -r
+  user  pts/0  2026-05-19 17:54
+
+$ [408/512]> systemctl get-default
+  graphical.target
+
+$ [409/512]> systemctl list-units --type=target
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [410/512]> service service_inexistant_xyz status
+  service_inexistant_xyz: unrecognized service
+
+$ [411/512]> service cron truc
+  Usage: service cron {start|stop|restart|status}
+
+$ [412/512]> service
+  Usage: service <service> {start|stop|restart|status}
+
+$ [413/512]> service cron
+  Usage: service cron {start|stop|restart|status}
+
+
+--- [414] § cron / at ---
+$ [414/512]> crontab -l
+  no crontab for user
+
+$ [415/512]> crontab -l -u root
+  no crontab for user
+
+$ [416/512]> echo "*/5 * * * * /usr/bin/true" | crontab -
+<empty>
+
+$ [417/512]> crontab -l
+  */5 * * * * /usr/bin/true
+
+$ [418/512]> crontab -r
+<empty>
+
+$ [419/512]> crontab -l
+  no crontab for user
+
+$ [420/512]> at -l
+  at: command not found
+
+$ [421/512]> atq
+  atq: command not found
+
+$ [422/512]> echo "echo hello" | at now + 5 minutes
+  at: command not found
+
+$ [423/512]> atq
+  atq: command not found
+
+$ [424/512]> ls /etc/cron.d
+  ls: cannot access '/etc/cron.d': No such file or directory
+
+$ [425/512]> ls /etc/cron.daily
+<empty>
+
+$ [426/512]> cat /etc/crontab
+  cat: /etc/crontab: No such file or directory
+
+$ [427/512]> crontab -l -u utilisateur_inexistant_xyz
+  no crontab for user
+
+$ [428/512]> crontab -z
+<empty>
+
+$ [429/512]> atq -x
+  atq: command not found
+
+
+--- [430] § lsof / fuser ---
+$ [430/512]> lsof
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [431/512]> lsof -p 1
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [432/512]> lsof -p $$
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [433/512]> lsof -u root
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [434/512]> lsof -i
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [435/512]> lsof -i :22
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [436/512]> lsof /var/log
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [437/512]> lsof -c bash
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [438/512]> fuser /var/log
+  fuser: command not found
+
+$ [439/512]> fuser -v /var/log
+  fuser: command not found
+
+$ [440/512]> pidstat
+  pidstat: command not found
+
+$ [441/512]> pidstat 1 2
+  pidstat: command not found
+
+$ [442/512]> pidstat -p 1
+  pidstat: command not found
+
+$ [443/512]> pmap 1
+  pmap: command not found
+
+$ [444/512]> pmap -x $$
+  pmap: command not found
+
+$ [445/512]> lsof -p 999999
+  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+  systemd     1   root  cwd    DIR    8,1     4096    2 /
+  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+
+$ [446/512]> fuser /chemin/inexistant_xyz
+  fuser: command not found
+
+$ [447/512]> pmap 999999
+  pmap: command not found
+
+$ [448/512]> pidstat -p abc
+  pidstat: command not found
+
+
+--- [449] § scénario A — priorité job de fond ---
+$ [449/512]> sleep 400 &
+<empty>
+
+$ [450/512]> echo "PID cible: $!"
+  PID cible: 
+
+$ [451/512]> ps -o pid,ni,comm -p $!
+  PID   NI  COMMAND
+
+$ [452/512]> renice 15 -p $!
+<empty>
+
+$ [453/512]> ps -o pid,ni,comm -p $!
+  PID   NI  COMMAND
+
+$ [454/512]> renice 0 -p $!
+<empty>
+
+$ [455/512]> ps -o pid,ni,comm -p $!
+  PID   NI  COMMAND
+
+$ [456/512]> kill $!
+  kill: : arguments must be process or job IDs
+
+$ [457/512]> ps -C sleep -o pid,comm
+  PID   COMMAND
+
+
+--- [458] § scénario B — sysctl set/show/restore ---
+$ [458/512]> sysctl vm.swappiness
+<empty>
+
+$ [459/512]> sysctl -w vm.swappiness=60
+<empty>
+
+$ [460/512]> sysctl vm.swappiness
+<empty>
+
+$ [461/512]> sysctl -w vm.swappiness=10
+<empty>
+
+$ [462/512]> sysctl vm.swappiness
+<empty>
+
+
+--- [463] § scénario C — cycle service ---
+$ [463/512]> systemctl is-active cron
+  active
+
+$ [464/512]> systemctl stop cron
+<empty>
+
+$ [465/512]> systemctl is-active cron
+  inactive
+
+$ [466/512]> systemctl start cron
+<empty>
+
+$ [467/512]> systemctl is-active cron
+  active
+
+$ [468/512]> systemctl restart cron
+<empty>
+
+$ [469/512]> systemctl status cron
+  ● cron.service - Regular background program processing daemon
+       Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 21 (cron)
+        Tasks: 1
+       CGroup: /system.slice/cron.service
+               └─21 /usr/sbin/cron -f
+
+
+--- [470] § scénario D — enable persistance ---
+$ [470/512]> systemctl disable cron
+  Removed /etc/systemd/system/multi-user.target.wants/cron.service.
+
+$ [471/512]> systemctl is-enabled cron
+  disabled
+
+$ [472/512]> systemctl enable cron
+  Created symlink /etc/systemd/system/multi-user.target.wants/cron.service → /usr/lib/systemd/system/cron.service.
+
+$ [473/512]> systemctl is-enabled cron
+  enabled
+
+
+--- [474] § scénario E — pipeline analyse ---
+$ [474/512]> ps -eo pid,pcpu,comm --sort=-pcpu | head -5
+  PID   %CPU COMMAND
+      1  0.0 systemd
+      2  0.0 sshd
+      4  0.0 rsyslogd
+      5  0.0 systemd-resolved
+
+$ [475/512]> ps -eo pid,pmem,comm --sort=-pmem | head -5
+  PID   %MEM COMMAND
+      1  0.3 systemd
+      2  0.2 sshd
+      4  0.2 rsyslogd
+      5  0.2 systemd-resolved
+
+$ [476/512]> ps -e | wc -l
+  13
+
+$ [477/512]> systemctl list-units --type=service --state=running | wc -l
+  13
+
+
+--- [478] § mal formées — command not found ---
+$ [478/512]> pss aux
+  pss: command not found
+
+$ [479/512]> systemtctl status cron
+  systemtctl: command not found
+
+$ [480/512]> killl 1
+  killl: command not found
+
+$ [481/512]> nicee -n 5 sleep 1
+  nicee: command not found
+
+$ [482/512]> reniec 5 -p 1
+  reniec: command not found
+
+$ [483/512]> jobss
+  jobss: command not found
+
+
+--- [484] § mal formées — options/opérandes invalides ---
+$ [484/512]> ps --sort=
+  PID   TTY      TIME     CMD
+     12 pts/0       00:00 -bash
+
+$ [485/512]> ps -o
+<empty>
+
+$ [486/512]> ps -p
+  PID   TTY      TIME     CMD
+
+$ [487/512]> kill -s
+  kill: undefined: invalid signal specification
+
+$ [488/512]> kill --signal
+  kill: -signal: invalid signal specification
+
+$ [489/512]> renice
+  renice: usage: renice [-n] priority [-p|--pid] pid...
+
+$ [490/512]> renice -p
+  renice: invalid priority '-p'
+
+$ [491/512]> nice -n
+  nice: invalid adjustment '-n'
+
+$ [492/512]> chrt
+  chrt: usage: chrt [options] [-p [priority] pid]
+
+$ [493/512]> ionice -c
+  ionice: invalid class: undefined
+
+$ [494/512]> taskset
+  taskset: usage: taskset [options] -p [mask] pid
+
+$ [495/512]> top -p
+  top - 17:54:56 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 12 total,  0 running, 12 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       25    5    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 sshd
+        4 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 rsyslogd
+        5 systemd-resolve  20    0     78M     7M     4M S   0.0   0.2   0:00.10 systemd-resolved
+        6 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 systemd-journald
+        7 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 systemd-logind
+        8 messagebus  20    0     78M     7M     4M S   0.0   0.2   0:00.10 dbus-daemon
+        9 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 ifup
+       10 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 ufw-init
+       11 root       25    5     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
+       12 user       10  -10     10M     4M     4M S   0.0   0.1   0:00.10 -bash
+       21 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 cron
+
+$ [496/512]> free -X
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [497/512]> vmstat -Q
+  vmstat: command not found
+
+$ [498/512]> sysctl -w
+<empty>
+
+$ [499/512]> systemctl enable --now
+  Failed to enable unit: Unit --now.service not found.
+
+$ [500/512]> systemctl --type
+    UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+    apparmor.service               loaded active   running  Load AppArmor profiles
+    cron.service                   loaded active   running  Regular background program processing daemon
+    dbus.service                   loaded active   running  D-Bus System Message Bus
+    networking.service             loaded active   running  Raise network interfaces
+    rsyslog.service                loaded active   running  System Logging Service
+    ssh.service                    loaded active   running  OpenBSD Secure Shell server
+    systemd-journald.service       loaded active   running  Journal Service
+    systemd-logind.service         loaded active   running  User Login Management
+    systemd-resolved.service       loaded active   running  Network Name Resolution
+    ufw.service                    loaded active   running  Uncomplicated firewall
+  
+  10 loaded units listed.
+
+$ [501/512]> journalctl -u
+  -- Logs begin at Tue May 19 17:54:56 2026, end at Tue May 19 17:54:59 2026. --
+  May 19 17:54:56 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 19 17:54:56 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 19 17:54:56 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 19 17:54:56 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 19 17:54:56 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 19 17:54:56 localhost kernel: NET: Registered PF_INET protocol family
+  May 19 17:54:57 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 19 17:54:57 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 19 17:54:58 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 19 17:54:58 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 19 17:54:58 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 19 17:54:58 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 19 17:54:58 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 19 17:54:59 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 19 17:54:59 localhost sshd[1234]: Server listening on :: port 22.
+  May 19 17:54:59 localhost systemd-logind[456]: New seat seat0.
+  May 19 17:54:59 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+
+$ [502/512]> crontab
+<empty>
+
+$ [503/512]> ulimit -
+  ulimit: command not found
+
+
+--- [504] § mal formées — argument numérique attendu ---
+$ [504/512]> sleep abc
+<empty>
+
+$ [505/512]> timeout abc sleep 1
+  timeout: command not found
+
+$ [506/512]> timeout 1
+  timeout: command not found
+
+$ [507/512]> kill -- -1abc
+  kill: -: invalid signal specification
+
+$ [508/512]> renice ++5 -p 1
+  renice: invalid priority '++5'
+
+
+--- [509] § mal formées — syntaxe shell invalide ---
+$ [509/512]> kill 1 2 3 4 5 6 7 8 9 abc
+  kill: (1) - Operation not permitted
+  kill: (3) - No such process
+  kill: abc: arguments must be process or job IDs
+
+$ [510/512]> ps aux | | head
+<empty>
+
+$ [511/512]> systemctl status cron ; ; systemctl is-active cron
+  ● cron.service - Regular background program processing daemon
+       Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
+       Active: active (running) since Tue, 19 May 2026 17:54:56 GMT
+     Main PID: 21 (cron)
+        Tasks: 1
+       CGroup: /system.slice/cron.service
+               └─21 /usr/sbin/cron -factive
+
+$ [512/512]> echo "fin du transcript"
+  fin du transcript

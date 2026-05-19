@@ -108,6 +108,7 @@ export abstract class LinuxMachine extends EndHost {
 
     // 2. Kernel / userspace
     this.executor = new LinuxCommandExecutor(profile.isServer);
+    this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
     this.initDefaultSockets(profile.isServer);
@@ -250,13 +251,19 @@ export abstract class LinuxMachine extends EndHost {
       // `ip`, `arp`, `ping`, `systemctl`, etc. are available.
       (line: string) => this.executeCommand(line),
     );
+    // Reactive: the SSH module subscribes to the events that concern
+    // it on the shared bus (instead of the legacy onLifecycle callback).
+    // sshd reloads /etc/ssh/sshd_config when its unit is restarted or
+    // reloaded — BRD SSH-07-R6.
     this._sshLifecycleOff?.();
-    this._sshLifecycleOff = this.executor.serviceMgr.onLifecycle((event, name) => {
-      if (name !== 'ssh' && name !== 'sshd') return;
-      if (event === 'restart' || event === 'reload') {
-        this._sshContext = this._sshContext?.reloadConfig() ?? null;
-      }
-    });
+    const bus = this.getBus();
+    const isSsh = (p: { name: string }): boolean => p.name === 'ssh' || p.name === 'sshd';
+    const reload = (): void => {
+      this._sshContext = this._sshContext?.reloadConfig() ?? null;
+    };
+    const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
+    const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
+    this._sshLifecycleOff = () => { offRestart(); offReload(); };
     return this._sshContext;
   }
 

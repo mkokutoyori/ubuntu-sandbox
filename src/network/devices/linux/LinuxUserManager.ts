@@ -4,6 +4,7 @@
  */
 
 import { VirtualFileSystem } from './VirtualFileSystem';
+import { uptimeHeader } from './system/SystemInfo';
 
 export interface UserEntry {
   username: string;
@@ -434,6 +435,38 @@ export class LinuxUserManager {
     return `uid=${user.uid}(${user.username}) gid=${user.gid}(${primaryGroup?.name || user.gid}) groups=${groupsStr}`;
   }
 
+  /**
+   * `id` with flag support: -u/-g/-G select which id(s), -n prints
+   * names instead of numbers, -r selects the real (vs effective) id.
+   * Returns an `id: ...` error string for invalid flag combinations.
+   */
+  idWithFlags(
+    username: string | undefined,
+    opts: { u?: boolean; g?: boolean; G?: boolean; n?: boolean; r?: boolean },
+  ): string {
+    const name = username || this.currentUser;
+    const user = this.users.get(name);
+    if (!user) return `id: '${name}': no such user`;
+
+    const selectors = [opts.u, opts.g, opts.G].filter(Boolean).length;
+    if (selectors === 0) {
+      if (opts.n || opts.r) {
+        return 'id: cannot print only names or real IDs in default format';
+      }
+      return this.id(name);
+    }
+    if (selectors > 1) {
+      return 'id: cannot print "only" of more than one choice';
+    }
+
+    const groups = this.getUserGroups(name);
+    const primary = this.getGroupByGid(user.gid);
+    if (opts.u) return opts.n ? user.username : String(user.uid);
+    if (opts.g) return opts.n ? (primary?.name ?? String(user.gid)) : String(user.gid);
+    // -G : every group id (or name with -n)
+    return groups.map(g => (opts.n ? g.name : String(g.gid))).join(' ');
+  }
+
   whoami(): string {
     return this.currentUser;
   }
@@ -491,7 +524,7 @@ export class LinuxUserManager {
     const now = new Date();
     const time = now.toTimeString().slice(0, 8);
     return [
-      ` ${time} up 1 day,  0:00,  1 user,  load average: 0.00, 0.00, 0.00`,
+      uptimeHeader(1),
       `USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT`,
       `${this.currentUser.padEnd(8)} pts/0    -                ${time}  0.00s  0.00s  0.00s -bash`,
     ].join('\n');
