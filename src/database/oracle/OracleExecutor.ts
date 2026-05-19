@@ -614,8 +614,11 @@ export class OracleExecutor extends BaseExecutor {
       return this.executeSetOperation(stmt);
     }
 
-    // DUAL has its own minimal pipeline (no JOIN/GROUP BY etc.)
-    if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef') {
+    // DUAL has its own minimal pipeline (no JOIN/GROUP BY etc.), but
+    // the row-generator idiom `SELECT … FROM DUAL CONNECT BY LEVEL <= N`
+    // needs the full hierarchical pipeline.
+    if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef'
+        && !stmt.connectBy && !stmt.groupBy && !stmt.where) {
       const firstName = stmt.from[0].name.toUpperCase();
       if (firstName === 'DUAL') {
         return this.executeSelectFromDual(stmt);
@@ -1715,28 +1718,47 @@ export class OracleExecutor extends BaseExecutor {
     const result: StorageRow[] = [];
     const visited = new Set<string>();
 
+    // Safety cap matching Oracle's default ORA-30009 threshold (10000).
+    const MAX_DEPTH = 10000;
+
     const traverse = (parentRow: StorageRow, level: number) => {
-      const rowKey = JSON.stringify(parentRow);
+      const rowKey = JSON.stringify(parentRow) + '#' + level;
       if (connectBy.noCycle && visited.has(rowKey)) return;
-      if (level > 100) return; // Safety limit
+      if (level > MAX_DEPTH) return;
 
       visited.add(rowKey);
       const rowWithLevel = [...parentRow];
       rowWithLevel[levelIdx] = level;
       result.push(rowWithLevel);
 
-      // Find children by evaluating CONNECT BY condition with PRIOR
+      // Find children by re-evaluating the CONNECT BY condition. The
+      // candidate child's LEVEL pseudo-column must reflect what its
+      // depth *would be* if it were emitted, otherwise predicates like
+      // `LEVEL <= N` never terminate the recursion correctly.
+      const childLevel = level + 1;
       for (const childRow of rows) {
-        if (this.evaluateConnectByCondition(connectBy.condition, parentRow, childRow, columns)) {
-          traverse(childRow, level + 1);
+        const childWithLevel = [...childRow];
+        childWithLevel[levelIdx] = childLevel;
+        const ok = this.evaluateConnectByCondition(connectBy.condition, rowWithLevel, childWithLevel, columns);
+        if (ok) {
+          traverse(childWithLevel, childLevel);
         }
       }
 
       visited.delete(rowKey);
     };
 
+    // Seed traversal: root rows get LEVEL=1. Without PRIOR / START WITH
+    // and a single-row source (e.g. DUAL), this is the standard "row
+    // generator" idiom.
     for (const root of rootRows) {
-      traverse(root, 1);
+      const rootWithLevel = [...root];
+      rootWithLevel[levelIdx] = 1;
+      // The first emission is unconditional only when the predicate
+      // accepts LEVEL=1 — real Oracle still applies the CONNECT BY
+      // filter to the root, except that LEVEL=1 always satisfies a
+      // `LEVEL <= N` style guard.
+      traverse(rootWithLevel, 1);
     }
 
     return result;
@@ -2215,6 +2237,23 @@ export class OracleExecutor extends BaseExecutor {
       temporary: stmt.temporary,
       rowCount: 0,
     });
+
+    // Real Oracle auto-creates a UNIQUE index for every PRIMARY KEY
+    // and UNIQUE constraint. The index name defaults to the constraint
+    // name (a SYS_C…-prefixed identifier when the DBA didn't name it).
+    // The index sits in the same tablespace as the table.
+    for (const c of constraints) {
+      if (c.type === 'PRIMARY_KEY' || c.type === 'UNIQUE') {
+        if (this.storage.getIndexes(schema).some(i => i.name === c.name)) continue;
+        this.storage.createIndex(schema, {
+          name: c.name,
+          tableName,
+          columns: c.columns,
+          unique: true,
+          tablespace: stmt.tablespace?.toUpperCase() || 'USERS',
+        });
+      }
+    }
 
     return emptyResult('Table created.');
   }

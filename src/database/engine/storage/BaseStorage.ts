@@ -41,6 +41,8 @@ export interface IndexMeta {
   unique: boolean;
   bitmap?: boolean;
   expressions?: (string | null)[];
+  /** Tablespace the index lives in (defaults to the owning table's TS). */
+  tablespace?: string;
 }
 
 export interface SequenceMeta {
