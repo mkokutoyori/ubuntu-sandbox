@@ -146,7 +146,19 @@ export function cmdGpasswd(ctx: ShellContext, args: string[]): string {
 
 export function cmdId(ctx: ShellContext, args: string[]): string {
   const username = args.find(a => !a.startsWith('-'));
-  return ctx.userMgr.id(username);
+  const flags = args.filter(a => a.startsWith('-') && a !== '--');
+  const letters = flags.join('').replace(/-/g, '');
+  const opts = {
+    u: letters.includes('u'),
+    g: letters.includes('g'),
+    G: letters.includes('G'),
+    n: letters.includes('n'),
+    r: letters.includes('r'),
+  };
+  if (!opts.u && !opts.g && !opts.G && !opts.n && !opts.r) {
+    return ctx.userMgr.id(username);
+  }
+  return ctx.userMgr.idWithFlags(username, opts);
 }
 
 export function cmdWhoami(ctx: ShellContext): string {

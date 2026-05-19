@@ -22,6 +22,7 @@ import type { SocketTable } from '../../core/SocketTable';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -210,7 +211,10 @@ export class LinuxCommandExecutor {
       }
     }
 
-    return result.output;
+    // A terminal does not echo a trailing blank line after a command
+    // (e.g. `echo x` shows one line, not two). Drop a single trailing
+    // newline so output is consistent across builtins and externals.
+    return result.output.replace(/\n$/, '');
   }
 
   /**
@@ -648,13 +652,15 @@ export class LinuxCommandExecutor {
       // ps — process listing backed by ProcessManager
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
-      // date, uptime, uname - basic system info
-      case 'date': return { output: new Date().toString(), exitCode: 0 };
-      case 'uptime': return { output: ' ' + new Date().toLocaleTimeString() + ' up 0 min,  1 user,  load average: 0.00, 0.00, 0.00', exitCode: 0 };
-      case 'uname': {
-        if (args.includes('-a')) return { output: 'Linux localhost 5.15.0-generic #1 SMP x86_64 GNU/Linux', exitCode: 0 };
-        if (args.includes('-r')) return { output: '5.15.0-generic', exitCode: 0 };
-        return { output: 'Linux', exitCode: 0 };
+      // date, uptime, uname, tty, runlevel, hostnamectl — system info
+      case 'date': return { output: cmdDate(args), exitCode: 0 };
+      case 'uptime': return { output: cmdUptime(args), exitCode: 0 };
+      case 'uname': return { output: cmdUname(args), exitCode: 0 };
+      case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
+      case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
+      case 'hostnamectl': {
+        const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        return { output: cmdHostnamectl(hn), exitCode: 0 };
       }
 
       // true/false

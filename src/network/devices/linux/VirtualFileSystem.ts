@@ -4,6 +4,7 @@
  */
 
 import { SAMPLE_SCRIPTS } from './SampleScripts';
+import { OS_RELEASE } from './system/SystemInfo';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -89,6 +90,11 @@ export class VirtualFileSystem {
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
       0o644, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
+    this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
+    this.createFileAt('/etc/lsb-release',
+      'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
+      'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',
+      0o644, 0, 0);
     this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
 
     // UFW default config files
