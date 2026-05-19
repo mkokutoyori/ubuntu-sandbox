@@ -81,6 +81,9 @@ export abstract class BaseParser {
         case 'ROLLBACK': return this.parseRollback();
         case 'SAVEPOINT': return this.parseSavepoint();
         case 'ANALYZE': return this.parseAnalyze();
+        case 'FLASHBACK': return this.parseFlashback();
+        case 'PURGE': return this.parsePurge();
+        case 'SET': return this.parseSetStatement();
       }
     }
 
@@ -555,7 +558,28 @@ export abstract class BaseParser {
     this.expect(TokenType.RPAREN);
 
     let tablespace: string | undefined;
-    if (this.matchKeyword('TABLESPACE')) tablespace = this.expectIdentifier();
+    // Walk any number of trailing storage / partition / LOB / compression
+    // clauses. We don't model their effects, but the simulator must let
+    // DBA-grade DDL pass without choking.
+    let safety = 1000;
+    while (--safety > 0 && !this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('TABLESPACE')) { tablespace = this.expectIdentifier(); continue; }
+      // PARTITION BY {RANGE|LIST|HASH|REFERENCE|SYSTEM} (cols) [INTERVAL (…)] [(part_specs)]
+      // SUBPARTITION BY … (subpart_template)
+      // LOB (col) STORE AS {SECUREFILE|BASICFILE} (clauses…)
+      // COMPRESS / NOCOMPRESS / ROW STORE COMPRESS … / PCTFREE n / PCTUSED n / …
+      // Skip a single token; balanced parentheses count as one logical group.
+      if (this.match(TokenType.LPAREN)) {
+        let depth = 1;
+        while (depth > 0 && !this.check(TokenType.EOF)) {
+          if (this.match(TokenType.LPAREN)) depth++;
+          else if (this.match(TokenType.RPAREN)) depth--;
+          else this.advance();
+        }
+        continue;
+      }
+      this.advance();
+    }
 
     return { type: 'CreateTableStatement', position: pos, schema, name, columns, constraints, tablespace };
   }
@@ -902,7 +926,11 @@ export abstract class BaseParser {
     const actions: import('./ASTNode').AlterTableAction[] = [];
 
     if (this.matchKeyword('ADD')) {
-      if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
+      if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
+        // ADD SUPPLEMENTAL LOG {DATA (…) COLUMNS | GROUP name (…) ALWAYS}
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
         const hadParen = this.tokens[this.pos - 1]?.type === TokenType.LPAREN;
         const constraint = this.parseTableConstraint();
         if (hadParen) this.expect(TokenType.RPAREN);
@@ -911,7 +939,17 @@ export abstract class BaseParser {
         actions.push({ action: 'ADD_COLUMN', column: this.parseColumnDefinition() });
       }
     } else if (this.matchKeyword('MODIFY')) {
-      actions.push({ action: 'MODIFY_COLUMN', column: this.parseColumnDefinition() });
+      // MODIFY PARTITION / SUBPARTITION / LOB (…) — administrative
+      // clauses not modeled, swallowed as a no-op. Otherwise it's a
+      // standard MODIFY column.
+      if (this.checkIdentifierOrKeyword('PARTITION')
+          || this.checkIdentifierOrKeyword('SUBPARTITION')
+          || this.checkIdentifierOrKeyword('LOB')) {
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else {
+        actions.push({ action: 'MODIFY_COLUMN', column: this.parseColumnDefinition() });
+      }
     } else if (this.matchKeyword('DROP')) {
       if (this.matchKeyword('COLUMN')) {
         actions.push({ action: 'DROP_COLUMN', columnName: this.expectIdentifier() });
@@ -919,6 +957,14 @@ export abstract class BaseParser {
         const constraintName = this.expectIdentifier();
         const cascade = this.matchKeyword('CASCADE');
         actions.push({ action: 'DROP_CONSTRAINT', constraintName, cascade: cascade || undefined });
+      } else if (this.matchKeyword('PARTITION') || this.matchKeyword('SUBPARTITION')) {
+        // DROP [SUB]PARTITION p0 [UPDATE INDEXES] — metadata-only no-op.
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
+        // DROP SUPPLEMENTAL LOG GROUP name — metadata-only no-op.
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
       }
     } else if (this.matchKeyword('RENAME')) {
       if (this.matchKeyword('COLUMN')) {
@@ -933,7 +979,13 @@ export abstract class BaseParser {
       }
     } else if (this.matchKeyword('MOVE')) {
       // MOVE TABLESPACE x | MOVE COMPRESS [FOR QUERY|ARCHIVE LOW|HIGH]
-      if (this.matchKeyword('TABLESPACE')) {
+      // MOVE PARTITION … / MOVE LOB (…) — metadata-only no-op.
+      if (this.checkIdentifierOrKeyword('PARTITION')
+          || this.checkIdentifierOrKeyword('LOB')
+          || this.checkIdentifierOrKeyword('SUBPARTITION')) {
+        this.consumeRestOfStatement();
+        actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.matchKeyword('TABLESPACE')) {
         actions.push({ action: 'MOVE_TABLESPACE', tablespace: this.expectIdentifier() });
       } else if (this.matchKeyword('COMPRESS')) {
         let level: string | undefined;
@@ -962,6 +1014,42 @@ export abstract class BaseParser {
     } else if (this.matchKeyword('DISABLE')) {
       this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT');
       actions.push({ action: 'ROW_MOVEMENT', enabled: false });
+    } else if (this.matchKeyword('ROW')) {
+      // ROW STORE COMPRESS [ADVANCED|BASIC]
+      this.matchKeyword('STORE');
+      this.matchKeyword('COMPRESS');
+      const parts: string[] = [];
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) parts.push(this.advance().value);
+      actions.push({ action: 'MOVE_COMPRESS', compressionLevel: parts.join(' ') || undefined });
+    } else if (this.matchKeyword('NOCOMPRESS') || this.matchKeyword('COMPRESS')) {
+      // Plain NOCOMPRESS / COMPRESS — collapse to MOVE_COMPRESS semantics.
+      const parts: string[] = [];
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) parts.push(this.advance().value);
+      actions.push({ action: 'MOVE_COMPRESS', compressionLevel: parts.join(' ') || undefined });
+    } else if (
+      this.matchKeyword('TRUNCATE') ||
+      this.matchKeyword('SPLIT')    || this.matchKeyword('MERGE') ||
+      this.matchKeyword('EXCHANGE')
+    ) {
+      // Partition / sub-partition administrative clauses — metadata-only
+      // no-ops since the simulator does not implement partitioning.
+      this.consumeRestOfStatement();
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('LOGGING') || this.matchKeyword('NOLOGGING')) {
+      // Table-level (NO)LOGGING — pure metadata flag, no-op for now.
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('FORCE')) {
+      this.matchKeyword('LOGGING');
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('NO')) {
+      this.matchKeyword('FORCE'); this.matchKeyword('LOGGING');
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')) {
+      // Optional `PARALLEL n` — consume the number.
+      if (this.check(TokenType.NUMBER_LITERAL)) this.advance();
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('CACHE') || this.matchKeyword('NOCACHE')) {
+      actions.push({ action: 'SHRINK_SPACE' });
     }
 
     return { type: 'AlterTableStatement', position: pos, schema, name, actions };
@@ -1140,6 +1228,82 @@ export abstract class BaseParser {
     // Swallow trailing options (FOR TABLE / FOR ALL COLUMNS / SAMPLE n PERCENT / ONLINE).
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
     return { type: 'AnalyzeStatement', position: pos, target, schema, name, action };
+  }
+
+  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement {
+    const pos = this.current().position;
+    this.expectKeyword('SET');
+    // SET TRANSACTION [READ ONLY|READ WRITE] [ISOLATION LEVEL …] [NAME 'x']
+    // SET ROLE r [, r2…] | SET ROLE NONE | SET ROLE ALL [EXCEPT …]
+    // SET CONSTRAINT[S] {ALL | name [,…]} {DEFERRED | IMMEDIATE}
+    if (this.matchKeyword('TRANSACTION')
+        || this.matchKeyword('ROLE')
+        || this.matchKeyword('CONSTRAINTS')
+        || this.matchKeyword('CONSTRAINT')) {
+      // The simulator doesn't track transaction isolation / role state
+      // changes — accept and no-op.
+      this.consumeRestOfStatement();
+      return { type: 'SetTransactionStatement', position: pos } as import('./ASTNode').SetTransactionStatement;
+    }
+    throw this.error(`Unsupported SET target: ${this.current().value}`);
+  }
+
+  protected parseFlashback(): import('./ASTNode').FlashbackStatement {
+    const pos = this.current().position;
+    this.expectKeyword('FLASHBACK');
+    let target: 'DATABASE' | 'TABLE' = 'DATABASE';
+    let schema: string | undefined;
+    let name: string | undefined;
+    if (this.matchKeyword('TABLE')) {
+      target = 'TABLE';
+      name = this.expectIdentifier();
+      if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+    } else {
+      this.matchKeyword('DATABASE');
+    }
+    // Capture the trailing TO TIMESTAMP / TO SCN / TO BEFORE DROP / TO
+    // RESTORE POINT … clause verbatim — the simulator can't time-travel
+    // but we keep the textual record so audit dumps make sense.
+    const parts: string[] = [];
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      parts.push(this.advance().value);
+    }
+    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: parts.join(' ') };
+  }
+
+  protected parsePurge(): import('./ASTNode').PurgeStatement {
+    const pos = this.current().position;
+    this.expectKeyword('PURGE');
+    if (this.matchKeyword('RECYCLEBIN')) return { type: 'PurgeStatement', position: pos, target: 'RECYCLEBIN' };
+    if (this.matchKeyword('DBA_RECYCLEBIN')
+        || (this.current().type === TokenType.IDENTIFIER && this.current().value.toUpperCase() === 'DBA_RECYCLEBIN'
+            && (this.advance(), true))) {
+      return { type: 'PurgeStatement', position: pos, target: 'DBA_RECYCLEBIN' };
+    }
+    if (this.matchKeyword('TABLE')) {
+      let name = this.expectIdentifier();
+      let schema: string | undefined;
+      if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+      return { type: 'PurgeStatement', position: pos, target: 'TABLE', schema, name };
+    }
+    if (this.matchKeyword('INDEX')) {
+      let name = this.expectIdentifier();
+      let schema: string | undefined;
+      if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+      return { type: 'PurgeStatement', position: pos, target: 'INDEX', schema, name };
+    }
+    if (this.matchKeyword('TABLESPACE')) {
+      const name = this.expectIdentifier();
+      // Optional USER user_name clause.
+      this.consumeRestOfStatement();
+      return { type: 'PurgeStatement', position: pos, target: 'TABLESPACE', name };
+    }
+    if (this.matchKeyword('USER_RECYCLEBIN')) {
+      return { type: 'PurgeStatement', position: pos, target: 'USER' };
+    }
+    // Unknown variant — treat as USER recyclebin purge.
+    this.consumeRestOfStatement();
+    return { type: 'PurgeStatement', position: pos, target: 'USER' };
   }
 
   protected parseTruncate(): import('./ASTNode').TruncateTableStatement {
@@ -1767,9 +1931,32 @@ export abstract class BaseParser {
     return this.current().type === TokenType.KEYWORD && this.current().value === keyword;
   }
 
+  /**
+   * Same as `checkKeyword` but also matches IDENTIFIER tokens whose
+   * uppercased value equals the target — useful for words like LOB or
+   * PARTITION that aren't always reserved.
+   */
+  protected checkIdentifierOrKeyword(keyword: string): boolean {
+    const cur = this.current();
+    if (cur.type === TokenType.KEYWORD && cur.value === keyword) return true;
+    if (cur.type === TokenType.IDENTIFIER && cur.value.toUpperCase() === keyword) return true;
+    return false;
+  }
+
   protected match(type: TokenType): boolean {
     if (this.check(type)) { this.advance(); return true; }
     return false;
+  }
+
+  /**
+   * Consume every remaining token up to (but not including) the next
+   * SEMICOLON / EOF. Handy when a DDL clause is recognised but the
+   * simulator has no use for its details (partitioning, LOB storage…).
+   */
+  protected consumeRestOfStatement(): void {
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      this.advance();
+    }
   }
 
   protected matchKeyword(keyword: string): boolean {

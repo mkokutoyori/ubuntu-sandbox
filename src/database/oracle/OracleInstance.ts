@@ -138,6 +138,14 @@ export class OracleInstance {
 
   get state(): InstanceState { return this._state; }
   get startupTime(): Date | null { return this._startupTime; }
+  /** RESTRICTED SESSION mode (ALTER SYSTEM ENABLE RESTRICTED SESSION). */
+  private _restrictedSession = false;
+  get restrictedSession(): boolean { return this._restrictedSession; }
+  setRestrictedSession(on: boolean): void { this._restrictedSession = on; }
+  /** Whether a SHUTDOWN is in progress (no new logins). */
+  private _shutdownPending = false;
+  get shutdownPending(): boolean { return this._shutdownPending; }
+  setShutdownPending(on: boolean): void { this._shutdownPending = on; }
   get isOpen(): boolean { return this._state === 'OPEN'; }
 
   startup(mode?: 'NOMOUNT' | 'MOUNT' | 'RESTRICT' | 'FORCE'): string[] {
@@ -500,7 +508,25 @@ export class OracleInstance {
 
   // ── Archive log mode ─────────────────────────────────────────────
 
+  /** Supplemental-log toggles, mutated by ALTER DATABASE / TABLE … SUPPLEMENTAL LOG. */
+  private _supplementalLog = { min: 'NO' as 'NO' | 'YES' | 'IMPLICIT', pk: false, ui: false, fk: false, all: false };
+  /** FORCE LOGGING toggle, mutated by ALTER DATABASE FORCE LOGGING. */
+  private _forceLogging = false;
+  /** FLASHBACK ON toggle. */
+  private _flashbackOn = false;
+
   get archiveLogMode(): boolean { return this._archiveLogMode; }
+  get supplementalLog(): { min: 'NO' | 'YES' | 'IMPLICIT'; pk: boolean; ui: boolean; fk: boolean; all: boolean } {
+    return { ...this._supplementalLog };
+  }
+  get forceLogging(): boolean { return this._forceLogging; }
+  get flashbackOn(): boolean { return this._flashbackOn; }
+
+  setSupplementalLog(patch: Partial<{ min: 'NO' | 'YES' | 'IMPLICIT'; pk: boolean; ui: boolean; fk: boolean; all: boolean }>): void {
+    this._supplementalLog = { ...this._supplementalLog, ...patch };
+  }
+  setForceLogging(on: boolean): void { this._forceLogging = on; }
+  setFlashbackOn(on: boolean): void { this._flashbackOn = on; }
 
   setArchiveLogMode(enabled: boolean): string {
     if (this._state !== 'MOUNT') {

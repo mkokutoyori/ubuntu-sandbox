@@ -646,6 +646,24 @@ export interface AnalyzeStatement extends ASTNode {
   action: 'COMPUTE_STATISTICS' | 'ESTIMATE_STATISTICS' | 'VALIDATE_STRUCTURE' | 'DELETE_STATISTICS';
 }
 
+export interface FlashbackStatement extends ASTNode {
+  type: 'FlashbackStatement';
+  /** DATABASE | TABLE. */
+  target: 'DATABASE' | 'TABLE';
+  schema?: string;
+  name?: string;
+  /** Raw SCN / TIMESTAMP / RESTORE POINT / BEFORE DROP clause. */
+  to: string;
+}
+
+export interface PurgeStatement extends ASTNode {
+  type: 'PurgeStatement';
+  /** TABLE | INDEX | RECYCLEBIN | DBA_RECYCLEBIN | TABLESPACE … */
+  target: 'RECYCLEBIN' | 'DBA_RECYCLEBIN' | 'TABLE' | 'INDEX' | 'TABLESPACE' | 'USER';
+  schema?: string;
+  name?: string;
+}
+
 export interface CreatePfileSpfileStatement extends ASTNode {
   type: 'CreatePfileSpfileStatement';
   /** What we're writing — PFILE or SPFILE. */
@@ -832,6 +850,7 @@ export type Statement =
   | StartupStatement | ShutdownStatement | AlterSystemStatement | AlterDatabaseStatement
   | CreateTablespaceStatement | DropTablespaceStatement | AlterTablespaceStatement
   | CreatePfileSpfileStatement | AnalyzeStatement
+  | FlashbackStatement | PurgeStatement
   | CreateDiskgroupStatement | DropDiskgroupStatement | AlterDiskgroupStatement
   // Explain
   | ExplainPlanStatement

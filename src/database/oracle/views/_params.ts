@@ -80,7 +80,13 @@ export function buildVParameter(instance: OracleInstance): ResultSet {
       { name: 'VALUE', dataType: oracleVarchar2(512) },
       { name: 'DISPLAY_VALUE', dataType: oracleVarchar2(512) },
       { name: 'ISDEFAULT', dataType: oracleVarchar2(9) },
+      { name: 'ISSES_MODIFIABLE', dataType: oracleVarchar2(5) },
+      { name: 'ISSYS_MODIFIABLE', dataType: oracleVarchar2(9) },
+      { name: 'ISINSTANCE_MODIFIABLE', dataType: oracleVarchar2(5) },
       { name: 'ISMODIFIED', dataType: oracleVarchar2(10) },
+      { name: 'ISADJUSTED', dataType: oracleVarchar2(5) },
+      { name: 'ISDEPRECATED', dataType: oracleVarchar2(5) },
+      { name: 'ISBASIC', dataType: oracleVarchar2(5) },
       { name: 'DESCRIPTION', dataType: oracleVarchar2(255) },
     ],
     Array.from(params.entries()).map(([name, value], idx) => {
@@ -88,7 +94,45 @@ export function buildVParameter(instance: OracleInstance): ResultSet {
       const isDefault = instance.isParameterModified(name) ? 'FALSE' : 'TRUE';
       const isModified = instance.isParameterModified(name) ? 'MODIFIED' : 'FALSE';
       const desc = PARAMETER_DESCRIPTIONS[name] ?? '';
-      return [idx + 1, name, type, value, value, isDefault, isModified, desc];
+      const mod = parameterModifiability(name);
+      return [
+        idx + 1, name, type, value, value, isDefault,
+        mod.ses, mod.sys, mod.instance,
+        isModified, 'FALSE', 'FALSE', mod.basic, desc,
+      ];
     })
   );
+}
+
+/**
+ * Static map of parameter modifiability. Falls back to a conservative
+ * "session=FALSE, system=DEFERRED, instance=FALSE" for unknown
+ * parameters — i.e. cannot be changed at all without a restart.
+ */
+function parameterModifiability(name: string): { ses: 'TRUE' | 'FALSE'; sys: 'IMMEDIATE' | 'DEFERRED' | 'FALSE'; instance: 'TRUE' | 'FALSE'; basic: 'TRUE' | 'FALSE' } {
+  const SES_TRUE = new Set([
+    'nls_language', 'nls_territory', 'nls_date_format', 'nls_currency',
+    'cursor_sharing', 'optimizer_mode', 'sql_trace', 'plsql_optimize_level',
+  ]);
+  const SYS_IMMEDIATE = new Set([
+    'log_archive_dest_1', 'log_archive_dest', 'db_recovery_file_dest',
+    'db_recovery_file_dest_size', 'audit_trail', 'sga_target',
+    'pga_aggregate_target', 'memory_target', 'shared_pool_size',
+    'db_cache_size', 'open_cursors', 'cursor_sharing', 'optimizer_mode',
+    'archive_log_mode',
+  ]);
+  const SYS_DEFERRED = new Set([
+    'undo_retention', 'audit_file_dest', 'diagnostic_dest',
+  ]);
+  const BASIC = new Set([
+    'db_name', 'db_unique_name', 'instance_name', 'service_names',
+    'control_files', 'sga_target', 'pga_aggregate_target',
+    'compatible', 'processes', 'sessions', 'undo_tablespace',
+  ]);
+  return {
+    ses: SES_TRUE.has(name) ? 'TRUE' : 'FALSE',
+    sys: SYS_IMMEDIATE.has(name) ? 'IMMEDIATE' : SYS_DEFERRED.has(name) ? 'DEFERRED' : 'FALSE',
+    instance: 'FALSE',
+    basic: BASIC.has(name) ? 'TRUE' : 'FALSE',
+  };
 }

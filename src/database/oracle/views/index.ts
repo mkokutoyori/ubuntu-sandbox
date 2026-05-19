@@ -297,6 +297,28 @@ import './v_pwfile_users';
 import './v_nonlogged_block';
 import './v_diag_problem';
 import './v_diag_incident';
+import './v_asm_disk_iostat';
+import './v_asm_attribute';
+import './dba_free_space_coalesced';
+import './dba_lobs';
+import './dba_lob_partitions';
+import './dba_lob_subpartitions';
+import './x_dbgalertext';
+import './dba_log_groups';
+import './dba_log_group_columns';
+import './v_undostat';
+import './v_rollstat';
+import './v_rollname';
+import './fga_log';
+import './v_recovery_status';
+import './v_timezone_file';
+import './dba_services';
+import './_parallel_query';
+import './_scheduler_extras';
+import './dba_dml_locks';
+import './dba_ddl_locks';
+import './v_recovery_file_status';
+import './v_dblink';
 
 // Core DBA_ views migrated out of OracleCatalog (one file per view).
 import './dba_users';

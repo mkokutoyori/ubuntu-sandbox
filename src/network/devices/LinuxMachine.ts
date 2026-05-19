@@ -829,6 +829,58 @@ export abstract class LinuxMachine extends EndHost {
     return this.executor.vfs.deleteFile(absPath);
   }
 
+  /**
+   * Idempotently install a systemd unit file and bring the service to
+   * the desired runtime state. The unit file lives under
+   * /etc/systemd/system so it takes precedence over vendor units and
+   * survives daemon-reload. Used by domain adapters (Oracle, ASM, …)
+   * that want to expose themselves to the standard Linux service tooling.
+   */
+  installSystemdUnit(
+    spec: {
+      name: string;
+      description: string;
+      execStart: string;
+      execStop?: string;
+      user?: string;
+      after?: string[];
+    },
+    desired: 'active' | 'inactive',
+  ): void {
+    const path = `/etc/systemd/system/${spec.name}.service`;
+    const lines: string[] = [
+      '[Unit]',
+      `Description=${spec.description}`,
+    ];
+    if (spec.after && spec.after.length > 0) {
+      lines.push(`After=${spec.after.map(a => a.endsWith('.target') || a.endsWith('.service') ? a : a + '.service').join(' ')}`);
+    }
+    lines.push(
+      '',
+      '[Service]',
+      'Type=simple',
+      `ExecStart=${spec.execStart}`,
+    );
+    if (spec.execStop) lines.push(`ExecStop=${spec.execStop}`);
+    if (spec.user) lines.push(`User=${spec.user}`);
+    lines.push(
+      'Restart=on-failure',
+      '',
+      '[Install]',
+      'WantedBy=multi-user.target',
+      '',
+    );
+    this.executor.vfs.writeFile(path, lines.join('\n'), 0, 0, 0o022);
+    const mgr = this.executor.serviceMgr;
+    mgr.daemonReload();
+    if (desired === 'active') {
+      mgr.enable(spec.name);
+      mgr.start(spec.name);
+    } else {
+      mgr.stop(spec.name);
+    }
+  }
+
   resolveAbsolutePath(path: string): string {
     return this.executor.vfs.normalizePath(path, this.executor.getCwd());
   }

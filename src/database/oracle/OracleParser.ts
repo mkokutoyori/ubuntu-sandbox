@@ -194,6 +194,14 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('BIGFILE') || this.matchKeyword('SMALLFILE')) {
       // BIGFILE / SMALLFILE are pure metadata hints; treat as a plain
       // CREATE TABLESPACE (the simulator doesn't enforce file-count limits).
+      if (this.matchKeyword('TEMPORARY')) {
+        this.expectKeyword('TABLESPACE');
+        return this.parseCreateTablespace(pos, true);
+      }
+      if (this.matchKeyword('UNDO')) {
+        this.expectKeyword('TABLESPACE');
+        return this.parseCreateTablespace(pos, false, true);
+      }
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos);
     }
@@ -493,6 +501,12 @@ export class OracleParser extends BaseParser {
     else if (this.matchKeyword('MOUNT')) mode = 'MOUNT';
     else if (this.matchKeyword('RESTRICT')) mode = 'RESTRICT';
     else if (this.matchKeyword('FORCE')) mode = 'FORCE';
+    else if (this.matchKeyword('UPGRADE') || this.matchKeyword('DOWNGRADE')) mode = 'MOUNT';
+    else if (this.matchKeyword('OPEN')) mode = undefined; // explicit OPEN — same as default
+    // Allow trailing optional clauses: RESTRICT, EXCLUSIVE, RECOVER,
+    // PFILE='…', etc. They have no effect on the simulator but should
+    // not break the parse.
+    this.consumeRestOfStatement();
     return { type: 'StartupStatement', position: pos, mode };
   }
 
@@ -522,6 +536,14 @@ export class OracleParser extends BaseParser {
     // ALTER SYSTEM ENABLE/DISABLE RESTRICTED SESSION
     if (this.matchKeyword('SET')) {
       const parameter = this.expectIdentifier();
+      // ALTER SYSTEM SET EVENTS '…'  — the EVENTS variant accepts a
+      // bare string literal (no `=`).
+      if (parameter.toUpperCase() === 'EVENTS' && this.check(TokenType.STRING_LITERAL)) {
+        const raw = this.advance().value;
+        const value = raw.slice(1, -1);
+        this.consumeRestOfStatement();
+        return { type: 'AlterSystemStatement', position: pos, action: 'SET', parameter, value };
+      }
       this.expect(TokenType.COMPARISON_OP, '=');
       let value: string;
       if (this.check(TokenType.STRING_LITERAL)) {
@@ -557,6 +579,8 @@ export class OracleParser extends BaseParser {
       return { type: 'AlterSystemStatement', position: pos, action: 'SWITCH LOGFILE' };
     }
     if (this.matchKeyword('CHECKPOINT')) {
+      // ALTER SYSTEM CHECKPOINT [GLOBAL | LOCAL] — both accepted.
+      this.matchKeyword('GLOBAL') || this.matchKeyword('LOCAL');
       return { type: 'AlterSystemStatement', position: pos, action: 'CHECKPOINT' };
     }
     if (this.matchKeyword('KILL')) {
@@ -581,6 +605,8 @@ export class OracleParser extends BaseParser {
       if (this.matchKeyword('ALL')) target = 'ALL';
       else if (this.matchKeyword('CURRENT')) target = 'CURRENT';
       else if (this.matchKeyword('NEXT')) target = 'NEXT';
+      else if (this.matchKeyword('START')) target = 'START';
+      else if (this.matchKeyword('STOP')) target = 'STOP';
       return { type: 'AlterSystemStatement', position: pos, action: 'ARCHIVE LOG', parameter: target };
     }
     if (this.matchKeyword('ENABLE')) {
@@ -903,12 +929,24 @@ export class OracleParser extends BaseParser {
     const schema = this.parseSchemaPrefix();
     const name = this.expectIdentifier();
     if (this.matchKeyword('REBUILD')) {
+      // Swallow optional ONLINE / TABLESPACE x / PARALLEL n / NOLOGGING — the
+      // simulator doesn't track index storage attributes yet.
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
       return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'REBUILD' };
     }
     if (this.matchKeyword('RENAME')) {
       this.expectKeyword('TO');
       const newName = this.expectIdentifier();
       return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'RENAME', newName };
+    }
+    if (this.matchKeyword('LOGGING') || this.matchKeyword('NOLOGGING')
+        || this.matchKeyword('MONITORING') || this.matchKeyword('NOMONITORING')
+        || this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')
+        || this.matchKeyword('COALESCE')
+        || this.matchKeyword('UNUSABLE') || this.matchKeyword('USABLE')) {
+      // Metadata flips that the simulator does not persist yet — swallow.
+      this.consumeRestOfStatement();
+      return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'REBUILD' };
     }
     throw this.error('Expected REBUILD or RENAME after ALTER INDEX');
   }

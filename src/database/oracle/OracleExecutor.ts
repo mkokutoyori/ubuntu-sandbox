@@ -429,6 +429,10 @@ export class OracleExecutor extends BaseExecutor {
       case 'CommitStatement': return this.executeCommit();
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
+      case 'SetTransactionStatement':
+        // The simulator does not differentiate transaction isolation
+        // levels — accept silently like a real ROLE / CONSTRAINTS toggle.
+        return emptyResult('Transaction set.');
       case 'StartupStatement': return this.executeStartup(statement);
       case 'ShutdownStatement': return this.executeShutdown(statement);
       case 'AlterSystemStatement': return this.executeAlterSystem(statement);
@@ -446,6 +450,17 @@ export class OracleExecutor extends BaseExecutor {
         // The simulator does not maintain CBO histograms, so ANALYZE is
         // a no-op that returns the same success message real Oracle does.
         return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
+      }
+      case 'FlashbackStatement': {
+        // The simulator does not time-travel — we accept the syntax so
+        // DBA scripts make progress and the alert log records intent.
+        const s = statement as import('../engine/parser/ASTNode').FlashbackStatement;
+        this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
+        return emptyResult(`Flashback complete.`);
+      }
+      case 'PurgeStatement': {
+        // Recyclebin is not modeled — the catalog is permanent.
+        return emptyResult('Recyclebin purged.');
       }
       case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
       case 'CreateDiskgroupStatement': return this.executeCreateDiskgroup(statement);

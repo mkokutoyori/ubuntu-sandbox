@@ -29,6 +29,8 @@ registerView({
         { name: 'BIGFILE', dataType: oracleVarchar2(3) },
         { name: 'ENCRYPTED', dataType: oracleVarchar2(3) },
         { name: 'FLASHBACK_ON', dataType: oracleVarchar2(3) },
+        { name: 'DEF_TAB_COMPRESSION', dataType: oracleVarchar2(8) },
+        { name: 'RETENTION', dataType: oracleVarchar2(11) },
       ],
       storage.getAllTablespaces().map(ts => [
         ts.name, ts.status, ts.type, ts.blockSize,
@@ -41,6 +43,8 @@ registerView({
         ts.bigfile ? 'YES' : 'NO',
         ts.encrypted ? 'YES' : 'NO',
         ts.flashbackOn ? 'YES' : 'NO',
+        'DISABLED', // DEF_TAB_COMPRESSION
+        ts.type === 'UNDO' ? 'NOGUARANTEE' : 'NOT APPLY', // RETENTION
       ])
     );
   },

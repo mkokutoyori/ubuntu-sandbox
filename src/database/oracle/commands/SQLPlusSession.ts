@@ -267,8 +267,17 @@ export class SQLPlusSession {
       return { output: ['SP2-0103: Nothing in SQL buffer to run.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // SET commands
+    // SET commands. Most are SQL*Plus settings (SET LINESIZE …), but
+    // a handful are real SQL statements: SET TRANSACTION, SET ROLE,
+    // SET CONSTRAINT[S]. Route those to the SQL engine.
     if (upper.startsWith('SET ')) {
+      const sqlSet = /^SET\s+(TRANSACTION|ROLE|CONSTRAINTS?)\b/i.exec(trimmed);
+      if (sqlSet) {
+        if (trimmed.endsWith(';')) return this.executeSql(trimmed.slice(0, -1));
+        this.sqlBuffer = trimmed;
+        this.lineNumber = 2;
+        return { output: [], exit: false, needsMoreInput: true, prompt: '  2  ' };
+      }
       return this.handleSet(trimmed.substring(4).trim());
     }
 
@@ -322,6 +331,19 @@ export class SQLPlusSession {
     // HOST / ! — delegate to host shell when a runner is wired.
     if (upper.startsWith('HOST ') || upper === 'HOST' || upper.startsWith('!')) {
       return this.handleHost(trimmed);
+    }
+
+    // ORADEBUG — internal diagnostic shell. The simulator emits a
+    // canned acknowledgement and returns a stub trace file name so
+    // DBA scripts that probe with `ORADEBUG SETMYPID; ORADEBUG DUMP …`
+    // don't drown in SP2-0734 noise.
+    if (upper.startsWith('ORADEBUG ') || upper === 'ORADEBUG' || upper === 'ORADEBUG;') {
+      return this.handleOradebug(trimmed);
+    }
+
+    // ARCHIVE LOG LIST — SQL*Plus status report on log mode + sequence.
+    if (upper === 'ARCHIVE LOG LIST' || upper === 'ARCHIVE LOG LIST;' || upper.startsWith('ARCHIVE LOG LIST ')) {
+      return this.handleArchiveLogList();
     }
 
     // EXEC / EXECUTE … — short-hand for an anonymous PL/SQL block.
@@ -477,6 +499,7 @@ export class SQLPlusSession {
       'GRANT', 'REVOKE', 'TRUNCATE', 'MERGE', 'WITH', 'COMMIT', 'ROLLBACK',
       'SAVEPOINT', 'COMMENT', 'EXPLAIN', 'AUDIT', 'NOAUDIT',
       'ANALYZE', 'LOCK', 'SET',
+      'FLASHBACK', 'PURGE',
     ];
     // Match the keyword followed by a space, the bare keyword, or the
     // keyword with a trailing semicolon (e.g. "COMMIT;" — real SQL*Plus
@@ -992,6 +1015,52 @@ export class SQLPlusSession {
   }
 
   // ── SPOOL ────────────────────────────────────────────────────────
+
+  // ── ORADEBUG ─────────────────────────────────────────────────────
+
+  private handleOradebug(line: string): SQLPlusResult {
+    const rest = line.replace(/;\s*$/, '').replace(/^ORADEBUG\s*/i, '').trim();
+    const upper = rest.toUpperCase();
+    const inst = this.db.instance;
+    if (upper === 'TRACEFILE_NAME') {
+      const path = `${inst.config.diagDest ?? '/u01/app/oracle'}/diag/rdbms/${inst.config.sid.toLowerCase()}/${inst.config.sid}/trace/${inst.config.sid.toLowerCase()}_ora_${process.pid ?? 1000}.trc`;
+      return { output: [path], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (upper.startsWith('SETMYPID')) {
+      return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (upper.startsWith('SETOSPID') || upper.startsWith('SETORAPID')) {
+      return { output: ['Oracle pid: 1, Unix process pid: 1000, image: oracle@localhost'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (upper.startsWith('DUMP ') || upper.startsWith('EVENT ') || upper.startsWith('SESSION_EVENT')
+        || upper.startsWith('SHORT_STACK') || upper.startsWith('UNLIMIT') || upper.startsWith('SUSPEND')
+        || upper.startsWith('RESUME')) {
+      return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── ARCHIVE LOG LIST ─────────────────────────────────────────────
+
+  private handleArchiveLogList(): SQLPlusResult {
+    const inst = this.db.instance;
+    const params = inst.getAllParameters();
+    const dest = params.get('log_archive_dest') ?? params.get('log_archive_dest_1') ?? 'USE_DB_RECOVERY_FILE_DEST';
+    const format = params.get('log_archive_format') ?? 'arch_%t_%s_%r.arc';
+    const groups = inst.getRedoLogGroups();
+    const current = groups.find(g => g.status === 'CURRENT') ?? groups[0];
+    const currentSeq = current?.sequence ?? 1;
+    const lines = [
+      `Database log mode              ${inst.archiveLogMode ? 'Archive Mode' : 'No Archive Mode'}`,
+      `Automatic archival             ${inst.archiveLogMode ? 'Enabled' : 'Disabled'}`,
+      `Archive destination            ${dest}`,
+      `Archive format                 ${format}`,
+      `Oldest online log sequence     ${Math.max(1, currentSeq - groups.length + 1)}`,
+      `Next log sequence to archive   ${currentSeq}`,
+      `Current log sequence           ${currentSeq}`,
+    ];
+    return { output: lines, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
 
   // ── HOST / ! ────────────────────────────────────────────────────
 
