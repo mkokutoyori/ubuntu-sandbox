@@ -482,6 +482,7 @@ export class SQLPlusSession {
       'GRANT', 'REVOKE', 'TRUNCATE', 'MERGE', 'WITH', 'COMMIT', 'ROLLBACK',
       'SAVEPOINT', 'COMMENT', 'EXPLAIN', 'AUDIT', 'NOAUDIT',
       'ANALYZE', 'LOCK', 'SET',
+      'FLASHBACK', 'PURGE',
     ];
     // Match the keyword followed by a space, the bare keyword, or the
     // keyword with a trailing semicolon (e.g. "COMMIT;" — real SQL*Plus

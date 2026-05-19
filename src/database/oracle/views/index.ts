@@ -306,6 +306,10 @@ import './dba_lob_subpartitions';
 import './x_dbgalertext';
 import './dba_log_groups';
 import './dba_log_group_columns';
+import './v_undostat';
+import './v_rollstat';
+import './v_rollname';
+import './fga_log';
 
 // Core DBA_ views migrated out of OracleCatalog (one file per view).
 import './dba_users';

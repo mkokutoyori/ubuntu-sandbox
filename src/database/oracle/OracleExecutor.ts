@@ -447,6 +447,17 @@ export class OracleExecutor extends BaseExecutor {
         // a no-op that returns the same success message real Oracle does.
         return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
       }
+      case 'FlashbackStatement': {
+        // The simulator does not time-travel — we accept the syntax so
+        // DBA scripts make progress and the alert log records intent.
+        const s = statement as import('../engine/parser/ASTNode').FlashbackStatement;
+        this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
+        return emptyResult(`Flashback complete.`);
+      }
+      case 'PurgeStatement': {
+        // Recyclebin is not modeled — the catalog is permanent.
+        return emptyResult('Recyclebin purged.');
+      }
       case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
       case 'CreateDiskgroupStatement': return this.executeCreateDiskgroup(statement);
       case 'DropDiskgroupStatement': return this.executeDropDiskgroup(statement);

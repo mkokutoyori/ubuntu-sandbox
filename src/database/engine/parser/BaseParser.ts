@@ -81,6 +81,8 @@ export abstract class BaseParser {
         case 'ROLLBACK': return this.parseRollback();
         case 'SAVEPOINT': return this.parseSavepoint();
         case 'ANALYZE': return this.parseAnalyze();
+        case 'FLASHBACK': return this.parseFlashback();
+        case 'PURGE': return this.parsePurge();
       }
     }
 
@@ -1032,6 +1034,21 @@ export abstract class BaseParser {
       // no-ops since the simulator does not implement partitioning.
       this.consumeRestOfStatement();
       actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('LOGGING') || this.matchKeyword('NOLOGGING')) {
+      // Table-level (NO)LOGGING — pure metadata flag, no-op for now.
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('FORCE')) {
+      this.matchKeyword('LOGGING');
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('NO')) {
+      this.matchKeyword('FORCE'); this.matchKeyword('LOGGING');
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')) {
+      // Optional `PARALLEL n` — consume the number.
+      if (this.check(TokenType.NUMBER_LITERAL)) this.advance();
+      actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('CACHE') || this.matchKeyword('NOCACHE')) {
+      actions.push({ action: 'SHRINK_SPACE' });
     }
 
     return { type: 'AlterTableStatement', position: pos, schema, name, actions };
@@ -1210,6 +1227,64 @@ export abstract class BaseParser {
     // Swallow trailing options (FOR TABLE / FOR ALL COLUMNS / SAMPLE n PERCENT / ONLINE).
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
     return { type: 'AnalyzeStatement', position: pos, target, schema, name, action };
+  }
+
+  protected parseFlashback(): import('./ASTNode').FlashbackStatement {
+    const pos = this.current().position;
+    this.expectKeyword('FLASHBACK');
+    let target: 'DATABASE' | 'TABLE' = 'DATABASE';
+    let schema: string | undefined;
+    let name: string | undefined;
+    if (this.matchKeyword('TABLE')) {
+      target = 'TABLE';
+      name = this.expectIdentifier();
+      if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+    } else {
+      this.matchKeyword('DATABASE');
+    }
+    // Capture the trailing TO TIMESTAMP / TO SCN / TO BEFORE DROP / TO
+    // RESTORE POINT … clause verbatim — the simulator can't time-travel
+    // but we keep the textual record so audit dumps make sense.
+    const parts: string[] = [];
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      parts.push(this.advance().value);
+    }
+    return { type: 'FlashbackStatement', position: pos, target, schema, name, to: parts.join(' ') };
+  }
+
+  protected parsePurge(): import('./ASTNode').PurgeStatement {
+    const pos = this.current().position;
+    this.expectKeyword('PURGE');
+    if (this.matchKeyword('RECYCLEBIN')) return { type: 'PurgeStatement', position: pos, target: 'RECYCLEBIN' };
+    if (this.matchKeyword('DBA_RECYCLEBIN')
+        || (this.current().type === TokenType.IDENTIFIER && this.current().value.toUpperCase() === 'DBA_RECYCLEBIN'
+            && (this.advance(), true))) {
+      return { type: 'PurgeStatement', position: pos, target: 'DBA_RECYCLEBIN' };
+    }
+    if (this.matchKeyword('TABLE')) {
+      let name = this.expectIdentifier();
+      let schema: string | undefined;
+      if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+      return { type: 'PurgeStatement', position: pos, target: 'TABLE', schema, name };
+    }
+    if (this.matchKeyword('INDEX')) {
+      let name = this.expectIdentifier();
+      let schema: string | undefined;
+      if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+      return { type: 'PurgeStatement', position: pos, target: 'INDEX', schema, name };
+    }
+    if (this.matchKeyword('TABLESPACE')) {
+      const name = this.expectIdentifier();
+      // Optional USER user_name clause.
+      this.consumeRestOfStatement();
+      return { type: 'PurgeStatement', position: pos, target: 'TABLESPACE', name };
+    }
+    if (this.matchKeyword('USER_RECYCLEBIN')) {
+      return { type: 'PurgeStatement', position: pos, target: 'USER' };
+    }
+    // Unknown variant — treat as USER recyclebin purge.
+    this.consumeRestOfStatement();
+    return { type: 'PurgeStatement', position: pos, target: 'USER' };
   }
 
   protected parseTruncate(): import('./ASTNode').TruncateTableStatement {

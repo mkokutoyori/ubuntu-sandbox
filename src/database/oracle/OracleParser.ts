@@ -925,6 +925,15 @@ export class OracleParser extends BaseParser {
       const newName = this.expectIdentifier();
       return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'RENAME', newName };
     }
+    if (this.matchKeyword('LOGGING') || this.matchKeyword('NOLOGGING')
+        || this.matchKeyword('MONITORING') || this.matchKeyword('NOMONITORING')
+        || this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')
+        || this.matchKeyword('COALESCE')
+        || this.matchKeyword('UNUSABLE') || this.matchKeyword('USABLE')) {
+      // Metadata flips that the simulator does not persist yet — swallow.
+      this.consumeRestOfStatement();
+      return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'REBUILD' };
+    }
     throw this.error('Expected REBUILD or RENAME after ALTER INDEX');
   }
 
