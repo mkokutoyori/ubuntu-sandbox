@@ -410,6 +410,29 @@ export class LinuxServiceManager {
     return this.units.get(name) ?? null;
   }
 
+  /** Find the unit whose main process is `pid` (used by the supervisor). */
+  findByMainPid(pid: number): ServiceUnit | null {
+    for (const u of this.units.values()) {
+      if (u.mainPid === pid) return u;
+    }
+    return null;
+  }
+
+  /** Transition a unit to `failed` and publish the failure event. */
+  markFailed(name: string, reason: string): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    const from = u.state;
+    u.state = 'failed';
+    u.mainPid = undefined;
+    u.activeSince = undefined;
+    this.emitStateChanged(name, from, 'failed');
+    this.bus?.publish({
+      topic: 'linux.service.failed',
+      payload: { deviceId: this.deviceId, name, reason },
+    });
+  }
+
   /** True if the service is currently active. */
   isActive(name: string): boolean {
     return this.units.get(name)?.state === 'active';

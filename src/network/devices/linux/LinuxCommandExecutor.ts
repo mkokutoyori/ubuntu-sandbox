@@ -24,6 +24,7 @@ import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
+import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -57,6 +58,8 @@ export class LinuxCommandExecutor {
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
   private commandHistory: string[] = [];
+  /** Reactive service supervisor (auto-restart per Restart= policy). */
+  private supervisor: LinuxServiceSupervisor | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
@@ -121,6 +124,8 @@ export class LinuxCommandExecutor {
   attachEventBus(bus: IEventBus, deviceId: string): void {
     this.processMgr.attachBus(bus, deviceId);
     this.serviceMgr.attachBus(bus, deviceId);
+    this.supervisor?.dispose();
+    this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
   }
 
   /** Set the network context for ip command support */
