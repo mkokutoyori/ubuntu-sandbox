@@ -25,6 +25,7 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmd
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
+import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -663,6 +664,13 @@ export class LinuxCommandExecutor {
         const r = cmdPidof(args, this.processCmdContext());
         return r;
       }
+
+      // Priorities / scheduling — set with one cmd, read back with another
+      case 'nice': return cmdNice(args, this.processCmdContext());
+      case 'renice': return cmdRenice(args, this.processCmdContext());
+      case 'chrt': return cmdChrt(args, this.processCmdContext());
+      case 'ionice': return cmdIonice(args, this.processCmdContext());
+      case 'taskset': return cmdTaskset(args, this.processCmdContext());
 
       // ps — process listing backed by ProcessManager
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };

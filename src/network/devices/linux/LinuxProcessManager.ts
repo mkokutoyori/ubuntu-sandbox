@@ -88,6 +88,16 @@ export interface ProcessInfo {
   exe: string;
   /** Service unit that owns this process, if any. */
   serviceName?: string;
+  /** Scheduling policy (chrt). Defaults to SCHED_OTHER. */
+  schedPolicy?: string;
+  /** Real-time scheduling priority (chrt). 0 for SCHED_OTHER. */
+  rtPriority?: number;
+  /** I/O scheduling class (ionice). Defaults to best-effort. */
+  ioClass?: string;
+  /** I/O scheduling class data 0..7 (ionice). */
+  ioClassData?: number;
+  /** CPU affinity mask as a list of CPU indices (taskset). */
+  cpuAffinity?: number[];
 }
 
 /** Options for spawning a new process. */

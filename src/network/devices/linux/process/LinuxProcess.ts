@@ -38,6 +38,11 @@ export class LinuxProcess implements ProcessInfo {
   cwd!: string;
   exe!: string;
   serviceName?: string;
+  schedPolicy?: string;
+  rtPriority?: number;
+  ioClass?: string;
+  ioClassData?: number;
+  cpuAffinity?: number[];
 
   constructor(init: ProcessInfo) {
     Object.assign(this, init);
