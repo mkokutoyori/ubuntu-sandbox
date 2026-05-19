@@ -24,6 +24,7 @@ registerView({
         { name: 'EMPTY_BLOCKS', dataType: oracleNumber(20) },
         { name: 'AVG_SPACE', dataType: oracleNumber(10) },
         { name: 'AVG_ROW_LEN', dataType: oracleNumber(10) },
+        { name: 'CHAIN_CNT', dataType: oracleNumber(20) },
         { name: 'LAST_ANALYZED', dataType: oracleDate() },
         { name: 'LOGGING', dataType: oracleVarchar2(3) },
         { name: 'PARTITIONED', dataType: oracleVarchar2(3) },
@@ -36,6 +37,7 @@ registerView({
           t.schema, t.name, t.tablespace ?? 'USERS', t.rowCount,
           blocks, Math.max(0, blocks - 1),
           1000, 200,
+          0,                  // CHAIN_CNT
           SEED_TIME,
           'YES', 'NO', 'N',
           'VALID',

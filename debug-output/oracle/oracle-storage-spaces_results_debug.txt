@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-storage-spaces
-Generated: 2026-05-18T22:50:38.126Z
+Generated: 2026-05-18T22:55:43.413Z
 Topology:  LinuxServer ora-stor — Oracle ORCL OPEN
 Total commands: 371
 ============================================================
@@ -429,36 +429,36 @@ SQL [76/371]> ALTER DATABASE DEFAULT TABLESPACE users;
 --- [77] § segments ---
 SQL [77/371]> SELECT * FROM dba_segments WHERE rownum < 30 ORDER BY bytes DESC;
   
-  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  --------- ------------------------- -------------- ------------ --------------- ----- ------ -------
-  FCUBSLIVE CLTB_ACCOUNT_SCHEDULES                   TABLE        USERS           5800  1      1      
-  FCUBSLIVE ACTB_ACCBAL_HISTORY                      TABLE        USERS           5000  1      1      
-  FCUBSLIVE ACTB_HISTORY                             TABLE        USERS           4800  1      1      
-  HR        EMPLOYEES                                TABLE        USERS           4000  1      1      
-  FCUBSLIVE STTM_CUST_ACCOUNT                        TABLE        USERS           4000  1      1      
-  FCUBSLIVE STTB_ACCOUNT                             TABLE        USERS           4000  1      1      
-  HR        JOBS                                     TABLE        USERS           3800  1      1      
-  SCOTT     EMP                                      TABLE        USERS           2800  1      1      
-  FCUBSLIVE CYTB_RATES_HISTORY                       TABLE        USERS           2800  1      1      
-  FCUBSLIVE STTM_CUSTOMER                            TABLE        USERS           2400  1      1      
-  FCUBSLIVE STTM_KYC_MASTER                          TABLE        USERS           2400  1      1      
-  HR        DEPARTMENTS                              TABLE        USERS           2200  1      1      
-  HR        COUNTRIES                                TABLE        USERS           2000  1      1      
-  HR        LOCATIONS                                TABLE        USERS           1600  1      1      
+  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  --------- ------------------------- -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
+  FCUBSLIVE CLTB_ACCOUNT_SCHEDULES                   TABLE        USERS           5800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE ACTB_ACCBAL_HISTORY                      TABLE        USERS           5000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE ACTB_HISTORY                             TABLE        USERS           4800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        EMPLOYEES                                TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_CUST_ACCOUNT                        TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTB_ACCOUNT                             TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        JOBS                                     TABLE        USERS           3800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     EMP                                      TABLE        USERS           2800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE CYTB_RATES_HISTORY                       TABLE        USERS           2800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_CUSTOMER                            TABLE        USERS           2400  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_KYC_MASTER                          TABLE        USERS           2400  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        DEPARTMENTS                              TABLE        USERS           2200  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        COUNTRIES                                TABLE        USERS           2000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        LOCATIONS                                TABLE        USERS           1600  1      1       65536          1048576     1           2147483645  0            DEFAULT    
   
-  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  --------- ------------------------- -------------- ------------ --------------- ----- ------ -------
-  FCUBSLIVE STTM_KYC_RETAIL                          TABLE        USERS           1600  1      1      
-  FCUBSLIVE FBTB_TILL_TXN_DETAIL_HIST                TABLE        USERS           1400  1      1      
-  FCUBSLIVE SMTB_USER                                TABLE        USERS           1200  1      1      
-  HR        JOB_HISTORY                              TABLE        USERS           1000  1      1      
-  SCOTT     SALGRADE                                 TABLE        USERS           1000  1      1      
-  FCUBSLIVE DETB_RTL_TELLER                          TABLE        USERS           1000  1      1      
-  HR        REGIONS                                  TABLE        USERS           800   1      1      
-  SCOTT     DEPT                                     TABLE        USERS           800   1      1      
-  FCUBSLIVE CLTB_ACCOUNT_APPS_MASTER                 TABLE        USERS           600   1      1      
-  SYS       DUAL                                     TABLE        SYSTEM          200   1      1      
-  SCOTT     BONUS                                    TABLE        USERS           0     0      1      
+  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  --------- ------------------------- -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
+  FCUBSLIVE STTM_KYC_RETAIL                          TABLE        USERS           1600  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE FBTB_TILL_TXN_DETAIL_HIST                TABLE        USERS           1400  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE SMTB_USER                                TABLE        USERS           1200  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        JOB_HISTORY                              TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     SALGRADE                                 TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE DETB_RTL_TELLER                          TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        REGIONS                                  TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     DEPT                                     TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE CLTB_ACCOUNT_APPS_MASTER                 TABLE        USERS           600   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SYS       DUAL                                     TABLE        SYSTEM          200   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     BONUS                                    TABLE        USERS           0     0      1       65536          1048576     1           2147483645  0            DEFAULT    
   
   25 rows selected.
 
@@ -552,62 +552,63 @@ SQL [81/371]> SELECT owner, segment_name, COUNT(*) AS extents FROM dba_extents G
 
 SQL [82/371]> SELECT * FROM dba_segments WHERE segment_type LIKE 'TABLE%' AND rownum < 30;
   
-  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  --------- ------------------------- -------------- ------------ --------------- ----- ------ -------
-  SYS       DUAL                                     TABLE        SYSTEM          200   1      1      
-  HR        REGIONS                                  TABLE        USERS           800   1      1      
-  HR        COUNTRIES                                TABLE        USERS           2000  1      1      
-  HR        LOCATIONS                                TABLE        USERS           1600  1      1      
-  HR        DEPARTMENTS                              TABLE        USERS           2200  1      1      
-  HR        JOBS                                     TABLE        USERS           3800  1      1      
-  HR        EMPLOYEES                                TABLE        USERS           4000  1      1      
-  HR        JOB_HISTORY                              TABLE        USERS           1000  1      1      
-  SCOTT     DEPT                                     TABLE        USERS           800   1      1      
-  SCOTT     EMP                                      TABLE        USERS           2800  1      1      
-  SCOTT     BONUS                                    TABLE        USERS           0     0      1      
-  SCOTT     SALGRADE                                 TABLE        USERS           1000  1      1      
-  FCUBSLIVE STTM_CUSTOMER                            TABLE        USERS           2400  1      1      
-  FCUBSLIVE STTM_CUST_ACCOUNT                        TABLE        USERS           4000  1      1      
+  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  --------- ------------------------- -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
+  SYS       DUAL                                     TABLE        SYSTEM          200   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        REGIONS                                  TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        COUNTRIES                                TABLE        USERS           2000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        LOCATIONS                                TABLE        USERS           1600  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        DEPARTMENTS                              TABLE        USERS           2200  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        JOBS                                     TABLE        USERS           3800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        EMPLOYEES                                TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR        JOB_HISTORY                              TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     DEPT                                     TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     EMP                                      TABLE        USERS           2800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     BONUS                                    TABLE        USERS           0     0      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT     SALGRADE                                 TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_CUSTOMER                            TABLE        USERS           2400  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_CUST_ACCOUNT                        TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
   
-  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  --------- ------------------------- -------------- ------------ --------------- ----- ------ -------
-  FCUBSLIVE STTB_ACCOUNT                             TABLE        USERS           4000  1      1      
-  FCUBSLIVE STTM_KYC_MASTER                          TABLE        USERS           2400  1      1      
-  FCUBSLIVE STTM_KYC_RETAIL                          TABLE        USERS           1600  1      1      
-  FCUBSLIVE SMTB_USER                                TABLE        USERS           1200  1      1      
-  FCUBSLIVE ACTB_HISTORY                             TABLE        USERS           4800  1      1      
-  FCUBSLIVE ACTB_ACCBAL_HISTORY                      TABLE        USERS           5000  1      1      
-  FCUBSLIVE CLTB_ACCOUNT_APPS_MASTER                 TABLE        USERS           600   1      1      
-  FCUBSLIVE CLTB_ACCOUNT_SCHEDULES                   TABLE        USERS           5800  1      1      
-  FCUBSLIVE CYTB_RATES_HISTORY                       TABLE        USERS           2800  1      1      
-  FCUBSLIVE DETB_RTL_TELLER                          TABLE        USERS           1000  1      1      
-  FCUBSLIVE FBTB_TILL_TXN_DETAIL_HIST                TABLE        USERS           1400  1      1      
+  OWNER     SEGMENT_NAME              PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  --------- ------------------------- -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
+  FCUBSLIVE STTB_ACCOUNT                             TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_KYC_MASTER                          TABLE        USERS           2400  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE STTM_KYC_RETAIL                          TABLE        USERS           1600  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE SMTB_USER                                TABLE        USERS           1200  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE ACTB_HISTORY                             TABLE        USERS           4800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE ACTB_ACCBAL_HISTORY                      TABLE        USERS           5000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE CLTB_ACCOUNT_APPS_MASTER                 TABLE        USERS           600   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE CLTB_ACCOUNT_SCHEDULES                   TABLE        USERS           5800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE CYTB_RATES_HISTORY                       TABLE        USERS           2800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE DETB_RTL_TELLER                          TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  FCUBSLIVE FBTB_TILL_TXN_DETAIL_HIST                TABLE        USERS           1400  1      1       65536          1048576     1           2147483645  0            DEFAULT    
   
   25 rows selected.
 
 SQL [83/371]> SELECT * FROM dba_segments WHERE segment_type LIKE 'INDEX%' AND rownum < 30;
   
-  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  ----- ------------ -------------- ------------ --------------- ----- ------ -------
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
 
 SQL [84/371]> SELECT * FROM dba_segments WHERE segment_type = 'LOBSEGMENT';
   
-  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  ----- ------------ -------------- ------------ --------------- ----- ------ -------
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
 
 SQL [85/371]> SELECT * FROM dba_segments WHERE segment_type = 'LOBINDEX';
   
-  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  ----- ------------ -------------- ------------ --------------- ----- ------ -------
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
 
 SQL [86/371]> SELECT * FROM dba_segments WHERE partition_name IS NOT NULL AND rownum < 30;
   
-  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  ----- ------------ -------------- ------------ --------------- ----- ------ -------
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
 
 SQL [87/371]> SELECT * FROM dba_segments WHERE buffer_pool != 'DEFAULT' AND rownum < 30;
-  ERROR:
-  ORA-00904: "BUFFER_POOL": invalid identifier
+  
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
 
 
 --- [88] § shrink + move + compress ---
@@ -620,50 +621,52 @@ SQL [89/371]> INSERT INTO hr.tmp_for_shrink SELECT level, LPAD('x', 200, 'x') FR
   ORA-01400: cannot insert NULL into ("HR"."TMP_FOR_SHRINK"."ID")
 
 SQL [90/371]> COMMIT;
-  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+  
+  Commit complete.
 
 SQL [91/371]> DELETE FROM hr.tmp_for_shrink WHERE MOD(id, 2) = 0;
   
   0 rows deleted.
 
 SQL [92/371]> COMMIT;
-  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+  
+  Commit complete.
 
 SQL [93/371]> ALTER TABLE hr.tmp_for_shrink ENABLE ROW MOVEMENT;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: ENABLE
+  
+  Table altered.
 
 SQL [94/371]> ALTER TABLE hr.tmp_for_shrink SHRINK SPACE COMPACT;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: SHRINK
+  
+  Table altered.
 
 SQL [95/371]> ALTER TABLE hr.tmp_for_shrink SHRINK SPACE;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: SHRINK
+  
+  Table altered.
 
 SQL [96/371]> ALTER TABLE hr.tmp_for_shrink SHRINK SPACE CASCADE;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: SHRINK
+  
+  Table altered.
 
 SQL [97/371]> ALTER TABLE hr.tmp_for_shrink DISABLE ROW MOVEMENT;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: DISABLE
+  
+  Table altered.
 
 SQL [98/371]> ALTER TABLE hr.tmp_for_shrink MOVE TABLESPACE users;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+  
+  Table altered.
 
 SQL [99/371]> ALTER TABLE hr.tmp_for_shrink MOVE COMPRESS FOR QUERY HIGH;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+  
+  Table altered.
 
 SQL [100/371]> ALTER TABLE hr.tmp_for_shrink MOVE NOCOMPRESS;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+  
+  Table altered.
 
 SQL [101/371]> ALTER TABLE hr.tmp_for_shrink MOVE ONLINE;
-  ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+  
+  Table altered.
 
 SQL [102/371]> ALTER TABLE hr.tmp_for_shrink ROW STORE COMPRESS ADVANCED;
   ERROR:
@@ -750,18 +753,18 @@ SQL [113/371]> SELECT * FROM v$tablespace_thread;
 
 SQL [114/371]> SELECT * FROM dba_segments ORDER BY extents DESC FETCH FIRST 10 ROWS ONLY;
   
-  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  ----- ------------ -------------- ------------ --------------- ----- ------ -------
-  SYS   DUAL                        TABLE        SYSTEM          200   1      1      
-  HR    REGIONS                     TABLE        USERS           800   1      1      
-  HR    COUNTRIES                   TABLE        USERS           2000  1      1      
-  HR    LOCATIONS                   TABLE        USERS           1600  1      1      
-  HR    DEPARTMENTS                 TABLE        USERS           2200  1      1      
-  HR    JOBS                        TABLE        USERS           3800  1      1      
-  HR    EMPLOYEES                   TABLE        USERS           4000  1      1      
-  HR    JOB_HISTORY                 TABLE        USERS           1000  1      1      
-  SCOTT DEPT                        TABLE        USERS           800   1      1      
-  SCOTT EMP                         TABLE        USERS           2800  1      1      
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
+  SYS   DUAL                        TABLE        SYSTEM          200   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    REGIONS                     TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    COUNTRIES                   TABLE        USERS           2000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    LOCATIONS                   TABLE        USERS           1600  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    DEPARTMENTS                 TABLE        USERS           2200  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    JOBS                        TABLE        USERS           3800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    EMPLOYEES                   TABLE        USERS           4000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    JOB_HISTORY                 TABLE        USERS           1000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT DEPT                        TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  SCOTT EMP                         TABLE        USERS           2800  1      1       65536          1048576     1           2147483645  0            DEFAULT    
   
   10 rows selected.
 
@@ -888,22 +891,27 @@ SQL [135/371]> SELECT table_name, num_rows, blocks, empty_blocks, avg_space, avg
   ORA-00904: "CHAIN_CNT": invalid identifier
 
 SQL [136/371]> EXEC DBMS_STATS.GATHER_TABLE_STATS('HR','EMPLOYEES');
-  SP2-0734: unknown command beginning "EXEC DBMS_STATS.GATH..." - rest of line ignored.
+  PL/SQL procedure successfully completed.
 
 SQL [137/371]> ANALYZE TABLE hr.employees COMPUTE STATISTICS;
-  SP2-0734: unknown command beginning "ANALYZE TABLE hr.emp..." - rest of line ignored.
+  
+  Table analyzed.
 
 SQL [138/371]> ANALYZE TABLE hr.employees ESTIMATE STATISTICS;
-  SP2-0734: unknown command beginning "ANALYZE TABLE hr.emp..." - rest of line ignored.
+  
+  Table analyzed.
 
 SQL [139/371]> ANALYZE TABLE hr.employees VALIDATE STRUCTURE;
-  SP2-0734: unknown command beginning "ANALYZE TABLE hr.emp..." - rest of line ignored.
+  
+  Table analyzed.
 
 SQL [140/371]> ANALYZE TABLE hr.employees VALIDATE STRUCTURE CASCADE;
-  SP2-0734: unknown command beginning "ANALYZE TABLE hr.emp..." - rest of line ignored.
+  
+  Table analyzed.
 
 SQL [141/371]> ANALYZE TABLE hr.employees LIST CHAINED ROWS INTO chained_rows;
-  SP2-0734: unknown command beginning "ANALYZE TABLE hr.emp..." - rest of line ignored.
+  
+  Table analyzed.
 
 
 --- [142] § partitioning ---
@@ -924,7 +932,8 @@ SQL [145/371]> INSERT INTO hr.sales_part VALUES (3, DATE '2025-01-10', 'APAC', 3
   ORA-00942: table or view does not exist
 
 SQL [146/371]> COMMIT;
-  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+  
+  Commit complete.
 
 SQL [147/371]> SELECT * FROM dba_tab_partitions WHERE table_name = 'SALES_PART';
   
@@ -947,7 +956,7 @@ SQL [150/371]> ALTER TABLE hr.sales_part MODIFY PARTITION p0 SHRINK SPACE;
 
 SQL [151/371]> ALTER TABLE hr.sales_part MOVE PARTITION FOR (DATE '2024-05-15') TABLESPACE users;
   ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+  ORA-00942: table or view does not exist
 
 SQL [152/371]> ALTER TABLE hr.sales_part TRUNCATE PARTITION FOR (DATE '2024-05-15');
   ERROR:
@@ -980,7 +989,8 @@ SQL [158/371]> INSERT INTO hr.with_lob VALUES (1, 'long text here', NULL);
   ORA-00942: table or view does not exist
 
 SQL [159/371]> COMMIT;
-  SP2-0734: unknown command beginning "COMMIT;..." - rest of line ignored.
+  
+  Commit complete.
 
 SQL [160/371]> SELECT * FROM dba_lobs WHERE owner = 'HR' AND table_name = 'WITH_LOB';
   ERROR:
@@ -1000,7 +1010,7 @@ SQL [163/371]> ALTER TABLE hr.with_lob MODIFY LOB (payload) (RETENTION);
 
 SQL [164/371]> ALTER TABLE hr.with_lob MOVE LOB (payload) STORE AS SECUREFILE (TABLESPACE users);
   ERROR:
-  ORA-00900: invalid SQL statement: Unexpected token: MOVE
+  ORA-00942: table or view does not exist
 
 SQL [165/371]> DROP TABLE hr.with_lob PURGE;
   ERROR:
@@ -1078,7 +1088,7 @@ SQL [181/371]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS DATABASE_STATUS INSTANCE_ROLE   
   --------------- ------------- --------- ---------- ------------------------ ------ --------------- ----------------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-18T22:50:38.047Z OPEN   ACTIVE          PRIMARY_INSTANCE
+  1               ORCL          localhost 19.0.0.0.0 2026-05-18T22:55:43.332Z OPEN   ACTIVE          PRIMARY_INSTANCE
   
   1 row selected.
 
@@ -1086,7 +1096,7 @@ SQL [182/371]> SELECT * FROM v$database WHERE rownum < 5;
   
   DBID       NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME   
   ---------- ---- ------------------------ ------------ ---------- ------------- ----------------
-  1234567890 ORCL 2026-05-18T22:50:38.165Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit
+  1234567890 ORCL 2026-05-18T22:55:43.454Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit
   
   1 row selected.
 
@@ -1122,10 +1132,10 @@ SQL [186/371]> SELECT * FROM v$session WHERE rownum < 5;
   
   SID SERIAL# USERNAME STATUS OSUSER MACHINE   PROGRAM                 TYPE       LOGON_TIME               SCHEMANAME COMMAND SQL_ID TERMINAL BLOCKING_SESSION SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID EVENT      WAIT_CLASS SECONDS_IN_WAIT STATE   LAST_CALL_ET SQL_TRACE RESOURCE_CONSUMER_GROUP SERVICE_NAME MODULE ACTION CLIENT_INFO PADDR TADDR LOCKWAIT
   --- ------- -------- ------ ------ --------- ----------------------- ---------- ------------------------ ---------- ------- ------ -------- ---------------- ---------------- -------------- ----------- ---------- ---------- --------------- ------- ------------ --------- ----------------------- ------------ ------ ------ ----------- ----- ----- --------
-  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-18T22:50:38.165Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-18T22:50:38.165Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-18T22:50:38.165Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-18T22:50:38.165Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-18T22:55:43.454Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-18T22:55:43.454Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-18T22:55:43.454Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-18T22:55:43.454Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
   
   4 rows selected.
 
@@ -1235,7 +1245,7 @@ SQL [196/371]> SELECT * FROM v$pgastat WHERE rownum < 5;
   aggregate PGA target parameter 134217728 bytes
   aggregate PGA auto target      120795955 bytes
   global memory bound            13421772  bytes
-  total PGA inuse                30998528  bytes
+  total PGA inuse                32112640  bytes
   
   4 rows selected.
 
@@ -1284,7 +1294,7 @@ SQL [201/371]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
   ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
   -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
-  3  DEFAULT 16384     0                0                0              12              726           726             286            
+  3  DEFAULT 16384     0                0                0              16              745           745             286            
   
   1 row selected.
 
@@ -1314,10 +1324,10 @@ SQL [204/371]> SELECT * FROM v$shared_pool_advice WHERE rownum < 5;
   
   SHARED_POOL_SIZE_FOR_ESTIMATE SHARED_POOL_SIZE_FACTOR ESTD_LC_SIZE ESTD_LC_MEMORY_OBJECTS ESTD_LC_TIME_SAVED ESTD_LC_TIME_SAVED_FACTOR
   ----------------------------- ----------------------- ------------ ---------------------- ------------------ -------------------------
-  134217728                     0.5                     33554432     16384                  2415               0.5                      
-  201326592                     0.75                    50331648     24576                  3622.5             0.75                     
-  268435456                     1                       67108864     32768                  4830               1                        
-  335544320                     1.25                    83886080     40960                  4830               1                        
+  134217728                     0.5                     33554432     16384                  2515               0.5                      
+  201326592                     0.75                    50331648     24576                  3772.5             0.75                     
+  268435456                     1                       67108864     32768                  5030               1                        
+  335544320                     1.25                    83886080     40960                  5030               1                        
   
   4 rows selected.
 
@@ -1325,7 +1335,7 @@ SQL [205/371]> SELECT * FROM v$librarycache WHERE rownum < 5;
   
   NAMESPACE       GETS GETHITS GETHITRATIO PINS PINHITS PINHITRATIO RELOADS INVALIDATIONS
   --------------- ---- ------- ----------- ---- ------- ----------- ------- -------------
-  SQL AREA        484  0       0           462  462     1           0       0            
+  SQL AREA        504  0       0           481  481     1           0       0            
   TABLE/PROCEDURE 25   25      1           25   25      1           0       0            
   BODY            25   25      1           25   25      1           0       0            
   TRIGGER         25   25      1           25   25      1           0       0            
@@ -1355,10 +1365,10 @@ SQL [208/371]> SELECT * FROM v$rowcache WHERE rownum < 5;
   
   CACHE# TYPE   PARAMETER      COUNT USAGE FIXED GETS GETMISSES SCANS SCANMISSES MODIFICATIONS FLUSHES
   ------ ------ -------------- ----- ----- ----- ---- --------- ----- ---------- ------------- -------
-  0      PARENT dc_users       100   80    16    44   44        0     0          0             0      
-  1      PARENT dc_objects     100   80    16    44   44        0     0          0             0      
-  2      PARENT dc_segments    100   80    16    44   44        0     0          0             0      
-  3      PARENT dc_tablespaces 100   80    16    44   44        0     0          0             0      
+  0      PARENT dc_users       100   80    16    46   46        0     0          0             0      
+  1      PARENT dc_objects     100   80    16    46   46        0     0          0             0      
+  2      PARENT dc_segments    100   80    16    46   46        0     0          0             0      
+  3      PARENT dc_tablespaces 100   80    16    46   46        0     0          0             0      
   
   4 rows selected.
 
@@ -1379,7 +1389,7 @@ SQL [211/371]> SELECT * FROM v$sql WHERE rownum < 5;
   
   SQL_ID      SQL_TEXT           EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ----------- ------------------ ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  abc123def45 SELECT 1 FROM DUAL 1          100          50       1           0          1              SYS                 2026-05-18T22:50:38
+  abc123def45 SELECT 1 FROM DUAL 1          100          50       1           0          1              SYS                 2026-05-18T22:55:43
   
   1 row selected.
 
@@ -1387,10 +1397,10 @@ SQL [212/371]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  0xu46pua3xqw0 0               1           1          1       686          549      1           0          0              SYS                 2026-05-18T22:50:38.065Z
-  1rncocva3xqw0 0               1           1          1       103          82       1           0          0              SYS                 2026-05-18T22:50:38.067Z
-  1cz97fza3xqw0 0               1           1          1       167          133      1           0          0              SYS                 2026-05-18T22:50:38.068Z
-  0u6sevoa3xqw0 0               1           1          1       149          119      1           0          0              SYS                 2026-05-18T22:50:38.068Z
+  0xu46pua3xqw0 0               1           1          1       740          592      1           0          0              SYS                 2026-05-18T22:55:43.351Z
+  1rncocva3xqw0 0               1           1          1       106          85       1           0          0              SYS                 2026-05-18T22:55:43.353Z
+  1cz97fza3xqw0 0               1           1          1       226          181      1           0          0              SYS                 2026-05-18T22:55:43.353Z
+  0u6sevoa3xqw0 0               1           1          1       151          121      1           0          0              SYS                 2026-05-18T22:55:43.354Z
   
   4 rows selected.
 
@@ -1425,10 +1435,10 @@ SQL [216/371]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-18T22:50:23.176Z 2026-05-18T22:50:38.176Z 1500         2        2000      CPU Usage Per Sec    31    CentiSeconds Per Second
-  2026-05-18T22:50:23.176Z 2026-05-18T22:50:38.176Z 1500         2        2003      User Calls Per Sec   33    Calls Per Second       
-  2026-05-18T22:50:23.176Z 2026-05-18T22:50:38.176Z 1500         2        2007      Executions Per Sec   31    Executes Per Second    
-  2026-05-18T22:50:23.176Z 2026-05-18T22:50:38.176Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-18T22:55:28.465Z 2026-05-18T22:55:43.465Z 1500         2        2000      CPU Usage Per Sec    32    CentiSeconds Per Second
+  2026-05-18T22:55:28.465Z 2026-05-18T22:55:43.465Z 1500         2        2003      User Calls Per Sec   34    Calls Per Second       
+  2026-05-18T22:55:28.465Z 2026-05-18T22:55:43.465Z 1500         2        2007      Executions Per Sec   32    Executes Per Second    
+  2026-05-18T22:55:28.465Z 2026-05-18T22:55:43.465Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -1436,10 +1446,10 @@ SQL [217/371]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-18T22:49:38.177Z 2026-05-18T22:50:38.177Z 6000         2        2000      CPU Usage Per Sec    31    CentiSeconds Per Second
-  2026-05-18T22:49:38.177Z 2026-05-18T22:50:38.177Z 6000         2        2003      User Calls Per Sec   33    Calls Per Second       
-  2026-05-18T22:49:38.177Z 2026-05-18T22:50:38.177Z 6000         2        2007      Executions Per Sec   31    Executes Per Second    
-  2026-05-18T22:49:38.177Z 2026-05-18T22:50:38.177Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-18T22:54:43.466Z 2026-05-18T22:55:43.466Z 6000         2        2000      CPU Usage Per Sec    32    CentiSeconds Per Second
+  2026-05-18T22:54:43.466Z 2026-05-18T22:55:43.466Z 6000         2        2003      User Calls Per Sec   34    Calls Per Second       
+  2026-05-18T22:54:43.466Z 2026-05-18T22:55:43.466Z 6000         2        2007      Executions Per Sec   32    Executes Per Second    
+  2026-05-18T22:54:43.466Z 2026-05-18T22:55:43.466Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -1583,10 +1593,10 @@ SQL [236/371]> SELECT * FROM v$filestat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM AVGIOTIM
   ----- ------ ------- -------- --------- ------- -------- --------
-  1     0      98      167      98        0       980      100     
-  1     0      98      167      98        0       980      100     
-  1     0      98      167      98        0       980      100     
-  1     0      98      167      98        0       980      100     
+  1     0      102     171      102       0       1020     100     
+  1     0      102     171      102       0       1020     100     
+  1     0      102     171      102       0       1020     100     
+  1     0      102     171      102       0       1020     100     
   
   4 rows selected.
 
@@ -1594,7 +1604,7 @@ SQL [237/371]> SELECT * FROM v$tempstat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM
   ----- ------ ------- -------- --------- ------- --------
-  1     494    494     3952     3952      2470    2470    
+  1     513    513     4104     4104      2565    2565    
   
   1 row selected.
 
@@ -1745,9 +1755,9 @@ SQL [256/371]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-  1          ORCL           ORCL           2026-05-18T22:50:38.063Z 1028177519        
-  2          SYS$USERS      SYS$USERS      2026-05-18T22:50:38.063Z 1028177519        
-  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-18T22:50:38.063Z 1028177519        
+  1          ORCL           ORCL           2026-05-18T22:55:43.348Z 1028482804        
+  2          SYS$USERS      SYS$USERS      2026-05-18T22:55:43.348Z 1028482804        
+  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-18T22:55:43.348Z 1028482804        
   
   3 rows selected.
 
@@ -1755,9 +1765,9 @@ SQL [257/371]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-  1          ORCL           ORCL           ORCL 2026-05-18T22:50:38.063Z
-  2          SYS$USERS      SYS$USERS      ORCL 2026-05-18T22:50:38.063Z
-  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-18T22:50:38.063Z
+  1          ORCL           ORCL           ORCL 2026-05-18T22:55:43.348Z
+  2          SYS$USERS      SYS$USERS      ORCL 2026-05-18T22:55:43.348Z
+  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-18T22:55:43.348Z
   
   3 rows selected.
 
@@ -1772,8 +1782,8 @@ SQL [259/371]> SELECT * FROM v$mystat WHERE rownum < 5;
   --- ---------- -----
   100 0          1    
   100 1          1    
-  100 2          538  
-  100 3          536  
+  100 2          558  
+  100 3          553  
   
   4 rows selected.
 
@@ -1792,7 +1802,7 @@ SQL [261/371]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  100 912        912             0              286           3                  0                       
+  100 931        931             0              286           4                  0                       
   
   1 row selected.
 
@@ -1800,10 +1810,10 @@ SQL [262/371]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID STAT_ID    STAT_NAME               VALUE
   --- ---------- ----------------------- -----
-  100 3649082374 DB time                 49472
-  100 3712030189 DB CPU                  39584
-  100 1561673735 background elapsed time 12368
-  100 4157170894 background cpu time     9896 
+  100 3649082374 DB time                 54838
+  100 3712030189 DB CPU                  43871
+  100 1561673735 background elapsed time 13709
+  100 4157170894 background cpu time     10967
   
   4 rows selected.
 
@@ -1832,10 +1842,10 @@ SQL [266/371]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T22:50:38.046Z DEFAULT PASSWORD           
-  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T22:50:38.046Z DEFAULT PASSWORD           
-  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-18T22:50:38.046Z DEFAULT PASSWORD           
-  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T22:50:38.046Z DEFAULT PASSWORD           
+  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-18T22:55:43.331Z DEFAULT PASSWORD           
+  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-18T22:55:43.331Z DEFAULT PASSWORD           
+  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-18T22:55:43.331Z DEFAULT PASSWORD           
+  HR       3       OPEN                                 USERS              TEMP                 2026-05-18T22:55:43.331Z DEFAULT PASSWORD           
   
   4 rows selected.
 
@@ -1892,10 +1902,10 @@ SQL [272/371]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                  100                      VIEW        2026-05-18T22:50:38.047Z 2026-05-18T22:50:38.047Z 2026-05-18:22:50:38 VALID  N         N         N         1         Y                
-  SYS   V$INSTANCE                 101                      VIEW        2026-05-18T22:50:38.047Z 2026-05-18T22:50:38.047Z 2026-05-18:22:50:38 VALID  N         N         N         1         Y                
-  SYS   V$DATABASE                 102                      VIEW        2026-05-18T22:50:38.047Z 2026-05-18T22:50:38.047Z 2026-05-18:22:50:38 VALID  N         N         N         1         Y                
-  SYS   V$SESSION                  103                      VIEW        2026-05-18T22:50:38.047Z 2026-05-18T22:50:38.047Z 2026-05-18:22:50:38 VALID  N         N         N         1         Y                
+  SYS   V$VERSION                  100                      VIEW        2026-05-18T22:55:43.332Z 2026-05-18T22:55:43.332Z 2026-05-18:22:55:43 VALID  N         N         N         1         Y                
+  SYS   V$INSTANCE                 101                      VIEW        2026-05-18T22:55:43.332Z 2026-05-18T22:55:43.332Z 2026-05-18:22:55:43 VALID  N         N         N         1         Y                
+  SYS   V$DATABASE                 102                      VIEW        2026-05-18T22:55:43.332Z 2026-05-18T22:55:43.332Z 2026-05-18:22:55:43 VALID  N         N         N         1         Y                
+  SYS   V$SESSION                  103                      VIEW        2026-05-18T22:55:43.332Z 2026-05-18T22:55:43.332Z 2026-05-18:22:55:43 VALID  N         N         N         1         Y                
   
   4 rows selected.
 
@@ -1996,12 +2006,12 @@ SQL [285/371]> SELECT * FROM dba_errors WHERE rownum < 5;
 
 SQL [286/371]> SELECT * FROM dba_segments WHERE rownum < 5;
   
-  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS
-  ----- ------------ -------------- ------------ --------------- ----- ------ -------
-  SYS   DUAL                        TABLE        SYSTEM          200   1      1      
-  HR    REGIONS                     TABLE        USERS           800   1      1      
-  HR    COUNTRIES                   TABLE        USERS           2000  1      1      
-  HR    LOCATIONS                   TABLE        USERS           1600  1      1      
+  OWNER SEGMENT_NAME PARTITION_NAME SEGMENT_TYPE TABLESPACE_NAME BYTES BLOCKS EXTENTS INITIAL_EXTENT NEXT_EXTENT MIN_EXTENTS MAX_EXTENTS PCT_INCREASE BUFFER_POOL
+  ----- ------------ -------------- ------------ --------------- ----- ------ ------- -------------- ----------- ----------- ----------- ------------ -----------
+  SYS   DUAL                        TABLE        SYSTEM          200   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    REGIONS                     TABLE        USERS           800   1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    COUNTRIES                   TABLE        USERS           2000  1      1       65536          1048576     1           2147483645  0            DEFAULT    
+  HR    LOCATIONS                   TABLE        USERS           1600  1      1       65536          1048576     1           2147483645  0            DEFAULT    
   
   4 rows selected.
 
@@ -2118,17 +2128,17 @@ SQL [302/371]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                                                                                                                                                                                        STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-05-18T22:50:38.063Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                    LOGON         
-  oracle      SYS      localhost 2026-05-18T22:50:38.066Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-05-18T22:55:43.348Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                    LOGON         
+  oracle      SYS      localhost 2026-05-18T22:55:43.352Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) NOT NULL,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           CREATE TABLE  
-  oracle      SYS      localhost 2026-05-18T22:50:38.067Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-05-18T22:55:43.353Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) NOT NULL,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             CREATE TABLE  
-  oracle      SYS      localhost 2026-05-18T22:50:38.068Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-05-18T22:55:43.353Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) NOT NULL,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -2143,10 +2153,10 @@ SQL [303/371]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- --------- -------- ------------------------ ----------- --------- ----------- ----------
-  oracle      SYS      localhost pts/0    2026-05-18T22:50:38.063Z LOGON       5                     0         
-  oracle      SYS      localhost pts/0    2026-05-18T22:50:38.081Z LOGON       6                     0         
-  oracle      SYS      localhost pts/0    2026-05-18T22:50:38.083Z LOGON       7                     0         
-  oracle      SYS      localhost pts/0    2026-05-18T22:50:38.125Z LOGON       8                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T22:55:43.348Z LOGON       5                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T22:55:43.366Z LOGON       6                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T22:55:43.369Z LOGON       7                     0         
+  oracle      SYS      localhost pts/0    2026-05-18T22:55:43.412Z LOGON       8                     0         
   
   4 rows selected.
 
@@ -2154,17 +2164,17 @@ SQL [304/371]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                        OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-05-18T22:50:38.063Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                     LOGON          SYSDBA                1       
-  2026-05-18T22:50:38.066Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
+  2026-05-18T22:55:43.348Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                     LOGON          SYSDBA                1       
+  2026-05-18T22:55:43.352Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) NOT NULL,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           HR            REGIONS     CREATE TABLE                         2       
-  2026-05-18T22:50:38.067Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
+  2026-05-18T22:55:43.353Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) NOT NULL,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             HR            COUNTRIES   CREATE TABLE                         3       
-  2026-05-18T22:50:38.068Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
+  2026-05-18T22:55:43.353Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) NOT NULL,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -2184,10 +2194,10 @@ SQL [306/371]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                               
   ----------- --------- -------- ------------------------ ------------------------ ------------------------------------------------------
-  1           Info      NORMAL   2026-05-18T22:50:38.047Z 2026-05-18T22:50:39.047Z 2026-05-18 22:50:38: Starting ORACLE instance (normal)
-  2           Info      NORMAL   2026-05-18T22:50:38.062Z 2026-05-18T22:50:39.062Z 2026-05-18 22:50:38: Database mounted                 
-  3           Info      NORMAL   2026-05-18T22:50:38.062Z 2026-05-18T22:50:39.062Z 2026-05-18 22:50:38: Database opened                  
-  4           Info      NORMAL   2026-05-18T22:50:38.063Z 2026-05-18T22:50:39.063Z 2026-05-18 22:50:38: Logon: user=SYS sid=5 as SYSDBA  
+  1           Info      NORMAL   2026-05-18T22:55:43.332Z 2026-05-18T22:55:44.332Z 2026-05-18 22:55:43: Starting ORACLE instance (normal)
+  2           Info      NORMAL   2026-05-18T22:55:43.348Z 2026-05-18T22:55:44.348Z 2026-05-18 22:55:43: Database mounted                 
+  3           Info      NORMAL   2026-05-18T22:55:43.348Z 2026-05-18T22:55:44.348Z 2026-05-18 22:55:43: Database opened                  
+  4           Info      NORMAL   2026-05-18T22:55:43.348Z 2026-05-18T22:55:44.348Z 2026-05-18 22:55:43: Logon: user=SYS sid=5 as SYSDBA  
   
   4 rows selected.
 
@@ -2217,7 +2227,7 @@ SQL [309/371]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-18T21:50:38.198Z 2026-05-18T22:50:38.198Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-18T21:55:43.487Z 2026-05-18T22:55:43.487Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 
@@ -2227,8 +2237,8 @@ SQL [310/371]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   ------- ---------- --------------- ------- ------------------------- -----
   1       1234567890 1               0       logons cumulative         1    
   1       1234567890 1               1       logons current            1    
-  1       1234567890 1               2       opened cursors cumulative 589  
-  1       1234567890 1               3       opened cursors current    510  
+  1       1234567890 1               2       opened cursors cumulative 609  
+  1       1234567890 1               3       opened cursors current    535  
   
   4 rows selected.
 
@@ -2236,10 +2246,10 @@ SQL [311/371]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-  1       0e7vcuaa3xqw0 0               1                21                 17             1                 0                1                   
-  1       1aj1lm5a3xqw0 0               1                15                 12             1                 0                1                   
-  1       0aclznxa3xqw0 0               1                11                 9              1                 0                1                   
-  1       1ukyerra3xqw0 0               1                9                  7              1                 0                1                   
+  1       1grudpwa3xqw0 0               1                29                 23             1                 0                1                   
+  1       1bfet7ya3xqw0 0               1                24                 19             1                 0                1                   
+  1       1crczcga3xqw0 0               1                22                 17             1                 0                1                   
+  1       13q2o7va3xqw0 0               1                20                 16             1                 0                1                   
   
   4 rows selected.
 
@@ -2629,7 +2639,7 @@ SQL [367/371]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-05-18 22:50:38
+  2026-05-18 22:55:43
   
   1 row selected.
 
@@ -2637,7 +2647,7 @@ SQL [368/371]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-05-18T22:50:38.205Z
+  2026-05-18T22:55:43.494Z
   
   1 row selected.
 

@@ -962,6 +962,18 @@ export abstract class BaseParser {
     } else if (this.matchKeyword('DISABLE')) {
       this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT');
       actions.push({ action: 'ROW_MOVEMENT', enabled: false });
+    } else if (this.matchKeyword('ROW')) {
+      // ROW STORE COMPRESS [ADVANCED|BASIC]
+      this.matchKeyword('STORE');
+      this.matchKeyword('COMPRESS');
+      const parts: string[] = [];
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) parts.push(this.advance().value);
+      actions.push({ action: 'MOVE_COMPRESS', compressionLevel: parts.join(' ') || undefined });
+    } else if (this.matchKeyword('NOCOMPRESS') || this.matchKeyword('COMPRESS')) {
+      // Plain NOCOMPRESS / COMPRESS — collapse to MOVE_COMPRESS semantics.
+      const parts: string[] = [];
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) parts.push(this.advance().value);
+      actions.push({ action: 'MOVE_COMPRESS', compressionLevel: parts.join(' ') || undefined });
     }
 
     return { type: 'AlterTableStatement', position: pos, schema, name, actions };

@@ -194,6 +194,14 @@ export class OracleParser extends BaseParser {
     if (this.matchKeyword('BIGFILE') || this.matchKeyword('SMALLFILE')) {
       // BIGFILE / SMALLFILE are pure metadata hints; treat as a plain
       // CREATE TABLESPACE (the simulator doesn't enforce file-count limits).
+      if (this.matchKeyword('TEMPORARY')) {
+        this.expectKeyword('TABLESPACE');
+        return this.parseCreateTablespace(pos, true);
+      }
+      if (this.matchKeyword('UNDO')) {
+        this.expectKeyword('TABLESPACE');
+        return this.parseCreateTablespace(pos, false, true);
+      }
       this.expectKeyword('TABLESPACE');
       return this.parseCreateTablespace(pos);
     }
@@ -903,6 +911,9 @@ export class OracleParser extends BaseParser {
     const schema = this.parseSchemaPrefix();
     const name = this.expectIdentifier();
     if (this.matchKeyword('REBUILD')) {
+      // Swallow optional ONLINE / TABLESPACE x / PARALLEL n / NOLOGGING — the
+      // simulator doesn't track index storage attributes yet.
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
       return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'REBUILD' };
     }
     if (this.matchKeyword('RENAME')) {
