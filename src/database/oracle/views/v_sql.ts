@@ -1,5 +1,10 @@
 /**
- * V$SQL — SQL statements in the cursor cache (representative entry).
+ * V$SQL — SQL statements in the cursor cache.
+ *
+ * Projection of `runtime.sqlCache` — populated by the `oracle.sql.parsed`
+ * event and updated on every `oracle.sql.executed`. Mirrors what
+ * V$SQLSTATS surfaces, so the two views stay coherent for any test that
+ * cross-joins them.
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -9,7 +14,7 @@ import { registerView } from './registry';
 registerView({
   name: 'V$SQL',
   comment: 'SQL statements in cache',
-  query() {
+  query({ runtime }) {
     return queryResult(
       [
         { name: 'SQL_ID', dataType: oracleVarchar2(13) },
@@ -23,9 +28,11 @@ registerView({
         { name: 'PARSING_SCHEMA_NAME', dataType: oracleVarchar2(30) },
         { name: 'FIRST_LOAD_TIME', dataType: oracleVarchar2(19) },
       ],
-      [
-        ['abc123def45', 'SELECT 1 FROM DUAL', 1, 100, 50, 1, 0, 1, 'SYS', new Date().toISOString().slice(0, 19)],
-      ]
+      [...runtime.sqlCache.values()].map(s => [
+        s.sqlId, s.text, s.executions, s.elapsedMicros, s.cpuMicros,
+        s.bufferGets, s.diskReads, s.rowsProcessed,
+        s.parsingSchema, new Date(s.firstLoadTime).toISOString().slice(0, 19),
+      ])
     );
   },
 });

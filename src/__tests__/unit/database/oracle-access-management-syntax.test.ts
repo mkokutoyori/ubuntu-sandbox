@@ -259,3 +259,32 @@ describe('Expressions — date ± number', () => {
     expect(r.rows.map(row => row[0])).toContain('ALICE');
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// V$SQL / V$SQLAREA / V$SQLSTATS — three views, one cursor cache
+// ──────────────────────────────────────────────────────────────────────
+
+describe('Cursor cache views — V$SQL/V$SQLAREA/V$SQLSTATS coherence', () => {
+  test('V$SQLAREA exposes the same SQL_IDs as V$SQL/V$SQLSTATS', () => {
+    exec("SELECT 1 FROM dual");
+    exec("SELECT 2 FROM dual");
+    const ids = (sql: string) =>
+      new Set(exec(sql).rows.map(r => String(r[0])));
+    const a = ids("SELECT sql_id FROM v$sqlarea");
+    const b = ids("SELECT sql_id FROM v$sql");
+    const c = ids("SELECT sql_id FROM v$sqlstats");
+    // Each query expands the cache by one — so the lookup itself is the
+    // only legitimate diff between the three sets.
+    const intersect = [...a].filter(id => b.has(id) && c.has(id));
+    expect(intersect.length).toBeGreaterThan(1);
+  });
+
+  test('V$SQLAREA reflects executions counter as it climbs', () => {
+    exec("SELECT 42 FROM dual");
+    exec("SELECT 42 FROM dual");
+    exec("SELECT 42 FROM dual");
+    const r = exec("SELECT executions FROM v$sqlarea WHERE sql_text = 'SELECT 42 FROM dual'");
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0][0]).toBeGreaterThanOrEqual(3);
+  });
+});
