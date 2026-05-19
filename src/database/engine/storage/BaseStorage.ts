@@ -282,6 +282,15 @@ export abstract class BaseStorage {
     return this.sequences.get(schema.toUpperCase())?.get(name.toUpperCase());
   }
 
+  /** Flat list of every sequence with its owner schema — used by DBA_SEQUENCES. */
+  getAllSequences(): { schema: string; sequence: SequenceMeta }[] {
+    const out: { schema: string; sequence: SequenceMeta }[] = [];
+    for (const [schema, byName] of this.sequences) {
+      for (const seq of byName.values()) out.push({ schema, sequence: seq });
+    }
+    return out;
+  }
+
   // ── Index operations ─────────────────────────────────────────────
 
   createIndex(schema: string, idx: IndexMeta): void {

@@ -2146,8 +2146,11 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
         }
-        // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK)
-        this.validateConstraints(schema, tableName, tableMeta, newRow);
+        // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK).
+        // Pass the pre-update row so uniqueness checks can exclude it
+        // from the existing-row set (otherwise an UPDATE that leaves
+        // the PK column unchanged would self-conflict).
+        this.validateConstraints(schema, tableName, tableMeta, newRow, row);
         this.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
@@ -2234,12 +2237,12 @@ export class OracleExecutor extends BaseExecutor {
     }));
 
     const constraints: ConstraintMeta[] = [];
-    let constraintIdx = 0;
+    const nextSysC = () => `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`;
 
     // Column-level constraints
     for (const col of stmt.columns) {
       for (const cc of col.constraints) {
-        const name = cc.constraintName || `SYS_C${String(10000 + constraintIdx++).padStart(6, '0')}`;
+        const name = cc.constraintName || nextSysC();
         if (cc.constraintType === 'NOT_NULL') {
           constraints.push({ name, type: 'NOT_NULL', columns: [col.name.toUpperCase()] });
           const colMeta = columns.find(c => c.name === col.name.toUpperCase());
@@ -2258,7 +2261,7 @@ export class OracleExecutor extends BaseExecutor {
 
     // Table-level constraints
     for (const tc of stmt.constraints) {
-      const name = tc.constraintName || `SYS_C${String(10000 + constraintIdx++).padStart(6, '0')}`;
+      const name = tc.constraintName || nextSysC();
       constraints.push({
         name,
         type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
@@ -4094,7 +4097,14 @@ export class OracleExecutor extends BaseExecutor {
     return null;
   }
 
-  private validateConstraints(schema: string, tableName: string, tableMeta: import('../engine/storage/BaseStorage').TableMeta, row: StorageRow): void {
+  private validateConstraints(
+    schema: string,
+    tableName: string,
+    tableMeta: import('../engine/storage/BaseStorage').TableMeta,
+    row: StorageRow,
+    /** For UPDATE: the pre-update row excluded from uniqueness checks. */
+    excludeRow?: StorageRow,
+  ): void {
     for (const constraint of tableMeta.constraints) {
       if (constraint.type === 'NOT_NULL' || constraint.type === 'PRIMARY_KEY') {
         for (const colName of constraint.columns) {
@@ -4109,6 +4119,7 @@ export class OracleExecutor extends BaseExecutor {
         const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
         const newKey = colIndexes.map(i => row[i]);
         for (const existing of existingRows) {
+          if (excludeRow && existing === excludeRow) continue;
           const existingKey = colIndexes.map(i => existing[i]);
           if (newKey.every((v, i) => this.compareValues(v, existingKey[i]) === 0)) {
             throw new OracleError(1, `unique constraint (${constraint.name}) violated`);
