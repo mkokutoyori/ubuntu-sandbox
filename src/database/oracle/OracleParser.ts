@@ -224,6 +224,10 @@ export class OracleParser extends BaseParser {
     }
     if (this.matchKeyword('DATABASE')) { this.expectKeyword('LINK'); return this.parseCreateDbLink(pos, false); }
     if (this.matchKeyword('MATERIALIZED')) { this.expectKeyword('VIEW'); return this.parseCreateMaterializedView(pos, orReplace); }
+    if (this.matchKeyword('AUDIT')) {
+      this.expectKeyword('POLICY');
+      return this.parseCreateAuditPolicy(pos);
+    }
     return null;
   }
 
@@ -454,6 +458,11 @@ export class OracleParser extends BaseParser {
   }
 
   protected override parseDialectDrop(pos: SourcePosition): Statement | null {
+    if (this.matchKeyword('AUDIT')) {
+      this.expectKeyword('POLICY');
+      const name = this.expectIdentifier().toUpperCase();
+      return { type: 'DropAuditPolicyStatement', position: pos, name } as import('../engine/parser/ASTNode').DropAuditPolicyStatement;
+    }
     if (this.matchKeyword('TABLESPACE')) return this.parseDropTablespace(pos);
     if (this.matchKeyword('DISKGROUP')) return this.parseDropDiskgroup(pos);
     if (this.matchKeyword('TRIGGER')) {
@@ -985,6 +994,62 @@ export class OracleParser extends BaseParser {
     return { type: 'CreateMaterializedViewStatement', position: pos, schema, name, query };
   }
 
+  // ── Unified audit policies ─────────────────────────────────────
+
+  private parseCreateAuditPolicy(pos: SourcePosition): import('../engine/parser/ASTNode').CreateAuditPolicyStatement {
+    const name = this.expectIdentifier().toUpperCase();
+    const actions: string[] = [];
+    const roles: string[] = [];
+    let onObject: import('../engine/parser/ASTNode').AuditObjectTarget | undefined;
+
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('ACTIONS') || this.matchKeyword('PRIVILEGES')) {
+        do {
+          // Each action is a multi-word verb (LOGON, UPDATE, CREATE TABLE…)
+          // terminated by comma, ON, ROLES, ';' or EOF.
+          let verb = this.expectIdentifierOrKeyword().toUpperCase();
+          while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+            const next = this.current().value.toUpperCase();
+            if (['ON', 'ROLES', 'WHEN', 'CONTAINER'].includes(next)) break;
+            verb += ' ' + this.advance().value.toUpperCase();
+          }
+          actions.push(verb);
+        } while (this.match(TokenType.COMMA));
+      } else if (this.matchKeyword('ON')) {
+        const schema = this.parseSchemaPrefix();
+        const objName = this.expectIdentifier();
+        onObject = { schema: schema?.toUpperCase(), name: objName.toUpperCase() };
+      } else if (this.matchKeyword('ROLES')) {
+        do { roles.push(this.expectIdentifier().toUpperCase()); } while (this.match(TokenType.COMMA));
+      } else if (this.matchKeyword('CONTAINER')) {
+        // CONTAINER = CURRENT|ALL — accept and ignore (single-tenant sim).
+        this.match(TokenType.EQUAL);
+        this.advance();
+      } else if (this.matchKeyword('WHEN')) {
+        // Skip the predicate body — we don't evaluate it.
+        while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+      } else break;
+    }
+    return {
+      type: 'CreateAuditPolicyStatement', position: pos, name, actions,
+      onObject, roles: roles.length ? roles : undefined,
+    };
+  }
+
+  private parseEnableAuditPolicy(pos: SourcePosition, disable: boolean): import('../engine/parser/ASTNode').AuditPolicyStatement {
+    const policyName = this.expectIdentifier().toUpperCase();
+    let byUsers: string[] | undefined;
+    let exceptUsers: string[] | undefined;
+    if (this.matchKeyword('BY')) {
+      byUsers = [];
+      do { byUsers.push(this.expectIdentifier().toUpperCase()); } while (this.match(TokenType.COMMA));
+    } else if (this.matchKeyword('EXCEPT')) {
+      exceptUsers = [];
+      do { exceptUsers.push(this.expectIdentifier().toUpperCase()); } while (this.match(TokenType.COMMA));
+    }
+    return { type: 'AuditPolicyStatement', position: pos, policyName, byUsers, exceptUsers, disable: disable || undefined };
+  }
+
   // ── AUDIT / NOAUDIT ────────────────────────────────────────────
 
   /**
@@ -1014,9 +1079,12 @@ export class OracleParser extends BaseParser {
     return { schema: schema?.toUpperCase(), name: name.toUpperCase() };
   }
 
-  private parseAudit(): AuditStatement {
+  private parseAudit(): AuditStatement | import('../engine/parser/ASTNode').AuditPolicyStatement {
     const pos = this.current().position;
     this.expectKeyword('AUDIT');
+    if (this.matchKeyword('POLICY')) {
+      return this.parseEnableAuditPolicy(pos, false);
+    }
     const auditOptions = this.parseAuditOptionList();
     const onObject = this.parseAuditOnObject();
 
@@ -1043,9 +1111,12 @@ export class OracleParser extends BaseParser {
     };
   }
 
-  private parseNoaudit(): NoauditStatement {
+  private parseNoaudit(): NoauditStatement | import('../engine/parser/ASTNode').AuditPolicyStatement {
     const pos = this.current().position;
     this.expectKeyword('NOAUDIT');
+    if (this.matchKeyword('POLICY')) {
+      return this.parseEnableAuditPolicy(pos, true);
+    }
     const auditOptions = this.parseAuditOptionList();
     const onObject = this.parseAuditOnObject();
 
