@@ -345,6 +345,21 @@ export interface CreateTableStatement extends ASTNode {
   tablespace?: string;
   asSelect?: SelectStatement;
   onCommit?: 'DELETE_ROWS' | 'PRESERVE_ROWS';
+  partitioning?: PartitioningClause;
+}
+
+export interface PartitioningClause {
+  type: 'PartitioningClause';
+  strategy: 'RANGE' | 'LIST' | 'HASH' | 'REFERENCE' | 'SYSTEM';
+  columns: string[];
+  interval?: string;
+  partitions: PartitionSpec[];
+}
+
+export interface PartitionSpec {
+  name: string;
+  highValue?: string;
+  tablespace?: string;
 }
 
 export interface AlterTableStatement extends ASTNode {
@@ -365,7 +380,10 @@ export type AlterTableAction =
   | { action: 'MOVE_TABLESPACE'; tablespace: string }
   | { action: 'MOVE_COMPRESS'; compressionLevel?: string }
   | { action: 'SHRINK_SPACE'; compact?: boolean; cascade?: boolean }
-  | { action: 'ROW_MOVEMENT'; enabled: boolean };
+  | { action: 'ROW_MOVEMENT'; enabled: boolean }
+  | { action: 'ADD_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string; columns: string[]; always: boolean }
+  | { action: 'DROP_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string }
+  | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';

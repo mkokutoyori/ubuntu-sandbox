@@ -558,17 +558,17 @@ export abstract class BaseParser {
     this.expect(TokenType.RPAREN);
 
     let tablespace: string | undefined;
-    // Walk any number of trailing storage / partition / LOB / compression
-    // clauses. We don't model their effects, but the simulator must let
-    // DBA-grade DDL pass without choking.
+    let partitioning: import('./ASTNode').PartitioningClause | undefined;
     let safety = 1000;
     while (--safety > 0 && !this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       if (this.matchKeyword('TABLESPACE')) { tablespace = this.expectIdentifier(); continue; }
-      // PARTITION BY {RANGE|LIST|HASH|REFERENCE|SYSTEM} (cols) [INTERVAL (…)] [(part_specs)]
-      // SUBPARTITION BY … (subpart_template)
-      // LOB (col) STORE AS {SECUREFILE|BASICFILE} (clauses…)
-      // COMPRESS / NOCOMPRESS / ROW STORE COMPRESS … / PCTFREE n / PCTUSED n / …
-      // Skip a single token; balanced parentheses count as one logical group.
+      if (this.matchKeyword('PARTITION')) {
+        this.expectKeyword('BY');
+        partitioning = this.parsePartitioningClause();
+        continue;
+      }
+      // SUBPARTITION BY … / LOB (col) STORE AS … / COMPRESS / NOCOMPRESS /
+      // PCTFREE / PCTUSED / ROW STORE COMPRESS … — swallow.
       if (this.match(TokenType.LPAREN)) {
         let depth = 1;
         while (depth > 0 && !this.check(TokenType.EOF)) {
@@ -581,7 +581,82 @@ export abstract class BaseParser {
       this.advance();
     }
 
-    return { type: 'CreateTableStatement', position: pos, schema, name, columns, constraints, tablespace };
+    return {
+      type: 'CreateTableStatement', position: pos, schema, name,
+      columns, constraints, tablespace, partitioning,
+    };
+  }
+
+  /**
+   * Parse the PARTITION BY clause and its (PARTITION p VALUES …) list.
+   * Captures kind + key columns + interval + per-partition specs.
+   * Subpartitioning is recognised but the inner spec is swallowed.
+   */
+  protected parsePartitioningClause(): import('./ASTNode').PartitioningClause {
+    type Strategy = 'RANGE' | 'LIST' | 'HASH' | 'REFERENCE' | 'SYSTEM';
+    let strategy: Strategy = 'RANGE';
+    if (this.matchKeyword('RANGE')) strategy = 'RANGE';
+    else if (this.matchKeyword('LIST')) strategy = 'LIST';
+    else if (this.matchKeyword('HASH')) strategy = 'HASH';
+    else if (this.matchKeyword('REFERENCE')) strategy = 'REFERENCE';
+    else if (this.matchKeyword('SYSTEM')) strategy = 'SYSTEM';
+    // PARTITION BY <strategy> (col [, col …])
+    const columns: string[] = [];
+    if (this.match(TokenType.LPAREN)) {
+      do { columns.push(this.expectIdentifier()); } while (this.match(TokenType.COMMA));
+      this.expect(TokenType.RPAREN);
+    }
+    let interval: string | undefined;
+    if (this.matchKeyword('INTERVAL')) {
+      // INTERVAL (expr) — capture as raw token string for fidelity.
+      const parts: string[] = [];
+      if (this.match(TokenType.LPAREN)) {
+        let depth = 1;
+        while (depth > 0 && !this.check(TokenType.EOF)) {
+          const t = this.advance();
+          if (t.type === TokenType.LPAREN) depth++;
+          else if (t.type === TokenType.RPAREN) { depth--; if (depth === 0) break; }
+          parts.push(t.value);
+        }
+      }
+      interval = parts.join(' ');
+    }
+    // PARTITIONS n (HASH default)
+    if (this.matchKeyword('PARTITIONS')) {
+      if (this.check(TokenType.NUMBER_LITERAL)) this.advance();
+    }
+    const partitions: import('./ASTNode').PartitionSpec[] = [];
+    if (this.match(TokenType.LPAREN)) {
+      do {
+        if (!this.matchKeyword('PARTITION')) break;
+        const name = this.expectIdentifier();
+        let highValue: string | undefined;
+        if (this.matchKeyword('VALUES')) {
+          // VALUES LESS THAN (…) | VALUES (…) | VALUES (DEFAULT)
+          this.matchKeyword('LESS'); this.matchKeyword('THAN');
+          const parts: string[] = [];
+          if (this.match(TokenType.LPAREN)) {
+            let depth = 1;
+            while (depth > 0 && !this.check(TokenType.EOF)) {
+              const t = this.advance();
+              if (t.type === TokenType.LPAREN) depth++;
+              else if (t.type === TokenType.RPAREN) { depth--; if (depth === 0) break; }
+              parts.push(t.value);
+            }
+          }
+          highValue = parts.join(' ');
+        }
+        let psTablespace: string | undefined;
+        if (this.matchKeyword('TABLESPACE')) psTablespace = this.expectIdentifier();
+        // Swallow any trailing per-partition storage clause until comma or RPAREN.
+        while (!this.check(TokenType.COMMA) && !this.check(TokenType.RPAREN) && !this.check(TokenType.EOF)) {
+          this.advance();
+        }
+        partitions.push({ name, highValue, tablespace: psTablespace });
+      } while (this.match(TokenType.COMMA));
+      this.match(TokenType.RPAREN);
+    }
+    return { type: 'PartitioningClause', strategy, columns, interval, partitions };
   }
 
   protected parseColumnDefinition(): ColumnDefinition {
@@ -927,9 +1002,7 @@ export abstract class BaseParser {
 
     if (this.matchKeyword('ADD')) {
       if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
-        // ADD SUPPLEMENTAL LOG {DATA (…) COLUMNS | GROUP name (…) ALWAYS}
-        this.consumeRestOfStatement();
-        actions.push({ action: 'SHRINK_SPACE' });
+        actions.push(this.parseAddSupplemental());
       } else if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
         const hadParen = this.tokens[this.pos - 1]?.type === TokenType.LPAREN;
         const constraint = this.parseTableConstraint();
@@ -962,9 +1035,12 @@ export abstract class BaseParser {
         this.consumeRestOfStatement();
         actions.push({ action: 'SHRINK_SPACE' });
       } else if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
-        // DROP SUPPLEMENTAL LOG GROUP name — metadata-only no-op.
+        // DROP SUPPLEMENTAL LOG GROUP name.
+        this.advance(); // SUPPLEMENTAL
+        this.matchKeyword('LOG'); this.matchKeyword('GROUP');
+        const name = this.expectIdentifier();
         this.consumeRestOfStatement();
-        actions.push({ action: 'SHRINK_SPACE' });
+        actions.push({ action: 'DROP_SUPPLEMENTAL_LOG_GROUP', logGroupName: name });
       }
     } else if (this.matchKeyword('RENAME')) {
       if (this.matchKeyword('COLUMN')) {
@@ -1228,6 +1304,35 @@ export abstract class BaseParser {
     // Swallow trailing options (FOR TABLE / FOR ALL COLUMNS / SAMPLE n PERCENT / ONLINE).
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
     return { type: 'AnalyzeStatement', position: pos, target, schema, name, action };
+  }
+
+  /** Parse the tail of `ALTER TABLE … ADD SUPPLEMENTAL LOG …`. */
+  protected parseAddSupplemental(): import('./ASTNode').AlterTableAction {
+    // SUPPLEMENTAL LOG {DATA (mode) COLUMNS | GROUP name (col,…) [ALWAYS]}
+    this.advance(); // SUPPLEMENTAL
+    this.matchKeyword('LOG');
+    if (this.matchKeyword('DATA')) {
+      this.match(TokenType.LPAREN);
+      let mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' = 'ALL';
+      if (this.matchKeyword('PRIMARY')) { this.expectKeyword('KEY'); mode = 'PRIMARY_KEY'; }
+      else if (this.matchKeyword('UNIQUE')) mode = 'UNIQUE';
+      else if (this.matchKeyword('FOREIGN')) { this.expectKeyword('KEY'); mode = 'FOREIGN_KEY'; }
+      else if (this.matchKeyword('ALL')) mode = 'ALL';
+      this.match(TokenType.RPAREN);
+      this.matchKeyword('COLUMNS');
+      this.consumeRestOfStatement();
+      return { action: 'ADD_SUPPLEMENTAL_LOG_DATA', mode };
+    }
+    this.expectKeyword('GROUP');
+    const logGroupName = this.expectIdentifier();
+    const columns: string[] = [];
+    if (this.match(TokenType.LPAREN)) {
+      do { columns.push(this.expectIdentifier()); } while (this.match(TokenType.COMMA));
+      this.expect(TokenType.RPAREN);
+    }
+    const always = this.matchKeyword('ALWAYS');
+    this.consumeRestOfStatement();
+    return { action: 'ADD_SUPPLEMENTAL_LOG_GROUP', logGroupName, columns, always };
   }
 
   protected parseSetStatement(): import('./ASTNode').SetTransactionStatement {

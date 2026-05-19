@@ -125,6 +125,45 @@ function viewRow(owner: string, name: string, text: string): (string | number | 
   ];
 }
 
+/** One row of the recyclebin (Oracle's soft-drop staging area). */
+export interface RecyclebinEntry {
+  /** Owner schema. */
+  owner: string;
+  /** BIN$… auto-generated unique name. */
+  objectName: string;
+  /** Original object name before DROP. */
+  originalName: string;
+  /** Object kind — TABLE, INDEX, TRIGGER, …. */
+  type: string;
+  /** Tablespace containing the object's segments. */
+  tsName: string;
+  /** Approximate space in 512-byte blocks. */
+  space: number;
+  /** Drop timestamp. */
+  droptime: Date;
+  /**
+   * Snapshot needed to restore the object via FLASHBACK …
+   * TO BEFORE DROP. Opaque to consumers other than the executor.
+   */
+  payload?: unknown;
+}
+
+export interface SupplementalLogGroup {
+  owner: string;
+  logGroupName: string;
+  tableName: string;
+  always: boolean;
+  /** Columns participating in the group, in declaration order. */
+  columns: string[];
+}
+
+/** 22-hex-char id used in BIN$<id>==$0 object names — short and unique. */
+function randomId(): string {
+  return Array.from({ length: 22 }, () =>
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 62)]
+  ).join('');
+}
+
 export class OracleCatalog extends BaseCatalog {
   private storage: OracleStorage;
   private instance: OracleInstance;
@@ -441,6 +480,82 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   getFgaTrail(): readonly FgaAuditRecord[] { return this.fgaTrail; }
+
+  // ── Recyclebin ────────────────────────────────────────────────────
+
+  /**
+   * Recyclebin entries — one row per object soft-dropped via
+   * `DROP TABLE` (no PURGE). FLASHBACK TABLE … TO BEFORE DROP and
+   * PURGE RECYCLEBIN both consult / mutate this map.
+   */
+  private recyclebin: RecyclebinEntry[] = [];
+
+  recyclebinAdd(entry: Omit<RecyclebinEntry, 'objectName' | 'droptime'> & { droptime?: Date }): RecyclebinEntry {
+    const objectName = `BIN$${randomId()}==$0`;
+    const full: RecyclebinEntry = {
+      ...entry,
+      objectName,
+      droptime: entry.droptime ?? new Date(),
+    };
+    this.recyclebin.push(full);
+    return full;
+  }
+
+  /** Find the most recent recyclebin entry matching the original name. */
+  recyclebinFindLatest(owner: string, originalName: string): RecyclebinEntry | undefined {
+    for (let i = this.recyclebin.length - 1; i >= 0; i--) {
+      const e = this.recyclebin[i];
+      if (e.owner === owner.toUpperCase() && e.originalName === originalName.toUpperCase()) {
+        return e;
+      }
+    }
+    return undefined;
+  }
+
+  /** Remove a recyclebin entry by object name (returns true if removed). */
+  recyclebinRemove(objectName: string): boolean {
+    const idx = this.recyclebin.findIndex(e => e.objectName === objectName);
+    if (idx < 0) return false;
+    this.recyclebin.splice(idx, 1);
+    return true;
+  }
+
+  /** Empty the recyclebin (PURGE RECYCLEBIN / DBA_RECYCLEBIN). */
+  recyclebinPurgeAll(owner?: string): number {
+    if (owner) {
+      const upper = owner.toUpperCase();
+      const before = this.recyclebin.length;
+      this.recyclebin = this.recyclebin.filter(e => e.owner !== upper);
+      return before - this.recyclebin.length;
+    }
+    const n = this.recyclebin.length;
+    this.recyclebin = [];
+    return n;
+  }
+
+  getRecyclebin(): readonly RecyclebinEntry[] { return this.recyclebin; }
+
+  // ── Supplemental log groups ──────────────────────────────────────
+
+  /**
+   * Supplemental log groups defined via `ALTER TABLE … ADD SUPPLEMENTAL
+   * LOG GROUP name (col [,col]) [ALWAYS]`. Empty until DBAs add any.
+   */
+  private supLogGroups: SupplementalLogGroup[] = [];
+
+  addSupplementalLogGroup(g: SupplementalLogGroup): void {
+    this.supLogGroups.push(g);
+  }
+
+  dropSupplementalLogGroup(owner: string, name: string): boolean {
+    const idx = this.supLogGroups.findIndex(g =>
+      g.owner === owner.toUpperCase() && g.logGroupName === name.toUpperCase());
+    if (idx < 0) return false;
+    this.supLogGroups.splice(idx, 1);
+    return true;
+  }
+
+  getSupplementalLogGroups(): readonly SupplementalLogGroup[] { return this.supLogGroups; }
 
   /**
    * Resolve a dictionary view to its column metadata — used by DESC

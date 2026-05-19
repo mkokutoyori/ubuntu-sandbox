@@ -63,6 +63,26 @@ export interface TableMeta {
   tablespace?: string;
   temporary?: boolean;
   rowCount: number;
+  /** Partitioning configuration, populated by CREATE TABLE … PARTITION BY. */
+  partitioning?: PartitioningMeta;
+}
+
+export interface PartitioningMeta {
+  /** Partitioning strategy. */
+  type: 'RANGE' | 'LIST' | 'HASH' | 'REFERENCE' | 'SYSTEM' | 'COMPOSITE';
+  /** Columns the partitioning key is built from. */
+  columns: string[];
+  /** Whether INTERVAL partitioning was specified. */
+  interval?: string;
+  /** Concrete partitions defined at CREATE time (RANGE / LIST). */
+  partitions: PartitionMeta[];
+}
+
+export interface PartitionMeta {
+  name: string;
+  /** Verbatim VALUES LESS THAN / VALUES (…) clause (kept as text). */
+  highValue?: string;
+  tablespace?: string;
 }
 
 export interface TriggerMeta {

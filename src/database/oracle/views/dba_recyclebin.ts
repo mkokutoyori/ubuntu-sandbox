@@ -1,8 +1,7 @@
 /**
- * DBA_RECYCLEBIN — dropped objects awaiting purge.
- *
- * We don't currently retain dropped objects in storage, so this view is
- * empty until the engine begins tracking them.
+ * DBA_RECYCLEBIN — soft-dropped objects. Backed by the real
+ * recyclebin maintained on OracleCatalog; DROP TABLE (without PURGE)
+ * adds a row, FLASHBACK … TO BEFORE DROP / PURGE removes it.
  */
 
 import { col } from './_columns';
@@ -12,7 +11,7 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_RECYCLEBIN',
   comment: 'Recyclebin contents',
-  query() {
+  query({ catalog }) {
     return queryResult(
       [
         col.str('OWNER', 128),
@@ -25,7 +24,13 @@ registerView({
         col.str('DROPTIME', 19),
         col.num('SPACE'),
       ],
-      []
+      catalog.getRecyclebin().map(r => [
+        r.owner, r.objectName, r.originalName,
+        'DROP', r.type, r.tsName,
+        r.droptime.toISOString().slice(0, 19).replace('T', ' '),
+        r.droptime.toISOString().slice(0, 19).replace('T', ' '),
+        r.space,
+      ]),
     );
   },
 });

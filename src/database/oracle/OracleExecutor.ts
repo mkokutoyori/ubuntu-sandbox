@@ -452,14 +452,44 @@ export class OracleExecutor extends BaseExecutor {
         return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
       }
       case 'FlashbackStatement': {
-        // The simulator does not time-travel — we accept the syntax so
-        // DBA scripts make progress and the alert log records intent.
         const s = statement as import('../engine/parser/ASTNode').FlashbackStatement;
+        // Only FLASHBACK TABLE … TO BEFORE DROP is plumbed against
+        // real state (the recyclebin). DATABASE / TO TIMESTAMP / SCN
+        // are accepted but logical no-ops — the simulator has no
+        // undo/redo time machine.
+        if (s.target === 'TABLE' && /BEFORE\s+DROP/i.test(s.to)) {
+          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const name = s.name!.toUpperCase();
+          const catalog = this.catalog as OracleCatalog;
+          const entry = catalog.recyclebinFindLatest(owner, name);
+          if (!entry || !entry.payload) {
+            throw new OracleError(38305, `object not in RECYCLE BIN`);
+          }
+          const payload = entry.payload as { meta: import('../engine/storage/BaseStorage').TableMeta; rows: StorageRow[] };
+          this.storage.ensureSchema(owner);
+          this.storage.createTable({
+            ...payload.meta, schema: owner, name, rowCount: payload.rows.length,
+          });
+          this.storage.insertRows(owner, name, payload.rows);
+          catalog.recyclebinRemove(entry.objectName);
+        }
         this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
         return emptyResult(`Flashback complete.`);
       }
       case 'PurgeStatement': {
-        // Recyclebin is not modeled — the catalog is permanent.
+        const s = statement as import('../engine/parser/ASTNode').PurgeStatement;
+        const catalog = this.catalog as OracleCatalog;
+        if (s.target === 'RECYCLEBIN' || s.target === 'USER') {
+          catalog.recyclebinPurgeAll(this.context.currentSchema);
+        } else if (s.target === 'DBA_RECYCLEBIN') {
+          catalog.recyclebinPurgeAll();
+        } else if (s.target === 'TABLE' && s.name) {
+          // PURGE TABLE name → remove the (most recent) recyclebin
+          // entry with that original name.
+          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const entry = catalog.recyclebinFindLatest(owner, s.name.toUpperCase());
+          if (entry) catalog.recyclebinRemove(entry.objectName);
+        }
         return emptyResult('Recyclebin purged.');
       }
       case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
@@ -2236,6 +2266,18 @@ export class OracleExecutor extends BaseExecutor {
       tablespace: stmt.tablespace?.toUpperCase() || 'USERS',
       temporary: stmt.temporary,
       rowCount: 0,
+      partitioning: stmt.partitioning ? {
+        type: stmt.partitioning.strategy === 'REFERENCE' ? 'REFERENCE'
+            : stmt.partitioning.strategy === 'SYSTEM' ? 'SYSTEM'
+            : stmt.partitioning.strategy,
+        columns: stmt.partitioning.columns.map(c => c.toUpperCase()),
+        interval: stmt.partitioning.interval,
+        partitions: stmt.partitioning.partitions.map(p => ({
+          name: p.name.toUpperCase(),
+          highValue: p.highValue,
+          tablespace: p.tablespace?.toUpperCase(),
+        })),
+      } : undefined,
     });
 
     // Real Oracle auto-creates a UNIQUE index for every PRIMARY KEY
@@ -2269,6 +2311,22 @@ export class OracleExecutor extends BaseExecutor {
     if (!this.storage.tableExists(schema, tableName)) {
       if (stmt.ifExists) return emptyResult('');
       throw new OracleError(942, `table or view does not exist`);
+    }
+
+    // Unless PURGE is specified, soft-drop into the recyclebin so
+    // FLASHBACK TABLE … TO BEFORE DROP can restore it.
+    if (!stmt.purge) {
+      const meta = this.storage.getTableMeta(schema, tableName)!;
+      const rows = this.storage.getRows(schema, tableName);
+      const catalog = this.catalog as OracleCatalog;
+      catalog.recyclebinAdd({
+        owner: schema,
+        originalName: tableName,
+        type: 'TABLE',
+        tsName: meta.tablespace ?? 'USERS',
+        space: Math.ceil((rows.length * 200) / 512),
+        payload: { meta, rows },
+      });
     }
     this.storage.dropTable(schema, tableName);
     return emptyResult('Table dropped.');
@@ -2328,6 +2386,27 @@ export class OracleExecutor extends BaseExecutor {
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.
+      } else if (action.action === 'ADD_SUPPLEMENTAL_LOG_GROUP') {
+        (this.catalog as OracleCatalog).addSupplementalLogGroup({
+          owner: schema,
+          logGroupName: action.logGroupName.toUpperCase(),
+          tableName,
+          always: action.always,
+          columns: action.columns.map(c => c.toUpperCase()),
+        });
+      } else if (action.action === 'DROP_SUPPLEMENTAL_LOG_GROUP') {
+        (this.catalog as OracleCatalog).dropSupplementalLogGroup(schema, action.logGroupName);
+      } else if (action.action === 'ADD_SUPPLEMENTAL_LOG_DATA') {
+        // Toggle on the instance-level supplemental log flags so
+        // V\$DATABASE reflects it.
+        const inst = this.instance;
+        const supp = inst.supplementalLog;
+        switch (action.mode) {
+          case 'PRIMARY_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', pk: true }); break;
+          case 'UNIQUE':      inst.setSupplementalLog({ min: 'IMPLICIT', ui: true }); break;
+          case 'FOREIGN_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', fk: true }); break;
+          case 'ALL':         inst.setSupplementalLog({ min: 'IMPLICIT', all: true, pk: supp.pk, ui: supp.ui, fk: supp.fk }); break;
+        }
       }
     }
 

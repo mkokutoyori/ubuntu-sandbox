@@ -39,7 +39,9 @@ registerView({
           1000, 200,
           0,                  // CHAIN_CNT
           SEED_TIME,
-          'YES', 'NO', 'N',
+          'YES',
+          t.partitioning ? 'YES' : 'NO',
+          'N',
           'VALID',
         ];
       })
