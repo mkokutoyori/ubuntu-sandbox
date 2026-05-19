@@ -15,6 +15,7 @@ import { queryView, listCatalogViewEntries, type CatalogViewEntry } from './view
 import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
+import { provisionClassicRoles, seedCatalogRoleObjectGrants } from './security/classicRoles';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
 // and adding it to `views/index.ts` — no edits to the catalog.
@@ -259,37 +260,33 @@ export class OracleCatalog extends BaseCatalog {
       this.passwords.set(u.username, password);
     }
 
-    // Roles
-    for (const r of ['CONNECT', 'RESOURCE', 'DBA', 'SELECT_CATALOG_ROLE', 'EXECUTE_CATALOG_ROLE', 'EXP_FULL_DATABASE', 'IMP_FULL_DATABASE']) {
-      this.createRole(r);
-    }
+    // Classic Oracle 19c roles + their canonical privileges
+    // (one declarative table per role in security/classicRoles.ts).
+    provisionClassicRoles(this);
+    seedCatalogRoleObjectGrants(this);
 
-    // SYS/SYSTEM privileges
-    const allPrivs = ['CREATE SESSION', 'CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
-      'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE INDEX', 'CREATE USER', 'ALTER USER',
-      'DROP USER', 'CREATE ROLE', 'GRANT ANY PRIVILEGE', 'GRANT ANY ROLE',
-      'SELECT ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE', 'DELETE ANY TABLE',
-      'CREATE ANY TABLE', 'DROP ANY TABLE', 'ALTER ANY TABLE',
-      'CREATE TABLESPACE', 'ALTER TABLESPACE', 'DROP TABLESPACE', 'ALTER SYSTEM',
-      'ALTER DATABASE', 'UNLIMITED TABLESPACE', 'CREATE ANY DIRECTORY'];
-    for (const priv of allPrivs) {
+    // SYS / SYSTEM hold the full system-privilege set with ADMIN OPTION.
+    const sysPrivs = [
+      'CREATE SESSION', 'CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
+      'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE INDEX', 'CREATE USER',
+      'ALTER USER', 'DROP USER', 'CREATE ROLE', 'GRANT ANY PRIVILEGE',
+      'GRANT ANY ROLE', 'SELECT ANY TABLE', 'INSERT ANY TABLE',
+      'UPDATE ANY TABLE', 'DELETE ANY TABLE', 'CREATE ANY TABLE',
+      'DROP ANY TABLE', 'ALTER ANY TABLE', 'CREATE TABLESPACE',
+      'ALTER TABLESPACE', 'DROP TABLESPACE', 'ALTER SYSTEM',
+      'ALTER DATABASE', 'UNLIMITED TABLESPACE', 'CREATE ANY DIRECTORY',
+      'AUDIT SYSTEM', 'AUDIT ANY', 'CREATE PROFILE', 'ALTER PROFILE',
+      'DROP PROFILE', 'SELECT ANY DICTIONARY',
+    ];
+    for (const priv of sysPrivs) {
       this.grantSystemPrivilege('SYS', priv, true);
       this.grantSystemPrivilege('SYSTEM', priv, true);
     }
-
-    // DBA role has all privileges
-    for (const priv of allPrivs) this.grantSystemPrivilege('DBA', priv, true);
     this.grantRole('SYS', 'DBA', true);
     this.grantRole('SYSTEM', 'DBA', true);
-
-    // CONNECT role (Oracle 10.2+): grants CREATE SESSION only.
-    this.grantSystemPrivilege('CONNECT', 'CREATE SESSION');
-    // RESOURCE role: object-creation privileges.
-    for (const p of ['CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
-                     'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE TYPE',
-                     'CREATE CLUSTER', 'CREATE INDEXTYPE', 'CREATE OPERATOR']) {
-      this.grantSystemPrivilege('RESOURCE', p);
-    }
+    this.grantRole('SYS', 'SELECT_CATALOG_ROLE', true);
+    this.grantRole('SYS', 'AUDIT_ADMIN', true);
+    this.grantRole('SYSTEM', 'AUDIT_ADMIN', true);
 
     // HR, SCOTT, and FCUBSLIVE get basic privileges
     for (const u of ['HR', 'SCOTT', 'FCUBSLIVE']) {
