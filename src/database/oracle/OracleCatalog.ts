@@ -15,6 +15,7 @@ import { queryView, listCatalogViewEntries, type CatalogViewEntry } from './view
 import { VIEW_COLUMNS } from './views/_viewColumns';
 import { BUILTIN_VIEWS } from './views/builtinCatalog';
 import type { SecurityEngine } from './security/SecurityEngine';
+import { provisionClassicRoles, seedCatalogRoleObjectGrants } from './security/classicRoles';
 // Side-effect import: each file under `views/` self-registers its
 // definition. Adding a new view requires only creating a new file there
 // and adding it to `views/index.ts` — no edits to the catalog.
@@ -125,6 +126,45 @@ function viewRow(owner: string, name: string, text: string): (string | number | 
   ];
 }
 
+/** One row of the recyclebin (Oracle's soft-drop staging area). */
+export interface RecyclebinEntry {
+  /** Owner schema. */
+  owner: string;
+  /** BIN$… auto-generated unique name. */
+  objectName: string;
+  /** Original object name before DROP. */
+  originalName: string;
+  /** Object kind — TABLE, INDEX, TRIGGER, …. */
+  type: string;
+  /** Tablespace containing the object's segments. */
+  tsName: string;
+  /** Approximate space in 512-byte blocks. */
+  space: number;
+  /** Drop timestamp. */
+  droptime: Date;
+  /**
+   * Snapshot needed to restore the object via FLASHBACK …
+   * TO BEFORE DROP. Opaque to consumers other than the executor.
+   */
+  payload?: unknown;
+}
+
+export interface SupplementalLogGroup {
+  owner: string;
+  logGroupName: string;
+  tableName: string;
+  always: boolean;
+  /** Columns participating in the group, in declaration order. */
+  columns: string[];
+}
+
+/** 22-hex-char id used in BIN$<id>==$0 object names — short and unique. */
+function randomId(): string {
+  return Array.from({ length: 22 }, () =>
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 62)]
+  ).join('');
+}
+
 export class OracleCatalog extends BaseCatalog {
   private storage: OracleStorage;
   private instance: OracleInstance;
@@ -220,37 +260,33 @@ export class OracleCatalog extends BaseCatalog {
       this.passwords.set(u.username, password);
     }
 
-    // Roles
-    for (const r of ['CONNECT', 'RESOURCE', 'DBA', 'SELECT_CATALOG_ROLE', 'EXECUTE_CATALOG_ROLE', 'EXP_FULL_DATABASE', 'IMP_FULL_DATABASE']) {
-      this.createRole(r);
-    }
+    // Classic Oracle 19c roles + their canonical privileges
+    // (one declarative table per role in security/classicRoles.ts).
+    provisionClassicRoles(this);
+    seedCatalogRoleObjectGrants(this);
 
-    // SYS/SYSTEM privileges
-    const allPrivs = ['CREATE SESSION', 'CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
-      'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE INDEX', 'CREATE USER', 'ALTER USER',
-      'DROP USER', 'CREATE ROLE', 'GRANT ANY PRIVILEGE', 'GRANT ANY ROLE',
-      'SELECT ANY TABLE', 'INSERT ANY TABLE', 'UPDATE ANY TABLE', 'DELETE ANY TABLE',
-      'CREATE ANY TABLE', 'DROP ANY TABLE', 'ALTER ANY TABLE',
-      'CREATE TABLESPACE', 'ALTER TABLESPACE', 'DROP TABLESPACE', 'ALTER SYSTEM',
-      'ALTER DATABASE', 'UNLIMITED TABLESPACE', 'CREATE ANY DIRECTORY'];
-    for (const priv of allPrivs) {
+    // SYS / SYSTEM hold the full system-privilege set with ADMIN OPTION.
+    const sysPrivs = [
+      'CREATE SESSION', 'CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
+      'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE INDEX', 'CREATE USER',
+      'ALTER USER', 'DROP USER', 'CREATE ROLE', 'GRANT ANY PRIVILEGE',
+      'GRANT ANY ROLE', 'SELECT ANY TABLE', 'INSERT ANY TABLE',
+      'UPDATE ANY TABLE', 'DELETE ANY TABLE', 'CREATE ANY TABLE',
+      'DROP ANY TABLE', 'ALTER ANY TABLE', 'CREATE TABLESPACE',
+      'ALTER TABLESPACE', 'DROP TABLESPACE', 'ALTER SYSTEM',
+      'ALTER DATABASE', 'UNLIMITED TABLESPACE', 'CREATE ANY DIRECTORY',
+      'AUDIT SYSTEM', 'AUDIT ANY', 'CREATE PROFILE', 'ALTER PROFILE',
+      'DROP PROFILE', 'SELECT ANY DICTIONARY',
+    ];
+    for (const priv of sysPrivs) {
       this.grantSystemPrivilege('SYS', priv, true);
       this.grantSystemPrivilege('SYSTEM', priv, true);
     }
-
-    // DBA role has all privileges
-    for (const priv of allPrivs) this.grantSystemPrivilege('DBA', priv, true);
     this.grantRole('SYS', 'DBA', true);
     this.grantRole('SYSTEM', 'DBA', true);
-
-    // CONNECT role (Oracle 10.2+): grants CREATE SESSION only.
-    this.grantSystemPrivilege('CONNECT', 'CREATE SESSION');
-    // RESOURCE role: object-creation privileges.
-    for (const p of ['CREATE TABLE', 'CREATE VIEW', 'CREATE SEQUENCE',
-                     'CREATE PROCEDURE', 'CREATE TRIGGER', 'CREATE TYPE',
-                     'CREATE CLUSTER', 'CREATE INDEXTYPE', 'CREATE OPERATOR']) {
-      this.grantSystemPrivilege('RESOURCE', p);
-    }
+    this.grantRole('SYS', 'SELECT_CATALOG_ROLE', true);
+    this.grantRole('SYS', 'AUDIT_ADMIN', true);
+    this.grantRole('SYSTEM', 'AUDIT_ADMIN', true);
 
     // HR, SCOTT, and FCUBSLIVE get basic privileges
     for (const u of ['HR', 'SCOTT', 'FCUBSLIVE']) {
@@ -291,6 +327,92 @@ export class OracleCatalog extends BaseCatalog {
 
   getExternalName(username: string): string | undefined {
     return this.externalNames.get(username.toUpperCase());
+  }
+
+  /** Plaintext role password (CREATE ROLE x IDENTIFIED BY pw); checked at SET ROLE. */
+  private rolePasswords: Map<string, string> = new Map();
+
+  setRolePassword(role: string, password: string): void {
+    this.rolePasswords.set(role.toUpperCase(), password);
+  }
+
+  getRolePassword(role: string): string | undefined {
+    return this.rolePasswords.get(role.toUpperCase());
+  }
+
+  // ── Column-level privileges (DBA_COL_PRIVS backing store) ─────────
+
+  private colPrivileges: Array<{
+    grantee: string;
+    grantor: string;
+    objectSchema: string;
+    objectName: string;
+    columnName: string;
+    privilege: string;
+    grantable: boolean;
+  }> = [];
+
+  grantColumnPrivilege(
+    grantee: string, privilege: string, objectSchema: string, objectName: string,
+    columnName: string, grantor: string = 'SYS', grantable: boolean = false,
+  ): void {
+    const upper = {
+      grantee: grantee.toUpperCase(),
+      privilege: privilege.toUpperCase(),
+      objectSchema: objectSchema.toUpperCase(),
+      objectName: objectName.toUpperCase(),
+      columnName: columnName.toUpperCase(),
+    };
+    // Idempotent: identical grant collapses to one row (Oracle behavior).
+    const exists = this.colPrivileges.some(p =>
+      p.grantee === upper.grantee && p.privilege === upper.privilege &&
+      p.objectSchema === upper.objectSchema && p.objectName === upper.objectName &&
+      p.columnName === upper.columnName);
+    if (exists) return;
+    this.colPrivileges.push({ ...upper, grantor: grantor.toUpperCase(), grantable });
+  }
+
+  revokeColumnPrivilege(
+    grantee: string, privilege: string, objectSchema: string, objectName: string,
+    columnName: string,
+  ): void {
+    const g = grantee.toUpperCase(), p = privilege.toUpperCase();
+    const os = objectSchema.toUpperCase(), on = objectName.toUpperCase(), c = columnName.toUpperCase();
+    this.colPrivileges = this.colPrivileges.filter(row =>
+      !(row.grantee === g && row.privilege === p
+        && row.objectSchema === os && row.objectName === on && row.columnName === c));
+  }
+
+  getColumnPrivileges(): ReadonlyArray<{
+    grantee: string; grantor: string; objectSchema: string; objectName: string;
+    columnName: string; privilege: string; grantable: boolean;
+  }> {
+    return this.colPrivileges;
+  }
+
+  // ── Default role specification (per-user) ─────────────────────────
+
+  private defaultRoleSpecs: Map<string, { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] }>
+    = new Map();
+
+  setDefaultRoleSpec(username: string, spec: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] }): void {
+    this.defaultRoleSpecs.set(username.toUpperCase(), {
+      mode: spec.mode,
+      roles: spec.roles.map(r => r.toUpperCase()),
+    });
+  }
+
+  /** Whether `role` is enabled by default for `username`. ALL is the implicit fallback. */
+  isDefaultRole(username: string, role: string): boolean {
+    const spec = this.defaultRoleSpecs.get(username.toUpperCase());
+    if (!spec) return true;                            // implicit ALL
+    const r = role.toUpperCase();
+    switch (spec.mode) {
+      case 'ALL':    return true;
+      case 'NONE':   return false;
+      case 'LIST':   return spec.roles.includes(r);
+      case 'EXCEPT': return !spec.roles.includes(r);
+    }
   }
 
   /** Allocate a unique user ID for new users */
@@ -441,6 +563,82 @@ export class OracleCatalog extends BaseCatalog {
   }
 
   getFgaTrail(): readonly FgaAuditRecord[] { return this.fgaTrail; }
+
+  // ── Recyclebin ────────────────────────────────────────────────────
+
+  /**
+   * Recyclebin entries — one row per object soft-dropped via
+   * `DROP TABLE` (no PURGE). FLASHBACK TABLE … TO BEFORE DROP and
+   * PURGE RECYCLEBIN both consult / mutate this map.
+   */
+  private recyclebin: RecyclebinEntry[] = [];
+
+  recyclebinAdd(entry: Omit<RecyclebinEntry, 'objectName' | 'droptime'> & { droptime?: Date }): RecyclebinEntry {
+    const objectName = `BIN$${randomId()}==$0`;
+    const full: RecyclebinEntry = {
+      ...entry,
+      objectName,
+      droptime: entry.droptime ?? new Date(),
+    };
+    this.recyclebin.push(full);
+    return full;
+  }
+
+  /** Find the most recent recyclebin entry matching the original name. */
+  recyclebinFindLatest(owner: string, originalName: string): RecyclebinEntry | undefined {
+    for (let i = this.recyclebin.length - 1; i >= 0; i--) {
+      const e = this.recyclebin[i];
+      if (e.owner === owner.toUpperCase() && e.originalName === originalName.toUpperCase()) {
+        return e;
+      }
+    }
+    return undefined;
+  }
+
+  /** Remove a recyclebin entry by object name (returns true if removed). */
+  recyclebinRemove(objectName: string): boolean {
+    const idx = this.recyclebin.findIndex(e => e.objectName === objectName);
+    if (idx < 0) return false;
+    this.recyclebin.splice(idx, 1);
+    return true;
+  }
+
+  /** Empty the recyclebin (PURGE RECYCLEBIN / DBA_RECYCLEBIN). */
+  recyclebinPurgeAll(owner?: string): number {
+    if (owner) {
+      const upper = owner.toUpperCase();
+      const before = this.recyclebin.length;
+      this.recyclebin = this.recyclebin.filter(e => e.owner !== upper);
+      return before - this.recyclebin.length;
+    }
+    const n = this.recyclebin.length;
+    this.recyclebin = [];
+    return n;
+  }
+
+  getRecyclebin(): readonly RecyclebinEntry[] { return this.recyclebin; }
+
+  // ── Supplemental log groups ──────────────────────────────────────
+
+  /**
+   * Supplemental log groups defined via `ALTER TABLE … ADD SUPPLEMENTAL
+   * LOG GROUP name (col [,col]) [ALWAYS]`. Empty until DBAs add any.
+   */
+  private supLogGroups: SupplementalLogGroup[] = [];
+
+  addSupplementalLogGroup(g: SupplementalLogGroup): void {
+    this.supLogGroups.push(g);
+  }
+
+  dropSupplementalLogGroup(owner: string, name: string): boolean {
+    const idx = this.supLogGroups.findIndex(g =>
+      g.owner === owner.toUpperCase() && g.logGroupName === name.toUpperCase());
+    if (idx < 0) return false;
+    this.supLogGroups.splice(idx, 1);
+    return true;
+  }
+
+  getSupplementalLogGroups(): readonly SupplementalLogGroup[] { return this.supLogGroups; }
 
   /**
    * Resolve a dictionary view to its column metadata — used by DESC

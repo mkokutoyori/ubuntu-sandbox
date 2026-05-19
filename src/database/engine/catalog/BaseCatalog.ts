@@ -18,11 +18,16 @@ export interface CatalogUser {
   created: Date;
   profile: string;
   authenticationType: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
+  /** External principal (Kerberos SPN for EXTERNAL, distinguished name for GLOBAL). */
+  externalName?: string;
 }
+
+export type RoleAuthenticationType = 'NONE' | 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
 
 export interface CatalogRole {
   name: string;
   passwordRequired: boolean;
+  authenticationType: RoleAuthenticationType;
 }
 
 export interface CatalogPrivilege {
@@ -80,8 +85,13 @@ export abstract class BaseCatalog {
 
   // ── Role management ──────────────────────────────────────────────
 
-  createRole(name: string): void {
-    this.roles.set(name.toUpperCase(), { name: name.toUpperCase(), passwordRequired: false });
+  createRole(name: string, authenticationType: RoleAuthenticationType = 'NONE'): void {
+    const upper = name.toUpperCase();
+    this.roles.set(upper, {
+      name: upper,
+      passwordRequired: authenticationType === 'PASSWORD',
+      authenticationType,
+    });
   }
 
   dropRole(name: string): void {

@@ -76,10 +76,13 @@ export class PrivilegeChecker {
     const anyPriv = `${priv} ANY TABLE`;
     if (this.hasSystemPrivilege(upper, anyPriv)) return true;
 
-    // Direct object privilege
-    return (this.catalog as any).tabPrivileges.some(
-      (p: CatalogPrivilege) =>
-        p.grantee === upper &&
+    // Direct grant OR object privilege inherited through any granted
+    // role. DBA scripts routinely `GRANT SELECT ON x TO role` and rely
+    // on the user picking it up transitively.
+    const grantees = new Set<string>([upper, ...this.getGrantedRoles(upper)]);
+    return (this.catalog as unknown as { tabPrivileges: CatalogPrivilege[] }).tabPrivileges.some(
+      (p) =>
+        grantees.has(p.grantee) &&
         p.privilege === priv &&
         p.objectSchema === schema &&
         p.objectName === obj

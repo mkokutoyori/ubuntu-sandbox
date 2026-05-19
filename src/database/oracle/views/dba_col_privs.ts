@@ -9,7 +9,7 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_COL_PRIVS',
   comment: 'Column-level grants',
-  query() {
+  query({ catalog }) {
     return queryResult(
       [
         col.str('GRANTEE', 128),
@@ -20,7 +20,10 @@ registerView({
         col.str('PRIVILEGE', 40),
         col.str('GRANTABLE', 3),
       ],
-      []
+      catalog.getColumnPrivileges().map(p => [
+        p.grantee, p.objectSchema, p.objectName, p.columnName, p.grantor, p.privilege,
+        p.grantable ? 'YES' : 'NO',
+      ]),
     );
   },
 });

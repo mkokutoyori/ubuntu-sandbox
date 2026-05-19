@@ -345,6 +345,21 @@ export interface CreateTableStatement extends ASTNode {
   tablespace?: string;
   asSelect?: SelectStatement;
   onCommit?: 'DELETE_ROWS' | 'PRESERVE_ROWS';
+  partitioning?: PartitioningClause;
+}
+
+export interface PartitioningClause {
+  type: 'PartitioningClause';
+  strategy: 'RANGE' | 'LIST' | 'HASH' | 'REFERENCE' | 'SYSTEM';
+  columns: string[];
+  interval?: string;
+  partitions: PartitionSpec[];
+}
+
+export interface PartitionSpec {
+  name: string;
+  highValue?: string;
+  tablespace?: string;
 }
 
 export interface AlterTableStatement extends ASTNode {
@@ -365,7 +380,10 @@ export type AlterTableAction =
   | { action: 'MOVE_TABLESPACE'; tablespace: string }
   | { action: 'MOVE_COMPRESS'; compressionLevel?: string }
   | { action: 'SHRINK_SPACE'; compact?: boolean; cascade?: boolean }
-  | { action: 'ROW_MOVEMENT'; enabled: boolean };
+  | { action: 'ROW_MOVEMENT'; enabled: boolean }
+  | { action: 'ADD_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string; columns: string[]; always: boolean }
+  | { action: 'DROP_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string }
+  | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';
@@ -446,7 +464,16 @@ export interface GrantStatement extends ASTNode {
   objectType?: string;
   objectSchema?: string;
   objectName?: string;
+  /** All grantees specified after TO — at least one element. */
+  grantees: string[];
+  /** Convenience alias for grantees[0]; preserved for legacy consumers. */
   grantee: string;
+  /**
+   * Column list collected from `priv(col1, col2, …)` clauses. Keyed by the
+   * upper-cased privilege name so `GRANT SELECT(a), UPDATE(b)` round-trips
+   * cleanly. Absent entries denote a whole-table grant.
+   */
+  privilegeColumns?: Record<string, string[]>;
   withGrantOption?: boolean;
   withAdminOption?: boolean;
 }
@@ -457,7 +484,9 @@ export interface RevokeStatement extends ASTNode {
   objectType?: string;
   objectSchema?: string;
   objectName?: string;
+  grantees: string[];
   grantee: string;
+  privilegeColumns?: Record<string, string[]>;
 }
 
 // ── User/Role Management ────────────────────────────────────────────
@@ -482,6 +511,10 @@ export interface AlterUserStatement extends ASTNode {
   type: 'AlterUserStatement';
   username: string;
   password?: string;
+  /** Switch authentication kind via IDENTIFIED EXTERNALLY / GLOBALLY. */
+  authenticationKind?: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
+  /** Optional principal / DN that follows AS '<…>' in the IDENTIFIED clause. */
+  externalName?: string;
   defaultTablespace?: string;
   temporaryTablespace?: string;
   quota?: { size: string; tablespace: string }[];
@@ -489,6 +522,14 @@ export interface AlterUserStatement extends ASTNode {
   accountLock?: boolean;
   accountUnlock?: boolean;
   passwordExpire?: boolean;
+  /**
+   * `DEFAULT ROLE …` clause. Mirrors Oracle's modes:
+   *   ALL                 → every granted role default-on (the implicit default)
+   *   NONE                → no role default-on
+   *   LIST {r1, r2, …}    → only the named roles default-on
+   *   EXCEPT {r1, …}      → every role default-on except the named ones
+   */
+  defaultRoleSpec?: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] };
 }
 
 export interface DropUserStatement extends ASTNode {
@@ -500,6 +541,15 @@ export interface DropUserStatement extends ASTNode {
 export interface CreateRoleStatement extends ASTNode {
   type: 'CreateRoleStatement';
   name: string;
+  /**
+   * How holders of the role must authenticate when SET ROLE is issued:
+   *   - `'NONE'` — default, role is enabled without a credential;
+   *   - `'PASSWORD'` — explicit `IDENTIFIED BY <pw>`;
+   *   - `'EXTERNAL'` — `IDENTIFIED EXTERNALLY`;
+   *   - `'GLOBAL'`   — `IDENTIFIED GLOBALLY`.
+   */
+  authenticationKind?: 'NONE' | 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
+  password?: string;
 }
 
 export interface DropRoleStatement extends ASTNode {

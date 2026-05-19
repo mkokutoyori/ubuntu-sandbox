@@ -107,7 +107,9 @@ describe('DBA_TAB_PRIVS', () => {
   test('multiple users with different privileges on same table', () => {
     exec('GRANT SELECT ON sensitive_data TO appuser');
     exec('GRANT SELECT, DELETE ON sensitive_data TO readonly');
-    const result = exec('SELECT GRANTEE, PRIVILEGE FROM DBA_TAB_PRIVS ORDER BY GRANTEE');
+    // Filter to the table under test — with classic role seeding the
+    // catalog now ships hundreds of SELECT_CATALOG_ROLE grants.
+    const result = exec("SELECT GRANTEE, PRIVILEGE FROM DBA_TAB_PRIVS WHERE TABLE_NAME='SENSITIVE_DATA' ORDER BY GRANTEE");
     expect(result.rows.length).toBe(3);
   });
 

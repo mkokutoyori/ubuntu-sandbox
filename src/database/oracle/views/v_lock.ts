@@ -1,5 +1,6 @@
 /**
- * V$LOCK — active locks. No lock manager is simulated, so empty.
+ * V$LOCK — active locks. Rows derive from the runtime lock table
+ * maintained by OracleRuntimeStateActor on every `oracle.lock.event`.
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -9,7 +10,7 @@ import { registerView } from './registry';
 registerView({
   name: 'V$LOCK',
   comment: 'Active locks',
-  query() {
+  query({ runtime }) {
     return queryResult(
       [
         { name: 'ADDR', dataType: oracleVarchar2(16) },
@@ -21,7 +22,10 @@ registerView({
         { name: 'REQUEST', dataType: oracleNumber(10) },
         { name: 'BLOCK', dataType: oracleNumber(10) },
       ],
-      []
+      runtime.locks.map((l, i) => [
+        `0x${(0x4000 + i).toString(16).toUpperCase()}`,
+        l.sid, l.type, l.id1, l.id2, l.lmode, l.request, l.block,
+      ]),
     );
   },
 });

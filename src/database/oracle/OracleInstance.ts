@@ -142,6 +142,9 @@ export class OracleInstance {
   private _restrictedSession = false;
   get restrictedSession(): boolean { return this._restrictedSession; }
   setRestrictedSession(on: boolean): void { this._restrictedSession = on; }
+  /** Monotonic counter feeding SYS_C00<n> auto-constraint / auto-index names. */
+  private _sysConstraintCounter = 0;
+  nextSysConstraintId(): number { return this._sysConstraintCounter++; }
   /** Whether a SHUTDOWN is in progress (no new logins). */
   private _shutdownPending = false;
   get shutdownPending(): boolean { return this._shutdownPending; }

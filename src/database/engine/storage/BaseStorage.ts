@@ -41,6 +41,8 @@ export interface IndexMeta {
   unique: boolean;
   bitmap?: boolean;
   expressions?: (string | null)[];
+  /** Tablespace the index lives in (defaults to the owning table's TS). */
+  tablespace?: string;
 }
 
 export interface SequenceMeta {
@@ -61,6 +63,30 @@ export interface TableMeta {
   tablespace?: string;
   temporary?: boolean;
   rowCount: number;
+  /** Partitioning configuration, populated by CREATE TABLE … PARTITION BY. */
+  partitioning?: PartitioningMeta;
+  /** Last time stats were gathered (ANALYZE / DBMS_STATS) — null before any. */
+  lastAnalyzed?: Date | null;
+  /** Compression state mutated by ALTER TABLE … MOVE COMPRESS / NOCOMPRESS. */
+  compression?: { enabled: boolean; for?: string };
+}
+
+export interface PartitioningMeta {
+  /** Partitioning strategy. */
+  type: 'RANGE' | 'LIST' | 'HASH' | 'REFERENCE' | 'SYSTEM' | 'COMPOSITE';
+  /** Columns the partitioning key is built from. */
+  columns: string[];
+  /** Whether INTERVAL partitioning was specified. */
+  interval?: string;
+  /** Concrete partitions defined at CREATE time (RANGE / LIST). */
+  partitions: PartitionMeta[];
+}
+
+export interface PartitionMeta {
+  name: string;
+  /** Verbatim VALUES LESS THAN / VALUES (…) clause (kept as text). */
+  highValue?: string;
+  tablespace?: string;
 }
 
 export interface TriggerMeta {
@@ -254,6 +280,15 @@ export abstract class BaseStorage {
 
   getSequence(schema: string, name: string): SequenceMeta | undefined {
     return this.sequences.get(schema.toUpperCase())?.get(name.toUpperCase());
+  }
+
+  /** Flat list of every sequence with its owner schema — used by DBA_SEQUENCES. */
+  getAllSequences(): { schema: string; sequence: SequenceMeta }[] {
+    const out: { schema: string; sequence: SequenceMeta }[] = [];
+    for (const [schema, byName] of this.sequences) {
+      for (const seq of byName.values()) out.push({ schema, sequence: seq });
+    }
+    return out;
   }
 
   // ── Index operations ─────────────────────────────────────────────

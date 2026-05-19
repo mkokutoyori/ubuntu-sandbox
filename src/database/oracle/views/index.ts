@@ -312,6 +312,7 @@ import './v_rollname';
 import './fga_log';
 import './v_recovery_status';
 import './v_timezone_file';
+import './session_privs';
 import './dba_services';
 import './_parallel_query';
 import './_scheduler_extras';

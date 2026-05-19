@@ -30,6 +30,7 @@ import { OracleError } from '../engine/types/DatabaseError';
 import { OracleLexer } from './OracleLexer';
 import { makeSqlId } from './views/sqlId';
 import { OracleParser } from './OracleParser';
+import { Equipment } from '../../network/equipment/Equipment';
 import { ORACLE_CONFIG } from '../../terminal/commands/OracleConfig';
 
 /** Snapshot of table rows for transaction undo */
@@ -444,22 +445,60 @@ export class OracleExecutor extends BaseExecutor {
         const s = statement as import('../engine/parser/ASTNode').AnalyzeStatement;
         const schema = (s.schema || this.context.currentSchema).toUpperCase();
         const name = s.name.toUpperCase();
-        if (s.target === 'TABLE' && !this.storage.tableExists(schema, name)) {
-          throw new OracleError(942, `table or view does not exist`);
+        if (s.target === 'TABLE') {
+          if (!this.storage.tableExists(schema, name)) {
+            throw new OracleError(942, `table or view does not exist`);
+          }
+          if (s.action === 'COMPUTE_STATISTICS' || s.action === 'ESTIMATE_STATISTICS') {
+            // Stamp the table with a real LAST_ANALYZED timestamp.
+            const meta = this.storage.getTableMeta(schema, name)!;
+            meta.lastAnalyzed = new Date();
+          } else if (s.action === 'DELETE_STATISTICS') {
+            const meta = this.storage.getTableMeta(schema, name)!;
+            meta.lastAnalyzed = null;
+          }
         }
-        // The simulator does not maintain CBO histograms, so ANALYZE is
-        // a no-op that returns the same success message real Oracle does.
         return emptyResult(`${s.target === 'TABLE' ? 'Table' : s.target === 'INDEX' ? 'Index' : 'Cluster'} analyzed.`);
       }
       case 'FlashbackStatement': {
-        // The simulator does not time-travel — we accept the syntax so
-        // DBA scripts make progress and the alert log records intent.
         const s = statement as import('../engine/parser/ASTNode').FlashbackStatement;
+        // Only FLASHBACK TABLE … TO BEFORE DROP is plumbed against
+        // real state (the recyclebin). DATABASE / TO TIMESTAMP / SCN
+        // are accepted but logical no-ops — the simulator has no
+        // undo/redo time machine.
+        if (s.target === 'TABLE' && /BEFORE\s+DROP/i.test(s.to)) {
+          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const name = s.name!.toUpperCase();
+          const catalog = this.catalog as OracleCatalog;
+          const entry = catalog.recyclebinFindLatest(owner, name);
+          if (!entry || !entry.payload) {
+            throw new OracleError(38305, `object not in RECYCLE BIN`);
+          }
+          const payload = entry.payload as { meta: import('../engine/storage/BaseStorage').TableMeta; rows: StorageRow[] };
+          this.storage.ensureSchema(owner);
+          this.storage.createTable({
+            ...payload.meta, schema: owner, name, rowCount: payload.rows.length,
+          });
+          this.storage.insertRows(owner, name, payload.rows);
+          catalog.recyclebinRemove(entry.objectName);
+        }
         this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
         return emptyResult(`Flashback complete.`);
       }
       case 'PurgeStatement': {
-        // Recyclebin is not modeled — the catalog is permanent.
+        const s = statement as import('../engine/parser/ASTNode').PurgeStatement;
+        const catalog = this.catalog as OracleCatalog;
+        if (s.target === 'RECYCLEBIN' || s.target === 'USER') {
+          catalog.recyclebinPurgeAll(this.context.currentSchema);
+        } else if (s.target === 'DBA_RECYCLEBIN') {
+          catalog.recyclebinPurgeAll();
+        } else if (s.target === 'TABLE' && s.name) {
+          // PURGE TABLE name → remove the (most recent) recyclebin
+          // entry with that original name.
+          const owner = (s.schema || this.context.currentSchema).toUpperCase();
+          const entry = catalog.recyclebinFindLatest(owner, s.name.toUpperCase());
+          if (entry) catalog.recyclebinRemove(entry.objectName);
+        }
         return emptyResult('Recyclebin purged.');
       }
       case 'CreatePfileSpfileStatement': return this.executeCreatePfileSpfile(statement);
@@ -614,8 +653,11 @@ export class OracleExecutor extends BaseExecutor {
       return this.executeSetOperation(stmt);
     }
 
-    // DUAL has its own minimal pipeline (no JOIN/GROUP BY etc.)
-    if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef') {
+    // DUAL has its own minimal pipeline (no JOIN/GROUP BY etc.), but
+    // the row-generator idiom `SELECT … FROM DUAL CONNECT BY LEVEL <= N`
+    // needs the full hierarchical pipeline.
+    if (stmt.from && stmt.from.length === 1 && stmt.from[0].type === 'TableRef'
+        && !stmt.connectBy && !stmt.groupBy && !stmt.where) {
       const firstName = stmt.from[0].name.toUpperCase();
       if (firstName === 'DUAL') {
         return this.executeSelectFromDual(stmt);
@@ -1715,28 +1757,47 @@ export class OracleExecutor extends BaseExecutor {
     const result: StorageRow[] = [];
     const visited = new Set<string>();
 
+    // Safety cap matching Oracle's default ORA-30009 threshold (10000).
+    const MAX_DEPTH = 10000;
+
     const traverse = (parentRow: StorageRow, level: number) => {
-      const rowKey = JSON.stringify(parentRow);
+      const rowKey = JSON.stringify(parentRow) + '#' + level;
       if (connectBy.noCycle && visited.has(rowKey)) return;
-      if (level > 100) return; // Safety limit
+      if (level > MAX_DEPTH) return;
 
       visited.add(rowKey);
       const rowWithLevel = [...parentRow];
       rowWithLevel[levelIdx] = level;
       result.push(rowWithLevel);
 
-      // Find children by evaluating CONNECT BY condition with PRIOR
+      // Find children by re-evaluating the CONNECT BY condition. The
+      // candidate child's LEVEL pseudo-column must reflect what its
+      // depth *would be* if it were emitted, otherwise predicates like
+      // `LEVEL <= N` never terminate the recursion correctly.
+      const childLevel = level + 1;
       for (const childRow of rows) {
-        if (this.evaluateConnectByCondition(connectBy.condition, parentRow, childRow, columns)) {
-          traverse(childRow, level + 1);
+        const childWithLevel = [...childRow];
+        childWithLevel[levelIdx] = childLevel;
+        const ok = this.evaluateConnectByCondition(connectBy.condition, rowWithLevel, childWithLevel, columns);
+        if (ok) {
+          traverse(childWithLevel, childLevel);
         }
       }
 
       visited.delete(rowKey);
     };
 
+    // Seed traversal: root rows get LEVEL=1. Without PRIOR / START WITH
+    // and a single-row source (e.g. DUAL), this is the standard "row
+    // generator" idiom.
     for (const root of rootRows) {
-      traverse(root, 1);
+      const rootWithLevel = [...root];
+      rootWithLevel[levelIdx] = 1;
+      // The first emission is unconditional only when the predicate
+      // accepts LEVEL=1 — real Oracle still applies the CONNECT BY
+      // filter to the root, except that LEVEL=1 always satisfies a
+      // `LEVEL <= N` style guard.
+      traverse(rootWithLevel, 1);
     }
 
     return result;
@@ -2085,8 +2146,11 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
         }
-        // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK)
-        this.validateConstraints(schema, tableName, tableMeta, newRow);
+        // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK).
+        // Pass the pre-update row so uniqueness checks can exclude it
+        // from the existing-row set (otherwise an UPDATE that leaves
+        // the PK column unchanged would self-conflict).
+        this.validateConstraints(schema, tableName, tableMeta, newRow, row);
         this.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
@@ -2173,12 +2237,12 @@ export class OracleExecutor extends BaseExecutor {
     }));
 
     const constraints: ConstraintMeta[] = [];
-    let constraintIdx = 0;
+    const nextSysC = () => `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`;
 
     // Column-level constraints
     for (const col of stmt.columns) {
       for (const cc of col.constraints) {
-        const name = cc.constraintName || `SYS_C${String(10000 + constraintIdx++).padStart(6, '0')}`;
+        const name = cc.constraintName || nextSysC();
         if (cc.constraintType === 'NOT_NULL') {
           constraints.push({ name, type: 'NOT_NULL', columns: [col.name.toUpperCase()] });
           const colMeta = columns.find(c => c.name === col.name.toUpperCase());
@@ -2197,7 +2261,7 @@ export class OracleExecutor extends BaseExecutor {
 
     // Table-level constraints
     for (const tc of stmt.constraints) {
-      const name = tc.constraintName || `SYS_C${String(10000 + constraintIdx++).padStart(6, '0')}`;
+      const name = tc.constraintName || nextSysC();
       constraints.push({
         name,
         type: tc.constraintType === 'PRIMARY_KEY' ? 'PRIMARY_KEY' : tc.constraintType === 'UNIQUE' ? 'UNIQUE' : tc.constraintType === 'FOREIGN_KEY' ? 'FOREIGN_KEY' : 'CHECK',
@@ -2214,7 +2278,36 @@ export class OracleExecutor extends BaseExecutor {
       tablespace: stmt.tablespace?.toUpperCase() || 'USERS',
       temporary: stmt.temporary,
       rowCount: 0,
+      partitioning: stmt.partitioning ? {
+        type: stmt.partitioning.strategy === 'REFERENCE' ? 'REFERENCE'
+            : stmt.partitioning.strategy === 'SYSTEM' ? 'SYSTEM'
+            : stmt.partitioning.strategy,
+        columns: stmt.partitioning.columns.map(c => c.toUpperCase()),
+        interval: stmt.partitioning.interval,
+        partitions: stmt.partitioning.partitions.map(p => ({
+          name: p.name.toUpperCase(),
+          highValue: p.highValue,
+          tablespace: p.tablespace?.toUpperCase(),
+        })),
+      } : undefined,
     });
+
+    // Real Oracle auto-creates a UNIQUE index for every PRIMARY KEY
+    // and UNIQUE constraint. The index name defaults to the constraint
+    // name (a SYS_C…-prefixed identifier when the DBA didn't name it).
+    // The index sits in the same tablespace as the table.
+    for (const c of constraints) {
+      if (c.type === 'PRIMARY_KEY' || c.type === 'UNIQUE') {
+        if (this.storage.getIndexes(schema).some(i => i.name === c.name)) continue;
+        this.storage.createIndex(schema, {
+          name: c.name,
+          tableName,
+          columns: c.columns,
+          unique: true,
+          tablespace: stmt.tablespace?.toUpperCase() || 'USERS',
+        });
+      }
+    }
 
     return emptyResult('Table created.');
   }
@@ -2230,6 +2323,22 @@ export class OracleExecutor extends BaseExecutor {
     if (!this.storage.tableExists(schema, tableName)) {
       if (stmt.ifExists) return emptyResult('');
       throw new OracleError(942, `table or view does not exist`);
+    }
+
+    // Unless PURGE is specified, soft-drop into the recyclebin so
+    // FLASHBACK TABLE … TO BEFORE DROP can restore it.
+    if (!stmt.purge) {
+      const meta = this.storage.getTableMeta(schema, tableName)!;
+      const rows = this.storage.getRows(schema, tableName);
+      const catalog = this.catalog as OracleCatalog;
+      catalog.recyclebinAdd({
+        owner: schema,
+        originalName: tableName,
+        type: 'TABLE',
+        tsName: meta.tablespace ?? 'USERS',
+        space: Math.ceil((rows.length * 200) / 512),
+        payload: { meta, rows },
+      });
     }
     this.storage.dropTable(schema, tableName);
     return emptyResult('Table dropped.');
@@ -2285,10 +2394,39 @@ export class OracleExecutor extends BaseExecutor {
         }
         if (target) meta.tablespace = target;
       } else if (action.action === 'MOVE_COMPRESS') {
-        // Compression flag isn't tracked yet — accept silently.
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (meta) {
+          const level = action.compressionLevel?.trim().toUpperCase();
+          // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
+          const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
+          meta.compression = off
+            ? { enabled: false }
+            : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
+        }
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.
+      } else if (action.action === 'ADD_SUPPLEMENTAL_LOG_GROUP') {
+        (this.catalog as OracleCatalog).addSupplementalLogGroup({
+          owner: schema,
+          logGroupName: action.logGroupName.toUpperCase(),
+          tableName,
+          always: action.always,
+          columns: action.columns.map(c => c.toUpperCase()),
+        });
+      } else if (action.action === 'DROP_SUPPLEMENTAL_LOG_GROUP') {
+        (this.catalog as OracleCatalog).dropSupplementalLogGroup(schema, action.logGroupName);
+      } else if (action.action === 'ADD_SUPPLEMENTAL_LOG_DATA') {
+        // Toggle on the instance-level supplemental log flags so
+        // V\$DATABASE reflects it.
+        const inst = this.instance;
+        const supp = inst.supplementalLog;
+        switch (action.mode) {
+          case 'PRIMARY_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', pk: true }); break;
+          case 'UNIQUE':      inst.setSupplementalLog({ min: 'IMPLICIT', ui: true }); break;
+          case 'FOREIGN_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', fk: true }); break;
+          case 'ALL':         inst.setSupplementalLog({ min: 'IMPLICIT', all: true, pk: supp.pk, ui: supp.ui, fk: supp.fk }); break;
+        }
       }
     }
 
@@ -2588,6 +2726,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeGrant(stmt: GrantStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
+    const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
     // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
@@ -2595,19 +2734,30 @@ export class OracleExecutor extends BaseExecutor {
       const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
       const engine = catalog.getSecurityEngine();
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
-        // Not the owner and not DBA — must hold the priv WITH GRANT OPTION (simplified check)
         throw new OracleError(1031, 'insufficient privileges');
       }
-      for (const priv of stmt.privileges) {
-        catalog.grantTablePrivilege(stmt.grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
+          if (cols && cols.length > 0) {
+            // Column-level grant: only DBA_COL_PRIVS, not DBA_TAB_PRIVS.
+            for (const c of cols) {
+              catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
+            }
+          } else {
+            catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+          }
+        }
       }
     } else {
       this.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
-      for (const priv of stmt.privileges) {
-        if (catalog.roleExists(priv)) {
-          catalog.grantRole(stmt.grantee, priv, stmt.withAdminOption);
-        } else {
-          catalog.grantSystemPrivilege(stmt.grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          if (catalog.roleExists(priv)) {
+            catalog.grantRole(grantee, priv, stmt.withAdminOption);
+          } else {
+            catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
+          }
         }
       }
     }
@@ -2616,17 +2766,27 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeRevoke(stmt: RevokeStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
+    const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
     if (stmt.objectName) {
       const schema = stmt.objectSchema || this.context.currentSchema;
-      for (const priv of stmt.privileges) {
-        catalog.revokeTablePrivilege(stmt.grantee, priv, schema, stmt.objectName);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          const cols = stmt.privilegeColumns?.[priv.toUpperCase()];
+          if (cols && cols.length > 0) {
+            for (const c of cols) catalog.revokeColumnPrivilege(grantee, priv, schema, stmt.objectName, c);
+          } else {
+            catalog.revokeTablePrivilege(grantee, priv, schema, stmt.objectName);
+          }
+        }
       }
     } else {
-      for (const priv of stmt.privileges) {
-        if (catalog.roleExists(priv)) {
-          catalog.revokeRole(stmt.grantee, priv);
-        } else {
-          catalog.revokeSystemPrivilege(stmt.grantee, priv);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          if (catalog.roleExists(priv)) {
+            catalog.revokeRole(grantee, priv);
+          } else {
+            catalog.revokeSystemPrivilege(grantee, priv);
+          }
         }
       }
     }
@@ -2658,12 +2818,13 @@ export class OracleExecutor extends BaseExecutor {
       created: new Date(),
       profile: profileName,
       authenticationType: authType,
+      externalName: stmt.externalName,
     });
     if (authType === 'PASSWORD' && stmt.password) {
       catalog.setPassword(username, stmt.password);
       catalog.getSecurityEngine()?.passwords.setPassword(username, stmt.password);
     }
-    if (authType === 'GLOBAL' && stmt.externalName) {
+    if ((authType === 'GLOBAL' || authType === 'EXTERNAL') && stmt.externalName) {
       catalog.setExternalName(username, stmt.externalName);
     }
     if (stmt.passwordExpired) {
@@ -2705,6 +2866,19 @@ export class OracleExecutor extends BaseExecutor {
         if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
       }
       catalog.setPassword(username, stmt.password);
+      if (user) {
+        user.authenticationType = 'PASSWORD';
+        user.externalName = undefined;
+      }
+    } else if (stmt.authenticationKind && user) {
+      user.authenticationType = stmt.authenticationKind;
+      if (stmt.externalName !== undefined) {
+        user.externalName = stmt.externalName;
+        catalog.setExternalName(username, stmt.externalName);
+      } else if (stmt.authenticationKind === 'EXTERNAL') {
+        // Bare IDENTIFIED EXTERNALLY — clear any prior principal.
+        user.externalName = undefined;
+      }
     }
     if (stmt.accountLock) {
       catalog.lockUser(username);
@@ -2735,6 +2909,9 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.quota && stmt.quota.length > 0) {
       engine?.applyQuotas(username, stmt.quota);
     }
+    if (stmt.defaultRoleSpec) {
+      catalog.setDefaultRoleSpec(username, stmt.defaultRoleSpec);
+    }
     return emptyResult('User altered.');
   }
 
@@ -2751,7 +2928,12 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
-    (this.catalog as OracleCatalog).createRole(stmt.name);
+    const catalog = this.catalog as OracleCatalog;
+    const authKind = stmt.authenticationKind ?? 'NONE';
+    catalog.createRole(stmt.name, authKind);
+    if (authKind === 'PASSWORD' && stmt.password) {
+      catalog.setRolePassword(stmt.name, stmt.password);
+    }
     return emptyResult('Role created.');
   }
 
@@ -2935,14 +3117,26 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Tablespace dropped.');
   }
 
+  /** No-op helper — see file-scope `parseInitParameters` below. */
   private executeCreatePfileSpfile(stmt: CreatePfileSpfileStatement): ResultSet {
-    // We don't actually re-import parameters from disk — the instance
-    // is the single source of truth in the simulator. So `FROM MEMORY`
-    // and `FROM SPFILE/PFILE` all snapshot the current parameter set
-    // and just choose where to render it.
+    const sid = this.sid;
+    // FROM PFILE='path' / FROM SPFILE[='path'] — load the source file
+    // from the device VFS and apply its parameters before we render
+    // the output file. FROM MEMORY snapshots the live parameter set.
+    if (stmt.source === 'PFILE' || stmt.source === 'SPFILE') {
+      const srcDefault = stmt.source === 'PFILE'
+        ? `${ORACLE_CONFIG.HOME}/dbs/init${sid}.ora`
+        : `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`;
+      const src = stmt.sourcePath ?? srcDefault;
+      const content = this.readDeviceFile(src);
+      if (content !== null) {
+        for (const [k, v] of parseInitParameters(content)) {
+          this.instance.setParameter(k, v, 'BOTH');
+        }
+      }
+    }
     const params: Record<string, string> = {};
     for (const [k, v] of this.instance.getAllParameters()) params[k] = v;
-    const sid = this.sid;
     const defaultPath =
       stmt.target === 'SPFILE'
         ? `${ORACLE_CONFIG.HOME}/dbs/spfile${sid}.ora`
@@ -2956,6 +3150,18 @@ export class OracleExecutor extends BaseExecutor {
       },
     });
     return emptyResult(`File created.`);
+  }
+
+  /**
+   * Look up the device by id (via the global registry) and read the
+   * given path through the VFS-backed editor accessor. Returns null
+   * if the device or file cannot be reached — callers fall back to
+   * the in-memory parameter set so behaviour is graceful.
+   */
+  private readDeviceFile(path: string): string | null {
+    const dev = Equipment.getById(this.deviceId);
+    const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | undefined)?.readFileForEditor;
+    return typeof read === 'function' ? read.call(dev, path) ?? null : null;
   }
 
   private executeAlterTablespace(stmt: AlterTablespaceStatement): ResultSet {
@@ -3856,6 +4062,29 @@ export class OracleExecutor extends BaseExecutor {
   private applyBinaryOp(op: string, left: CellValue, right: CellValue): CellValue {
     if (op === '||') return (left != null ? String(left) : '') + (right != null ? String(right) : '');
     if (left == null || right == null) return null;
+    // Date arithmetic: DATE ± NUMBER → DATE, DATE − DATE → NUMBER (days).
+    // Cheaper than wrapping every cell in a Date object — detect ISO-shaped
+    // strings (what SYSDATE / CURRENT_DATE produce) and operate in ms.
+    if (op === '+' || op === '-') {
+      const lDate = this.coerceToDateMs(left);
+      const rDate = this.coerceToDateMs(right);
+      const DAY = 86_400_000;
+      if (lDate !== null && rDate !== null) {
+        if (op === '-') return (lDate - rDate) / DAY;
+        // DATE + DATE is not legal in Oracle (ORA-00975) — fall through.
+      } else if (lDate !== null && typeof right !== 'string') {
+        const days = Number(right);
+        if (!Number.isNaN(days)) {
+          const out = op === '+' ? lDate + days * DAY : lDate - days * DAY;
+          return new Date(out).toISOString().slice(0, 19).replace('T', ' ');
+        }
+      } else if (rDate !== null && typeof left !== 'string' && op === '+') {
+        const days = Number(left);
+        if (!Number.isNaN(days)) {
+          return new Date(rDate + days * DAY).toISOString().slice(0, 19).replace('T', ' ');
+        }
+      }
+    }
     const l = this.toNumber(left);
     const r = this.toNumber(right);
     switch (op) {
@@ -3865,6 +4094,20 @@ export class OracleExecutor extends BaseExecutor {
       case '/': if (r === 0) throw new OracleError(1476, 'divisor is equal to zero'); return l / r;
       default: return this.applyComparison(op, left, right) ? 1 : 0;
     }
+  }
+
+  /**
+   * Detects an Oracle-shaped date scalar — either a JS `Date` or an
+   * ISO-ish string `YYYY-MM-DD[ T]HH:MM:SS[.fff[Z]]`. Returns its epoch
+   * milliseconds, or `null` if the value is not a date.
+   */
+  private coerceToDateMs(value: CellValue): number | null {
+    if (value instanceof Date) return value.getTime();
+    if (typeof value !== 'string') return null;
+    // Reject pure numeric strings ("1", "100") that just happen to parse.
+    if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return null;
+    const ms = Date.parse(value.replace(' ', 'T'));
+    return Number.isNaN(ms) ? null : ms;
   }
 
   private applyComparison(op: string, left: CellValue, right: CellValue): boolean {
@@ -3935,7 +4178,14 @@ export class OracleExecutor extends BaseExecutor {
     return null;
   }
 
-  private validateConstraints(schema: string, tableName: string, tableMeta: import('../engine/storage/BaseStorage').TableMeta, row: StorageRow): void {
+  private validateConstraints(
+    schema: string,
+    tableName: string,
+    tableMeta: import('../engine/storage/BaseStorage').TableMeta,
+    row: StorageRow,
+    /** For UPDATE: the pre-update row excluded from uniqueness checks. */
+    excludeRow?: StorageRow,
+  ): void {
     for (const constraint of tableMeta.constraints) {
       if (constraint.type === 'NOT_NULL' || constraint.type === 'PRIMARY_KEY') {
         for (const colName of constraint.columns) {
@@ -3950,6 +4200,7 @@ export class OracleExecutor extends BaseExecutor {
         const colIndexes = constraint.columns.map(cn => tableMeta.columns.findIndex(c => c.name === cn));
         const newKey = colIndexes.map(i => row[i]);
         for (const existing of existingRows) {
+          if (excludeRow && existing === excludeRow) continue;
           const existingKey = colIndexes.map(i => existing[i]);
           if (newKey.every((v, i) => this.compareValues(v, existingKey[i]) === 0)) {
             throw new OracleError(1, `unique constraint (${constraint.name}) violated`);
@@ -4207,4 +4458,24 @@ export class OracleExecutor extends BaseExecutor {
     }
     return emptyResult('Noaudit succeeded.');
   }
+}
+
+/**
+ * Parse the `*.<name>=value` (spfile) and bare `<name>=value` (pfile)
+ * lines from an init.ora-style file into a plain (name, value) map.
+ * Comment lines (#) and blank lines are skipped; surrounding single
+ * quotes on the value are stripped.
+ */
+function parseInitParameters(content: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = /^(?:\*\.)?([a-zA-Z0-9_]+)\s*=\s*(.+)$/.exec(line);
+    if (!m) continue;
+    let value = m[2].trim();
+    if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+    out.set(m[1].toLowerCase(), value);
+  }
+  return out;
 }

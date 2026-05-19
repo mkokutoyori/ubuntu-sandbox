@@ -48,7 +48,9 @@ registerView({
         col.date('TIMESTAMP'),
         col.str('ACTION_NAME', 28),
         col.str('OBJ_NAME', 128),
-        col.str('OBJ_OWNER', 128),
+        // Oracle 19c spelling — the column was renamed from OBJ_OWNER
+        // → OWNER in 11g; transcripts query it under the new name.
+        col.str('OWNER', 128),
         col.num('SESSIONID'),
         col.num('RETURNCODE'),
         col.str('SQL_TEXT', 2000),
