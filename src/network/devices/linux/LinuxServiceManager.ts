@@ -55,6 +55,8 @@ export interface ServiceUnit {
   enabled: EnabledState;
   mainPid?: number;
   activeSince?: Date;
+  /** Runtime resource-control overrides set via `systemctl set-property`. */
+  props?: Record<string, string>;
 }
 
 export interface ServiceManagerOptions {
@@ -251,7 +253,7 @@ export type ServiceLifecycleListener = (
 
 export class LinuxServiceManager {
   /** Loaded units indexed by short name (without .service suffix). */
-  private units = new Map<string, ServiceUnit>();
+  private units = new Map<string, LinuxService>();
   /** Lifecycle listeners (BRD SSH-07-R6: sshd reloads its config on restart). */
   private listeners: ServiceLifecycleListener[] = [];
   /** Reactive sink — null until a device attaches its bus. */
@@ -406,13 +408,51 @@ export class LinuxServiceManager {
     return { ok: true };
   }
 
+  /** Mask a unit (symlink to /dev/null): it cannot be started. */
+  mask(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    const u = unit.unit;
+    u.enabled = 'masked';
+    this.emitEnablement('linux.service.masked', u.name, 'masked');
+    return { ok: true };
+  }
+
+  /** Reverse `mask`, restoring the computed enable state. */
+  unmask(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    const u = unit.unit;
+    u.enabled = this.computeEnabledState(name);
+    this.emitEnablement('linux.service.unmasked', u.name, u.enabled);
+    return { ok: true };
+  }
+
+  /** systemd default boot target (graphical for PC, multi-user for server). */
+  defaultTarget(): string {
+    return this.opts.isServer ? 'multi-user.target' : 'graphical.target';
+  }
+
+  /** Clear the `failed` state so the unit can be started again. */
+  resetFailed(name?: string): void {
+    const units = name ? [this.units.get(name)].filter(Boolean) as LinuxService[]
+      : [...this.units.values()];
+    for (const u of units) {
+      if (u.state === 'failed') {
+        const from = u.state;
+        u.state = 'inactive';
+        this.emitStateChanged(u.name, from, 'inactive');
+      }
+    }
+  }
+
   /** Return the unit, or null if not loaded. */
-  status(name: string): ServiceUnit | null {
+  status(name: string): LinuxService | null {
     return this.units.get(name) ?? null;
   }
 
   /** Find the unit whose main process is `pid` (used by the supervisor). */
-  findByMainPid(pid: number): ServiceUnit | null {
+  findByMainPid(pid: number): LinuxService | null {
     for (const u of this.units.values()) {
       if (u.mainPid === pid) return u;
     }
@@ -445,8 +485,8 @@ export class LinuxServiceManager {
   }
 
   /** List units, optionally filtered by state or enabled flag. */
-  list(filter: ListFilter = {}): ServiceUnit[] {
-    const out: ServiceUnit[] = [];
+  list(filter: ListFilter = {}): LinuxService[] {
+    const out: LinuxService[] = [];
     for (const u of this.units.values()) {
       if (filter.state !== undefined && u.state !== filter.state) continue;
       if (filter.enabled !== undefined && u.enabled !== filter.enabled) continue;
@@ -508,7 +548,7 @@ export class LinuxServiceManager {
 
   private requireUnit(
     name: string,
-  ): { ok: true; unit: ServiceUnit } | { ok: false; error: string } {
+  ): { ok: true; unit: LinuxService } | { ok: false; error: string } {
     const short = name.replace(/\.service$/, '');
     const u = this.units.get(short);
     if (!u) {
@@ -517,7 +557,7 @@ export class LinuxServiceManager {
     return { ok: true, unit: u };
   }
 
-  private activate(u: ServiceUnit): OperationResult {
+  private activate(u: LinuxService): OperationResult {
     const prev = u.state;
     u.state = 'activating';
     const userEntry = u.user || 'root';
@@ -540,7 +580,7 @@ export class LinuxServiceManager {
     return { ok: true };
   }
 
-  private deactivate(u: ServiceUnit): OperationResult {
+  private deactivate(u: LinuxService): OperationResult {
     const prev = u.state;
     u.state = 'deactivating';
     if (u.mainPid !== undefined) {

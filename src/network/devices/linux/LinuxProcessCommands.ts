@@ -11,6 +11,7 @@ import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import { runPs } from './ps/PsCommand';
 import { memPercent, kbToMiB } from './system/ProcFormat';
+import { LinuxService } from './service/LinuxService';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
@@ -263,8 +264,35 @@ function renderUnitStatus(u: ServiceUnit): string {
   return lines.join('\n');
 }
 
+/**
+ * Validate a `systemctl set-property` assignment. Returns an error
+ * string for an unknown key or malformed value, else null.
+ */
+function validateUnitProperty(key: string, val: string): string | null {
+  const validators: Record<string, RegExp> = {
+    CPUQuota: /^\d+%$/,
+    CPUWeight: /^\d+$/,
+    MemoryMax: /^(\d+[KMG]?|infinity)$/,
+    MemoryHigh: /^(\d+[KMG]?|infinity)$/,
+    MemoryLimit: /^(\d+[KMG]?|infinity)$/,
+    TasksMax: /^(\d+|infinity)$/,
+    IOWeight: /^\d+$/,
+  };
+  const rule = validators[key];
+  if (!rule) {
+    return `Cannot set property ${key}, or unknown property.`;
+  }
+  if (!rule.test(val)) {
+    return `Failed to parse ${key}= setting "${val}".`;
+  }
+  return null;
+}
+
 export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlResult {
-  const sub = (args[0] || '').toLowerCase();
+  let sub = (args[0] || '').toLowerCase();
+  // Bare option invocations (`systemctl --failed`, `--type=service`,
+  // `-t service`) are listing requests in real systemd.
+  if (sub.startsWith('-') && sub !== '--version') sub = 'list-units';
   const unit = (args[1] || '').replace(/\.service$/, '');
 
   if (!sub) {
@@ -365,8 +393,110 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
     }
 
     case 'daemon-reload':
+    case 'daemon-reexec':
       sm.daemonReload();
       return { output: '', exitCode: 0 };
+
+    case '--version':
+    case 'version':
+      return {
+        output: 'systemd 249 (249.11-0ubuntu3)\n+PAM +AUDIT +SELINUX +APPARMOR +SYSVINIT',
+        exitCode: 0,
+      };
+
+    case 'get-default':
+      return { output: sm.defaultTarget(), exitCode: 0 };
+
+    case 'is-failed': {
+      const u = sm.status(unit);
+      const failed = u?.state === 'failed';
+      return { output: failed ? 'failed' : 'active', exitCode: failed ? 0 : 1 };
+    }
+
+    case 'mask':
+    case 'unmask': {
+      if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
+      const r = sub === 'mask' ? sm.mask(unit) : sm.unmask(unit);
+      if (!r.ok) return { output: `Failed to ${sub} unit: ${r.error}`, exitCode: 1 };
+      const verb = sub === 'mask' ? 'Created' : 'Removed';
+      return {
+        output: `${verb} symlink /etc/systemd/system/${unit}.service${sub === 'mask' ? ' → /dev/null' : ''}.`,
+        exitCode: 0,
+      };
+    }
+
+    case 'reset-failed':
+      sm.resetFailed(unit || undefined);
+      return { output: '', exitCode: 0 };
+
+    case 'show': {
+      const props: string[] = [];
+      let target = '';
+      for (let i = 1; i < args.length; i++) {
+        const a = args[i];
+        if (a === '-p' || a === '--property') {
+          props.push(...(args[++i] ?? '').split(',').filter(Boolean));
+        } else if (a.startsWith('--property=')) {
+          props.push(...a.slice('--property='.length).split(',').filter(Boolean));
+        } else if (a === '-a' || a === '--all') {
+          /* show all: ignored, we print the default set */
+        } else if (!a.startsWith('-')) {
+          target = a.replace(/\.service$/, '');
+        }
+      }
+      if (!target) {
+        return {
+          output: [
+            `Version=249`,
+            `Architecture=x86-64`,
+            `NNames=1`,
+            `DefaultTimeoutStartUSec=1min 30s`,
+          ].join('\n'),
+          exitCode: 0,
+        };
+      }
+      const u = sm.status(target);
+      if (!u) {
+        // systemd prints empty values for unknown units, exit 0.
+        return { output: props.map(p => `${p}=`).join('\n'), exitCode: 0 };
+      }
+      const keys = props.length > 0 ? props : LinuxService.DEFAULT_SHOW_KEYS;
+      return {
+        output: keys.map(k => `${k}=${u.effectiveProp(k)}`).join('\n'),
+        exitCode: 0,
+      };
+    }
+
+    case 'set-property': {
+      if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
+      const u = sm.status(unit);
+      if (!u) return { output: `Unit ${unit}.service not loaded.`, exitCode: 1 };
+      const pairs = args.slice(2).filter(a => a.includes('='));
+      if (pairs.length === 0) return { output: 'Too few arguments.', exitCode: 1 };
+      for (const pair of pairs) {
+        const eq = pair.indexOf('=');
+        const key = pair.slice(0, eq);
+        const val = pair.slice(eq + 1);
+        const err = validateUnitProperty(key, val);
+        if (err) return { output: err, exitCode: 1 };
+        u.setProperty(key, val);
+      }
+      return { output: '', exitCode: 0 };
+    }
+
+    case 'list-timers':
+      return { output: 'NEXT LEFT LAST PASSED UNIT ACTIVATES\n\n0 timers listed.', exitCode: 0 };
+
+    case 'list-sockets':
+      return { output: 'LISTEN UNIT ACTIVATES\n\n0 sockets listed.', exitCode: 0 };
+
+    case 'list-dependencies': {
+      const u = unit ? sm.status(unit) : null;
+      if (unit && !u) return { output: `Failed to get dependencies: Unit ${unit}.service not found.`, exitCode: 1 };
+      const head = unit ? `${unit}.service` : sm.defaultTarget();
+      const deps = u ? u.after : [];
+      return { output: [head, ...deps.map(d => `● └─${d}`)].join('\n'), exitCode: 0 };
+    }
 
     case 'cat': {
       if (!unit) return { output: 'Too few arguments.', exitCode: 1 };
