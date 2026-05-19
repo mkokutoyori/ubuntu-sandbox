@@ -108,6 +108,7 @@ export abstract class LinuxMachine extends EndHost {
 
     // 2. Kernel / userspace
     this.executor = new LinuxCommandExecutor(profile.isServer);
+    this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
     this.initDefaultSockets(profile.isServer);

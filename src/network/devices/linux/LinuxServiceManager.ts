@@ -14,6 +14,7 @@
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
+import type { IEventBus } from '@/events/EventBus';
 
 /** systemd-equivalent activation state for a unit. */
 export type ServiceState =
@@ -252,6 +253,9 @@ export class LinuxServiceManager {
   private units = new Map<string, ServiceUnit>();
   /** Lifecycle listeners (BRD SSH-07-R6: sshd reloads its config on restart). */
   private listeners: ServiceLifecycleListener[] = [];
+  /** Reactive sink — null until a device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -263,6 +267,15 @@ export class LinuxServiceManager {
     this.startEnabledServices();
   }
 
+  /**
+   * Attach the owning device's bus so service transitions become
+   * observable by supervisors / UI / telemetry (Dependency Inversion).
+   */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
+
   /** Subscribe to service lifecycle changes. Returns an unsubscribe handle. */
   onLifecycle(listener: ServiceLifecycleListener): () => void {
     this.listeners.push(listener);
@@ -271,8 +284,43 @@ export class LinuxServiceManager {
     };
   }
 
+  private static readonly LIFECYCLE_TOPIC = {
+    start: 'linux.service.started',
+    stop: 'linux.service.stopped',
+    restart: 'linux.service.restarted',
+    reload: 'linux.service.reloaded',
+  } as const;
+
   private emitLifecycle(event: ServiceLifecycleEvent, name: string): void {
     for (const l of this.listeners) l(event, name);
+    const u = this.units.get(name);
+    this.bus?.publish({
+      topic: LinuxServiceManager.LIFECYCLE_TOPIC[event],
+      payload: {
+        deviceId: this.deviceId,
+        name,
+        state: u?.state ?? 'inactive',
+        mainPid: u?.mainPid,
+        type: u?.type ?? 'simple',
+      },
+    });
+  }
+
+  private emitEnablement(
+    topic: 'linux.service.enabled' | 'linux.service.disabled'
+      | 'linux.service.masked' | 'linux.service.unmasked',
+    name: string,
+    enabled: EnabledState,
+  ): void {
+    this.bus?.publish({ topic, payload: { deviceId: this.deviceId, name, enabled } });
+  }
+
+  private emitStateChanged(name: string, from: ServiceState, to: ServiceState): void {
+    if (from === to) return;
+    this.bus?.publish({
+      topic: 'linux.service.state-changed',
+      payload: { deviceId: this.deviceId, name, from, to },
+    });
   }
 
   // ─── Public API ───────────────────────────────────────────────────
@@ -339,6 +387,7 @@ export class LinuxServiceManager {
       this.vfs.createSymlink(linkPath, target, 0, 0);
     }
     u.enabled = 'enabled';
+    this.emitEnablement('linux.service.enabled', u.name, 'enabled');
     return { ok: true };
   }
 
@@ -352,6 +401,7 @@ export class LinuxServiceManager {
       this.vfs.deleteFile(linkPath);
     }
     u.enabled = 'disabled';
+    this.emitEnablement('linux.service.disabled', u.name, 'disabled');
     return { ok: true };
   }
 
@@ -444,6 +494,7 @@ export class LinuxServiceManager {
   }
 
   private activate(u: ServiceUnit): OperationResult {
+    const prev = u.state;
     u.state = 'activating';
     const userEntry = u.user || 'root';
     const uid = userEntry === 'root' ? 0 : 1;
@@ -460,11 +511,13 @@ export class LinuxServiceManager {
     });
     u.mainPid = proc.pid;
     u.activeSince = new Date();
-    u.state = u.type === 'oneshot' ? 'active' : 'active';
+    u.state = 'active';
+    this.emitStateChanged(u.name, prev, 'active');
     return { ok: true };
   }
 
   private deactivate(u: ServiceUnit): OperationResult {
+    const prev = u.state;
     u.state = 'deactivating';
     if (u.mainPid !== undefined) {
       this.processMgr.kill(u.mainPid, 'SIGTERM');
@@ -472,6 +525,7 @@ export class LinuxServiceManager {
     }
     u.activeSince = undefined;
     u.state = 'inactive';
+    this.emitStateChanged(u.name, prev, 'inactive');
     return { ok: true };
   }
 

@@ -23,6 +23,7 @@ import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcess
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
+import type { IEventBus } from '@/events/EventBus';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -111,6 +112,15 @@ export class LinuxCommandExecutor {
     });
     this.shellPid = shell.pid;
     this.shellPpid = shell.ppid;
+  }
+
+  /**
+   * Attach the owning device's event bus so the process table and
+   * service layer publish deviceId-scoped domain events.
+   */
+  attachEventBus(bus: IEventBus, deviceId: string): void {
+    this.processMgr.attachBus(bus, deviceId);
+    this.serviceMgr.attachBus(bus, deviceId);
   }
 
   /** Set the network context for ip command support */
