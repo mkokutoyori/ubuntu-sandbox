@@ -35,3 +35,4 @@ playwright-report/
 debug-output/*
 !debug-output/rman/
 !debug-output/oracle/
+!debug-output/linux/
