@@ -42,7 +42,7 @@ registerView({
       catalog.getAllRoles().map(r => [
         r.name,
         r.passwordRequired ? 'YES' : 'NO',
-        r.passwordRequired ? 'PASSWORD' : 'NONE',
+        r.authenticationType ?? (r.passwordRequired ? 'PASSWORD' : 'NONE'),
         'NO',
         ORACLE_MAINTAINED_ROLES.has(r.name) ? 'Y' : 'N',
         'NO',

@@ -329,6 +329,17 @@ export class OracleCatalog extends BaseCatalog {
     return this.externalNames.get(username.toUpperCase());
   }
 
+  /** Plaintext role password (CREATE ROLE x IDENTIFIED BY pw); checked at SET ROLE. */
+  private rolePasswords: Map<string, string> = new Map();
+
+  setRolePassword(role: string, password: string): void {
+    this.rolePasswords.set(role.toUpperCase(), password);
+  }
+
+  getRolePassword(role: string): string | undefined {
+    return this.rolePasswords.get(role.toUpperCase());
+  }
+
   /** Allocate a unique user ID for new users */
   allocateUserId(): number {
     return this.nextUserId++;

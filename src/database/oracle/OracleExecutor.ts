@@ -2726,6 +2726,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeGrant(stmt: GrantStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
+    const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
     // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
@@ -2733,19 +2734,22 @@ export class OracleExecutor extends BaseExecutor {
       const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
       const engine = catalog.getSecurityEngine();
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
-        // Not the owner and not DBA — must hold the priv WITH GRANT OPTION (simplified check)
         throw new OracleError(1031, 'insufficient privileges');
       }
-      for (const priv of stmt.privileges) {
-        catalog.grantTablePrivilege(stmt.grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption);
+        }
       }
     } else {
       this.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
-      for (const priv of stmt.privileges) {
-        if (catalog.roleExists(priv)) {
-          catalog.grantRole(stmt.grantee, priv, stmt.withAdminOption);
-        } else {
-          catalog.grantSystemPrivilege(stmt.grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          if (catalog.roleExists(priv)) {
+            catalog.grantRole(grantee, priv, stmt.withAdminOption);
+          } else {
+            catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
+          }
         }
       }
     }
@@ -2754,17 +2758,22 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeRevoke(stmt: RevokeStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
+    const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
     if (stmt.objectName) {
       const schema = stmt.objectSchema || this.context.currentSchema;
-      for (const priv of stmt.privileges) {
-        catalog.revokeTablePrivilege(stmt.grantee, priv, schema, stmt.objectName);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          catalog.revokeTablePrivilege(grantee, priv, schema, stmt.objectName);
+        }
       }
     } else {
-      for (const priv of stmt.privileges) {
-        if (catalog.roleExists(priv)) {
-          catalog.revokeRole(stmt.grantee, priv);
-        } else {
-          catalog.revokeSystemPrivilege(stmt.grantee, priv);
+      for (const grantee of grantees) {
+        for (const priv of stmt.privileges) {
+          if (catalog.roleExists(priv)) {
+            catalog.revokeRole(grantee, priv);
+          } else {
+            catalog.revokeSystemPrivilege(grantee, priv);
+          }
         }
       }
     }
@@ -2796,12 +2805,13 @@ export class OracleExecutor extends BaseExecutor {
       created: new Date(),
       profile: profileName,
       authenticationType: authType,
+      externalName: stmt.externalName,
     });
     if (authType === 'PASSWORD' && stmt.password) {
       catalog.setPassword(username, stmt.password);
       catalog.getSecurityEngine()?.passwords.setPassword(username, stmt.password);
     }
-    if (authType === 'GLOBAL' && stmt.externalName) {
+    if ((authType === 'GLOBAL' || authType === 'EXTERNAL') && stmt.externalName) {
       catalog.setExternalName(username, stmt.externalName);
     }
     if (stmt.passwordExpired) {
@@ -2843,6 +2853,19 @@ export class OracleExecutor extends BaseExecutor {
         if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
       }
       catalog.setPassword(username, stmt.password);
+      if (user) {
+        user.authenticationType = 'PASSWORD';
+        user.externalName = undefined;
+      }
+    } else if (stmt.authenticationKind && user) {
+      user.authenticationType = stmt.authenticationKind;
+      if (stmt.externalName !== undefined) {
+        user.externalName = stmt.externalName;
+        catalog.setExternalName(username, stmt.externalName);
+      } else if (stmt.authenticationKind === 'EXTERNAL') {
+        // Bare IDENTIFIED EXTERNALLY — clear any prior principal.
+        user.externalName = undefined;
+      }
     }
     if (stmt.accountLock) {
       catalog.lockUser(username);
@@ -2889,7 +2912,12 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
-    (this.catalog as OracleCatalog).createRole(stmt.name);
+    const catalog = this.catalog as OracleCatalog;
+    const authKind = stmt.authenticationKind ?? 'NONE';
+    catalog.createRole(stmt.name, authKind);
+    if (authKind === 'PASSWORD' && stmt.password) {
+      catalog.setRolePassword(stmt.name, stmt.password);
+    }
     return emptyResult('Role created.');
   }
 

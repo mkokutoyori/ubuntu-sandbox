@@ -464,6 +464,9 @@ export interface GrantStatement extends ASTNode {
   objectType?: string;
   objectSchema?: string;
   objectName?: string;
+  /** All grantees specified after TO — at least one element. */
+  grantees: string[];
+  /** Convenience alias for grantees[0]; preserved for legacy consumers. */
   grantee: string;
   withGrantOption?: boolean;
   withAdminOption?: boolean;
@@ -475,6 +478,7 @@ export interface RevokeStatement extends ASTNode {
   objectType?: string;
   objectSchema?: string;
   objectName?: string;
+  grantees: string[];
   grantee: string;
 }
 
@@ -500,6 +504,10 @@ export interface AlterUserStatement extends ASTNode {
   type: 'AlterUserStatement';
   username: string;
   password?: string;
+  /** Switch authentication kind via IDENTIFIED EXTERNALLY / GLOBALLY. */
+  authenticationKind?: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
+  /** Optional principal / DN that follows AS '<…>' in the IDENTIFIED clause. */
+  externalName?: string;
   defaultTablespace?: string;
   temporaryTablespace?: string;
   quota?: { size: string; tablespace: string }[];
@@ -518,6 +526,15 @@ export interface DropUserStatement extends ASTNode {
 export interface CreateRoleStatement extends ASTNode {
   type: 'CreateRoleStatement';
   name: string;
+  /**
+   * How holders of the role must authenticate when SET ROLE is issued:
+   *   - `'NONE'` — default, role is enabled without a credential;
+   *   - `'PASSWORD'` — explicit `IDENTIFIED BY <pw>`;
+   *   - `'EXTERNAL'` — `IDENTIFIED EXTERNALLY`;
+   *   - `'GLOBAL'`   — `IDENTIFIED GLOBALLY`.
+   */
+  authenticationKind?: 'NONE' | 'PASSWORD' | 'EXTERNAL' | 'GLOBAL';
+  password?: string;
 }
 
 export interface DropRoleStatement extends ASTNode {
