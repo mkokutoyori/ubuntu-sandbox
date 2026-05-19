@@ -10,6 +10,7 @@ import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from './OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
+import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
@@ -19,6 +20,8 @@ import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceCo
 const oracleInstances: Map<string, OracleDatabase> = new Map();
 /** Per-device FS sync adapter — Phase 7c replaces the manual *ToDevice helpers. */
 const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
+/** Per-device systemd sync adapter — wires oracle bus events to LinuxServiceManager. */
+const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -40,6 +43,12 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     sync.start();
     oracleFsSyncs.set(deviceId, sync);
+
+    const systemd = new OracleSystemdSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+    });
+    systemd.start();
+    oracleSystemdSyncs.set(deviceId, systemd);
 
     db.instance.startup('OPEN');
     installAllDemoSchemas(db);
@@ -121,6 +130,8 @@ export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | 
 export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.get(deviceId)?.stop();
   oracleFsSyncs.delete(deviceId);
+  oracleSystemdSyncs.get(deviceId)?.stop();
+  oracleSystemdSyncs.delete(deviceId);
   oracleInstances.delete(deviceId);
   // Tear down the RMAN device-scoped catalog + config so a subsequent
   // getOracleDatabase(deviceId) starts fresh.
@@ -136,6 +147,8 @@ export function removeOracleDatabase(deviceId: string): void {
 export function resetAllOracleInstances(): void {
   for (const sync of oracleFsSyncs.values()) sync.stop();
   oracleFsSyncs.clear();
+  for (const sync of oracleSystemdSyncs.values()) sync.stop();
+  oracleSystemdSyncs.clear();
   oracleInstances.clear();
   oracleFilesystemInitialized.clear();
   DeviceCatalogRegistry._reset();
