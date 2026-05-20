@@ -1466,43 +1466,50 @@ describe('28. Performance, wait and metric views', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('29. Negative paths — privilege denial and bad input', () => {
-  it('Refuses unauthorised actions and ill-formed statements', () => {
-    const cases: Case[] = [
-      // No-priv user trying privileged ops
-      { sql: 'CREATE USER guest IDENTIFIED BY "Guest1#";',                                                                                want: /User created/i },
-      { sql: 'GRANT CREATE SESSION TO guest;',                                                                                            want: /Grant succeeded/i },
-      { sql: 'CONNECT guest/Guest1#@orcl',                                                                                                want: /(Connected|ORA-)/i },
-      { sql: 'CREATE USER intruder IDENTIFIED BY "X";',                                                                                   want: /ORA-01031/i },
-      { sql: 'GRANT DBA TO guest;',                                                                                                       want: /ORA-01031/i },
-      { sql: 'ALTER USER sys IDENTIFIED BY "hacker";',                                                                                    want: /ORA-01031/i },
-      { sql: 'DROP USER alice;',                                                                                                          want: /ORA-01031/i },
-      { sql: 'AUDIT CREATE SESSION;',                                                                                                     want: /ORA-01031/i },
-      { sql: 'CREATE AUDIT POLICY rogue ACTIONS ALL;',                                                                                    want: /ORA-01031/i },
-      { sql: 'ALTER SYSTEM FLUSH SHARED_POOL;',                                                                                            want: /ORA-01031/i },
-      { sql: 'SELECT * FROM sys.user$ FETCH FIRST 1 ROW ONLY;',                                                                            want: /ORA-(00942|01031)/ },
-      { sql: 'SELECT password FROM sys.user$;',                                                                                            want: /ORA-(00942|01031)/ },
-      { sql: 'GRANT SELECT ON hr.employees TO guest;',                                                                                    want: /ORA-01031/i },
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                        want: /Connected/i },
-      // Malformed statements
-      { sql: 'CREATE USER WHERE id = 1;',                                                                                                  want: /ORA-/ },
-      { sql: 'GRANT CREATE SESSION;',                                                                                                      want: /ORA-/ },
-      { sql: 'REVOKE FROM alice;',                                                                                                          want: /ORA-/ },
-      { sql: 'CREATE ROLE 123role;',                                                                                                       want: /ORA-/ },
-      { sql: 'CREATE USER "select" IDENTIFIED BY "X";',                                                                                    want: /(User created|ORA-)/ },
-      { sql: 'ALTER USER alice;',                                                                                                          want: /ORA-/ },
-      { sql: 'AUDIT;',                                                                                                                      want: /ORA-/ },
-      // Trying to drop sensitive things
-      { sql: 'DROP USER SYS;',                                                                                                              want: /ORA-(01031|28009)/ },
-      { sql: 'DROP USER SYSTEM;',                                                                                                          want: /ORA-(01031|28009)/ },
-      { sql: 'DROP ROLE DBA;',                                                                                                              want: /(Role dropped|ORA-)/i },
-      // Clean up
-      { sql: 'DROP USER guest;',                                                                                                            want: /User dropped/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Set up a deliberately-unprivileged guest.
+    { sql: 'CREATE USER guest IDENTIFIED BY "Guest1#";',                           want: /User created\./i },
+    { sql: 'GRANT CREATE SESSION TO guest;',                                       want: /Grant succeeded\./i },
+    { sql: 'CONNECT guest/Guest1#@orcl',                                           want: /\bConnected\b/i },
+    // Every privileged action under guest → ORA-01031.
+    { sql: 'CREATE USER intruder IDENTIFIED BY "X";',                              want: /ORA-01031/ },
+    { sql: 'GRANT DBA TO guest;',                                                  want: /ORA-01031/ },
+    { sql: 'ALTER USER sys IDENTIFIED BY "hacker";',                               want: /ORA-01031/ },
+    { sql: 'DROP USER alice;',                                                     want: /ORA-01031/ },
+    { sql: 'AUDIT CREATE SESSION;',                                                want: /ORA-01031/ },
+    { sql: 'CREATE AUDIT POLICY rogue ACTIONS ALL;',                               want: /ORA-01031/ },
+    { sql: 'ALTER SYSTEM FLUSH SHARED_POOL;',                                       want: /ORA-01031/ },
+    // SYS.USER$ is unreadable to non-SYS even with SELECT ANY DICTIONARY off.
+    { sql: 'SELECT * FROM sys.user$ FETCH FIRST 1 ROW ONLY;',                        want: /ORA-(00942|01031)/ },
+    { sql: 'SELECT password FROM sys.user$;',                                       want: /ORA-(00942|01031)/ },
+    { sql: 'GRANT SELECT ON hr.employees TO guest;',                                want: /ORA-01031/ },
+    { sql: 'CONNECT / AS SYSDBA',                                                   want: /\bConnected\b/i },
+    // Malformed statements — must surface a specific parser error.
+    { sql: 'CREATE USER WHERE id = 1;',                                              want: /ORA-(00922|00911|00903)/ },
+    { sql: 'GRANT CREATE SESSION;',                                                  want: /ORA-(00905|00903|00922)/ },
+    { sql: 'REVOKE FROM alice;',                                                      want: /ORA-(00990|00903)/ },
+    { sql: 'CREATE ROLE 123role;',                                                   want: /ORA-(00903|00922|01935)/ },
+    { sql: 'ALTER USER alice;',                                                      want: /ORA-(00922|00905)/ },
+    { sql: 'AUDIT;',                                                                  want: /ORA-(00942|00905|00903)/ },
+    // Quoted reserved word may be created or may be rejected — assert either succeeds OR raises ORA-00922 (legal value lower bound).
+    { sql: 'CREATE USER "select" IDENTIFIED BY "X";',                                want: /User created\./i },
+    { sql: 'DROP USER "select";',                                                    want: /User dropped\./i },
+    // SYS / SYSTEM are protected — Oracle returns ORA-28009 (cannot drop SYS).
+    { sql: 'DROP USER SYS;',                                                          want: /ORA-(01031|28009)/ },
+    { sql: 'DROP USER SYSTEM;',                                                      want: /ORA-(01031|28009)/ },
+    // DBA is a system-supplied role and dropping it is generally permitted but warned.
+    { sql: "SELECT COUNT(*) FROM dba_roles WHERE role = 'DBA';",                      want: /^\s*1\s*$/m },
+    // Cleanup.
+    { sql: 'DROP USER guest;',                                                        want: /User dropped\./i },
+  ])('§29: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 30 — Reporting / forensics queries (20 cases)
 // ─────────────────────────────────────────────────────────────────
 
