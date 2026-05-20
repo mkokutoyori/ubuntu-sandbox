@@ -2760,9 +2760,29 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.objectName) {
       const user = this.context.currentUser;
       const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
+      const objName = stmt.objectName.toUpperCase();
       const engine = catalog.getSecurityEngine();
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
         throw new OracleError(1031, 'insufficient privileges');
+      }
+      // Validate the object exists — granting on a missing table /
+      // schema must raise ORA-00942 (Oracle never silently succeeds).
+      const tableExists = this.storage.getTableMeta(schema, objName) != null;
+      const viewExists = this.storage.getViewMeta?.(schema, objName) != null;
+      const sequenceExists = this.storage.getSequence?.(schema, objName) != null;
+      if (!tableExists && !viewExists && !sequenceExists) {
+        // Could still be a PL/SQL object — query the catalog provider.
+        const units = (this.catalog as OracleCatalog & { getStoredUnits?: () => { schema: string; name: string }[] }).getStoredUnits?.() ?? [];
+        const procExists = units.some(u => u.schema === schema && u.name === objName);
+        if (!procExists) {
+          throw new OracleError(942, 'table or view does not exist');
+        }
+      }
+      // Self-grant (owner grants to themselves) — ORA-01749.
+      for (const grantee of grantees) {
+        if (grantee.toUpperCase() === schema) {
+          throw new OracleError(1749, 'you may not GRANT/REVOKE privileges to/from yourself');
+        }
       }
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
@@ -2770,6 +2790,8 @@ export class OracleExecutor extends BaseExecutor {
           if (cols && cols.length > 0) {
             // Column-level grant: only DBA_COL_PRIVS, not DBA_TAB_PRIVS.
             for (const c of cols) {
+              const colExists = this.storage.getTableMeta(schema, objName)?.columns.some(co => co.name === c.toUpperCase());
+              if (!colExists) throw new OracleError(904, `"${c.toUpperCase()}": invalid identifier`);
               catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
             }
           } else {
