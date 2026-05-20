@@ -3814,54 +3814,49 @@ export class OracleExecutor extends BaseExecutor {
       case 'ROUND': return args[0] != null ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0]))) : null;
       case 'TRUNC': {
         if (args[0] == null) return null;
-        // If the argument is a Date, TRUNC drops the time-of-day. With
-        // a second format-mask argument (e.g. 'MM', 'YEAR'), Oracle
-        // rounds down to that boundary — we honour the most common ones.
-        if (args[0] instanceof Date) {
-          const d = new Date(args[0].getTime());
+        const asDate = OracleExecutor.coerceDate(args[0]);
+        if (asDate != null) {
+          const d = new Date(asDate.getTime());
           const fmt = args[1] != null ? String(args[1]).toUpperCase() : 'DD';
           if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
-            return new Date(d.getFullYear(), 0, 1);
+            return OracleExecutor.formatDate(new Date(d.getFullYear(), 0, 1));
           }
           if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
-            return new Date(d.getFullYear(), d.getMonth(), 1);
+            return OracleExecutor.formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
           }
           if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
             const day = d.getDay();
-            return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day);
+            return OracleExecutor.formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - day));
           }
           d.setHours(0, 0, 0, 0);
-          return d;
+          return OracleExecutor.formatDate(d);
         }
         return Math.trunc(Number(args[0]));
       }
       case 'ADD_MONTHS': {
         if (args[0] == null || args[1] == null) return null;
-        const base = args[0] instanceof Date ? new Date(args[0].getTime()) : new Date(String(args[0]));
-        if (isNaN(base.getTime())) return null;
+        const base = OracleExecutor.coerceDate(args[0]);
+        if (base == null) return null;
         const month = base.getMonth() + Number(args[1]);
         const day = base.getDate();
         base.setDate(1);
         base.setMonth(month);
-        // Clamp to last day of month if overflow.
         const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
         base.setDate(Math.min(day, last));
-        return base;
+        return OracleExecutor.formatDate(base);
       }
       case 'MONTHS_BETWEEN': {
         if (args[0] == null || args[1] == null) return null;
-        const a = args[0] instanceof Date ? args[0] : new Date(String(args[0]));
-        const b = args[1] instanceof Date ? args[1] : new Date(String(args[1]));
-        if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+        const a = OracleExecutor.coerceDate(args[0]);
+        const b = OracleExecutor.coerceDate(args[1]);
+        if (!a || !b) return null;
         const months = (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
-        // Fractional portion uses day-of-month delta over 31.
-        const frac = (a.getDate() - b.getDate()) / 31;
-        return months + frac;
+        return months + (a.getDate() - b.getDate()) / 31;
       }
       case 'NEXT_DAY': {
         if (args[0] == null || args[1] == null) return null;
-        const base = args[0] instanceof Date ? new Date(args[0].getTime()) : new Date(String(args[0]));
-        if (isNaN(base.getTime())) return null;
+        const base = OracleExecutor.coerceDate(args[0]);
+        if (!base) return null;
         const dayMap: Record<string, number> = {
           SUNDAY: 0, SUN: 0, MONDAY: 1, MON: 1, TUESDAY: 2, TUE: 2,
           WEDNESDAY: 3, WED: 3, THURSDAY: 4, THU: 4, FRIDAY: 5, FRI: 5,
@@ -3871,13 +3866,13 @@ export class OracleExecutor extends BaseExecutor {
         if (target === undefined) return null;
         const delta = ((target - base.getDay() + 7) % 7) || 7;
         base.setDate(base.getDate() + delta);
-        return base;
+        return OracleExecutor.formatDate(base);
       }
       case 'LAST_DAY': {
         if (args[0] == null) return null;
-        const base = args[0] instanceof Date ? new Date(args[0].getTime()) : new Date(String(args[0]));
-        if (isNaN(base.getTime())) return null;
-        return new Date(base.getFullYear(), base.getMonth() + 1, 0);
+        const base = OracleExecutor.coerceDate(args[0]);
+        if (!base) return null;
+        return OracleExecutor.formatDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
       }
       case 'MOD': return args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null;
       case 'POWER': return args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null;
@@ -4329,6 +4324,25 @@ export class OracleExecutor extends BaseExecutor {
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return null;
     const ms = Date.parse(value.replace(' ', 'T'));
     return Number.isNaN(ms) ? null : ms;
+  }
+
+  /** Return a mutable Date copy of the value, or null if not a date. */
+  static coerceDate(value: unknown): Date | null {
+    if (value instanceof Date) return new Date(value.getTime());
+    if (typeof value !== 'string') return null;
+    if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) {
+      // Accept bare YYYY-MM-DD too.
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    }
+    const ms = Date.parse(value.replace(' ', 'T'));
+    return Number.isNaN(ms) ? null : new Date(ms);
+  }
+
+  /** Format a Date the way SYSDATE / TO_CHAR(DATE) renders in SQL*Plus. */
+  static formatDate(d: Date): string {
+    const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+      + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   private applyComparison(op: string, left: CellValue, right: CellValue): boolean {
