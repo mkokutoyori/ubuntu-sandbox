@@ -63,7 +63,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const parsed = RE_USERHOST.exec(target);
   if (!parsed) {
     return {
-      output: `ssh: Could not resolve hostname ${target}: Name or service not known`,
+      output: `ssh: Could not resolve hostname ${target}: Name or service not known\n`,
       exitCode: 255,
     };
   }
@@ -73,7 +73,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const found = findHostByAddress(host);
   if (!found) {
     return {
-      output: `ssh: Could not resolve hostname ${host}: Name or service not known`,
+      output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
       exitCode: 255,
     };
   }
@@ -88,7 +88,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   };
   if (typeof machine.isServiceActive !== 'function') {
     return {
-      output: `ssh: connect to host ${host} port 22: Connection refused`,
+      output: `ssh: connect to host ${host} port 22: Connection refused\n`,
       exitCode: 255,
     };
   }
@@ -97,7 +97,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (!machine.isServiceActive('ssh')) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
-      output: `ssh: connect to host ${host} port 22: Connection refused`,
+      output: `ssh: connect to host ${host} port 22: Connection refused\n`,
       exitCode: 255,
     };
   }
@@ -121,12 +121,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (remoteCmd) {
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     let execOut = '';
+    let execRc = 0;
     try {
-      execOut = machine.executor?.execute?.(remoteCmd) ?? '';
+      const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
+      execOut = execMod?.execute?.(remoteCmd) ?? '';
+      execRc = execMod?.lastExitCode ?? 0;
     } finally {
       remoteUidBeforeAfter?.();
     }
-    return { output: execOut, exitCode: 0 };
+    return { output: execOut, exitCode: execRc };
   }
 
   // Interactive form (no command): the simulator returns the typical

@@ -340,9 +340,12 @@ export class LinuxCommandExecutor {
    * Execute a command string through the bash interpreter.
    * Handles variables, control structures, pipes, redirections, functions, etc.
    */
+  /** Exit code of the most recent execute() call. Cleared per call. */
+  lastExitCode = 0;
+
   execute(input: string): string {
     const trimmed = input.trim();
-    if (!trimmed) return '';
+    if (!trimmed) { this.lastExitCode = 0; return ''; }
 
     // Track command in history (store the raw input, like bash)
     this.commandHistory.push(trimmed);
@@ -391,6 +394,8 @@ export class LinuxCommandExecutor {
         }
       }
     }
+
+    this.lastExitCode = result.exitCode ?? 0;
 
     // A terminal does not echo a trailing blank line after a command
     // (e.g. `echo x` shows one line, not two). Drop a single trailing
