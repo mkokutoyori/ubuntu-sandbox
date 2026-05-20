@@ -203,6 +203,27 @@ export abstract class LinuxMachine extends EndHost {
     if (cfg.allowUsers.length > 0 && !matchesAny(cfg.allowUsers)) {
       return { ok: false, reason: 'not in AllowUsers' };
     }
+
+    // User must exist in /etc/passwd. Test fixtures are responsible for
+    // calling useradd before relying on a login — sshd does not create
+    // accounts on the fly.
+    const userEntry = this.executor.userMgr.getUser(user);
+    if (!userEntry) return { ok: false, reason: 'no such user' };
+
+    // Locked account (passwd -l → shadow stores "!password" prefix).
+    const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
+    const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
+    if (shadowLine && shadowLine.split(':')[1]?.startsWith('!')) {
+      return { ok: false, reason: 'account locked' };
+    }
+    // Expired account (chage -E in the past).
+    if (shadowLine) {
+      const expireDays = Number.parseInt(shadowLine.split(':')[7] ?? '', 10);
+      if (Number.isFinite(expireDays) && expireDays > 0) {
+        const expireDate = new Date(expireDays * 86_400_000);
+        if (expireDate < new Date()) return { ok: false, reason: 'account expired' };
+      }
+    }
     return { ok: true };
   }
 

@@ -65,6 +65,24 @@ function buildLan(): Lan {
   pc1.setHostname('pc1'); pc2.setHostname('pc2'); pc3.setHostname('pc3'); pc4.setHostname('pc4');
   srv1.setHostname('srv1'); srv2.setHostname('srv2');
 
+  // Provision a small cast of regular users on every device so the
+  // sshd-side "user exists in /etc/passwd" gate accepts them. Done via
+  // the user manager directly (not `useradd`) because that command is
+  // root-only and PCs default to the unprivileged 'user'.
+  for (const d of [pc1, pc2, pc3, pc4, srv1, srv2]) {
+    const um = (d as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      getUser: (u: string) => unknown;
+      setPassword: (u: string, p: string) => void;
+    } } }).executor.userMgr;
+    for (const u of ['alice', 'bob', 'carol', 'dave', 'admin', 'charlie']) {
+      if (!um.getUser(u)) {
+        um.useradd(u, { m: true, s: '/bin/bash' });
+        um.setPassword(u, 'admin');
+      }
+    }
+  }
+
   return {
     pc1, pc2, pc3, pc4, srv1, srv2, sw,
     ipOf: {
