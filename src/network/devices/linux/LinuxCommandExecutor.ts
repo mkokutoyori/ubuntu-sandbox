@@ -848,7 +848,7 @@ export class LinuxCommandExecutor {
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
       case 'date': return { output: cmdDate(args), exitCode: 0 };
       case 'uptime': return { output: cmdUptime(args), exitCode: 0 };
-      case 'uname': return { output: cmdUname(args), exitCode: 0 };
+      case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()), exitCode: 0 };
       case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
       case 'hostnamectl': {

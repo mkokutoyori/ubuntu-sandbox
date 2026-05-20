@@ -161,21 +161,28 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
  */
 function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | null {
   const exec = (machine as LinuxMachine & {
-    executor: { userMgr: { currentUser: string; currentUid: number; currentGid: number; getUser: (u: string) => { uid: number; gid: number } | undefined; useradd: (u: string, o?: object) => void } };
+    executor: {
+      userMgr: { currentUser: string; currentUid: number; currentGid: number; getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined; useradd: (u: string, o?: object) => void };
+      cwd: string;
+    };
   }).executor;
   if (!exec?.userMgr) return null;
   // Auto-provision the user if it's not in the remote's /etc/passwd yet.
   if (!exec.userMgr.getUser(user)) exec.userMgr.useradd(user, { m: true, s: '/bin/bash' });
   const target = exec.userMgr.getUser(user);
-  const before = { user: exec.userMgr.currentUser, uid: exec.userMgr.currentUid, gid: exec.userMgr.currentGid };
+  const before = {
+    user: exec.userMgr.currentUser, uid: exec.userMgr.currentUid, gid: exec.userMgr.currentGid, cwd: exec.cwd,
+  };
   if (target) {
     exec.userMgr.currentUser = user;
     exec.userMgr.currentUid = target.uid;
     exec.userMgr.currentGid = target.gid;
+    exec.cwd = target.home ?? `/home/${user}`;
   }
   return () => {
     exec.userMgr.currentUser = before.user;
     exec.userMgr.currentUid = before.uid;
     exec.userMgr.currentGid = before.gid;
+    exec.cwd = before.cwd;
   };
 }

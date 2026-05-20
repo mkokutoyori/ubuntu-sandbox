@@ -70,7 +70,7 @@ export function cmdUptime(args: string[]): string {
   return uptimeHeader(1);
 }
 
-export function cmdUname(args: string[]): string {
+export function cmdUname(args: string[], hostname = 'localhost'): string {
   const flags = args.filter(a => a.startsWith('-')).join('').replace(/-/g, '');
   const all = flags.includes('a');
   const want = (f: string): boolean => all || flags.includes(f);
@@ -81,12 +81,12 @@ export function cmdUname(args: string[]): string {
 
   // -a has a fixed canonical ordering: s n r v m p i o
   if (all) {
-    return `Linux localhost ${KERNEL_RELEASE} ${KERNEL_VERSION} ${MACHINE} ${MACHINE} ${MACHINE} ${OS_NAME}`;
+    return `Linux ${hostname} ${KERNEL_RELEASE} ${KERNEL_VERSION} ${MACHINE} ${MACHINE} ${MACHINE} ${OS_NAME}`;
   }
 
   const parts: string[] = [];
   if (want('s')) parts.push('Linux');
-  if (want('n')) parts.push('localhost');
+  if (want('n')) parts.push(hostname);
   if (want('r')) parts.push(KERNEL_RELEASE);
   if (want('v')) parts.push(KERNEL_VERSION);
   if (want('m') || want('p') || want('i')) parts.push(MACHINE);

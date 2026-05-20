@@ -482,7 +482,8 @@ describe('§7 — SSH refused when remote machine is powered off', () => {
       on: l => l.pc1,
       cmd: 'ping -c 2 10.0.0.2',
       contains: [/100% packet loss|Destination Host Unreachable|Network is unreachable/],
-      excludes: [/0% packet loss/],
+      // Note: don't exclude "0% packet loss" — "100% packet loss" matches it as a substring.
+      excludes: [/\b0 packets transmitted, 2 received/],
     },
     {
       name: 'arping to a powered-off device gets no replies',
