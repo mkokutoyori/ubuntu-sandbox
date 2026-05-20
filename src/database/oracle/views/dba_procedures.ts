@@ -11,18 +11,35 @@ registerView({
   name: 'DBA_PROCEDURES',
   comment: 'Stored procedures and functions',
   query({ catalog }) {
+    // Oracle 19c DBA_PROCEDURES columns. Standalone procedures fill
+    // OBJECT_NAME and leave PROCEDURE_NAME null; package members carry
+    // the package in OBJECT_NAME and the member in PROCEDURE_NAME.
     return queryResult(
       [
         { name: 'OWNER', dataType: oracleVarchar2(30) },
         { name: 'OBJECT_NAME', dataType: oracleVarchar2(30) },
+        { name: 'PROCEDURE_NAME', dataType: oracleVarchar2(30) },
+        { name: 'OBJECT_ID', dataType: oracleVarchar2(10) },
         { name: 'OBJECT_TYPE', dataType: oracleVarchar2(13) },
         { name: 'AGGREGATE', dataType: oracleVarchar2(3) },
         { name: 'PIPELINED', dataType: oracleVarchar2(3) },
+        { name: 'IMPLTYPEOWNER', dataType: oracleVarchar2(30) },
+        { name: 'IMPLTYPENAME', dataType: oracleVarchar2(30) },
+        { name: 'PARALLEL', dataType: oracleVarchar2(3) },
+        { name: 'INTERFACE', dataType: oracleVarchar2(3) },
         { name: 'DETERMINISTIC', dataType: oracleVarchar2(3) },
+        { name: 'AUTHID', dataType: oracleVarchar2(12) },
+        { name: 'RESULT_CACHE', dataType: oracleVarchar2(3) },
       ],
       catalog.getStoredUnits()
         .filter(u => u.type === 'PROCEDURE' || u.type === 'FUNCTION')
-        .map(u => [u.schema, u.name, u.type, 'NO', 'NO', 'NO'])
+        .map((u, i) => [
+          u.schema, u.name, null,
+          String(1000 + i), u.type,
+          'NO', 'NO', null, null,
+          'NO', 'NO', 'NO',
+          'DEFINER', 'NO',
+        ])
     );
   },
 });
