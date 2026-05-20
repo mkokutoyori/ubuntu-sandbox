@@ -1124,3 +1124,69 @@ describe('§17 — kill of critical / protected processes', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 18 — scp / sftp / rsync also gated on remote sshd ────────
+
+describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp alice@host:/path local — succeeds when sshd is up',
+      setup: (l) => { void l.pc2.executeCommand('echo hello > /tmp/file.txt'); },
+      on: l => l.pc1,
+      cmd: 'scp alice@10.0.0.2:/tmp/file.txt /tmp/local.txt',
+      contains: [/file\.txt\s+100%|bytes transferred/i],
+      excludes: [/Connection refused/],
+    },
+    {
+      name: 'scp refused when remote sshd is stopped',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'scp alice@10.0.0.2:/tmp/file.txt /tmp/local.txt',
+      contains: [/Connection refused|lost connection/],
+    },
+    {
+      name: 'sftp succeeds when sshd is up and shows interactive prompt',
+      on: l => l.pc1,
+      cmd: 'sftp alice@10.0.0.2',
+      contains: [/Connected to 10\.0\.0\.2|sftp>/],
+    },
+    {
+      name: 'sftp refused when sshd is stopped',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'sftp alice@10.0.0.2',
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'rsync over ssh refused when sshd is stopped',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'rsync -av /tmp/ alice@10.0.0.2:/tmp/',
+      contains: [/Connection refused|connection unexpectedly closed/],
+    },
+    {
+      name: 'scp to a bad host fails with "Could not resolve"',
+      on: l => l.pc1,
+      cmd: 'scp /tmp/x alice@192.0.2.99:/tmp/',
+      contains: [/Could not resolve hostname|lost connection/],
+    },
+    {
+      name: 'scp with -P 2222 uses the alternate port',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'scp -P 2222 /tmp/x alice@10.0.0.2:/tmp/',
+      contains: [/bytes transferred|100%/i],
+      excludes: [/Connection refused/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
