@@ -901,6 +901,22 @@ export interface NoauditStatement extends ASTNode {
 }
 
 /**
+ * `COMMENT ON {TABLE|COLUMN|MATERIALIZED VIEW} <name> IS '<text>'`.
+ * The catalog stores the text so DBA_TAB_COMMENTS / DBA_COL_COMMENTS
+ * can surface it. Real Oracle treats this as a DDL statement with its
+ * own action_name in the audit trail.
+ */
+export interface CommentStatement extends ASTNode {
+  type: 'CommentStatement';
+  target: 'TABLE' | 'COLUMN' | 'MATERIALIZED_VIEW';
+  schema?: string;
+  tableName: string;
+  /** Set only when target === 'COLUMN'. */
+  columnName?: string;
+  text: string;
+}
+
+/**
  * `ADMINISTER KEY MANAGEMENT …` — TDE wallet & master-key administration.
  * The statement is dispatched on `operation`; the rest of the clause
  * (location, identifier, tag, etc.) is captured for the executor.
@@ -1002,5 +1018,6 @@ export type Statement =
   | AuditStatement | NoauditStatement
   | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement
   | AdministerKeyManagementStatement
+  | CommentStatement
   // PL/SQL
   | PLSQLBlock;

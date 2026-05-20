@@ -84,6 +84,7 @@ export abstract class BaseParser {
         case 'FLASHBACK': return this.parseFlashback();
         case 'PURGE': return this.parsePurge();
         case 'SET': return this.parseSetStatement();
+        case 'COMMENT': return this.parseComment();
       }
     }
 
@@ -1024,11 +1025,27 @@ export abstract class BaseParser {
     if (this.matchKeyword('ADD')) {
       if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
         actions.push(this.parseAddSupplemental());
-      } else if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
-        const hadParen = this.tokens[this.pos - 1]?.type === TokenType.LPAREN;
+      } else if (this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
+        // Bare table-level constraint (no parens).
         const constraint = this.parseTableConstraint();
-        if (hadParen) this.expect(TokenType.RPAREN);
         actions.push({ action: 'ADD_CONSTRAINT', constraint });
+      } else if (this.match(TokenType.LPAREN)) {
+        // Parenthesized clause — either a single CONSTRAINT or a
+        // comma-separated column list. Disambiguate on the first
+        // token inside the parens.
+        if (this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY')
+            || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN')
+            || this.checkKeyword('CHECK')) {
+          const constraint = this.parseTableConstraint();
+          this.expect(TokenType.RPAREN);
+          actions.push({ action: 'ADD_CONSTRAINT', constraint });
+        } else {
+          // Column list: ADD (col1 type [...], col2 type [...], …)
+          do {
+            actions.push({ action: 'ADD_COLUMN', column: this.parseColumnDefinition() });
+          } while (this.match(TokenType.COMMA));
+          this.expect(TokenType.RPAREN);
+        }
       } else {
         actions.push({ action: 'ADD_COLUMN', column: this.parseColumnDefinition() });
       }
@@ -1403,6 +1420,40 @@ export abstract class BaseParser {
       limits.set(resName.toUpperCase(), value.toUpperCase());
     }
     return limits;
+  }
+
+  // ── COMMENT ON …  ─────────────────────────────────────────────────
+
+  /**
+   * `COMMENT ON {TABLE | COLUMN | MATERIALIZED VIEW} <name> IS '<text>';`
+   * Real Oracle also accepts INDEXTYPE, OPERATOR, EDITION, MINING MODEL —
+   * those are tolerated as TABLE/COLUMN equivalents (no first-class storage).
+   */
+  protected parseComment(): import('./ASTNode').CommentStatement {
+    const pos = this.current().position;
+    this.expectKeyword('COMMENT');
+    this.expectKeyword('ON');
+    let target: 'TABLE' | 'COLUMN' | 'MATERIALIZED_VIEW' = 'TABLE';
+    if (this.matchKeyword('TABLE')) target = 'TABLE';
+    else if (this.matchKeyword('COLUMN')) target = 'COLUMN';
+    else if (this.matchKeyword('MATERIALIZED')) { this.expectKeyword('VIEW'); target = 'MATERIALIZED_VIEW'; }
+    else this.expectKeyword('TABLE'); // raise standard mismatch error.
+
+    let schema: string | undefined;
+    let tableName = this.expectIdentifier();
+    if (this.match(TokenType.DOT)) { schema = tableName; tableName = this.expectIdentifier(); }
+    let columnName: string | undefined;
+    if (target === 'COLUMN' && this.match(TokenType.DOT)) {
+      columnName = this.expectIdentifier();
+    }
+
+    this.expectKeyword('IS');
+    const text = this.expectIdentifierOrString();
+    return {
+      type: 'CommentStatement', position: pos, target,
+      schema: schema?.toUpperCase(), tableName: tableName.toUpperCase(),
+      columnName: columnName?.toUpperCase(), text,
+    };
   }
 
   // ── TRUNCATE ──────────────────────────────────────────────────────

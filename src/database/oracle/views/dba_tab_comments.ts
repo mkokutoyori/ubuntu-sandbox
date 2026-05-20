@@ -9,10 +9,15 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_TAB_COMMENTS',
   comment: 'Comments on tables and views',
-  query({ storage }) {
+  query({ storage, catalog }) {
+    const c = catalog as unknown as { getTableComment?: (s: string, t: string) => string | null };
     const rows: (string | null)[][] = [];
-    for (const t of storage.getAllTables()) rows.push([t.schema, t.name, 'TABLE', null]);
-    for (const v of storage.getAllViews()) rows.push([v.schema, v.name, 'VIEW', null]);
+    for (const t of storage.getAllTables()) {
+      rows.push([t.schema, t.name, 'TABLE', c.getTableComment?.(t.schema, t.name) ?? null]);
+    }
+    for (const v of storage.getAllViews()) {
+      rows.push([v.schema, v.name, 'VIEW', c.getTableComment?.(v.schema, v.name) ?? null]);
+    }
     return queryResult(
       [
         col.str('OWNER', 30),

@@ -526,6 +526,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropAuditPolicyStatement': return this.executeDropAuditPolicy(statement);
       case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
       case 'AdministerKeyManagementStatement': return this.executeAdministerKeyManagement(statement);
+      case 'CommentStatement': return this.executeComment(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -4456,6 +4457,14 @@ export class OracleExecutor extends BaseExecutor {
   // ── Audit / Noaudit ──────────────────────────────────────────────
 
   private executeAudit(stmt: AuditStatement): ResultSet {
+    // AUDIT requires AUDIT SYSTEM (for statement / privilege audit) or
+    // AUDIT ANY (for object audit). Real Oracle refuses anything else
+    // with ORA-01031.
+    if (stmt.onObject) {
+      this.requireSystemPrivilege('AUDIT ANY');
+    } else {
+      this.requireSystemPrivilege('AUDIT SYSTEM');
+    }
     const catalog = this.catalog as OracleCatalog;
     const options = stmt.auditOptions ?? [stmt.auditOption];
     const byCode = stmt.byMode === 'SESSION' ? 'S' : 'A';
@@ -4490,6 +4499,11 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeNoaudit(stmt: NoauditStatement): ResultSet {
+    if (stmt.onObject) {
+      this.requireSystemPrivilege('AUDIT ANY');
+    } else {
+      this.requireSystemPrivilege('AUDIT SYSTEM');
+    }
     const catalog = this.catalog as OracleCatalog;
     const options = stmt.auditOptions ?? [stmt.auditOption];
     if (stmt.onObject) {
@@ -4584,6 +4598,23 @@ export class OracleExecutor extends BaseExecutor {
       default:
         return emptyResult('keystore altered.\nThe operation succeeded.');
     }
+  }
+
+  // ── COMMENT ON … IS … ────────────────────────────────────────────
+
+  private executeComment(stmt: import('../engine/parser/ASTNode').CommentStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    const schema = (stmt.schema ?? this.context.currentSchema).toUpperCase();
+    // Commenting on a foreign schema requires COMMENT ANY TABLE.
+    if (schema !== this.context.currentUser && this.context.currentUser !== 'SYS') {
+      this.requireSystemPrivilege('COMMENT ANY TABLE');
+    }
+    if (stmt.target === 'COLUMN' && stmt.columnName) {
+      catalog.setColumnComment(schema, stmt.tableName, stmt.columnName, stmt.text);
+    } else {
+      catalog.setTableComment(schema, stmt.tableName, stmt.text);
+    }
+    return emptyResult('Comment created.');
   }
 }
 

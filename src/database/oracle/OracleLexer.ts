@@ -79,6 +79,9 @@ const ORACLE_KEYWORDS = new Set([
   // Oracle audit
   'AUDIT', 'NOAUDIT', 'ACCESS',
 
+  // COMMENT ON statement.
+  'COMMENT',
+
   // Sequences
   'NEXTVAL', 'CURRVAL', 'CACHE', 'NOCACHE', 'CYCLE', 'NOCYCLE',
   'MINVALUE', 'NOMINVALUE', 'MAXVALUE', 'NOMAXVALUE',

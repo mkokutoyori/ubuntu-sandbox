@@ -671,6 +671,36 @@ export class OracleCatalog extends BaseCatalog {
     return this.proxyUsers;
   }
 
+  // ── COMMENT ON … IS …  ─────────────────────────────────────────
+  //
+  // Table / view / column comments persist here so DBA_TAB_COMMENTS
+  // and DBA_COL_COMMENTS surface what the DBA wrote.
+
+  private tableComments = new Map<string, string>();
+  private columnComments = new Map<string, string>();
+
+  private static tabCommentKey(schema: string, table: string): string {
+    return `${schema.toUpperCase()}.${table.toUpperCase()}`;
+  }
+  private static colCommentKey(schema: string, table: string, column: string): string {
+    return `${schema.toUpperCase()}.${table.toUpperCase()}.${column.toUpperCase()}`;
+  }
+
+  setTableComment(schema: string, table: string, text: string): void {
+    this.tableComments.set(OracleCatalog.tabCommentKey(schema, table), text);
+  }
+  setColumnComment(schema: string, table: string, column: string, text: string): void {
+    this.columnComments.set(OracleCatalog.colCommentKey(schema, table, column), text);
+  }
+  getTableComment(schema: string, table: string): string | null {
+    return this.tableComments.get(OracleCatalog.tabCommentKey(schema, table)) ?? null;
+  }
+  getColumnComment(schema: string, table: string, column: string): string | null {
+    return this.columnComments.get(OracleCatalog.colCommentKey(schema, table, column)) ?? null;
+  }
+  getAllTableComments(): ReadonlyMap<string, string> { return this.tableComments; }
+  getAllColumnComments(): ReadonlyMap<string, string> { return this.columnComments; }
+
   // ── Unified audit policies ───────────────────────────────────────
 
   private unifiedAuditPolicies = new Map<string, {
