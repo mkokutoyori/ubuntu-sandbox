@@ -18,6 +18,7 @@ import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
+import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
@@ -67,6 +68,67 @@ export class OracleDatabase {
   private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
+
+  /** Live OracleSession objects keyed by SID — the dictionary feeds
+   *  V$SESSION, SYS_CONTEXT('USERENV', …) and DBMS_SESSION. */
+  private sessions: Map<number, OracleSession> = new Map();
+
+  /**
+   * Build the instance-identity payload OracleSession needs.
+   * Reads live values from `OracleInstance` parameters so renaming /
+   * relocation is automatically reflected.
+   */
+  private buildInstanceIdentity(): {
+    instanceId: number; instanceName: string;
+    dbName: string; dbUniqueName: string; dbDomain: string; serverHost: string;
+  } {
+    const dbName = this.instance.getParameter('db_name') ?? 'orcl';
+    return {
+      instanceId: 1,
+      instanceName: dbName,
+      dbName,
+      dbUniqueName: this.instance.getParameter('db_unique_name') ?? dbName,
+      dbDomain: this.instance.getParameter('db_domain') ?? 'localdomain',
+      serverHost: this.instance.getParameter('server_host') ?? 'localhost',
+    };
+  }
+
+  /** Open OracleSession + register in the sessions map. */
+  private openSession(args: {
+    sid: number; serial: number; username: string; schema?: string;
+    osCtx: OsSecurityContext; authenticationMethod: AuthenticationMethod;
+    type?: 'USER' | 'BACKGROUND'; authenticatedIdentity?: string;
+  }): OracleSession {
+    const user = this.catalog.getUser(args.username.toUpperCase());
+    const session = new OracleSession({
+      sid: args.sid,
+      serial: args.serial,
+      username: args.username,
+      schema: args.schema,
+      osContext: args.osCtx,
+      authenticationMethod: args.authenticationMethod,
+      type: args.type,
+      authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
+      instance: this.buildInstanceIdentity(),
+    });
+    this.sessions.set(args.sid, session);
+    return session;
+  }
+
+  /** Close an OracleSession (called on disconnect). */
+  closeSession(sid: number): void {
+    this.sessions.delete(sid);
+  }
+
+  /** All currently-open sessions. */
+  getOpenSessions(): readonly OracleSession[] {
+    return [...this.sessions.values()];
+  }
+
+  /** Locate an open session by SID. */
+  getSession(sid: number): OracleSession | undefined {
+    return this.sessions.get(sid);
+  }
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
@@ -157,6 +219,14 @@ export class OracleDatabase {
     this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
     this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
 
+    const authMethod: AuthenticationMethod =
+      user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
+      : user?.authenticationType === 'GLOBAL' ? 'GLOBAL'
+      : 'PASSWORD';
+    const session = this.openSession({
+      sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
+    });
+
     const context: ExecutionContext = {
       currentUser: upperUser,
       currentSchema: upperUser,
@@ -164,6 +234,7 @@ export class OracleDatabase {
       serverOutput: false,
       feedback: true,
       timing: false,
+      session,
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
@@ -201,6 +272,11 @@ export class OracleDatabase {
     });
     this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
 
+    const sysSession = this.openSession({
+      sid, serial, username: 'SYS', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+      authenticationMethod: 'SYSDBA',
+    });
+
     const context: ExecutionContext = {
       currentUser: 'SYS',
       currentSchema: 'SYS',
@@ -208,6 +284,7 @@ export class OracleDatabase {
       serverOutput: false,
       feedback: true,
       timing: false,
+      session: sysSession,
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
@@ -239,6 +316,11 @@ export class OracleDatabase {
       { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
       this.catalog, sid, serial);
 
+    const sysoperSession = this.openSession({
+      sid, serial, username: 'PUBLIC', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+      authenticationMethod: 'SYSOPER',
+    });
+
     const context: ExecutionContext = {
       currentUser: 'PUBLIC',
       currentSchema: 'PUBLIC',
@@ -246,6 +328,7 @@ export class OracleDatabase {
       serverOutput: false,
       feedback: true,
       timing: false,
+      session: sysoperSession,
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
@@ -358,6 +441,10 @@ export class OracleDatabase {
           return emptyResult('ORA-02248: invalid option for ALTER SESSION');
         }
         executor.updateContext({ currentSchema: value });
+        // Keep the live OracleSession in sync — USERENV reads from it.
+        const ctx = (executor as { context: ExecutionContext }).context;
+        const sess = ctx.session as { setCurrentSchema?: (s: string) => void } | undefined;
+        sess?.setCurrentSchema?.(value);
       }
     }
     return emptyResult('Session altered.');

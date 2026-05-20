@@ -525,6 +525,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'CreateAuditPolicyStatement': return this.executeCreateAuditPolicy(statement);
       case 'DropAuditPolicyStatement': return this.executeDropAuditPolicy(statement);
       case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
+      case 'AdministerKeyManagementStatement': return this.executeAdministerKeyManagement(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -3798,15 +3799,31 @@ export class OracleExecutor extends BaseExecutor {
       case 'SYS_CONTEXT': {
         const namespace = args[0] != null ? String(args[0]).toUpperCase() : '';
         const param = args[1] != null ? String(args[1]).toUpperCase() : '';
+        // USERENV — delegate to the live OracleSession.
         if (namespace === 'USERENV') {
-          switch (param) {
-            case 'CURRENT_SCHEMA': return this.context.currentSchema;
-            case 'CURRENT_USER': return this.context.currentUser;
-            case 'SESSION_USER': return this.context.currentUser;
-            default: return this.context.currentUser;
+          const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
+          if (session?.userenv) {
+            const value = session.userenv(param);
+            return value === undefined ? null : value as string | number | null;
           }
+          // Fallback when no session has been attached (engine-direct).
+          if (param === 'SESSION_USER' || param === 'CURRENT_USER') return this.context.currentUser;
+          if (param === 'CURRENT_SCHEMA') return this.context.currentSchema;
+          return null;
         }
-        return this.context.currentUser;
+        // SYS_SESSION_ROLES / application contexts → unknown, NULL.
+        return null;
+      }
+      case 'USERENV': {
+        // The legacy USERENV(<keyword>) function is functionally
+        // equivalent to SYS_CONTEXT('USERENV', <keyword>).
+        const param = args[0] != null ? String(args[0]).toUpperCase() : '';
+        const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
+        if (session?.userenv) {
+          const value = session.userenv(param);
+          return value === undefined ? null : value as string | number | null;
+        }
+        return null;
       }
 
       // DBMS_RANDOM package
@@ -4522,6 +4539,51 @@ export class OracleExecutor extends BaseExecutor {
     }
     catalog.enableUnifiedAuditPolicy(stmt.policyName, stmt.byUsers, stmt.exceptUsers);
     return emptyResult('Audit succeeded.');
+  }
+
+  // ── ADMINISTER KEY MANAGEMENT (TDE) ──────────────────────────────
+
+  private executeAdministerKeyManagement(stmt: import('../engine/parser/ASTNode').AdministerKeyManagementStatement): ResultSet {
+    this.requireSystemPrivilege('ADMINISTER KEY MANAGEMENT');
+    const catalog = this.catalog as OracleCatalog;
+    const creator = this.context.currentUser;
+
+    switch (stmt.operation) {
+      case 'CREATE_KEYSTORE': {
+        if (!stmt.location) throw new OracleError(46651, 'keystore location is required');
+        catalog.configureTdeWallet(stmt.location, 'PASSWORD');
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'OPEN_KEYSTORE': {
+        catalog.openTdeWallet();
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'CLOSE_KEYSTORE': {
+        catalog.closeTdeWallet();
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'SET_KEY': {
+        const tag = stmt.tag ?? '';
+        catalog.addTdeMasterKey(tag, creator);
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'CREATE_AUTO_LOGIN_KEYSTORE': {
+        const w = catalog.getTdeWallet();
+        if (!w) {
+          if (!stmt.location) throw new OracleError(46651, 'keystore location is required');
+          catalog.configureTdeWallet(stmt.location, 'AUTOLOGIN');
+        }
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'BACKUP_KEYSTORE':
+      case 'MERGE_KEYSTORE':
+      case 'EXPORT_KEYS':
+      case 'IMPORT_KEYS':
+        // No state mutation needed — succeed with the canonical message.
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      default:
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+    }
   }
 }
 

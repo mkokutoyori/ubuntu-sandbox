@@ -65,6 +65,9 @@ const ORACLE_KEYWORDS = new Set([
   'SYSDBA', 'SYSOPER', 'ADMIN', 'OPTION',
   'ROLE', 'SYNONYM',
 
+  // TDE / keystore administration (ADMINISTER KEY MANAGEMENT).
+  'ADMINISTER', 'KEYSTORE', 'WALLET', 'TAG', 'AUTO_LOGIN', 'KEY',
+
   // Oracle instance
   'STARTUP', 'SHUTDOWN', 'NOMOUNT', 'MOUNT', 'OPEN', 'ABORT',
   'RESTRICT', 'TRANSACTIONAL', 'NORMAL',
