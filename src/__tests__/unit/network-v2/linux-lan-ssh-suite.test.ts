@@ -2103,3 +2103,59 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 33 — port forwarding (-L, -R, -D) ────────────────────────
+
+describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh -L 8080:srv2:80 alice@srv1 establishes local forwarding',
+      on: l => l.pc1,
+      cmd: 'ssh -fNL 8080:10.0.0.11:80 alice@10.0.0.10',
+      excludes: [/Could not request local forwarding|refused/],
+    },
+    {
+      name: 'after -L is up, ss -tln on pc1 shows port 8080 listening',
+      setup: (l) => { void l.pc1.executeCommand('ssh -fNL 8080:10.0.0.11:80 alice@10.0.0.10'); },
+      on: l => l.pc1,
+      cmd: 'ss -tln',
+      contains: [/127\.0\.0\.1:8080|0\.0\.0\.0:8080/],
+    },
+    {
+      name: 'ssh -R 9090:localhost:22 alice@srv1 sets up remote forwarding',
+      on: l => l.pc1,
+      cmd: 'ssh -fNR 9090:localhost:22 alice@10.0.0.10',
+      excludes: [/Could not request remote forwarding|refused/],
+    },
+    {
+      name: 'after -R is up, srv1 ss -tln shows 9090 listening',
+      setup: (l) => { void l.pc1.executeCommand('ssh -fNR 9090:localhost:22 alice@10.0.0.10'); },
+      on: l => l.srv1,
+      cmd: 'ss -tln',
+      contains: [/127\.0\.0\.1:9090|0\.0\.0\.0:9090/],
+    },
+    {
+      name: 'AllowTcpForwarding no rejects -L with error',
+      setup: async (l) => {
+        await l.srv1.executeCommand('printf "AllowTcpForwarding no\\n" > /etc/ssh/sshd_config');
+        await l.srv1.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh -L 8080:10.0.0.11:80 alice@10.0.0.10',
+      contains: [/administratively prohibited|forwarding disabled/i],
+    },
+    {
+      name: 'ssh -D 1080 alice@host sets up a SOCKS proxy listener',
+      on: l => l.pc1,
+      cmd: 'ssh -fND 1080 alice@10.0.0.10',
+      excludes: [/refused|cannot/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
