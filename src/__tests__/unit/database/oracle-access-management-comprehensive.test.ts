@@ -1029,32 +1029,41 @@ describe('17. Transparent Data Encryption', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('18. Database Vault provisioning', () => {
-  it('Creates realms, command rules, factors, and authorisations', () => {
-    const cases: Case[] = [
-      { sql: "BEGIN DBMS_MACADM.CREATE_REALM(realm_name=>'HR Realm', description=>'Protect HR data', enabled=>'Y', audit_options=>1); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.CREATE_REALM(realm_name=>'Finance Realm', description=>'Protect finance objects', enabled=>'Y', audit_options=>1); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.ADD_OBJECT_TO_REALM(realm_name=>'HR Realm', object_owner=>'HR', object_name=>'EMPLOYEES', object_type=>'TABLE'); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.ADD_AUTH_TO_REALM(realm_name=>'HR Realm', grantee=>'OPS_USER', auth_options=>'PARTICIPANT'); END;",    want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.CREATE_ROLE(role=>'DV_HR_ANALYST', enabled=>'Y'); END;",                                                want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.CREATE_COMMAND_RULE(command=>'DROP TABLE', rule_set_name=>'Default Rule Set', object_owner=>'HR', object_name=>'EMPLOYEES', enabled=>'Y'); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.CREATE_FACTOR(factor_name=>'Client_IP', factor_type_name=>'IP_Address', description=>'Client IP factor', validate_expr=>'DVF.F$Client_IP IS NOT NULL', identify_by=>'BY_CONSTANT', labeled_by=>'BY_SELF', eval_options=>'BY_SESSION', audit_options=>1, fail_options=>1); END;", want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_dv_realm;',                                                                                            want: { not: /ORA-00942/ } },
-      { sql: "SELECT name FROM dba_dv_realm WHERE name LIKE '%Realm%';",                                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_dv_role;',                                                                                              want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_dv_realm_auth;',                                                                                       want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_dv_command_rule;',                                                                                     want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_dv_factor;',                                                                                            want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.DELETE_REALM(realm_name=>'Finance Realm'); END;",                                                       want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.DELETE_FACTOR(factor_name=>'Client_IP'); END;",                                                          want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.DELETE_ROLE(role=>'DV_HR_ANALYST'); END;",                                                              want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.DELETE_COMMAND_RULE(command=>'DROP TABLE', object_owner=>'HR', object_name=>'EMPLOYEES'); END;",        want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_MACADM.DELETE_REALM(realm_name=>'HR Realm'); END;",                                                            want: { not: /ORA-00942/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Realm creation + member registration.
+    { sql: "BEGIN DBMS_MACADM.CREATE_REALM(realm_name=>'HR Realm', description=>'Protect HR data', enabled=>'Y', audit_options=>1); END;",            want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.CREATE_REALM(realm_name=>'Finance Realm', description=>'Protect finance objects', enabled=>'Y', audit_options=>1); END;", want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.ADD_OBJECT_TO_REALM(realm_name=>'HR Realm', object_owner=>'HR', object_name=>'EMPLOYEES', object_type=>'TABLE'); END;",  want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.ADD_AUTH_TO_REALM(realm_name=>'HR Realm', grantee=>'OPS_USER', auth_options=>'PARTICIPANT'); END;",                       want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.CREATE_ROLE(role=>'DV_HR_ANALYST', enabled=>'Y'); END;",                                                                  want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.CREATE_COMMAND_RULE(command=>'DROP TABLE', rule_set_name=>'Default Rule Set', object_owner=>'HR', object_name=>'EMPLOYEES', enabled=>'Y'); END;", want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.CREATE_FACTOR(factor_name=>'Client_IP', factor_type_name=>'IP_Address', description=>'Client IP factor', validate_expr=>'DVF.F\$Client_IP IS NOT NULL', identify_by=>'BY_CONSTANT', labeled_by=>'BY_SELF', eval_options=>'BY_SESSION', audit_options=>1, fail_options=>1); END;", want: /PL\/SQL procedure successfully completed\./i },
+    // DBA_DV_* dictionary verification — committed rows.
+    { sql: "SELECT name FROM dba_dv_realm WHERE name = 'HR REALM';",                                                                                    want: /\bHR REALM\b/i },
+    { sql: "SELECT COUNT(*) FROM dba_dv_realm WHERE name IN ('HR REALM','FINANCE REALM');",                                                              want: /^\s*2\s*$/m },
+    { sql: "SELECT role FROM dba_dv_role WHERE role = 'DV_HR_ANALYST';",                                                                                 want: /\bDV_HR_ANALYST\b/ },
+    { sql: "SELECT grantee FROM dba_dv_realm_auth WHERE realm_name = 'HR REALM' AND grantee = 'OPS_USER';",                                              want: /\bOPS_USER\b/ },
+    { sql: "SELECT command FROM dba_dv_command_rule WHERE command = 'DROP TABLE' AND object_name = 'EMPLOYEES';",                                       want: /\bDROP TABLE\b/i },
+    { sql: "SELECT name FROM dba_dv_factor WHERE name = 'CLIENT_IP';",                                                                                  want: /\bCLIENT_IP\b/ },
+    // Deletes — each removes exactly one entity.
+    { sql: "BEGIN DBMS_MACADM.DELETE_REALM(realm_name=>'Finance Realm'); END;",                                                                          want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.DELETE_FACTOR(factor_name=>'Client_IP'); END;",                                                                              want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.DELETE_ROLE(role=>'DV_HR_ANALYST'); END;",                                                                                  want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.DELETE_COMMAND_RULE(command=>'DROP TABLE', object_owner=>'HR', object_name=>'EMPLOYEES'); END;",                            want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_MACADM.DELETE_REALM(realm_name=>'HR Realm'); END;",                                                                                want: /PL\/SQL procedure successfully completed\./i },
+    // After deletion: dictionary rows are gone.
+    { sql: "SELECT COUNT(*) FROM dba_dv_realm WHERE name IN ('HR REALM','FINANCE REALM');",                                                              want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_dv_role WHERE role = 'DV_HR_ANALYST';",                                                                              want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_dv_factor WHERE name = 'CLIENT_IP';",                                                                                want: /^\s*0\s*$/m },
+  ])('§18: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 19 — Fine-grained access policies (RLS) (14 cases)
 // ─────────────────────────────────────────────────────────────────
 
