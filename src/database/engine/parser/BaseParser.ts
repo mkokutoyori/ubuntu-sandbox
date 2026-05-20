@@ -84,6 +84,7 @@ export abstract class BaseParser {
         case 'FLASHBACK': return this.parseFlashback();
         case 'PURGE': return this.parsePurge();
         case 'SET': return this.parseSetStatement();
+        case 'COMMENT': return this.parseComment();
       }
     }
 
@@ -799,7 +800,9 @@ export abstract class BaseParser {
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
       this.expectKeyword('REFERENCES');
-      const refTable = this.expectIdentifier();
+      // Accept schema.table for the referenced relation.
+      let refTable = this.expectIdentifier();
+      if (this.match(TokenType.DOT)) refTable = `${refTable}.${this.expectIdentifier()}`;
       let refColumns: string[] | undefined;
       if (this.match(TokenType.LPAREN)) {
         refColumns = this.parseIdentifierList();
@@ -1024,11 +1027,27 @@ export abstract class BaseParser {
     if (this.matchKeyword('ADD')) {
       if (this.checkIdentifierOrKeyword('SUPPLEMENTAL')) {
         actions.push(this.parseAddSupplemental());
-      } else if (this.match(TokenType.LPAREN) || this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
-        const hadParen = this.tokens[this.pos - 1]?.type === TokenType.LPAREN;
+      } else if (this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY') || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN') || this.checkKeyword('CHECK')) {
+        // Bare table-level constraint (no parens).
         const constraint = this.parseTableConstraint();
-        if (hadParen) this.expect(TokenType.RPAREN);
         actions.push({ action: 'ADD_CONSTRAINT', constraint });
+      } else if (this.match(TokenType.LPAREN)) {
+        // Parenthesized clause — either a single CONSTRAINT or a
+        // comma-separated column list. Disambiguate on the first
+        // token inside the parens.
+        if (this.checkKeyword('CONSTRAINT') || this.checkKeyword('PRIMARY')
+            || this.checkKeyword('UNIQUE') || this.checkKeyword('FOREIGN')
+            || this.checkKeyword('CHECK')) {
+          const constraint = this.parseTableConstraint();
+          this.expect(TokenType.RPAREN);
+          actions.push({ action: 'ADD_CONSTRAINT', constraint });
+        } else {
+          // Column list: ADD (col1 type [...], col2 type [...], …)
+          do {
+            actions.push({ action: 'ADD_COLUMN', column: this.parseColumnDefinition() });
+          } while (this.match(TokenType.COMMA));
+          this.expect(TokenType.RPAREN);
+        }
       } else {
         actions.push({ action: 'ADD_COLUMN', column: this.parseColumnDefinition() });
       }
@@ -1405,6 +1424,40 @@ export abstract class BaseParser {
     return limits;
   }
 
+  // ── COMMENT ON …  ─────────────────────────────────────────────────
+
+  /**
+   * `COMMENT ON {TABLE | COLUMN | MATERIALIZED VIEW} <name> IS '<text>';`
+   * Real Oracle also accepts INDEXTYPE, OPERATOR, EDITION, MINING MODEL —
+   * those are tolerated as TABLE/COLUMN equivalents (no first-class storage).
+   */
+  protected parseComment(): import('./ASTNode').CommentStatement {
+    const pos = this.current().position;
+    this.expectKeyword('COMMENT');
+    this.expectKeyword('ON');
+    let target: 'TABLE' | 'COLUMN' | 'MATERIALIZED_VIEW' = 'TABLE';
+    if (this.matchKeyword('TABLE')) target = 'TABLE';
+    else if (this.matchKeyword('COLUMN')) target = 'COLUMN';
+    else if (this.matchKeyword('MATERIALIZED')) { this.expectKeyword('VIEW'); target = 'MATERIALIZED_VIEW'; }
+    else this.expectKeyword('TABLE'); // raise standard mismatch error.
+
+    let schema: string | undefined;
+    let tableName = this.expectIdentifier();
+    if (this.match(TokenType.DOT)) { schema = tableName; tableName = this.expectIdentifier(); }
+    let columnName: string | undefined;
+    if (target === 'COLUMN' && this.match(TokenType.DOT)) {
+      columnName = this.expectIdentifier();
+    }
+
+    this.expectKeyword('IS');
+    const text = this.expectIdentifierOrString();
+    return {
+      type: 'CommentStatement', position: pos, target,
+      schema: schema?.toUpperCase(), tableName: tableName.toUpperCase(),
+      columnName: columnName?.toUpperCase(), text,
+    };
+  }
+
   // ── TRUNCATE ──────────────────────────────────────────────────────
 
   protected parseAnalyze(): import('./ASTNode').AnalyzeStatement {
@@ -1558,11 +1611,23 @@ export abstract class BaseParser {
     const grantees = this.parseIdentifierList();
     let withGrantOption = false;
     let withAdminOption = false;
+    // Role activation password — `GRANT <role> TO <user> IDENTIFIED BY <pwd>`.
+    // The simulator accepts the clause and discards the password — it's
+    // recorded on the role itself, not on the grant relationship.
+    if (this.matchKeyword('IDENTIFIED')) {
+      this.expectKeyword('BY');
+      this.expectIdentifierOrString();
+    }
     if (this.matchKeyword('WITH')) {
       if (this.matchKeyword('GRANT')) {
         this.expectKeyword('OPTION');
         withGrantOption = true;
       } else if (this.matchKeyword('ADMIN')) {
+        this.expectKeyword('OPTION');
+        withAdminOption = true;
+      } else if (this.matchKeyword('DELEGATE')) {
+        // WITH DELEGATE OPTION — Database Vault flavour, tolerated as
+        // ADMIN OPTION equivalent.
         this.expectKeyword('OPTION');
         withAdminOption = true;
       }
@@ -1573,6 +1638,19 @@ export abstract class BaseParser {
   protected parseRevoke(): import('./ASTNode').RevokeStatement {
     const pos = this.current().position;
     this.expectKeyword('REVOKE');
+    // Optional `ADMIN OPTION FOR` / `GRANT OPTION FOR` prefix — strips
+    // the WITH-ADMIN/WITH-GRANT flag from the existing grant rather
+    // than removing the grant itself.
+    let strippingOption: 'ADMIN' | 'GRANT' | undefined;
+    if (this.matchKeyword('ADMIN')) {
+      this.expectKeyword('OPTION');
+      this.expectKeyword('FOR');
+      strippingOption = 'ADMIN';
+    } else if (this.matchKeyword('GRANT')) {
+      this.expectKeyword('OPTION');
+      this.expectKeyword('FOR');
+      strippingOption = 'GRANT';
+    }
     const { privileges, privilegeColumns } = this.parsePrivilegeListWithColumns();
     let objectName: string | undefined;
     let objectSchema: string | undefined;
@@ -1582,7 +1660,7 @@ export abstract class BaseParser {
     }
     this.expectKeyword('FROM');
     const grantees = this.parseIdentifierList();
-    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0] };
+    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0], strippingOption };
   }
 
   /**
@@ -1871,6 +1949,29 @@ export abstract class BaseParser {
       let val = strToken.value;
       if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
       return { type: 'Literal', position: pos, dataType: 'timestamp', value: val };
+    }
+
+    // INTERVAL '<value>' { YEAR | MONTH | DAY | HOUR | MINUTE | SECOND }
+    // [TO …] — ANSI/Oracle interval literal. The value is captured as a
+    // composite string keeping the unit so the executor can apply it.
+    if (this.checkKeyword('INTERVAL') && this.peekNext()?.type === TokenType.STRING_LITERAL) {
+      this.advance(); // consume INTERVAL
+      const strToken = this.advance();
+      let val = strToken.value;
+      if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+      const unitParts: string[] = [];
+      while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+        const next = this.current().value.toUpperCase();
+        if (['YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND', 'TO'].includes(next)) {
+          unitParts.push(this.advance().value.toUpperCase());
+        } else break;
+      }
+      // Optional (precision) suffix.
+      if (this.match(TokenType.LPAREN)) {
+        while (!this.check(TokenType.RPAREN) && !this.check(TokenType.EOF)) this.advance();
+        this.match(TokenType.RPAREN);
+      }
+      return { type: 'Literal', position: pos, dataType: 'interval', value: `${val} ${unitParts.join(' ')}` };
     }
 
     // CASE expression

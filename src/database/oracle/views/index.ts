@@ -52,6 +52,8 @@ import './dba_priv_audit_opts';
 import './dba_obj_audit_opts';
 import './dba_policies';
 import './dba_policy_groups';
+import './dba_policy_contexts';
+import './dba_sec_relevant_cols';
 import './dba_audit_policies';
 import './unified_audit_trail';
 import './dba_2pc_pending';
@@ -382,5 +384,7 @@ import './dba_dv_command_rule';
 import './dba_dv_factor';
 import './proxy_users';
 import './audit_unified_policies';
+import './dba_audit_mgmt_config_params';
+import './dba_audit_mgmt_last_arch_ts';
 
 export { };

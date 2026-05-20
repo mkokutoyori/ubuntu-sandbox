@@ -489,6 +489,12 @@ export interface RevokeStatement extends ASTNode {
   grantees: string[];
   grantee: string;
   privilegeColumns?: Record<string, string[]>;
+  /**
+   * Present when the statement is `REVOKE {ADMIN|GRANT} OPTION FOR p
+   * FROM g` — the privilege itself is preserved, only the option is
+   * stripped from the dictionary row.
+   */
+  strippingOption?: 'ADMIN' | 'GRANT';
 }
 
 // ── User/Role Management ────────────────────────────────────────────
@@ -901,6 +907,53 @@ export interface NoauditStatement extends ASTNode {
 }
 
 /**
+ * `COMMENT ON {TABLE|COLUMN|MATERIALIZED VIEW} <name> IS '<text>'`.
+ * The catalog stores the text so DBA_TAB_COMMENTS / DBA_COL_COMMENTS
+ * can surface it. Real Oracle treats this as a DDL statement with its
+ * own action_name in the audit trail.
+ */
+export interface CommentStatement extends ASTNode {
+  type: 'CommentStatement';
+  target: 'TABLE' | 'COLUMN' | 'MATERIALIZED_VIEW';
+  schema?: string;
+  tableName: string;
+  /** Set only when target === 'COLUMN'. */
+  columnName?: string;
+  text: string;
+}
+
+/**
+ * `ADMINISTER KEY MANAGEMENT …` — TDE wallet & master-key administration.
+ * The statement is dispatched on `operation`; the rest of the clause
+ * (location, identifier, tag, etc.) is captured for the executor.
+ */
+export interface AdministerKeyManagementStatement extends ASTNode {
+  type: 'AdministerKeyManagementStatement';
+  operation:
+    | 'CREATE_KEYSTORE'
+    | 'OPEN_KEYSTORE'
+    | 'CLOSE_KEYSTORE'
+    | 'SET_KEY'
+    | 'CREATE_AUTO_LOGIN_KEYSTORE'
+    | 'BACKUP_KEYSTORE'
+    | 'MERGE_KEYSTORE'
+    | 'EXPORT_KEYS'
+    | 'IMPORT_KEYS';
+  /** Filesystem location for the keystore (CREATE / BACKUP / AUTO_LOGIN). */
+  location?: string;
+  /** Optional keystore backup destination. */
+  toLocation?: string;
+  /** Wallet/keystore password (from `IDENTIFIED BY "…"`). */
+  password?: string;
+  /** Tag used in SET KEY USING TAG '…'. */
+  tag?: string;
+  /** Backup identifier when BACKUP KEYSTORE USING '<id>'. */
+  backupId?: string;
+  /** TRUE when the statement carries WITH BACKUP. */
+  withBackup?: boolean;
+}
+
+/**
  * `CREATE AUDIT POLICY <name> [ACTIONS …] [ON [schema.]obj] [ROLES …]`.
  * The unified-audit definition is registered in the catalog; rows
  * surface in `AUDIT_UNIFIED_POLICIES`.
@@ -970,5 +1023,7 @@ export type Statement =
   // Audit
   | AuditStatement | NoauditStatement
   | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement
+  | AdministerKeyManagementStatement
+  | CommentStatement
   // PL/SQL
   | PLSQLBlock;

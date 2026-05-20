@@ -79,8 +79,25 @@ export class PrivilegeChecker {
     // Direct grant OR object privilege inherited through any granted
     // role. DBA scripts routinely `GRANT SELECT ON x TO role` and rely
     // on the user picking it up transitively.
-    const grantees = new Set<string>([upper, ...this.getGrantedRoles(upper)]);
-    return (this.catalog as unknown as { tabPrivileges: CatalogPrivilege[] }).tabPrivileges.some(
+    const grantees = new Set<string>([upper, ...this.getGrantedRoles(upper), 'PUBLIC']);
+    const cat = this.catalog as unknown as {
+      tabPrivileges: CatalogPrivilege[];
+      colPrivileges?: Array<{ grantee: string; privilege: string; objectSchema: string; objectName: string; columnName: string }>;
+    };
+    const tableMatch = cat.tabPrivileges.some(
+      (p) =>
+        grantees.has(p.grantee) &&
+        p.privilege === priv &&
+        p.objectSchema === schema &&
+        p.objectName === obj
+    );
+    if (tableMatch) return true;
+    // Column-level grants count too. They are restrictive (the executor
+    // is responsible for refusing access to ungranted columns), but for
+    // existence-vs-privilege disambiguation the user is considered to
+    // have *some* access on the object.
+    const colPrivs = cat.colPrivileges ?? [];
+    return colPrivs.some(
       (p) =>
         grantees.has(p.grantee) &&
         p.privilege === priv &&

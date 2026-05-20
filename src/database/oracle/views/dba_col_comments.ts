@@ -9,11 +9,12 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_COL_COMMENTS',
   comment: 'Comments on columns',
-  query({ storage }) {
+  query({ storage, catalog }) {
+    const cat = catalog as unknown as { getColumnComment?: (s: string, t: string, c: string) => string | null };
     const rows: (string | null)[][] = [];
     for (const t of storage.getAllTables()) {
       for (const c of t.columns) {
-        rows.push([t.schema, t.name, c.name, null]);
+        rows.push([t.schema, t.name, c.name, cat.getColumnComment?.(t.schema, t.name, c.name) ?? null]);
       }
     }
     return queryResult(

@@ -18,6 +18,7 @@ import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
+import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
@@ -67,6 +68,67 @@ export class OracleDatabase {
   private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
+
+  /** Live OracleSession objects keyed by SID — the dictionary feeds
+   *  V$SESSION, SYS_CONTEXT('USERENV', …) and DBMS_SESSION. */
+  private sessions: Map<number, OracleSession> = new Map();
+
+  /**
+   * Build the instance-identity payload OracleSession needs.
+   * Reads live values from `OracleInstance` parameters so renaming /
+   * relocation is automatically reflected.
+   */
+  private buildInstanceIdentity(): {
+    instanceId: number; instanceName: string;
+    dbName: string; dbUniqueName: string; dbDomain: string; serverHost: string;
+  } {
+    const dbName = this.instance.getParameter('db_name') ?? 'orcl';
+    return {
+      instanceId: 1,
+      instanceName: dbName,
+      dbName,
+      dbUniqueName: this.instance.getParameter('db_unique_name') ?? dbName,
+      dbDomain: this.instance.getParameter('db_domain') ?? 'localdomain',
+      serverHost: this.instance.getParameter('server_host') ?? 'localhost',
+    };
+  }
+
+  /** Open OracleSession + register in the sessions map. */
+  private openSession(args: {
+    sid: number; serial: number; username: string; schema?: string;
+    osCtx: OsSecurityContext; authenticationMethod: AuthenticationMethod;
+    type?: 'USER' | 'BACKGROUND'; authenticatedIdentity?: string;
+  }): OracleSession {
+    const user = this.catalog.getUser(args.username.toUpperCase());
+    const session = new OracleSession({
+      sid: args.sid,
+      serial: args.serial,
+      username: args.username,
+      schema: args.schema,
+      osContext: args.osCtx,
+      authenticationMethod: args.authenticationMethod,
+      type: args.type,
+      authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
+      instance: this.buildInstanceIdentity(),
+    });
+    this.sessions.set(args.sid, session);
+    return session;
+  }
+
+  /** Close an OracleSession (called on disconnect). */
+  closeSession(sid: number): void {
+    this.sessions.delete(sid);
+  }
+
+  /** All currently-open sessions. */
+  getOpenSessions(): readonly OracleSession[] {
+    return [...this.sessions.values()];
+  }
+
+  /** Locate an open session by SID. */
+  getSession(sid: number): OracleSession | undefined {
+    return this.sessions.get(sid);
+  }
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
@@ -157,6 +219,14 @@ export class OracleDatabase {
     this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
     this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
 
+    const authMethod: AuthenticationMethod =
+      user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
+      : user?.authenticationType === 'GLOBAL' ? 'GLOBAL'
+      : 'PASSWORD';
+    const session = this.openSession({
+      sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
+    });
+
     const context: ExecutionContext = {
       currentUser: upperUser,
       currentSchema: upperUser,
@@ -164,6 +234,7 @@ export class OracleDatabase {
       serverOutput: false,
       feedback: true,
       timing: false,
+      session,
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
@@ -201,6 +272,11 @@ export class OracleDatabase {
     });
     this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
 
+    const sysSession = this.openSession({
+      sid, serial, username: 'SYS', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+      authenticationMethod: 'SYSDBA',
+    });
+
     const context: ExecutionContext = {
       currentUser: 'SYS',
       currentSchema: 'SYS',
@@ -208,6 +284,7 @@ export class OracleDatabase {
       serverOutput: false,
       feedback: true,
       timing: false,
+      session: sysSession,
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
@@ -239,6 +316,11 @@ export class OracleDatabase {
       { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
       this.catalog, sid, serial);
 
+    const sysoperSession = this.openSession({
+      sid, serial, username: 'PUBLIC', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
+      authenticationMethod: 'SYSOPER',
+    });
+
     const context: ExecutionContext = {
       currentUser: 'PUBLIC',
       currentSchema: 'PUBLIC',
@@ -246,6 +328,7 @@ export class OracleDatabase {
       serverOutput: false,
       feedback: true,
       timing: false,
+      session: sysoperSession,
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
@@ -330,6 +413,15 @@ export class OracleDatabase {
       return this.dropPackage(executor, trimmed);
     }
 
+    // ALTER {PROCEDURE | FUNCTION | PACKAGE} <name> COMPILE [BODY]
+    // is a no-op recompile in the simulator — emits the canonical message.
+    const alterCompile = trimmed.match(/^ALTER\s+(PROCEDURE|FUNCTION|PACKAGE)\s+(?:\w+\s*\.\s*)?\w+\s+COMPILE(\s+BODY)?\b/i);
+    if (alterCompile) {
+      const kind = alterCompile[1].toUpperCase();
+      const label = kind === 'PROCEDURE' ? 'Procedure' : kind === 'FUNCTION' ? 'Function' : 'Package';
+      return emptyResult(`${label} altered.`);
+    }
+
     const tokens = this.lexer.tokenize(trimmed);
     const parser = new OracleParser();
     const statements = parser.parseMultiple(tokens);
@@ -358,6 +450,10 @@ export class OracleDatabase {
           return emptyResult('ORA-02248: invalid option for ALTER SESSION');
         }
         executor.updateContext({ currentSchema: value });
+        // Keep the live OracleSession in sync — USERENV reads from it.
+        const ctx = (executor as { context: ExecutionContext }).context;
+        const sess = ctx.session as { setCurrentSchema?: (s: string) => void } | undefined;
+        sess?.setCurrentSchema?.(value);
       }
     }
     return emptyResult('Session altered.');
@@ -673,6 +769,29 @@ export class OracleDatabase {
     // DBMS_SESSION.SET_ROLE / SET_NLS
     if (upper.startsWith('DBMS_SESSION.')) {
       return; // No-op in simulator
+    }
+
+    // DBMS_RLS.{ADD_POLICY,ADD_GROUPED_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY,DROP_GROUPED_POLICY}
+    if (upper.startsWith('DBMS_RLS.')) {
+      this.executeDbmsRlsCall(executor, trimmed);
+      return;
+    }
+
+    // DBMS_FGA.{ADD_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY}
+    if (upper.startsWith('DBMS_FGA.')) {
+      this.executeDbmsFgaCall(executor, trimmed);
+      return;
+    }
+
+    // DBMS_MACADM — Database Vault administration; routed through the catalog.
+    if (upper.startsWith('DBMS_MACADM.')) {
+      this.executeDbmsMacadmCall(trimmed);
+      return;
+    }
+
+    // DBMS_AUDIT_MGMT — accept maintenance procedures as no-ops.
+    if (upper.startsWith('DBMS_AUDIT_MGMT.')) {
+      return;
     }
 
     // DBMS_SCHEDULER calls
@@ -1044,13 +1163,16 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] PROCEDURE */
   private createStoredProcedure(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
+    // Accept `schema.name` as well as bare `name`. The qualified form
+    // takes precedence over the connected schema (real Oracle behaviour).
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const name = match[2].toUpperCase();
-    const paramStr = match[3] || '';
-    const body = match[4].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const name = match[3].toUpperCase();
+    const paramStr = match[4] || '';
+    const body = match[5].trim();
 
     const parameters = this.parseParameters(paramStr);
     const key = `${schema}.${name}`;
@@ -1071,14 +1193,15 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] FUNCTION */
   private createStoredFunction(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const name = match[2].toUpperCase();
-    const paramStr = match[3] || '';
-    const returnType = match[4].toUpperCase();
-    const body = match[5].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const name = match[3].toUpperCase();
+    const paramStr = match[4] || '';
+    const returnType = match[5].toUpperCase();
+    const body = match[6].trim();
 
     const parameters = this.parseParameters(paramStr);
     const key = `${schema}.${name}`;
@@ -1192,11 +1315,12 @@ export class OracleDatabase {
 
   /** DROP PROCEDURE/FUNCTION/PACKAGE BODY */
   private dropStoredUnit(_executor: OracleExecutor, sql: string, type: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE BODY'): ResultSet {
-    const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION|PACKAGE\s+BODY)\s+(\w+)/i);
+    const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION|PACKAGE\s+BODY)\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const name = match[1].toUpperCase();
-    const schema = (_executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[1] ?? ctxSchema).toUpperCase();
+    const name = match[2].toUpperCase();
 
     if (type === 'PACKAGE BODY') {
       const bodyKey = `${schema}.${name}.__BODY__`;
@@ -1234,12 +1358,13 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] PACKAGE (specification) */
   private createPackageSpec(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const name = match[2].toUpperCase();
-    const body = match[3].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const name = match[3].toUpperCase();
+    const body = match[4].trim();
     const key = `${schema}.${name}`;
 
     // If OR REPLACE, remove existing spec (but keep body and members)
@@ -1263,12 +1388,13 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] PACKAGE BODY */
   private createPackageBody(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const pkgName = match[2].toUpperCase();
-    const bodyContent = match[3].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const pkgName = match[3].toUpperCase();
+    const bodyContent = match[4].trim();
     const bodyKey = `${schema}.${pkgName}`;
 
     // If OR REPLACE, remove existing body and its member units
@@ -1422,5 +1548,182 @@ export class OracleDatabase {
     });
 
     return emptyResult('Trigger created.');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // DBMS_RLS / DBMS_FGA / DBMS_MACADM dispatchers
+  //
+  // PL/SQL procedure calls are parsed with a permissive regex: the call
+  // body is split on commas and each `name => value` pair is captured.
+  // Positional arguments are tolerated by falling back on declaration
+  // order, mirroring real PL/SQL invocation.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Extract named arguments from a procedure call body like
+   *  `object_schema=>'HR', policy_name=>'p1', statement_types=>'SELECT'`. */
+  private parseNamedArgs(call: string): Record<string, string> {
+    // Strip the leading `<PKG>.<PROC>(` and trailing `);`.
+    const open = call.indexOf('(');
+    const close = call.lastIndexOf(')');
+    if (open < 0 || close < 0 || close <= open) return {};
+    const body = call.slice(open + 1, close);
+    const args: Record<string, string> = {};
+    // Split on top-level commas only (so quoted commas survive).
+    const parts: string[] = [];
+    let depth = 0; let buf = ''; let inStr = false;
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      if (ch === "'" && body[i - 1] !== '\\') inStr = !inStr;
+      if (!inStr && ch === '(') depth++;
+      if (!inStr && ch === ')') depth--;
+      if (!inStr && ch === ',' && depth === 0) { parts.push(buf); buf = ''; continue; }
+      buf += ch;
+    }
+    if (buf.trim()) parts.push(buf);
+    for (const raw of parts) {
+      const m = raw.match(/^\s*(\w+)\s*=>\s*([\s\S]+?)\s*$/);
+      if (m) args[m[1].toUpperCase()] = OracleDatabase.unquote(m[2]);
+    }
+    return args;
+  }
+
+  private static unquote(value: string): string {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("'") && trimmed.endsWith("'")) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  }
+
+  private executeDbmsRlsCall(_executor: OracleExecutor, call: string): void {
+    const upper = call.toUpperCase();
+    const args = this.parseNamedArgs(call);
+    const get = (key: string): string => args[key] ?? '';
+    if (upper.includes('.ADD_POLICY')) {
+      this.catalog.addRlsPolicy({
+        objectSchema: get('OBJECT_SCHEMA'),
+        objectName: get('OBJECT_NAME'),
+        policyName: get('POLICY_NAME'),
+        functionSchema: get('FUNCTION_SCHEMA'),
+        policyFunction: get('POLICY_FUNCTION'),
+        statementTypes: get('STATEMENT_TYPES'),
+        policyType: get('POLICY_TYPE'),
+        secRelevantCols: get('SEC_RELEVANT_COLS'),
+      });
+    } else if (upper.includes('.ADD_GROUPED_POLICY')) {
+      this.catalog.addRlsPolicy({
+        objectSchema: get('OBJECT_SCHEMA'),
+        objectName: get('OBJECT_NAME'),
+        policyName: get('POLICY_NAME'),
+        policyGroup: get('POLICY_GROUP'),
+        functionSchema: get('FUNCTION_SCHEMA'),
+        policyFunction: get('POLICY_FUNCTION'),
+        statementTypes: get('STATEMENT_TYPES'),
+      });
+    } else if (upper.includes('.ENABLE_POLICY')) {
+      // Positional: (object_schema, object_name, policy_name, enable)
+      const positional = this.parsePositionalArgs(call);
+      const enable = positional[3]?.toUpperCase() !== 'FALSE';
+      this.catalog.enableRlsPolicy(positional[0] ?? '', positional[1] ?? '', positional[2] ?? '', enable);
+    } else if (upper.includes('.DISABLE_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      this.catalog.enableRlsPolicy(positional[0] ?? '', positional[1] ?? '', positional[2] ?? '', false);
+    } else if (upper.includes('.DROP_POLICY') || upper.includes('.DROP_GROUPED_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      // DROP_GROUPED_POLICY signature: (object_schema, object_name, policy_group, policy_name)
+      const policyName = upper.includes('GROUPED') ? positional[3] ?? '' : positional[2] ?? '';
+      this.catalog.dropRlsPolicy(positional[0] ?? '', positional[1] ?? '', policyName);
+    }
+  }
+
+  private executeDbmsFgaCall(_executor: OracleExecutor, call: string): void {
+    const upper = call.toUpperCase();
+    const args = this.parseNamedArgs(call);
+    const get = (key: string): string => args[key] ?? '';
+    if (upper.includes('.ADD_POLICY')) {
+      const types = (get('STATEMENT_TYPES') || 'SELECT').toUpperCase();
+      this.catalog.addFgaPolicy({
+        objectSchema: get('OBJECT_SCHEMA').toUpperCase(),
+        objectName: get('OBJECT_NAME').toUpperCase(),
+        policyName: get('POLICY_NAME').toUpperCase(),
+        policyOwner: get('OBJECT_SCHEMA').toUpperCase(),
+        policyText: get('AUDIT_CONDITION') || '',
+        enabled: true,
+        select: types.includes('SELECT'),
+        insert: types.includes('INSERT'),
+        update: types.includes('UPDATE'),
+        delete: types.includes('DELETE'),
+      });
+    } else if (upper.includes('.ENABLE_POLICY') || upper.includes('.DISABLE_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      const enable = upper.includes('.ENABLE_POLICY');
+      const policies = this.catalog.getFgaPolicies();
+      const p = policies.find(x => x.objectSchema === (positional[0] ?? '').toUpperCase()
+                                && x.objectName === (positional[1] ?? '').toUpperCase()
+                                && x.policyName === (positional[2] ?? '').toUpperCase());
+      if (p) (p as { enabled: boolean }).enabled = enable;
+    } else if (upper.includes('.DROP_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      this.catalog.dropFgaPolicy(positional[0] ?? '', positional[1] ?? '', positional[2] ?? '');
+    }
+  }
+
+  private executeDbmsMacadmCall(call: string): void {
+    const upper = call.toUpperCase();
+    const args = this.parseNamedArgs(call);
+    const get = (key: string): string => args[key] ?? '';
+    if (upper.includes('.CREATE_REALM')) {
+      this.catalog.createDvRealm(get('REALM_NAME'), get('DESCRIPTION'), Number(get('AUDIT_OPTIONS') || '1'));
+    } else if (upper.includes('.DELETE_REALM')) {
+      // Best-effort removal — there's no dedicated DV remove in the catalog.
+      const all = this.catalog.getDvRealms() as { name: string }[];
+      const idx = all.findIndex(r => r.name === get('REALM_NAME').toUpperCase());
+      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+    } else if (upper.includes('.ADD_OBJECT_TO_REALM') || upper.includes('.ADD_AUTH_TO_REALM')) {
+      if (upper.includes('AUTH')) {
+        this.catalog.addDvRealmAuth(get('REALM_NAME'), get('GRANTEE'), '', get('AUTH_OPTIONS') || 'PARTICIPANT');
+      }
+    } else if (upper.includes('.CREATE_ROLE')) {
+      this.catalog.createDvRole(get('ROLE'), '');
+    } else if (upper.includes('.DELETE_ROLE')) {
+      const all = this.catalog.getDvRoles() as { name: string }[];
+      const idx = all.findIndex(r => r.name === get('ROLE').toUpperCase());
+      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+    } else if (upper.includes('.CREATE_COMMAND_RULE')) {
+      this.catalog.createDvCommandRule(get('COMMAND'), get('RULE_SET_NAME'), get('OBJECT_OWNER'), get('OBJECT_NAME'));
+    } else if (upper.includes('.DELETE_COMMAND_RULE')) {
+      const all = this.catalog.getDvCommandRules() as { command: string; objectOwner: string; objectName: string }[];
+      const idx = all.findIndex(r => r.command === get('COMMAND').toUpperCase()
+                                  && r.objectOwner === get('OBJECT_OWNER').toUpperCase()
+                                  && r.objectName === get('OBJECT_NAME').toUpperCase());
+      if (idx >= 0) (all as unknown[]).splice(idx, 1);
+    } else if (upper.includes('.CREATE_FACTOR')) {
+      this.catalog.createDvFactor({
+        name: get('FACTOR_NAME'),
+        description: get('DESCRIPTION'),
+        factorType: get('FACTOR_TYPE_NAME'),
+        validateExpr: get('VALIDATE_EXPR'),
+        identifyBy: get('IDENTIFY_BY'),
+        labeledBy: get('LABELED_BY'),
+        evalOptions: get('EVAL_OPTIONS'),
+        auditOptions: Number(get('AUDIT_OPTIONS') || '1'),
+        failOptions: Number(get('FAIL_OPTIONS') || '1'),
+      });
+    } else if (upper.includes('.DELETE_FACTOR')) {
+      const all = this.catalog.getDvFactors() as { name: string }[];
+      const idx = all.findIndex(r => r.name === get('FACTOR_NAME').toUpperCase());
+      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+    }
+  }
+
+  /** Parse positional arguments — used for procedures like
+   *  DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','pol'). */
+  private parsePositionalArgs(call: string): string[] {
+    const open = call.indexOf('(');
+    const close = call.lastIndexOf(')');
+    if (open < 0 || close < 0) return [];
+    const body = call.slice(open + 1, close);
+    if (body.includes('=>')) return []; // Named-arg call — use parseNamedArgs.
+    return body.split(',').map(p => OracleDatabase.unquote(p));
   }
 }

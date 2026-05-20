@@ -671,6 +671,36 @@ export class OracleCatalog extends BaseCatalog {
     return this.proxyUsers;
   }
 
+  // ── COMMENT ON … IS …  ─────────────────────────────────────────
+  //
+  // Table / view / column comments persist here so DBA_TAB_COMMENTS
+  // and DBA_COL_COMMENTS surface what the DBA wrote.
+
+  private tableComments = new Map<string, string>();
+  private columnComments = new Map<string, string>();
+
+  private static tabCommentKey(schema: string, table: string): string {
+    return `${schema.toUpperCase()}.${table.toUpperCase()}`;
+  }
+  private static colCommentKey(schema: string, table: string, column: string): string {
+    return `${schema.toUpperCase()}.${table.toUpperCase()}.${column.toUpperCase()}`;
+  }
+
+  setTableComment(schema: string, table: string, text: string): void {
+    this.tableComments.set(OracleCatalog.tabCommentKey(schema, table), text);
+  }
+  setColumnComment(schema: string, table: string, column: string, text: string): void {
+    this.columnComments.set(OracleCatalog.colCommentKey(schema, table, column), text);
+  }
+  getTableComment(schema: string, table: string): string | null {
+    return this.tableComments.get(OracleCatalog.tabCommentKey(schema, table)) ?? null;
+  }
+  getColumnComment(schema: string, table: string, column: string): string | null {
+    return this.columnComments.get(OracleCatalog.colCommentKey(schema, table, column)) ?? null;
+  }
+  getAllTableComments(): ReadonlyMap<string, string> { return this.tableComments; }
+  getAllColumnComments(): ReadonlyMap<string, string> { return this.columnComments; }
+
   // ── Unified audit policies ───────────────────────────────────────
 
   private unifiedAuditPolicies = new Map<string, {
@@ -875,6 +905,99 @@ export class OracleCatalog extends BaseCatalog {
   getDvRealmAuth(): readonly { realmName: string; grantee: string; authRuleSetName: string; authOptions: string }[] { return this.dvRealmAuth; }
   getDvCommandRules(): readonly { command: string; ruleSetName: string; objectOwner: string; objectName: string; enabled: boolean }[] { return this.dvCommandRules; }
   getDvFactors(): readonly { name: string; description: string; factorType: string; validateExpr: string; identifyBy: string; labeledBy: string; evalOptions: string; auditOptions: number; failOptions: number }[] { return this.dvFactors; }
+
+  // ── Row-Level Security (Virtual Private Database) ────────────────
+  //
+  // DBMS_RLS.ADD_POLICY / ADD_GROUPED_POLICY register an RLS policy
+  // that the executor would apply as a predicate transform on the
+  // target object. The catalog records the policy; views surface it.
+
+  private rlsPolicies: {
+    objectOwner: string;
+    objectName: string;
+    policyName: string;
+    policyGroup: string;          // 'SYS_DEFAULT' for ungrouped policies.
+    pfOwner: string;
+    pfPackage: string | null;
+    pfFunction: string;
+    statementTypes: { sel: boolean; ins: boolean; upd: boolean; del: boolean; idx: boolean };
+    enabled: boolean;
+    /** Columns that activate the policy (DBMS_RLS sec_relevant_cols). */
+    secRelevantCols: string[];
+    policyType: 'STATIC' | 'SHARED_STATIC' | 'CONTEXT_SENSITIVE' | 'SHARED_CONTEXT_SENSITIVE' | 'DYNAMIC';
+  }[] = [];
+
+  /** Distinct (object, group) tuples shown by DBA_POLICY_GROUPS. */
+  private rlsPolicyGroups: { objectOwner: string; objectName: string; policyGroup: string }[] = [];
+
+  /** Application-context drivers shown by DBA_POLICY_CONTEXTS. */
+  private rlsPolicyContexts: { objectOwner: string; objectName: string; namespace: string; attribute: string }[] = [];
+
+  addRlsPolicy(p: {
+    objectSchema: string; objectName: string; policyName: string;
+    functionSchema: string; policyFunction: string;
+    statementTypes?: string; policyType?: string;
+    policyGroup?: string;
+    secRelevantCols?: string;
+  }): void {
+    const parts = p.policyFunction.split('.');
+    const pkg = parts.length === 2 ? parts[0].toUpperCase() : null;
+    const fn = (parts.length === 2 ? parts[1] : parts[0]).toUpperCase();
+    const types = (p.statementTypes ?? 'SELECT,INSERT,UPDATE,DELETE').toUpperCase();
+    this.rlsPolicies.push({
+      objectOwner: p.objectSchema.toUpperCase(),
+      objectName: p.objectName.toUpperCase(),
+      policyName: p.policyName.toUpperCase(),
+      policyGroup: (p.policyGroup ?? 'SYS_DEFAULT').toUpperCase(),
+      pfOwner: p.functionSchema.toUpperCase(),
+      pfPackage: pkg,
+      pfFunction: fn,
+      statementTypes: {
+        sel: types.includes('SELECT'),
+        ins: types.includes('INSERT'),
+        upd: types.includes('UPDATE'),
+        del: types.includes('DELETE'),
+        idx: types.includes('INDEX'),
+      },
+      enabled: true,
+      secRelevantCols: (p.secRelevantCols ?? '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean),
+      policyType: (p.policyType ?? 'DYNAMIC') as 'DYNAMIC',
+    });
+    if (p.policyGroup && p.policyGroup.toUpperCase() !== 'SYS_DEFAULT') {
+      const key = `${p.objectSchema.toUpperCase()}.${p.objectName.toUpperCase()}.${p.policyGroup.toUpperCase()}`;
+      if (!this.rlsPolicyGroups.some(g => `${g.objectOwner}.${g.objectName}.${g.policyGroup}` === key)) {
+        this.rlsPolicyGroups.push({
+          objectOwner: p.objectSchema.toUpperCase(),
+          objectName: p.objectName.toUpperCase(),
+          policyGroup: p.policyGroup.toUpperCase(),
+        });
+      }
+    }
+  }
+
+  enableRlsPolicy(objectSchema: string, objectName: string, policyName: string, enable: boolean): boolean {
+    const p = this.rlsPolicies.find(x =>
+      x.objectOwner === objectSchema.toUpperCase()
+      && x.objectName === objectName.toUpperCase()
+      && x.policyName === policyName.toUpperCase());
+    if (!p) return false;
+    p.enabled = enable;
+    return true;
+  }
+
+  dropRlsPolicy(objectSchema: string, objectName: string, policyName: string): boolean {
+    const idx = this.rlsPolicies.findIndex(x =>
+      x.objectOwner === objectSchema.toUpperCase()
+      && x.objectName === objectName.toUpperCase()
+      && x.policyName === policyName.toUpperCase());
+    if (idx < 0) return false;
+    this.rlsPolicies.splice(idx, 1);
+    return true;
+  }
+
+  getRlsPolicies(): readonly typeof this.rlsPolicies[number][] { return this.rlsPolicies; }
+  getRlsPolicyGroups(): readonly { objectOwner: string; objectName: string; policyGroup: string }[] { return this.rlsPolicyGroups; }
+  getRlsPolicyContexts(): readonly { objectOwner: string; objectName: string; namespace: string; attribute: string }[] { return this.rlsPolicyContexts; }
 
   getUnifiedAuditPolicies(): readonly {
     name: string; actions: string[]; objectSchema?: string; objectName?: string;

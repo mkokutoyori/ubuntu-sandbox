@@ -23,6 +23,16 @@ export interface ExecutionContext {
   feedback: boolean;
   /** Timing (show execution time) */
   timing: boolean;
+  /**
+   * Reference to the live OracleSession (when running under Oracle).
+   * Holds every USERENV attribute, NLS settings, application info,
+   * V$SESSION state, etc. Optional so the engine remains usable from
+   * non-Oracle dialects.
+   *
+   * Typed as `unknown` here to avoid a circular import from
+   * `oracle/security`; callers cast at the boundary.
+   */
+  session?: unknown;
 }
 
 export abstract class BaseExecutor {

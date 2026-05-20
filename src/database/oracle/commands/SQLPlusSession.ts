@@ -500,6 +500,8 @@ export class SQLPlusSession {
       'SAVEPOINT', 'COMMENT', 'EXPLAIN', 'AUDIT', 'NOAUDIT',
       'ANALYZE', 'LOCK', 'SET',
       'FLASHBACK', 'PURGE',
+      // 19c TDE / keystore administration commands.
+      'ADMINISTER',
     ];
     // Match the keyword followed by a space, the bare keyword, or the
     // keyword with a trailing semicolon (e.g. "COMMIT;" — real SQL*Plus

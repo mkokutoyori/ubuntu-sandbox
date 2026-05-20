@@ -111,7 +111,11 @@ export abstract class BaseCatalog {
   // ── Privilege management ─────────────────────────────────────────
 
   grantSystemPrivilege(grantee: string, privilege: string, grantable: boolean = false): void {
-    this.sysPrivileges.push({ grantee: grantee.toUpperCase(), privilege: privilege.toUpperCase(), grantable });
+    const g = grantee.toUpperCase();
+    const p = privilege.toUpperCase();
+    const existing = this.sysPrivileges.find(x => x.grantee === g && x.privilege === p);
+    if (existing) { if (grantable) existing.grantable = true; return; }
+    this.sysPrivileges.push({ grantee: g, privilege: p, grantable });
   }
 
   revokeSystemPrivilege(grantee: string, privilege: string): void {
@@ -121,13 +125,18 @@ export abstract class BaseCatalog {
   }
 
   grantTablePrivilege(grantee: string, privilege: string, objectSchema: string, objectName: string, grantable: boolean = false): void {
-    this.tabPrivileges.push({
-      grantee: grantee.toUpperCase(),
-      privilege: privilege.toUpperCase(),
-      grantable,
-      objectSchema: objectSchema.toUpperCase(),
-      objectName: objectName.toUpperCase(),
-    });
+    const g = grantee.toUpperCase();
+    const p = privilege.toUpperCase();
+    const sch = objectSchema.toUpperCase();
+    const obj = objectName.toUpperCase();
+    const existing = this.tabPrivileges.find(x =>
+      x.grantee === g && x.privilege === p && x.objectSchema === sch && x.objectName === obj);
+    if (existing) {
+      // Re-granting upgrades to WITH GRANT OPTION if asked.
+      if (grantable) existing.grantable = true;
+      return;
+    }
+    this.tabPrivileges.push({ grantee: g, privilege: p, grantable, objectSchema: sch, objectName: obj });
   }
 
   revokeTablePrivilege(grantee: string, privilege: string, objectSchema: string, objectName: string): void {
@@ -138,7 +147,15 @@ export abstract class BaseCatalog {
   }
 
   grantRole(grantee: string, role: string, adminOption: boolean = false): void {
-    this.roleGrants.push({ grantee: grantee.toUpperCase(), role: role.toUpperCase(), adminOption });
+    const g = grantee.toUpperCase();
+    const r = role.toUpperCase();
+    const existing = this.roleGrants.find(rg => rg.grantee === g && rg.role === r);
+    if (existing) {
+      // Re-granting upgrades the admin-option flag — Oracle's behaviour.
+      if (adminOption) existing.adminOption = true;
+      return;
+    }
+    this.roleGrants.push({ grantee: g, role: r, adminOption });
   }
 
   revokeRole(grantee: string, role: string): void {

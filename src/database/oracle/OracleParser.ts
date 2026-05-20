@@ -77,8 +77,105 @@ export class OracleParser extends BaseParser {
       case 'EXPLAIN': return this.parseExplainPlan();
       case 'AUDIT': return this.parseAudit();
       case 'NOAUDIT': return this.parseNoaudit();
+      case 'ADMINISTER': return this.parseAdministerKeyManagement();
     }
     return null;
+  }
+
+  /**
+   * `ADMINISTER KEY MANAGEMENT <operation> …` — Transparent Data
+   * Encryption administration. Real Oracle accepts a small grammar
+   * built from CREATE / OPEN / CLOSE / SET / BACKUP / EXPORT / IMPORT
+   * verbs operating on keystores and master keys. The parser captures
+   * just enough to execute the operation; freeform clauses (e.g.
+   * `WITH BACKUP`, `TO 'path'`) are surfaced on the AST node.
+   */
+  private parseAdministerKeyManagement(): import('../engine/parser/ASTNode').AdministerKeyManagementStatement {
+    const pos = this.current().position;
+    this.expectKeyword('ADMINISTER');
+    this.expectIdentifierOrKeyword(); // KEY
+    this.expectIdentifierOrKeyword(); // MANAGEMENT
+
+    let operation: import('../engine/parser/ASTNode').AdministerKeyManagementStatement['operation'] = 'CREATE_KEYSTORE';
+    let location: string | undefined;
+    let toLocation: string | undefined;
+    let password: string | undefined;
+    let tag: string | undefined;
+    let backupId: string | undefined;
+    let withBackup = false;
+
+    const peek = (): string => this.current().value.toUpperCase();
+
+    if (this.matchKeyword('CREATE')) {
+      if (this.matchKeyword('AUTO_LOGIN')) {
+        this.expectKeyword('KEYSTORE');
+        this.expectKeyword('FROM');
+        this.expectKeyword('KEYSTORE');
+        location = this.expectIdentifierOrString();
+        operation = 'CREATE_AUTO_LOGIN_KEYSTORE';
+      } else {
+        this.matchKeyword('LOCAL');
+        this.expectKeyword('KEYSTORE');
+        location = this.expectIdentifierOrString();
+        operation = 'CREATE_KEYSTORE';
+      }
+    } else if (this.matchKeyword('SET')) {
+      if (this.matchKeyword('KEYSTORE')) {
+        if (this.matchKeyword('OPEN')) operation = 'OPEN_KEYSTORE';
+        else if (this.matchKeyword('CLOSE')) operation = 'CLOSE_KEYSTORE';
+        else operation = 'OPEN_KEYSTORE';
+      } else if (this.matchKeyword('KEY')) {
+        operation = 'SET_KEY';
+        if (this.matchKeyword('USING')) {
+          this.expectKeyword('TAG');
+          tag = this.expectIdentifierOrString();
+        }
+      }
+    } else if (this.matchKeyword('BACKUP')) {
+      this.expectKeyword('KEYSTORE');
+      operation = 'BACKUP_KEYSTORE';
+      if (this.matchKeyword('USING')) backupId = this.expectIdentifierOrString();
+    } else if (this.matchKeyword('MERGE')) {
+      this.expectKeyword('KEYSTORE');
+      operation = 'MERGE_KEYSTORE';
+      location = this.expectIdentifierOrString();
+    } else if (this.matchKeyword('EXPORT')) {
+      this.expectKeyword('KEYS');
+      operation = 'EXPORT_KEYS';
+    } else if (this.matchKeyword('IMPORT')) {
+      this.expectKeyword('KEYS');
+      operation = 'IMPORT_KEYS';
+    }
+
+    // Tail clauses: IDENTIFIED BY "<pwd>", TO '<path>', WITH BACKUP — order is free.
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+      if (this.matchKeyword('IDENTIFIED')) {
+        this.expectKeyword('BY');
+        password = this.expectIdentifierOrString();
+      } else if (this.matchKeyword('TO')) {
+        toLocation = this.expectIdentifierOrString();
+      } else if (this.matchKeyword('WITH')) {
+        this.expectKeyword('BACKUP');
+        withBackup = true;
+      } else if (this.matchKeyword('USING')) {
+        // Some variants place USING here (CREATE AUTO_LOGIN ... USING tag).
+        if (peek() === 'TAG') { this.advance(); tag = this.expectIdentifierOrString(); }
+        else backupId = this.expectIdentifierOrString();
+      } else if (this.matchKeyword('FORCE') || this.matchKeyword('KEYSTORE')
+                 || this.matchKeyword('CONTAINER')) {
+        // Tolerated keyword chatter — consume the value if any.
+        if (peek() === '=') this.advance();
+        if (this.check(TokenType.IDENTIFIER) || this.check(TokenType.STRING_LITERAL)) this.advance();
+      } else {
+        // Unknown trailing token — swallow to keep the parser robust.
+        this.advance();
+      }
+    }
+
+    return {
+      type: 'AdministerKeyManagementStatement', position: pos,
+      operation, location, toLocation, password, tag, backupId, withBackup,
+    };
   }
 
   // ── MERGE ────────────────────────────────────────────────────────

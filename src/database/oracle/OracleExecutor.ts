@@ -23,6 +23,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
 } from '../engine/parser/ASTNode';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
+import { ORACLE_SYSTEM_PRIVILEGES } from './security/systemPrivileges';
 import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
@@ -525,6 +526,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'CreateAuditPolicyStatement': return this.executeCreateAuditPolicy(statement);
       case 'DropAuditPolicyStatement': return this.executeDropAuditPolicy(statement);
       case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
+      case 'AdministerKeyManagementStatement': return this.executeAdministerKeyManagement(statement);
+      case 'CommentStatement': return this.executeComment(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -590,9 +593,17 @@ export class OracleExecutor extends BaseExecutor {
     // Any-table system privilege?
     const anyPriv = `${operation} ANY TABLE`;
     if (engine.privileges.hasSystemPrivilege(user, anyPriv)) return;
-    // Explicit object grant?
-    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objectName.toUpperCase())) return;
-    // Hide existence
+    // Explicit object grant for the requested operation?
+    const objNameUpper = objectName.toUpperCase();
+    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objNameUpper)) return;
+    // Differentiate between "no privilege at all" (hide existence with
+    // ORA-00942) and "some privilege but not this one" (ORA-01031 — the
+    // user already knows the object exists).
+    const otherOps: Array<'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'REFERENCES' | 'ALTER' | 'INDEX'> =
+      ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'ALTER', 'INDEX'];
+    const hasAnyObjectPriv = otherOps.some(op =>
+      engine.privileges.hasObjectPrivilege(user, op, targetUpper, objNameUpper));
+    if (hasAnyObjectPriv) throw new OracleError(1031, 'insufficient privileges');
     throw new OracleError(942, 'table or view does not exist');
   }
 
@@ -2079,7 +2090,8 @@ export class OracleExecutor extends BaseExecutor {
       }
     }
 
-    return emptyResult(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} inserted.`, insertedCount);
+    // Oracle SQL*Plus reports "<n> row[s] created." (not "inserted").
+    return emptyResult(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} created.`, insertedCount);
   }
 
   private buildInsertRow(tableMeta: import('../engine/storage/BaseStorage').TableMeta, columns: string[] | undefined, values: Expression[]): StorageRow {
@@ -2402,6 +2414,33 @@ export class OracleExecutor extends BaseExecutor {
         (this.catalog as OracleCatalog).clearColumnEncryption(schema, tableName, action.columnName);
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
+      } else if (action.action === 'RENAME_COLUMN') {
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const oldUpper = action.oldName.toUpperCase();
+        const newUpper = action.newName.toUpperCase();
+        const target = meta.columns.find(c => c.name === oldUpper);
+        if (!target) throw new OracleError(904, `"${oldUpper}": invalid identifier`);
+        if (meta.columns.some(c => c.name === newUpper)) {
+          throw new OracleError(957, 'duplicate column name');
+        }
+        target.name = newUpper;
+        // Migrate stored row keys when rows are dict-keyed.
+        const rows = this.storage.getRows?.(schema, tableName) ?? [];
+        for (const row of rows) {
+          if (row && Object.prototype.hasOwnProperty.call(row, oldUpper)) {
+            (row as Record<string, unknown>)[newUpper] = (row as Record<string, unknown>)[oldUpper];
+            delete (row as Record<string, unknown>)[oldUpper];
+          }
+        }
+      } else if (action.action === 'RENAME_TABLE') {
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const newUpper = action.newName.toUpperCase();
+        if (this.storage.getTableMeta(schema, newUpper)) {
+          throw new OracleError(955, 'name is already used by an existing object');
+        }
+        meta.name = newUpper;
       } else if (action.action === 'MOVE_TABLESPACE') {
         const meta = this.storage.getTableMeta(schema, tableName);
         if (!meta) throw new OracleError(942, `table or view does not exist`);
@@ -2744,14 +2783,55 @@ export class OracleExecutor extends BaseExecutor {
   private executeGrant(stmt: GrantStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
     const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
+    // Validate that every grantee resolves to a known principal — Oracle
+    // refuses the entire statement with ORA-01917 if any name is wrong.
+    for (const g of grantees) {
+      const gUpper = g.toUpperCase();
+      if (gUpper === 'PUBLIC') continue;
+      if (!catalog.userExists(gUpper) && !catalog.roleExists(gUpper)) {
+        throw new OracleError(1917, `user or role '${gUpper}' does not exist`);
+      }
+    }
     // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
       const user = this.context.currentUser;
       const schema = (stmt.objectSchema || this.context.currentSchema).toUpperCase();
+      const objName = stmt.objectName.toUpperCase();
       const engine = catalog.getSecurityEngine();
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
-        throw new OracleError(1031, 'insufficient privileges');
+        // Non-owner / non-DBA may grant only if they hold the privilege
+        // WITH GRANT OPTION on every privilege being granted.
+        const tabPrivs = (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string; objectSchema: string; objectName: string; grantable: boolean }[] }).tabPrivileges;
+        const grantOptionHolder = stmt.privileges.every(priv =>
+          tabPrivs.some(p =>
+            p.grantee === user
+            && p.privilege === priv.toUpperCase()
+            && p.objectSchema === schema
+            && p.objectName === objName
+            && p.grantable === true));
+        if (!grantOptionHolder) {
+          throw new OracleError(1031, 'insufficient privileges');
+        }
+      }
+      // Validate the object exists — granting on a missing table /
+      // schema must raise ORA-00942 (Oracle never silently succeeds).
+      const tableExists = this.storage.getTableMeta(schema, objName) != null;
+      const viewExists = this.storage.getViewMeta?.(schema, objName) != null;
+      const sequenceExists = this.storage.getSequence?.(schema, objName) != null;
+      if (!tableExists && !viewExists && !sequenceExists) {
+        // Could still be a PL/SQL object — query the catalog provider.
+        const units = (this.catalog as OracleCatalog & { getStoredUnits?: () => { schema: string; name: string }[] }).getStoredUnits?.() ?? [];
+        const procExists = units.some(u => u.schema === schema && u.name === objName);
+        if (!procExists) {
+          throw new OracleError(942, 'table or view does not exist');
+        }
+      }
+      // Self-grant (owner grants to themselves) — ORA-01749.
+      for (const grantee of grantees) {
+        if (grantee.toUpperCase() === schema) {
+          throw new OracleError(1749, 'you may not GRANT/REVOKE privileges to/from yourself');
+        }
       }
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
@@ -2759,6 +2839,8 @@ export class OracleExecutor extends BaseExecutor {
           if (cols && cols.length > 0) {
             // Column-level grant: only DBA_COL_PRIVS, not DBA_TAB_PRIVS.
             for (const c of cols) {
+              const colExists = this.storage.getTableMeta(schema, objName)?.columns.some(co => co.name === c.toUpperCase());
+              if (!colExists) throw new OracleError(904, `"${c.toUpperCase()}": invalid identifier`);
               catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
             }
           } else {
@@ -2768,11 +2850,40 @@ export class OracleExecutor extends BaseExecutor {
       }
     } else {
       this.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
+      // Expand the ALL PRIVILEGES shortcut into the full set of system
+      // privileges, matching real Oracle's DBA_SYS_PRIVS expansion.
+      const expanded: string[] = [];
+      for (const p of stmt.privileges) {
+        if (p.toUpperCase() === 'ALL PRIVILEGES') {
+          expanded.push(...ORACLE_SYSTEM_PRIVILEGES);
+        } else {
+          expanded.push(p);
+        }
+      }
       for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
+        for (const priv of expanded) {
           if (catalog.roleExists(priv)) {
+            // Cycle prevention — ORA-01934. Walk the role-grant
+            // transitive closure to ensure the grantee is not already
+            // (directly or indirectly) granted the role.
+            const granteeUpper = grantee.toUpperCase();
+            const privUpper = priv.toUpperCase();
+            if (granteeUpper === privUpper) {
+              throw new OracleError(1934, 'circular role grant detected');
+            }
+            const engine = catalog.getSecurityEngine();
+            if (engine) {
+              const reachable = engine.privileges.getGrantedRoles(privUpper);
+              if (reachable.includes(granteeUpper)) {
+                throw new OracleError(1934, 'circular role grant detected');
+              }
+            }
             catalog.grantRole(grantee, priv, stmt.withAdminOption);
           } else {
+            // Self-grant of SYSDBA/SYSOPER/etc on SYS — ORA-01931.
+            if (grantee.toUpperCase() === 'SYS') {
+              throw new OracleError(1931, 'role/privilege cannot be granted to SYS');
+            }
             catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
           }
         }
@@ -2784,6 +2895,41 @@ export class OracleExecutor extends BaseExecutor {
   private executeRevoke(stmt: RevokeStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
     const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
+    // Validate every grantee exists first — ORA-01917 stops the whole
+    // statement before any mutation, matching Oracle.
+    for (const g of grantees) {
+      const gUpper = g.toUpperCase();
+      if (gUpper === 'PUBLIC') continue;
+      if (!catalog.userExists(gUpper) && !catalog.roleExists(gUpper)) {
+        throw new OracleError(1917, `user or role '${gUpper}' does not exist`);
+      }
+    }
+    // REVOKE {ADMIN|GRANT} OPTION FOR — only strip the option flag,
+    // keep the underlying privilege row.
+    if (stmt.strippingOption) {
+      const sysPrivs = (this.catalog as OracleCatalog & { sysPrivileges?: { grantee: string; privilege: string; grantable: boolean }[] }).sysPrivileges ?? [];
+      const tabPrivs = (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string; grantable: boolean; objectSchema: string; objectName: string }[] }).tabPrivileges;
+      const roleGrants = (this.catalog as OracleCatalog & { roleGrants?: { grantee: string; role: string; adminOption: boolean }[] }).roleGrants ?? [];
+      for (const grantee of grantees) {
+        const g = grantee.toUpperCase();
+        for (const priv of stmt.privileges) {
+          const p = priv.toUpperCase();
+          if (stmt.objectName) {
+            const schema = (stmt.objectSchema ?? this.context.currentSchema).toUpperCase();
+            const objName = stmt.objectName.toUpperCase();
+            const row = tabPrivs.find(x => x.grantee === g && x.privilege === p && x.objectSchema === schema && x.objectName === objName);
+            if (row) row.grantable = false;
+          } else if (catalog.roleExists(p)) {
+            const row = roleGrants.find(r => r.grantee === g && r.role === p);
+            if (row) row.adminOption = false;
+          } else {
+            const row = sysPrivs.find(r => r.grantee === g && r.privilege === p);
+            if (row) row.grantable = false;
+          }
+        }
+      }
+      return emptyResult('Revoke succeeded.');
+    }
     if (stmt.objectName) {
       const schema = stmt.objectSchema || this.context.currentSchema;
       for (const grantee of grantees) {
@@ -2797,12 +2943,37 @@ export class OracleExecutor extends BaseExecutor {
         }
       }
     } else {
+      const tabPrivs = (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string }[] }).tabPrivileges;
+      const sysPrivs = (this.catalog as OracleCatalog & { sysPrivileges?: { grantee: string; privilege: string }[] }).sysPrivileges ?? [];
+      const roleGrants = (this.catalog as OracleCatalog & { roleGrants?: { grantee: string; role: string }[] }).roleGrants ?? [];
+      // Expand REVOKE ALL PRIVILEGES into the catalog's full system set
+      // — mirrors the symmetric GRANT-time expansion. Track expansion
+      // so we don't raise ORA-01927 for individual misses.
+      const expanded: { name: string; fromAll: boolean }[] = [];
+      for (const priv of stmt.privileges) {
+        if (priv.toUpperCase() === 'ALL PRIVILEGES') {
+          for (const p of ORACLE_SYSTEM_PRIVILEGES) expanded.push({ name: p, fromAll: true });
+        } else {
+          expanded.push({ name: priv, fromAll: false });
+        }
+      }
       for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
-          if (catalog.roleExists(priv)) {
-            catalog.revokeRole(grantee, priv);
+        for (const entry of expanded) {
+          const granteeU = grantee.toUpperCase();
+          const privU = entry.name.toUpperCase();
+          if (catalog.roleExists(entry.name)) {
+            const hadRole = roleGrants.some(r => r.grantee === granteeU && r.role === privU);
+            if (!hadRole && !entry.fromAll) {
+              throw new OracleError(1924, `role '${privU}' not granted or does not exist`);
+            }
+            catalog.revokeRole(grantee, entry.name);
           } else {
-            catalog.revokeSystemPrivilege(grantee, priv);
+            const hadPriv = sysPrivs.some(p => p.grantee === granteeU && p.privilege === privU)
+              || tabPrivs.some(p => p.grantee === granteeU && p.privilege === privU);
+            if (!hadPriv && !entry.fromAll) {
+              throw new OracleError(1927, `cannot REVOKE privileges you did not grant`);
+            }
+            catalog.revokeSystemPrivilege(grantee, entry.name);
           }
         }
       }
@@ -2824,6 +2995,13 @@ export class OracleExecutor extends BaseExecutor {
     }
     const username = stmt.username.toUpperCase();
     const authType = stmt.authenticationKind ?? (stmt.password ? 'PASSWORD' : 'PASSWORD');
+    // Reject weak passwords up-front when the chosen profile carries a
+    // PASSWORD_VERIFY_FUNCTION. Real Oracle calls the verifier before
+    // creating the row, so the user is never persisted.
+    if (authType === 'PASSWORD' && stmt.password) {
+      const verifierError = catalog.getSecurityEngine()?.verifyPasswordForProfile(username, stmt.password, profileName);
+      if (verifierError) throw new OracleError(28003, verifierError.replace(/^ORA-28003:\s*/, ''));
+    }
     catalog.createUser({
       username,
       userId: catalog.allocateUserId(),
@@ -2859,7 +3037,9 @@ export class OracleExecutor extends BaseExecutor {
     const catalog = this.catalog as OracleCatalog;
     const username = stmt.username.toUpperCase();
     if (!catalog.userExists(username)) {
-      throw new OracleError(1917, `user or role '${username}' does not exist`);
+      // ALTER USER on a non-existent user is ORA-01918 (user does not
+      // exist) — distinct from the generic ORA-01917 (user or role).
+      throw new OracleError(1918, `user '${username}' does not exist`);
     }
 
     // Users may always alter their own password; any other ALTER USER needs ALTER USER priv.
@@ -2949,6 +3129,11 @@ export class OracleExecutor extends BaseExecutor {
     this.requireSystemPrivilege('DROP USER');
     const catalog = this.catalog as OracleCatalog;
     const username = stmt.username.toUpperCase();
+    // SYS-supplied schemas cannot be dropped — ORA-28009 / 1031.
+    const PROTECTED = new Set(['SYS', 'SYSTEM', 'PUBLIC', 'XDB', 'OUTLN', 'AUDSYS', 'DBSNMP', 'CTXSYS', 'MDSYS', 'WMSYS']);
+    if (PROTECTED.has(username)) {
+      throw new OracleError(28009, `cannot drop user '${username}': protected schema`);
+    }
     if (!catalog.userExists(username)) {
       throw new OracleError(1918, `user '${username}' does not exist`);
     }
@@ -2958,7 +3143,12 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
+    this.requireSystemPrivilege('CREATE ROLE');
     const catalog = this.catalog as OracleCatalog;
+    const upper = stmt.name.toUpperCase();
+    if (catalog.roleExists(upper) || catalog.userExists(upper)) {
+      throw new OracleError(1921, `role name '${upper}' conflicts with another user or role name`);
+    }
     const authKind = stmt.authenticationKind ?? 'NONE';
     catalog.createRole(stmt.name, authKind);
     if (authKind === 'PASSWORD' && stmt.password) {
@@ -2968,7 +3158,12 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropRole(stmt: DropRoleStatement): ResultSet {
-    (this.catalog as OracleCatalog).dropRole(stmt.name);
+    this.requireSystemPrivilege('DROP ANY ROLE');
+    const catalog = this.catalog as OracleCatalog;
+    if (!catalog.roleExists(stmt.name)) {
+      throw new OracleError(1919, `role '${stmt.name.toUpperCase()}' does not exist`);
+    }
+    catalog.dropRole(stmt.name);
     return emptyResult('Role dropped.');
   }
 
@@ -3727,7 +3922,68 @@ export class OracleExecutor extends BaseExecutor {
       case 'CEIL': return args[0] != null ? Math.ceil(Number(args[0])) : null;
       case 'FLOOR': return args[0] != null ? Math.floor(Number(args[0])) : null;
       case 'ROUND': return args[0] != null ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0]))) : null;
-      case 'TRUNC': return args[0] != null ? Math.trunc(Number(args[0])) : null;
+      case 'TRUNC': {
+        if (args[0] == null) return null;
+        const asDate = OracleExecutor.coerceDate(args[0]);
+        if (asDate != null) {
+          const d = new Date(asDate.getTime());
+          const fmt = args[1] != null ? String(args[1]).toUpperCase() : 'DD';
+          if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
+            return OracleExecutor.formatDate(new Date(d.getFullYear(), 0, 1));
+          }
+          if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
+            return OracleExecutor.formatDate(new Date(d.getFullYear(), d.getMonth(), 1));
+          }
+          if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
+            const day = d.getDay();
+            return OracleExecutor.formatDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - day));
+          }
+          d.setHours(0, 0, 0, 0);
+          return OracleExecutor.formatDate(d);
+        }
+        return Math.trunc(Number(args[0]));
+      }
+      case 'ADD_MONTHS': {
+        if (args[0] == null || args[1] == null) return null;
+        const base = OracleExecutor.coerceDate(args[0]);
+        if (base == null) return null;
+        const month = base.getMonth() + Number(args[1]);
+        const day = base.getDate();
+        base.setDate(1);
+        base.setMonth(month);
+        const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+        base.setDate(Math.min(day, last));
+        return OracleExecutor.formatDate(base);
+      }
+      case 'MONTHS_BETWEEN': {
+        if (args[0] == null || args[1] == null) return null;
+        const a = OracleExecutor.coerceDate(args[0]);
+        const b = OracleExecutor.coerceDate(args[1]);
+        if (!a || !b) return null;
+        const months = (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
+        return months + (a.getDate() - b.getDate()) / 31;
+      }
+      case 'NEXT_DAY': {
+        if (args[0] == null || args[1] == null) return null;
+        const base = OracleExecutor.coerceDate(args[0]);
+        if (!base) return null;
+        const dayMap: Record<string, number> = {
+          SUNDAY: 0, SUN: 0, MONDAY: 1, MON: 1, TUESDAY: 2, TUE: 2,
+          WEDNESDAY: 3, WED: 3, THURSDAY: 4, THU: 4, FRIDAY: 5, FRI: 5,
+          SATURDAY: 6, SAT: 6,
+        };
+        const target = dayMap[String(args[1]).toUpperCase().trim()];
+        if (target === undefined) return null;
+        const delta = ((target - base.getDay() + 7) % 7) || 7;
+        base.setDate(base.getDate() + delta);
+        return OracleExecutor.formatDate(base);
+      }
+      case 'LAST_DAY': {
+        if (args[0] == null) return null;
+        const base = OracleExecutor.coerceDate(args[0]);
+        if (!base) return null;
+        return OracleExecutor.formatDate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
+      }
       case 'MOD': return args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null;
       case 'POWER': return args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null;
       case 'SQRT': return args[0] != null ? Math.sqrt(Number(args[0])) : null;
@@ -3798,15 +4054,31 @@ export class OracleExecutor extends BaseExecutor {
       case 'SYS_CONTEXT': {
         const namespace = args[0] != null ? String(args[0]).toUpperCase() : '';
         const param = args[1] != null ? String(args[1]).toUpperCase() : '';
+        // USERENV — delegate to the live OracleSession.
         if (namespace === 'USERENV') {
-          switch (param) {
-            case 'CURRENT_SCHEMA': return this.context.currentSchema;
-            case 'CURRENT_USER': return this.context.currentUser;
-            case 'SESSION_USER': return this.context.currentUser;
-            default: return this.context.currentUser;
+          const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
+          if (session?.userenv) {
+            const value = session.userenv(param);
+            return value === undefined ? null : value as string | number | null;
           }
+          // Fallback when no session has been attached (engine-direct).
+          if (param === 'SESSION_USER' || param === 'CURRENT_USER') return this.context.currentUser;
+          if (param === 'CURRENT_SCHEMA') return this.context.currentSchema;
+          return null;
         }
-        return this.context.currentUser;
+        // SYS_SESSION_ROLES / application contexts → unknown, NULL.
+        return null;
+      }
+      case 'USERENV': {
+        // The legacy USERENV(<keyword>) function is functionally
+        // equivalent to SYS_CONTEXT('USERENV', <keyword>).
+        const param = args[0] != null ? String(args[0]).toUpperCase() : '';
+        const session = this.context.session as { userenv?: (p: string) => unknown } | undefined;
+        if (session?.userenv) {
+          const value = session.userenv(param);
+          return value === undefined ? null : value as string | number | null;
+        }
+        return null;
       }
 
       // DBMS_RANDOM package
@@ -4089,27 +4361,51 @@ export class OracleExecutor extends BaseExecutor {
     return n;
   }
 
+  /** Convert an interval literal (`'1' HOUR`, `'7' DAY`, …) into days. */
+  private intervalToDays(value: unknown): number | null {
+    if (typeof value !== 'string') return null;
+    const m = value.match(/^-?(\d+(?:\.\d+)?)\s+(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)\b/i);
+    if (!m) return null;
+    const amount = Number(m[1]);
+    const unit = m[2].toUpperCase();
+    const sign = value.startsWith('-') ? -1 : 1;
+    switch (unit) {
+      case 'YEAR':   return sign * amount * 365;
+      case 'MONTH':  return sign * amount * 30;
+      case 'DAY':    return sign * amount;
+      case 'HOUR':   return sign * amount / 24;
+      case 'MINUTE': return sign * amount / 1440;
+      case 'SECOND': return sign * amount / 86_400;
+      default: return null;
+    }
+  }
+
   private applyBinaryOp(op: string, left: CellValue, right: CellValue): CellValue {
     if (op === '||') return (left != null ? String(left) : '') + (right != null ? String(right) : '');
     if (left == null || right == null) return null;
-    // Date arithmetic: DATE ± NUMBER → DATE, DATE − DATE → NUMBER (days).
-    // Cheaper than wrapping every cell in a Date object — detect ISO-shaped
-    // strings (what SYSDATE / CURRENT_DATE produce) and operate in ms.
+    // Date arithmetic: DATE ± NUMBER → DATE, DATE − DATE → NUMBER (days),
+    // DATE ± INTERVAL → DATE.
     if (op === '+' || op === '-') {
       const lDate = this.coerceToDateMs(left);
       const rDate = this.coerceToDateMs(right);
       const DAY = 86_400_000;
+      // INTERVAL handling — convert to fractional days, fall into number path.
+      const lInt = lDate === null ? this.intervalToDays(left) : null;
+      const rInt = rDate === null ? this.intervalToDays(right) : null;
+      const lNum = lInt ?? (typeof left === 'number' ? left : null);
+      const rNum = rInt ?? (typeof right === 'number' ? right : null);
+
       if (lDate !== null && rDate !== null) {
         if (op === '-') return (lDate - rDate) / DAY;
         // DATE + DATE is not legal in Oracle (ORA-00975) — fall through.
-      } else if (lDate !== null && typeof right !== 'string') {
-        const days = Number(right);
+      } else if (lDate !== null && (rNum !== null || typeof right !== 'string')) {
+        const days = rNum ?? Number(right);
         if (!Number.isNaN(days)) {
           const out = op === '+' ? lDate + days * DAY : lDate - days * DAY;
           return new Date(out).toISOString().slice(0, 19).replace('T', ' ');
         }
-      } else if (rDate !== null && typeof left !== 'string' && op === '+') {
-        const days = Number(left);
+      } else if (rDate !== null && (lNum !== null || typeof left !== 'string') && op === '+') {
+        const days = lNum ?? Number(left);
         if (!Number.isNaN(days)) {
           return new Date(rDate + days * DAY).toISOString().slice(0, 19).replace('T', ' ');
         }
@@ -4138,6 +4434,25 @@ export class OracleExecutor extends BaseExecutor {
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) return null;
     const ms = Date.parse(value.replace(' ', 'T'));
     return Number.isNaN(ms) ? null : ms;
+  }
+
+  /** Return a mutable Date copy of the value, or null if not a date. */
+  static coerceDate(value: unknown): Date | null {
+    if (value instanceof Date) return new Date(value.getTime());
+    if (typeof value !== 'string') return null;
+    if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) {
+      // Accept bare YYYY-MM-DD too.
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    }
+    const ms = Date.parse(value.replace(' ', 'T'));
+    return Number.isNaN(ms) ? null : new Date(ms);
+  }
+
+  /** Format a Date the way SYSDATE / TO_CHAR(DATE) renders in SQL*Plus. */
+  static formatDate(d: Date): string {
+    const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+      + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   private applyComparison(op: string, left: CellValue, right: CellValue): boolean {
@@ -4419,19 +4734,31 @@ export class OracleExecutor extends BaseExecutor {
   // ── Profile management ──────────────────────────────────────────
 
   private executeCreateProfile(stmt: CreateProfileStatement): ResultSet {
+    this.requireSystemPrivilege('CREATE PROFILE');
     const catalog = this.catalog as OracleCatalog;
+    if (catalog.profileExists(stmt.profileName)) {
+      throw new OracleError(2379, `profile ${stmt.profileName.toUpperCase()} already exists`);
+    }
     catalog.createProfile(stmt.profileName, stmt.limits);
     return emptyResult('Profile created.');
   }
 
   private executeAlterProfile(stmt: AlterProfileStatement): ResultSet {
+    this.requireSystemPrivilege('ALTER PROFILE');
     const catalog = this.catalog as OracleCatalog;
+    if (!catalog.profileExists(stmt.profileName)) {
+      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
+    }
     catalog.alterProfile(stmt.profileName, stmt.limits);
     return emptyResult('Profile altered.');
   }
 
   private executeDropProfile(stmt: DropProfileStatement): ResultSet {
+    this.requireSystemPrivilege('DROP PROFILE');
     const catalog = this.catalog as OracleCatalog;
+    if (!catalog.profileExists(stmt.profileName)) {
+      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
+    }
     catalog.dropProfile(stmt.profileName);
     return emptyResult('Profile dropped.');
   }
@@ -4439,6 +4766,14 @@ export class OracleExecutor extends BaseExecutor {
   // ── Audit / Noaudit ──────────────────────────────────────────────
 
   private executeAudit(stmt: AuditStatement): ResultSet {
+    // AUDIT requires AUDIT SYSTEM (for statement / privilege audit) or
+    // AUDIT ANY (for object audit). Real Oracle refuses anything else
+    // with ORA-01031.
+    if (stmt.onObject) {
+      this.requireSystemPrivilege('AUDIT ANY');
+    } else {
+      this.requireSystemPrivilege('AUDIT SYSTEM');
+    }
     const catalog = this.catalog as OracleCatalog;
     const options = stmt.auditOptions ?? [stmt.auditOption];
     const byCode = stmt.byMode === 'SESSION' ? 'S' : 'A';
@@ -4473,6 +4808,11 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeNoaudit(stmt: NoauditStatement): ResultSet {
+    if (stmt.onObject) {
+      this.requireSystemPrivilege('AUDIT ANY');
+    } else {
+      this.requireSystemPrivilege('AUDIT SYSTEM');
+    }
     const catalog = this.catalog as OracleCatalog;
     const options = stmt.auditOptions ?? [stmt.auditOption];
     if (stmt.onObject) {
@@ -4522,6 +4862,68 @@ export class OracleExecutor extends BaseExecutor {
     }
     catalog.enableUnifiedAuditPolicy(stmt.policyName, stmt.byUsers, stmt.exceptUsers);
     return emptyResult('Audit succeeded.');
+  }
+
+  // ── ADMINISTER KEY MANAGEMENT (TDE) ──────────────────────────────
+
+  private executeAdministerKeyManagement(stmt: import('../engine/parser/ASTNode').AdministerKeyManagementStatement): ResultSet {
+    this.requireSystemPrivilege('ADMINISTER KEY MANAGEMENT');
+    const catalog = this.catalog as OracleCatalog;
+    const creator = this.context.currentUser;
+
+    switch (stmt.operation) {
+      case 'CREATE_KEYSTORE': {
+        if (!stmt.location) throw new OracleError(46651, 'keystore location is required');
+        catalog.configureTdeWallet(stmt.location, 'PASSWORD');
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'OPEN_KEYSTORE': {
+        catalog.openTdeWallet();
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'CLOSE_KEYSTORE': {
+        catalog.closeTdeWallet();
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'SET_KEY': {
+        const tag = stmt.tag ?? '';
+        catalog.addTdeMasterKey(tag, creator);
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'CREATE_AUTO_LOGIN_KEYSTORE': {
+        const w = catalog.getTdeWallet();
+        if (!w) {
+          if (!stmt.location) throw new OracleError(46651, 'keystore location is required');
+          catalog.configureTdeWallet(stmt.location, 'AUTOLOGIN');
+        }
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      }
+      case 'BACKUP_KEYSTORE':
+      case 'MERGE_KEYSTORE':
+      case 'EXPORT_KEYS':
+      case 'IMPORT_KEYS':
+        // No state mutation needed — succeed with the canonical message.
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+      default:
+        return emptyResult('keystore altered.\nThe operation succeeded.');
+    }
+  }
+
+  // ── COMMENT ON … IS … ────────────────────────────────────────────
+
+  private executeComment(stmt: import('../engine/parser/ASTNode').CommentStatement): ResultSet {
+    const catalog = this.catalog as OracleCatalog;
+    const schema = (stmt.schema ?? this.context.currentSchema).toUpperCase();
+    // Commenting on a foreign schema requires COMMENT ANY TABLE.
+    if (schema !== this.context.currentUser && this.context.currentUser !== 'SYS') {
+      this.requireSystemPrivilege('COMMENT ANY TABLE');
+    }
+    if (stmt.target === 'COLUMN' && stmt.columnName) {
+      catalog.setColumnComment(schema, stmt.tableName, stmt.columnName, stmt.text);
+    } else {
+      catalog.setTableComment(schema, stmt.tableName, stmt.text);
+    }
+    return emptyResult('Comment created.');
   }
 }
 

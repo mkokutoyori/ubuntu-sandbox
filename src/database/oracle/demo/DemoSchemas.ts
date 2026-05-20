@@ -185,6 +185,30 @@ export function installHRSchema(db: OracleDatabase): void {
   db.executeSql(executor, `CREATE SEQUENCE HR.EMPLOYEES_SEQ START WITH 207 INCREMENT BY 1`);
   db.executeSql(executor, `CREATE SEQUENCE HR.DEPARTMENTS_SEQ START WITH 280 INCREMENT BY 10`);
   db.executeSql(executor, `CREATE SEQUENCE HR.LOCATIONS_SEQ START WITH 3300 INCREMENT BY 100`);
+
+  // Stored PL/SQL units that real HR demos ship with — used by audit /
+  // privilege tests that GRANT EXECUTE on HR.ADD_EMPLOYEE.
+  db.executeSql(executor, `CREATE OR REPLACE PROCEDURE HR.ADD_EMPLOYEE(
+    p_first_name IN VARCHAR2,
+    p_last_name  IN VARCHAR2,
+    p_email      IN VARCHAR2,
+    p_hire_date  IN DATE,
+    p_job_id     IN VARCHAR2,
+    p_salary     IN NUMBER DEFAULT NULL,
+    p_dept_id    IN NUMBER DEFAULT NULL
+  ) AS
+    v_id NUMBER;
+  BEGIN
+    SELECT HR.EMPLOYEES_SEQ.NEXTVAL INTO v_id FROM DUAL;
+    INSERT INTO HR.EMPLOYEES (employee_id, first_name, last_name, email, hire_date, job_id, salary, department_id)
+    VALUES (v_id, p_first_name, p_last_name, p_email, p_hire_date, p_job_id, p_salary, p_dept_id);
+  END;`);
+  db.executeSql(executor, `CREATE OR REPLACE FUNCTION HR.GET_EMPLOYEE_NAME(p_id IN NUMBER) RETURN VARCHAR2 AS
+    v_name VARCHAR2(80);
+  BEGIN
+    SELECT first_name || ' ' || last_name INTO v_name FROM HR.EMPLOYEES WHERE employee_id = p_id;
+    RETURN v_name;
+  END;`);
 }
 
 /**
