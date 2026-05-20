@@ -264,3 +264,62 @@ describe('§3 — SSH by hostname rather than IP', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 4 — SSH failure: unreachable / malformed target ──────────
+
+describe('§4 — SSH connection failures: address / target', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'IP off-topology returns "Could not resolve hostname"',
+      on: l => l.pc1,
+      cmd: 'ssh alice@192.0.2.99',
+      contains: [/Could not resolve hostname|No route to host/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'IPv4 with octet > 255 is rejected',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.999',
+      contains: [/Could not resolve hostname/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'Empty hostname yields usage',
+      on: l => l.pc1,
+      cmd: 'ssh',
+      contains: [/usage:\s*ssh/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'Only options (no host) yields usage',
+      on: l => l.pc1,
+      cmd: 'ssh -v -q',
+      contains: [/usage:\s*ssh/],
+    },
+    {
+      name: 'Pure whitespace target is treated as missing',
+      on: l => l.pc1,
+      cmd: 'ssh    ',
+      contains: [/usage:\s*ssh/],
+    },
+    {
+      name: 'Garbage hostname with spaces is rejected',
+      on: l => l.pc1,
+      cmd: 'ssh "alice@bad host"',
+      contains: [/Could not resolve hostname|invalid/],
+    },
+    {
+      name: 'Localhost when sshd is up actually connects',
+      on: l => l.pc1,
+      cmd: 'ssh alice@127.0.0.1',
+      contains: ['Welcome to Ubuntu'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
