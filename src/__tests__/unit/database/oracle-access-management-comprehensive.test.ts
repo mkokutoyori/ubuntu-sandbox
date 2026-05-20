@@ -262,36 +262,46 @@ describe('3. User creation — every authentication variant', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('4. Role creation', () => {
-  it('Creates roles with each authentication mode', () => {
-    const cases: Case[] = [
-      { sql: 'CREATE ROLE app_role;',                                                                                                 want: /Role created/i },
-      { sql: 'CREATE ROLE read_only_role;',                                                                                           want: /Role created/i },
-      { sql: 'CREATE ROLE write_role;',                                                                                               want: /Role created/i },
-      { sql: 'CREATE ROLE admin_role IDENTIFIED BY "Adm1n!";',                                                                        want: /Role created/i },
-      { sql: 'CREATE ROLE reporting_role NOT IDENTIFIED;',                                                                            want: /Role created/i },
-      { sql: 'CREATE ROLE manager_role;',                                                                                             want: /Role created/i },
-      { sql: 'CREATE ROLE developer_role;',                                                                                           want: /Role created/i },
-      { sql: 'CREATE ROLE tester_role;',                                                                                              want: /Role created/i },
-      { sql: 'CREATE ROLE batch_role;',                                                                                               want: /Role created/i },
-      { sql: 'CREATE ROLE etl_role;',                                                                                                 want: /Role created/i },
-      { sql: 'CREATE ROLE audit_role;',                                                                                               want: /Role created/i },
-      { sql: 'CREATE ROLE security_role;',                                                                                            want: /Role created/i },
-      { sql: 'CREATE ROLE backup_role;',                                                                                              want: /Role created/i },
-      { sql: 'CREATE ROLE monitor_role;',                                                                                             want: /Role created/i },
-      { sql: 'CREATE ROLE schema_admin IDENTIFIED EXTERNALLY;',                                                                       want: /Role created/i },
-      { sql: 'CREATE ROLE ldap_role IDENTIFIED GLOBALLY;',                                                                            want: /Role created/i },
-      // Duplicate
-      { sql: 'CREATE ROLE app_role;',                                                                                                  want: /ORA-01921/i },
-      // Verification
-      { sql: "SELECT role FROM dba_roles WHERE role IN ('APP_ROLE','READ_ONLY_ROLE','WRITE_ROLE');",                                  want: /APP_ROLE/ },
-      { sql: "SELECT role, password_required FROM dba_roles WHERE role = 'ADMIN_ROLE';",                                              want: /YES/ },
-      { sql: "SELECT role, password_required FROM dba_roles WHERE role = 'REPORTING_ROLE';",                                          want: /NO/ },
-      { sql: "SELECT COUNT(*) FROM dba_roles WHERE role LIKE '%_ROLE';",                                                              want: /\d+/ },
-      { sql: "SELECT role FROM dba_roles WHERE role = 'CONNECT';",                                                                    want: /CONNECT/ },
-      { sql: "SELECT role FROM dba_roles WHERE role = 'RESOURCE';",                                                                   want: /RESOURCE/ },
-      { sql: "SELECT role FROM dba_roles WHERE role = 'DBA';",                                                                        want: /DBA/ },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Default-auth roles (no IDENTIFIED clause).
+    { sql: 'CREATE ROLE app_role;',                                want: /Role created\./i },
+    { sql: 'CREATE ROLE read_only_role;',                          want: /Role created\./i },
+    { sql: 'CREATE ROLE write_role;',                              want: /Role created\./i },
+    { sql: 'CREATE ROLE manager_role;',                            want: /Role created\./i },
+    { sql: 'CREATE ROLE developer_role;',                          want: /Role created\./i },
+    { sql: 'CREATE ROLE tester_role;',                             want: /Role created\./i },
+    { sql: 'CREATE ROLE batch_role;',                              want: /Role created\./i },
+    { sql: 'CREATE ROLE etl_role;',                                want: /Role created\./i },
+    { sql: 'CREATE ROLE audit_role;',                              want: /Role created\./i },
+    { sql: 'CREATE ROLE security_role;',                           want: /Role created\./i },
+    { sql: 'CREATE ROLE backup_role;',                             want: /Role created\./i },
+    { sql: 'CREATE ROLE monitor_role;',                            want: /Role created\./i },
+    // Auth-variant roles.
+    { sql: 'CREATE ROLE admin_role IDENTIFIED BY "Adm1n!";',       want: /Role created\./i },
+    { sql: 'CREATE ROLE reporting_role NOT IDENTIFIED;',           want: /Role created\./i },
+    { sql: 'CREATE ROLE schema_admin IDENTIFIED EXTERNALLY;',      want: /Role created\./i },
+    { sql: 'CREATE ROLE ldap_role IDENTIFIED GLOBALLY;',           want: /Role created\./i },
+    // Duplicate role raises ORA-01921.
+    { sql: 'CREATE ROLE app_role;',                                want: /ORA-01921/ },
+    // Verification — exact rows from DBA_ROLES.
+    { sql: "SELECT role FROM dba_roles WHERE role = 'APP_ROLE';",                          want: /^\s*APP_ROLE\s*$/m },
+    { sql: "SELECT role FROM dba_roles WHERE role = 'READ_ONLY_ROLE';",                    want: /^\s*READ_ONLY_ROLE\s*$/m },
+    { sql: "SELECT role FROM dba_roles WHERE role = 'WRITE_ROLE';",                        want: /^\s*WRITE_ROLE\s*$/m },
+    { sql: "SELECT password_required FROM dba_roles WHERE role = 'ADMIN_ROLE';",           want: /\bYES\b/ },
+    { sql: "SELECT password_required FROM dba_roles WHERE role = 'REPORTING_ROLE';",       want: /\bNO\b/ },
+    { sql: "SELECT authentication_type FROM dba_roles WHERE role = 'SCHEMA_ADMIN';",       want: /\bEXTERNAL\b/ },
+    { sql: "SELECT authentication_type FROM dba_roles WHERE role = 'LDAP_ROLE';",          want: /\bGLOBAL\b/ },
+    { sql: "SELECT COUNT(*) FROM dba_roles WHERE role IN ('APP_ROLE','READ_ONLY_ROLE','WRITE_ROLE','ADMIN_ROLE','REPORTING_ROLE','MANAGER_ROLE','DEVELOPER_ROLE','TESTER_ROLE','BATCH_ROLE','ETL_ROLE','AUDIT_ROLE','SECURITY_ROLE','BACKUP_ROLE','MONITOR_ROLE','SCHEMA_ADMIN','LDAP_ROLE');", want: /^\s*16\s*$/m },
+    // Oracle-supplied roles exist out of the box.
+    { sql: "SELECT role FROM dba_roles WHERE role = 'CONNECT';",                           want: /^\s*CONNECT\s*$/m },
+    { sql: "SELECT role FROM dba_roles WHERE role = 'RESOURCE';",                          want: /^\s*RESOURCE\s*$/m },
+    { sql: "SELECT role FROM dba_roles WHERE role = 'DBA';",                               want: /^\s*DBA\s*$/m },
+  ])('§4: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
