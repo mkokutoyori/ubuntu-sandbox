@@ -1377,3 +1377,72 @@ describe('§21 — background ssh and job control', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 22 — concurrent SSH from multiple clients ────────────────
+
+describe('§22 — concurrent SSH from multiple clients', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'four clients to one target produce four auth.log entries',
+      setup: async (l) => {
+        await Promise.all([
+          l.pc1.executeCommand('ssh alice@10.0.0.10'),
+          l.pc2.executeCommand('ssh bob@10.0.0.10'),
+          l.pc3.executeCommand('ssh carol@10.0.0.10'),
+          l.pc4.executeCommand('ssh dave@10.0.0.10'),
+        ]);
+      },
+      on: l => l.srv1,
+      cmd: 'grep -c Accepted /var/log/auth.log',
+      contains: [/^4\b/],
+    },
+    {
+      name: 'the four sources are all distinct IPs in the log',
+      setup: async (l) => {
+        await Promise.all([
+          l.pc1.executeCommand('ssh alice@10.0.0.10'),
+          l.pc2.executeCommand('ssh alice@10.0.0.10'),
+          l.pc3.executeCommand('ssh alice@10.0.0.10'),
+          l.pc4.executeCommand('ssh alice@10.0.0.10'),
+        ]);
+      },
+      on: l => l.srv1,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/from 10\.0\.0\.1\b/, /from 10\.0\.0\.2\b/, /from 10\.0\.0\.3\b/, /from 10\.0\.0\.4\b/],
+    },
+    {
+      name: 'who shows multiple sessions on the target while ssh holds',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
+        await l.pc2.executeCommand('ssh bob@10.0.0.10 sleep 60 &');
+      },
+      on: l => l.srv1,
+      cmd: 'who',
+      contains: [/alice/, /bob/],
+    },
+    {
+      name: 'last shows recent successful logins',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.10');
+        await l.pc2.executeCommand('ssh bob@10.0.0.10');
+      },
+      on: l => l.srv1,
+      cmd: 'last -n 5',
+      contains: [/alice.*10\.0\.0\.1/, /bob.*10\.0\.0\.2/],
+    },
+    {
+      name: 'two clients hitting a stopped service all see Connection refused',
+      setup: (l) => { void l.srv1.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.10',
+      contains: [/Connection refused/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
