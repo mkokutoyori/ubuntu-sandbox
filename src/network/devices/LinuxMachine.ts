@@ -233,7 +233,28 @@ export abstract class LinuxMachine extends EndHost {
   }
 
   /** Per-machine SSH session table — backs `w`, `who`, `last`. */
-  public readonly sessionTable = new SshSessionTable();
+  public readonly sessionTable = (() => {
+    const t = new SshSessionTable();
+    // Seed the local console session so `who`/`w`/`last` show the
+    // currently logged-in user even before any SSH connect happens.
+    return t;
+  })();
+
+  /** Ensure a tty=tty1 console session exists for the local user. */
+  private ensureLocalConsoleSession(): void {
+    if (this.sessionTable.list().some(s => s.tty === 'tty1')) return;
+    const user = this.executor.userMgr.currentUser;
+    const userEntry = this.executor.userMgr.getUser(user);
+    this.sessionTable.open({
+      user,
+      uid: userEntry?.uid ?? 0,
+      sshdPid: 0,
+      tty: 'tty1',
+      fromIp: ':0',
+      fromHost: '',
+      transport: 'console',
+    });
+  }
 
   /**
    * Match `w` / `who` / `last` invocations and render them from the
@@ -243,6 +264,9 @@ export abstract class LinuxMachine extends EndHost {
   private renderSessionView(command: string): string | null {
     const argv = command.split(/\s+/);
     const cmd = argv[0];
+    if (cmd === 'w' || cmd === 'who' || cmd === 'last') {
+      this.ensureLocalConsoleSession();
+    }
     if (cmd === 'w' && argv.length === 1) {
       const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
         `${this.sessionTable.list().length} users,  load average: 0.00, 0.00, 0.00\n` +

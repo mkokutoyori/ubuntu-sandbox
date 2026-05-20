@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-05-20T17:53:39.262Z
+Generated: 2026-05-20T17:57:21.085Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -1160,7 +1160,7 @@ Total steps: 288
    clock offset: 0.0000 ms
 
 [219/288] r1 [R1] display clock
-  2026-05-20 17:53:39
+  2026-05-20 17:57:21
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -1177,13 +1177,13 @@ Total steps: 288
 [222/288] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-20 17:53:39
+  CPU Usage Stat. Time : 2026-05-20 17:57:21
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-20 17:53:39
+  Memory utilization statistics at 2026-05-20 17:57:21
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1215,7 +1215,7 @@ Total steps: 288
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-20 17:53:39 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-20 17:57:21 %01SRM/4/PORT_STATE: Port state changed.
 
 [228/288] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
