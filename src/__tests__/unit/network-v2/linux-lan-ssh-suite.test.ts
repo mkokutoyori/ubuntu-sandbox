@@ -1795,3 +1795,66 @@ describe('§27 — ssh-agent and ssh-add', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 28 — ssh exec mode (`ssh host cmd …`) ────────────────────
+
+describe('§28 — ssh exec mode: remote command execution', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh host hostname prints the remote hostname only',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^pc2\s*$/m],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'ssh host whoami prints the SSH login user (not the local one)',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 whoami',
+      contains: [/^alice\s*$/m],
+    },
+    {
+      name: 'ssh host pwd returns the alice user home',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 pwd',
+      contains: [/^\/home\/alice\s*$/m],
+    },
+    {
+      name: 'ssh quoting: ssh host "uname -a" returns remote uname',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 "uname -a"',
+      contains: [/Linux pc2.*GNU\/Linux/],
+    },
+    {
+      name: 'ssh host returns the remote command exit status',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 false; echo "rc=$?"',
+      contains: [/^rc=1\s*$/m],
+    },
+    {
+      name: 'ssh host with bad command yields "command not found" + exit 127',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 ghostbin; echo "rc=$?"',
+      contains: [/ghostbin: command not found/, /^rc=127\s*$/m],
+    },
+    {
+      name: 'multi-statement: ssh host "cd /tmp && pwd" reflects the cd',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 "cd /tmp && pwd"',
+      contains: [/^\/tmp\s*$/m],
+    },
+    {
+      name: 'ssh -t host bash -lc starts a login shell context',
+      on: l => l.pc1,
+      cmd: 'ssh -t alice@10.0.0.2 bash -lc \'echo $0\'',
+      contains: [/^-?bash\s*$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
