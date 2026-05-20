@@ -96,10 +96,27 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   }
 
   machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, true);
-  // Real ssh would now hand control to the remote shell. The simulator
-  // returns the typical "Welcome to" banner and the connection-closed
-  // marker so downstream scripts see a sane transcript.
-  const banner = `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`;
-  const last = `Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceHostname}\n`;
-  return { output: banner + last + `Connection to ${host} closed.`, exitCode: 0 };
+
+  // Real ssh hands control to the remote shell after printing a banner
+  // assembled from /etc/issue.net (pre-auth), then a Welcome line, the
+  // Last login marker, and finally /etc/motd. The simulator returns the
+  // same composition so dump-driven tests see a coherent transcript.
+  const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
+  const issueNet = remoteVfs.readFile('/etc/issue.net') ?? '';
+  const motd     = remoteVfs.readFile('/etc/motd')      ?? '';
+
+  // -q / -Q (quiet) suppresses banner output (still connects). Match
+  // OpenSSH: stay silent on success.
+  const quiet = opts.args.some(a => a === '-q' || a === '-Q');
+  if (quiet) {
+    return { output: '', exitCode: 0 };
+  }
+
+  const lines: string[] = [];
+  if (issueNet.trim()) lines.push(issueNet.replace(/\n*$/, ''));
+  lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
+  lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceHostname}`);
+  if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
+  lines.push(`Connection to ${host} closed.`);
+  return { output: lines.join('\n'), exitCode: 0 };
 }

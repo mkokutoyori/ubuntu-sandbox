@@ -61,6 +61,10 @@ function buildLan(): Lan {
   srv1.getPorts()[0].configureIP(new IPAddress('10.0.0.10'), mask);
   srv2.getPorts()[0].configureIP(new IPAddress('10.0.0.11'), mask);
 
+  // Hostnames match the device test name for ssh banner / auth.log realism.
+  pc1.setHostname('pc1'); pc2.setHostname('pc2'); pc3.setHostname('pc3'); pc4.setHostname('pc4');
+  srv1.setHostname('srv1'); srv2.setHostname('srv2');
+
   return {
     pc1, pc2, pc3, pc4, srv1, srv2, sw,
     ipOf: {
@@ -1079,7 +1083,6 @@ describe('§17 — kill of critical / protected processes', () => {
       on: l => l.pc1,
       cmd: 'kill -9 1',
       contains: [/Operation not permitted|not permitted/i],
-      excludes: ['' /* no real death */],
     },
     {
       name: 'after attempting kill -9 1, systemd is still PID 1',

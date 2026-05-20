@@ -192,6 +192,16 @@ export abstract class LinuxMachine extends EndHost {
 
   // ─── Hostname sync ───────────────────────────────────────────────────
 
+  /**
+   * Set this machine's hostname after construction. Updates `/etc/hostname`
+   * and `/etc/hosts` so subsequent `hostnamectl`, `uname -n`, ssh banner
+   * lines, and auth.log entries all reflect the new value.
+   */
+  setHostname(hostname: string): void {
+    (this.profile as { hostname: string }).hostname = hostname;
+    this.syncHostnameFiles(hostname);
+  }
+
   private syncHostnameFiles(hostname: string): void {
     const vfs = this.executor.vfs;
     vfs.writeFile('/etc/hostname', hostname + '\n', 0, 0, 0o022);
