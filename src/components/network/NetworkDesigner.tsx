@@ -65,7 +65,9 @@ export function NetworkDesigner() {
       const data = await openTopologyFile();
       const result = importTopology(data);
 
-      // Clear current state first (disconnect existing cables)
+      // Clear current state first (disconnect existing cables). clearAll()
+      // now publishes `registry.cleared` which causes the TerminalManager
+      // to dispose every open session reactively — no manual close loop.
       clearAll();
 
       // Apply imported state directly to the store
@@ -77,11 +79,6 @@ export function NetworkDesigner() {
       });
 
       setProjectName(result.projectName);
-
-      // Close all open terminals
-      for (const [sessionId] of allSessions) {
-        manager.closeTerminal(sessionId);
-      }
       setMinimizedSessions(new Set());
     } catch (err) {
       if (err instanceof Error && err.message !== 'No file selected') {
@@ -151,6 +148,22 @@ export function NetworkDesigner() {
       setFocusedIndex(Math.max(0, visibleSessions.length - 1));
     }
   }, [visibleSessions.length, focusedIndex]);
+
+  // Prune dangling entries from minimizedSessions whenever the live session
+  // set shrinks (e.g. device removed via bus event, clearAll, etc.). Without
+  // this, the React-only Set keeps stale ids forever.
+  useEffect(() => {
+    const liveIds = new Set(allSessions.map(([id]) => id));
+    setMinimizedSessions(prev => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (liveIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [allSessions]);
 
   // Keyboard shortcuts for tiling (Alt+key)
   useEffect(() => {

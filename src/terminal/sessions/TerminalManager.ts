@@ -22,6 +22,7 @@ import { CiscoTerminalSession } from './CiscoTerminalSession';
 import { HuaweiTerminalSession } from './HuaweiTerminalSession';
 import { WindowsTerminalSession } from './WindowsTerminalSession';
 import { preInstallForDevice } from '@/terminal/packages';
+import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
 
 let nextSessionId = 1;
 
@@ -30,6 +31,107 @@ export class TerminalManager {
   private sessions = new Map<string, TerminalSession>();
   /** deviceId → sessionId[] (for multi-terminal per device) */
   private deviceSessions = new Map<string, string[]>();
+  /** Event bus subscriptions held for the lifetime of the manager. */
+  private busSubs: Unsubscribe[] = [];
+  /** Bus this manager listens on (null = lazily resolved). */
+  private bus: IEventBus | null = null;
+
+  constructor(bus?: IEventBus) {
+    this.bus = bus ?? null;
+    this.attachToBus();
+  }
+
+  // ── Event-bus wiring ────────────────────────────────────────────
+
+  /**
+   * Subscribe to Equipment lifecycle events. Idempotent — re-attaching
+   * detaches the previous subscriptions first.
+   *
+   * Driven topics:
+   *   - device.power-off    → freeze all terminals on the device (read-only,
+   *                            "Connection to <host> lost" notice).
+   *   - device.power-on     → unfreeze them and signal readiness.
+   *   - device.removed,
+   *     device.deregistered → dispose all terminals on the device.
+   *   - registry.cleared    → dispose every terminal.
+   */
+  private attachToBus(): void {
+    this.detachFromBus();
+    const bus = this.bus ?? getDefaultEventBus();
+    this.busSubs.push(
+      bus.subscribe('device.power-off', ({ payload }) => {
+        this.onDevicePoweredOff(payload.id);
+      }),
+      bus.subscribe('device.power-on', ({ payload }) => {
+        this.onDevicePoweredOn(payload.id);
+      }),
+      bus.subscribe('device.removed', ({ payload }) => {
+        this.onDeviceRemoved(payload.id, payload.name);
+      }),
+      bus.subscribe('device.deregistered', ({ payload }) => {
+        this.onDeviceRemoved(payload.id, '');
+      }),
+      bus.subscribe('registry.cleared', () => {
+        this.disposeAll();
+      }),
+    );
+  }
+
+  private detachFromBus(): void {
+    for (const u of this.busSubs) {
+      try { u(); } catch { /* ignore */ }
+    }
+    this.busSubs = [];
+  }
+
+  /** Allow tests to swap the bus. Re-wires subscriptions. */
+  setEventBus(bus: IEventBus | null): void {
+    this.bus = bus;
+    this.attachToBus();
+  }
+
+  // ── Lifecycle reactions ─────────────────────────────────────────
+
+  private onDevicePoweredOff(deviceId: string): void {
+    const ids = this.deviceSessions.get(deviceId);
+    if (!ids || ids.length === 0) return;
+    for (const sid of ids) {
+      const s = this.sessions.get(sid);
+      if (!s || s.disposed) continue;
+      const host = s.device.getHostname() || s.device.getName();
+      s.markDisconnected('device-off', `Connection to ${host} lost: device powered off.`);
+    }
+    this.notify();
+  }
+
+  private onDevicePoweredOn(deviceId: string): void {
+    const ids = this.deviceSessions.get(deviceId);
+    if (!ids || ids.length === 0) return;
+    for (const sid of ids) {
+      const s = this.sessions.get(sid);
+      if (!s || s.disposed) continue;
+      if (s.isDisconnected) {
+        s.markReconnected();
+      }
+    }
+    this.notify();
+  }
+
+  private onDeviceRemoved(deviceId: string, _name: string): void {
+    const ids = this.deviceSessions.get(deviceId);
+    if (!ids || ids.length === 0) return;
+    // Copy: closeTerminal mutates the array.
+    for (const sid of [...ids]) {
+      this.closeTerminal(sid);
+    }
+  }
+
+  private disposeAll(): void {
+    if (this.sessions.size === 0) return;
+    for (const sid of [...this.sessions.keys()]) {
+      this.closeTerminal(sid);
+    }
+  }
 
   // ── Observable store ────────────────────────────────────────────
   private _version = 0;
