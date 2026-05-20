@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-05-18T04:43:33.370Z
+Generated: 2026-05-20T06:30:42.606Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -787,7 +787,30 @@ Total steps: 260
   GE0/0/3                           unassigned           down       down
 
 [161/260] r1 <R1> display interface
-  Error: Incomplete command.
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.0.0.1/255.255.255.252
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [162/260] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -939,8 +962,8 @@ Total steps: 260
    clock offset: 0.0000 ms
 
 [191/260] r1 <R1> display clock
-  2026-05-18 04:43:33
-  Monday
+  2026-05-20 06:30:42
+  Wednesday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -956,13 +979,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-18 04:43:33
+  CPU Usage Stat. Time : 2026-05-20 06:30:42
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-05-18 04:43:33
+  Memory utilization statistics at 2026-05-20 06:30:42
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -994,7 +1017,7 @@ Total steps: 260
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-18 04:43:33 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-20 06:30:42 %01SRM/4/PORT_STATE: Port state changed.
 
 [200/260] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1036,7 +1059,12 @@ Total steps: 260
    Trial Days Left: 60
 
 [206/260] r1 <R1> display interface brief
-  Error: Wrong parameter found at '^' position.
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
 
 [207/260] r1 <R1> display ip interface GigabitEthernet0/0/0
   % Invalid input detected at '^' marker.

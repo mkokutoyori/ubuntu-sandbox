@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-05-19T08:48:03.000Z
+Generated: 2026-05-20T06:30:43.688Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Tue May 19 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Wed May 20 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -15,12 +15,12 @@ Total commands: 31
 
 
 --- [1] § registry vs dictionary ---
--- registry=344 dba_views=344 all_views=344 dict=344
+-- registry=366 dba_views=366 all_views=366 dict=366
 SQL [1/31]> SELECT COUNT(*) AS dba_views FROM DBA_VIEWS;
   
   DBA_VIEWS
   ---------
-  344      
+  366      
   
   1 row selected.
 
@@ -28,7 +28,7 @@ SQL [2/31]> SELECT COUNT(*) AS all_views FROM ALL_VIEWS;
   
   ALL_VIEWS
   ---------
-  344      
+  366      
   
   1 row selected.
 
@@ -36,7 +36,7 @@ SQL [3/31]> SELECT COUNT(*) AS dict_entries FROM DICTIONARY;
   
   DICT_ENTRIES
   ------------
-  344         
+  366         
   
   1 row selected.
 
@@ -143,8 +143,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START           STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- ------------------------ --------- -------- ------------ -------- ----------- ---------- -------------------
-  13ipzqna3xqw0 1           2026-05-19T08:48:03.013Z DONE      SYS      717          574      2           0          0                  
-  1rcfn8ma3xqw0 2           2026-05-19T08:48:03.013Z EXECUTING SYS      0            0        0           0          0                  
+  1rcfn8ma3xqw0 1           2026-05-20T06:30:43.701Z EXECUTING SYS      0            0        0           0          0                  
+  13ipzqna3xqw0 2           2026-05-20T06:30:43.700Z DONE      SYS      844          675      2           0          0                  
   
   2 rows selected.
 
@@ -168,7 +168,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-19T07:48:03.015Z 2026-05-19T08:48:03.015Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-20T05:30:43.704Z 2026-05-20T06:30:43.704Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 
