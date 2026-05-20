@@ -1570,3 +1570,86 @@ describe('§24 — Oracle DB processes visible across the LAN via ssh', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 25 — end-to-end audit: SSH session ↔ logs ↔ ps ↔ services
+
+describe('§25 — full end-to-end audit story', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'after an ssh login, w on the remote lists the user',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      on: l => l.srv1,
+      cmd: 'w',
+      contains: [/alice.*pts\/\d+\s+10\.0\.0\.1/],
+    },
+    {
+      name: 'cat /var/log/auth.log + ps -ef tell a coherent story (both PIDs match)',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      on: l => l.srv1,
+      cmd: 'sh -c "tail -1 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
+      contains: [/Accepted password for alice/, /sshd.*alice/],
+    },
+    {
+      name: 'logger writes a custom line and syslog records it',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"'); },
+      on: l => l.srv1,
+      cmd: 'grep audit-trail-marker /var/log/syslog',
+      contains: [/audit-trail-marker/],
+    },
+    {
+      name: 'systemctl stop ssh during a session is reflected in journalctl',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
+        await l.srv1.executeCommand('systemctl stop ssh');
+      },
+      on: l => l.srv1,
+      cmd: 'journalctl -u ssh.service -n 5',
+      contains: [/Stopped|Deactivated|ssh\.service/i],
+    },
+    {
+      name: 'turn srv1 off mid-session → pc1\'s ssh job ends',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
+        l.srv1.setPoweredOn(false);
+      },
+      on: l => l.pc1,
+      cmd: 'jobs',
+      contains: [/Done|Exit|Killed/],
+    },
+    {
+      name: 'after a deny rule on srv1 firewall, audit.log keeps NO new Accepted lines',
+      setup: async (l) => {
+        await l.srv1.executeCommand('iptables -A INPUT -s 10.0.0.1 -p tcp --dport 22 -j DROP');
+        await l.srv1.executeCommand(': > /var/log/auth.log');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10');
+      },
+      on: l => l.srv1,
+      cmd: 'cat /var/log/auth.log',
+      excludes: [/Accepted password for alice from 10\.0\.0\.1/],
+    },
+    {
+      name: 'reboot of srv1 resets uptime',
+      setup: async (l) => {
+        l.srv1.setPoweredOn(false);
+        l.srv1.setPoweredOn(true);
+      },
+      on: l => l.srv1,
+      cmd: 'uptime -p',
+      contains: [/up\s+0\s+(minutes|seconds)|up\s+less than/],
+    },
+    {
+      name: 'a full audit query via ssh: who+last+ps in one line',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      on: l => l.pc2,
+      cmd: 'ssh bob@10.0.0.10 "who; last -n 1; ps -ef | grep sshd | head -3"',
+      contains: [/alice/, /sshd/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
