@@ -24,6 +24,7 @@ import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
+import { runSshClient } from './network/LinuxSshClient';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -138,6 +139,17 @@ export class LinuxCommandExecutor {
   /** Set the network context for ip command support */
   setIpNetworkContext(ctx: IpNetworkContext): void {
     this.ipNetworkCtx = ctx;
+  }
+
+  /** First non-loopback IPv4 address configured on this machine. */
+  private firstConfiguredIp(): string | null {
+    if (!this.ipNetworkCtx) return null;
+    for (const name of this.ipNetworkCtx.getInterfaceNames()) {
+      if (name === 'lo') continue;
+      const info = this.ipNetworkCtx.getInterfaceInfo(name);
+      if (info?.ip) return info.ip;
+    }
+    return null;
   }
 
   /** Wire the device's socket table so netstat/ss output is dynamic */
@@ -897,9 +909,14 @@ export class LinuxCommandExecutor {
         return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
       }
       case 'ssh': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
-        return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
+        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
+        return runSshClient({
+          args,
+          sourceHostname: hostname,
+          sourceIp,
+          sourceUser: this.userMgr.currentUser,
+        });
       }
       case 'ssh-add':
         return this.handleSshAdd(args);
