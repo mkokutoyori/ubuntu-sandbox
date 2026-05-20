@@ -495,39 +495,42 @@ describe('7. Column-level GRANT / REVOKE', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('8. Role-to-user / role-to-role grants', () => {
-  it('Builds role hierarchies and assigns them to principals', () => {
-    const cases: Case[] = [
-      { sql: 'GRANT app_role TO bob;',                                                                                                want: /Grant succeeded/i },
-      { sql: 'GRANT read_only_role TO readonly;',                                                                                     want: /Grant succeeded/i },
-      { sql: 'GRANT write_role TO app_user;',                                                                                         want: /Grant succeeded/i },
-      { sql: 'GRANT admin_role TO ops_user IDENTIFIED BY "Adm1n!";',                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT app_role TO dev_team;',                                                                                           want: /Grant succeeded/i },
-      { sql: 'GRANT tester_role TO qa_team;',                                                                                         want: /Grant succeeded/i },
-      { sql: 'GRANT manager_role TO grace WITH ADMIN OPTION;',                                                                        want: /Grant succeeded/i },
-      // Role-to-role nesting
-      { sql: 'GRANT read_only_role TO reporting_role;',                                                                               want: /Grant succeeded/i },
-      { sql: 'GRANT reporting_role TO analyst;',                                                                                      want: /Grant succeeded/i },
-      // Multi-grantee
-      { sql: 'GRANT developer_role TO alice, bob, carol;',                                                                            want: /Grant succeeded/i },
-      // Already granted
-      { sql: 'GRANT app_role TO bob;',                                                                                                want: /Grant succeeded/i },
-      // Cycle prevention
-      { sql: 'GRANT app_role TO read_only_role;',                                                                                     want: /(Grant succeeded|ORA-01934)/i },
-      { sql: 'GRANT read_only_role TO app_role;',                                                                                     want: /(Grant succeeded|ORA-01934)/i },
-      // Verification
-      { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",                          want: /APP_ROLE/ },
-      { sql: "SELECT admin_option FROM dba_role_privs WHERE grantee = 'GRACE' AND granted_role = 'MANAGER_ROLE';",                    want: /YES/ },
-      { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'REPORTING_ROLE';",                                              want: /READ_ONLY_ROLE/ },
-      { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'BOB';",                                                            want: /\d+/ },
-      { sql: "SELECT default_role FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",                          want: /YES/ },
-      { sql: "SELECT grantee FROM dba_role_privs WHERE granted_role = 'APP_ROLE';",                                                    want: /BOB/ },
-      { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'PUBLIC';",                                                      want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Direct role-to-user grants.
+    { sql: 'GRANT app_role TO bob;',                                                            want: /Grant succeeded\./i },
+    { sql: 'GRANT read_only_role TO readonly;',                                                 want: /Grant succeeded\./i },
+    { sql: 'GRANT write_role TO app_user;',                                                     want: /Grant succeeded\./i },
+    { sql: 'GRANT admin_role TO ops_user IDENTIFIED BY "Adm1n!";',                              want: /Grant succeeded\./i },
+    { sql: 'GRANT app_role TO dev_team;',                                                       want: /Grant succeeded\./i },
+    { sql: 'GRANT tester_role TO qa_team;',                                                     want: /Grant succeeded\./i },
+    { sql: 'GRANT manager_role TO grace WITH ADMIN OPTION;',                                    want: /Grant succeeded\./i },
+    // Role-to-role nesting builds the closure walked by privilege checks.
+    { sql: 'GRANT read_only_role TO reporting_role;',                                           want: /Grant succeeded\./i },
+    { sql: 'GRANT reporting_role TO analyst;',                                                  want: /Grant succeeded\./i },
+    // Multi-grantee in one statement.
+    { sql: 'GRANT developer_role TO alice, bob, carol;',                                        want: /Grant succeeded\./i },
+    // Re-granting an existing role is a no-op success (still "Grant succeeded.").
+    { sql: 'GRANT app_role TO bob;',                                                            want: /Grant succeeded\./i },
+    // A direct cycle (granting a role to itself) must be refused — ORA-01934.
+    { sql: 'GRANT app_role TO app_role;',                                                       want: /ORA-01934/ },
+    // Dictionary verification — committed values.
+    { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",                  want: /^\s*APP_ROLE\s*$/m },
+    { sql: "SELECT admin_option FROM dba_role_privs WHERE grantee = 'GRACE' AND granted_role = 'MANAGER_ROLE';",            want: /\bYES\b/ },
+    { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'REPORTING_ROLE' AND granted_role = 'READ_ONLY_ROLE';", want: /^\s*READ_ONLY_ROLE\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role IN ('APP_ROLE','DEVELOPER_ROLE');",  want: /^\s*2\s*$/m },
+    { sql: "SELECT default_role FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",                  want: /\bYES\b/ },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE granted_role = 'APP_ROLE' AND grantee = 'BOB';",                      want: /^\s*1\s*$/m },
+    // Multi-grantee created three rows (alice, bob, carol).
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE granted_role = 'DEVELOPER_ROLE' AND grantee IN ('ALICE','BOB','CAROL');", want: /^\s*3\s*$/m },
+  ])('§8: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 9 — ALTER USER variants (35 cases)
 // ─────────────────────────────────────────────────────────────────
 
