@@ -3071,6 +3071,11 @@ export class OracleExecutor extends BaseExecutor {
     this.requireSystemPrivilege('DROP USER');
     const catalog = this.catalog as OracleCatalog;
     const username = stmt.username.toUpperCase();
+    // SYS-supplied schemas cannot be dropped — ORA-28009 / 1031.
+    const PROTECTED = new Set(['SYS', 'SYSTEM', 'PUBLIC', 'XDB', 'OUTLN', 'AUDSYS', 'DBSNMP', 'CTXSYS', 'MDSYS', 'WMSYS']);
+    if (PROTECTED.has(username)) {
+      throw new OracleError(28009, `cannot drop user '${username}': protected schema`);
+    }
     if (!catalog.userExists(username)) {
       throw new OracleError(1918, `user '${username}' does not exist`);
     }
