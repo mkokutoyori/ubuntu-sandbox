@@ -592,9 +592,17 @@ export class OracleExecutor extends BaseExecutor {
     // Any-table system privilege?
     const anyPriv = `${operation} ANY TABLE`;
     if (engine.privileges.hasSystemPrivilege(user, anyPriv)) return;
-    // Explicit object grant?
-    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objectName.toUpperCase())) return;
-    // Hide existence
+    // Explicit object grant for the requested operation?
+    const objNameUpper = objectName.toUpperCase();
+    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objNameUpper)) return;
+    // Differentiate between "no privilege at all" (hide existence with
+    // ORA-00942) and "some privilege but not this one" (ORA-01031 — the
+    // user already knows the object exists).
+    const otherOps: Array<'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'REFERENCES' | 'ALTER' | 'INDEX'> =
+      ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'ALTER', 'INDEX'];
+    const hasAnyObjectPriv = otherOps.some(op =>
+      engine.privileges.hasObjectPrivilege(user, op, targetUpper, objNameUpper));
+    if (hasAnyObjectPriv) throw new OracleError(1031, 'insufficient privileges');
     throw new OracleError(942, 'table or view does not exist');
   }
 

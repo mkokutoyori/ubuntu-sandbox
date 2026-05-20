@@ -345,6 +345,8 @@ describe('5. GRANT system privileges', () => {
       { sql: 'GRANT CREATE SESSION TO grace, heidi, ivan, judy;',                                                                     want: /Grant succeeded\./i },
       // Service / role-holder users also need CREATE SESSION to log in.
       { sql: 'GRANT CREATE SESSION TO readonly, app_user, dev_team, ops_user;',                                                       want: /Grant succeeded\./i },
+      // app_user needs CREATE TABLE in its own schema to provision app objects.
+      { sql: 'GRANT CREATE TABLE TO app_user;',                                                                                       want: /Grant succeeded\./i },
       // Multi-privilege list
       { sql: 'GRANT INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE TO write_role;',                                            want: /Grant succeeded\./i },
       // ALL PRIVILEGES
