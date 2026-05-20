@@ -939,50 +939,53 @@ describe('15. Audit configuration', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('16. Audit trail inspection', () => {
-  it('Queries DBA_AUDIT_TRAIL and UNIFIED_AUDIT_TRAIL with filters', () => {
-    const cases: Case[] = [
-      { sql: 'SELECT COUNT(*) FROM dba_audit_trail;',                                                                                  want: /\d+/ },
-      { sql: 'SELECT username, action_name, timestamp FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST 20 ROWS ONLY;',         want: { not: /ORA-/ } },
-      { sql: "SELECT action_name, COUNT(*) FROM dba_audit_trail GROUP BY action_name ORDER BY 2 DESC FETCH FIRST 10 ROWS ONLY;",       want: { not: /ORA-/ } },
-      { sql: "SELECT username, COUNT(*) FROM dba_audit_trail WHERE returncode != 0 GROUP BY username;",                                want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_audit_session FETCH FIRST 10 ROWS ONLY;",                                                              want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_audit_statement FETCH FIRST 10 ROWS ONLY;",                                                            want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_audit_object FETCH FIRST 10 ROWS ONLY;",                                                                want: { not: /ORA-/ } },
-      { sql: "SELECT username, owner, obj_name, action_name FROM dba_audit_object WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",       want: { not: /ORA-00904/ } },
-      { sql: "SELECT username, owner, obj_name FROM dba_audit_object WHERE obj_name = 'EMPLOYEES';",                                   want: { not: /ORA-/ } },
-      { sql: "SELECT event_timestamp, dbusername, action_name FROM unified_audit_trail ORDER BY event_timestamp DESC FETCH FIRST 25 ROWS ONLY;", want: { not: /ORA-00942/ } },
-      { sql: "SELECT action_name, COUNT(*) FROM unified_audit_trail GROUP BY action_name ORDER BY 2 DESC FETCH FIRST 5 ROWS ONLY;",    want: { not: /ORA-/ } },
-      { sql: "SELECT object_schema, object_name, COUNT(*) FROM unified_audit_trail WHERE object_name IS NOT NULL GROUP BY object_schema, object_name FETCH FIRST 5 ROWS ONLY;", want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_fga_audit_trail FETCH FIRST 5 ROWS ONLY;",                                                              want: { not: /ORA-/ } },
-      // Failed login tracking
-      { sql: "SELECT username, COUNT(*) FROM dba_audit_session WHERE returncode != 0 GROUP BY username;",                              want: { not: /ORA-/ } },
-      { sql: "SELECT username, lcount FROM dba_users WHERE lcount > 0;",                                                                want: { not: /ORA-00942/ } },
-      { sql: "SELECT * FROM dba_audit_trail WHERE action_name = 'LOGON' AND returncode != 0 FETCH FIRST 10 ROWS ONLY;",                want: { not: /ORA-/ } },
-      // High-risk privileges audit
-      { sql: "SELECT * FROM dba_priv_audit_opts WHERE privilege LIKE 'DROP%' OR privilege LIKE 'ALTER%' FETCH FIRST 10 ROWS ONLY;",   want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_obj_audit_opts WHERE owner = 'HR';",                                                                   want: { not: /ORA-/ } },
-      // Aggregate by timestamp window
-      { sql: "SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS day, COUNT(*) FROM dba_audit_trail GROUP BY TO_CHAR(timestamp, 'YYYY-MM-DD') ORDER BY 1 DESC FETCH FIRST 5 ROWS ONLY;", want: { not: /ORA-/ } },
-      { sql: "SELECT username, action_name FROM dba_audit_trail WHERE timestamp > SYSDATE - 1 AND username NOT IN ('SYS') FETCH FIRST 20 ROWS ONLY;", want: { not: /ORA-/ } },
-      // Forensics-style joins
-      { sql: "SELECT t.username, t.action_name, u.account_status FROM dba_audit_trail t JOIN dba_users u ON u.username = t.username WHERE t.returncode != 0 FETCH FIRST 10 ROWS ONLY;", want: { not: /ORA-/ } },
-      // Purge / Cleanup
-      { sql: "BEGIN DBMS_AUDIT_MGMT.CLEAN_AUDIT_TRAIL(audit_trail_type=>DBMS_AUDIT_MGMT.AUDIT_TRAIL_DB_STD, use_last_arch_timestamp=>FALSE); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_AUDIT_MGMT.SET_LAST_ARCHIVE_TIMESTAMP(audit_trail_type=>DBMS_AUDIT_MGMT.AUDIT_TRAIL_UNIFIED, last_archive_time=>SYSTIMESTAMP); END;", want: { not: /ORA-00942/ } },
-      // Audit policy enablement
-      { sql: "SELECT * FROM dba_priv_audit_opts WHERE user_name IS NULL FETCH FIRST 5 ROWS ONLY;",                                    want: { not: /ORA-/ } },
-      // Audit trail rotation
-      { sql: "SELECT * FROM dba_audit_mgmt_config_params FETCH FIRST 5 ROWS ONLY;",                                                     want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_audit_mgmt_last_arch_ts;",                                                                              want: { not: /ORA-/ } },
-      // Sessionless audit
-      { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE sessionid IS NOT NULL;",                                                      want: /\d+/ },
-      { sql: "SELECT username, action_name, sql_text FROM dba_audit_trail WHERE sql_text LIKE 'GRANT%' FETCH FIRST 5 ROWS ONLY;",      want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Row counts and column headers — committed expectations.
+    { sql: 'SELECT COUNT(*) FROM dba_audit_trail;',                                                                                want: /^\s*\d+\s*$/m },
+    { sql: 'SELECT username, action_name, timestamp FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST 20 ROWS ONLY;',       want: /\bACTION_NAME\b/i },
+    { sql: "SELECT COUNT(*) FROM (SELECT action_name FROM dba_audit_trail GROUP BY action_name);",                                  want: /^\s*\d+\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE returncode != 0;",                                                          want: /^\s*\d+\s*$/m },
+    { sql: "SELECT username, action_name, returncode FROM dba_audit_session FETCH FIRST 10 ROWS ONLY;",                            want: /\bACTION_NAME\b/i },
+    { sql: "SELECT username, action_name FROM dba_audit_statement FETCH FIRST 10 ROWS ONLY;",                                       want: /\bACTION_NAME\b/i },
+    { sql: "SELECT username, owner, obj_name, action_name FROM dba_audit_object FETCH FIRST 10 ROWS ONLY;",                         want: /\bOBJ_NAME\b/i },
+    { sql: "SELECT username, owner, obj_name, action_name FROM dba_audit_object WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",      want: /\bOWNER\b/i },
+    { sql: "SELECT username, obj_name FROM dba_audit_object WHERE obj_name = 'EMPLOYEES';",                                         want: /\bOBJ_NAME\b/i },
+    { sql: "SELECT event_timestamp, dbusername, action_name FROM unified_audit_trail ORDER BY event_timestamp DESC FETCH FIRST 25 ROWS ONLY;", want: /\bACTION_NAME\b/i },
+    { sql: "SELECT action_name FROM unified_audit_trail GROUP BY action_name FETCH FIRST 5 ROWS ONLY;",                            want: /\bACTION_NAME\b/i },
+    { sql: "SELECT object_schema, object_name FROM unified_audit_trail WHERE object_name IS NOT NULL FETCH FIRST 5 ROWS ONLY;",     want: /\bOBJECT_SCHEMA\b/i },
+    { sql: "SELECT sessionid, db_user, sql_text FROM dba_fga_audit_trail FETCH FIRST 5 ROWS ONLY;",                                 want: /\bSESSIONID\b/i },
+    // Failed logins tracked in DBA_AUDIT_SESSION and DBA_USERS.LCOUNT.
+    { sql: "SELECT username, returncode FROM dba_audit_session WHERE returncode != 0 FETCH FIRST 5 ROWS ONLY;",                     want: /\bRETURNCODE\b/i },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE lcount > 0;",                                                                      want: /^\s*\d+\s*$/m },
+    { sql: "SELECT username, action_name FROM dba_audit_trail WHERE action_name = 'LOGON' AND returncode != 0 FETCH FIRST 10 ROWS ONLY;", want: /\bACTION_NAME\b/i },
+    // High-risk privileges audit options.
+    { sql: "SELECT privilege FROM dba_priv_audit_opts WHERE privilege LIKE 'DROP%' FETCH FIRST 5 ROWS ONLY;",                       want: /\bPRIVILEGE\b/i },
+    { sql: "SELECT owner, object_name FROM dba_obj_audit_opts WHERE owner = 'HR' FETCH FIRST 5 ROWS ONLY;",                         want: /\bOBJECT_NAME\b/i },
+    // Aggregates over time windows.
+    { sql: "SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS day, COUNT(*) FROM dba_audit_trail GROUP BY TO_CHAR(timestamp, 'YYYY-MM-DD') ORDER BY 1 DESC FETCH FIRST 5 ROWS ONLY;", want: /\bDAY\b/i },
+    { sql: "SELECT username, action_name FROM dba_audit_trail WHERE timestamp > SYSDATE - 1 AND username NOT IN ('SYS') FETCH FIRST 20 ROWS ONLY;", want: /\bACTION_NAME\b/i },
+    // Forensics join.
+    { sql: "SELECT t.username, t.action_name, u.account_status FROM dba_audit_trail t JOIN dba_users u ON u.username = t.username WHERE t.returncode != 0 FETCH FIRST 10 ROWS ONLY;", want: /\bACCOUNT_STATUS\b/i },
+    // DBMS_AUDIT_MGMT maintenance procedures.
+    { sql: "BEGIN DBMS_AUDIT_MGMT.CLEAN_AUDIT_TRAIL(audit_trail_type=>DBMS_AUDIT_MGMT.AUDIT_TRAIL_DB_STD, use_last_arch_timestamp=>FALSE); END;",     want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_AUDIT_MGMT.SET_LAST_ARCHIVE_TIMESTAMP(audit_trail_type=>DBMS_AUDIT_MGMT.AUDIT_TRAIL_UNIFIED, last_archive_time=>SYSTIMESTAMP); END;", want: /PL\/SQL procedure successfully completed\./i },
+    // Global audit options.
+    { sql: "SELECT user_name, privilege FROM dba_priv_audit_opts WHERE user_name IS NULL FETCH FIRST 5 ROWS ONLY;",                 want: /\bPRIVILEGE\b/i },
+    // Audit trail rotation config.
+    { sql: "SELECT parameter_name, parameter_value FROM dba_audit_mgmt_config_params FETCH FIRST 5 ROWS ONLY;",                     want: /\bPARAMETER_NAME\b/i },
+    { sql: "SELECT audit_trail, last_archive_ts FROM dba_audit_mgmt_last_arch_ts;",                                                  want: /\bAUDIT_TRAIL\b/i },
+    // Final counts.
+    { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE sessionid IS NOT NULL;",                                                     want: /^\s*\d+\s*$/m },
+    { sql: "SELECT username, sql_text FROM dba_audit_trail WHERE sql_text LIKE 'GRANT%' FETCH FIRST 5 ROWS ONLY;",                  want: /\bSQL_TEXT\b/i },
+  ])('§16: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 17 — TDE / encryption (16 cases)
 // ─────────────────────────────────────────────────────────────────
 
