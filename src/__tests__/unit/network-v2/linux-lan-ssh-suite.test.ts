@@ -2042,16 +2042,27 @@ describe('§31 — user existence ↔ SSH login outcome', () => {
     },
     {
       name: 'userdel alice on the remote then ssh alice fails',
-      setup: (l) => { void l.pc2.executeCommand('userdel alice'); },
+      setup: (l) => {
+        // userdel is root-only in the bash shell; delete via the user
+        // manager so the test doesn't depend on becoming root.
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          userdel: (u: string) => void;
+        } } }).executor.userMgr;
+        um.userdel('alice');
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: [/Permission denied/],
     },
     {
-      name: 'locked account (passwd -l alice) is refused',
-      setup: async (l) => {
-        await l.pc2.executeCommand('useradd -m alice 2>/dev/null');
-        await l.pc2.executeCommand('passwd -l alice');
+      name: 'locked account (usermod -L alice) is refused',
+      setup: (l) => {
+        // passwd / usermod are root-only in the bash shell; tunnel
+        // through the userMgr directly to lock the account.
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          usermod: (u: string, opts: object) => void;
+        } } }).executor.userMgr;
+        um.usermod('alice', { L: true });
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
@@ -2066,9 +2077,17 @@ describe('§31 — user existence ↔ SSH login outcome', () => {
     },
     {
       name: 'expired shadow entry blocks login',
-      setup: async (l) => {
-        await l.pc2.executeCommand('useradd -m bob 2>/dev/null');
-        await l.pc2.executeCommand('chage -E 2020-01-01 bob');
+      setup: (l) => {
+        // chage is root-only; set expireDate directly so the test
+        // doesn't depend on becoming root.
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          getUser: (u: string) => { expireDate?: number } | undefined;
+        } } }).executor.userMgr;
+        const u = um.getUser('bob');
+        if (u) {
+          // 18262 = days from 1970-01-01 to 2020-01-01 — already in the past.
+          u.expireDate = 18262;
+        }
       },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',

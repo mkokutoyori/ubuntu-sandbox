@@ -221,21 +221,32 @@ export abstract class LinuxMachine extends EndHost {
     // User must exist in /etc/passwd. Test fixtures are responsible for
     // calling useradd before relying on a login — sshd does not create
     // accounts on the fly.
-    const userEntry = this.executor.userMgr.getUser(user);
+    const userEntry = this.executor.userMgr.getUser(user) as
+      | { locked?: boolean; expireDate?: number; password?: string }
+      | undefined;
     if (!userEntry) return { ok: false, reason: 'no such user' };
 
-    // Locked account (passwd -l → shadow stores "!password" prefix).
+    // Locked account: either the userMgr's in-memory flag is on, or
+    // /etc/shadow stores "!<hash>" / "!".
+    if (userEntry.locked) return { ok: false, reason: 'account locked' };
+    if (userEntry.password === '!') return { ok: false, reason: 'no password set' };
     const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
     const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
-    if (shadowLine && shadowLine.split(':')[1]?.startsWith('!')) {
+    if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
       return { ok: false, reason: 'account locked' };
     }
-    // Expired account (chage -E in the past).
+    // Expired account: userMgr.expireDate in days-since-epoch, or
+    // /etc/shadow column 8 in the past.
+    const now = Date.now();
+    if (userEntry.expireDate !== undefined && userEntry.expireDate > 0) {
+      if (userEntry.expireDate * 86_400_000 < now) {
+        return { ok: false, reason: 'account expired' };
+      }
+    }
     if (shadowLine) {
       const expireDays = Number.parseInt(shadowLine.split(':')[7] ?? '', 10);
       if (Number.isFinite(expireDays) && expireDays > 0) {
-        const expireDate = new Date(expireDays * 86_400_000);
-        if (expireDate < new Date()) return { ok: false, reason: 'account expired' };
+        if (expireDays * 86_400_000 < now) return { ok: false, reason: 'account expired' };
       }
     }
     return { ok: true };
