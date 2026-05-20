@@ -1925,3 +1925,62 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 30 — network monitoring of SSH (ss, netstat, lsof, tcpdump)
+
+describe('§30 — network monitoring of SSH listener and sessions', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ss -tlnp shows sshd listening on port 22 with PID/program',
+      on: l => l.pc1,
+      cmd: 'ss -tlnp',
+      contains: [/0\.0\.0\.0:22.*sshd/, /pid=\d+/],
+    },
+    {
+      name: 'netstat -tlnp shows the same sshd listener',
+      on: l => l.pc1,
+      cmd: 'netstat -tlnp',
+      contains: [/0\.0\.0\.0:22.*LISTEN.*sshd/],
+    },
+    {
+      name: 'lsof -i :22 lists the sshd process bound to port 22',
+      on: l => l.pc1,
+      cmd: 'lsof -i :22',
+      contains: [/sshd\s+\d+\s+root.*TCP \*:(ssh|22) \(LISTEN\)/],
+    },
+    {
+      name: 'after systemctl stop ssh, no listener on port 22',
+      setup: (l) => { void l.pc1.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'ss -tln',
+      excludes: [/:22\s/],
+    },
+    {
+      name: 'while session is active, ss -t shows an ESTABLISHED connection',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &'); },
+      on: l => l.pc2,
+      cmd: 'ss -t state established',
+      contains: [/10\.0\.0\.2:(ssh|22)\s+10\.0\.0\.1:\d+/],
+    },
+    {
+      name: 'tcpdump -ni eth0 port 22 -c 2 captures SYN/SYN-ACK during a connect',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 hostname'); },
+      on: l => l.pc1,
+      cmd: 'tcpdump -ni eth0 port 22 -c 2',
+      contains: [/Flags \[S\]|Flags \[S\.\]/, /10\.0\.0\.2\.22/],
+    },
+    {
+      name: 'iftop / ss --resolve shows the symbolic port "ssh"',
+      on: l => l.pc1,
+      cmd: 'ss -tln',
+      contains: [/:22\s/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
