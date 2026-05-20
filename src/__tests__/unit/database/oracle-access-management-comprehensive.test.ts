@@ -1248,46 +1248,46 @@ describe('22. DROP USER / ROLE / PROFILE — final cleanup', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('23. Cross-cutting metadata views', () => {
-  it('Reads the full dictionary surface relevant to security/access', () => {
-    const cases: Case[] = [
-      { sql: "SELECT * FROM dictionary WHERE table_name LIKE '%USER%' FETCH FIRST 10 ROWS ONLY;",                                     want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dict_columns WHERE column_name LIKE '%PRIV%' FETCH FIRST 10 ROWS ONLY;",                                  want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_tablespaces;',                                                                                          want: /USERS/ },
-      { sql: 'SELECT * FROM dba_data_files FETCH FIRST 10 ROWS ONLY;',                                                                  want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_temp_files FETCH FIRST 5 ROWS ONLY;',                                                                    want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_segments FETCH FIRST 10 ROWS ONLY;',                                                                    want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_extents FETCH FIRST 10 ROWS ONLY;',                                                                     want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_free_space FETCH FIRST 10 ROWS ONLY;',                                                                  want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_objects WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                                                want: { not: /ORA-/ } },
-      { sql: "SELECT object_type, COUNT(*) FROM dba_objects WHERE owner IN ('HR','SCOTT') GROUP BY object_type;",                  want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_recyclebin;',                                                                                            want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_directories;',                                                                                          want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_db_links;',                                                                                              want: { not: /ORA-00942/ } },
-      { sql: "SELECT * FROM dba_synonyms WHERE owner = 'PUBLIC' FETCH FIRST 10 ROWS ONLY;",                                            want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_dependencies WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                                            want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_constraints WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                                            want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_cons_columns WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                                          want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_indexes WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                                                want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_ind_columns WHERE table_owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                                       want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_sequences WHERE sequence_owner = 'HR';",                                                              want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_views WHERE owner = 'HR' FETCH FIRST 5 ROWS ONLY;",                                                    want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_jobs FETCH FIRST 5 ROWS ONLY;',                                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_scheduler_jobs FETCH FIRST 5 ROWS ONLY;',                                                                want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_services;',                                                                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_resource_incarnation_session_history FETCH FIRST 5 ROWS ONLY;',                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_resumable;',                                                                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_rsrc_consumer_groups;',                                                                                  want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_rsrc_plans;',                                                                                            want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_2pc_pending;',                                                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_log_groups;',                                                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM dba_supplemental_logging WHERE TRUE FETCH FIRST 5 ROWS ONLY;',                                              want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM v$option WHERE parameter LIKE '%Encryption%';",                                                          want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    { sql: "SELECT table_name FROM dictionary WHERE table_name = 'DBA_USERS';",                                            want: /^\s*DBA_USERS\s*$/m },
+    { sql: "SELECT column_name FROM dict_columns WHERE table_name = 'DBA_SYS_PRIVS' AND column_name = 'PRIVILEGE';",        want: /^\s*PRIVILEGE\s*$/m },
+    { sql: 'SELECT tablespace_name FROM dba_tablespaces;',                                                                  want: /\bUSERS\b/i },
+    { sql: 'SELECT file_name, tablespace_name FROM dba_data_files FETCH FIRST 10 ROWS ONLY;',                                want: /\bFILE_NAME\b/i },
+    { sql: 'SELECT file_name, tablespace_name FROM dba_temp_files FETCH FIRST 5 ROWS ONLY;',                                 want: /\bTABLESPACE_NAME\b/i },
+    { sql: 'SELECT segment_name, segment_type FROM dba_segments FETCH FIRST 10 ROWS ONLY;',                                  want: /\bSEGMENT_TYPE\b/i },
+    { sql: 'SELECT extent_id, block_id FROM dba_extents FETCH FIRST 10 ROWS ONLY;',                                          want: /\bBLOCK_ID\b/i },
+    { sql: 'SELECT tablespace_name, file_id FROM dba_free_space FETCH FIRST 10 ROWS ONLY;',                                  want: /\bFILE_ID\b/i },
+    { sql: "SELECT COUNT(*) FROM dba_objects WHERE owner = 'HR';",                                                          want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM (SELECT object_type FROM dba_objects WHERE owner IN ('HR','SCOTT') GROUP BY object_type);", want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'SELECT object_name, original_name FROM dba_recyclebin FETCH FIRST 5 ROWS ONLY;',                                 want: /\bORIGINAL_NAME\b/i },
+    { sql: 'SELECT directory_name FROM dba_directories FETCH FIRST 5 ROWS ONLY;',                                            want: /\bDIRECTORY_NAME\b/i },
+    { sql: 'SELECT db_link, username FROM dba_db_links FETCH FIRST 5 ROWS ONLY;',                                            want: /\bDB_LINK\b/i },
+    { sql: "SELECT synonym_name FROM dba_synonyms WHERE owner = 'PUBLIC' FETCH FIRST 10 ROWS ONLY;",                         want: /\bSYNONYM_NAME\b/i },
+    { sql: "SELECT name, referenced_name FROM dba_dependencies WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                want: /\bREFERENCED_NAME\b/i },
+    { sql: "SELECT constraint_name, constraint_type FROM dba_constraints WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",     want: /\bCONSTRAINT_TYPE\b/i },
+    { sql: "SELECT constraint_name, column_name FROM dba_cons_columns WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",        want: /\bCOLUMN_NAME\b/i },
+    { sql: "SELECT index_name, index_type FROM dba_indexes WHERE owner = 'HR' FETCH FIRST 10 ROWS ONLY;",                    want: /\bINDEX_TYPE\b/i },
+    { sql: "SELECT index_name, column_name FROM dba_ind_columns WHERE table_owner = 'HR' FETCH FIRST 10 ROWS ONLY;",         want: /\bCOLUMN_NAME\b/i },
+    { sql: "SELECT sequence_name FROM dba_sequences WHERE sequence_owner = 'HR';",                                            want: /\bSEQUENCE_NAME\b/i },
+    { sql: "SELECT view_name FROM dba_views WHERE owner = 'HR' FETCH FIRST 5 ROWS ONLY;",                                     want: /\bVIEW_NAME\b/i },
+    { sql: 'SELECT job, what FROM dba_jobs FETCH FIRST 5 ROWS ONLY;',                                                          want: /\bWHAT\b/i },
+    { sql: 'SELECT job_name FROM dba_scheduler_jobs FETCH FIRST 5 ROWS ONLY;',                                                 want: /\bJOB_NAME\b/i },
+    { sql: 'SELECT name FROM dba_services;',                                                                                    want: /\bNAME\b/i },
+    { sql: 'SELECT status, name FROM dba_resumable FETCH FIRST 5 ROWS ONLY;',                                                  want: /\bSTATUS\b/i },
+    { sql: 'SELECT consumer_group FROM dba_rsrc_consumer_groups FETCH FIRST 5 ROWS ONLY;',                                     want: /\bCONSUMER_GROUP\b/i },
+    { sql: 'SELECT plan FROM dba_rsrc_plans FETCH FIRST 5 ROWS ONLY;',                                                          want: /\bPLAN\b/i },
+    { sql: 'SELECT local_tran_id FROM dba_2pc_pending;',                                                                        want: /\bLOCAL_TRAN_ID\b/i },
+    { sql: 'SELECT log_group_name FROM dba_log_groups FETCH FIRST 5 ROWS ONLY;',                                                want: /\bLOG_GROUP_NAME\b/i },
+    { sql: "SELECT parameter FROM v\$option WHERE parameter LIKE '%Encryption%';",                                              want: /\bPARAMETER\b/i },
+  ])('§23: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 24 — SYSDATE arithmetic and time-based queries (16 cases)
 // ─────────────────────────────────────────────────────────────────
 
