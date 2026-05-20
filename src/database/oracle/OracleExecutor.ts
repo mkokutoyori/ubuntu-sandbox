@@ -2413,6 +2413,32 @@ export class OracleExecutor extends BaseExecutor {
         (this.catalog as OracleCatalog).clearColumnEncryption(schema, tableName, action.columnName);
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
+      } else if (action.action === 'RENAME_COLUMN') {
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const oldUpper = action.oldName.toUpperCase();
+        const newUpper = action.newName.toUpperCase();
+        const target = meta.columns.find(c => c.name === oldUpper);
+        if (!target) throw new OracleError(904, `"${oldUpper}": invalid identifier`);
+        if (meta.columns.some(c => c.name === newUpper)) {
+          throw new OracleError(957, 'duplicate column name');
+        }
+        target.name = newUpper;
+        // Migrate stored row keys when rows are dict-keyed.
+        for (const row of meta.rows) {
+          if (Object.prototype.hasOwnProperty.call(row, oldUpper)) {
+            (row as Record<string, unknown>)[newUpper] = (row as Record<string, unknown>)[oldUpper];
+            delete (row as Record<string, unknown>)[oldUpper];
+          }
+        }
+      } else if (action.action === 'RENAME_TABLE') {
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const newUpper = action.newName.toUpperCase();
+        if (this.storage.getTableMeta(schema, newUpper)) {
+          throw new OracleError(955, 'name is already used by an existing object');
+        }
+        meta.name = newUpper;
       } else if (action.action === 'MOVE_TABLESPACE') {
         const meta = this.storage.getTableMeta(schema, tableName);
         if (!meta) throw new OracleError(942, `table or view does not exist`);
