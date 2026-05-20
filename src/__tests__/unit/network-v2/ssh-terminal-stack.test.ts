@@ -72,6 +72,19 @@ async function buildLan(): Promise<Lan> {
       await pc.executeCommand(`ping -c 1 ${other}`);
     }
   }
+  // Auto-provision a cast of users on every PC so the sshd
+  // user-existence gate accepts them (sshd refuses unknown users).
+  for (const d of [pc1, pc2, pc3, pc4]) {
+    const um = (d as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      setPassword: (u: string, p: string) => void;
+      getUser: (u: string) => unknown;
+    } } }).executor.userMgr;
+    for (const u of ['alice', 'bob', 'carol', 'dave']) {
+      if (!um.getUser(u)) { um.useradd(u, { m: true, s: '/bin/bash' }); um.setPassword(u, 'x'); }
+    }
+  }
+
   return { pc1, pc2, pc3, pc4, sw };
 }
 

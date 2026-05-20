@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-05-20T17:56:36.901Z
+Generated: 2026-05-20T18:17:38.313Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
@@ -143,8 +143,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START           STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- ------------------------ --------- -------- ------------ -------- ----------- ---------- -------------------
-  1rcfn8ma3xqw0 1           2026-05-20T17:56:36.913Z EXECUTING SYS      0            0        0           0          0                  
-  13ipzqna3xqw0 2           2026-05-20T17:56:36.912Z DONE      SYS      752          602      2           0          0                  
+  1rcfn8ma3xqw0 1           2026-05-20T18:17:38.330Z EXECUTING SYS      0            0        0           0          0                  
+  13ipzqna3xqw0 2           2026-05-20T18:17:38.329Z DONE      SYS      729          583      2           0          0                  
   
   2 rows selected.
 
@@ -168,7 +168,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-20T16:56:36.915Z 2026-05-20T17:56:36.915Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-20T17:17:38.333Z 2026-05-20T18:17:38.333Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 

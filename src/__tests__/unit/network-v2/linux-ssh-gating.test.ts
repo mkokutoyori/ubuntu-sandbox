@@ -41,7 +41,16 @@ describe('ssh client — remote sshd gating', () => {
     wire(client, server);
     configure(client, '10.0.0.2');
     configure(server, '10.0.0.10');
-    // Default profile starts the ssh service active on both machines.
+    // Provision the named users the tests log in as (sshd refuses
+    // unknown users on the remote).
+    const um = (server as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      setPassword: (u: string, p: string) => void;
+      getUser: (u: string) => unknown;
+    } } }).executor.userMgr;
+    for (const u of ['alice', 'user']) {
+      if (!um.getUser(u)) { um.useradd(u, { m: true, s: '/bin/bash' }); um.setPassword(u, 'x'); }
+    }
   });
 
   it('connects when sshd is active on the remote', async () => {
@@ -95,6 +104,8 @@ describe('ssh client — works identically from LinuxServer', () => {
     wire(a, b);
     configure(a, '10.0.0.20');
     configure(b, '10.0.0.21');
+    const um = (b as unknown as { executor: { userMgr: { useradd: (u: string, o?: object) => void; setPassword: (u: string, p: string) => void; getUser: (u: string) => unknown } } }).executor.userMgr;
+    if (!um.getUser('alice')) { um.useradd('alice', { m: true, s: '/bin/bash' }); um.setPassword('alice', 'x'); }
     expect(await a.executeCommand('ssh alice@10.0.0.21')).toContain('Welcome to Ubuntu');
     b.executeCommand('systemctl stop ssh');
     expect(await a.executeCommand('ssh alice@10.0.0.21')).toMatch(/Connection refused/);

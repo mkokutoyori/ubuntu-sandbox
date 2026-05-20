@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-instance-lifecycle
-Generated: 2026-05-20T17:56:26.887Z
+Generated: 2026-05-20T18:17:28.249Z
 Topology:  LinuxServer ora-life — Oracle ORCL
 Total commands: 406
 ============================================================
@@ -27,7 +27,7 @@ SQL [2/406]> SELECT instance_name, host_name, version, startup_time, status, par
   
   INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL ARCHIVER
   ------------- --------- ---------- ------------------------ ------ -------- --------
-  ORCL          localhost 19.0.0.0.0 2026-05-20T17:56:26.782Z OPEN   NO       STOPPED 
+  ORCL          localhost 19.0.0.0.0 2026-05-20T18:17:28.108Z OPEN   NO       STOPPED 
   
   1 row selected.
 
@@ -43,7 +43,7 @@ SQL [4/406]> SELECT * FROM v$instance;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-20T17:56:26.782Z OPEN   NO       1       STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
+  1               ORCL          localhost 19.0.0.0.0 2026-05-20T18:17:28.108Z OPEN   NO       1       STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -51,7 +51,7 @@ SQL [5/406]> SELECT * FROM v$database;
   
   DBID       NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON
   ---------- ---- ------------------------ ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------
-  1234567890 ORCL 2026-05-20T17:56:26.892Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
+  1234567890 ORCL 2026-05-20T18:17:28.253Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
   
   1 row selected.
 
@@ -118,7 +118,7 @@ SQL [14/406]> SELECT * FROM v$database;
   
   DBID       NAME CREATED                  LOG_MODE     OPEN_MODE DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON
   ---------- ---- ------------------------ ------------ --------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------
-  1234567890 ORCL 2026-05-20T17:56:26.896Z NOARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
+  1234567890 ORCL 2026-05-20T18:17:28.257Z NOARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
   
   1 row selected.
 
@@ -182,7 +182,7 @@ SQL [24/406]> SELECT * FROM v$database;
   
   DBID       NAME CREATED                  LOG_MODE     OPEN_MODE DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON
   ---------- ---- ------------------------ ------------ --------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------
-  1234567890 ORCL 2026-05-20T17:56:26.898Z NOARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
+  1234567890 ORCL 2026-05-20T18:17:28.259Z NOARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
   
   1 row selected.
 
@@ -625,8 +625,8 @@ SQL [73/406]> CREATE SPFILE='/u01/oradata/spfileORCL_backup.ora' FROM PFILE;
 
 SQL [74/406]> HOST ls -la $ORACLE_HOME/dbs/spfileORCL.ora
   total 16
-  drwx------  2 root root 0 May 20 17:56 [1;34m.[0m
-  drwxr-xr-x 18 root root 0 May 20 17:56 [1;34m..[0m
+  drwx------  2 root root 0 May 20 18:17 [1;34m.[0m
+  drwxr-xr-x 18 root root 0 May 20 18:17 [1;34m..[0m
   ls: cannot access '/dbs/spfileORCL.ora': No such file or directory
 
 SQL [75/406]> HOST ls -la $ORACLE_HOME/dbs/initORCL.ora 2>/dev/null
@@ -1287,65 +1287,65 @@ SQL [180/406]> SELECT message_text FROM x$dbgalertext ORDER BY originating_times
   
   MESSAGE_TEXT                                           
   -------------------------------------------------------
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Database mounted                  
-  2026-05-20 17:56:26: Database opened                   
-  2026-05-20 17:56:26: Logon: user=SYS sid=5 as SYSDBA   
-  2026-05-20 17:56:26: Logon: user=SYS sid=6 as SYSDBA   
-  2026-05-20 17:56:26: Logon: user=SYS sid=7 as SYSDBA   
-  2026-05-20 17:56:26: Logon: user=SYS sid=8 as SYSDBA   
-  2026-05-20 17:56:26: Shutting down instance (normal)   
-  2026-05-20 17:56:26: Database closed                   
-  2026-05-20 17:56:26: Database dismounted               
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Instance started in NOMOUNT mode  
-  2026-05-20 17:56:26: Shutting down instance (immediate)
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Database mounted                  
+  2026-05-20 18:17:28: Database opened                   
+  2026-05-20 18:17:28: Logon: user=SYS sid=5 as SYSDBA   
+  2026-05-20 18:17:28: Logon: user=SYS sid=6 as SYSDBA   
+  2026-05-20 18:17:28: Logon: user=SYS sid=7 as SYSDBA   
+  2026-05-20 18:17:28: Logon: user=SYS sid=8 as SYSDBA   
+  2026-05-20 18:17:28: Shutting down instance (normal)   
+  2026-05-20 18:17:28: Database closed                   
+  2026-05-20 18:17:28: Database dismounted               
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Instance started in NOMOUNT mode  
+  2026-05-20 18:17:28: Shutting down instance (immediate)
   
   MESSAGE_TEXT                                           
   -------------------------------------------------------
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Database mounted                  
-  2026-05-20 17:56:26: Shutting down instance (immediate)
-  2026-05-20 17:56:26: Database dismounted               
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Database mounted                  
-  2026-05-20 17:56:26: Database opened                   
-  2026-05-20 17:56:26: Shutting down instance (immediate)
-  2026-05-20 17:56:26: Database closed                   
-  2026-05-20 17:56:26: Database dismounted               
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Database mounted                  
+  2026-05-20 18:17:28: Shutting down instance (immediate)
+  2026-05-20 18:17:28: Database dismounted               
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Database mounted                  
+  2026-05-20 18:17:28: Database opened                   
+  2026-05-20 18:17:28: Shutting down instance (immediate)
+  2026-05-20 18:17:28: Database closed                   
+  2026-05-20 18:17:28: Database dismounted               
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
   
   MESSAGE_TEXT                                           
   -------------------------------------------------------
-  2026-05-20 17:56:26: Instance started in NOMOUNT mode  
-  2026-05-20 17:56:26: Shutting down instance (immediate)
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Database mounted                  
-  2026-05-20 17:56:26: Shutting down instance (immediate)
-  2026-05-20 17:56:26: Database dismounted               
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Database mounted                  
-  2026-05-20 17:56:26: Database opened                   
-  2026-05-20 17:56:26: Database opened in restricted mode
-  2026-05-20 17:56:26: Shutting down instance (immediate)
-  2026-05-20 17:56:26: Database closed                   
+  2026-05-20 18:17:28: Instance started in NOMOUNT mode  
+  2026-05-20 18:17:28: Shutting down instance (immediate)
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Database mounted                  
+  2026-05-20 18:17:28: Shutting down instance (immediate)
+  2026-05-20 18:17:28: Database dismounted               
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Database mounted                  
+  2026-05-20 18:17:28: Database opened                   
+  2026-05-20 18:17:28: Database opened in restricted mode
+  2026-05-20 18:17:28: Shutting down instance (immediate)
+  2026-05-20 18:17:28: Database closed                   
   
   MESSAGE_TEXT                                           
   -------------------------------------------------------
-  2026-05-20 17:56:26: Database dismounted               
-  2026-05-20 17:56:26: Instance shut down                
-  2026-05-20 17:56:26: Starting ORACLE instance (normal) 
-  2026-05-20 17:56:26: Database mounted                  
-  2026-05-20 17:56:26: Database opened                   
-  2026-05-20 17:56:26: Shutting down instance (abort)    
-  2026-05-20 17:56:26: Database closed                   
-  2026-05-20 17:56:26: Database dismounted               
+  2026-05-20 18:17:28: Database dismounted               
+  2026-05-20 18:17:28: Instance shut down                
+  2026-05-20 18:17:28: Starting ORACLE instance (normal) 
+  2026-05-20 18:17:28: Database mounted                  
+  2026-05-20 18:17:28: Database opened                   
+  2026-05-20 18:17:28: Shutting down instance (abort)    
+  2026-05-20 18:17:28: Database closed                   
+  2026-05-20 18:17:28: Database dismounted               
   
   50 rows selected.
 
@@ -1353,29 +1353,29 @@ SQL [181/406]> SELECT * FROM v$diag_alert_ext ORDER BY originating_timestamp DES
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                            MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- ------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Archive log mode enabled                            
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database mounted                                    
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Starting ORACLE instance (normal)                   
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Instance shut down                                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database dismounted                                 
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Shutting down instance (immediate)                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Archive log mode disabled                           
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database mounted                                    
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Starting ORACLE instance (normal)                   
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Instance shut down                                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database dismounted                                 
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Shutting down instance (immediate)                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Archive log mode enabled                            
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database mounted                                    
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Archive log mode enabled                            
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database mounted                                    
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Starting ORACLE instance (normal)                   
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Instance shut down                                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database dismounted                                 
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Shutting down instance (immediate)                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Archive log mode disabled                           
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database mounted                                    
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Starting ORACLE instance (normal)                   
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Instance shut down                                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database dismounted                                 
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Shutting down instance (immediate)                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Archive log mode enabled                            
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database mounted                                    
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                            MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- ------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Starting ORACLE instance (normal)                   
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Instance shut down                                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database dismounted                                 
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Shutting down instance (immediate)                  
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Database mounted                                    
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 17:56:26: Starting ORACLE instance (normal)                   
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Starting ORACLE instance (normal)                   
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Instance shut down                                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database dismounted                                 
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Shutting down instance (immediate)                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Database mounted                                    
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1    1            32                       Default                           1000       1         SYS     ORCL                                                                                               0                          2026-05-20 18:17:28: Starting ORACLE instance (normal)                   
   
   20 rows selected.
 
@@ -1453,7 +1453,7 @@ SQL [188/406]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-05-20 17:56:26
+  2026-05-20 18:17:28
   
   1 row selected.
 
@@ -1461,7 +1461,7 @@ SQL [189/406]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-05-20T17:56:26.968Z
+  2026-05-20T18:17:28.329Z
   
   1 row selected.
 
@@ -1546,7 +1546,7 @@ SQL [204/406]> ORADEBUG DUMP HANGANALYZE 3;
   Statement processed.
 
 SQL [205/406]> ORADEBUG TRACEFILE_NAME;
-  /u01/app/oracle/diag/rdbms/orcl/ORCL/trace/orcl_ora_14421.trc
+  /u01/app/oracle/diag/rdbms/orcl/ORCL/trace/orcl_ora_9987.trc
 
 
 --- [206] § cross-validate ---
@@ -1586,7 +1586,7 @@ SQL [210/406]> SELECT * FROM v$instance;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-20T17:56:26.958Z MOUNT  NO       1       STARTED                  ALLOWED NO               SUSPENDED       PRIMARY_INSTANCE NORMAL       NO     
+  1               ORCL          localhost 19.0.0.0.0 2026-05-20T18:17:28.317Z MOUNT  NO       1       STARTED                  ALLOWED NO               SUSPENDED       PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -1594,7 +1594,7 @@ SQL [211/406]> SELECT * FROM v$database;
   
   DBID       NAME CREATED                  LOG_MODE   OPEN_MODE DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON
   ---------- ---- ------------------------ ---------- --------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------
-  1234567890 ORCL 2026-05-20T17:56:26.970Z ARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
+  1234567890 ORCL 2026-05-20T18:17:28.333Z ARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
   
   1 row selected.
 
@@ -1631,7 +1631,7 @@ SQL [213/406]> SELECT * FROM v$instance;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-20T17:56:26.958Z MOUNT  NO       1       STARTED                  ALLOWED NO               SUSPENDED       PRIMARY_INSTANCE NORMAL       NO     
+  1               ORCL          localhost 19.0.0.0.0 2026-05-20T18:17:28.317Z MOUNT  NO       1       STARTED                  ALLOWED NO               SUSPENDED       PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -1649,7 +1649,7 @@ SQL [216/406]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-20T17:56:26.958Z MOUNT  NO       1       STARTED                  ALLOWED NO               SUSPENDED       PRIMARY_INSTANCE NORMAL       NO     
+  1               ORCL          localhost 19.0.0.0.0 2026-05-20T18:17:28.317Z MOUNT  NO       1       STARTED                  ALLOWED NO               SUSPENDED       PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -1657,7 +1657,7 @@ SQL [217/406]> SELECT * FROM v$database WHERE rownum < 5;
   
   DBID       NAME CREATED                  LOG_MODE   OPEN_MODE DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON
   ---------- ---- ------------------------ ---------- --------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------
-  1234567890 ORCL 2026-05-20T17:56:26.970Z ARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
+  1234567890 ORCL 2026-05-20T18:17:28.333Z ARCHIVELOG MOUNTED   PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
   
   1 row selected.
 
@@ -1693,10 +1693,10 @@ SQL [221/406]> SELECT * FROM v$session WHERE rownum < 5;
   
   SID SERIAL# USERNAME STATUS OSUSER MACHINE   PROGRAM                 TYPE       LOGON_TIME               SCHEMANAME COMMAND SQL_ID TERMINAL BLOCKING_SESSION SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID EVENT      WAIT_CLASS SECONDS_IN_WAIT STATE   LAST_CALL_ET SQL_TRACE RESOURCE_CONSUMER_GROUP SERVICE_NAME MODULE ACTION CLIENT_INFO PADDR TADDR LOCKWAIT
   --- ------- -------- ------ ------ --------- ----------------------- ---------- ------------------------ ---------- ------- ------ -------- ---------------- ---------------- -------------- ----------- ---------- ---------- --------------- ------- ------------ --------- ----------------------- ------------ ------ ------ ----------- ----- ----- --------
-  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-20T17:56:26.971Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-20T17:56:26.971Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-20T17:56:26.971Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-20T17:56:26.971Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-20T18:17:28.334Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-20T18:17:28.334Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-20T18:17:28.334Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-20T18:17:28.334Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
   
   4 rows selected.
 
@@ -1953,10 +1953,10 @@ SQL [246/406]> SELECT * FROM v$sql WHERE rownum < 5;
   
   SQL_ID        SQL_TEXT                     EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ------------- ---------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  107s6ova3xqw0 STARTUP MOUNT                1          1838         1470     1           0          0              SYS                 2026-05-20T17:56:26
-  1aruonka3xqw0 ALTER DATABASE ARCHIVELOG    1          41           33       1           0          0              SYS                 2026-05-20T17:56:26
-  0a6jhusa3xqw0 ALTER DATABASE OPEN          1          6            5        1           0          0              SYS                 2026-05-20T17:56:26
-  1bcyqrna3xqw0 ALTER SYSTEM ARCHIVE LOG ALL 1          70           56       1           0          0              SYS                 2026-05-20T17:56:26
+  107s6ova3xqw0 STARTUP MOUNT                1          1347         1077     1           0          0              SYS                 2026-05-20T18:17:28
+  1aruonka3xqw0 ALTER DATABASE ARCHIVELOG    1          35           28       1           0          0              SYS                 2026-05-20T18:17:28
+  0a6jhusa3xqw0 ALTER DATABASE OPEN          1          9            7        1           0          0              SYS                 2026-05-20T18:17:28
+  1bcyqrna3xqw0 ALTER SYSTEM ARCHIVE LOG ALL 1          79           63       1           0          0              SYS                 2026-05-20T18:17:28
   
   4 rows selected.
 
@@ -1964,10 +1964,10 @@ SQL [247/406]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  107s6ova3xqw0 0               1           1          1       1838         1470     1           0          0              SYS                 2026-05-20T17:56:26.958Z
-  1aruonka3xqw0 0               1           1          1       41           33       1           0          0              SYS                 2026-05-20T17:56:26.960Z
-  0a6jhusa3xqw0 0               1           1          1       6            5        1           0          0              SYS                 2026-05-20T17:56:26.960Z
-  1bcyqrna3xqw0 0               1           1          1       70           56       1           0          0              SYS                 2026-05-20T17:56:26.960Z
+  107s6ova3xqw0 0               1           1          1       1347         1077     1           0          0              SYS                 2026-05-20T18:17:28.317Z
+  1aruonka3xqw0 0               1           1          1       35           28       1           0          0              SYS                 2026-05-20T18:17:28.319Z
+  0a6jhusa3xqw0 0               1           1          1       9            7        1           0          0              SYS                 2026-05-20T18:17:28.319Z
+  1bcyqrna3xqw0 0               1           1          1       79           63       1           0          0              SYS                 2026-05-20T18:17:28.319Z
   
   4 rows selected.
 
@@ -2002,10 +2002,10 @@ SQL [251/406]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-20T17:56:11.979Z 2026-05-20T17:56:26.979Z 1500         2        2000      CPU Usage Per Sec    6     CentiSeconds Per Second
-  2026-05-20T17:56:11.979Z 2026-05-20T17:56:26.979Z 1500         2        2003      User Calls Per Sec   6     Calls Per Second       
-  2026-05-20T17:56:11.979Z 2026-05-20T17:56:26.979Z 1500         2        2007      Executions Per Sec   6     Executes Per Second    
-  2026-05-20T17:56:11.979Z 2026-05-20T17:56:26.979Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-20T18:17:13.341Z 2026-05-20T18:17:28.341Z 1500         2        2000      CPU Usage Per Sec    6     CentiSeconds Per Second
+  2026-05-20T18:17:13.341Z 2026-05-20T18:17:28.341Z 1500         2        2003      User Calls Per Sec   6     Calls Per Second       
+  2026-05-20T18:17:13.341Z 2026-05-20T18:17:28.341Z 1500         2        2007      Executions Per Sec   6     Executes Per Second    
+  2026-05-20T18:17:13.341Z 2026-05-20T18:17:28.341Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -2013,10 +2013,10 @@ SQL [252/406]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-20T17:55:26.980Z 2026-05-20T17:56:26.980Z 6000         2        2000      CPU Usage Per Sec    6     CentiSeconds Per Second
-  2026-05-20T17:55:26.980Z 2026-05-20T17:56:26.980Z 6000         2        2003      User Calls Per Sec   6     Calls Per Second       
-  2026-05-20T17:55:26.980Z 2026-05-20T17:56:26.980Z 6000         2        2007      Executions Per Sec   6     Executes Per Second    
-  2026-05-20T17:55:26.980Z 2026-05-20T17:56:26.980Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-20T18:16:28.342Z 2026-05-20T18:17:28.342Z 6000         2        2000      CPU Usage Per Sec    6     CentiSeconds Per Second
+  2026-05-20T18:16:28.342Z 2026-05-20T18:17:28.342Z 6000         2        2003      User Calls Per Sec   6     Calls Per Second       
+  2026-05-20T18:16:28.342Z 2026-05-20T18:17:28.342Z 6000         2        2007      Executions Per Sec   6     Executes Per Second    
+  2026-05-20T18:16:28.342Z 2026-05-20T18:17:28.342Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -2381,10 +2381,10 @@ SQL [301/406]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-20T17:56:26.780Z DEFAULT PASSWORD           
-  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-20T17:56:26.780Z DEFAULT PASSWORD           
-  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-20T17:56:26.780Z DEFAULT PASSWORD           
-  HR       3       OPEN                                 USERS              TEMP                 2026-05-20T17:56:26.780Z DEFAULT PASSWORD           
+  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-20T18:17:28.106Z DEFAULT PASSWORD           
+  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-20T18:17:28.106Z DEFAULT PASSWORD           
+  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-20T18:17:28.106Z DEFAULT PASSWORD           
+  HR       3       OPEN                                 USERS              TEMP                 2026-05-20T18:17:28.106Z DEFAULT PASSWORD           
   
   4 rows selected.
 
@@ -2447,10 +2447,10 @@ SQL [307/406]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                  100                      VIEW        2026-05-20T17:56:26.782Z 2026-05-20T17:56:26.782Z 2026-05-20:17:56:26 VALID  N         N         N         1         Y                
-  SYS   V$INSTANCE                 101                      VIEW        2026-05-20T17:56:26.782Z 2026-05-20T17:56:26.782Z 2026-05-20:17:56:26 VALID  N         N         N         1         Y                
-  SYS   V$DATABASE                 102                      VIEW        2026-05-20T17:56:26.782Z 2026-05-20T17:56:26.782Z 2026-05-20:17:56:26 VALID  N         N         N         1         Y                
-  SYS   V$SESSION                  103                      VIEW        2026-05-20T17:56:26.782Z 2026-05-20T17:56:26.782Z 2026-05-20:17:56:26 VALID  N         N         N         1         Y                
+  SYS   V$VERSION                  100                      VIEW        2026-05-20T18:17:28.108Z 2026-05-20T18:17:28.108Z 2026-05-20:18:17:28 VALID  N         N         N         1         Y                
+  SYS   V$INSTANCE                 101                      VIEW        2026-05-20T18:17:28.108Z 2026-05-20T18:17:28.108Z 2026-05-20:18:17:28 VALID  N         N         N         1         Y                
+  SYS   V$DATABASE                 102                      VIEW        2026-05-20T18:17:28.108Z 2026-05-20T18:17:28.108Z 2026-05-20:18:17:28 VALID  N         N         N         1         Y                
+  SYS   V$SESSION                  103                      VIEW        2026-05-20T18:17:28.108Z 2026-05-20T18:17:28.108Z 2026-05-20:18:17:28 VALID  N         N         N         1         Y                
   
   4 rows selected.
 
@@ -2680,17 +2680,17 @@ SQL [337/406]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                                                                                                                                                                                           STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-05-20T17:56:26.800Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                       LOGON         
-  oracle      SYS      localhost 2026-05-20T17:56:26.803Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-05-20T18:17:28.136Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                       LOGON         
+  oracle      SYS      localhost 2026-05-20T18:17:28.140Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           CREATE TABLE  
-  oracle      SYS      localhost 2026-05-20T17:56:26.805Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-05-20T18:17:28.141Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             CREATE TABLE  
-  oracle      SYS      localhost 2026-05-20T17:56:26.805Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-05-20T18:17:28.142Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -2705,10 +2705,10 @@ SQL [338/406]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- --------- -------- ------------------------ ----------- --------- ----------- ----------
-  oracle      SYS      localhost pts/0    2026-05-20T17:56:26.800Z LOGON       5                     0         
-  oracle      SYS      localhost pts/0    2026-05-20T17:56:26.819Z LOGON       6                     0         
-  oracle      SYS      localhost pts/0    2026-05-20T17:56:26.822Z LOGON       7                     0         
-  oracle      SYS      localhost pts/0    2026-05-20T17:56:26.887Z LOGON       8                     0         
+  oracle      SYS      localhost pts/0    2026-05-20T18:17:28.136Z LOGON       5                     0         
+  oracle      SYS      localhost pts/0    2026-05-20T18:17:28.169Z LOGON       6                     0         
+  oracle      SYS      localhost pts/0    2026-05-20T18:17:28.172Z LOGON       7                     0         
+  oracle      SYS      localhost pts/0    2026-05-20T18:17:28.248Z LOGON       8                     0         
   
   4 rows selected.
 
@@ -2716,17 +2716,17 @@ SQL [339/406]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                           OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-05-20T17:56:26.800Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                        LOGON          SYSDBA                1       
-  2026-05-20T17:56:26.803Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
+  2026-05-20T18:17:28.136Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                        LOGON          SYSDBA                1       
+  2026-05-20T18:17:28.140Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           HR            REGIONS     CREATE TABLE                         2       
-  2026-05-20T17:56:26.805Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
+  2026-05-20T18:17:28.141Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             HR            COUNTRIES   CREATE TABLE                         3       
-  2026-05-20T17:56:26.805Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
+  2026-05-20T18:17:28.142Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -2746,9 +2746,9 @@ SQL [341/406]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                               
   ----------- --------- -------- ------------------------ ------------------------ ------------------------------------------------------
-  1           Info      NORMAL   2026-05-20T17:56:26.958Z 2026-05-20T17:56:27.958Z 2026-05-20 17:56:26: Starting ORACLE instance (normal)
-  2           Info      NORMAL   2026-05-20T17:56:26.960Z 2026-05-20T17:56:27.960Z 2026-05-20 17:56:26: Database mounted                 
-  3           Info      NORMAL   2026-05-20T17:56:26.960Z 2026-05-20T17:56:27.960Z 2026-05-20 17:56:26: Archive log mode enabled         
+  1           Info      NORMAL   2026-05-20T18:17:28.317Z 2026-05-20T18:17:29.317Z 2026-05-20 18:17:28: Starting ORACLE instance (normal)
+  2           Info      NORMAL   2026-05-20T18:17:28.319Z 2026-05-20T18:17:29.319Z 2026-05-20 18:17:28: Database mounted                 
+  3           Info      NORMAL   2026-05-20T18:17:28.319Z 2026-05-20T18:17:29.319Z 2026-05-20 18:17:28: Archive log mode enabled         
   
   3 rows selected.
 
@@ -2778,7 +2778,7 @@ SQL [344/406]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-20T16:56:27.011Z 2026-05-20T17:56:27.011Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-20T17:17:28.370Z 2026-05-20T18:17:28.370Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 
@@ -2797,10 +2797,10 @@ SQL [346/406]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-  1       107s6ova3xqw0 0               1                1838               1470           1                 0                0                   
-  1       1aruonka3xqw0 0               1                41                 33             1                 0                0                   
-  1       0a6jhusa3xqw0 0               1                6                  5              1                 0                0                   
-  1       1bcyqrna3xqw0 0               1                70                 56             1                 0                0                   
+  1       107s6ova3xqw0 0               1                1347               1077           1                 0                0                   
+  1       1aruonka3xqw0 0               1                35                 28             1                 0                0                   
+  1       0a6jhusa3xqw0 0               1                9                  7              1                 0                0                   
+  1       1bcyqrna3xqw0 0               1                79                 63             1                 0                0                   
   
   4 rows selected.
 
@@ -3190,7 +3190,7 @@ SQL [402/406]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-05-20 17:56:27
+  2026-05-20 18:17:28
   
   1 row selected.
 
@@ -3198,7 +3198,7 @@ SQL [403/406]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-05-20T17:56:27.024Z
+  2026-05-20T18:17:28.377Z
   
   1 row selected.
 
