@@ -15,6 +15,8 @@ export interface RemoteHost {
   ip: string;
   /** Hostname provided by the caller (or the IP itself if numeric). */
   resolvedFrom: string;
+  /** True when the IP is configured but the device is powered off — ssh returns "No route to host". */
+  poweredOff?: boolean;
 }
 
 /**
@@ -32,16 +34,20 @@ export function findHostByAddress(addressOrName: string): RemoteHost | null {
 
   // IPv4 numeric form → exact port match.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(target)) {
+    let off: RemoteHost | null = null;
     for (const dev of registry.getAll()) {
-      if (!dev.getIsPoweredOn()) continue;
       for (const port of dev.getPorts()) {
         const ip = port.getIPAddress();
         if (ip && ip.toString() === target) {
+          if (!dev.getIsPoweredOn()) {
+            off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
+            continue;
+          }
           return { device: dev, ip: target, resolvedFrom: target };
         }
       }
     }
-    return null;
+    return off;
   }
 
   // Name form — match the device's hostname-like fields.

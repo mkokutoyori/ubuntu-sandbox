@@ -72,9 +72,31 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
   return { positional, flags };
 }
 
+/** Ports configured by sshd_config on the remote machine — defaults to [22]. */
+function sshdConfiguredPorts(machine: LinuxMachine): number[] {
+  const raw = (machine as LinuxMachine & {
+    executor: { vfs: { readFile: (p: string) => string | null } };
+  }).executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
+    .map(m => Number(m[1]))
+    .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+  return ports.length ? ports : [22];
+}
+
+/** Extract -p <port> from argv (default 22). */
+function clientPort(args: string[]): number {
+  const i = args.indexOf('-p');
+  if (i >= 0 && args[i + 1]) {
+    const n = Number.parseInt(args[i + 1], 10);
+    if (Number.isFinite(n) && n > 0 && n < 65536) return n;
+  }
+  return 22;
+}
+
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional } = splitSshArgs(opts.args);
   const target = positional[0];
+  const port = clientPort(opts.args);
   if (!target) {
     return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
   }
@@ -96,6 +118,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  if (found.poweredOff) {
+    return {
+      output: `ssh: connect to host ${host} port 22: No route to host\n`,
+      exitCode: 255,
+    };
+  }
 
   // The discovered Equipment may be a router/switch — only LinuxMachine
   // (PC or Server) ships a sshd; everything else refuses on principle.
@@ -112,11 +140,20 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  // Reactive gate: only an active sshd accepts the TCP handshake.
+  // Reactive gate: only an active sshd accepts the TCP handshake AND
+  // the requested port must match a Port directive in sshd_config.
   if (!machine.isServiceActive('ssh')) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
-      output: `ssh: connect to host ${host} port 22: Connection refused\n`,
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+  const cfgPorts = sshdConfiguredPorts(machine);
+  if (!cfgPorts.includes(port)) {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
       exitCode: 255,
     };
   }

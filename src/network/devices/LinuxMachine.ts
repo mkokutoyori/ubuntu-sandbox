@@ -439,13 +439,31 @@ export abstract class LinuxMachine extends EndHost {
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
     // Reactive socket-table sync: unbind :22 on stop, rebind on start.
+    // Read the configured Port from sshd_config (or fall back to 22)
+    // so listener / unlistener honour custom Port directives.
+    const portsFromConfig = (): number[] => {
+      const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+      const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim)).map(m => Number(m[1])).filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+      return ports.length ? ports : [22];
+    };
+    const rebindPorts = (): void => {
+      // Drop any currently-bound 'sshd' listeners then bind the configured set.
+      for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
+        this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
+      }
+      for (const p of portsFromConfig()) {
+        try { this.socketTable.bind('tcp', '0.0.0.0', p, 985, 'sshd'); } catch { /* already bound */ }
+      }
+    };
     const offStopped = bus.subscribeWhere('linux.service.stopped', isSsh, () => {
-      this.socketTable.unbind('tcp', '0.0.0.0', 22);
+      for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
+        this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
+      }
     });
-    const offStarted = bus.subscribeWhere('linux.service.started', isSsh, () => {
-      this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
-    });
-    this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); };
+    const offStarted = bus.subscribeWhere('linux.service.started', isSsh, rebindPorts);
+    const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
+    const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
+    this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
     return this._sshContext;
   }
 
