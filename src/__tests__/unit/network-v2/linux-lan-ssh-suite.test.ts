@@ -442,3 +442,63 @@ describe('§6 — SSH refused when sshd process is killed directly', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 7 — SSH refused when remote machine is powered off ──────
+
+describe('§7 — SSH refused when remote machine is powered off', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'powerOff(pc2) then ssh from pc1 → no route / refused',
+      setup: (l) => { l.pc2.setPoweredOn(false); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/No route to host|Connection timed out|Could not resolve|refused/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'powering off srv1 also refuses ssh from any pc',
+      setup: (l) => { l.srv1.setPoweredOn(false); },
+      on: l => l.pc3,
+      cmd: 'ssh alice@10.0.0.10',
+      contains: [/No route to host|Connection timed out|refused/],
+    },
+    {
+      name: 'powering off then back on restores connectivity',
+      setup: (l) => { l.pc2.setPoweredOn(false); l.pc2.setPoweredOn(true); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'ping to a powered-off device also fails',
+      setup: (l) => { l.pc2.setPoweredOn(false); },
+      on: l => l.pc1,
+      cmd: 'ping -c 2 10.0.0.2',
+      contains: [/100% packet loss|Destination Host Unreachable|Network is unreachable/],
+      excludes: [/0% packet loss/],
+    },
+    {
+      name: 'arping to a powered-off device gets no replies',
+      setup: (l) => { l.pc2.setPoweredOn(false); },
+      on: l => l.pc1,
+      cmd: 'arping -c 2 10.0.0.2',
+      contains: [/Sent 2 probes \(2 broadcast\(s\)\)|Received 0 reply|Timeout/],
+      excludes: [/Unicast reply from 10\.0\.0\.2/],
+    },
+    {
+      name: 'a powered-off PC does not appear in ip neigh on its neighbours',
+      setup: (l) => { l.pc2.setPoweredOn(false); },
+      on: l => l.pc1,
+      cmd: 'ip neigh show 10.0.0.2',
+      contains: [/FAILED|INCOMPLETE/],
+      excludes: [/REACHABLE|PERMANENT/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
