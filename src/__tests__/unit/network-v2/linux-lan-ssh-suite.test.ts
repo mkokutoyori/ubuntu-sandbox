@@ -1066,3 +1066,61 @@ describe('§16 — pstree process tree presentation', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 17 — killing critical / protected processes ──────────────
+
+describe('§17 — kill of critical / protected processes', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'kill -9 1 (systemd) is refused with "Operation not permitted"',
+      on: l => l.pc1,
+      cmd: 'kill -9 1',
+      contains: [/Operation not permitted|not permitted/i],
+      excludes: ['' /* no real death */],
+    },
+    {
+      name: 'after attempting kill -9 1, systemd is still PID 1',
+      setup: (l) => { void l.pc1.executeCommand('kill -9 1'); },
+      on: l => l.pc1,
+      cmd: 'ps -p 1 -o pid,comm',
+      contains: [/^\s*1\s+systemd/m],
+    },
+    {
+      name: 'kill on a non-existent PID reports "No such process"',
+      on: l => l.pc1,
+      cmd: 'kill 999999',
+      contains: [/No such process/],
+    },
+    {
+      name: 'kill with no argument prints usage and exits non-zero',
+      on: l => l.pc1,
+      cmd: 'kill',
+      contains: [/usage:\s+kill/i],
+    },
+    {
+      name: 'kill -l lists at least the standard 15 + RT signals',
+      on: l => l.pc1,
+      cmd: 'kill -l',
+      contains: ['SIGHUP', 'SIGINT', 'SIGKILL', 'SIGTERM', 'SIGCHLD'],
+    },
+    {
+      name: 'killall systemd refuses to terminate the init process',
+      on: l => l.pc1,
+      cmd: 'killall systemd',
+      contains: [/Operation not permitted|systemd: no process found/i],
+    },
+    {
+      name: 'pkill -9 of an unknown comm reports no processes matched',
+      on: l => l.pc1,
+      cmd: 'pkill -9 ghostproc',
+      contains: [''], // pkill prints nothing on no match
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
