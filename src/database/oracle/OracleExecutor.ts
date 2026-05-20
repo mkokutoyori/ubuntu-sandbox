@@ -2781,6 +2781,15 @@ export class OracleExecutor extends BaseExecutor {
   private executeGrant(stmt: GrantStatement): ResultSet {
     const catalog = this.catalog as OracleCatalog;
     const grantees = stmt.grantees && stmt.grantees.length > 0 ? stmt.grantees : [stmt.grantee];
+    // Validate that every grantee resolves to a known principal — Oracle
+    // refuses the entire statement with ORA-01917 if any name is wrong.
+    for (const g of grantees) {
+      const gUpper = g.toUpperCase();
+      if (gUpper === 'PUBLIC') continue;
+      if (!catalog.userExists(gUpper) && !catalog.roleExists(gUpper)) {
+        throw new OracleError(1917, `user or role '${gUpper}' does not exist`);
+      }
+    }
     // Granting system privs / roles requires GRANT ANY PRIVILEGE or DBA.
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
@@ -2981,7 +2990,9 @@ export class OracleExecutor extends BaseExecutor {
     const catalog = this.catalog as OracleCatalog;
     const username = stmt.username.toUpperCase();
     if (!catalog.userExists(username)) {
-      throw new OracleError(1917, `user or role '${username}' does not exist`);
+      // ALTER USER on a non-existent user is ORA-01918 (user does not
+      // exist) — distinct from the generic ORA-01917 (user or role).
+      throw new OracleError(1918, `user '${username}' does not exist`);
     }
 
     // Users may always alter their own password; any other ALTER USER needs ALTER USER priv.
@@ -4666,19 +4677,31 @@ export class OracleExecutor extends BaseExecutor {
   // ── Profile management ──────────────────────────────────────────
 
   private executeCreateProfile(stmt: CreateProfileStatement): ResultSet {
+    this.requireSystemPrivilege('CREATE PROFILE');
     const catalog = this.catalog as OracleCatalog;
+    if (catalog.profileExists(stmt.profileName)) {
+      throw new OracleError(2379, `profile ${stmt.profileName.toUpperCase()} already exists`);
+    }
     catalog.createProfile(stmt.profileName, stmt.limits);
     return emptyResult('Profile created.');
   }
 
   private executeAlterProfile(stmt: AlterProfileStatement): ResultSet {
+    this.requireSystemPrivilege('ALTER PROFILE');
     const catalog = this.catalog as OracleCatalog;
+    if (!catalog.profileExists(stmt.profileName)) {
+      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
+    }
     catalog.alterProfile(stmt.profileName, stmt.limits);
     return emptyResult('Profile altered.');
   }
 
   private executeDropProfile(stmt: DropProfileStatement): ResultSet {
+    this.requireSystemPrivilege('DROP PROFILE');
     const catalog = this.catalog as OracleCatalog;
+    if (!catalog.profileExists(stmt.profileName)) {
+      throw new OracleError(2380, `profile ${stmt.profileName.toUpperCase()} does not exist`);
+    }
     catalog.dropProfile(stmt.profileName);
     return emptyResult('Profile dropped.');
   }
