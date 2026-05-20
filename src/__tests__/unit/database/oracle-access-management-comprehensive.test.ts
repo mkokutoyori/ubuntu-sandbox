@@ -1199,43 +1199,51 @@ describe('21. REVOKE privileges, roles, and access', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('22. DROP USER / ROLE / PROFILE — final cleanup', () => {
-  it('Drops users with CASCADE, drops roles, drops profiles', () => {
-    const cases: Case[] = [
-      { sql: 'DROP USER nograntee;',                                                                                                   want: /User dropped/i },
-      { sql: 'DROP USER expensive_user CASCADE;',                                                                                       want: /User dropped/i },
-      { sql: 'DROP USER schema_owner CASCADE;',                                                                                          want: /User dropped/i },
-      { sql: 'DROP USER analyst;',                                                                                                      want: /User dropped/i },
-      { sql: 'DROP USER reporter;',                                                                                                     want: /User dropped/i },
-      { sql: 'DROP USER batch_user CASCADE;',                                                                                            want: /User dropped/i },
-      { sql: 'DROP USER kerb_user;',                                                                                                    want: /User dropped/i },
-      { sql: 'DROP USER global_user;',                                                                                                  want: /User dropped/i },
-      { sql: 'DROP USER nonexistent_user;',                                                                                              want: /ORA-01918/i },
-      { sql: 'DROP USER ops$oracle;',                                                                                                    want: /User dropped/i },
-      { sql: 'DROP ROLE batch_role;',                                                                                                    want: /Role dropped/i },
-      { sql: 'DROP ROLE etl_role;',                                                                                                      want: /Role dropped/i },
-      { sql: 'DROP ROLE schema_admin;',                                                                                                  want: /Role dropped/i },
-      { sql: 'DROP ROLE ldap_role;',                                                                                                     want: /Role dropped/i },
-      { sql: 'DROP ROLE monitor_role;',                                                                                                   want: /Role dropped/i },
-      { sql: 'DROP ROLE backup_role;',                                                                                                     want: /Role dropped/i },
-      { sql: 'DROP ROLE security_role;',                                                                                                   want: /Role dropped/i },
-      { sql: 'DROP ROLE audit_role;',                                                                                                       want: /Role dropped/i },
-      { sql: 'DROP ROLE nonexistent_role;',                                                                                                   want: /ORA-01919/i },
-      { sql: 'DROP PROFILE dev_profile;',                                                                                                 want: /Profile dropped/i },
-      { sql: 'DROP PROFILE reporting_profile;',                                                                                              want: /Profile dropped/i },
-      { sql: 'DROP PROFILE pci_profile;',                                                                                                    want: /Profile dropped/i },
-      // Verification that they really are gone
-      { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'NOGRANTEE';",                                                            want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'KERB_USER';",                                                            want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_roles WHERE role = 'BATCH_ROLE';",                                                                want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'DEV_PROFILE';",                                                          want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_users WHERE username LIKE 'ALICE';",                                                              want: /1/ },
-      { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE action_name = 'DROP USER' AND timestamp > SYSDATE - 1;",                       want: /\d+/ },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    { sql: 'DROP USER nograntee;',                               want: /User dropped\./i },
+    { sql: 'DROP USER expensive_user CASCADE;',                  want: /User dropped\./i },
+    { sql: 'DROP USER schema_owner CASCADE;',                    want: /User dropped\./i },
+    { sql: 'DROP USER analyst;',                                 want: /User dropped\./i },
+    { sql: 'DROP USER reporter;',                                want: /User dropped\./i },
+    { sql: 'DROP USER batch_user CASCADE;',                      want: /User dropped\./i },
+    { sql: 'DROP USER kerb_user;',                               want: /User dropped\./i },
+    { sql: 'DROP USER global_user;',                             want: /User dropped\./i },
+    // Non-existent user — ORA-01918.
+    { sql: 'DROP USER nonexistent_user;',                        want: /ORA-01918/ },
+    { sql: 'DROP USER ops$oracle;',                              want: /User dropped\./i },
+    // Role drops.
+    { sql: 'DROP ROLE batch_role;',                              want: /Role dropped\./i },
+    { sql: 'DROP ROLE etl_role;',                                want: /Role dropped\./i },
+    { sql: 'DROP ROLE schema_admin;',                            want: /Role dropped\./i },
+    { sql: 'DROP ROLE ldap_role;',                               want: /Role dropped\./i },
+    { sql: 'DROP ROLE monitor_role;',                            want: /Role dropped\./i },
+    { sql: 'DROP ROLE backup_role;',                             want: /Role dropped\./i },
+    { sql: 'DROP ROLE security_role;',                           want: /Role dropped\./i },
+    { sql: 'DROP ROLE audit_role;',                              want: /Role dropped\./i },
+    // Non-existent role — ORA-01919.
+    { sql: 'DROP ROLE nonexistent_role;',                        want: /ORA-01919/ },
+    // Profile drops.
+    { sql: 'DROP PROFILE dev_profile;',                          want: /Profile dropped\./i },
+    { sql: 'DROP PROFILE reporting_profile;',                    want: /Profile dropped\./i },
+    { sql: 'DROP PROFILE pci_profile;',                          want: /Profile dropped\./i },
+    // Post-drop state.
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'NOGRANTEE';",       want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'KERB_USER';",       want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'EXPENSIVE_USER';",  want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_roles WHERE role = 'BATCH_ROLE';",          want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_roles WHERE role = 'AUDIT_ROLE';",          want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'DEV_PROFILE';",   want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'ALICE';",           want: /^\s*1\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE action_name = 'DROP USER';", want: /^\s*[1-9]\d*\s*$/m },
+  ])('§22: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 23 — Cross-cutting metadata views (32 cases)
 // ─────────────────────────────────────────────────────────────────
 
