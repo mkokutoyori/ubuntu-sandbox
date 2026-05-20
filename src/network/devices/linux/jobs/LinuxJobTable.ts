@@ -10,37 +10,40 @@
  * The table does NOT execute commands itself; it is a registry. The
  * shell decides what to actually run and when to remove entries.
  */
-export type JobState = 'Running' | 'Stopped' | 'Done';
+import { LinuxJob, type JobState, type LinuxJobInit } from './LinuxJob';
 
-export interface JobEntry {
-  id: number;
-  pid: number;
-  command: string;
-  state: JobState;
-}
+export { LinuxJob };
+export type { JobState };
+
+/**
+ * Backwards-compatible alias: external consumers used to import
+ * `JobEntry` from this module. The rich {@link LinuxJob} class now
+ * fills the role; keep the name as a structural type export.
+ */
+export type JobEntry = LinuxJob;
 
 export class LinuxJobTable {
-  private jobs = new Map<number, JobEntry>();
+  private jobs = new Map<number, LinuxJob>();
   private nextId = 1;
   private currentId: number | null = null;
   private previousId: number | null = null;
 
-  /** Register a freshly spawned background job. Returns the assigned id. */
-  add(pid: number, command: string, state: JobState = 'Running'): JobEntry {
+  /** Register a freshly spawned background job. Returns the LinuxJob. */
+  add(pid: number, command: string, state: JobState = 'Running', extra: Partial<LinuxJobInit> = {}): LinuxJob {
     const id = this.nextId++;
-    const job: JobEntry = { id, pid, command, state };
+    const job = new LinuxJob({ id, pid, command, state, ...extra });
     this.jobs.set(id, job);
     this.previousId = this.currentId;
     this.currentId = id;
     return job;
   }
 
-  get(id: number): JobEntry | undefined {
+  get(id: number): LinuxJob | undefined {
     return this.jobs.get(id);
   }
 
   /** All jobs ordered by id. */
-  list(): JobEntry[] {
+  list(): LinuxJob[] {
     return Array.from(this.jobs.values()).sort((a, b) => a.id - b.id);
   }
 
