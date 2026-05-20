@@ -371,3 +371,75 @@ Tests (`src/__tests__/unit/terminal/ssh-realism.test.ts`) :
 - la banière inclut « Welcome to Ubuntu » et le contenu de `/etc/motd`
 
 ---
+
+## Section 4 — UI / rendu : modal, taskbar, téléchargement
+
+### 4.1 Le panneau « Device Powered Off » masque toute la scrollback
+
+**Anomalie.** Quand l'utilisateur éteint la machine alors que son terminal est
+ouvert, `TerminalModal` (src/components/network/TerminalModal.tsx:117) remplace
+*tout* son contenu par une carte rouge centrée « Device Powered Off ». Conséquence :
+l'utilisateur perd le contexte de ce qu'il faisait — sa scrollback, son
+historique de commandes, son output de la dernière commande. Pire, depuis le
+correctif §1 où la session passe simplement en mode `disconnected` (read-only)
+en gardant ses lignes, ce panneau devient redondant ET destructif (il cache
+exactement l'information que §1 a préservée).
+
+**Correctif.** Supprimer la branche `if (!isPoweredOn) return …` du `TerminalModal`.
+Le mode `disconnected` ajoute déjà une ligne `[session frozen — device-off — …]`
+en bas de la scrollback (cf. TerminalView.tsx). Le titre de la modale gagne en
+contrepartie un badge rouge « OFFLINE » à droite du nom de la machine pour
+qu'il n'y ait pas d'ambiguïté visuelle.
+
+### 4.2 Nom de fichier d'enregistrement non assaini
+
+**Anomalie.** `downloadRecording` (TerminalModal.tsx:271) :
+```ts
+a.download = `terminal-recording-${recording.deviceName}-${ts}.json`;
+```
+Or `device.setName(...)` accepte n'importe quel string. Un utilisateur qui
+renomme sa machine `pc1 / .. / mots avec espaces` produit un nom de fichier
+contenant `/`, `..`, espaces, voire des caractères Unicode. Selon le browser
+cela peut casser le download ou pire, suggérer une descente de répertoire.
+
+**Correctif.** Normaliser : tout caractère non `[A-Za-z0-9._-]` devient `_`,
+double underscore est compressé, la longueur est plafonnée à 64.
+
+### 4.3 La barre de titre n'indique pas le contexte SSH
+
+**Anomalie mineure.** La title-bar du `TerminalModal` montre toujours
+`pc1 — Ubuntu Linux` même quand l'utilisateur a `ssh`-poussé dans 3 machines.
+Sur un vrai client (e.g. iTerm), la title-bar reflète l'hôte actif. La
+`SshContextBanner` (TerminalView.tsx:394) gère ça en bas de la zone terminale,
+mais le title-bar reste statique.
+
+**Correctif.** Quand `session.getSessionType() === 'linux'` et que
+`(session as LinuxTerminalSession).isInsideSshSession` est vrai, le titre
+devient `pc1 → root@db-server — Ubuntu Linux (SSH)`. Aucun fix nécessaire de
+fond — c'est uniquement une amélioration cosmétique consommant l'API existante.
+
+### 4.4 La taskbar peut accumuler des tuiles fantômes après import
+
+**Anomalie partielle (corrigée par §1).** L'effet de purge des
+`minimizedSessions` ajouté en §1 nettoie la cas import. RAS pour Section 4.
+
+### 4.5 Pas de feedback sur la fermeture du dernier terminal
+
+**Anomalie mineure.** Quand le dernier terminal est fermé, l'overlay tile
+disparaît mais le canvas behind n'a aucune animation/transition. Suffisamment
+mineur pour être laissé en TODO.
+
+### 4.6 Correctif implémenté
+
+- Suppression de la branche « Powered Off » dans `TerminalModal`.
+- Ajout d'un badge `OFFLINE` rouge dans la title-bar quand le device est éteint.
+- Ajout d'une chaîne SSH dans la title-bar quand `isInsideSshSession`.
+- Nouvelle fonction `sanitizeFilename` partagée pour les noms d'export
+  (recording, mais aussi topology export futur), placée dans
+  `src/lib/sanitizeFilename.ts`.
+
+Tests (`src/__tests__/unit/terminal/filename-sanitize.test.ts`) :
+- noms de fichiers contenant `/`, `..`, `\0`, espaces → assainis
+- noms vides ou ne contenant que des caractères invalides → repli `recording`
+
+---
