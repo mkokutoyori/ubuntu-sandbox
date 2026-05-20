@@ -2804,8 +2804,27 @@ export class OracleExecutor extends BaseExecutor {
       for (const grantee of grantees) {
         for (const priv of stmt.privileges) {
           if (catalog.roleExists(priv)) {
+            // Cycle prevention — ORA-01934. Walk the role-grant
+            // transitive closure to ensure the grantee is not already
+            // (directly or indirectly) granted the role.
+            const granteeUpper = grantee.toUpperCase();
+            const privUpper = priv.toUpperCase();
+            if (granteeUpper === privUpper) {
+              throw new OracleError(1934, 'circular role grant detected');
+            }
+            const engine = catalog.getSecurityEngine();
+            if (engine) {
+              const reachable = engine.privileges.getGrantedRoles(privUpper);
+              if (reachable.includes(granteeUpper)) {
+                throw new OracleError(1934, 'circular role grant detected');
+              }
+            }
             catalog.grantRole(grantee, priv, stmt.withAdminOption);
           } else {
+            // Self-grant of SYSDBA/SYSOPER/etc on SYS — ORA-01931.
+            if (grantee.toUpperCase() === 'SYS') {
+              throw new OracleError(1931, 'role/privilege cannot be granted to SYS');
+            }
             catalog.grantSystemPrivilege(grantee, priv, stmt.withAdminOption || stmt.withGrantOption);
           }
         }

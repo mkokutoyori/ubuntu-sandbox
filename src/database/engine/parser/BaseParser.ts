@@ -1611,11 +1611,23 @@ export abstract class BaseParser {
     const grantees = this.parseIdentifierList();
     let withGrantOption = false;
     let withAdminOption = false;
+    // Role activation password — `GRANT <role> TO <user> IDENTIFIED BY <pwd>`.
+    // The simulator accepts the clause and discards the password — it's
+    // recorded on the role itself, not on the grant relationship.
+    if (this.matchKeyword('IDENTIFIED')) {
+      this.expectKeyword('BY');
+      this.expectIdentifierOrString();
+    }
     if (this.matchKeyword('WITH')) {
       if (this.matchKeyword('GRANT')) {
         this.expectKeyword('OPTION');
         withGrantOption = true;
       } else if (this.matchKeyword('ADMIN')) {
+        this.expectKeyword('OPTION');
+        withAdminOption = true;
+      } else if (this.matchKeyword('DELEGATE')) {
+        // WITH DELEGATE OPTION — Database Vault flavour, tolerated as
+        // ADMIN OPTION equivalent.
         this.expectKeyword('OPTION');
         withAdminOption = true;
       }
