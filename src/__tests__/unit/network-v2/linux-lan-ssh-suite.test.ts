@@ -323,3 +323,65 @@ describe('§4 — SSH connection failures: address / target', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 5 — SSH refused when remote sshd service is stopped ──────
+
+describe('§5 — SSH refused when remote sshd service is stopped', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'after `systemctl stop ssh` on the target → Connection refused',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Connection refused/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'service stop on a server refuses every client',
+      setup: (l) => { void l.srv1.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc3,
+      cmd: 'ssh alice@10.0.0.10',
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'masking ssh refuses with the same error',
+      setup: (l) => { void l.pc2.executeCommand('systemctl mask ssh'); void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'after start again, the connection works',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop ssh');
+        await l.pc2.executeCommand('systemctl start ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Connection refused/],
+    },
+    {
+      name: 'one remote stopped does NOT affect another remote on the LAN',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.3',  // pc3 still up
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'sshd stopped is reflected by systemctl is-active locally',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc2,
+      cmd: 'systemctl is-active ssh',
+      contains: ['inactive'],
+      excludes: ['active'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
