@@ -595,52 +595,65 @@ describe('9. ALTER USER — every realistic alteration', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('10. Object lifecycle in HR schema', () => {
-  it('Creates, alters, drops tables / indexes / sequences / views', () => {
-    const cases: Case[] = [
-      { sql: 'CREATE TABLE hr.test_audit (id NUMBER PRIMARY KEY, created_at DATE DEFAULT SYSDATE, payload VARCHAR2(4000));',         want: /Table created/i },
-      { sql: 'CREATE TABLE hr.test_history (id NUMBER, snapshot_at TIMESTAMP, data CLOB);',                                          want: /Table created/i },
-      { sql: 'CREATE INDEX hr.idx_audit_payload ON hr.test_audit(payload);',                                                          want: /Index created/i },
-      { sql: 'CREATE UNIQUE INDEX hr.uk_audit_unique ON hr.test_audit(id, created_at);',                                              want: /Index created/i },
-      { sql: 'CREATE BITMAP INDEX hr.bm_audit ON hr.test_audit(SUBSTR(payload, 1, 1));',                                              want: /Index created/i },
-      { sql: 'CREATE SEQUENCE hr.audit_seq START WITH 1000 INCREMENT BY 1 CACHE 100;',                                                want: /Sequence created/i },
-      { sql: 'CREATE OR REPLACE VIEW hr.v_recent_audits AS SELECT * FROM hr.test_audit WHERE created_at > SYSDATE - 7;',             want: /View created/i },
-      { sql: 'CREATE OR REPLACE SYNONYM hr.recent_audits FOR hr.v_recent_audits;',                                                    want: /Synonym created/i },
-      { sql: 'CREATE PUBLIC SYNONYM audit_view FOR hr.v_recent_audits;',                                                              want: /Synonym created/i },
-      { sql: 'ALTER TABLE hr.test_audit ADD (severity NUMBER(3));',                                                                   want: /Table altered/i },
-      { sql: 'ALTER TABLE hr.test_audit MODIFY (payload VARCHAR2(8000));',                                                            want: /Table altered/i },
-      { sql: 'ALTER TABLE hr.test_audit ADD CONSTRAINT chk_severity CHECK (severity BETWEEN 0 AND 10);',                              want: /Table altered/i },
-      { sql: 'ALTER TABLE hr.test_audit RENAME COLUMN payload TO event_body;',                                                        want: /Table altered/i },
-      { sql: 'ALTER TABLE hr.test_audit ADD CONSTRAINT fk_severity_lookup FOREIGN KEY (severity) REFERENCES hr.departments(department_id);', want: /(Table altered|ORA-)/i },
-      { sql: 'ALTER INDEX hr.idx_audit_payload REBUILD ONLINE;',                                                                      want: /(Index altered|ORA-)/i },
-      { sql: 'ALTER SEQUENCE hr.audit_seq INCREMENT BY 5;',                                                                           want: /Sequence altered/i },
-      { sql: "COMMENT ON TABLE hr.test_audit IS 'Audit harness';",                                                                   want: /Comment created/i },
-      { sql: "COMMENT ON COLUMN hr.test_audit.event_body IS 'Audit payload';",                                                       want: /Comment created/i },
-      // Verification
-      { sql: "SELECT table_name FROM dba_tables WHERE owner = 'HR' AND table_name = 'TEST_AUDIT';",                                   want: /TEST_AUDIT/ },
-      { sql: "SELECT column_name FROM dba_tab_columns WHERE owner = 'HR' AND table_name = 'TEST_AUDIT' ORDER BY column_id;",          want: /ID/ },
-      { sql: "SELECT index_name, index_type FROM dba_indexes WHERE owner = 'HR' AND table_name = 'TEST_AUDIT';",                      want: /(NORMAL|BITMAP)/ },
-      { sql: "SELECT uniqueness FROM dba_indexes WHERE owner = 'HR' AND index_name = 'UK_AUDIT_UNIQUE';",                              want: /UNIQUE/ },
-      { sql: "SELECT view_name FROM dba_views WHERE owner = 'HR' AND view_name = 'V_RECENT_AUDITS';",                                  want: /V_RECENT_AUDITS/ },
-      { sql: "SELECT synonym_name FROM dba_synonyms WHERE owner = 'HR' AND synonym_name = 'RECENT_AUDITS';",                          want: /RECENT_AUDITS/ },
-      { sql: "SELECT synonym_name FROM dba_synonyms WHERE owner = 'PUBLIC' AND synonym_name = 'AUDIT_VIEW';",                         want: /AUDIT_VIEW/ },
-      { sql: "SELECT constraint_name, constraint_type FROM dba_constraints WHERE table_name = 'TEST_AUDIT';",                          want: /[CPRU]/ },
-      { sql: "SELECT comments FROM dba_tab_comments WHERE owner = 'HR' AND table_name = 'TEST_AUDIT';",                               want: /(Audit harness|ORA-)/ },
-      // Truncate / Insert
-      { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (1, 5, 'first');",                                         want: /(1 row created|ORA-)/i },
-      { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (2, 1, 'second');",                                        want: /(1 row created|ORA-)/i },
-      { sql: 'COMMIT;',                                                                                                                want: /Commit complete/i },
-      { sql: 'TRUNCATE TABLE hr.test_audit;',                                                                                          want: /Table truncated/i },
-      // FLASHBACK / Drop
-      { sql: 'DROP INDEX hr.bm_audit;',                                                                                                want: /Index dropped/i },
-      { sql: 'DROP SYNONYM hr.recent_audits;',                                                                                         want: /Synonym dropped/i },
-      { sql: 'DROP PUBLIC SYNONYM audit_view;',                                                                                        want: /Synonym dropped/i },
-      { sql: 'DROP VIEW hr.v_recent_audits;',                                                                                          want: /View dropped/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Tables
+    { sql: 'CREATE TABLE hr.test_audit (id NUMBER PRIMARY KEY, created_at DATE DEFAULT SYSDATE, payload VARCHAR2(4000));', want: /Table created\./i },
+    { sql: 'CREATE TABLE hr.test_history (id NUMBER, snapshot_at TIMESTAMP, data CLOB);',                                  want: /Table created\./i },
+    // Indexes
+    { sql: 'CREATE INDEX hr.idx_audit_payload ON hr.test_audit(payload);',                                                  want: /Index created\./i },
+    { sql: 'CREATE UNIQUE INDEX hr.uk_audit_unique ON hr.test_audit(id, created_at);',                                      want: /Index created\./i },
+    { sql: 'CREATE BITMAP INDEX hr.bm_audit ON hr.test_audit(SUBSTR(payload, 1, 1));',                                      want: /Index created\./i },
+    // Sequences
+    { sql: 'CREATE SEQUENCE hr.audit_seq START WITH 1000 INCREMENT BY 1 CACHE 100;',                                        want: /Sequence created\./i },
+    // Views / Synonyms
+    { sql: 'CREATE OR REPLACE VIEW hr.v_recent_audits AS SELECT * FROM hr.test_audit WHERE created_at > SYSDATE - 7;',     want: /View created\./i },
+    { sql: 'CREATE OR REPLACE SYNONYM hr.recent_audits FOR hr.v_recent_audits;',                                            want: /Synonym created\./i },
+    { sql: 'CREATE PUBLIC SYNONYM audit_view FOR hr.v_recent_audits;',                                                      want: /Synonym created\./i },
+    // ALTER TABLE
+    { sql: 'ALTER TABLE hr.test_audit ADD (severity NUMBER(3));',                                                           want: /Table altered\./i },
+    { sql: 'ALTER TABLE hr.test_audit MODIFY (payload VARCHAR2(8000));',                                                    want: /Table altered\./i },
+    { sql: 'ALTER TABLE hr.test_audit ADD CONSTRAINT chk_severity CHECK (severity BETWEEN 0 AND 10);',                      want: /Table altered\./i },
+    { sql: 'ALTER TABLE hr.test_audit RENAME COLUMN payload TO event_body;',                                                want: /Table altered\./i },
+    // FK to a real table.
+    { sql: 'ALTER TABLE hr.test_audit ADD CONSTRAINT fk_severity_lookup FOREIGN KEY (severity) REFERENCES hr.departments(department_id);', want: /Table altered\./i },
+    { sql: 'ALTER INDEX hr.idx_audit_payload REBUILD ONLINE;',                                                              want: /Index altered\./i },
+    { sql: 'ALTER SEQUENCE hr.audit_seq INCREMENT BY 5;',                                                                   want: /Sequence altered\./i },
+    { sql: "COMMENT ON TABLE hr.test_audit IS 'Audit harness';",                                                            want: /Comment created\./i },
+    { sql: "COMMENT ON COLUMN hr.test_audit.event_body IS 'Audit payload';",                                                want: /Comment created\./i },
+    // Verification rows.
+    { sql: "SELECT table_name FROM dba_tables WHERE owner = 'HR' AND table_name = 'TEST_AUDIT';",                            want: /^\s*TEST_AUDIT\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_columns WHERE owner = 'HR' AND table_name = 'TEST_AUDIT' AND column_name IN ('ID','CREATED_AT','EVENT_BODY','SEVERITY');", want: /^\s*4\s*$/m },
+    { sql: "SELECT index_type FROM dba_indexes WHERE owner = 'HR' AND index_name = 'BM_AUDIT';",                              want: /\bBITMAP\b/ },
+    { sql: "SELECT uniqueness FROM dba_indexes WHERE owner = 'HR' AND index_name = 'UK_AUDIT_UNIQUE';",                       want: /\bUNIQUE\b/ },
+    { sql: "SELECT view_name FROM dba_views WHERE owner = 'HR' AND view_name = 'V_RECENT_AUDITS';",                           want: /^\s*V_RECENT_AUDITS\s*$/m },
+    { sql: "SELECT synonym_name FROM dba_synonyms WHERE owner = 'HR' AND synonym_name = 'RECENT_AUDITS';",                    want: /^\s*RECENT_AUDITS\s*$/m },
+    { sql: "SELECT synonym_name FROM dba_synonyms WHERE owner = 'PUBLIC' AND synonym_name = 'AUDIT_VIEW';",                   want: /^\s*AUDIT_VIEW\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_constraints WHERE table_name = 'TEST_AUDIT' AND constraint_type IN ('P','C','R');",      want: /^\s*[3-9]\s*$/m },
+    { sql: "SELECT comments FROM dba_tab_comments WHERE owner = 'HR' AND table_name = 'TEST_AUDIT';",                         want: /Audit harness/ },
+    // DML round-trip.
+    { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (1, 5, 'first');",                                   want: /1 row created\./i },
+    { sql: "INSERT INTO hr.test_audit (id, severity, event_body) VALUES (2, 1, 'second');",                                  want: /1 row created\./i },
+    { sql: 'COMMIT;',                                                                                                          want: /Commit complete\./i },
+    { sql: 'SELECT COUNT(*) FROM hr.test_audit;',                                                                              want: /^\s*2\s*$/m },
+    { sql: 'TRUNCATE TABLE hr.test_audit;',                                                                                    want: /Table truncated\./i },
+    { sql: 'SELECT COUNT(*) FROM hr.test_audit;',                                                                              want: /^\s*0\s*$/m },
+    // Drops.
+    { sql: 'DROP INDEX hr.bm_audit;',                                                                                          want: /Index dropped\./i },
+    { sql: 'DROP SYNONYM hr.recent_audits;',                                                                                   want: /Synonym dropped\./i },
+    { sql: 'DROP PUBLIC SYNONYM audit_view;',                                                                                  want: /Synonym dropped\./i },
+    { sql: 'DROP VIEW hr.v_recent_audits;',                                                                                    want: /View dropped\./i },
+    // After-drop assertions.
+    { sql: "SELECT COUNT(*) FROM dba_indexes WHERE owner = 'HR' AND index_name = 'BM_AUDIT';",                                  want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_views WHERE owner = 'HR' AND view_name = 'V_RECENT_AUDITS';",                              want: /^\s*0\s*$/m },
+  ])('§10: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 11 — Connection attempts with new users (24 cases)
 // ─────────────────────────────────────────────────────────────────
 
