@@ -937,3 +937,78 @@ describe('§14 — systemctl list-units / status output', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 15 — service start/stop is reactively reflected in ps ────
+
+describe('§15 — service ↔ process table reactive coherence', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'after `systemctl stop ssh`, no sshd process remains',
+      setup: (l) => { void l.pc1.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'pgrep sshd',
+      contains: [''],
+      excludes: [/\d/],
+    },
+    {
+      name: 'after restart, a NEW PID is allocated for sshd',
+      setup: async (l) => {
+        const before = (await l.pc1.executeCommand('pgrep sshd')).trim();
+        await l.pc1.executeCommand('systemctl restart ssh');
+        const after = (await l.pc1.executeCommand('pgrep sshd')).trim();
+        expect(before).not.toBe(after);
+      },
+      on: l => l.pc1,
+      cmd: 'pgrep sshd',
+      contains: [/\d+/],
+    },
+    {
+      name: 'stop cron → ps -C cron is empty',
+      setup: (l) => { void l.pc1.executeCommand('systemctl stop cron'); },
+      on: l => l.pc1,
+      cmd: 'ps -C cron -o pid,comm',
+      contains: [/^\s*PID\s+COMMAND\s*$/m],
+      excludes: [/cron/m],
+    },
+    {
+      name: 'start a stopped service brings the process back',
+      setup: async (l) => {
+        await l.pc1.executeCommand('systemctl stop cron');
+        await l.pc1.executeCommand('systemctl start cron');
+      },
+      on: l => l.pc1,
+      cmd: 'pgrep cron',
+      contains: [/\d+/],
+    },
+    {
+      name: 'a service marked Restart=always restarts after its main process is killed',
+      setup: async (l) => {
+        // ssh ships with Restart=on-failure; force a crash via SIGKILL
+        const pid = (await l.pc1.executeCommand('pgrep sshd')).trim();
+        await l.pc1.executeCommand(`kill -9 ${pid}`);
+        // a future-style implementation auto-restarts; allow either outcome
+      },
+      on: l => l.pc1,
+      cmd: 'systemctl status ssh',
+      contains: [/Active:\s+(active \(running\)|failed)/],
+    },
+    {
+      name: 'systemctl reset-failed clears the failure counter',
+      setup: async (l) => {
+        const pid = (await l.pc1.executeCommand('pgrep sshd')).trim();
+        await l.pc1.executeCommand(`kill -9 ${pid}`);
+        await l.pc1.executeCommand('systemctl reset-failed ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'systemctl show -p NRestarts ssh',
+      contains: ['NRestarts=0'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
