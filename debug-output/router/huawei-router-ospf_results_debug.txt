@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-05-18T04:43:35.000Z
+Generated: 2026-05-20T07:08:46.015Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -701,7 +701,54 @@ Total steps: 247
   LoopBack4                         10.10.4.1/255.255.255.0down       down
 
 [148/247] r1 <R1> display interface
-  Error: Incomplete command.
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.0.0.1/255.255.255.252
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/2 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/3 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack1 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.10.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack2 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.10.2.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack3 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.10.3.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  LoopBack4 current state : UP
+  Line protocol current state : UP
+  Internet Address is 10.10.4.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [149/247] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -904,8 +951,8 @@ Total steps: 247
    clock offset: 0.0000 ms
 
 [178/247] r1 <R1> display clock
-  2026-05-18 04:43:35
-  Monday
+  2026-05-20 07:08:46
+  Wednesday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -921,13 +968,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-18 04:43:35
+  CPU Usage Stat. Time : 2026-05-20 07:08:46
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-05-18 04:43:35
+  Memory utilization statistics at 2026-05-20 07:08:46
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -959,7 +1006,7 @@ Total steps: 247
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-18 04:43:35 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-20 07:08:46 %01SRM/4/PORT_STATE: Port state changed.
 
 [187/247] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1001,7 +1048,16 @@ Total steps: 247
    Trial Days Left: 60
 
 [193/247] r1 <R1> display interface brief
-  Error: Wrong parameter found at '^' position.
+  PHY: Physical   *down: administratively down
+  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
+  GE0/0/0                     up      up        0%    0%       0          0
+  GE0/0/1                     up      up        0%    0%       0          0
+  GE0/0/2                     down    down      0%    0%       0          0
+  GE0/0/3                     down    down      0%    0%       0          0
+  LoopBack1                   down    down      0%    0%       0          0
+  LoopBack2                   down    down      0%    0%       0          0
+  LoopBack3                   down    down      0%    0%       0          0
+  LoopBack4                   down    down      0%    0%       0          0
 
 [194/247] r1 <R1> display ip interface GigabitEthernet0/0/0
   % Invalid input detected at '^' marker.

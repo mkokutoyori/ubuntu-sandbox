@@ -1112,6 +1112,11 @@ export class WindowsPC extends EndHost {
 
   /** nslookup command implementation for Windows */
   private cmdNslookup(args: string[]): string {
+    if (this.svcMgr.getService('Dnscache')?.state !== 'Running') {
+      const host = args.find(a => !a.startsWith('-')) ?? '';
+      return `*** Can't find ${host}: No DNS servers available\n` +
+             `The DNS Client (Dnscache) service is not running.`;
+    }
     // Get DNS server from any configured interface
     let resolverIP = '';
     for (const [ifName] of this.ports) {

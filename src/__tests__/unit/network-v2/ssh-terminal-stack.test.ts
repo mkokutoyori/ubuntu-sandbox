@@ -140,10 +140,17 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     lan = await buildLan();
   });
 
-  it('returns "Connection refused" for `ssh user@host` directly through the bash interpreter', async () => {
-    const out = await lan.pc1.executeCommand(`ssh user@${PC2_IP} hostname`);
-    // The bash stub treats the whole token as the host, so the message
-    // mentions `user@10.0.0.2`. The important bit is "Connection refused".
+  it('connects via `ssh user@host` when remote sshd is active (Phase D-2)', async () => {
+    // Both pc1 and pc2 ship sshd Running by default, so the cross-device
+    // ssh actually completes through the reactive gate. Use the non-root
+    // user so PermitRootLogin no does not interfere.
+    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`);
+    expect(out).toContain('Welcome to Ubuntu');
+  });
+
+  it('refuses when the remote sshd service has been stopped', async () => {
+    lan.pc2.executeCommand('systemctl stop ssh');
+    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`);
     expect(out).toMatch(/Connection refused/);
   });
 

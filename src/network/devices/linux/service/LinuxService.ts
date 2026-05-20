@@ -1,16 +1,17 @@
 /**
- * LinuxService — the systemd **unit** entity.
+ * LinuxService — Linux-flavoured {@link OSService}.
  *
- * Reactive-refonte counterpart of {@link LinuxProcess}: a real object
- * that owns its declarative spec + runtime state and answers questions
- * about itself. State transitions and event emission remain in
- * {@link LinuxServiceManager} (the aggregate root) so the unit never
- * emits on its own.
+ * Adds systemd-specific behaviour on top of the cross-OS base:
+ *   - `props` is mandatory-shaped (no undefined access)
+ *   - `wantsAutoRestart` honours the Linux subset of restart policies
+ *   - DEFAULT_SHOW_KEYS for `systemctl show <unit>` formatting
+ *   - structurally compatible with the legacy ServiceUnit interface
  *
- * Structurally implements {@link ServiceUnit}; prototype methods are
- * non-enumerable so existing consumers/tests are unaffected.
+ * State transitions stay in {@link LinuxServiceManager} (aggregate
+ * root + event publisher).
  */
 
+import { OSService } from '../../os/OSService';
 import type {
   ServiceUnit, ServiceType, ServiceState, EnabledState, RestartPolicy,
 } from '../LinuxServiceManager';
@@ -19,93 +20,39 @@ const AUTO_RESTART: ReadonlySet<RestartPolicy> = new Set<RestartPolicy>([
   'always', 'on-failure', 'on-abnormal',
 ]);
 
-export class LinuxService implements ServiceUnit {
-  name!: string;
-  description!: string;
-  type!: ServiceType;
-  execStart!: string;
-  execStop?: string;
-  execReload?: string;
-  user!: string;
-  group!: string;
-  wantedBy!: string[];
-  after!: string[];
-  requires!: string[];
-  restart!: RestartPolicy;
-  loadedFrom!: string;
-  state!: ServiceState;
-  enabled!: EnabledState;
-  mainPid?: number;
-  activeSince?: Date;
-  props?: Record<string, string>;
+export class LinuxService extends OSService implements ServiceUnit {
+  // Re-declare with the Linux-specific narrowed types from the legacy
+  // ServiceUnit interface, so existing consumers stay type-safe.
+  declare type: ServiceType;
+  declare state: ServiceState;
+  declare enabled: EnabledState;
+  declare restart: RestartPolicy;
 
   constructor(init: ServiceUnit) {
-    Object.assign(this, init);
+    super({
+      name: init.name,
+      description: init.description,
+      type: init.type as ServiceType,
+      execStart: init.execStart,
+      execStop: init.execStop,
+      execReload: init.execReload,
+      user: init.user,
+      group: init.group,
+      wantedBy: init.wantedBy,
+      after: init.after,
+      requires: init.requires,
+      restart: init.restart as RestartPolicy,
+      loadedFrom: init.loadedFrom,
+      state: init.state as ServiceState,
+      enabled: init.enabled as EnabledState,
+      props: init.props,
+    });
+    if (init.mainPid !== undefined) this.mainPid = init.mainPid;
+    if (init.activeSince !== undefined) this.activeSince = init.activeSince;
   }
 
-  isActive(): boolean {
-    return this.state === 'active';
-  }
-
-  isEnabled(): boolean {
-    return this.enabled === 'enabled';
-  }
-
-  isMasked(): boolean {
-    return this.enabled === 'masked';
-  }
-
-  /** Whether the supervisor should resurrect this unit after a crash. */
-  wantsAutoRestart(): boolean {
-    return AUTO_RESTART.has(this.restart);
-  }
-
-  /** systemd `Loaded:` parenthetical, e.g. "enabled; preset: enabled". */
-  loadStateLabel(): string {
-    return `${this.enabled}; preset: enabled`;
-  }
-
-  private subState(): string {
-    if (this.state === 'active') return this.type === 'oneshot' ? 'exited' : 'running';
-    if (this.state === 'failed') return 'failed';
-    return 'dead';
-  }
-
-  private loadState(): string {
-    return this.enabled === 'masked' ? 'masked' : 'loaded';
-  }
-
-  /** Resolve a `systemctl show -p KEY` value (override wins over derived). */
-  effectiveProp(key: string): string {
-    const override = this.props?.[key];
-    if (override !== undefined) return override;
-    switch (key) {
-      case 'Id': return `${this.name}.service`;
-      case 'Names': return `${this.name}.service`;
-      case 'Description': return this.description;
-      case 'MainPID': return String(this.mainPid ?? 0);
-      case 'ActiveState': return this.state;
-      case 'SubState': return this.subState();
-      case 'LoadState': return this.loadState();
-      case 'UnitFileState': return this.enabled;
-      case 'Type': return this.type;
-      case 'User': return this.user;
-      case 'ExecStart': return this.execStart;
-      case 'Restart': return this.restart;
-      case 'FragmentPath': return this.loadedFrom;
-      case 'WantedBy': return this.wantedBy.join(' ');
-      case 'After': return this.after.join(' ');
-      case 'CPUQuota': return this.props?.CPUQuota ?? '';
-      case 'MemoryMax': return this.props?.MemoryMax ?? 'infinity';
-      case 'TasksMax': return this.props?.TasksMax ?? '4915';
-      default: return this.props?.[key] ?? '';
-    }
-  }
-
-  /** Persist a runtime resource-control override (systemctl set-property). */
-  setProperty(key: string, value: string): void {
-    (this.props ??= {})[key] = value;
-  }
+  /** Linux supervisor only resurrects these three restart policies. */
+  wantsAutoRestart(): boolean { return AUTO_RESTART.has(this.restart); }
 
   /** A reasonable default property set for `systemctl show <unit>`. */
   static readonly DEFAULT_SHOW_KEYS = [
@@ -114,8 +61,16 @@ export class LinuxService implements ServiceUnit {
     'FragmentPath',
   ];
 
-  /** Plain serialisable copy (telemetry / UI projections). */
+  /**
+   * Persist a runtime resource-control override (systemctl set-property).
+   * Mirrors well-known keys into typed fields via the base implementation.
+   */
+  override setProperty(key: string, value: string): void {
+    super.setProperty(key, value);
+  }
+
+  /** Plain ServiceUnit-shaped snapshot for telemetry / UI projections. */
   snapshot(): ServiceUnit {
-    return { ...this };
+    return { ...this } as unknown as ServiceUnit;
   }
 }

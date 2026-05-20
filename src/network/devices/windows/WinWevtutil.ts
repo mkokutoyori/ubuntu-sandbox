@@ -7,6 +7,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
+import { requireWindowsService } from './WinFeatureGate';
 
 const WEVTUTIL_HELP = `Windows Events Command Line Utility.
 
@@ -48,6 +49,10 @@ export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
   if (args.includes('/?') || args.includes('/help') || args.length === 0) {
     return WEVTUTIL_HELP;
   }
+
+  // Any query / mutation requires the Windows Event Log service.
+  const gate = requireWindowsService(ctx, 'EventLog');
+  if (!gate.ok) return gate.error;
 
   const joined = args.join(' ');
 

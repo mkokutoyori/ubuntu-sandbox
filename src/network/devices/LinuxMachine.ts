@@ -157,6 +157,39 @@ export abstract class LinuxMachine extends EndHost {
     }
   }
 
+  // ─── Reactive surface for cross-device commands (ssh, scp, sftp) ─────
+
+  /** Whether the named systemd unit is currently active on this machine. */
+  isServiceActive(name: string): boolean {
+    return this.executor.serviceMgr.isActive(name);
+  }
+
+  /**
+   * Login policy check. Mirrors sshd's PermitRootLogin gate; future
+   * AllowUsers / DenyUsers / MaxAuthTries enforcement plugs in here.
+   */
+  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+    const cfg = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const permitRoot = !/^\s*PermitRootLogin\s+no\b/im.test(cfg);
+    if (user === 'root' && !permitRoot) {
+      return { ok: false, reason: 'PermitRootLogin no' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Append a syslog-style line to /var/log/auth.log on this machine.
+   * Used by inbound SSH (this device) to log a login from a remote.
+   */
+  recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void {
+    const vfs = this.executor.vfs;
+    const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+    const verdict = accepted ? 'Accepted password' : 'Failed password';
+    const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
+    const existing = vfs.readFile('/var/log/auth.log') ?? '';
+    vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+  }
+
   // ─── Hostname sync ───────────────────────────────────────────────────
 
   private syncHostnameFiles(hostname: string): void {
