@@ -97,6 +97,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional } = splitSshArgs(opts.args);
   const target = positional[0];
   const port = clientPort(opts.args);
+
+  // Local network plumbing must be up to even attempt a TCP handshake.
+  if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
+    return {
+      output: `ssh: connect to host ${target ?? ''} port ${port}: Network is unreachable\n`,
+      exitCode: 255,
+    };
+  }
   if (!target) {
     return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
   }
@@ -111,7 +119,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const remoteUser = parsed[1] ?? opts.sourceUser ?? 'root';
   const host = parsed[2];
 
-  const found = findHostByAddress(host);
+  const found = findHostByAddress(host, opts.localVfs);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,

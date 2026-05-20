@@ -27,7 +27,10 @@ export interface RemoteHost {
  *   field if exposed, then against the equipment's name as a fallback
  *   so authors can write `ssh server` in tests.
  */
-export function findHostByAddress(addressOrName: string): RemoteHost | null {
+export function findHostByAddress(
+  addressOrName: string,
+  resolverVfs?: { readFile: (p: string) => string | null },
+): RemoteHost | null {
   const registry = EquipmentRegistry.getInstance();
   const target = addressOrName.trim();
   if (!target) return null;
@@ -50,14 +53,39 @@ export function findHostByAddress(addressOrName: string): RemoteHost | null {
     return off;
   }
 
-  // Name form — match the device's hostname-like fields.
+  // Name form — match the device's hostname-like fields. Tries
+  //   1. /etc/hosts on the calling machine (if `resolverVfs` provided)
+  //   2. exact hostname / device name match
+  //   3. short-name component when the input is FQDN-like (foo.bar.lan)
   const needle = target.toLowerCase();
+  const shortNeedle = needle.split('.')[0];
+
+  // /etc/hosts of the caller — checked first to match real resolver order.
+  if (resolverVfs) {
+    const hosts = resolverVfs.readFile('/etc/hosts') ?? '';
+    for (const line of hosts.split('\n')) {
+      const trimmed = line.replace(/#.*/, '').trim();
+      if (!trimmed) continue;
+      const tokens = trimmed.split(/\s+/);
+      const [ip, ...names] = tokens;
+      if (names.some(n => n.toLowerCase() === needle || n.toLowerCase() === shortNeedle)) {
+        const dev = registry.getAll().find(d =>
+          d.getIsPoweredOn() && d.getPorts().some(p => p.getIPAddress()?.toString() === ip),
+        );
+        if (dev) return { device: dev, ip, resolvedFrom: target };
+      }
+    }
+  }
+
   for (const dev of registry.getAll()) {
     if (!dev.getIsPoweredOn()) continue;
     const candidate = (dev as Equipment & { profile?: { hostname?: string } });
     const hostname = candidate.profile?.hostname?.toLowerCase();
     const name = dev.getName().toLowerCase();
-    if (hostname === needle || name === needle) {
+    if (
+      hostname === needle || hostname === shortNeedle ||
+      name === needle || name === shortNeedle
+    ) {
       const ip = dev.getPorts()
         .map(p => p.getIPAddress())
         .find(a => a !== null);
