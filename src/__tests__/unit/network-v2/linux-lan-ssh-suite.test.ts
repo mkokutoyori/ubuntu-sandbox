@@ -1317,3 +1317,63 @@ describe('§20 — firewall rules blocking port 22', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 21 — background ssh & job control ───────────────────────
+
+describe('§21 — background ssh and job control', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: '`ssh ... &` registers a background job, announces [N] PID',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 sleep 60 &',
+      contains: [/^\[1\] \d+/m],
+    },
+    {
+      name: 'jobs lists the background ssh',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &'); },
+      on: l => l.pc1,
+      cmd: 'jobs',
+      contains: [/\[1\][-+ ]+Running\s+ssh alice@10\.0\.0\.2/],
+    },
+    {
+      name: 'kill %1 terminates the background ssh',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &');
+        await l.pc1.executeCommand('kill %1');
+      },
+      on: l => l.pc1,
+      cmd: 'jobs',
+      excludes: [/\[1\]/],
+    },
+    {
+      name: 'nohup ssh disowns from the parent shell',
+      on: l => l.pc1,
+      cmd: 'nohup ssh alice@10.0.0.2 sleep 60 &',
+      contains: [/nohup: ignoring input/, /\[1\] \d+/],
+    },
+    {
+      name: 'concurrent ssh sessions both appear in jobs',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &');
+        await l.pc1.executeCommand('ssh bob@10.0.0.10 sleep 60 &');
+      },
+      on: l => l.pc1,
+      cmd: 'jobs',
+      contains: [/\[1\]/, /\[2\]/],
+    },
+    {
+      name: 'wait %1 returns when the background ssh finishes',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 true &'); },
+      on: l => l.pc1,
+      cmd: 'wait %1',
+      excludes: [/no such job/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
