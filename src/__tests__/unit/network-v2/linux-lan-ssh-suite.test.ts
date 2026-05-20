@@ -561,3 +561,61 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 9 — AllowUsers / DenyUsers in sshd_config ────────────────
+
+describe('§9 — AllowUsers / DenyUsers gating', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'AllowUsers alice → alice succeeds',
+      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'AllowUsers alice → bob is rejected',
+      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: 'ssh bob@10.0.0.2',
+      contains: [/Permission denied/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'AllowUsers with glob "a*" lets alice and admin in',
+      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers a*\\n" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: 'ssh admin@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'DenyUsers bob → bob refused even when AllowUsers absent',
+      setup: (l) => { void l.pc2.executeCommand('printf "DenyUsers bob\\n" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: 'ssh bob@10.0.0.2',
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'DenyUsers takes precedence over AllowUsers',
+      setup: (l) => {
+        void l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n" > /etc/ssh/sshd_config');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh bob@10.0.0.2',
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'no AllowUsers / no DenyUsers → any non-root user is fine',
+      on: l => l.pc1,
+      cmd: 'ssh charlie@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
