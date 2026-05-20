@@ -990,30 +990,41 @@ describe('16. Audit trail inspection', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('17. Transparent Data Encryption', () => {
-  it('Configures the wallet, master keys, and encrypts columns/tablespaces', () => {
-    const cases: Case[] = [
-      { sql: "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '/opt/oracle/wallet' IDENTIFIED BY \"WalletP@ss1\";",                          want: /(succeeded|ORA-)/i },
-      { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";",                                            want: /(succeeded|ORA-)/i },
-      { sql: "ADMINISTER KEY MANAGEMENT SET KEY USING TAG 'master-2026' IDENTIFIED BY \"WalletP@ss1\" WITH BACKUP;",                  want: /(succeeded|ORA-)/i },
-      { sql: "ADMINISTER KEY MANAGEMENT CREATE AUTO_LOGIN KEYSTORE FROM KEYSTORE '/opt/oracle/wallet' IDENTIFIED BY \"WalletP@ss1\";", want: /(succeeded|ORA-)/i },
-      { sql: 'SELECT * FROM v$encryption_wallet;',                                                                                    want: { not: /ORA-00942/ } },
-      { sql: 'SELECT key_id, tag, creator FROM v$encryption_keys;',                                                                   want: { not: /ORA-00942/ } },
-      { sql: "ALTER TABLE hr.employees MODIFY (salary ENCRYPT USING 'AES256');",                                                     want: /(Table altered|ORA-)/i },
-      { sql: "ALTER TABLE hr.employees MODIFY (commission_pct ENCRYPT USING 'AES192' NO SALT);",                                     want: /(Table altered|ORA-)/i },
-      { sql: 'ALTER TABLE hr.employees MODIFY (phone_number DECRYPT);',                                                                want: /(Table altered|ORA-)/i },
-      { sql: "SELECT owner, table_name, column_name, encryption_alg FROM dba_encrypted_columns;",                                     want: { not: /ORA-00942/ } },
-      { sql: 'ALTER TABLESPACE users ENCRYPTION ONLINE ENCRYPT;',                                                                     want: /(Tablespace altered|ORA-)/i },
-      { sql: 'SELECT * FROM v$encrypted_tablespaces;',                                                                                want: { not: /ORA-00942/ } },
-      { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE IDENTIFIED BY \"WalletP@ss1\";",                                           want: /(succeeded|ORA-)/i },
-      { sql: 'SELECT status FROM v$encryption_wallet;',                                                                                want: { not: /ORA-00942/ } },
-      { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";",                                            want: /(succeeded|ORA-)/i },
-      { sql: "ADMINISTER KEY MANAGEMENT BACKUP KEYSTORE USING 'rotation-backup' IDENTIFIED BY \"WalletP@ss1\" TO '/opt/oracle/wallet_bk';", want: /(succeeded|ORA-)/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Each ADMINISTER KEY MANAGEMENT verb must report "succeeded".
+    { sql: "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '/opt/oracle/wallet' IDENTIFIED BY \"WalletP@ss1\";",                            want: /\bsucceeded\b/i },
+    { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";",                                              want: /\bsucceeded\b/i },
+    { sql: "ADMINISTER KEY MANAGEMENT SET KEY USING TAG 'master-2026' IDENTIFIED BY \"WalletP@ss1\" WITH BACKUP;",                    want: /\bsucceeded\b/i },
+    { sql: "ADMINISTER KEY MANAGEMENT CREATE AUTO_LOGIN KEYSTORE FROM KEYSTORE '/opt/oracle/wallet' IDENTIFIED BY \"WalletP@ss1\";",  want: /\bsucceeded\b/i },
+    // V$ encryption views must report at least one row reflecting the wallet.
+    { sql: 'SELECT status FROM v$encryption_wallet;',                                                                                    want: /\b(OPEN|CLOSED|OPEN_NO_MASTER_KEY)\b/ },
+    { sql: 'SELECT COUNT(*) FROM v$encryption_keys;',                                                                                    want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'SELECT tag FROM v$encryption_keys WHERE tag = \'master-2026\';',                                                            want: /master-2026/ },
+    // Column-level ENCRYPT / DECRYPT.
+    { sql: "ALTER TABLE hr.employees MODIFY (salary ENCRYPT USING 'AES256');",                                                          want: /Table altered\./i },
+    { sql: "ALTER TABLE hr.employees MODIFY (commission_pct ENCRYPT USING 'AES192' NO SALT);",                                          want: /Table altered\./i },
+    { sql: 'ALTER TABLE hr.employees MODIFY (commission_pct DECRYPT);',                                                                  want: /Table altered\./i },
+    { sql: "SELECT column_name FROM dba_encrypted_columns WHERE owner = 'HR' AND table_name = 'EMPLOYEES' AND column_name = 'SALARY';", want: /^\s*SALARY\s*$/m },
+    { sql: "SELECT encryption_alg FROM dba_encrypted_columns WHERE owner = 'HR' AND table_name = 'EMPLOYEES' AND column_name = 'SALARY';", want: /\bAES256\b/ },
+    { sql: "SELECT COUNT(*) FROM dba_encrypted_columns WHERE owner = 'HR' AND table_name = 'EMPLOYEES' AND column_name = 'COMMISSION_PCT';", want: /^\s*0\s*$/m },
+    // Tablespace encryption surface.
+    { sql: 'ALTER TABLESPACE users ENCRYPTION ONLINE ENCRYPT;',                                                                          want: /Tablespace altered\./i },
+    { sql: "SELECT encryptionalg FROM v\$encrypted_tablespaces WHERE TS# IS NOT NULL FETCH FIRST 1 ROW ONLY;",                          want: /\b(AES128|AES192|AES256)\b/ },
+    // Wallet close / open cycle.
+    { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE IDENTIFIED BY \"WalletP@ss1\";",                                             want: /\bsucceeded\b/i },
+    { sql: 'SELECT status FROM v$encryption_wallet;',                                                                                    want: /\bCLOSED\b/ },
+    { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";",                                              want: /\bsucceeded\b/i },
+    { sql: 'SELECT status FROM v$encryption_wallet;',                                                                                    want: /\bOPEN\b/ },
+    { sql: "ADMINISTER KEY MANAGEMENT BACKUP KEYSTORE USING 'rotation-backup' IDENTIFIED BY \"WalletP@ss1\" TO '/opt/oracle/wallet_bk';", want: /\bsucceeded\b/i },
+  ])('§17: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 18 — Database Vault (18 cases)
 // ─────────────────────────────────────────────────────────────────
 
