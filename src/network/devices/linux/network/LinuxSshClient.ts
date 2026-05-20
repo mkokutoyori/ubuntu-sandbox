@@ -17,6 +17,7 @@
  */
 
 import { findHostByAddress } from './HostLookup';
+import { SshKnownHostEntry, type SshHostKeyType } from './SshKnownHostEntry';
 import type { LinuxMachine } from '../../LinuxMachine';
 
 export interface SshClientResult {
@@ -33,6 +34,10 @@ export interface SshClientOpts {
   sourceIp: string;
   /** Local user invoking ssh (defaults to "root"). */
   sourceUser: string;
+  /** Local VFS — needed to read/write ~/.ssh/known_hosts. */
+  localVfs?: { readFile: (p: string) => string | null; writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void };
+  /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
+  sourceHome?: string;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
@@ -114,6 +119,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, true);
 
+  // Update the local ~/.ssh/known_hosts with the remote's host key (or
+  // emit the OpenSSH-style identification-changed warning when the key
+  // already present differs from the remote's).
+  const keyChanged = updateKnownHosts(opts, machine, found.ip);
+  if (keyChanged) {
+    return {
+      output:
+        '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
+        '@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n' +
+        '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
+        'IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n' +
+        `Add correct host key in /root/.ssh/known_hosts to get rid of this message.\n` +
+        `Offending key in /root/.ssh/known_hosts:1\n`,
+      exitCode: 255,
+    };
+  }
+
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
   // This is OpenSSH's "exec mode" — no banner, no Last login.
@@ -159,6 +181,37 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
  * Switch the remote machine's "current user" context for the duration of
  * an exec-mode command, then restore it. Returns the restorer.
  */
+/**
+ * Read the remote's host public key, find/append the matching entry in
+ * the local ~/.ssh/known_hosts. Returns true when an existing entry's
+ * key differs from the remote's current key (host-key changed).
+ */
+function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string): boolean {
+  if (!opts.localVfs) return false;
+  const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
+  // Read the remote's ed25519 public key (the algorithm we seed everywhere).
+  const pubKeyRaw = remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
+  const tokens = pubKeyRaw.trim().split(/\s+/);
+  if (tokens.length < 2) return false;
+  const keyType = tokens[0] as SshHostKeyType;
+  const publicKey = tokens[1];
+
+  const home = opts.sourceHome ?? '/root';
+  const knownHostsPath = `${home}/.ssh/known_hosts`;
+  const existing = opts.localVfs.readFile(knownHostsPath) ?? '';
+  const entries = SshKnownHostEntry.parseFile(existing);
+  const found = entries.find(e => e.matches(ip));
+
+  if (found && found.keyType === keyType && found.publicKey !== publicKey) {
+    return true; // host key changed → caller emits the big warning
+  }
+  if (!found) {
+    entries.push(new SshKnownHostEntry({ hostnames: [ip], keyType, publicKey }));
+    opts.localVfs.writeFile(knownHostsPath, SshKnownHostEntry.serializeFile(entries), 0, 0, 0o022);
+  }
+  return false;
+}
+
 function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | null {
   const exec = (machine as LinuxMachine & {
     executor: {
