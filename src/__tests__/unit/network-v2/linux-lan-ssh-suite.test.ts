@@ -8,11 +8,11 @@
  *
  * Topology (built fresh per test):
  *
- *     pc1 ─┐                            ┌─ srv1 (oracle)
- *     pc2 ─┼─ hub ─┬─────────────────── ┤
- *     pc3 ─┤       │                    └─ srv2 (file/web server)
- *          │       │
- *     pc4 ─┘       (10.0.0.0/24)
+ *     pc1 ─┐                              ┌─ srv1 (oracle)
+ *     pc2 ─┼─ switch ─┬─────────────────── ┤
+ *     pc3 ─┤          │                    └─ srv2 (file/web server)
+ *          │          │
+ *     pc4 ─┘          (10.0.0.0/24)
  *
  * Conventions:
  *   - pc1=10.0.0.1 pc2=10.0.0.2 pc3=10.0.0.3 pc4=10.0.0.4
@@ -27,7 +27,7 @@
 import { describe, expect, beforeEach, test } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
-import { Hub } from '@/network/devices/Hub';
+import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -37,7 +37,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 export interface Lan {
   pc1: LinuxPC; pc2: LinuxPC; pc3: LinuxPC; pc4: LinuxPC;
   srv1: LinuxServer; srv2: LinuxServer;
-  hub: Hub;
+  sw: GenericSwitch;
   ipOf: Record<string, string>;
 }
 
@@ -49,9 +49,9 @@ function buildLan(): Lan {
   const pc4 = new LinuxPC('linux-pc', 'pc4', 0, 0);
   const srv1 = new LinuxServer('linux-server', 'srv1', 0, 0);
   const srv2 = new LinuxServer('linux-server', 'srv2', 0, 0);
-  const hub = new Hub('hub', 'core', 0, 0);
+  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
   const all: (LinuxPC | LinuxServer)[] = [pc1, pc2, pc3, pc4, srv1, srv2];
-  all.forEach((d, i) => { new Cable(d.getPorts()[0], hub.getPorts()[i]); });
+  all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
 
   const mask = new SubnetMask('255.255.255.0');
   pc1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
@@ -62,7 +62,7 @@ function buildLan(): Lan {
   srv2.getPorts()[0].configureIP(new IPAddress('10.0.0.11'), mask);
 
   return {
-    pc1, pc2, pc3, pc4, srv1, srv2, hub,
+    pc1, pc2, pc3, pc4, srv1, srv2, sw,
     ipOf: {
       pc1: '10.0.0.1', pc2: '10.0.0.2', pc3: '10.0.0.3', pc4: '10.0.0.4',
       srv1: '10.0.0.10', srv2: '10.0.0.11',
