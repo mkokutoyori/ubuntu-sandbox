@@ -2048,3 +2048,58 @@ describe('§31 — user existence ↔ SSH login outcome', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 32 — env forwarding (SendEnv / AcceptEnv) ────────────────
+
+describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'default: client env is NOT forwarded to remote',
+      on: l => l.pc1,
+      cmd: 'MYVAR=hello ssh alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
+      contains: [/^MYVAR=\s*$/m],
+    },
+    {
+      name: 'SendEnv MYVAR + AcceptEnv MYVAR forwards the variable',
+      setup: async (l) => {
+        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config');
+        await l.pc2.executeCommand('printf "AcceptEnv MYVAR\\n" >> /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'MYVAR=hello ssh alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
+      contains: [/^MYVAR=hello\s*$/m],
+    },
+    {
+      name: 'LANG / LC_ALL are forwarded by default (OpenSSH defaults)',
+      on: l => l.pc1,
+      cmd: 'LANG=fr_FR.UTF-8 ssh alice@10.0.0.2 \'locale | head -1\'',
+      contains: [/LANG=fr_FR\.UTF-8/],
+    },
+    {
+      name: '-o SendEnv= overrides config and blocks forwarding',
+      setup: (l) => { void l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config'); },
+      on: l => l.pc1,
+      cmd: 'MYVAR=zzz ssh -o "SendEnv " alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
+      contains: [/^MYVAR=\s*$/m],
+    },
+    {
+      name: 'forwarded env appears in env output on remote',
+      setup: async (l) => {
+        await l.pc1.executeCommand('printf "SendEnv FOO BAR\\n" > /root/.ssh/config');
+        await l.pc2.executeCommand('printf "AcceptEnv FOO BAR\\n" >> /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'FOO=1 BAR=2 ssh alice@10.0.0.2 env',
+      contains: [/^FOO=1$/m, /^BAR=2$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
