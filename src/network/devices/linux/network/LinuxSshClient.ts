@@ -50,15 +50,24 @@ const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
 /** SSH options that consume a single value (so we can skip them in argv scan). */
 const SSH_OPTS_WITH_VALUE = new Set(['-p', '-i', '-l', '-o', '-L', '-R', '-D', '-F', '-c', '-m', '-J']);
 
-/** Walk argv: return positional args (host, then command tokens) and detected options. */
+/**
+ * Walk argv: return positional args (host, then command tokens) and
+ * detected options. Once the host token is found (the first positional),
+ * everything that follows is treated as the remote command — even tokens
+ * that look like options. This matches OpenSSH semantics where flags
+ * after the host belong to the remote shell, e.g. `ssh host sudo -l`.
+ */
 function splitSshArgs(args: string[]): { positional: string[]; flags: string[] } {
   const positional: string[] = [];
   const flags: string[] = [];
+  let hostFound = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
+    if (hostFound) { positional.push(a); continue; }
     if (a.startsWith('-') && SSH_OPTS_WITH_VALUE.has(a)) { flags.push(a, args[++i] ?? ''); continue; }
     if (a.startsWith('-')) { flags.push(a); continue; }
     positional.push(a);
+    hostFound = true;
   }
   return { positional, flags };
 }

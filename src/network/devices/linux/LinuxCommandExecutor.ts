@@ -514,6 +514,9 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
+      // Strip flags that don't consume a value (-n non-interactive, -S
+      // read password from stdin, -E preserve env, -k reset timestamp).
+      while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
@@ -521,6 +524,15 @@ export class LinuxCommandExecutor {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
+      }
+      // Audit: write a syslog-style sudo line to /var/log/auth.log
+      // (real sudo logs through pam_systemd → journald → rsyslog).
+      if (this.serviceMgr.isActive('rsyslog')) {
+        const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const line = `${ts} ${hostname} sudo: ${this.userMgr.currentUser} : TTY=pts/0 ; PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdArgs.join(' ')}\n`;
+        const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+        this.vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
       }
       let sudoTargetUser: string | null = null;
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {

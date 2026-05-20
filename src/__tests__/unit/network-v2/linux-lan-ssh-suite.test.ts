@@ -74,11 +74,15 @@ function buildLan(): Lan {
       useradd: (u: string, o?: object) => void;
       getUser: (u: string) => unknown;
       setPassword: (u: string, p: string) => void;
+      usermod: (u: string, o: object) => void;
     } } }).executor.userMgr;
     for (const u of ['alice', 'bob', 'carol', 'dave', 'admin', 'charlie']) {
       if (!um.getUser(u)) {
         um.useradd(u, { m: true, s: '/bin/bash' });
         um.setPassword(u, 'admin');
+        // alice and admin are sudoers (membership in the 'sudo' group);
+        // bob/carol/dave/charlie deliberately are not.
+        if (u === 'alice' || u === 'admin') um.usermod(u, { aG: 'sudo' });
       }
     }
   }
@@ -2203,7 +2207,14 @@ describe('§34 — sudo over ssh', () => {
     },
     {
       name: 'non-sudoer ssh + sudo is rejected with "is not in the sudoers file"',
-      setup: (l) => { void l.pc2.executeCommand('useradd -m mallory'); },
+      setup: (l) => {
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          useradd: (u: string, o?: object) => void;
+          setPassword: (u: string, p: string) => void;
+        } } }).executor.userMgr;
+        um.useradd('mallory', { m: true, s: '/bin/bash' });
+        um.setPassword('mallory', 'x');
+      },
       on: l => l.pc1,
       cmd: 'ssh mallory@10.0.0.2 sudo -n whoami',
       contains: [/is not in the sudoers file/],
