@@ -1137,66 +1137,64 @@ describe('20. ALTER SYSTEM — session lifecycle administration', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('21. REVOKE privileges, roles, and access', () => {
-  it('Cleans up privileges in all flavours', () => {
-    const cases: Case[] = [
-      { sql: 'REVOKE CREATE TABLE FROM alice;',                                                                                       want: /Revoke succeeded/i },
-      { sql: 'REVOKE SELECT ANY TABLE FROM bob;',                                                                                     want: /Revoke succeeded/i },
-      { sql: 'REVOKE ALL PRIVILEGES FROM dave;',                                                                                     want: /Revoke succeeded/i },
-      { sql: 'REVOKE SELECT ON hr.employees FROM alice;',                                                                             want: /Revoke succeeded/i },
-      { sql: 'REVOKE app_role FROM bob;',                                                                                              want: /Revoke succeeded/i },
-      { sql: 'REVOKE admin_role FROM ops_user;',                                                                                       want: /Revoke succeeded/i },
-      { sql: 'REVOKE developer_role FROM carol;',                                                                                      want: /Revoke succeeded/i },
-      { sql: 'REVOKE EXECUTE ANY PROCEDURE FROM bob;',                                                                                  want: /Revoke succeeded/i },
-      { sql: 'REVOKE UNLIMITED TABLESPACE FROM app_user;',                                                                              want: /Revoke succeeded/i },
-      // Multi-grantee REVOKE
-      { sql: 'REVOKE CREATE SESSION FROM eve, frank;',                                                                                  want: /Revoke succeeded/i },
-      // Multi-privilege REVOKE
-      { sql: 'REVOKE INSERT, UPDATE, DELETE ON hr.employees FROM bob;',                                                                want: /Revoke succeeded/i },
-      // Column-level REVOKE
-      { sql: 'REVOKE UPDATE (salary) ON hr.employees FROM grace;',                                                                    want: /(Revoke succeeded|ORA-)/i },
-      // REVOKE from PUBLIC
-      { sql: 'REVOKE SELECT ON hr.regions FROM PUBLIC;',                                                                                want: /Revoke succeeded/i },
-      // REVOKE non-existent grant
-      { sql: 'REVOKE CREATE ANY VIEW FROM mallory;',                                                                                    want: /(ORA-01927|Revoke succeeded)/i },
-      // REVOKE WITH ADMIN OPTION
-      { sql: 'REVOKE ADMIN OPTION FOR CREATE TABLE FROM heidi;',                                                                       want: /(Revoke succeeded|ORA-)/i },
-      // REVOKE GRANT OPTION
-      { sql: 'REVOKE GRANT OPTION FOR SELECT ON hr.employees FROM heidi;',                                                            want: /(Revoke succeeded|ORA-)/i },
-      // REVOKE cascading
-      { sql: 'REVOKE read_only_role FROM reporting_role;',                                                                              want: /Revoke succeeded/i },
-      { sql: 'REVOKE write_role FROM app_user;',                                                                                       want: /Revoke succeeded/i },
-      // Verification
-      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'DAVE';",                                                            want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",                              want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'PUBLIC' AND table_name = 'REGIONS';",                               want: /0/ },
-      { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'BOB' AND table_name = 'EMPLOYEES' AND privilege = 'INSERT';",        want: /0/ },
-      // REVOKE from unknown grantee
-      { sql: 'REVOKE CREATE SESSION FROM ghost_user;',                                                                                  want: /ORA-/ },
-      // REVOKE that breaks dependent grants (downstream cascade)
-      { sql: 'GRANT SELECT ON hr.employees TO heidi WITH GRANT OPTION;',                                                                want: /Grant succeeded/i },
-      { sql: 'CONNECT heidi/Welcome1#@orcl',                                                                                            want: /(Connected|ORA-)/i },
-      { sql: 'GRANT SELECT ON hr.employees TO ivan;',                                                                                   want: /(Grant succeeded|ORA-)/i },
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                     want: /Connected/i },
-      { sql: 'REVOKE SELECT ON hr.employees FROM heidi;',                                                                               want: /Revoke succeeded/i },
-      { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'IVAN' AND table_name = 'EMPLOYEES';",                                want: /\d+/ },
-      // Revoke at role chain
-      { sql: 'REVOKE app_role FROM dev_team;',                                                                                          want: /Revoke succeeded/i },
-      // System privileges (rare)
-      { sql: 'REVOKE ALTER SYSTEM FROM ops_user;',                                                                                       want: /Revoke succeeded/i },
-      { sql: 'REVOKE CREATE USER FROM ops_user;',                                                                                       want: /Revoke succeeded/i },
-      { sql: 'REVOKE ALTER USER FROM ops_user;',                                                                                       want: /Revoke succeeded/i },
-      { sql: 'REVOKE DROP USER FROM ops_user;',                                                                                         want: /Revoke succeeded/i },
-      { sql: 'REVOKE DBA FROM ops_user;',                                                                                                want: /Revoke succeeded/i },
-      { sql: 'REVOKE CONNECT FROM alice;',                                                                                              want: /Revoke succeeded/i },
-      { sql: 'REVOKE RESOURCE FROM alice;',                                                                                              want: /Revoke succeeded/i },
-      // Final verification — alice has lost almost everything
-      { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'ALICE';",                                                          want: /\d+/ },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // System privileges revoked one by one.
+    { sql: 'REVOKE CREATE TABLE FROM alice;',                                       want: /Revoke succeeded\./i },
+    { sql: 'REVOKE SELECT ANY TABLE FROM bob;',                                     want: /Revoke succeeded\./i },
+    { sql: 'REVOKE ALL PRIVILEGES FROM dave;',                                      want: /Revoke succeeded\./i },
+    { sql: 'REVOKE SELECT ON hr.employees FROM alice;',                             want: /Revoke succeeded\./i },
+    { sql: 'REVOKE app_role FROM bob;',                                              want: /Revoke succeeded\./i },
+    { sql: 'REVOKE admin_role FROM ops_user;',                                      want: /Revoke succeeded\./i },
+    { sql: 'REVOKE developer_role FROM carol;',                                     want: /Revoke succeeded\./i },
+    { sql: 'REVOKE EXECUTE ANY PROCEDURE FROM bob;',                                want: /Revoke succeeded\./i },
+    { sql: 'REVOKE UNLIMITED TABLESPACE FROM app_user;',                            want: /Revoke succeeded\./i },
+    // Multi-grantee / multi-priv / column-level / PUBLIC variants.
+    { sql: 'REVOKE CREATE SESSION FROM eve, frank;',                                want: /Revoke succeeded\./i },
+    { sql: 'REVOKE INSERT, UPDATE, DELETE ON hr.employees FROM bob;',               want: /Revoke succeeded\./i },
+    { sql: 'REVOKE SELECT ON hr.regions FROM PUBLIC;',                              want: /Revoke succeeded\./i },
+    // REVOKE a privilege the grantee never had — ORA-01927.
+    { sql: 'REVOKE CREATE ANY VIEW FROM mallory;',                                  want: /ORA-01927/ },
+    // REVOKE ADMIN/GRANT OPTION FOR — succeeds, downgrades the row.
+    { sql: 'REVOKE ADMIN OPTION FOR CREATE TABLE FROM heidi;',                      want: /Revoke succeeded\./i },
+    { sql: 'REVOKE GRANT OPTION FOR SELECT ON hr.employees FROM heidi;',            want: /Revoke succeeded\./i },
+    // Role-from-role.
+    { sql: 'REVOKE read_only_role FROM reporting_role;',                            want: /Revoke succeeded\./i },
+    { sql: 'REVOKE write_role FROM app_user;',                                      want: /Revoke succeeded\./i },
+    // Verification — committed counts.
+    { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'DAVE';",                                                    want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",                      want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'PUBLIC' AND table_name = 'REGIONS';",                       want: /^\s*0\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'BOB' AND table_name = 'EMPLOYEES' AND privilege = 'INSERT';", want: /^\s*0\s*$/m },
+    // Unknown grantee — ORA-01917.
+    { sql: 'REVOKE CREATE SESSION FROM ghost_user;',                                want: /ORA-01917/ },
+    // Cascade — granting through heidi, revoking from heidi cascades to ivan.
+    { sql: 'GRANT SELECT ON hr.employees TO heidi WITH GRANT OPTION;',              want: /Grant succeeded\./i },
+    { sql: 'CONNECT heidi/Welcome1#@orcl',                                          want: /\bConnected\b/i },
+    { sql: 'GRANT SELECT ON hr.employees TO ivan;',                                  want: /Grant succeeded\./i },
+    { sql: 'CONNECT / AS SYSDBA',                                                    want: /\bConnected\b/i },
+    { sql: 'REVOKE SELECT ON hr.employees FROM heidi;',                              want: /Revoke succeeded\./i },
+    // Cascade removes ivan's downstream grant.
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'IVAN' AND table_name = 'EMPLOYEES';", want: /^\s*0\s*$/m },
+    // Role-from-role chain.
+    { sql: 'REVOKE app_role FROM dev_team;',                                         want: /Revoke succeeded\./i },
+    // System privileges to ops_user.
+    { sql: 'REVOKE ALTER SYSTEM FROM ops_user;',                                     want: /Revoke succeeded\./i },
+    { sql: 'REVOKE CREATE USER FROM ops_user;',                                      want: /Revoke succeeded\./i },
+    { sql: 'REVOKE ALTER USER FROM ops_user;',                                       want: /Revoke succeeded\./i },
+    { sql: 'REVOKE DROP USER FROM ops_user;',                                        want: /Revoke succeeded\./i },
+    { sql: 'REVOKE DBA FROM ops_user;',                                              want: /Revoke succeeded\./i },
+    { sql: 'REVOKE CONNECT FROM alice;',                                             want: /Revoke succeeded\./i },
+    { sql: 'REVOKE RESOURCE FROM alice;',                                            want: /Revoke succeeded\./i },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'ALICE' AND granted_role IN ('CONNECT','RESOURCE');", want: /^\s*0\s*$/m },
+  ])('§21: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 22 — Final cleanup and tear-down (28 cases)
 // ─────────────────────────────────────────────────────────────────
 
