@@ -385,3 +385,60 @@ describe('§5 — SSH refused when remote sshd service is stopped', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 6 — SSH refused when sshd process is killed ──────────────
+
+describe('§6 — SSH refused when sshd process is killed directly', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'kill -9 of sshd PID also makes ssh refuse (parity with stop)',
+      setup: async (l) => {
+        const ps = await l.pc2.executeCommand('pgrep sshd');
+        const pid = ps.trim().split(/\s+/)[0];
+        await l.pc2.executeCommand(`kill -9 ${pid}`);
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'pkill -f sshd has the same effect',
+      setup: (l) => { void l.pc2.executeCommand('pkill -f sshd'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'killing sshd then systemctl shows it as failed',
+      setup: (l) => { void l.pc2.executeCommand('pkill -9 sshd'); },
+      on: l => l.pc2,
+      cmd: 'systemctl status ssh',
+      contains: [/inactive|failed/],
+      excludes: [/active \(running\)/],
+    },
+    {
+      name: 'after kill, restarting via systemctl restores service',
+      setup: async (l) => {
+        await l.pc2.executeCommand('pkill -9 sshd');
+        await l.pc2.executeCommand('systemctl restart ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'pkill of an unrelated process leaves ssh up',
+      setup: (l) => { void l.pc2.executeCommand('pkill -9 cron'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
