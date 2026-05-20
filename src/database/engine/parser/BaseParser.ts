@@ -1924,6 +1924,29 @@ export abstract class BaseParser {
       return { type: 'Literal', position: pos, dataType: 'timestamp', value: val };
     }
 
+    // INTERVAL '<value>' { YEAR | MONTH | DAY | HOUR | MINUTE | SECOND }
+    // [TO …] — ANSI/Oracle interval literal. The value is captured as a
+    // composite string keeping the unit so the executor can apply it.
+    if (this.checkKeyword('INTERVAL') && this.peekNext()?.type === TokenType.STRING_LITERAL) {
+      this.advance(); // consume INTERVAL
+      const strToken = this.advance();
+      let val = strToken.value;
+      if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+      const unitParts: string[] = [];
+      while (this.check(TokenType.KEYWORD) || this.check(TokenType.IDENTIFIER)) {
+        const next = this.current().value.toUpperCase();
+        if (['YEAR', 'MONTH', 'DAY', 'HOUR', 'MINUTE', 'SECOND', 'TO'].includes(next)) {
+          unitParts.push(this.advance().value.toUpperCase());
+        } else break;
+      }
+      // Optional (precision) suffix.
+      if (this.match(TokenType.LPAREN)) {
+        while (!this.check(TokenType.RPAREN) && !this.check(TokenType.EOF)) this.advance();
+        this.match(TokenType.RPAREN);
+      }
+      return { type: 'Literal', position: pos, dataType: 'interval', value: `${val} ${unitParts.join(' ')}` };
+    }
+
     // CASE expression
     if (this.matchKeyword('CASE')) {
       return this.parseCaseExpression(pos);

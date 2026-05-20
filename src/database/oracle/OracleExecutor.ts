@@ -3730,7 +3730,73 @@ export class OracleExecutor extends BaseExecutor {
       case 'CEIL': return args[0] != null ? Math.ceil(Number(args[0])) : null;
       case 'FLOOR': return args[0] != null ? Math.floor(Number(args[0])) : null;
       case 'ROUND': return args[0] != null ? (args[1] != null ? Number(Number(args[0]).toFixed(Number(args[1]))) : Math.round(Number(args[0]))) : null;
-      case 'TRUNC': return args[0] != null ? Math.trunc(Number(args[0])) : null;
+      case 'TRUNC': {
+        if (args[0] == null) return null;
+        // If the argument is a Date, TRUNC drops the time-of-day. With
+        // a second format-mask argument (e.g. 'MM', 'YEAR'), Oracle
+        // rounds down to that boundary — we honour the most common ones.
+        if (args[0] instanceof Date) {
+          const d = new Date(args[0].getTime());
+          const fmt = args[1] != null ? String(args[1]).toUpperCase() : 'DD';
+          if (fmt === 'YYYY' || fmt === 'YEAR' || fmt === 'YY') {
+            return new Date(d.getFullYear(), 0, 1);
+          }
+          if (fmt === 'MM' || fmt === 'MONTH' || fmt === 'MON') {
+            return new Date(d.getFullYear(), d.getMonth(), 1);
+          }
+          if (fmt === 'DAY' || fmt === 'D' || fmt === 'IW') {
+            const day = d.getDay();
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate() - day);
+          }
+          d.setHours(0, 0, 0, 0);
+          return d;
+        }
+        return Math.trunc(Number(args[0]));
+      }
+      case 'ADD_MONTHS': {
+        if (args[0] == null || args[1] == null) return null;
+        const base = args[0] instanceof Date ? new Date(args[0].getTime()) : new Date(String(args[0]));
+        if (isNaN(base.getTime())) return null;
+        const month = base.getMonth() + Number(args[1]);
+        const day = base.getDate();
+        base.setDate(1);
+        base.setMonth(month);
+        // Clamp to last day of month if overflow.
+        const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+        base.setDate(Math.min(day, last));
+        return base;
+      }
+      case 'MONTHS_BETWEEN': {
+        if (args[0] == null || args[1] == null) return null;
+        const a = args[0] instanceof Date ? args[0] : new Date(String(args[0]));
+        const b = args[1] instanceof Date ? args[1] : new Date(String(args[1]));
+        if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+        const months = (a.getFullYear() - b.getFullYear()) * 12 + (a.getMonth() - b.getMonth());
+        // Fractional portion uses day-of-month delta over 31.
+        const frac = (a.getDate() - b.getDate()) / 31;
+        return months + frac;
+      }
+      case 'NEXT_DAY': {
+        if (args[0] == null || args[1] == null) return null;
+        const base = args[0] instanceof Date ? new Date(args[0].getTime()) : new Date(String(args[0]));
+        if (isNaN(base.getTime())) return null;
+        const dayMap: Record<string, number> = {
+          SUNDAY: 0, SUN: 0, MONDAY: 1, MON: 1, TUESDAY: 2, TUE: 2,
+          WEDNESDAY: 3, WED: 3, THURSDAY: 4, THU: 4, FRIDAY: 5, FRI: 5,
+          SATURDAY: 6, SAT: 6,
+        };
+        const target = dayMap[String(args[1]).toUpperCase().trim()];
+        if (target === undefined) return null;
+        const delta = ((target - base.getDay() + 7) % 7) || 7;
+        base.setDate(base.getDate() + delta);
+        return base;
+      }
+      case 'LAST_DAY': {
+        if (args[0] == null) return null;
+        const base = args[0] instanceof Date ? new Date(args[0].getTime()) : new Date(String(args[0]));
+        if (isNaN(base.getTime())) return null;
+        return new Date(base.getFullYear(), base.getMonth() + 1, 0);
+      }
       case 'MOD': return args[0] != null && args[1] != null ? Number(args[0]) % Number(args[1]) : null;
       case 'POWER': return args[0] != null && args[1] != null ? Math.pow(Number(args[0]), Number(args[1])) : null;
       case 'SQRT': return args[0] != null ? Math.sqrt(Number(args[0])) : null;
@@ -4108,27 +4174,51 @@ export class OracleExecutor extends BaseExecutor {
     return n;
   }
 
+  /** Convert an interval literal (`'1' HOUR`, `'7' DAY`, …) into days. */
+  private intervalToDays(value: unknown): number | null {
+    if (typeof value !== 'string') return null;
+    const m = value.match(/^-?(\d+(?:\.\d+)?)\s+(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)\b/i);
+    if (!m) return null;
+    const amount = Number(m[1]);
+    const unit = m[2].toUpperCase();
+    const sign = value.startsWith('-') ? -1 : 1;
+    switch (unit) {
+      case 'YEAR':   return sign * amount * 365;
+      case 'MONTH':  return sign * amount * 30;
+      case 'DAY':    return sign * amount;
+      case 'HOUR':   return sign * amount / 24;
+      case 'MINUTE': return sign * amount / 1440;
+      case 'SECOND': return sign * amount / 86_400;
+      default: return null;
+    }
+  }
+
   private applyBinaryOp(op: string, left: CellValue, right: CellValue): CellValue {
     if (op === '||') return (left != null ? String(left) : '') + (right != null ? String(right) : '');
     if (left == null || right == null) return null;
-    // Date arithmetic: DATE ± NUMBER → DATE, DATE − DATE → NUMBER (days).
-    // Cheaper than wrapping every cell in a Date object — detect ISO-shaped
-    // strings (what SYSDATE / CURRENT_DATE produce) and operate in ms.
+    // Date arithmetic: DATE ± NUMBER → DATE, DATE − DATE → NUMBER (days),
+    // DATE ± INTERVAL → DATE.
     if (op === '+' || op === '-') {
       const lDate = this.coerceToDateMs(left);
       const rDate = this.coerceToDateMs(right);
       const DAY = 86_400_000;
+      // INTERVAL handling — convert to fractional days, fall into number path.
+      const lInt = lDate === null ? this.intervalToDays(left) : null;
+      const rInt = rDate === null ? this.intervalToDays(right) : null;
+      const lNum = lInt ?? (typeof left === 'number' ? left : null);
+      const rNum = rInt ?? (typeof right === 'number' ? right : null);
+
       if (lDate !== null && rDate !== null) {
         if (op === '-') return (lDate - rDate) / DAY;
         // DATE + DATE is not legal in Oracle (ORA-00975) — fall through.
-      } else if (lDate !== null && typeof right !== 'string') {
-        const days = Number(right);
+      } else if (lDate !== null && (rNum !== null || typeof right !== 'string')) {
+        const days = rNum ?? Number(right);
         if (!Number.isNaN(days)) {
           const out = op === '+' ? lDate + days * DAY : lDate - days * DAY;
           return new Date(out).toISOString().slice(0, 19).replace('T', ' ');
         }
-      } else if (rDate !== null && typeof left !== 'string' && op === '+') {
-        const days = Number(left);
+      } else if (rDate !== null && (lNum !== null || typeof left !== 'string') && op === '+') {
+        const days = lNum ?? Number(left);
         if (!Number.isNaN(days)) {
           return new Date(rDate + days * DAY).toISOString().slice(0, 19).replace('T', ' ');
         }
