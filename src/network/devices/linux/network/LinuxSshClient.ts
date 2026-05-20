@@ -72,6 +72,24 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
   return { positional, flags };
 }
 
+/**
+ * Ask the remote machine's iptables/ufw filter table whether an
+ * inbound TCP SYN from `srcIp` to `dstPort` would be accepted.
+ * Returns 'accept' / 'drop' / 'reject'. Defaults to 'accept' if the
+ * remote has no firewall manager (e.g. switches).
+ */
+function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: number): 'accept' | 'drop' | 'reject' {
+  const ipt = (machine as LinuxMachine & {
+    executor?: { iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' } };
+  }).executor?.iptables;
+  if (!ipt?.filterPacket) return 'accept';
+  const dstIp = machine.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
+  return ipt.filterPacket({
+    direction: 'in', protocol: 6, srcIP: srcIp, dstIP: dstIp,
+    srcPort: 50000, dstPort, iface: 'eth0',
+  });
+}
+
 /** Ports configured by sshd_config on the remote machine — defaults to [22]. */
 function sshdConfiguredPorts(machine: LinuxMachine): number[] {
   const raw = (machine as LinuxMachine & {
@@ -162,6 +180,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
       output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+
+  // Inbound firewall (iptables/ufw): synth a SYN packet, ask filter.
+  const verdict = inboundFirewallVerdict(machine, opts.sourceIp, port);
+  if (verdict === 'drop' || verdict === 'reject') {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: verdict === 'reject'
+        ? `ssh: connect to host ${host} port ${port}: Connection refused\n`
+        : `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
       exitCode: 255,
     };
   }
