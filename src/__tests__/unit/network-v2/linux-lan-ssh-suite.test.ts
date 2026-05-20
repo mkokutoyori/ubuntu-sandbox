@@ -2159,3 +2159,50 @@ describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 34 — sudo over ssh and audit trail ──────────────────────
+
+describe('§34 — sudo over ssh', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh + sudo whoami returns root when user is in sudoers',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 sudo -n whoami',
+      contains: [/^root\s*$/m],
+    },
+    {
+      name: 'non-sudoer ssh + sudo is rejected with "is not in the sudoers file"',
+      setup: (l) => { void l.pc2.executeCommand('useradd -m mallory'); },
+      on: l => l.pc1,
+      cmd: 'ssh mallory@10.0.0.2 sudo -n whoami',
+      contains: [/is not in the sudoers file/],
+    },
+    {
+      name: 'sudo over ssh is logged in /var/log/auth.log',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /'); },
+      on: l => l.pc2,
+      cmd: 'grep sudo /var/log/auth.log',
+      contains: [/sudo:\s+alice : TTY=.*PWD=.*USER=root/],
+    },
+    {
+      name: 'sudo with bad password is rejected and audit logs the failure',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\''); },
+      on: l => l.pc2,
+      cmd: 'tail -5 /var/log/auth.log',
+      contains: [/incorrect password|authentication failure/i],
+    },
+    {
+      name: 'sudo -l over ssh lists rules',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 sudo -l',
+      contains: [/User alice may run|\(ALL\)/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
