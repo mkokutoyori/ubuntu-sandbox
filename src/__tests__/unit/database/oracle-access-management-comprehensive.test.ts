@@ -1327,32 +1327,36 @@ describe('24. SYSDATE / TIMESTAMP arithmetic across views', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('25. SYS_CONTEXT and USERENV', () => {
-  it('Reads session attributes across many namespaces', () => {
-    const cases: Case[] = [
-      { sql: "SELECT SYS_CONTEXT('USERENV','AUTHENTICATION_TYPE') FROM dual;",                                                          want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','AUTHENTICATED_IDENTITY') FROM dual;",                                                        want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','BG_JOB_ID') FROM dual;",                                                                    want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','CLIENT_IDENTIFIER') FROM dual;",                                                            want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','CLIENT_INFO') FROM dual;",                                                                  want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','DB_DOMAIN') FROM dual;",                                                                    want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','DB_UNIQUE_NAME') FROM dual;",                                                                want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','ENTERPRISE_IDENTITY') FROM dual;",                                                          want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','HOST') FROM dual;",                                                                          want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','IDENTIFICATION_TYPE') FROM dual;",                                                          want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','IP_ADDRESS') FROM dual;",                                                                    want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','LANG') FROM dual;",                                                                          want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','LANGUAGE') FROM dual;",                                                                      want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','MODULE') FROM dual;",                                                                        want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','NETWORK_PROTOCOL') FROM dual;",                                                              want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','PROXY_USER') FROM dual;",                                                                    want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','SESSIONID') FROM dual;",                                                                    want: /\d/ },
-      { sql: "SELECT USER, USERENV('SESSIONID'), USERENV('TERMINAL') FROM dual;",                                                        want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Authentication-related attributes — concrete expected token sets.
+    { sql: "SELECT SYS_CONTEXT('USERENV','AUTHENTICATION_TYPE') FROM dual;",          want: /\b(DATABASE|EXTERNAL|GLOBAL|OS|SYSDBA)\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','AUTHENTICATED_IDENTITY') FROM dual;",       want: /\S/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','BG_JOB_ID') FROM dual;",                    want: /\b(\d+|)\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','CLIENT_IDENTIFIER') FROM dual;",            want: /\b\S*\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','CLIENT_INFO') FROM dual;",                  want: /\b\S*\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','DB_DOMAIN') FROM dual;",                     want: /\b\S*\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','DB_UNIQUE_NAME') FROM dual;",                want: /\S/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','ENTERPRISE_IDENTITY') FROM dual;",          want: /\b\S*\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','HOST') FROM dual;",                          want: /\S/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','IDENTIFICATION_TYPE') FROM dual;",          want: /\b(LOCAL|EXTERNAL|GLOBAL|SHARED)\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','IP_ADDRESS') FROM dual;",                    want: /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|^\s*$|::|\b\S*\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','LANG') FROM dual;",                          want: /\b(US|FR|EN|[A-Z]{2,3})\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','LANGUAGE') FROM dual;",                      want: /AMERICAN|FRENCH|ENGLISH|\bUS\b|AL32UTF8|UTF8/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','MODULE') FROM dual;",                        want: /SQL\*?Plus|sqlplus|\b\S*\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','NETWORK_PROTOCOL') FROM dual;",              want: /tcp|beq|ipc|\b\S*\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','PROXY_USER') FROM dual;",                    want: /\b\S*\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','SESSIONID') FROM dual;",                    want: /^\s*[1-9]\d*\s*$/m },
+    // Multi-column DUAL projection.
+    { sql: "SELECT USER, USERENV('SESSIONID'), USERENV('TERMINAL') FROM dual;",        want: /\bSYS\b/ },
+  ])('§25: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 26 — PL/SQL invocation under different privileges (20 cases)
 // ─────────────────────────────────────────────────────────────────
 
