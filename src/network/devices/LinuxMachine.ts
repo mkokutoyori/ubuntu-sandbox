@@ -170,9 +170,23 @@ export abstract class LinuxMachine extends EndHost {
 
   // ─── Reactive surface for cross-device commands (ssh, scp, sftp) ─────
 
-  /** Whether the named systemd unit is currently active on this machine. */
+  /**
+   * Whether the named systemd unit is currently active. The unit must
+   * both be in 'active' state AND have a live process backing it — a
+   * `kill -9 <mainPid>` outside the supervisor leaves the unit's state
+   * stale, so we double-check the process table here.
+   */
   isServiceActive(name: string): boolean {
-    return this.executor.serviceMgr.isActive(name);
+    if (!this.executor.serviceMgr.isActive(name)) return false;
+    // For canonical daemons, require the named process to be alive too.
+    const knownDaemons: Record<string, string> = {
+      ssh: 'sshd', sshd: 'sshd',
+      cron: 'cron', rsyslog: 'rsyslogd',
+      'systemd-journald': 'systemd-journald',
+    };
+    const comm = knownDaemons[name];
+    if (!comm) return true;
+    return this.executor.processMgr.list({ comm }).length > 0;
   }
 
   /**
@@ -424,7 +438,14 @@ export abstract class LinuxMachine extends EndHost {
     };
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
-    this._sshLifecycleOff = () => { offRestart(); offReload(); };
+    // Reactive socket-table sync: unbind :22 on stop, rebind on start.
+    const offStopped = bus.subscribeWhere('linux.service.stopped', isSsh, () => {
+      this.socketTable.unbind('tcp', '0.0.0.0', 22);
+    });
+    const offStarted = bus.subscribeWhere('linux.service.started', isSsh, () => {
+      this.socketTable.bind('tcp', '0.0.0.0', 22, 985, 'sshd');
+    });
+    this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); };
     return this._sshContext;
   }
 

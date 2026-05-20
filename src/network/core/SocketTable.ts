@@ -130,6 +130,23 @@ export class SocketTable {
   }
 
   /**
+   * Remove any socket bound to (protocol, port) on the given local addr.
+   * Returns the number of sockets removed. Used by service-lifecycle
+   * reactors (e.g. `systemctl stop ssh` → unbind tcp:22).
+   */
+  unbind(protocol: SocketProtocol, localAddress: string, localPort: number): number {
+    let removed = 0;
+    for (const [id, entry] of this.sockets) {
+      if (entry.protocol === protocol && entry.localAddress === localAddress && entry.localPort === localPort) {
+        this.bindings.delete(this.bindKey(entry.protocol, entry.localPort));
+        this.sockets.delete(id);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
+  /**
    * Close a socket by its id.
    * Returns true if the socket existed and was removed, false otherwise.
    */
