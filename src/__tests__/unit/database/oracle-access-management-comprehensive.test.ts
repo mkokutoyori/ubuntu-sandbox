@@ -658,47 +658,51 @@ describe('10. Object lifecycle in HR schema', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('11. Connection attempts under different identities', () => {
-  it('Allows / refuses CONNECT based on credentials, lock, and expiry', () => {
-    const cases: Case[] = [
-      { sql: 'CONNECT alice/ReturnPwd1#@orcl',                                                                                        want: /(Connected|ORA-)/i },
-      { sql: 'SHOW USER',                                                                                                              want: /(ALICE|SYS)/i },
-      { sql: 'CONNECT bob/Welcome1#@orcl',                                                                                            want: /(Connected|ORA-)/i },
-      { sql: 'SHOW USER',                                                                                                              want: /(BOB|SYS)/i },
-      { sql: 'CONNECT carol/Welcome1#@orcl',                                                                                          want: /(Connected|ORA-)/i },
-      // Wrong password
-      { sql: 'CONNECT alice/WrongPassword@orcl',                                                                                       want: /ORA-01017/i },
-      { sql: 'CONNECT bob/123456@orcl',                                                                                                want: /ORA-01017/i },
-      // Locked user
-      { sql: 'ALTER USER locked_user ACCOUNT LOCK;',                                                                                   want: /User altered/i },
-      { sql: 'CONNECT locked_user/Locked1#@orcl',                                                                                      want: /ORA-(28000|01017)/i },
-      // Expired user
-      { sql: 'CONNECT expired_user/Expired1#@orcl',                                                                                    want: /ORA-(28001|28002)/i },
-      // Unknown user
-      { sql: 'CONNECT phantom/anything@orcl',                                                                                          want: /ORA-01017/i },
-      // External user
-      { sql: 'CONNECT /@orcl',                                                                                                          want: /(Connected|ORA-)/i },
-      // Return to SYS
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                    want: /Connected/i },
-      { sql: 'SHOW USER',                                                                                                              want: /SYS/i },
-      // Unlock and re-attempt
-      { sql: 'ALTER USER locked_user ACCOUNT UNLOCK;',                                                                                 want: /User altered/i },
-      { sql: 'CONNECT locked_user/Locked1#@orcl',                                                                                      want: /(Connected|ORA-)/i },
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                    want: /Connected/i },
-      // CONNECT BY USER
-      { sql: 'CONNECT ops_user/Ops1#@orcl',                                                                                            want: /(Connected|ORA-)/i },
-      { sql: "SELECT SYS_CONTEXT('USERENV','SESSION_USER') FROM DUAL;",                                                               want: /(OPS_USER|SYS)/ },
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                    want: /Connected/i },
-      // Failed login attempts trigger lockout
-      { sql: 'CONNECT alice/wrong1@orcl',                                                                                              want: /ORA-01017/i },
-      { sql: 'CONNECT alice/wrong2@orcl',                                                                                              want: /ORA-01017/i },
-      { sql: 'CONNECT alice/wrong3@orcl',                                                                                              want: /ORA-01017/i },
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                    want: /Connected/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Valid credentials — must succeed and SHOW USER reflects the new identity.
+    { sql: 'CONNECT alice/ReturnPwd1#@orcl',                                  want: /\bConnected\b/i },
+    { sql: 'SHOW USER',                                                       want: /USER\s+(?:is\s+)?["']?ALICE["']?/i },
+    { sql: 'CONNECT bob/Welcome1#@orcl',                                      want: /\bConnected\b/i },
+    { sql: 'SHOW USER',                                                       want: /USER\s+(?:is\s+)?["']?BOB["']?/i },
+    { sql: 'CONNECT carol/Welcome1#@orcl',                                    want: /\bConnected\b/i },
+    { sql: 'SHOW USER',                                                       want: /USER\s+(?:is\s+)?["']?CAROL["']?/i },
+    // Wrong password — ORA-01017 invalid username/password.
+    { sql: 'CONNECT alice/WrongPassword@orcl',                                want: /ORA-01017/ },
+    { sql: 'CONNECT bob/123456@orcl',                                         want: /ORA-01017/ },
+    // Locked account — ORA-28000.
+    { sql: 'ALTER USER locked_user ACCOUNT LOCK;',                            want: /User altered\./i },
+    { sql: 'CONNECT locked_user/Locked1#@orcl',                               want: /ORA-28000/ },
+    // Expired account — ORA-28001 (or 28002 in the grace period).
+    { sql: 'CONNECT expired_user/Expired1#@orcl',                             want: /ORA-(28001|28002)/ },
+    // Unknown user — ORA-01017 (never reveal "user does not exist").
+    { sql: 'CONNECT phantom/anything@orcl',                                   want: /ORA-01017/ },
+    // OS-authenticated session via the well-known ops$ user.
+    { sql: 'CONNECT /@orcl',                                                  want: /\bConnected\b/i },
+    // Switch back to SYSDBA before continuing the suite.
+    { sql: 'CONNECT / AS SYSDBA',                                             want: /\bConnected\b/i },
+    { sql: 'SHOW USER',                                                       want: /USER\s+(?:is\s+)?["']?SYS["']?/i },
+    // Unlock and reconnect succeeds.
+    { sql: 'ALTER USER locked_user ACCOUNT UNLOCK;',                          want: /User altered\./i },
+    { sql: 'CONNECT locked_user/Locked1#@orcl',                               want: /\bConnected\b/i },
+    { sql: 'CONNECT / AS SYSDBA',                                             want: /\bConnected\b/i },
+    // Switch to ops_user and verify the live USERENV value.
+    { sql: 'CONNECT ops_user/Ops1#@orcl',                                     want: /\bConnected\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','SESSION_USER') FROM DUAL;",         want: /\bOPS_USER\b/ },
+    { sql: 'CONNECT / AS SYSDBA',                                             want: /\bConnected\b/i },
+    // Three wrong passwords — each must independently raise ORA-01017.
+    { sql: 'CONNECT alice/wrong1@orcl',                                       want: /ORA-01017/ },
+    { sql: 'CONNECT alice/wrong2@orcl',                                       want: /ORA-01017/ },
+    { sql: 'CONNECT alice/wrong3@orcl',                                       want: /ORA-01017/ },
+    { sql: 'CONNECT / AS SYSDBA',                                             want: /\bConnected\b/i },
+  ])('§11: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 12 — Privilege enforcement (SELECT/INSERT/UPDATE/DELETE) (30 cases)
 // ─────────────────────────────────────────────────────────────────
 
