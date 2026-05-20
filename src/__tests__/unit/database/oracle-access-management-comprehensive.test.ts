@@ -444,7 +444,7 @@ describe('6. GRANT object privileges', () => {
     { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name IN ('JOBS','LOCATIONS','COUNTRIES','REGIONS') AND grantee = 'READ_ONLY_ROLE' AND privilege = 'SELECT';", want: /^\s*4\s*$/m },
     { sql: "SELECT COUNT(DISTINCT owner) FROM dba_tab_privs WHERE grantee = 'BOB';", want: /^\s*[12]\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name = 'DEPARTMENTS' AND grantee = 'GRACE' AND privilege IN ('SELECT','INSERT','UPDATE');", want: /^\s*3\s*$/m },
-    { sql: "SELECT type FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB' AND ROWNUM = 1;", want: /\bTABLE\b/i },
+    { sql: "SELECT DISTINCT type FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB';", want: /\bTABLE\b/i },
     { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE owner = 'SCOTT' AND grantee = 'BOB' AND privilege IN ('SELECT','UPDATE');", want: /^\s*2\s*$/m },
     // PL/SQL EXECUTE on the HR.ADD_EMPLOYEE demo procedure.
     { sql: 'GRANT EXECUTE ON hr.add_employee TO grace;',                                                                            want: /Grant succeeded\./i },

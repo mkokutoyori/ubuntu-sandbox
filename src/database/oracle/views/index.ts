@@ -384,5 +384,7 @@ import './dba_dv_command_rule';
 import './dba_dv_factor';
 import './proxy_users';
 import './audit_unified_policies';
+import './dba_audit_mgmt_config_params';
+import './dba_audit_mgmt_last_arch_ts';
 
 export { };
