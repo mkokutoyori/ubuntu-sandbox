@@ -43,6 +43,9 @@ import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
+import { cmdNetUse } from './windows/WinNetUse';
+import { cmdNetShare } from './windows/WinNetShare';
+import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { cmdDir } from './windows/WinDir';
 import {
@@ -367,6 +370,7 @@ export class WindowsPC extends EndHost {
       case 'start':   return this.cmdStart(args);
       case 'setx':    return this.cmdSetx(args);
       case 'schtasks': return this.cmdSchtasks(args);
+      case 'print':    return cmdPrint(this.buildNetContext(), args);
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'reg':     return this.cmdReg(args);
@@ -385,6 +389,8 @@ export class WindowsPC extends EndHost {
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
+      if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
+      if (subCmd === 'share') return cmdNetShare(this.buildNetContext(), subArgs);
       if (subCmd === 'help' || subCmd === '/?' || subCmd === '-?') {
         const topic = (subArgs[0] ?? '').toLowerCase();
         if (!topic) {
@@ -803,6 +809,8 @@ export class WindowsPC extends EndHost {
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
+      if (subCmd === 'use')         return cmdNetUse(this.buildNetContext(), subArgs);
+      if (subCmd === 'share')       return cmdNetShare(this.buildNetContext(), subArgs);
     }
     const netCtx = this.buildNetContext();
     switch (lower) {
@@ -958,6 +966,9 @@ export class WindowsPC extends EndHost {
    * `Register-ScheduledTask` see the same data.
    */
   private cmdSchtasks(args: string[]): string {
+    if (this.svcMgr.getService('Schedule')?.state !== 'Running') {
+      return `ERROR: The Task Scheduler service is not running.`;
+    }
     const action = args[0]?.toLowerCase();
     const flagIdx = (name: string) => args.findIndex(a => a.toLowerCase() === name);
     const tn      = (() => { const i = flagIdx('/tn'); return i >= 0 ? args[i + 1] : undefined; })();

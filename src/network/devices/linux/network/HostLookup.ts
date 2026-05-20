@@ -33,6 +33,7 @@ export function findHostByAddress(addressOrName: string): RemoteHost | null {
   // IPv4 numeric form → exact port match.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(target)) {
     for (const dev of registry.getAll()) {
+      if (!dev.getIsPoweredOn()) continue;
       for (const port of dev.getPorts()) {
         const ip = port.getIPAddress();
         if (ip && ip.toString() === target) {
@@ -46,6 +47,7 @@ export function findHostByAddress(addressOrName: string): RemoteHost | null {
   // Name form — match the device's hostname-like fields.
   const needle = target.toLowerCase();
   for (const dev of registry.getAll()) {
+    if (!dev.getIsPoweredOn()) continue;
     const candidate = (dev as Equipment & { profile?: { hostname?: string } });
     const hostname = candidate.profile?.hostname?.toLowerCase();
     const name = dev.getName().toLowerCase();
