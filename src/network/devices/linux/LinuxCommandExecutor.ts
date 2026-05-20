@@ -141,6 +141,43 @@ export class LinuxCommandExecutor {
     this.ipNetworkCtx = ctx;
   }
 
+  /**
+   * scp / sftp / rsync share the SSH transport: same lookup + sshd gating
+   * as runSshClient, but with command-specific output for the success case.
+   * Mirrors real OpenSSH where these tools fail with the same
+   * "Connection refused" / "Could not resolve hostname" as the parent.
+   */
+  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[]): { output: string; exitCode: number } {
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
+    // Extract the destination spec: user@host[:path] (positional argv).
+    const positional = args.filter(a => !a.startsWith('-'));
+    const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
+    if (!dest) {
+      const usage = cmd === 'sftp'
+        ? 'usage: sftp [-options] [user@]host[:path]'
+        : cmd === 'scp'
+          ? 'usage: scp [-options] source ... target'
+          : 'rsync: no destination specified';
+      return { output: usage, exitCode: 1 };
+    }
+    const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
+    // Probe via the same ssh client; if it returns Connection refused, propagate.
+    const probe = runSshClient({ args: [hostPart, 'true'], sourceHostname: hostname, sourceIp, sourceUser: this.userMgr.currentUser });
+    if (probe.exitCode !== 0) {
+      // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
+      const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
+      return { output: prefix + probe.output, exitCode: probe.exitCode };
+    }
+    // Success: simulate a typical line of output per tool.
+    const summary = cmd === 'sftp'
+      ? `Connected to ${hostPart}.\nsftp> `
+      : cmd === 'scp'
+        ? `${positional[0]}                                     100% 1024     1.0KB/s   00:00`
+        : `sent 128 bytes  received 32 bytes  ${'160.00 bytes/sec'}\ntotal size is 1024  speedup is 6.40`;
+    return { output: summary, exitCode: 0 };
+  }
+
   /** First non-loopback IPv4 address configured on this machine. */
   private firstConfiguredIp(): string | null {
     if (!this.ipNetworkCtx) return null;
@@ -901,12 +938,9 @@ export class LinuxCommandExecutor {
       case 'unzip':
         return { output: '', exitCode: 0 };
       case 'scp':
-      case 'rsync':
-        return { output: '', exitCode: 0 };
-      case 'sftp': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'usage: sftp [options] [user@]host[:path]', exitCode: 1 };
-        return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
+      case 'sftp':
+      case 'rsync': {
+        return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
         const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
