@@ -502,3 +502,62 @@ describe('§7 — SSH refused when remote machine is powered off', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 8 — PermitRootLogin policy enforcement ──────────────────
+
+describe('§8 — PermitRootLogin policy enforcement', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'default PermitRootLogin no → root refused',
+      on: l => l.pc1,
+      cmd: 'ssh root@10.0.0.2',
+      contains: [/Permission denied/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'PermitRootLogin yes → root accepted',
+      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: 'ssh root@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Permission denied/],
+    },
+    {
+      name: 'PermitRootLogin prohibit-password also blocks password root',
+      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: 'ssh root@10.0.0.2',
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'non-root users are never blocked by PermitRootLogin no',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Permission denied/],
+    },
+    {
+      name: 'PermitRootLogin no on server still blocks server-to-server root',
+      on: l => l.srv1,
+      cmd: 'ssh root@10.0.0.11',
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'flipping the policy via systemctl reload picks it up',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh root@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
