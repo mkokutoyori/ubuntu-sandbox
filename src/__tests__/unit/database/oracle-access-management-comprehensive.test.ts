@@ -1101,28 +1101,38 @@ describe('19. Row-level security (DBMS_RLS)', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('20. ALTER SYSTEM — session lifecycle administration', () => {
-  it('Kills and disconnects sessions, manages resources', () => {
-    const cases: Case[] = [
-      { sql: "SELECT sid, serial# FROM v$session WHERE username = 'BOB' FETCH FIRST 1 ROW ONLY;",                                      want: { not: /ORA-/ } },
-      { sql: "ALTER SYSTEM KILL SESSION '142,12345';",                                                                                  want: /ORA-(00031|00030)/ },
-      { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' IMMEDIATE;",                                                                  want: /ORA-(00031|00030)/ },
-      { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' POST_TRANSACTION;",                                                          want: /ORA-(00031|00030|00900)/ },
-      { sql: "ALTER SYSTEM SET sga_target = 1G SCOPE=BOTH;",                                                                            want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM SET open_cursors = 500 SCOPE=BOTH;",                                                                         want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM FLUSH SHARED_POOL;",                                                                                          want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM FLUSH BUFFER_CACHE;",                                                                                         want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM CHECKPOINT;",                                                                                                 want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM SWITCH LOGFILE;",                                                                                            want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM ARCHIVE LOG CURRENT;",                                                                                       want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM RESET sga_target SCOPE=SPFILE;",                                                                              want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM SET resource_limit = TRUE;",                                                                                  want: /(System altered|ORA-)/i },
-      { sql: "ALTER SYSTEM SUSPEND;",                                                                                                    want: /(System altered|ORA-)/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Inspect a live session before manipulating it.
+    { sql: "SELECT sid FROM v$session WHERE username = 'SYS' AND ROWNUM = 1;",                  want: /\bSID\b/i },
+    // KILL SESSION against a non-existent SID — ORA-00030 or ORA-00031.
+    { sql: "ALTER SYSTEM KILL SESSION '142,12345';",                                            want: /ORA-(00030|00031)/ },
+    { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' IMMEDIATE;",                            want: /ORA-(00030|00031)/ },
+    { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' POST_TRANSACTION;",                    want: /ORA-(00030|00031)/ },
+    // SPFILE-scoped parameter mutations must succeed.
+    { sql: 'ALTER SYSTEM SET sga_target = 1G SCOPE=BOTH;',                                       want: /System altered\./i },
+    { sql: 'ALTER SYSTEM SET open_cursors = 500 SCOPE=BOTH;',                                   want: /System altered\./i },
+    { sql: "SELECT value FROM v\$parameter WHERE name = 'open_cursors';",                       want: /^\s*500\s*$/m },
+    // Cache & log maintenance.
+    { sql: 'ALTER SYSTEM FLUSH SHARED_POOL;',                                                   want: /System altered\./i },
+    { sql: 'ALTER SYSTEM FLUSH BUFFER_CACHE;',                                                  want: /System altered\./i },
+    { sql: 'ALTER SYSTEM CHECKPOINT;',                                                          want: /System altered\./i },
+    { sql: 'ALTER SYSTEM SWITCH LOGFILE;',                                                      want: /System altered\./i },
+    { sql: 'ALTER SYSTEM ARCHIVE LOG CURRENT;',                                                 want: /System altered\./i },
+    // Reset, resource limits, suspend.
+    { sql: 'ALTER SYSTEM RESET sga_target SCOPE=SPFILE;',                                       want: /System altered\./i },
+    { sql: 'ALTER SYSTEM SET resource_limit = TRUE;',                                           want: /System altered\./i },
+    { sql: "SELECT value FROM v\$parameter WHERE name = 'resource_limit';",                     want: /\bTRUE\b/i },
+    { sql: 'ALTER SYSTEM SUSPEND;',                                                              want: /System altered\./i },
+    { sql: 'ALTER SYSTEM RESUME;',                                                                want: /System altered\./i },
+  ])('§20: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 21 — REVOKE everywhere (38 cases)
 // ─────────────────────────────────────────────────────────────────
 
