@@ -1068,28 +1068,35 @@ describe('18. Database Vault provisioning', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('19. Row-level security (DBMS_RLS)', () => {
-  it('Adds, drops, and queries VPD policies', () => {
-    const cases: Case[] = [
-      { sql: "BEGIN DBMS_RLS.ADD_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_name=>'emp_dept_pol', function_schema=>'HR', policy_function=>'dept_security_predicate'); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_RLS.ADD_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_name=>'emp_sal_pol', function_schema=>'HR', policy_function=>'sal_security_predicate', statement_types=>'SELECT,UPDATE'); END;", want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_RLS.ENABLE_POLICY('HR','EMPLOYEES','emp_dept_pol', TRUE); END;",                                                want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_RLS.ADD_GROUPED_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_group=>'PII_GROUP', policy_name=>'mask_email', function_schema=>'HR', policy_function=>'email_mask'); END;", want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_policies;',                                                                                            want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM dba_policy_groups;',                                                                                       want: { not: /ORA-00942/ } },
-      { sql: "SELECT object_owner, object_name, policy_name, enable FROM dba_policies WHERE object_name = 'EMPLOYEES';",              want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_policy_contexts FETCH FIRST 5 ROWS ONLY;",                                                              want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_sec_relevant_cols FETCH FIRST 5 ROWS ONLY;",                                                            want: { not: /ORA-/ } },
-      { sql: "BEGIN DBMS_RLS.DISABLE_POLICY('HR','EMPLOYEES','emp_dept_pol'); END;",                                                    want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','emp_dept_pol'); END;",                                                       want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','emp_sal_pol'); END;",                                                        want: { not: /ORA-00942/ } },
-      { sql: "BEGIN DBMS_RLS.DROP_GROUPED_POLICY('HR','EMPLOYEES','PII_GROUP','mask_email'); END;",                                     want: { not: /ORA-00942/ } },
-      { sql: "SELECT COUNT(*) FROM dba_policies WHERE object_name = 'EMPLOYEES';",                                                     want: /0/ },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // ADD_POLICY round-trip.
+    { sql: "BEGIN DBMS_RLS.ADD_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_name=>'emp_dept_pol', function_schema=>'HR', policy_function=>'dept_security_predicate'); END;",                       want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_RLS.ADD_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_name=>'emp_sal_pol', function_schema=>'HR', policy_function=>'sal_security_predicate', statement_types=>'SELECT,UPDATE'); END;", want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_RLS.ENABLE_POLICY('HR','EMPLOYEES','emp_dept_pol', TRUE); END;",                                                                                                                              want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_RLS.ADD_GROUPED_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_group=>'PII_GROUP', policy_name=>'mask_email', function_schema=>'HR', policy_function=>'email_mask'); END;",      want: /PL\/SQL procedure successfully completed\./i },
+    // Dictionary verification.
+    { sql: "SELECT COUNT(*) FROM dba_policies WHERE object_name = 'EMPLOYEES' AND policy_name IN ('EMP_DEPT_POL','EMP_SAL_POL');",                                                                                  want: /^\s*2\s*$/m },
+    { sql: "SELECT enable FROM dba_policies WHERE object_name = 'EMPLOYEES' AND policy_name = 'EMP_DEPT_POL';",                                                                                                      want: /\bYES\b/ },
+    { sql: "SELECT policy_group FROM dba_policy_groups WHERE policy_group = 'PII_GROUP';",                                                                                                                            want: /\bPII_GROUP\b/ },
+    { sql: "SELECT object_owner, object_name, policy_name FROM dba_policies WHERE object_name = 'EMPLOYEES' AND policy_name = 'EMP_SAL_POL';",                                                                       want: /\bEMP_SAL_POL\b/ },
+    { sql: "SELECT policy_name FROM dba_policy_contexts WHERE object_name = 'EMPLOYEES' FETCH FIRST 5 ROWS ONLY;",                                                                                                    want: /\bPOLICY_NAME\b/i },
+    { sql: "SELECT column_name FROM dba_sec_relevant_cols WHERE object_name = 'EMPLOYEES' FETCH FIRST 5 ROWS ONLY;",                                                                                                   want: /\bCOLUMN_NAME\b/i },
+    // DISABLE then DROP round-trip.
+    { sql: "BEGIN DBMS_RLS.DISABLE_POLICY('HR','EMPLOYEES','emp_dept_pol'); END;",                                                                                                                                    want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "SELECT enable FROM dba_policies WHERE object_name = 'EMPLOYEES' AND policy_name = 'EMP_DEPT_POL';",                                                                                                       want: /\bNO\b/ },
+    { sql: "BEGIN DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','emp_dept_pol'); END;",                                                                                                                                       want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','emp_sal_pol'); END;",                                                                                                                                         want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_RLS.DROP_GROUPED_POLICY('HR','EMPLOYEES','PII_GROUP','mask_email'); END;",                                                                                                                      want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "SELECT COUNT(*) FROM dba_policies WHERE object_name = 'EMPLOYEES';",                                                                                                                                       want: /^\s*0\s*$/m },
+  ])('§19: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 20 — ALTER SYSTEM session control (14 cases)
 // ─────────────────────────────────────────────────────────────────
 
