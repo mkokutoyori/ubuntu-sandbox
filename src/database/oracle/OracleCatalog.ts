@@ -640,6 +640,249 @@ export class OracleCatalog extends BaseCatalog {
 
   getSupplementalLogGroups(): readonly SupplementalLogGroup[] { return this.supLogGroups; }
 
+  // ── Proxy authentication ─────────────────────────────────────────
+  //
+  // `ALTER USER <client> GRANT CONNECT THROUGH <proxy> [WITH ROLE r]`
+  // adds a row here; the matching `REVOKE` variant removes it. The
+  // simulator does not actually arbitrate connection routing — the
+  // mapping exists so PROXY_USERS reports what real Oracle would.
+
+  private proxyUsers: { client: string; proxy: string; role: string | null }[] = [];
+
+  grantProxy(client: string, proxy: string, role?: string): void {
+    const c = client.toUpperCase();
+    const p = proxy.toUpperCase();
+    const r = role ? role.toUpperCase() : null;
+    const existing = this.proxyUsers.find(x => x.client === c && x.proxy === p);
+    if (existing) { existing.role = r; return; }
+    this.proxyUsers.push({ client: c, proxy: p, role: r });
+  }
+
+  revokeProxy(client: string, proxy: string): boolean {
+    const c = client.toUpperCase();
+    const p = proxy.toUpperCase();
+    const idx = this.proxyUsers.findIndex(x => x.client === c && x.proxy === p);
+    if (idx < 0) return false;
+    this.proxyUsers.splice(idx, 1);
+    return true;
+  }
+
+  getProxyUsers(): readonly { client: string; proxy: string; role: string | null }[] {
+    return this.proxyUsers;
+  }
+
+  // ── Unified audit policies ───────────────────────────────────────
+
+  private unifiedAuditPolicies = new Map<string, {
+    name: string;
+    actions: string[];
+    objectSchema?: string;
+    objectName?: string;
+    roles: string[];
+    /** Enabled users (BY clause). `null` ⇒ enabled for ALL USERS. */
+    enabledFor: string[] | null;
+    /** Users excluded from a BY ALL enablement. */
+    exceptUsers: string[];
+    enabled: boolean;
+  }>();
+
+  createUnifiedAuditPolicy(p: { name: string; actions: string[]; objectSchema?: string; objectName?: string; roles?: string[] }): void {
+    const key = p.name.toUpperCase();
+    if (this.unifiedAuditPolicies.has(key)) {
+      throw new Error(`ORA-46361: audit policy ${key} already exists`);
+    }
+    this.unifiedAuditPolicies.set(key, {
+      name: key,
+      actions: p.actions.map(a => a.toUpperCase()),
+      objectSchema: p.objectSchema?.toUpperCase(),
+      objectName: p.objectName?.toUpperCase(),
+      roles: (p.roles ?? []).map(r => r.toUpperCase()),
+      enabledFor: [],
+      exceptUsers: [],
+      enabled: false,
+    });
+  }
+
+  dropUnifiedAuditPolicy(name: string): boolean {
+    return this.unifiedAuditPolicies.delete(name.toUpperCase());
+  }
+
+  enableUnifiedAuditPolicy(name: string, byUsers?: string[], exceptUsers?: string[]): void {
+    const key = name.toUpperCase();
+    const p = this.unifiedAuditPolicies.get(key);
+    if (!p) throw new Error(`ORA-46365: audit policy ${key} does not exist`);
+    p.enabled = true;
+    if (byUsers && byUsers.length > 0) {
+      const set = new Set(p.enabledFor ?? []);
+      for (const u of byUsers) set.add(u.toUpperCase());
+      p.enabledFor = [...set];
+    } else if (exceptUsers && exceptUsers.length > 0) {
+      // BY EXCEPT — enable for all users except listed.
+      p.enabledFor = null;
+      const set = new Set(p.exceptUsers);
+      for (const u of exceptUsers) set.add(u.toUpperCase());
+      p.exceptUsers = [...set];
+    } else {
+      // Bare AUDIT POLICY name — enable for ALL USERS.
+      p.enabledFor = null;
+    }
+  }
+
+  disableUnifiedAuditPolicy(name: string, byUsers?: string[]): void {
+    const key = name.toUpperCase();
+    const p = this.unifiedAuditPolicies.get(key);
+    if (!p) throw new Error(`ORA-46365: audit policy ${key} does not exist`);
+    if (!byUsers || byUsers.length === 0) {
+      p.enabled = false;
+      p.enabledFor = [];
+      p.exceptUsers = [];
+      return;
+    }
+    if (p.enabledFor !== null) {
+      const set = new Set(p.enabledFor);
+      for (const u of byUsers) set.delete(u.toUpperCase());
+      p.enabledFor = [...set];
+    } else {
+      // Removing specific users from a BY ALL enablement → add them to except.
+      const set = new Set(p.exceptUsers);
+      for (const u of byUsers) set.add(u.toUpperCase());
+      p.exceptUsers = [...set];
+    }
+  }
+
+  // ── Transparent Data Encryption (TDE) ────────────────────────────
+  //
+  // The simulator does not encrypt anything for real, but it tracks the
+  // wallet / master-key / per-column metadata that DBAs would manage
+  // through `ADMINISTER KEY MANAGEMENT` and `ALTER TABLE … ENCRYPT`.
+  // Views (V$ENCRYPTION_KEYS, V$ENCRYPTION_WALLET,
+  // DBA_ENCRYPTED_COLUMNS) read live state from here — no hard-coded
+  // rows. Empty until an admin configures TDE, exactly like a real DB.
+
+  private tdeWallet: {
+    location: string;
+    status: 'OPEN' | 'CLOSED' | 'OPEN_NO_MASTER_KEY';
+    walletType: 'PASSWORD' | 'AUTOLOGIN' | 'LOCAL_AUTOLOGIN';
+    fullyBackedUp: boolean;
+  } | null = null;
+
+  private tdeKeys: {
+    keyId: string;
+    tag: string;
+    creator: string;
+    creationTime: Date;
+    activationTime: Date;
+    active: boolean;
+  }[] = [];
+
+  private encryptedColumns: {
+    owner: string;
+    tableName: string;
+    columnName: string;
+    encryptionAlg: string;
+    salt: boolean;
+    integrityAlg: string;
+  }[] = [];
+
+  configureTdeWallet(loc: string, type: 'PASSWORD' | 'AUTOLOGIN' | 'LOCAL_AUTOLOGIN' = 'PASSWORD'): void {
+    this.tdeWallet = { location: loc, status: 'OPEN_NO_MASTER_KEY', walletType: type, fullyBackedUp: false };
+  }
+
+  openTdeWallet(): void {
+    if (!this.tdeWallet) throw new Error('ORA-28365: wallet is not open');
+    this.tdeWallet.status = this.tdeKeys.length > 0 ? 'OPEN' : 'OPEN_NO_MASTER_KEY';
+  }
+
+  closeTdeWallet(): void {
+    if (this.tdeWallet) this.tdeWallet.status = 'CLOSED';
+  }
+
+  addTdeMasterKey(tag: string, creator: string): { keyId: string } {
+    if (!this.tdeWallet || this.tdeWallet.status === 'CLOSED') {
+      throw new Error('ORA-28365: wallet is not open');
+    }
+    const now = new Date();
+    // Synthesise a 78-char base64-like key id from time + sequence — real
+    // Oracle uses a UUID-style identifier; reproducibility is fine here.
+    const seq = (this.tdeKeys.length + 1).toString().padStart(4, '0');
+    const keyId = `AbCdEf${now.getTime().toString(36).padStart(12, '0').toUpperCase()}${seq}==`;
+    for (const k of this.tdeKeys) k.active = false;
+    this.tdeKeys.push({ keyId, tag, creator: creator.toUpperCase(), creationTime: now, activationTime: now, active: true });
+    this.tdeWallet.status = 'OPEN';
+    return { keyId };
+  }
+
+  setColumnEncryption(owner: string, tableName: string, columnName: string, alg = 'AES192', salt = true, integrity = 'SHA-1'): void {
+    const o = owner.toUpperCase(), t = tableName.toUpperCase(), c = columnName.toUpperCase();
+    const existing = this.encryptedColumns.find(e => e.owner === o && e.tableName === t && e.columnName === c);
+    if (existing) { existing.encryptionAlg = alg; existing.salt = salt; existing.integrityAlg = integrity; return; }
+    this.encryptedColumns.push({ owner: o, tableName: t, columnName: c, encryptionAlg: alg, salt, integrityAlg: integrity });
+  }
+
+  clearColumnEncryption(owner: string, tableName: string, columnName: string): boolean {
+    const o = owner.toUpperCase(), t = tableName.toUpperCase(), c = columnName.toUpperCase();
+    const idx = this.encryptedColumns.findIndex(e => e.owner === o && e.tableName === t && e.columnName === c);
+    if (idx < 0) return false;
+    this.encryptedColumns.splice(idx, 1);
+    return true;
+  }
+
+  getTdeWallet(): { location: string; status: string; walletType: string; fullyBackedUp: boolean } | null {
+    return this.tdeWallet;
+  }
+  getTdeMasterKeys(): readonly { keyId: string; tag: string; creator: string; creationTime: Date; activationTime: Date; active: boolean }[] {
+    return this.tdeKeys;
+  }
+  getEncryptedColumns(): readonly { owner: string; tableName: string; columnName: string; encryptionAlg: string; salt: boolean; integrityAlg: string }[] {
+    return this.encryptedColumns;
+  }
+
+  // ── Database Vault ───────────────────────────────────────────────
+  //
+  // Identical pattern to TDE: the catalog holds the realms / roles /
+  // command rules / factors that an admin would register via
+  // DBMS_MACADM. Views read live state. Empty by default — DV is not
+  // configured on a fresh install.
+
+  private dvRealms: { name: string; description: string; auditOptions: number; enabled: boolean }[] = [];
+  private dvRoles: { name: string; enabled: boolean; ruleSetName: string }[] = [];
+  private dvRealmAuth: { realmName: string; grantee: string; authRuleSetName: string; authOptions: string }[] = [];
+  private dvCommandRules: { command: string; ruleSetName: string; objectOwner: string; objectName: string; enabled: boolean }[] = [];
+  private dvFactors: { name: string; description: string; factorType: string; validateExpr: string; identifyBy: string; labeledBy: string; evalOptions: string; auditOptions: number; failOptions: number }[] = [];
+
+  createDvRealm(name: string, description: string, auditOptions = 1): void {
+    this.dvRealms.push({ name: name.toUpperCase(), description, auditOptions, enabled: true });
+  }
+  createDvRole(name: string, ruleSetName: string): void {
+    this.dvRoles.push({ name: name.toUpperCase(), enabled: true, ruleSetName });
+  }
+  addDvRealmAuth(realmName: string, grantee: string, authRuleSetName = '', authOptions = 'PARTICIPANT'): void {
+    this.dvRealmAuth.push({ realmName: realmName.toUpperCase(), grantee: grantee.toUpperCase(), authRuleSetName, authOptions });
+  }
+  createDvCommandRule(command: string, ruleSetName: string, objectOwner: string, objectName: string): void {
+    this.dvCommandRules.push({ command: command.toUpperCase(), ruleSetName, objectOwner: objectOwner.toUpperCase(), objectName: objectName.toUpperCase(), enabled: true });
+  }
+  createDvFactor(f: { name: string; description: string; factorType: string; validateExpr?: string; identifyBy?: string; labeledBy?: string; evalOptions?: string; auditOptions?: number; failOptions?: number }): void {
+    this.dvFactors.push({
+      name: f.name.toUpperCase(), description: f.description, factorType: f.factorType,
+      validateExpr: f.validateExpr ?? '', identifyBy: f.identifyBy ?? 'BY_CONSTANT',
+      labeledBy: f.labeledBy ?? 'BY_SELF', evalOptions: f.evalOptions ?? 'BY_SESSION',
+      auditOptions: f.auditOptions ?? 1, failOptions: f.failOptions ?? 1,
+    });
+  }
+  getDvRealms(): readonly { name: string; description: string; auditOptions: number; enabled: boolean }[] { return this.dvRealms; }
+  getDvRoles(): readonly { name: string; enabled: boolean; ruleSetName: string }[] { return this.dvRoles; }
+  getDvRealmAuth(): readonly { realmName: string; grantee: string; authRuleSetName: string; authOptions: string }[] { return this.dvRealmAuth; }
+  getDvCommandRules(): readonly { command: string; ruleSetName: string; objectOwner: string; objectName: string; enabled: boolean }[] { return this.dvCommandRules; }
+  getDvFactors(): readonly { name: string; description: string; factorType: string; validateExpr: string; identifyBy: string; labeledBy: string; evalOptions: string; auditOptions: number; failOptions: number }[] { return this.dvFactors; }
+
+  getUnifiedAuditPolicies(): readonly {
+    name: string; actions: string[]; objectSchema?: string; objectName?: string;
+    roles: string[]; enabledFor: string[] | null; exceptUsers: string[]; enabled: boolean;
+  }[] {
+    return [...this.unifiedAuditPolicies.values()];
+  }
+
   /**
    * Resolve a dictionary view to its column metadata — used by DESC
    * so `DESC ALL_VIEWS` succeeds even with no user views in storage.

@@ -522,6 +522,9 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropProfileStatement': return this.executeDropProfile(statement);
       case 'AuditStatement': return this.executeAudit(statement);
       case 'NoauditStatement': return this.executeNoaudit(statement);
+      case 'CreateAuditPolicyStatement': return this.executeCreateAuditPolicy(statement);
+      case 'DropAuditPolicyStatement': return this.executeDropAuditPolicy(statement);
+      case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
     }
@@ -2383,6 +2386,20 @@ export class OracleExecutor extends BaseExecutor {
             existing.dataType = { ...existing.dataType, nullable: false };
           }
         }
+      } else if (action.action === 'ENCRYPT_COLUMN') {
+        // Validate that the column exists, then record TDE metadata.
+        const meta = this.storage.getTableMeta(schema, tableName);
+        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const col = meta.columns.find(c => c.name === action.columnName.toUpperCase());
+        if (!col) throw new OracleError(904, `"${action.columnName.toUpperCase()}": invalid identifier`);
+        (this.catalog as OracleCatalog).setColumnEncryption(
+          schema, tableName, action.columnName,
+          (action.algorithm ?? 'AES192').toUpperCase().replace(/^'|'$/g, ''),
+          action.salt ?? true,
+          (action.integrity ?? 'SHA-1').toUpperCase().replace(/^'|'$/g, ''),
+        );
+      } else if (action.action === 'DECRYPT_COLUMN') {
+        (this.catalog as OracleCatalog).clearColumnEncryption(schema, tableName, action.columnName);
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
       } else if (action.action === 'MOVE_TABLESPACE') {
@@ -2861,7 +2878,9 @@ export class OracleExecutor extends BaseExecutor {
 
     if (stmt.password) {
       const profileName = user?.profile ?? 'DEFAULT';
-      if (engine) {
+      // IDENTIFIED BY VALUES '<hash>' bypasses password verification —
+      // the value is an opaque verifier already produced by Oracle.
+      if (engine && !stmt.passwordByHash) {
         const result = engine.changePassword(username, stmt.password, profileName);
         if (!result.ok) throw new OracleError(28007, result.error ?? 'password reuse violation');
       }
@@ -2911,6 +2930,17 @@ export class OracleExecutor extends BaseExecutor {
     }
     if (stmt.defaultRoleSpec) {
       catalog.setDefaultRoleSpec(username, stmt.defaultRoleSpec);
+    }
+    if (stmt.proxy) {
+      const proxyName = stmt.proxy.proxy.toUpperCase();
+      if (!catalog.userExists(proxyName)) {
+        throw new OracleError(1917, `user or role '${proxyName}' does not exist`);
+      }
+      if (stmt.proxy.mode === 'GRANT') {
+        catalog.grantProxy(username, proxyName, stmt.proxy.role);
+      } else {
+        catalog.revokeProxy(username, proxyName);
+      }
     }
     return emptyResult('User altered.');
   }
@@ -4457,6 +4487,41 @@ export class OracleExecutor extends BaseExecutor {
       catalog.removeStmtAuditOption(auditOption, stmt.byUser ?? null);
     }
     return emptyResult('Noaudit succeeded.');
+  }
+
+  // ── Unified audit policies ───────────────────────────────────────
+
+  private executeCreateAuditPolicy(stmt: import('../engine/parser/ASTNode').CreateAuditPolicyStatement): ResultSet {
+    this.requireSystemPrivilege('AUDIT SYSTEM');
+    const catalog = this.catalog as OracleCatalog;
+    catalog.createUnifiedAuditPolicy({
+      name: stmt.name,
+      actions: stmt.actions,
+      objectSchema: stmt.onObject?.schema,
+      objectName: stmt.onObject?.name,
+      roles: stmt.roles,
+    });
+    return emptyResult('Audit policy created.');
+  }
+
+  private executeDropAuditPolicy(stmt: import('../engine/parser/ASTNode').DropAuditPolicyStatement): ResultSet {
+    this.requireSystemPrivilege('AUDIT SYSTEM');
+    const catalog = this.catalog as OracleCatalog;
+    if (!catalog.dropUnifiedAuditPolicy(stmt.name)) {
+      throw new OracleError(46365, `audit policy ${stmt.name} does not exist`);
+    }
+    return emptyResult('Audit policy dropped.');
+  }
+
+  private executeAuditPolicy(stmt: import('../engine/parser/ASTNode').AuditPolicyStatement): ResultSet {
+    this.requireSystemPrivilege('AUDIT SYSTEM');
+    const catalog = this.catalog as OracleCatalog;
+    if (stmt.disable) {
+      catalog.disableUnifiedAuditPolicy(stmt.policyName, stmt.byUsers);
+      return emptyResult('Noaudit succeeded.');
+    }
+    catalog.enableUnifiedAuditPolicy(stmt.policyName, stmt.byUsers, stmt.exceptUsers);
+    return emptyResult('Audit succeeded.');
   }
 }
 
