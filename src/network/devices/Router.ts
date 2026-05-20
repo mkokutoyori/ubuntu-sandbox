@@ -37,6 +37,7 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
+import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
@@ -1205,6 +1206,93 @@ export abstract class Router extends Equipment {
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
     return this.shell.tabComplete(input);
+  }
+
+  // ─── vty sessions (per-terminal CLI isolation, §5.1 of terminal_gap.md) ──
+
+  /** Live vty sessions, keyed by their internal id. */
+  private readonly vtySessions = new Map<string, CliShellSession>();
+  /** Per-device queue serialising swap-and-restore around the shared shell. */
+  private vtyExecQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Allocate a fresh vty session — one per opened terminal. Each session
+   * carries its own mode, selectedInterface, terminalLength, … so two
+   * concurrent terminals do not leak privilege escalation or sub-mode
+   * pointers across each other.
+   */
+  openVtySession(): CliShellSession {
+    const initialMode = this.getOSType() === 'huawei-vrp' ? 'user-view' : 'user';
+    const s = new CliShellSession({ initialMode });
+    this.vtySessions.set(s.id, s);
+    return s;
+  }
+
+  /** Tear down a vty session and remove it from the active set. */
+  closeVtySession(sessionOrId: CliShellSession | string): void {
+    const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId.id;
+    const s = this.vtySessions.get(id);
+    if (!s) return;
+    s.dispose();
+    this.vtySessions.delete(id);
+  }
+
+  /** Lookup helper. */
+  getVtySession(id: string): CliShellSession | undefined {
+    return this.vtySessions.get(id);
+  }
+
+  /**
+   * Like `executeCommand`, but routes through the per-terminal vty
+   * session so each terminal observes its own mode / selection context.
+   * Sync swap-and-restore around the shared shell instance — async
+   * commands are awaited inside the swap window.
+   */
+  async executeCommandInVty(command: string, session: CliShellSession): Promise<string> {
+    const shell = this.shell as unknown as {
+      snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;
+      applyVtyState?: (s: import('./shells/vty/CliShellSession').VtySnapshot) => void;
+    };
+    // Older shells (HuaweiVRPShell pre-§5.1) may not expose the snapshot
+    // hooks yet — degrade gracefully to the legacy shared-state path so
+    // commands still work, even if isolation is not yet enforced there.
+    if (!shell.snapshotVtyState || !shell.applyVtyState) {
+      return this.executeCommand(command);
+    }
+    const run = async (): Promise<string> => {
+      if (!this.isPoweredOn) return '% Device is powered off';
+      if (session.disposed) return '';
+      const baseline = shell.snapshotVtyState!();
+      shell.applyVtyState!(session.state);
+      try {
+        const out = await this.executeCommand(command);
+        session.state = shell.snapshotVtyState!();
+        return out;
+      } finally {
+        shell.applyVtyState!(baseline);
+      }
+    };
+    const promise = this.vtyExecQueue.then(run, run) as Promise<string>;
+    this.vtyExecQueue = promise.catch(() => undefined);
+    return promise;
+  }
+
+  /** Read the per-vty prompt without disturbing the shared shell state. */
+  getPromptForVty(session: CliShellSession): string {
+    const shell = this.shell as unknown as {
+      snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;
+      applyVtyState?: (s: import('./shells/vty/CliShellSession').VtySnapshot) => void;
+    };
+    if (!shell.snapshotVtyState || !shell.applyVtyState) {
+      return this.getPrompt();
+    }
+    const baseline = shell.snapshotVtyState!();
+    shell.applyVtyState!(session.state);
+    try {
+      return this.getPrompt();
+    } finally {
+      shell.applyVtyState!(baseline);
+    }
   }
 
   getBanner(type: string): string {
