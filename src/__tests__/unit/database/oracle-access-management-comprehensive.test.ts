@@ -1292,30 +1292,37 @@ describe('23. Cross-cutting metadata views', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('24. SYSDATE / TIMESTAMP arithmetic across views', () => {
-  it('Performs date arithmetic with audit and user views', () => {
-    const cases: Case[] = [
-      { sql: 'SELECT SYSDATE FROM dual;',                                                                                              want: /\d{4}/ },
-      { sql: 'SELECT SYSDATE - 1 AS yesterday FROM dual;',                                                                              want: /\d{4}/ },
-      { sql: 'SELECT SYSTIMESTAMP FROM dual;',                                                                                          want: /\d{4}/ },
-      { sql: 'SELECT username FROM dba_users WHERE created > SYSDATE - 1;',                                                              want: { not: /ORA-01722/ } },
-      { sql: 'SELECT username FROM dba_users WHERE created > SYSDATE - 30;',                                                            want: { not: /ORA-01722/ } },
-      { sql: 'SELECT username, expiry_date FROM dba_users WHERE expiry_date BETWEEN SYSDATE AND SYSDATE + 30;',                          want: { not: /ORA-/ } },
-      { sql: "SELECT TO_CHAR(created, 'YYYY-MM-DD HH24:MI:SS') FROM dba_users WHERE username = 'ALICE';",                            want: { not: /ORA-/ } },
-      { sql: 'SELECT TRUNC(SYSDATE) FROM dual;',                                                                                          want: /\d{4}/ },
-      { sql: 'SELECT ADD_MONTHS(SYSDATE, 6) FROM dual;',                                                                                  want: /\d{4}/ },
-      { sql: 'SELECT MONTHS_BETWEEN(SYSDATE, SYSDATE - 90) FROM dual;',                                                                  want: /3/ },
-      { sql: "SELECT NEXT_DAY(SYSDATE, 'MONDAY') FROM dual;",                                                                          want: /\d{4}/ },
-      { sql: 'SELECT EXTRACT(YEAR FROM SYSDATE) FROM dual;',                                                                            want: /\d{4}/ },
-      { sql: "SELECT (SYSDATE - created) AS age_days FROM dba_users WHERE username = 'ALICE';",                                        want: { not: /ORA-/ } },
-      { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE timestamp > SYSTIMESTAMP - INTERVAL '1' HOUR;",                                want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM dba_audit_trail WHERE timestamp >= SYSDATE - INTERVAL '7' DAY FETCH FIRST 5 ROWS ONLY;",                    want: { not: /ORA-/ } },
-      { sql: "SELECT SESSIONTIMEZONE FROM dual;",                                                                                       want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // SYSDATE / SYSTIMESTAMP — current date markers (year >= 2024).
+    { sql: 'SELECT SYSDATE FROM dual;',                                                                want: /\b20\d{2}\b/ },
+    { sql: 'SELECT SYSDATE - 1 AS yesterday FROM dual;',                                                want: /\b20\d{2}\b/ },
+    { sql: 'SELECT SYSTIMESTAMP FROM dual;',                                                            want: /\b20\d{2}\b/ },
+    // Comparing DATE columns with SYSDATE arithmetic must NOT raise ORA-01722.
+    { sql: 'SELECT COUNT(*) FROM dba_users WHERE created > SYSDATE - 1;',                              want: /^\s*\d+\s*$/m },
+    { sql: 'SELECT COUNT(*) FROM dba_users WHERE created > SYSDATE - 30;',                             want: /^\s*\d+\s*$/m },
+    { sql: 'SELECT COUNT(*) FROM dba_users WHERE expiry_date BETWEEN SYSDATE AND SYSDATE + 30;',       want: /^\s*\d+\s*$/m },
+    // TO_CHAR formats a DATE into a known shape.
+    { sql: "SELECT TO_CHAR(created, 'YYYY-MM-DD HH24:MI:SS') FROM dba_users WHERE username = 'ALICE';", want: /\b20\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\b/ },
+    { sql: 'SELECT TRUNC(SYSDATE) FROM dual;',                                                          want: /\b20\d{2}\b/ },
+    { sql: 'SELECT ADD_MONTHS(SYSDATE, 6) FROM dual;',                                                  want: /\b20\d{2}\b/ },
+    // MONTHS_BETWEEN(now, now - 90d) ≈ 3.
+    { sql: 'SELECT ROUND(MONTHS_BETWEEN(SYSDATE, SYSDATE - 90)) FROM dual;',                            want: /^\s*3\s*$/m },
+    { sql: "SELECT NEXT_DAY(SYSDATE, 'MONDAY') FROM dual;",                                              want: /\b20\d{2}\b/ },
+    { sql: 'SELECT EXTRACT(YEAR FROM SYSDATE) FROM dual;',                                              want: /^\s*20\d{2}\s*$/m },
+    // DATE − DATE returns a NUMBER.
+    { sql: "SELECT (SYSDATE - created) AS age_days FROM dba_users WHERE username = 'ALICE';",          want: /^\s*-?\d+(\.\d+)?\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE timestamp > SYSTIMESTAMP - INTERVAL '1' HOUR;",  want: /^\s*\d+\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE timestamp >= SYSDATE - INTERVAL '7' DAY;",       want: /^\s*\d+\s*$/m },
+    { sql: 'SELECT SESSIONTIMEZONE FROM dual;',                                                          want: /[+\-]\d{2}:\d{2}|\b[A-Z]{3,}\b/ },
+  ])('§24: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 25 — SYS_CONTEXT / USERENV inspection (18 cases)
 // ─────────────────────────────────────────────────────────────────
 
