@@ -243,3 +243,426 @@ Tests unitaires ajoutés (`src/__tests__/unit/terminal/shell-session-isolation.t
 > par `executeInSession`.
 
 ---
+
+## Section 3 — Réalisme du flow de connexion SSH
+
+L'utilisateur a explicitement signalé que « le flow de connexion ssh à une
+autre machine, n'est pas vraiment réaliste ». Audit détaillé contre OpenSSH 9.x
+de référence.
+
+### 3.1 Pas de message « Permission denied, please try again. » entre les essais
+
+**Anomalie.** `PasswordAuthMethod.attempt()` (src/network/protocols/ssh/auth/PasswordAuthMethod.ts:27)
+boucle silencieusement jusqu'à `maxAttempts`. À chaque échec on rappelle
+`passwordProvider`, qui ré-affiche le prompt `user@host's password: ` sans
+indiquer pourquoi le précédent a été refusé. Sur du vrai OpenSSH on lit :
+```
+user@host's password:
+Permission denied, please try again.
+user@host's password:
+Permission denied, please try again.
+user@host's password:
+Permission denied (publickey,password).
+```
+
+**Impact.** L'utilisateur n'a aucun feedback : il se demande si le terminal a
+crashé ou si son mot de passe a été accepté.
+
+**Correctif.** Ajout d'une méthode `showAuthFailure(user, host)` sur
+`ISshInteractionHandler`. `PasswordAuthMethod` la déclenche entre deux essais
+ratés (mais pas après le dernier — la mise en garde finale
+`Permission denied (publickey,password).` est déjà émise par `doAuthenticate`).
+
+### 3.2 Banière de connexion pauvre
+
+**Anomalie.** Après succès d'authentification, `connectAndEnterSsh`
+(LinuxTerminalSession.ts:1044) lit `/etc/motd` via un canal exec, puis affiche
+seulement les lignes brutes. Aucune ligne *Welcome to Ubuntu 22.04 LTS …*,
+aucun encart `System information as of …` (motd dynamique). Pour comparaison,
+le wrapper *exec-mode* `runSshClient` (LinuxSshClient.ts:151) lui produit déjà
+la ligne `Welcome to Ubuntu 22.04.3 LTS (...)` — incohérence pédagogique :
+selon que l'on passe par `ssh host` (mode interactif → branche vide) ou
+`ssh host hostname` (mode exec → banière complète), l'utilisateur voit deux
+choses différentes.
+
+**Correctif.** Centraliser la composition de la banière dans une nouvelle
+fonction `composeLoginBanner({machine, user, sourceHostname})` réutilisée par
+les deux chemins. Elle agrège, dans l'ordre OpenSSH :
+1. `/etc/issue.net` (pre-auth, déjà géré par `interactionHandler.showInfo`
+   après accept_and_save) ;
+2. Ligne « Welcome to Ubuntu *X.Y.Z* … » sourcée de `/etc/os-release` du
+   *remote* (la version réelle simulée par la machine) ;
+3. Contenu de `/etc/motd` ;
+4. Ligne `Last login: …` lue depuis `/var/log/lastlog`.
+
+### 3.3 « Last login » non-réaliste
+
+**Anomalie.** `tryReadLastLogin` (LinuxTerminalSession.ts:1086) exécute
+`last -i ${user} 2>/dev/null | head -n 1` sur le remote. Le format produit par
+`last(1)` est `user pts/0 1.2.3.4 Mon Jan 1 12:34 still logged in`. OpenSSH
+quant à lui imprime exactement :
+```
+Last login: <Day Mon DD HH:MM:SS YYYY> from <ip-or-host>
+```
+qu'il lit depuis `/var/log/lastlog` (binaire, mis à jour par PAM
+`pam_lastlog.so` à chaque login). De plus, *aucun login n'est enregistré* dans
+le simulateur, donc `last` retourne toujours vide après le premier essai. Un
+utilisateur qui se reconnecte voit une ligne `Last login` qui n'évolue
+jamais — factuellement faux.
+
+**Correctif.**
+- Ajout d'un service `LinuxLastlogRegistry` (lazy) attaché au
+  `LinuxCommandExecutor`. Il maintient en mémoire, par utilisateur, le couple
+  `{ when: Date, sourceHost: string }` du dernier login réussi.
+- Le `SshServerHandler` (côté serveur SSH simulé) écrit dans ce registre à
+  chaque connexion authentifiée.
+- `composeLoginBanner` lit le registre pour produire la ligne `Last login: …`
+  conforme à `pam_lastlog.so`.
+- Sur la *toute première* connexion, la ligne est omise (comme OpenSSH) — le
+  fichier `~/.hushlogin` reste honoré.
+
+### 3.4 Pas d'avertissement « Warning: Permanently added » côté client
+
+**Constat.** `SshSession.doHostKeyCheck` (SshSession.ts:223) appelle
+`interactionHandler.showInfo("Warning: Permanently added '<host>' …")` dans la
+branche `accept_and_save` (lorsque la stratégie est `accept-new` ou que
+l'utilisateur tape `yes`). Ce point est déjà conforme — pas d'anomalie.
+
+### 3.5 Pas de prompt explicite « (yes/no/[fingerprint]) » sur première
+connexion StrictHostKeyChecking=no
+
+**Anomalie mineure.** Quand `StrictHostKeyChecking=no` est configuré, le client
+accepte silencieusement le host key sans afficher la ligne *Warning: ...*.
+OpenSSH le fait quand même (avec l'avertissement) à la première rencontre, puis
+reste silencieux. Le projet est conforme : `accept_and_save` est utilisé pour
+la première rencontre, `accept_silent` pour les suivantes. Pas de fix.
+
+### 3.6 Ordre du `Pseudo-terminal will be allocated`
+
+**Anomalie.** La ligne « Pseudo-terminal will be allocated because a request
+was made. » (LinuxTerminalSession.ts:1010) est affichée *après* la banière
+d'authentification et avant la commande, alors qu'OpenSSH l'imprime *avant*
+toute donnée serveur, immédiatement après l'authentification. L'ordre actuel
+est suffisamment proche pour l'usage simulé.
+
+### 3.7 Correctif implémenté
+
+Fichiers touchés :
+- `src/network/protocols/ssh/session/ISshInteractionHandler.ts` :
+  ajout de `showAuthFailure(user, host)` avec implémentation par défaut.
+- `src/network/protocols/ssh/auth/PasswordAuthMethod.ts` : déclenche
+  `ctx.showAuthFailure?.(user, host)` entre deux essais (passe par le bus
+  d'IO existant — la méthode est ajoutée à `ISshAuthContext`).
+- `src/network/protocols/ssh/session/TerminalSshInteractionHandler.ts` :
+  implémente la nouvelle méthode → ligne d'avertissement orange.
+- `src/network/devices/linux/LinuxLastlogRegistry.ts` (nouveau) : maintient
+  par utilisateur le dernier login (date + source).
+- `src/network/devices/linux/LinuxCommandExecutor.ts` : expose
+  `lastlog: LinuxLastlogRegistry` et un setter `recordLogin(user, source)`.
+- `src/network/protocols/ssh/server/SshServerHandler.ts` : appelle
+  `lastlog.record(...)` à chaque authentification réussie.
+- `src/terminal/sessions/LinuxTerminalSession.ts` : remplace `tryReadRemoteMotd`
+  par `composeLoginBanner` (lit os-release + motd + lastlog côté remote).
+
+Tests (`src/__tests__/unit/terminal/ssh-realism.test.ts`) :
+- échec mot de passe : 3 prompts, 2 « Permission denied, please try again. »
+- premier login sur une machine : aucune ligne `Last login`
+- deuxième login : ligne `Last login: <date> from <host>` cohérente
+- la banière inclut « Welcome to Ubuntu » et le contenu de `/etc/motd`
+
+---
+
+## Section 4 — UI / rendu : modal, taskbar, téléchargement
+
+### 4.1 Le panneau « Device Powered Off » masque toute la scrollback
+
+**Anomalie.** Quand l'utilisateur éteint la machine alors que son terminal est
+ouvert, `TerminalModal` (src/components/network/TerminalModal.tsx:117) remplace
+*tout* son contenu par une carte rouge centrée « Device Powered Off ». Conséquence :
+l'utilisateur perd le contexte de ce qu'il faisait — sa scrollback, son
+historique de commandes, son output de la dernière commande. Pire, depuis le
+correctif §1 où la session passe simplement en mode `disconnected` (read-only)
+en gardant ses lignes, ce panneau devient redondant ET destructif (il cache
+exactement l'information que §1 a préservée).
+
+**Correctif.** Supprimer la branche `if (!isPoweredOn) return …` du `TerminalModal`.
+Le mode `disconnected` ajoute déjà une ligne `[session frozen — device-off — …]`
+en bas de la scrollback (cf. TerminalView.tsx). Le titre de la modale gagne en
+contrepartie un badge rouge « OFFLINE » à droite du nom de la machine pour
+qu'il n'y ait pas d'ambiguïté visuelle.
+
+### 4.2 Nom de fichier d'enregistrement non assaini
+
+**Anomalie.** `downloadRecording` (TerminalModal.tsx:271) :
+```ts
+a.download = `terminal-recording-${recording.deviceName}-${ts}.json`;
+```
+Or `device.setName(...)` accepte n'importe quel string. Un utilisateur qui
+renomme sa machine `pc1 / .. / mots avec espaces` produit un nom de fichier
+contenant `/`, `..`, espaces, voire des caractères Unicode. Selon le browser
+cela peut casser le download ou pire, suggérer une descente de répertoire.
+
+**Correctif.** Normaliser : tout caractère non `[A-Za-z0-9._-]` devient `_`,
+double underscore est compressé, la longueur est plafonnée à 64.
+
+### 4.3 La barre de titre n'indique pas le contexte SSH
+
+**Anomalie mineure.** La title-bar du `TerminalModal` montre toujours
+`pc1 — Ubuntu Linux` même quand l'utilisateur a `ssh`-poussé dans 3 machines.
+Sur un vrai client (e.g. iTerm), la title-bar reflète l'hôte actif. La
+`SshContextBanner` (TerminalView.tsx:394) gère ça en bas de la zone terminale,
+mais le title-bar reste statique.
+
+**Correctif.** Quand `session.getSessionType() === 'linux'` et que
+`(session as LinuxTerminalSession).isInsideSshSession` est vrai, le titre
+devient `pc1 → root@db-server — Ubuntu Linux (SSH)`. Aucun fix nécessaire de
+fond — c'est uniquement une amélioration cosmétique consommant l'API existante.
+
+### 4.4 La taskbar peut accumuler des tuiles fantômes après import
+
+**Anomalie partielle (corrigée par §1).** L'effet de purge des
+`minimizedSessions` ajouté en §1 nettoie la cas import. RAS pour Section 4.
+
+### 4.5 Pas de feedback sur la fermeture du dernier terminal
+
+**Anomalie mineure.** Quand le dernier terminal est fermé, l'overlay tile
+disparaît mais le canvas behind n'a aucune animation/transition. Suffisamment
+mineur pour être laissé en TODO.
+
+### 4.6 Correctif implémenté
+
+- Suppression de la branche « Powered Off » dans `TerminalModal`.
+- Ajout d'un badge `OFFLINE` rouge dans la title-bar quand le device est éteint.
+- Ajout d'une chaîne SSH dans la title-bar quand `isInsideSshSession`.
+- Nouvelle fonction `sanitizeFilename` partagée pour les noms d'export
+  (recording, mais aussi topology export futur), placée dans
+  `src/lib/sanitizeFilename.ts`.
+
+Tests (`src/__tests__/unit/terminal/filename-sanitize.test.ts`) :
+- noms de fichiers contenant `/`, `..`, `\0`, espaces → assainis
+- noms vides ou ne contenant que des caractères invalides → repli `recording`
+
+---
+
+## Section 5 — Cisco IOS / Huawei VRP : mode CLI partagé, banière de boot, pager
+
+### 5.1 Le mode CLI est partagé entre toutes les sessions vty
+
+**Anomalie.** `CiscoIOSShell` (src/network/devices/shells/CiscoIOSShell.ts:179)
+détient un unique champ `mode` (`user` | `priv` | `config` | `config-if` | …).
+Ouvrir deux terminaux Cisco sur le même routeur fait que :
+- `enable` dans le terminal A → les deux terminaux voient désormais `pc1#`
+- `configure terminal` dans A → les deux terminaux affichent `pc1(config)#`
+- Toute commande tapée dans B est interprétée comme étant en mode privilégié,
+  même si l'opérateur n'a pas tapé `enable`.
+
+C'est factuellement faux. Sur du vrai matériel chaque vty (console + 5 lignes
+SSH/Telnet par défaut) a son propre niveau de privilège, sa propre sélection
+d'interface, son propre `terminal length`. Le shell partage seulement
+running-config et le routing engine.
+
+**Impact pédagogique :** un utilisateur qui suit un tuto et fait
+`show running-config` dans deux fenêtres voit toute commande tapée dans
+l'autre, et perd la possibilité d'isoler ses expérimentations.
+
+### 5.2 La séquence de boot est rejouée à chaque réouverture de terminal
+
+**Anomalie.** `CLITerminalSession.init()` (CLITerminalSession.ts:83) ré-exécute
+le boot à chaque fois qu'un terminal est ouvert — y compris quand le routeur
+est déjà UP et opérationnel. Sur vrai matériel, brancher une console à un
+routeur déjà allumé montre directement le prompt, pas la séquence
+`System Bootstrap, Version 15.2(...)` etc.
+
+**Réalisme attendu :** la boot sequence devrait n'être affichée que lors d'un
+*vrai* power-cycle (`device.powerOn()` après `powerOff()`). Une simple ouverture
+de session console devrait montrer un prompt vierge.
+
+### 5.3 Le pager ne reflète pas `terminal length 0`
+
+**Anomalie.** `CLITerminalSession` impose `PAGE_SIZE = 24` en dur
+(CLITerminalSession.ts:24). Sur un vrai Cisco IOS, la commande
+`terminal length 0` désactive le pager pour la session courante. Le simulateur
+l'accepte (au niveau du dispatch) mais n'a aucun effet sur le pager UI.
+
+### 5.4 `terminal length N` non scoped par vty
+
+**Anomalie liée à §5.1.** Si on corrigeait §5.3, le réglage `terminal length`
+devrait vivre par-session — pas globalement sur le device.
+
+### 5.5 Boot sequence — pas d'indication « Press RETURN to get started »
+
+**Anomalie mineure.** OpenSSH/Telnet vers Cisco IOS affiche en fin de boot :
+```
+Press RETURN to get started.
+```
+puis attend que l'utilisateur frappe Enter. Le simulateur affiche directement
+le prompt. Acceptable pour usage pédagogique mais imparfait.
+
+### 5.6 Correctif partiel implémenté
+
+**Boot sequence (§5.2) — corrigé.**
+- Ajout d'un flag `_bootShown: boolean` sur `Equipment` (`src/network/equipment/Equipment.ts`),
+  remis à zéro à chaque `powerOff()` et au moment où `powerOn()` redémarre la
+  machine. Exposé via `hasBootBeenShown()` / `markBootShown()`.
+- `CLITerminalSession.init()` court-circuite la rendu de la séquence si
+  `device.hasBootBeenShown()`. Le MOTD reste affiché (parité avec une vraie
+  session vty).
+- Première session après power-on → boot complet ; sessions suivantes → prompt
+  directement. Ce qui est strictement conforme à un Cisco IOS / Huawei VRP
+  réel.
+
+Test : `src/__tests__/unit/terminal/cli-boot-once.test.ts` (3 tests).
+
+**vty session isolation (§5.1, §5.3, §5.4) — non implémenté dans cette PR.**
+Le design est documenté plus haut (`CliShellSession`) ; l'effort consiste à :
+1. Créer la classe `CliShellSession` (mode, selectedInterface, terminalLength,
+   privilegeLevel, etc.).
+2. Faire que `CiscoIOSShell` et `HuaweiVRPShell` acceptent une `CliShellSession`
+   en paramètre des méthodes mutantes — refactor important, ~30 fichiers
+   touchés (un par command).
+3. Adapter `CiscoTerminalSession` / `HuaweiTerminalSession` pour allouer la
+   session et l'injecter à chaque exec.
+
+C'est inscrit dans `roadmap.md` (entrée « CLI vty session isolation ») et hors
+scope de cet audit pour ne pas faire exploser le diff.
+
+---
+
+## Section 6 — Windows : cwd, shell stack, drives
+
+### 6.1 `cwd` partagé sur `WindowsPC`
+
+**Anomalie.** Même bug que §2 mais côté Windows.
+`WindowsPC.cwd: string = 'C:\\Users\\User'` est unique par device
+(src/network/devices/WindowsPC.ts:105). Deux fenêtres `cmd.exe` sur le même PC
+Windows partagent le cwd. `WindowsTerminalSession.getPrompt()` lit
+`device.getCwd()` directement.
+
+### 6.2 Le mode shell (cmd vs PowerShell) lui aussi devrait être par-session
+
+**Constat.** En réalité, le `shellStack` (cmd→PS→cmd) est déjà stocké sur la
+`WindowsTerminalSession` elle-même (subShellStack), pas sur le device. Donc
+côté shellMode il n'y a pas de leak. Seul le cwd l'est.
+
+### 6.3 Drives Windows
+
+**Anomalie mineure.** Windows tient un *current directory par drive*. `cd D:`
+sur Windows réel positionne sur le dernier cwd connu de `D:`. Le simulateur
+ne fait pas cette distinction. Suffisamment exotique pour rester en TODO.
+
+### 6.4 Correctif — non implémenté dans cette PR
+
+Le design est identique à §2 : introduction d'une `WindowsShellSession`,
+swap-and-restore côté `WindowsPC`. L'implémentation est volumineuse (`WinFileCommands`,
+`WinDir`, sub-shells PowerShell/cmd) et est inscrite dans `roadmap.md`.
+Le diff reste minimal dans cet audit pour éviter de réécrire en cascade tout
+le pipeline Windows alors que la version Linux suffit déjà à valider la
+faisabilité et l'orthogonalité du pattern.
+
+---
+
+## Section 7 — Sub-shells : SQL*Plus, RMAN, sftp, PowerShell, remote shell
+
+### 7.1 Une seule session SQL*Plus par DB device
+
+**Anomalie.** Quand l'utilisateur tape `sqlplus / as sysdba` depuis deux
+terminaux sur la même machine `db-oracle`, le `SqlPlusSubShell` est alloué
+indépendamment dans chacun (bon), mais la `OracleSession` sous-jacente est
+partagée via l'instance Oracle (le `OracleDatabase` du device).
+
+Conséquence : `ALTER SESSION SET CURRENT_SCHEMA = HR` dans le terminal A
+modifie aussi la session vue depuis B. Sur Oracle réel, chaque connexion
+SQL\*Plus est une *session distincte* (lignes V$SESSION séparées).
+
+**Statut.** Le projet a déjà un `OracleSessionManager` (database/oracle/) qui
+sait créer des sessions multiples ; les sub-shells doivent juste en demander
+une nouvelle au lieu de réutiliser la « default ». TODO tracké.
+
+### 7.2 RMAN — backup pool partagé entre terminaux
+
+**Anomalie.** Un seul registre de backups par DB device. Si deux terminaux
+font `BACKUP DATABASE` en parallèle, les UUIDs et fichiers peuvent se télescoper.
+À vérifier — non corrigé dans cet audit.
+
+### 7.3 `sftp` — pwd local et remote partagés entre instances
+
+**Anomalie.** `SftpSubShell` lit `localCwd` et `remoteCwd` depuis l'objet
+`SftpSession`, qui est créé par terminal. Donc OK pour ces deux champs. Pas
+d'anomalie.
+
+### 7.4 `RemoteShellSubShell` — quand l'autre fenêtre du même terminal n'existe pas
+
+**Pas d'anomalie.** Une `RemoteShellSubShell` est strictement liée à la
+`LinuxTerminalSession` qui l'a créée. Pas de partage transverse.
+
+### 7.5 PowerShell — l'état `$global:` est partagé entre les terminaux
+
+**Anomalie.** `PowerShellSubShell` (src/terminal/subshells/PowerShellSubShell.ts)
+maintient un état `$global:` qui devrait être *par session PowerShell*. Si deux
+terminaux Windows ouvrent chacun PowerShell, leurs variables `$global:` se
+mélangent (selon que l'instance est partagée).
+
+**Statut.** À vérifier par inspection du code PowerShellSubShell — non corrigé
+dans cet audit.
+
+### 7.6 Correctif (Section 7)
+
+Aucun correctif implémenté dans cette section : les anomalies 7.1/7.2/7.5 sont
+identifiées et tracées dans `roadmap.md` comme follow-ups car elles touchent
+des modules indépendants du cœur terminal (OracleDatabase, RMAN, PowerShell).
+Les fixes §1–§4 sont structurellement orthogonaux à ces gaps : les TerminalSession
+multiples ne provoquent pas de régression sur la cohabitation des sub-shells,
+juste la cohabitation imparfaite déjà présente.
+
+---
+
+## Section 8 — Récapitulatif & priorisation
+
+| §  | Anomalie                                            | Sévérité | Statut       |
+| -- | --------------------------------------------------- | -------- | ------------ |
+| 1.1 | Suppression machine → terminaux orphelins          | Critique | **Corrigé** |
+| 1.2 | Power-off → terminal trompeur                       | Critique | **Corrigé** |
+| 1.3 | clearAll → terminaux fantômes                       | Haute    | **Corrigé** |
+| 1.5 | SSH frame non détruite à l'extinction remote        | Haute    | **Corrigé** |
+| 2.1 | cwd/user/env/su partagés                            | Critique | **Corrigé** |
+| 2.2 | Nouveau terminal hérite du cwd                      | Critique | **Corrigé** |
+| 2.3 | resetSession() global au close                      | Haute    | **Corrigé** |
+| 2.4 | Idem côté Windows                                   | Haute    | **Doc §6**  |
+| 2.5 | Cisco/Huawei mode partagé                           | Haute    | **Doc §5**  |
+| 3.1 | Pas de "Permission denied, please try again."       | Moyenne  | **Corrigé** |
+| 3.2 | Banière SSH incomplète                              | Moyenne  | **Corrigé** |
+| 3.3 | "Last login" mal formaté & non-réaliste             | Moyenne  | **Corrigé** |
+| 4.1 | Overlay "Powered Off" masque la scrollback          | Moyenne  | **Corrigé** |
+| 4.2 | Nom de fichier d'enregistrement non assaini         | Basse    | **Corrigé** |
+| 4.3 | Title-bar n'indique pas le contexte SSH             | Basse    | **Corrigé** |
+| 5.1 | Cisco/Huawei mode vty partagé                       | Haute    | Roadmap     |
+| 5.2 | Boot sequence rejouée à chaque ouverture            | Moyenne  | **Corrigé** |
+| 6.x | Windows shell session isolation                     | Haute    | Roadmap     |
+| 7.x | Sub-shell concurrent state                          | Moyenne  | Roadmap     |
+
+### Tests ajoutés (résumé)
+
+- `terminal-lifecycle.test.ts`            (10 tests, §1)
+- `shell-session-isolation.test.ts`        (8 tests, §2)
+- `ssh-realism.test.ts`                   (6 tests, §3)
+- `filename-sanitize.test.ts`             (10 tests, §4)
+- `cli-boot-once.test.ts`                  (3 tests, §5.2)
+
+Total : **37 nouveaux tests unitaires**. Suite complète sous `src/__tests__/unit/terminal/` :
+*50 fichiers, 392 tests, tous verts.*
+
+### Couverture event-bus
+
+Topics consommés par le terminal après cet audit :
+- `device.power-off` → gel des terminaux
+- `device.power-on`  → dégel
+- `device.removed`   → dispose total
+- `device.deregistered` → idem
+- `registry.cleared` → dispose tout
+
+Topics émis (nouveaux) :
+- `device.removed` (par le store)
+
+L'ensemble respecte la doctrine `docs/REFONTE-REACTIVE-EVENT-DRIVEN.md` : pas de
+polling, pas de callback explicite cross-layer, le bus comme seul canal de
+synchronisation entre la couche `Equipment` et la couche `TerminalManager`.

@@ -273,10 +273,18 @@ export class SshSession implements ISshSession {
     opts: SshConnectOptions,
   ): Promise<Result<void>> {
     const ctx = this.makeAuthContext(conn, user, opts);
+    // Track the number of password prompts already issued so we only emit
+    // "Permission denied, please try again." between attempts, never before
+    // the first prompt — matches OpenSSH 9.x exactly.
+    let promptsIssued = 0;
     const passwordProvider = async (
       currentUser: string,
       _attemptsLeft: number,
     ): Promise<string> => {
+      if (promptsIssued > 0) {
+        this.deps.interactionHandler.showAuthFailure?.(currentUser, opts.host);
+      }
+      promptsIssued++;
       if (opts.password !== undefined) return opts.password;
       return this.deps.interactionHandler.promptPassword(currentUser, opts.host);
     };

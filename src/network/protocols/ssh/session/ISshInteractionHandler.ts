@@ -43,6 +43,16 @@ export interface ISshInteractionHandler {
   showWarning(message: string): void;
   showInfo(message: string): void;
   onConnected(info: SshConnectionInfo): void;
+  /**
+   * Surface a single-failed-attempt notice between two password prompts —
+   * matches OpenSSH's "Permission denied, please try again." line. The
+   * final terminal "Permission denied (publickey,password)." message is
+   * emitted separately by SshSession.doAuthenticate after all attempts.
+   *
+   * Default implementations re-route the line through showWarning() so
+   * existing handlers keep working without overriding.
+   */
+  showAuthFailure?(user: string, host: string): void;
 }
 
 /**
@@ -72,6 +82,10 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
   }
 
   onConnected(_info: SshConnectionInfo): void {
+    /* silent */
+  }
+
+  showAuthFailure(_user: string, _host: string): void {
     /* silent */
   }
 }

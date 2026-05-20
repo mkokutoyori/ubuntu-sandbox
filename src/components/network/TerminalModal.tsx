@@ -16,7 +16,9 @@ import { TerminalView, useTerminalSession } from '@/components/terminal/Terminal
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import type { SessionRecording } from '@/terminal/sessions/TerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
+import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { cn } from '@/lib/utils';
+import { sanitizeFilename } from '@/lib/sanitizeFilename';
 
 // Minimum and default dimensions
 const MIN_WIDTH = 400;
@@ -112,24 +114,17 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
     setShowScrollbackConfig(false);
   }, [session, scrollbackValue]);
 
-  // ── Power off / not implemented guards ──
+  // Powered-off branches used to replace the entire modal with a red panel,
+  // hiding the user's scrollback. With §1's `disconnected` InputMode the
+  // session keeps its history visible and signals the freeze inline; the
+  // modal only needs to surface an OFFLINE badge in the title bar.
 
-  if (!isPoweredOn) {
-    return (
-      <div className={embedded
-        ? "w-full h-full flex items-center justify-center bg-slate-900"
-        : "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      }>
-        <div className={cn("w-[400px] p-6 flex flex-col items-center", "bg-slate-900 rounded-xl", "border border-white/10 shadow-2xl shadow-black/50", "animate-in zoom-in-95 fade-in duration-200")}>
-          <div className="text-red-400 text-lg mb-2">Device Powered Off</div>
-          <div className="text-white/60 text-sm text-center mb-4">
-            {deviceName} is currently powered off. Please power on the device to access the terminal.
-          </div>
-          <button onClick={onClose} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 transition-colors">Close</button>
-        </div>
-      </div>
-    );
-  }
+  // SSH chain for the title bar — gives an at-a-glance hint that the
+  // current prompt belongs to a remote machine (the in-window banner from
+  // SshContextBanner shows the full chain).
+  const sshContext = sessionType === 'linux'
+    ? (session as LinuxTerminalSession).getSshContextInfo?.()
+    : { active: false, chain: [] };
 
   // ── Title bar ──
 
@@ -138,6 +133,12 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
       <div className="flex items-center gap-2 pl-3 min-w-0">
         <span className="text-[11px] font-medium text-white/80 truncate">
           {deviceName}
+          {sshContext?.active && sshContext.chain.length > 0 && (
+            <span className="text-sky-300/90">
+              {' → '}
+              {sshContext.chain.map((f) => `${f.user}@${f.host}`).join(' › ')}
+            </span>
+          )}
           {sessionType === 'linux' && !isDatabaseDevice && ' — Ubuntu Linux'}
           {sessionType === 'windows' && (winShellMode === 'powershell' ? ' — Windows PowerShell' : ' — Command Prompt')}
           {sessionType === 'cisco' && ' — Cisco IOS'}
@@ -149,6 +150,14 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             deviceType === 'db-sqlserver' ? 'SQL Server' : 'Database'
           }`}
         </span>
+        {!isPoweredOn && (
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 shrink-0"
+            title="Device is powered off — terminal is read-only"
+          >
+            OFFLINE
+          </span>
+        )}
       </div>
       <div className="flex items-stretch h-full">
         <button
@@ -268,7 +277,11 @@ function downloadRecording(recording: SessionRecording): void {
   const a = document.createElement('a');
   a.href = url;
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  a.download = `terminal-recording-${recording.deviceName}-${ts}.json`;
+  // Sanitize: user-controlled device.name may contain slashes, spaces,
+  // unicode, or path-traversal segments. Browsers either reject or silently
+  // mangle such names. Normalise to a safe slug.
+  const safeName = sanitizeFilename(recording.deviceName, 'recording');
+  a.download = `terminal-recording-${safeName}-${ts}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

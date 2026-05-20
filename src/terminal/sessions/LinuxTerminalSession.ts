@@ -1104,10 +1104,16 @@ export class LinuxTerminalSession extends TerminalSession {
     // tab-completion, history). If the remote machine cannot be
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
-    const motd = await this.tryReadRemoteMotd(session);
-    for (const line of motd) this.addLine(line);
-    const lastLogin = await this.tryReadLastLogin(session, user);
-    if (lastLogin) this.addLine(lastLogin);
+    //
+    // Banner composition: prefer the in-process LinuxMachine path because
+    // it gives us the canonical OpenSSH ordering (Welcome → motd → blank
+    // → Last login). Falls back to the exec-channel reads when the remote
+    // is a synthetic handler that doesn't materialise a LinuxMachine.
+    const remoteForBanner = findLinuxMachineByIp(host);
+    const bannerLines = remoteForBanner
+      ? composeLoginBanner(remoteForBanner, user)
+      : await this.composeLoginBannerViaExec(session, user);
+    for (const line of bannerLines) this.addLine(line);
 
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
@@ -1616,6 +1622,53 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
+   * Banner composition for the fallback exec-channel path (synthetic SSH
+   * handlers in tests). Mirrors `composeLoginBanner` ordering: Welcome →
+   * motd → blank → Last login. Uses ssh exec commands because we do not
+   * have direct access to the remote VFS.
+   */
+  private async composeLoginBannerViaExec(
+    session: SshSession,
+    user: string,
+  ): Promise<string[]> {
+    const lines: string[] = [];
+    const welcome = await this.tryReadWelcome(session);
+    if (welcome) lines.push(welcome);
+    const motd = await this.tryReadRemoteMotd(session);
+    if (motd.length > 0) {
+      if (lines.length > 0) lines.push('');
+      for (const m of motd) lines.push(m);
+    }
+    const lastLogin = await this.tryReadLastLogin(session, user);
+    if (lastLogin) {
+      if (lines.length > 0) lines.push('');
+      lines.push(lastLogin);
+    }
+    return lines;
+  }
+
+  /**
+   * Compose the canonical Ubuntu "Welcome to …" banner from /etc/os-release
+   * + uname. Falls back to a generic string if the remote does not surface
+   * those files.
+   */
+  private async tryReadWelcome(session: SshSession): Promise<string | null> {
+    const ch = session.openExecChannel(
+      'sh -c "grep PRETTY_NAME /etc/os-release 2>/dev/null; uname -r 2>/dev/null"',
+    );
+    if (!isOk(ch)) return null;
+    const r = await ch.value.execute();
+    ch.value.close();
+    const out = r.stdout || '';
+    const pretty = /PRETTY_NAME="([^"]+)"/.exec(out)?.[1];
+    const release = out.split('\n').find((l) => /^\d+\./.test(l)) ?? '';
+    if (!pretty && !release) return null;
+    const machine = 'GNU/Linux';
+    const arch = 'x86_64';
+    return `Welcome to ${pretty ?? 'Ubuntu'} (${machine} ${release || '5.15.0'} ${arch})`;
+  }
+
+  /**
    * Generic sub-shell key handler.
    * Works for SQL*Plus and any future ISubShell implementations.
    */
@@ -2011,6 +2064,70 @@ function findLinuxMachineByIp(targetIp: string): Equipment | null {
     }
   }
   return null;
+}
+
+/**
+ * Compose the post-authentication banner the way OpenSSH does (with PAM
+ * configured the Ubuntu way):
+ *   1. "Welcome to Ubuntu <pretty-name> (GNU/Linux <release> <arch>)"
+ *   2. Contents of /etc/motd (if non-empty)
+ *   3. Blank line separator
+ *   4. "Last login: …" pulled from the in-memory lastlog registry
+ *
+ * Honours `~/.hushlogin`: if the user's home contains it, no banner is
+ * emitted — matches PAM behaviour exactly.
+ */
+function composeLoginBanner(remote: Equipment, user: string): string[] {
+  const exec = (remote as unknown as {
+    executor?: {
+      vfs?: { readFile: (p: string) => string | null };
+      lastlog?: {
+        getPrevious: (u: string) => { when: number; sourceHost: string; tty: string } | undefined;
+      };
+      userMgr?: { getUser: (u: string) => { home?: string } | undefined };
+    };
+  }).executor;
+  if (!exec?.vfs) return [];
+
+  const home = exec.userMgr?.getUser(user)?.home ?? `/home/${user}`;
+  // /etc/nologin: refuse non-root logins. Conventional Ubuntu honors it via PAM.
+  // /etc/motd:    static-motd. /etc/legal: not surfaced by default sshd.
+  // ~/.hushlogin: suppress all banner content (motd + lastlog).
+  const hushLogin = exec.vfs.readFile(`${home}/.hushlogin`);
+  if (hushLogin !== null) return [];
+
+  const lines: string[] = [];
+
+  const osRelease = exec.vfs.readFile('/etc/os-release') ?? '';
+  const pretty = /PRETTY_NAME="([^"]+)"/.exec(osRelease)?.[1] ?? 'Ubuntu 22.04 LTS';
+  // Kernel release would normally come from /proc/sys/kernel/osrelease.
+  // We do not synthesise one here; the line is purely cosmetic.
+  lines.push(`Welcome to ${pretty} (GNU/Linux 5.15.0-91-generic x86_64)`);
+
+  const motd = (exec.vfs.readFile('/etc/motd') ?? '').replace(/\n+$/, '');
+  if (motd.trim().length > 0) {
+    lines.push('');
+    for (const m of motd.split('\n')) lines.push(m);
+  }
+
+  const prev = exec.lastlog?.getPrevious(user);
+  if (prev) {
+    lines.push('');
+    // Ctime format identical to pam_lastlog.so.
+    const d = new Date(prev.when);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ctime =
+      `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ` +
+      `${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:` +
+      `${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} ` +
+      `${d.getUTCFullYear()}`;
+    lines.push(`Last login: ${ctime} from ${prev.sourceHost}`);
+  }
+
+  return lines;
 }
 
 // ── ssh CLI argument parser ─────────────────────────────────────

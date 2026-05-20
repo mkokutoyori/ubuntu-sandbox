@@ -32,6 +32,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
 import type { LinuxShellSession } from './shell/LinuxShellSession';
+import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -47,6 +48,12 @@ export class LinuxCommandExecutor {
    * and surfaced to outgoing SSH connections that honour `ssh -A`.
    */
   readonly sshAgent: SshAgent = new SshAgent();
+  /**
+   * Last-login registry — populated by the SSH server on successful auth
+   * (and by the console-login flow in the future). Read by ssh client code
+   * when composing the post-login banner.
+   */
+  readonly lastlog: LinuxLastlogRegistry = new LinuxLastlogRegistry();
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
