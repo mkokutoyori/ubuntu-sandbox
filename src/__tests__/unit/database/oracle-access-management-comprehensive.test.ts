@@ -106,26 +106,43 @@ afterAll(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// SECTION 1 — Session bootstrap & SYS context (12 cases)
+// SECTION 1 — Session bootstrap & SYS context
 // ─────────────────────────────────────────────────────────────────
 
 describe('1. Session bootstrap and SYS context', () => {
-  it('SYS session is established and reports the expected identity', () => {
-    const cases: Case[] = [
-      { sql: 'SELECT USER FROM DUAL;',                                                  want: /SYS/ },
-      { sql: "SELECT SYS_CONTEXT('USERENV','SESSION_USER') FROM DUAL;",                 want: /SYS/ },
-      { sql: "SELECT SYS_CONTEXT('USERENV','CURRENT_USER') FROM DUAL;",                 want: /SYS/ },
-      { sql: "SELECT SYS_CONTEXT('USERENV','CURRENT_SCHEMA') FROM DUAL;",               want: /SYS/ },
-      { sql: "SELECT SYS_CONTEXT('USERENV','ISDBA') FROM DUAL;",                        want: /TRUE/i },
-      { sql: "SELECT SYS_CONTEXT('USERENV','OS_USER') FROM DUAL;",                      want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','SESSIONID') FROM DUAL;",                    want: /\d/ },
-      { sql: "SELECT SYS_CONTEXT('USERENV','INSTANCE_NAME') FROM DUAL;",                want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','DB_NAME') FROM DUAL;",                      want: { not: /ORA-/ } },
-      { sql: "SELECT SYS_CONTEXT('USERENV','SERVER_HOST') FROM DUAL;",                  want: { not: /ORA-/ } },
-      { sql: 'SHOW USER',                                                               want: /SYS/i },
-      { sql: 'SELECT BANNER FROM v$version WHERE ROWNUM = 1;',                          want: /Oracle/i },
-    ];
-    drive(sys, cases);
+  // Each row is asserted as its own `test.each` case so the report
+  // identifies exactly which statement failed. Matchers are tight: no
+  // alternations between success and failure, no bare "does not throw"
+  // checks — every assertion commits to the expected output token(s).
+  it.each<Case>([
+    // USER pseudo-column resolves to the connected schema.
+    { sql: 'SELECT USER FROM DUAL;',                                            want: /\bSYS\b/ },
+    // Every USERENV namespace value an admin actually queries.
+    { sql: "SELECT SYS_CONTEXT('USERENV','SESSION_USER') FROM DUAL;",           want: /\bSYS\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','CURRENT_USER') FROM DUAL;",           want: /\bSYS\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','CURRENT_SCHEMA') FROM DUAL;",         want: /\bSYS\b/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','ISDBA') FROM DUAL;",                  want: /\bTRUE\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','AUTHENTICATION_METHOD') FROM DUAL;",  want: /\b(PASSWORD|OS|EXTERNAL|SYSDBA)\b/i },
+    { sql: "SELECT SYS_CONTEXT('USERENV','OS_USER') FROM DUAL;",                want: /\S/ },
+    // SESSIONID must be a non-zero integer.
+    { sql: "SELECT SYS_CONTEXT('USERENV','SESSIONID') FROM DUAL;",              want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT SYS_CONTEXT('USERENV','INSTANCE_NAME') FROM DUAL;",          want: /\S/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','DB_NAME') FROM DUAL;",                want: /\S/ },
+    { sql: "SELECT SYS_CONTEXT('USERENV','SERVER_HOST') FROM DUAL;",            want: /\S/ },
+    // SHOW USER renders the canonical SQL*Plus line.
+    { sql: 'SHOW USER',                                                         want: /USER\s+(?:is\s+)?["']?SYS["']?/i },
+    // V$VERSION first row must carry the Oracle release marker.
+    { sql: 'SELECT BANNER FROM v$version WHERE ROWNUM = 1;',                    want: /Oracle\s+Database\s+\d+/i },
+    // DUAL is the canonical one-row table.
+    { sql: 'SELECT COUNT(*) FROM DUAL;',                                        want: /^\s*1\s*$/m },
+    // The currently-open user session is visible in V$SESSION.
+    { sql: "SELECT COUNT(*) FROM v$session WHERE username = 'SYS' AND type = 'USER';", want: /^\s*[1-9]\d*\s*$/m },
+  ])('§1: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
