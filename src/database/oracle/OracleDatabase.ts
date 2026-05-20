@@ -771,6 +771,29 @@ export class OracleDatabase {
       return; // No-op in simulator
     }
 
+    // DBMS_RLS.{ADD_POLICY,ADD_GROUPED_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY,DROP_GROUPED_POLICY}
+    if (upper.startsWith('DBMS_RLS.')) {
+      this.executeDbmsRlsCall(executor, trimmed);
+      return;
+    }
+
+    // DBMS_FGA.{ADD_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY}
+    if (upper.startsWith('DBMS_FGA.')) {
+      this.executeDbmsFgaCall(executor, trimmed);
+      return;
+    }
+
+    // DBMS_MACADM — Database Vault administration; routed through the catalog.
+    if (upper.startsWith('DBMS_MACADM.')) {
+      this.executeDbmsMacadmCall(trimmed);
+      return;
+    }
+
+    // DBMS_AUDIT_MGMT — accept maintenance procedures as no-ops.
+    if (upper.startsWith('DBMS_AUDIT_MGMT.')) {
+      return;
+    }
+
     // DBMS_SCHEDULER calls
     if (upper.startsWith('DBMS_SCHEDULER.')) {
       return; // No-op in simulator
@@ -1525,5 +1548,182 @@ export class OracleDatabase {
     });
 
     return emptyResult('Trigger created.');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // DBMS_RLS / DBMS_FGA / DBMS_MACADM dispatchers
+  //
+  // PL/SQL procedure calls are parsed with a permissive regex: the call
+  // body is split on commas and each `name => value` pair is captured.
+  // Positional arguments are tolerated by falling back on declaration
+  // order, mirroring real PL/SQL invocation.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Extract named arguments from a procedure call body like
+   *  `object_schema=>'HR', policy_name=>'p1', statement_types=>'SELECT'`. */
+  private parseNamedArgs(call: string): Record<string, string> {
+    // Strip the leading `<PKG>.<PROC>(` and trailing `);`.
+    const open = call.indexOf('(');
+    const close = call.lastIndexOf(')');
+    if (open < 0 || close < 0 || close <= open) return {};
+    const body = call.slice(open + 1, close);
+    const args: Record<string, string> = {};
+    // Split on top-level commas only (so quoted commas survive).
+    const parts: string[] = [];
+    let depth = 0; let buf = ''; let inStr = false;
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      if (ch === "'" && body[i - 1] !== '\\') inStr = !inStr;
+      if (!inStr && ch === '(') depth++;
+      if (!inStr && ch === ')') depth--;
+      if (!inStr && ch === ',' && depth === 0) { parts.push(buf); buf = ''; continue; }
+      buf += ch;
+    }
+    if (buf.trim()) parts.push(buf);
+    for (const raw of parts) {
+      const m = raw.match(/^\s*(\w+)\s*=>\s*([\s\S]+?)\s*$/);
+      if (m) args[m[1].toUpperCase()] = OracleDatabase.unquote(m[2]);
+    }
+    return args;
+  }
+
+  private static unquote(value: string): string {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("'") && trimmed.endsWith("'")) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  }
+
+  private executeDbmsRlsCall(_executor: OracleExecutor, call: string): void {
+    const upper = call.toUpperCase();
+    const args = this.parseNamedArgs(call);
+    const get = (key: string): string => args[key] ?? '';
+    if (upper.includes('.ADD_POLICY')) {
+      this.catalog.addRlsPolicy({
+        objectSchema: get('OBJECT_SCHEMA'),
+        objectName: get('OBJECT_NAME'),
+        policyName: get('POLICY_NAME'),
+        functionSchema: get('FUNCTION_SCHEMA'),
+        policyFunction: get('POLICY_FUNCTION'),
+        statementTypes: get('STATEMENT_TYPES'),
+        policyType: get('POLICY_TYPE'),
+        secRelevantCols: get('SEC_RELEVANT_COLS'),
+      });
+    } else if (upper.includes('.ADD_GROUPED_POLICY')) {
+      this.catalog.addRlsPolicy({
+        objectSchema: get('OBJECT_SCHEMA'),
+        objectName: get('OBJECT_NAME'),
+        policyName: get('POLICY_NAME'),
+        policyGroup: get('POLICY_GROUP'),
+        functionSchema: get('FUNCTION_SCHEMA'),
+        policyFunction: get('POLICY_FUNCTION'),
+        statementTypes: get('STATEMENT_TYPES'),
+      });
+    } else if (upper.includes('.ENABLE_POLICY')) {
+      // Positional: (object_schema, object_name, policy_name, enable)
+      const positional = this.parsePositionalArgs(call);
+      const enable = positional[3]?.toUpperCase() !== 'FALSE';
+      this.catalog.enableRlsPolicy(positional[0] ?? '', positional[1] ?? '', positional[2] ?? '', enable);
+    } else if (upper.includes('.DISABLE_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      this.catalog.enableRlsPolicy(positional[0] ?? '', positional[1] ?? '', positional[2] ?? '', false);
+    } else if (upper.includes('.DROP_POLICY') || upper.includes('.DROP_GROUPED_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      // DROP_GROUPED_POLICY signature: (object_schema, object_name, policy_group, policy_name)
+      const policyName = upper.includes('GROUPED') ? positional[3] ?? '' : positional[2] ?? '';
+      this.catalog.dropRlsPolicy(positional[0] ?? '', positional[1] ?? '', policyName);
+    }
+  }
+
+  private executeDbmsFgaCall(_executor: OracleExecutor, call: string): void {
+    const upper = call.toUpperCase();
+    const args = this.parseNamedArgs(call);
+    const get = (key: string): string => args[key] ?? '';
+    if (upper.includes('.ADD_POLICY')) {
+      const types = (get('STATEMENT_TYPES') || 'SELECT').toUpperCase();
+      this.catalog.addFgaPolicy({
+        objectSchema: get('OBJECT_SCHEMA').toUpperCase(),
+        objectName: get('OBJECT_NAME').toUpperCase(),
+        policyName: get('POLICY_NAME').toUpperCase(),
+        policyOwner: get('OBJECT_SCHEMA').toUpperCase(),
+        policyText: get('AUDIT_CONDITION') || '',
+        enabled: true,
+        select: types.includes('SELECT'),
+        insert: types.includes('INSERT'),
+        update: types.includes('UPDATE'),
+        delete: types.includes('DELETE'),
+      });
+    } else if (upper.includes('.ENABLE_POLICY') || upper.includes('.DISABLE_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      const enable = upper.includes('.ENABLE_POLICY');
+      const policies = this.catalog.getFgaPolicies();
+      const p = policies.find(x => x.objectSchema === (positional[0] ?? '').toUpperCase()
+                                && x.objectName === (positional[1] ?? '').toUpperCase()
+                                && x.policyName === (positional[2] ?? '').toUpperCase());
+      if (p) (p as { enabled: boolean }).enabled = enable;
+    } else if (upper.includes('.DROP_POLICY')) {
+      const positional = this.parsePositionalArgs(call);
+      this.catalog.dropFgaPolicy(positional[0] ?? '', positional[1] ?? '', positional[2] ?? '');
+    }
+  }
+
+  private executeDbmsMacadmCall(call: string): void {
+    const upper = call.toUpperCase();
+    const args = this.parseNamedArgs(call);
+    const get = (key: string): string => args[key] ?? '';
+    if (upper.includes('.CREATE_REALM')) {
+      this.catalog.createDvRealm(get('REALM_NAME'), get('DESCRIPTION'), Number(get('AUDIT_OPTIONS') || '1'));
+    } else if (upper.includes('.DELETE_REALM')) {
+      // Best-effort removal — there's no dedicated DV remove in the catalog.
+      const all = this.catalog.getDvRealms() as { name: string }[];
+      const idx = all.findIndex(r => r.name === get('REALM_NAME').toUpperCase());
+      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+    } else if (upper.includes('.ADD_OBJECT_TO_REALM') || upper.includes('.ADD_AUTH_TO_REALM')) {
+      if (upper.includes('AUTH')) {
+        this.catalog.addDvRealmAuth(get('REALM_NAME'), get('GRANTEE'), '', get('AUTH_OPTIONS') || 'PARTICIPANT');
+      }
+    } else if (upper.includes('.CREATE_ROLE')) {
+      this.catalog.createDvRole(get('ROLE'), '');
+    } else if (upper.includes('.DELETE_ROLE')) {
+      const all = this.catalog.getDvRoles() as { name: string }[];
+      const idx = all.findIndex(r => r.name === get('ROLE').toUpperCase());
+      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+    } else if (upper.includes('.CREATE_COMMAND_RULE')) {
+      this.catalog.createDvCommandRule(get('COMMAND'), get('RULE_SET_NAME'), get('OBJECT_OWNER'), get('OBJECT_NAME'));
+    } else if (upper.includes('.DELETE_COMMAND_RULE')) {
+      const all = this.catalog.getDvCommandRules() as { command: string; objectOwner: string; objectName: string }[];
+      const idx = all.findIndex(r => r.command === get('COMMAND').toUpperCase()
+                                  && r.objectOwner === get('OBJECT_OWNER').toUpperCase()
+                                  && r.objectName === get('OBJECT_NAME').toUpperCase());
+      if (idx >= 0) (all as unknown[]).splice(idx, 1);
+    } else if (upper.includes('.CREATE_FACTOR')) {
+      this.catalog.createDvFactor({
+        name: get('FACTOR_NAME'),
+        description: get('DESCRIPTION'),
+        factorType: get('FACTOR_TYPE_NAME'),
+        validateExpr: get('VALIDATE_EXPR'),
+        identifyBy: get('IDENTIFY_BY'),
+        labeledBy: get('LABELED_BY'),
+        evalOptions: get('EVAL_OPTIONS'),
+        auditOptions: Number(get('AUDIT_OPTIONS') || '1'),
+        failOptions: Number(get('FAIL_OPTIONS') || '1'),
+      });
+    } else if (upper.includes('.DELETE_FACTOR')) {
+      const all = this.catalog.getDvFactors() as { name: string }[];
+      const idx = all.findIndex(r => r.name === get('FACTOR_NAME').toUpperCase());
+      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+    }
+  }
+
+  /** Parse positional arguments — used for procedures like
+   *  DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','pol'). */
+  private parsePositionalArgs(call: string): string[] {
+    const open = call.indexOf('(');
+    const close = call.lastIndexOf(')');
+    if (open < 0 || close < 0) return [];
+    const body = call.slice(open + 1, close);
+    if (body.includes('=>')) return []; // Named-arg call — use parseNamedArgs.
+    return body.split(',').map(p => OracleDatabase.unquote(p));
   }
 }
