@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-services-processes
-Generated: 2026-05-20T06:32:25.075Z
+Generated: 2026-05-20T06:56:08.093Z
 Engine: linux
 host=L-SRV-SP-DBG (linux-server) — focus: processus & services
 Total commands: 512
@@ -75,13 +75,13 @@ $ [16/512]> pwd
   /root
 
 $ [17/512]> date
-  Wed May 20 06:32:25 UTC 2026
+  Wed May 20 06:56:08 UTC 2026
 
 $ [18/512]> date -u
-  Wed May 20 06:32:25 UTC 2026
+  Wed May 20 06:56:08 UTC 2026
 
 $ [19/512]> uptime
-   06:32:25 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05
+   06:56:08 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 $ [20/512]> uptime -p
   up 17 minutes
@@ -90,12 +90,12 @@ $ [21/512]> runlevel
   N 3
 
 $ [22/512]> who
-  root  pts/0  2026-05-20 06:32
+  root  pts/0  2026-05-20 06:56
 
 $ [23/512]> w
-   06:32:25 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05
+   06:56:08 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05
   USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-  root     pts/0    -                06:32:25  0.00s  0.00s  0.00s -bash
+  root     pts/0    -                06:56:08  0.00s  0.00s  0.00s -bash
 
 
 --- [24] § inventaire ps ---
@@ -114,35 +114,35 @@ $ [24/512]> ps
 
 $ [25/512]> ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    06:32       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/rsyslogd -n -iNONE
-  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-resolved
-  root         6  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-journald
-  root         7  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-logind
-  messagebus     8  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root         9  0.0  0.2   80000   8000 ?        S    06:32       00:00 /sbin/ifup -a --read-environment
-  root        10  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/ufw/ufw-init start quiet
-  root        11  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      12  0.0  0.2   80000   8000 ?        S    06:32       00:00 /etc/init.d/init.ohasd run
-  root        13  0.0  0.1   10240   4096 pts/0    S    06:32       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    06:56       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    06:56       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      12  0.0  0.2   80000   8000 ?        S    06:56       00:00 /etc/init.d/init.ohasd run
+  root        13  0.0  0.1   10240   4096 pts/0    S    06:56       00:00 -bash
 
 $ [26/512]> ps -ef
   UID      PID   PPID  C  STIME TTY      TIME     CMD
-  root         1     0  0 06:32 ?           00:00 /sbin/init
-  root         2     1  0 06:32 ?           00:00 /usr/sbin/sshd -D
-  root         3     1  0 06:32 ?           00:00 /usr/sbin/cron -f
-  root         4     1  0 06:32 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
-  systemd-resolve     5     1  0 06:32 ?           00:00 /lib/systemd/systemd-resolved
-  root         6     1  0 06:32 ?           00:00 /lib/systemd/systemd-journald
-  root         7     1  0 06:32 ?           00:00 /lib/systemd/systemd-logind
-  messagebus     8     1  0 06:32 ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root         9     1  0 06:32 ?           00:00 /sbin/ifup -a --read-environment
-  root        10     1  0 06:32 ?           00:00 /lib/ufw/ufw-init start quiet
-  root        11     1  0 06:32 ?           00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      12     1  0 06:32 ?           00:00 /etc/init.d/init.ohasd run
-  root        13     2  0 06:32 pts/0       00:00 -bash
+  root         1     0  0 06:56 ?           00:00 /sbin/init
+  root         2     1  0 06:56 ?           00:00 /usr/sbin/sshd -D
+  root         3     1  0 06:56 ?           00:00 /usr/sbin/cron -f
+  root         4     1  0 06:56 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5     1  0 06:56 ?           00:00 /lib/systemd/systemd-resolved
+  root         6     1  0 06:56 ?           00:00 /lib/systemd/systemd-journald
+  root         7     1  0 06:56 ?           00:00 /lib/systemd/systemd-logind
+  messagebus     8     1  0 06:56 ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9     1  0 06:56 ?           00:00 /sbin/ifup -a --read-environment
+  root        10     1  0 06:56 ?           00:00 /lib/ufw/ufw-init start quiet
+  root        11     1  0 06:56 ?           00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      12     1  0 06:56 ?           00:00 /etc/init.d/init.ohasd run
+  root        13     2  0 06:56 pts/0       00:00 -bash
 
 $ [27/512]> ps -e
   PID   TTY      TIME     CMD
@@ -210,16 +210,16 @@ $ [30/512]> ps -ely
 
 $ [31/512]> ps -f
   UID      PID   PPID  C  STIME TTY      TIME     CMD
-  root         1     0  0 06:32 ?           00:00 /sbin/init
-  root         2     1  0 06:32 ?           00:00 /usr/sbin/sshd -D
-  root         3     1  0 06:32 ?           00:00 /usr/sbin/cron -f
-  root         4     1  0 06:32 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         6     1  0 06:32 ?           00:00 /lib/systemd/systemd-journald
-  root         7     1  0 06:32 ?           00:00 /lib/systemd/systemd-logind
-  root         9     1  0 06:32 ?           00:00 /sbin/ifup -a --read-environment
-  root        10     1  0 06:32 ?           00:00 /lib/ufw/ufw-init start quiet
-  root        11     1  0 06:32 ?           00:00 /lib/apparmor/apparmor.systemd reload
-  root        13     2  0 06:32 pts/0       00:00 -bash
+  root         1     0  0 06:56 ?           00:00 /sbin/init
+  root         2     1  0 06:56 ?           00:00 /usr/sbin/sshd -D
+  root         3     1  0 06:56 ?           00:00 /usr/sbin/cron -f
+  root         4     1  0 06:56 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         6     1  0 06:56 ?           00:00 /lib/systemd/systemd-journald
+  root         7     1  0 06:56 ?           00:00 /lib/systemd/systemd-logind
+  root         9     1  0 06:56 ?           00:00 /sbin/ifup -a --read-environment
+  root        10     1  0 06:56 ?           00:00 /lib/ufw/ufw-init start quiet
+  root        11     1  0 06:56 ?           00:00 /lib/apparmor/apparmor.systemd reload
+  root        13     2  0 06:56 pts/0       00:00 -bash
 
 $ [32/512]> ps -fl
   F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
@@ -252,19 +252,19 @@ $ [33/512]> ps ax
 
 $ [34/512]> ps axu
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    06:32       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/rsyslogd -n -iNONE
-  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-resolved
-  root         6  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-journald
-  root         7  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-logind
-  messagebus     8  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root         9  0.0  0.2   80000   8000 ?        S    06:32       00:00 /sbin/ifup -a --read-environment
-  root        10  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/ufw/ufw-init start quiet
-  root        11  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      12  0.0  0.2   80000   8000 ?        S    06:32       00:00 /etc/init.d/init.ohasd run
-  root        13  0.0  0.1   10240   4096 pts/0    S    06:32       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    06:56       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    06:56       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      12  0.0  0.2   80000   8000 ?        S    06:56       00:00 /etc/init.d/init.ohasd run
+  root        13  0.0  0.1   10240   4096 pts/0    S    06:56       00:00 -bash
 
 $ [35/512]> ps -e f
   PID   TTY      TIME     CMD
@@ -456,35 +456,35 @@ $ [52/512]> ps axo pid,stat,euser,cmd --sort=-pcpu
 
 $ [53/512]> ps aux --sort=-%mem
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    06:32       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/rsyslogd -n -iNONE
-  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-resolved
-  root         6  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-journald
-  root         7  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-logind
-  messagebus     8  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root         9  0.0  0.2   80000   8000 ?        S    06:32       00:00 /sbin/ifup -a --read-environment
-  root        10  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/ufw/ufw-init start quiet
-  root        11  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      12  0.0  0.2   80000   8000 ?        S    06:32       00:00 /etc/init.d/init.ohasd run
-  root        13  0.0  0.1   10240   4096 pts/0    S    06:32       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    06:56       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    06:56       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      12  0.0  0.2   80000   8000 ?        S    06:56       00:00 /etc/init.d/init.ohasd run
+  root        13  0.0  0.1   10240   4096 pts/0    S    06:56       00:00 -bash
 
 $ [54/512]> ps aux --sort=-%cpu
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    06:32       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/rsyslogd -n -iNONE
-  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-resolved
-  root         6  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-journald
-  root         7  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-logind
-  messagebus     8  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root         9  0.0  0.2   80000   8000 ?        S    06:32       00:00 /sbin/ifup -a --read-environment
-  root        10  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/ufw/ufw-init start quiet
-  root        11  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      12  0.0  0.2   80000   8000 ?        S    06:32       00:00 /etc/init.d/init.ohasd run
-  root        13  0.0  0.1   10240   4096 pts/0    S    06:32       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    06:56       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    06:56       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      12  0.0  0.2   80000   8000 ?        S    06:56       00:00 /etc/init.d/init.ohasd run
+  root        13  0.0  0.1   10240   4096 pts/0    S    06:56       00:00 -bash
 
 $ [55/512]> ps -e --sort=start_time
   PID   TTY      TIME     CMD
@@ -590,25 +590,25 @@ $ [63/512]> ps w
 
 $ [64/512]> ps ww aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    06:32       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/sbin/rsyslogd -n -iNONE
-  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-resolved
-  root         6  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-journald
-  root         7  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/systemd/systemd-logind
-  messagebus     8  0.0  0.2   80000   8000 ?        S    06:32       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root         9  0.0  0.2   80000   8000 ?        S    06:32       00:00 /sbin/ifup -a --read-environment
-  root        10  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/ufw/ufw-init start quiet
-  root        11  0.0  0.2   80000   8000 ?        S    06:32       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      12  0.0  0.2   80000   8000 ?        S    06:32       00:00 /etc/init.d/init.ohasd run
-  root        13  0.0  0.1   10240   4096 pts/0    S    06:32       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    06:56       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/sbin/rsyslogd -n -iNONE
+  systemd-resolve     5  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-resolved
+  root         6  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-journald
+  root         7  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/systemd/systemd-logind
+  messagebus     8  0.0  0.2   80000   8000 ?        S    06:56       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root         9  0.0  0.2   80000   8000 ?        S    06:56       00:00 /sbin/ifup -a --read-environment
+  root        10  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/ufw/ufw-init start quiet
+  root        11  0.0  0.2   80000   8000 ?        S    06:56       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      12  0.0  0.2   80000   8000 ?        S    06:56       00:00 /etc/init.d/init.ohasd run
+  root        13  0.0  0.1   10240   4096 pts/0    S    06:56       00:00 -bash
 
 $ [65/512]> ps -e | wc -l
   14
 
 $ [66/512]> ps aux | grep bash | grep -v grep
-  root        13  0.0  0.1   10240   4096 pts/0    S    06:32       00:00 -bash
+  root        13  0.0  0.1   10240   4096 pts/0    S    06:56       00:00 -bash
 
 $ [67/512]> ps -Z
   ps: invalid option -- 'Z'
@@ -866,7 +866,7 @@ $ [103/512]> pgrep -Z bash
 
 --- [104] § top / vmstat / free ---
 $ [104/512]> top -b -n 1
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -888,7 +888,7 @@ $ [104/512]> top -b -n 1
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [105/512]> top -b -n 1 | head -20
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -910,7 +910,7 @@ $ [105/512]> top -b -n 1 | head -20
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [106/512]> top -b -n 1 -o %CPU
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -932,7 +932,7 @@ $ [106/512]> top -b -n 1 -o %CPU
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [107/512]> top -b -n 1 -o %MEM
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -954,7 +954,7 @@ $ [107/512]> top -b -n 1 -o %MEM
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [108/512]> top -b -n 1 -p 1
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -976,7 +976,7 @@ $ [108/512]> top -b -n 1 -p 1
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [109/512]> top -b -n 1 -u root
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -998,7 +998,7 @@ $ [109/512]> top -b -n 1 -u root
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [110/512]> top -H -b -n 1
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1081,7 +1081,7 @@ $ [125/512]> iostat -x
   iostat: command not found
 
 $ [126/512]> top -z
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1103,7 +1103,7 @@ $ [126/512]> top -z
        13 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [127/512]> top -b -n abc
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 13 total,  0 running, 13 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1280,10 +1280,10 @@ $ [170/512]> ionice -p $$
   best-effort: prio 0
 
 $ [171/512]> taskset -p $$
-  pid 13's current affinity mask: f
+  pid 13's current affinity mask: 1
 
 $ [172/512]> taskset -pc $$
-  pid 13's current affinity list: 0-3
+  pid 13's current affinity list: 0-0
 
 $ [173/512]> nice -n abc sleep 1
   nice: invalid adjustment 'abc'
@@ -1730,7 +1730,7 @@ $ [290/512]> systemctl status
       State: running
        Jobs: 0 queued
      Failed: 0 units
-     Since: Wed, 20 May 2026 06:32:25 GMT
+     Since: Wed, 20 May 2026 06:56:08 GMT
      CGroup: /
 
 $ [291/512]> systemctl is-system-running
@@ -1927,7 +1927,7 @@ $ [302/512]> systemctl get-default
 $ [303/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 28 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -1936,7 +1936,7 @@ $ [303/512]> systemctl status cron
 $ [304/512]> systemctl status ssh
   ● ssh.service - OpenBSD Secure Shell server
        Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 2 (ssh)
         Tasks: 1
        CGroup: /system.slice/ssh.service
@@ -1948,7 +1948,7 @@ $ [305/512]> systemctl status sshd
 $ [306/512]> systemctl status systemd-journald
   ● systemd-journald.service - Journal Service
        Loaded: loaded (/usr/lib/systemd/system/systemd-journald.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 6 (systemd-journald)
         Tasks: 1
        CGroup: /system.slice/systemd-journald.service
@@ -1957,7 +1957,7 @@ $ [306/512]> systemctl status systemd-journald
 $ [307/512]> systemctl status systemd-logind
   ● systemd-logind.service - User Login Management
        Loaded: loaded (/usr/lib/systemd/system/systemd-logind.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 7 (systemd-logind)
         Tasks: 1
        CGroup: /system.slice/systemd-logind.service
@@ -1966,7 +1966,7 @@ $ [307/512]> systemctl status systemd-logind
 $ [308/512]> systemctl status dbus
   ● dbus.service - D-Bus System Message Bus
        Loaded: loaded (/usr/lib/systemd/system/dbus.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 8 (dbus)
         Tasks: 1
        CGroup: /system.slice/dbus.service
@@ -2087,7 +2087,7 @@ $ [330/512]> systemctl is-enabled cron
 $ [331/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; masked; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 28 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -2143,7 +2143,7 @@ $ [346/512]> systemctl is-active cron
 $ [347/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 28 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -2186,70 +2186,70 @@ $ [359/512]> systemctl daemon-reload
 <empty>
 
 $ [360/512]> journalctl
-  -- Logs begin at Wed May 20 06:32:25 2026, end at Wed May 20 06:32:27 2026. --
-  May 20 06:32:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  May 20 06:32:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  May 20 06:32:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  May 20 06:32:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  May 20 06:32:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET protocol family
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET6 protocol family
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  May 20 06:32:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  May 20 06:32:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  May 20 06:32:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  May 20 06:32:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  May 20 06:32:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  May 20 06:32:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on :: port 22.
-  May 20 06:32:27 localhost systemd-logind[456]: New seat seat0.
-  May 20 06:32:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  -- Logs begin at Wed May 20 06:56:08 2026, end at Wed May 20 06:56:10 2026. --
+  May 20 06:56:08 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 20 06:56:08 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 20 06:56:08 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 20 06:56:08 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 20 06:56:08 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET protocol family
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 20 06:56:10 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 20 06:56:10 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 20 06:56:10 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 20 06:56:10 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 20 06:56:10 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 20 06:56:10 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on :: port 22.
+  May 20 06:56:10 localhost systemd-logind[456]: New seat seat0.
+  May 20 06:56:10 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
 
 $ [361/512]> journalctl -n 20
-  -- Logs begin at Wed May 20 06:32:25 2026, end at Wed May 20 06:32:27 2026. --
-  May 20 06:32:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  May 20 06:32:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  May 20 06:32:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  May 20 06:32:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  May 20 06:32:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET protocol family
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET6 protocol family
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  May 20 06:32:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  May 20 06:32:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  May 20 06:32:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  May 20 06:32:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  May 20 06:32:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  May 20 06:32:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on :: port 22.
-  May 20 06:32:27 localhost systemd-logind[456]: New seat seat0.
-  May 20 06:32:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  -- Logs begin at Wed May 20 06:56:08 2026, end at Wed May 20 06:56:10 2026. --
+  May 20 06:56:08 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 20 06:56:08 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 20 06:56:08 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 20 06:56:08 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 20 06:56:08 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET protocol family
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 20 06:56:10 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 20 06:56:10 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 20 06:56:10 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 20 06:56:10 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 20 06:56:10 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 20 06:56:10 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on :: port 22.
+  May 20 06:56:10 localhost systemd-logind[456]: New seat seat0.
+  May 20 06:56:10 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
 
 $ [362/512]> journalctl -n 50 --no-pager
-  -- Logs begin at Wed May 20 06:32:25 2026, end at Wed May 20 06:32:27 2026. --
-  May 20 06:32:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  May 20 06:32:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  May 20 06:32:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  May 20 06:32:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  May 20 06:32:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET protocol family
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET6 protocol family
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  May 20 06:32:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  May 20 06:32:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  May 20 06:32:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  May 20 06:32:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  May 20 06:32:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  May 20 06:32:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on :: port 22.
-  May 20 06:32:27 localhost systemd-logind[456]: New seat seat0.
-  May 20 06:32:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  -- Logs begin at Wed May 20 06:56:08 2026, end at Wed May 20 06:56:10 2026. --
+  May 20 06:56:08 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 20 06:56:08 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 20 06:56:08 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 20 06:56:08 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 20 06:56:08 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET protocol family
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 20 06:56:10 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 20 06:56:10 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 20 06:56:10 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 20 06:56:10 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 20 06:56:10 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 20 06:56:10 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on :: port 22.
+  May 20 06:56:10 localhost systemd-logind[456]: New seat seat0.
+  May 20 06:56:10 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
 
 $ [363/512]> journalctl -u cron
   -- No entries --
@@ -2267,54 +2267,54 @@ $ [367/512]> journalctl -p err -n 10
   -- No entries --
 
 $ [368/512]> journalctl -k
-  -- Logs begin at Wed May 20 06:32:25 2026, end at Wed May 20 06:32:27 2026. --
-  May 20 06:32:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  May 20 06:32:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  May 20 06:32:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  May 20 06:32:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  May 20 06:32:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET protocol family
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET6 protocol family
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  May 20 06:32:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  May 20 06:32:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  May 20 06:32:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  May 20 06:32:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  May 20 06:32:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  May 20 06:32:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on :: port 22.
-  May 20 06:32:27 localhost systemd-logind[456]: New seat seat0.
-  May 20 06:32:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  -- Logs begin at Wed May 20 06:56:08 2026, end at Wed May 20 06:56:10 2026. --
+  May 20 06:56:08 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 20 06:56:08 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 20 06:56:08 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 20 06:56:08 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 20 06:56:08 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET protocol family
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 20 06:56:10 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 20 06:56:10 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 20 06:56:10 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 20 06:56:10 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 20 06:56:10 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 20 06:56:10 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on :: port 22.
+  May 20 06:56:10 localhost systemd-logind[456]: New seat seat0.
+  May 20 06:56:10 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
 
 $ [369/512]> journalctl -b
-  -- Logs begin at Wed May 20 06:32:25 2026, end at Wed May 20 06:32:27 2026. --
-  May 20 06:32:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  May 20 06:32:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  May 20 06:32:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  May 20 06:32:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  May 20 06:32:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET protocol family
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET6 protocol family
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  May 20 06:32:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  May 20 06:32:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  May 20 06:32:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  May 20 06:32:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  May 20 06:32:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  May 20 06:32:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on :: port 22.
-  May 20 06:32:27 localhost systemd-logind[456]: New seat seat0.
-  May 20 06:32:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  -- Logs begin at Wed May 20 06:56:08 2026, end at Wed May 20 06:56:10 2026. --
+  May 20 06:56:08 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 20 06:56:08 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 20 06:56:08 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 20 06:56:08 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 20 06:56:08 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET protocol family
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 20 06:56:10 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 20 06:56:10 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 20 06:56:10 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 20 06:56:10 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 20 06:56:10 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 20 06:56:10 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on :: port 22.
+  May 20 06:56:10 localhost systemd-logind[456]: New seat seat0.
+  May 20 06:56:10 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
 
 $ [370/512]> journalctl --disk-usage
   Archived and active journals take up 2.4K in the file system.
 
 $ [371/512]> journalctl --list-boots
-   0 67755e73-e152-dca5-1291-3b16f4d32c9c Wed May 20 06:32:25 2026—Wed May 20 06:32:25 2026
+   0 31951ad4-156c-0def-898c-045e88dc0bad Wed May 20 06:56:08 2026—Wed May 20 06:56:08 2026
 
 $ [372/512]> systemctl start service_inexistant_xyz
   Failed to start service_inexistant_xyz.service: Unit service_inexistant_xyz.service not found.
@@ -2357,8 +2357,8 @@ $ [380/512]> cat /etc/systemd/system/debugdemo.service
 
 $ [381/512]> ls -l /etc/systemd/system/
   total 16
-  -rw-r--r-- 1 root root 165 May 20 06:32 debugdemo.service
-  drwxr-xr-x 2 root root   0 May 20 06:32 [1;34mmulti-user.target.wants[0m
+  -rw-r--r-- 1 root root 165 May 20 06:56 debugdemo.service
+  drwxr-xr-x 2 root root   0 May 20 06:56 [1;34mmulti-user.target.wants[0m
 
 $ [382/512]> systemctl daemon-reload
 <empty>
@@ -2464,7 +2464,7 @@ $ [406/512]> runlevel
   N 3
 
 $ [407/512]> who -r
-  root  pts/0  2026-05-20 06:32
+  root  pts/0  2026-05-20 06:56
 
 $ [408/512]> systemctl get-default
   multi-user.target
@@ -2700,7 +2700,7 @@ $ [468/512]> systemctl restart cron
 $ [469/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 37 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -2822,7 +2822,7 @@ $ [494/512]> taskset
   taskset: usage: taskset [options] -p [mask] pid
 
 $ [495/512]> top -p
-  top - 06:32:25 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 06:56:08 up  0:05,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 16 total,  0 running, 16 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -2881,26 +2881,26 @@ $ [500/512]> systemctl --type
   15 loaded units listed.
 
 $ [501/512]> journalctl -u
-  -- Logs begin at Wed May 20 06:32:25 2026, end at Wed May 20 06:32:27 2026. --
-  May 20 06:32:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  May 20 06:32:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  May 20 06:32:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  May 20 06:32:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  May 20 06:32:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET protocol family
-  May 20 06:32:25 localhost kernel: NET: Registered PF_INET6 protocol family
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  May 20 06:32:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  May 20 06:32:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  May 20 06:32:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  May 20 06:32:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  May 20 06:32:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  May 20 06:32:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  May 20 06:32:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  May 20 06:32:28 localhost sshd[1234]: Server listening on :: port 22.
-  May 20 06:32:27 localhost systemd-logind[456]: New seat seat0.
-  May 20 06:32:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  -- Logs begin at Wed May 20 06:56:08 2026, end at Wed May 20 06:56:10 2026. --
+  May 20 06:56:08 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  May 20 06:56:08 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  May 20 06:56:08 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  May 20 06:56:08 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  May 20 06:56:08 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET protocol family
+  May 20 06:56:08 localhost kernel: NET: Registered PF_INET6 protocol family
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  May 20 06:56:09 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  May 20 06:56:10 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  May 20 06:56:10 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  May 20 06:56:10 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  May 20 06:56:10 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  May 20 06:56:10 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  May 20 06:56:10 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  May 20 06:56:11 localhost sshd[1234]: Server listening on :: port 22.
+  May 20 06:56:10 localhost systemd-logind[456]: New seat seat0.
+  May 20 06:56:10 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
 
 $ [502/512]> crontab
 <empty>
@@ -2938,7 +2938,7 @@ $ [510/512]> ps aux | | head
 $ [511/512]> systemctl status cron ; ; systemctl is-active cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 20 May 2026 06:32:25 GMT
+       Active: active (running) since Wed, 20 May 2026 06:56:08 GMT
      Main PID: 37 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service

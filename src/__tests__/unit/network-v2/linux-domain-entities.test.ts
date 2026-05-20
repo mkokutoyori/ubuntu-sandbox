@@ -81,8 +81,13 @@ describe('LinuxService entity', () => {
     expect(new LinuxService({ ...base, restart: 'no' }).wantsAutoRestart()).toBe(false);
   });
 
-  it('snapshot is a plain structural copy', () => {
+  it('snapshot is a plain structural copy of the unit fields', () => {
     const s = new LinuxService(base);
-    expect(s.snapshot()).toEqual({ ...base });
+    const snap = s.snapshot();
+    // The OS-rich base adds extra attributes; we only assert the
+    // original ServiceUnit fields round-trip correctly.
+    expect(snap).toMatchObject(base);
+    expect(typeof (snap as unknown as { isActive?: unknown }).isActive)
+      .toBe('undefined');
   });
 });

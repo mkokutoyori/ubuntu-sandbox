@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-05-20T06:30:46.181Z
+Generated: 2026-05-20T06:56:43.222Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -1239,7 +1239,7 @@ Total steps: 300
    clock offset: 0.0000 ms
 
 [231/300] r1 [R1] display clock
-  2026-05-20 06:30:46
+  2026-05-20 06:56:43
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -1256,13 +1256,13 @@ Total steps: 300
 [234/300] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-20 06:30:46
+  CPU Usage Stat. Time : 2026-05-20 06:56:43
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-20 06:30:46
+  Memory utilization statistics at 2026-05-20 06:56:43
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1294,7 +1294,7 @@ Total steps: 300
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-20 06:30:46 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-20 06:56:43 %01SRM/4/PORT_STATE: Port state changed.
 
 [240/300] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
