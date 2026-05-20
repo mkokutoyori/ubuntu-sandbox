@@ -619,3 +619,64 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 10 — non-default Port directive in sshd_config ───────────
+
+describe('§10 — sshd Port directive (non-default)', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'after Port 2222 + reload, port 22 refuses',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',  // defaults to 22
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'ssh -p 2222 reaches the new port',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh -p 2222 alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'ss -tln after reload shows port 2222 listening, not 22',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc2,
+      cmd: 'ss -tln',
+      contains: [/:2222\s/],
+      excludes: [/:22\s/],
+    },
+    {
+      name: 'invalid Port value (-1) is rejected on reload',
+      on: l => l.pc2,
+      cmd: 'sh -c \'echo "Port -1" > /etc/ssh/sshd_config && systemctl reload ssh\'',
+      contains: [/Bad configuration option|invalid|out of range/],
+    },
+    {
+      name: 'two Port directives → both ports accept',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh -p 2222 alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
