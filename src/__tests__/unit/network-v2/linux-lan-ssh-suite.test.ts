@@ -1721,3 +1721,77 @@ describe('§26 — SSH public-key authentication', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 27 — ssh-agent / ssh-add ─────────────────────────────────
+
+describe('§27 — ssh-agent and ssh-add', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh-add -l reports "no identities" when agent is empty',
+      on: l => l.pc1,
+      cmd: 'ssh-add -l',
+      contains: [/no identities|No identities/],
+    },
+    {
+      name: 'ssh-add of a key adds it and ssh-add -l lists it',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh-add -l',
+      contains: [/^256 SHA256:.*id_ed25519 \(ED25519\)/m],
+    },
+    {
+      name: 'ssh-add -L prints the public key in authorized_keys form',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh-add -L',
+      contains: [/^ssh-ed25519 /m],
+    },
+    {
+      name: 'ssh-add -d removes a specific identity',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+        await l.pc1.executeCommand('ssh-add -d /root/.ssh/id_ed25519');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh-add -l',
+      contains: [/no identities/i],
+    },
+    {
+      name: 'ssh-add -D removes all identities',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/k1 -N "" -q');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/k2 -N "" -q');
+        await l.pc1.executeCommand('ssh-add /root/.ssh/k1');
+        await l.pc1.executeCommand('ssh-add /root/.ssh/k2');
+        await l.pc1.executeCommand('ssh-add -D');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh-add -l',
+      contains: [/no identities/i],
+    },
+    {
+      name: 'ssh -A forwards the agent (remote ssh-add -l hits original agent)',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh -A alice@10.0.0.2 ssh-add -l',
+      contains: [/SHA256:.*id_ed25519/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
