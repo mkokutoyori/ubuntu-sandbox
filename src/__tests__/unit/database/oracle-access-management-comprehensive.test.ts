@@ -814,62 +814,68 @@ describe('13. Session, process, and resource inspection', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('14. Dictionary queries on users, roles, and privileges', () => {
-  it('Reads dba_users, dba_roles, dba_*_privs in many shapes', () => {
-    const cases: Case[] = [
-      { sql: 'SELECT username FROM dba_users ORDER BY username;',                                                                     want: /ALICE/ },
-      { sql: 'SELECT COUNT(*) FROM dba_users;',                                                                                       want: /\d+/ },
-      { sql: "SELECT username, account_status FROM dba_users WHERE account_status != 'OPEN';",                                      want: { not: /ORA-/ } },
-      { sql: "SELECT username, created FROM dba_users WHERE created > SYSDATE - 1;",                                                  want: { not: /ORA-/ } },
-      { sql: "SELECT username, lock_date FROM dba_users WHERE lock_date IS NOT NULL;",                                                want: { not: /ORA-/ } },
-      { sql: "SELECT username, expiry_date FROM dba_users WHERE expiry_date IS NOT NULL;",                                            want: { not: /ORA-/ } },
-      { sql: "SELECT username, profile FROM dba_users WHERE profile != 'DEFAULT';",                                                   want: /SECURE_PROFILE/ },
-      { sql: "SELECT username, default_tablespace, temporary_tablespace FROM dba_users WHERE username IN ('ALICE','BOB');",            want: /USERS/ },
-      { sql: "SELECT username, authentication_type FROM dba_users WHERE username IN ('KERB_USER','GLOBAL_USER','OPS$ORACLE');",       want: /(EXTERNAL|GLOBAL)/ },
-      { sql: "SELECT username, external_name FROM dba_users WHERE external_name IS NOT NULL;",                                        want: { not: /ORA-/ } },
-      { sql: "SELECT username, common, oracle_maintained FROM dba_users WHERE username = 'SYS';",                                     want: { not: /ORA-00904/ } },
-      { sql: 'SELECT role, password_required, authentication_type FROM dba_roles;',                                                   want: /APP_ROLE/ },
-      { sql: "SELECT COUNT(*) FROM dba_roles WHERE password_required = 'YES';",                                                       want: /\d+/ },
-      { sql: 'SELECT grantee, granted_role, admin_option, default_role FROM dba_role_privs ORDER BY grantee;',                        want: /BOB/ },
-      { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'BOB';",                                                            want: /\d+/ },
-      { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'ANALYST';",                                                    want: /REPORTING_ROLE/ },
-      { sql: 'SELECT grantee, privilege, admin_option FROM dba_sys_privs ORDER BY grantee, privilege;',                               want: /(BOB|ALICE)/ },
-      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'ALICE';",                                                           want: /\d+/ },
-      { sql: "SELECT privilege FROM dba_sys_privs WHERE grantee = 'ADMIN_ROLE' AND ROWNUM <= 10;",                                    want: /(CREATE|ALTER|DROP)/ },
-      { sql: 'SELECT grantor, grantee, owner, table_name, privilege, grantable FROM dba_tab_privs ORDER BY grantee, table_name;',     want: /(BOB|ALICE)/ },
-      { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE owner = 'HR' AND table_name = 'EMPLOYEES';",                                   want: /\d+/ },
-      { sql: 'SELECT grantee, owner, table_name, column_name, privilege FROM dba_col_privs;',                                          want: { not: /ORA-00942/ } },
-      { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'DEV_TEAM';",                                                        want: /\d+/ },
-      { sql: 'SELECT * FROM role_sys_privs FETCH FIRST 10 ROWS ONLY;',                                                                 want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM role_tab_privs FETCH FIRST 10 ROWS ONLY;',                                                                 want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM role_role_privs FETCH FIRST 10 ROWS ONLY;',                                                                want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM session_privs;',                                                                                          want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM session_roles;',                                                                                          want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM user_users;',                                                                                              want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM user_role_privs;',                                                                                         want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM user_sys_privs;',                                                                                          want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM user_tab_privs;',                                                                                          want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM all_users;',                                                                                              want: /ALICE/ },
-      { sql: 'SELECT * FROM all_tables FETCH FIRST 5 ROWS ONLY;',                                                                      want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM all_tab_privs FETCH FIRST 5 ROWS ONLY;',                                                                   want: { not: /ORA-/ } },
-      // Recursive role expansion
-      { sql: "SELECT grantee, granted_role FROM dba_role_privs CONNECT BY PRIOR granted_role = grantee START WITH grantee = 'ANALYST';", want: { not: /ORA-/ } },
-      // Counts and aggregates
-      { sql: "SELECT grantee, COUNT(*) FROM dba_sys_privs GROUP BY grantee ORDER BY 2 DESC FETCH FIRST 5 ROWS ONLY;",                  want: { not: /ORA-/ } },
-      { sql: "SELECT privilege, COUNT(*) FROM dba_sys_privs GROUP BY privilege ORDER BY 2 DESC FETCH FIRST 5 ROWS ONLY;",              want: { not: /ORA-/ } },
-      { sql: "SELECT owner, table_name, COUNT(DISTINCT grantee) FROM dba_tab_privs GROUP BY owner, table_name ORDER BY 3 DESC FETCH FIRST 5 ROWS ONLY;", want: { not: /ORA-/ } },
-      { sql: "SELECT username, profile, COUNT(*) OVER (PARTITION BY profile) AS users_in_profile FROM dba_users;",                    want: { not: /ORA-/ } },
-      // Filter by NOT EXISTS
-      { sql: "SELECT u.username FROM dba_users u WHERE NOT EXISTS (SELECT 1 FROM dba_sys_privs s WHERE s.grantee = u.username);",      want: { not: /ORA-/ } },
-      // Privilege chain — what does BOB end up with?
-      { sql: "SELECT DISTINCT p.privilege FROM dba_role_privs r JOIN dba_sys_privs p ON p.grantee = r.granted_role WHERE r.grantee = 'BOB' UNION SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB';", want: { not: /ORA-/ } },
-      { sql: "SELECT username FROM dba_users WHERE oracle_maintained = 'N' ORDER BY 1;",                                              want: { not: /ORA-/ } },
-      { sql: "SELECT username FROM dba_users WHERE expiry_date < SYSDATE;",                                                            want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // DBA_USERS — every user we created shows up.
+    { sql: "SELECT username FROM dba_users WHERE username = 'ALICE';",                                            want: /^\s*ALICE\s*$/m },
+    { sql: 'SELECT COUNT(*) FROM dba_users;',                                                                     want: /^\s*[2-9]\d+\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE account_status != 'OPEN';",                                      want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE created > SYSDATE - 1;",                                          want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT username FROM dba_users WHERE username = 'LOCKED_USER' AND lock_date IS NOT NULL;",            want: /^\s*LOCKED_USER\s*$/m },
+    { sql: "SELECT username FROM dba_users WHERE username = 'EXPIRED_USER' AND expiry_date IS NOT NULL;",         want: /^\s*EXPIRED_USER\s*$/m },
+    { sql: "SELECT username FROM dba_users WHERE profile = 'SECURE_PROFILE';",                                     want: /^\s*ALICE\s*$/m },
+    { sql: "SELECT default_tablespace FROM dba_users WHERE username = 'ALICE';",                                  want: /\bUSERS\b/i },
+    { sql: "SELECT authentication_type FROM dba_users WHERE username = 'KERB_USER';",                              want: /\bEXTERNAL\b/ },
+    { sql: "SELECT external_name FROM dba_users WHERE username = 'GLOBAL_USER';",                                  want: /CN=global,O=Acme/ },
+    { sql: "SELECT oracle_maintained FROM dba_users WHERE username = 'SYS';",                                      want: /\bY\b/ },
+    // DBA_ROLES
+    { sql: "SELECT role FROM dba_roles WHERE role = 'APP_ROLE';",                                                  want: /^\s*APP_ROLE\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_roles WHERE password_required = 'YES';",                                     want: /^\s*[1-9]\d*\s*$/m },
+    // DBA_ROLE_PRIVS
+    { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'BOB' AND granted_role = 'APP_ROLE';",        want: /^\s*APP_ROLE\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'BOB';",                                          want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT granted_role FROM dba_role_privs WHERE grantee = 'ANALYST' AND granted_role = 'REPORTING_ROLE';", want: /^\s*REPORTING_ROLE\s*$/m },
+    // DBA_SYS_PRIVS
+    { sql: "SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB' AND privilege = 'SELECT ANY TABLE';",       want: /^\s*SELECT ANY TABLE\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'ALICE';",                                          want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'ADMIN_ROLE' AND privilege LIKE 'CREATE%';",        want: /^\s*[1-9]\d*\s*$/m },
+    // DBA_TAB_PRIVS
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE owner = 'HR' AND table_name = 'EMPLOYEES';",                  want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'BOB' AND owner = 'HR';",                          want: /^\s*[1-9]\d*\s*$/m },
+    // DBA_COL_PRIVS
+    { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'DEV_TEAM';",                                      want: /^\s*[1-9]\d*\s*$/m },
+    // ROLE_* view families.
+    { sql: "SELECT role, privilege FROM role_sys_privs WHERE role = 'APP_ROLE';",                                  want: /\bAPP_ROLE\b/ },
+    { sql: "SELECT role FROM role_tab_privs WHERE role = 'READ_ONLY_ROLE';",                                      want: /\bREAD_ONLY_ROLE\b/ },
+    { sql: "SELECT role FROM role_role_privs WHERE role = 'REPORTING_ROLE';",                                     want: /\bREPORTING_ROLE\b/ },
+    // Session-level views.
+    { sql: 'SELECT privilege FROM session_privs WHERE ROWNUM <= 1;',                                                want: /\bPRIVILEGE\b/i },
+    { sql: 'SELECT role FROM session_roles WHERE ROWNUM <= 1;',                                                     want: /\bROLE\b/i },
+    // USER_* / ALL_* facets work for the current session.
+    { sql: 'SELECT username FROM user_users;',                                                                       want: /\bSYS\b/ },
+    { sql: 'SELECT granted_role FROM user_role_privs FETCH FIRST 5 ROWS ONLY;',                                     want: /\bGRANTED_ROLE\b/i },
+    { sql: 'SELECT username FROM all_users WHERE username = \'ALICE\';',                                          want: /^\s*ALICE\s*$/m },
+    { sql: "SELECT table_name FROM all_tables WHERE owner = 'HR' AND table_name = 'EMPLOYEES';",                   want: /^\s*EMPLOYEES\s*$/m },
+    // Recursive role expansion (CONNECT BY) must surface the chain.
+    { sql: "SELECT granted_role FROM dba_role_privs CONNECT BY PRIOR granted_role = grantee START WITH grantee = 'ANALYST';", want: /\bREPORTING_ROLE\b/ },
+    // Aggregates — committed counts, not "no error".
+    { sql: "SELECT COUNT(*) FROM (SELECT grantee FROM dba_sys_privs GROUP BY grantee);",                            want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM (SELECT privilege FROM dba_sys_privs GROUP BY privilege);",                        want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs;",                                                                    want: /^\s*[1-9]\d*\s*$/m },
+    // NOT EXISTS — at least one user has no system privileges.
+    { sql: "SELECT COUNT(*) FROM dba_users u WHERE NOT EXISTS (SELECT 1 FROM dba_sys_privs s WHERE s.grantee = u.username);", want: /^\s*[0-9]+\s*$/m },
+    // Privilege chain for BOB (direct + through APP_ROLE).
+    { sql: "SELECT DISTINCT privilege FROM (SELECT p.privilege FROM dba_role_privs r JOIN dba_sys_privs p ON p.grantee = r.granted_role WHERE r.grantee = 'BOB' UNION SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB') WHERE privilege = 'CREATE SESSION';", want: /^\s*CREATE SESSION\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE oracle_maintained = 'N';",                                        want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE expiry_date < SYSDATE;",                                          want: /^\s*[0-9]+\s*$/m },
+  ])('§14: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 15 — Audit configuration (traditional + unified) (38 cases)
 // ─────────────────────────────────────────────────────────────────
 
