@@ -673,7 +673,7 @@ voulait `cd C:\Foo; ipconfig > rapport.txt` 100% conforme au
 | 4.3 | Title-bar n'indique pas le contexte SSH             | Basse    | **Corrigé** |
 | 5.1 | Cisco IOS mode vty partagé                          | Haute    | **Corrigé** |
 | 5.2 | Boot sequence rejouée à chaque ouverture            | Moyenne  | **Corrigé** |
-| 5.x | Huawei VRP mode vty partagé                         | Moyenne  | Roadmap (a) |
+| 5.3 | Huawei VRP mode vty partagé                         | Moyenne  | **Corrigé** |
 | 6.x | Windows shell session isolation                     | Haute    | **Corrigé** |
 | 7.1 | SQL\*Plus session — déjà isolé (validé par test)    | —        | Vérifié     |
 | 7.2 | RMAN catalog partagé — conforme Oracle              | —        | Vérifié     |
@@ -690,17 +690,12 @@ voulait `cd C:\Foo; ipconfig > rapport.txt` 100% conforme au
 - `cli-vty-isolation.test.ts`               (9 tests, §5.1)
 - `windows-session-isolation.test.ts`       (8 tests, §6)
 - `subshell-isolation.test.ts`              (5 tests, §7)
+- `huawei-vty-isolation.test.ts`            (5 tests, §5.3)
 
-Total : **59 nouveaux tests unitaires**. Suite complète sous
-`src/__tests__/unit/terminal/` : *53 fichiers, 414 tests, tous verts.*
+Total : **64 nouveaux tests unitaires**. Suite complète sous
+`src/__tests__/unit/terminal/` : *54 fichiers, 419 tests, tous verts.*
 
-### Roadmap items créés
-
-(a) **Huawei VRP vty isolation** — appliquer le pattern §5.1 à
-    `HuaweiVRPShell` (snapshotVtyState / applyVtyState ne sont implémentés
-    que sur `CiscoIOSShell`). La passerelle `Router.executeCommandInVty`
-    détecte l'absence des hooks et retombe sur la voie historique sans
-    perte fonctionnelle, juste sans l'isolation.
+### Roadmap résiduelle
 
 (b) **PowerShell native delegations** — les appels
     `device.executeCmdCommand(...)` à l'intérieur de `PowerShellExecutor`
