@@ -211,3 +211,56 @@ describe('§2 — SSH banner, MOTD and issue.net', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 3 — SSH by hostname (DNS / /etc/hosts resolution) ────────
+
+describe('§3 — SSH by hostname rather than IP', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'short device name resolves: ssh alice@pc2',
+      on: l => l.pc1,
+      cmd: 'ssh alice@pc2',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Could not resolve hostname/],
+    },
+    {
+      name: 'short server name resolves: ssh alice@srv1',
+      on: l => l.pc1,
+      cmd: 'ssh alice@srv1',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'fully-qualified resolution falls back to short name',
+      on: l => l.pc1,
+      cmd: 'ssh alice@srv1.lan',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: '/etc/hosts entry on the client makes nickname resolvable',
+      setup: (l) => { void l.pc1.executeCommand('echo "10.0.0.10 oracledb oracledb.local" >> /etc/hosts'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@oracledb',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'unknown name yields "Could not resolve hostname"',
+      on: l => l.pc1,
+      cmd: 'ssh alice@nope.invalid',
+      contains: [/Could not resolve hostname/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'IPv4 address takes precedence over name lookup',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
