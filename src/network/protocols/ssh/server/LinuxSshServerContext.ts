@@ -291,6 +291,12 @@ export class LinuxSshServerContext implements ISshServerContext {
       type: 'login',
       tty: 'pts/0',
     });
+    // Mirror the login into the in-memory lastlog registry so the SSH
+    // client side (which lives in the same process) can pick up the
+    // canonical ctime-formatted "Last login: …" line without re-parsing
+    // the JSON file. The registry rotates current ↔ previous, keeping
+    // PAM-like semantics.
+    this.executor?.lastlog.record(user, fromIp, 'pts/0');
   }
 
   /**

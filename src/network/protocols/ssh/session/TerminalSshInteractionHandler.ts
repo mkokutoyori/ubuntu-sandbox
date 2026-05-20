@@ -77,6 +77,15 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
   // Connection details are shown via MOTD and lastlog in the caller;
   // printing a separate "Connected to…" line here would not match real OpenSSH.
   onConnected(_info: SshConnectionInfo): void {}
+
+  /**
+   * Mirror OpenSSH between two password prompts. The line is intentionally
+   * not styled as an error: real openssh writes it as a regular warning so
+   * the terminal pager / scrollback colors stay neutral.
+   */
+  showAuthFailure(_user: string, _host: string): void {
+    this.io.writeLine('Permission denied, please try again.', 'warning');
+  }
 }
 
 /**

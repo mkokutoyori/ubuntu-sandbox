@@ -243,3 +243,131 @@ Tests unitaires ajoutés (`src/__tests__/unit/terminal/shell-session-isolation.t
 > par `executeInSession`.
 
 ---
+
+## Section 3 — Réalisme du flow de connexion SSH
+
+L'utilisateur a explicitement signalé que « le flow de connexion ssh à une
+autre machine, n'est pas vraiment réaliste ». Audit détaillé contre OpenSSH 9.x
+de référence.
+
+### 3.1 Pas de message « Permission denied, please try again. » entre les essais
+
+**Anomalie.** `PasswordAuthMethod.attempt()` (src/network/protocols/ssh/auth/PasswordAuthMethod.ts:27)
+boucle silencieusement jusqu'à `maxAttempts`. À chaque échec on rappelle
+`passwordProvider`, qui ré-affiche le prompt `user@host's password: ` sans
+indiquer pourquoi le précédent a été refusé. Sur du vrai OpenSSH on lit :
+```
+user@host's password:
+Permission denied, please try again.
+user@host's password:
+Permission denied, please try again.
+user@host's password:
+Permission denied (publickey,password).
+```
+
+**Impact.** L'utilisateur n'a aucun feedback : il se demande si le terminal a
+crashé ou si son mot de passe a été accepté.
+
+**Correctif.** Ajout d'une méthode `showAuthFailure(user, host)` sur
+`ISshInteractionHandler`. `PasswordAuthMethod` la déclenche entre deux essais
+ratés (mais pas après le dernier — la mise en garde finale
+`Permission denied (publickey,password).` est déjà émise par `doAuthenticate`).
+
+### 3.2 Banière de connexion pauvre
+
+**Anomalie.** Après succès d'authentification, `connectAndEnterSsh`
+(LinuxTerminalSession.ts:1044) lit `/etc/motd` via un canal exec, puis affiche
+seulement les lignes brutes. Aucune ligne *Welcome to Ubuntu 22.04 LTS …*,
+aucun encart `System information as of …` (motd dynamique). Pour comparaison,
+le wrapper *exec-mode* `runSshClient` (LinuxSshClient.ts:151) lui produit déjà
+la ligne `Welcome to Ubuntu 22.04.3 LTS (...)` — incohérence pédagogique :
+selon que l'on passe par `ssh host` (mode interactif → branche vide) ou
+`ssh host hostname` (mode exec → banière complète), l'utilisateur voit deux
+choses différentes.
+
+**Correctif.** Centraliser la composition de la banière dans une nouvelle
+fonction `composeLoginBanner({machine, user, sourceHostname})` réutilisée par
+les deux chemins. Elle agrège, dans l'ordre OpenSSH :
+1. `/etc/issue.net` (pre-auth, déjà géré par `interactionHandler.showInfo`
+   après accept_and_save) ;
+2. Ligne « Welcome to Ubuntu *X.Y.Z* … » sourcée de `/etc/os-release` du
+   *remote* (la version réelle simulée par la machine) ;
+3. Contenu de `/etc/motd` ;
+4. Ligne `Last login: …` lue depuis `/var/log/lastlog`.
+
+### 3.3 « Last login » non-réaliste
+
+**Anomalie.** `tryReadLastLogin` (LinuxTerminalSession.ts:1086) exécute
+`last -i ${user} 2>/dev/null | head -n 1` sur le remote. Le format produit par
+`last(1)` est `user pts/0 1.2.3.4 Mon Jan 1 12:34 still logged in`. OpenSSH
+quant à lui imprime exactement :
+```
+Last login: <Day Mon DD HH:MM:SS YYYY> from <ip-or-host>
+```
+qu'il lit depuis `/var/log/lastlog` (binaire, mis à jour par PAM
+`pam_lastlog.so` à chaque login). De plus, *aucun login n'est enregistré* dans
+le simulateur, donc `last` retourne toujours vide après le premier essai. Un
+utilisateur qui se reconnecte voit une ligne `Last login` qui n'évolue
+jamais — factuellement faux.
+
+**Correctif.**
+- Ajout d'un service `LinuxLastlogRegistry` (lazy) attaché au
+  `LinuxCommandExecutor`. Il maintient en mémoire, par utilisateur, le couple
+  `{ when: Date, sourceHost: string }` du dernier login réussi.
+- Le `SshServerHandler` (côté serveur SSH simulé) écrit dans ce registre à
+  chaque connexion authentifiée.
+- `composeLoginBanner` lit le registre pour produire la ligne `Last login: …`
+  conforme à `pam_lastlog.so`.
+- Sur la *toute première* connexion, la ligne est omise (comme OpenSSH) — le
+  fichier `~/.hushlogin` reste honoré.
+
+### 3.4 Pas d'avertissement « Warning: Permanently added » côté client
+
+**Constat.** `SshSession.doHostKeyCheck` (SshSession.ts:223) appelle
+`interactionHandler.showInfo("Warning: Permanently added '<host>' …")` dans la
+branche `accept_and_save` (lorsque la stratégie est `accept-new` ou que
+l'utilisateur tape `yes`). Ce point est déjà conforme — pas d'anomalie.
+
+### 3.5 Pas de prompt explicite « (yes/no/[fingerprint]) » sur première
+connexion StrictHostKeyChecking=no
+
+**Anomalie mineure.** Quand `StrictHostKeyChecking=no` est configuré, le client
+accepte silencieusement le host key sans afficher la ligne *Warning: ...*.
+OpenSSH le fait quand même (avec l'avertissement) à la première rencontre, puis
+reste silencieux. Le projet est conforme : `accept_and_save` est utilisé pour
+la première rencontre, `accept_silent` pour les suivantes. Pas de fix.
+
+### 3.6 Ordre du `Pseudo-terminal will be allocated`
+
+**Anomalie.** La ligne « Pseudo-terminal will be allocated because a request
+was made. » (LinuxTerminalSession.ts:1010) est affichée *après* la banière
+d'authentification et avant la commande, alors qu'OpenSSH l'imprime *avant*
+toute donnée serveur, immédiatement après l'authentification. L'ordre actuel
+est suffisamment proche pour l'usage simulé.
+
+### 3.7 Correctif implémenté
+
+Fichiers touchés :
+- `src/network/protocols/ssh/session/ISshInteractionHandler.ts` :
+  ajout de `showAuthFailure(user, host)` avec implémentation par défaut.
+- `src/network/protocols/ssh/auth/PasswordAuthMethod.ts` : déclenche
+  `ctx.showAuthFailure?.(user, host)` entre deux essais (passe par le bus
+  d'IO existant — la méthode est ajoutée à `ISshAuthContext`).
+- `src/network/protocols/ssh/session/TerminalSshInteractionHandler.ts` :
+  implémente la nouvelle méthode → ligne d'avertissement orange.
+- `src/network/devices/linux/LinuxLastlogRegistry.ts` (nouveau) : maintient
+  par utilisateur le dernier login (date + source).
+- `src/network/devices/linux/LinuxCommandExecutor.ts` : expose
+  `lastlog: LinuxLastlogRegistry` et un setter `recordLogin(user, source)`.
+- `src/network/protocols/ssh/server/SshServerHandler.ts` : appelle
+  `lastlog.record(...)` à chaque authentification réussie.
+- `src/terminal/sessions/LinuxTerminalSession.ts` : remplace `tryReadRemoteMotd`
+  par `composeLoginBanner` (lit os-release + motd + lastlog côté remote).
+
+Tests (`src/__tests__/unit/terminal/ssh-realism.test.ts`) :
+- échec mot de passe : 3 prompts, 2 « Permission denied, please try again. »
+- premier login sur une machine : aucune ligne `Last login`
+- deuxième login : ligne `Last login: <date> from <host>` cohérente
+- la banière inclut « Welcome to Ubuntu » et le contenu de `/etc/motd`
+
+---
