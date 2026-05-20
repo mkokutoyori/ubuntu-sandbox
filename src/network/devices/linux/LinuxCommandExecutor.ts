@@ -25,6 +25,8 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmd
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
+import { findHostByAddress } from './network/HostLookup';
+import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -72,6 +74,11 @@ export class LinuxCommandExecutor {
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
+
+  /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
+  _oracleBootstrap: ((args: string[]) => string | null) | null = null;
+  /** Optional Oracle listener hook — backs `lsnrctl`. */
+  _oracleListener: ((args: string[]) => string) | null = null;
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -148,8 +155,6 @@ export class LinuxCommandExecutor {
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
   private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[]): { output: string; exitCode: number } {
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
@@ -163,7 +168,7 @@ export class LinuxCommandExecutor {
     }
     const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
     // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({ args: [hostPart, 'true'], sourceHostname: hostname, sourceIp, sourceUser: this.userMgr.currentUser });
+    const probe = runSshClient({ ...this.buildSshClientOpts([hostPart, 'true']) });
     if (probe.exitCode !== 0) {
       // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
@@ -176,6 +181,93 @@ export class LinuxCommandExecutor {
         ? `${positional[0]}                                     100% 1024     1.0KB/s   00:00`
         : `sent 128 bytes  received 32 bytes  ${'160.00 bytes/sec'}\ntotal size is 1024  speedup is 6.40`;
     return { output: summary, exitCode: 0 };
+  }
+
+  /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
+  private buildSshClientOpts(args: string[]) {
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
+    const user = this.userMgr.currentUser;
+    const home = user === 'root' ? '/root' : `/home/${user}`;
+    return {
+      args,
+      sourceHostname: hostname,
+      sourceIp,
+      sourceUser: user,
+      sourceHome: home,
+      localVfs: {
+        readFile: (p: string) => this.vfs.readFile(p),
+        writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
+          this.vfs.writeFile(p, c, uid, gid, umask),
+        resolveInode: (p: string) => this.vfs.resolveInode(p),
+        mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
+      },
+    };
+  }
+
+  /**
+   * `ssh-keyscan <host>` — print the remote's host public key in the
+   * same format as a known_hosts line. Used to seed known_hosts non-
+   * interactively.
+   */
+  private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
+    const host = args.find(a => !a.startsWith('-'));
+    if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
+    const found = findHostByAddress(host);
+    if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
+    const remoteVfs = (found.device as unknown as { executor: { vfs: { readFile: (p: string) => string | null } } }).executor?.vfs;
+    if (!remoteVfs) return { output: `# ${host} no host key`, exitCode: 1 };
+    const pub = (remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '').trim();
+    if (!pub) return { output: `# ${host} no host key`, exitCode: 1 };
+    const tokens = pub.split(/\s+/);
+    return { output: `${found.ip} ${tokens[0]} ${tokens[1]}`, exitCode: 0 };
+  }
+
+  /**
+   * `ssh-keygen -R <host>` — remove all entries matching the host from
+   * the local known_hosts. Other subcommands (-y, -F, -t) flow through
+   * the existing key-management dispatcher.
+   */
+  private runSshKeygen(args: string[]): { output: string; exitCode: number } {
+    if (args[0] === '-R' && args[1]) {
+      const home = this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`;
+      const path = `${home}/.ssh/known_hosts`;
+      const existing = this.vfs.readFile(path) ?? '';
+      const before = SshKnownHostEntry.parseFile(existing);
+      const after = before.filter(e => !e.matches(args[1]));
+      this.vfs.writeFile(path, SshKnownHostEntry.serializeFile(after), 0, 0, 0o022);
+      return { output: `# Host ${args[1]} found: line 1\n/root/.ssh/known_hosts updated.\nOriginal contents retained as /root/.ssh/known_hosts.old`, exitCode: 0 };
+    }
+    // Fall back to the keypair generator already wired into handleSshAdd
+    // path. The existing implementation only supports -t / -f / -N / -q
+    // / -y for the simulator, which is enough for the new tests.
+    return this.handleSshKeygenLegacy(args);
+  }
+
+  /**
+   * Bridge to the legacy ssh-keygen handler kept inside handleSshAdd.
+   * Wraps the simple `-t / -f / -N / -y / -q` interface that has lived
+   * here for a while.
+   */
+  private handleSshKeygenLegacy(args: string[]): { output: string; exitCode: number } {
+    // The legacy bash interpreter saw `ssh-keygen` as an unknown command
+    // and returned "command not found". Provide a minimal compatible
+    // implementation that creates a file pair under -f and -N.
+    const fIdx = args.indexOf('-f');
+    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`}/.ssh/id_ed25519`;
+    if (args.includes('-y')) {
+      // Read the private key, output its public form (stub).
+      return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
+    }
+    // Generate: write two files (private + .pub).
+    const sshDir = file.replace(/\/[^/]+$/, '');
+    if (!this.vfs.resolveInode(sshDir)) {
+      this.vfs.mkdirp(sshDir, 0o700, 0, 0);
+    }
+    const pubKey = `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
+    this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', 0, 0, 0o077);
+    this.vfs.writeFile(`${file}.pub`, pubKey + '\n', 0, 0, 0o022);
+    return { output: '', exitCode: 0 };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -422,6 +514,9 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
+      // Strip flags that don't consume a value (-n non-interactive, -S
+      // read password from stdin, -E preserve env, -k reset timestamp).
+      while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
@@ -429,6 +524,15 @@ export class LinuxCommandExecutor {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
+      }
+      // Audit: write a syslog-style sudo line to /var/log/auth.log
+      // (real sudo logs through pam_systemd → journald → rsyslog).
+      if (this.serviceMgr.isActive('rsyslog')) {
+        const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const line = `${ts} ${hostname} sudo: ${this.userMgr.currentUser} : TTY=pts/0 ; PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdArgs.join(' ')}\n`;
+        const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+        this.vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
       }
       let sudoTargetUser: string | null = null;
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
@@ -948,17 +1052,12 @@ export class LinuxCommandExecutor {
         return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
-        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
-        return runSshClient({
-          args,
-          sourceHostname: hostname,
-          sourceIp,
-          sourceUser: this.userMgr.currentUser,
-        });
+        return runSshClient(this.buildSshClientOpts(args));
       }
       case 'ssh-add':
         return this.handleSshAdd(args);
+      case 'ssh-keyscan': return this.runSshKeyscan(args);
+      case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'xargs': {
         if (!stdin) return { output: '', exitCode: 0 };
         const xCmd = args[0] || 'echo';
@@ -1016,6 +1115,13 @@ export class LinuxCommandExecutor {
             exitCode: 0,
           };
         }
+        // Oracle Server profile: actually boot the instance the first
+        // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
+        // and lsnrctl status can read the listener state.
+        if (this.isServer && this._oracleBootstrap) {
+          const out = this._oracleBootstrap(args);
+          if (out !== null) return { output: out, exitCode: 0 };
+        }
         return {
           output:
             'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
@@ -1023,6 +1129,12 @@ export class LinuxCommandExecutor {
             'SP2-0157: unable to CONNECT to ORACLE after 3 attempts, exiting SQL*Plus',
           exitCode: 1,
         };
+      }
+      case 'lsnrctl': {
+        if (this.isServer && this._oracleListener) {
+          return { output: this._oracleListener(args), exitCode: 0 };
+        }
+        return { output: 'LSNRCTL: command not found on this host', exitCode: 1 };
       }
       case 'rman':
         return {
