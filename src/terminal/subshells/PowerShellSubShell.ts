@@ -72,12 +72,23 @@ export class PowerShellSubShell implements ISubShell {
   /**
    * Factory: create a PowerShell sub-shell for a Windows device.
    *
+   * @param device  The Windows device hosting the sub-shell.
+   * @param opts.initialCwd  Optional starting cwd — pass the parent
+   *  WindowsShellSession's cwd so PowerShell launched from terminal A
+   *  doesn't inherit terminal B's cwd via the device-wide shared field
+   *  (terminal_gap.md §7.5). When omitted, falls back to the device cwd
+   *  for backwards-compat with callers that do not yet thread a session.
    * @returns The sub-shell and banner lines.
    */
-  static create(device: Equipment): { subShell: PowerShellSubShell; banner: string[] } {
+  static create(
+    device: Equipment,
+    opts?: { initialCwd?: string },
+  ): { subShell: PowerShellSubShell; banner: string[] } {
     const subShell = new PowerShellSubShell(device);
-    // Sync initial cwd from the device
-    subShell.psExecutor.setCwd((device as any).getCwd());
+    // Prefer the caller-provided cwd (per-terminal session); fall back to
+    // the device's shared cwd so legacy call sites still work.
+    const startCwd = opts?.initialCwd ?? (device as any).getCwd();
+    subShell.psExecutor.setCwd(startCwd);
     // Wire env-var resolution so $env:APPDATA etc. return Windows-accurate values
     subShell.interp.envVarHook = (name: string) => subShell.psExecutor.resolveEnvVar(name);
     // Wire Test-Path to filesystem + registry

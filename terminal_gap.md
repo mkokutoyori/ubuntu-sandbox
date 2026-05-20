@@ -550,39 +550,59 @@ côté shellMode il n'y a pas de leak. Seul le cwd l'est.
 sur Windows réel positionne sur le dernier cwd connu de `D:`. Le simulateur
 ne fait pas cette distinction. Suffisamment exotique pour rester en TODO.
 
-### 6.4 Correctif — non implémenté dans cette PR
+### 6.4 Correctif implémenté
 
-Le design est identique à §2 : introduction d'une `WindowsShellSession`,
-swap-and-restore côté `WindowsPC`. L'implémentation est volumineuse (`WinFileCommands`,
-`WinDir`, sub-shells PowerShell/cmd) et est inscrite dans `roadmap.md`.
-Le diff reste minimal dans cet audit pour éviter de réécrire en cascade tout
-le pipeline Windows alors que la version Linux suffit déjà à valider la
-faisabilité et l'orthogonalité du pattern.
+Introduction d'une `WindowsShellSession`
+(`src/network/devices/windows/shell/WindowsShellSession.ts`), même pattern
+que `LinuxShellSession` :
+- `cwd`, `env: Map<string, string>`, `driveCwd: Map<string, string>`,
+  `history: string[]`, `lastExitCode: number`, `echoOn: boolean`,
+  `codePage: number`, `comSpec: string`.
+
+`WindowsPC.openShellSession()` / `closeShellSession()` /
+`executeCommandInSession()` / `getCompletionsForSession()` analogues.
+`WindowsTerminalSession.constructor` alloue une session ; `getPrompt()`
+lit `session.cwd` ; `executeOnDevice` route via la session ; un
+tear-down dispose la session à la fermeture.
+
+La stratégie de fusion du `env` lors du swap-in préserve les valeurs
+système du device (USERPROFILE, ComSpec, PATHEXT) pour que les sub-shells
+et les modules cmd voient toujours leur seed, tandis que `set FOO=bar`
+ne mute que la session.
+
+Tests (`src/__tests__/unit/terminal/windows-session-isolation.test.ts`) :
+- `cd C:\Windows` dans le terminal A ne change pas le prompt du terminal B
+- `set FOO=hello` reste local
+- réouverture → on retombe sur `%USERPROFILE%`
+- commandes concurrentes sérialisées
+- la session est détruite à la fermeture du terminal
 
 ---
 
 ## Section 7 — Sub-shells : SQL*Plus, RMAN, sftp, PowerShell, remote shell
 
-### 7.1 Une seule session SQL*Plus par DB device
+### 7.1 SQL*Plus — déjà isolé correctement
 
-**Anomalie.** Quand l'utilisateur tape `sqlplus / as sysdba` depuis deux
-terminaux sur la même machine `db-oracle`, le `SqlPlusSubShell` est alloué
-indépendamment dans chacun (bon), mais la `OracleSession` sous-jacente est
-partagée via l'instance Oracle (le `OracleDatabase` du device).
+**Vérification.** Lecture du code (`createSQLPlusSession` →
+`new SQLPlusSession(db)` → `db.connect(...)` → `new OracleExecutor(...)` avec
+contexte fraîchement alloué incluant `currentSchema: upperUser`) confirme
+que chaque terminal SQL\*Plus a son propre executor et son propre context.
+`ALTER SESSION SET CURRENT_SCHEMA = HR` mute uniquement
+`executor.context.currentSchema` de cette session, pas les autres.
 
-Conséquence : `ALTER SESSION SET CURRENT_SCHEMA = HR` dans le terminal A
-modifie aussi la session vue depuis B. Sur Oracle réel, chaque connexion
-SQL\*Plus est une *session distincte* (lignes V$SESSION séparées).
+**Statut : pas d'anomalie.** Test ajouté pour figer la garantie de
+non-régression : `ALTER SESSION` dans shell A → shell B reste sur SYS.
 
-**Statut.** Le projet a déjà un `OracleSessionManager` (database/oracle/) qui
-sait créer des sessions multiples ; les sub-shells doivent juste en demander
-une nouvelle au lieu de réutiliser la « default ». TODO tracké.
+### 7.2 RMAN — catalog partagé conforme
 
-### 7.2 RMAN — backup pool partagé entre terminaux
+**Vérification.** `ReactiveRmanSubShell.create()` alloue un `sessionId`
+unique par appel (devId + horodatage + suffixe aléatoire). Le `catalog`
+RMAN est volontairement partagé au niveau du device — comportement
+attendu sur Oracle réel, où le catalog RMAN survit aux sessions et est
+explicitement *singleton par base*.
 
-**Anomalie.** Un seul registre de backups par DB device. Si deux terminaux
-font `BACKUP DATABASE` en parallèle, les UUIDs et fichiers peuvent se télescoper.
-À vérifier — non corrigé dans cet audit.
+**Statut : pas d'anomalie.** Le partage du catalog est conforme à la
+sémantique RMAN.
 
 ### 7.3 `sftp` — pwd local et remote partagés entre instances
 
@@ -595,24 +615,40 @@ d'anomalie.
 **Pas d'anomalie.** Une `RemoteShellSubShell` est strictement liée à la
 `LinuxTerminalSession` qui l'a créée. Pas de partage transverse.
 
-### 7.5 PowerShell — l'état `$global:` est partagé entre les terminaux
+### 7.5 PowerShell — `$global:` per-instance, mais cwd initial leak
 
-**Anomalie.** `PowerShellSubShell` (src/terminal/subshells/PowerShellSubShell.ts)
-maintient un état `$global:` qui devrait être *par session PowerShell*. Si deux
-terminaux Windows ouvrent chacun PowerShell, leurs variables `$global:` se
-mélangent (selon que l'instance est partagée).
+**Vérification.** Chaque `PowerShellSubShell.create(device)` instancie un
+nouveau `PowerShellExecutor` et un nouveau `PSInterpreter` ; les variables
+`$global:` vivent dans l'interpreter, donc strictement par-terminal.
 
-**Statut.** À vérifier par inspection du code PowerShellSubShell — non corrigé
-dans cet audit.
+**Vrai gap identifié : cwd initial.** `PowerShellSubShell.create()` faisait
+`psExecutor.setCwd(device.getCwd())` sans paramètre alternatif. Du coup
+ouvrir PowerShell depuis le terminal A, alors que B avait fait `cd D:\foo`,
+voyait le prompt PowerShell démarrer dans `D:\foo` — uniquement parce que
+`device.getCwd()` lisait le `cwd` partagé du device. Avec §6, le cwd
+*partagé* du device est protégé par swap-and-restore mais reste
+intermittent (le snapshot baseline ne coïncide pas toujours avec
+`%USERPROFILE%`). Pour fermer la fenêtre, `PowerShellSubShell.create()`
+accepte désormais `{ initialCwd?: string }` et `WindowsTerminalSession`
+passe `this.shell.cwd` lors de `enterPowerShell()`.
 
-### 7.6 Correctif (Section 7)
+**Limitation connue (documentée).** Les délégations natives (`ipconfig`,
+`ping`, etc.) depuis PowerShell passent encore par
+`device.executeCmdCommand(...)` qui utilise le `cwd` partagé. Cas marginal
+parce que ces commandes ne dépendent pas du cwd, mais à corriger si on
+voulait `cd C:\Foo; ipconfig > rapport.txt` 100% conforme au
+`%CD%` de la session. Ticket roadmap.
 
-Aucun correctif implémenté dans cette section : les anomalies 7.1/7.2/7.5 sont
-identifiées et tracées dans `roadmap.md` comme follow-ups car elles touchent
-des modules indépendants du cœur terminal (OracleDatabase, RMAN, PowerShell).
-Les fixes §1–§4 sont structurellement orthogonaux à ces gaps : les TerminalSession
-multiples ne provoquent pas de régression sur la cohabitation des sub-shells,
-juste la cohabitation imparfaite déjà présente.
+### 7.6 Correctif implémenté
+
+- `PowerShellSubShell.create(device, { initialCwd? })` — paramètre
+  optionnel pour seeder le `cwd` du sous-shell.
+- `WindowsTerminalSession.enterPowerShell()` passe `this.shell?.cwd`
+  pour que la fenêtre PowerShell démarre dans le cwd *de ce terminal*.
+- Tests d'isolation (`src/__tests__/unit/terminal/subshell-isolation.test.ts`) :
+  - deux SQL\*Plus indépendants ; `ALTER SESSION` ne fuit pas
+  - deux PowerShell ont des executors distincts
+  - PS ouvert depuis le terminal A démarre dans le cwd de A, pas de B
 
 ---
 
@@ -635,21 +671,42 @@ juste la cohabitation imparfaite déjà présente.
 | 4.1 | Overlay "Powered Off" masque la scrollback          | Moyenne  | **Corrigé** |
 | 4.2 | Nom de fichier d'enregistrement non assaini         | Basse    | **Corrigé** |
 | 4.3 | Title-bar n'indique pas le contexte SSH             | Basse    | **Corrigé** |
-| 5.1 | Cisco/Huawei mode vty partagé                       | Haute    | Roadmap     |
+| 5.1 | Cisco IOS mode vty partagé                          | Haute    | **Corrigé** |
 | 5.2 | Boot sequence rejouée à chaque ouverture            | Moyenne  | **Corrigé** |
-| 6.x | Windows shell session isolation                     | Haute    | Roadmap     |
-| 7.x | Sub-shell concurrent state                          | Moyenne  | Roadmap     |
+| 5.x | Huawei VRP mode vty partagé                         | Moyenne  | Roadmap (a) |
+| 6.x | Windows shell session isolation                     | Haute    | **Corrigé** |
+| 7.1 | SQL\*Plus session — déjà isolé (validé par test)    | —        | Vérifié     |
+| 7.2 | RMAN catalog partagé — conforme Oracle              | —        | Vérifié     |
+| 7.5 | PowerShell cwd initial leak                         | Moyenne  | **Corrigé** |
+| 7.x | PS native delegations utilisent cwd partagé         | Basse    | Roadmap (b) |
 
 ### Tests ajoutés (résumé)
 
-- `terminal-lifecycle.test.ts`            (10 tests, §1)
-- `shell-session-isolation.test.ts`        (8 tests, §2)
-- `ssh-realism.test.ts`                   (6 tests, §3)
-- `filename-sanitize.test.ts`             (10 tests, §4)
-- `cli-boot-once.test.ts`                  (3 tests, §5.2)
+- `terminal-lifecycle.test.ts`             (10 tests, §1)
+- `shell-session-isolation.test.ts`         (8 tests, §2)
+- `ssh-realism.test.ts`                     (6 tests, §3)
+- `filename-sanitize.test.ts`              (10 tests, §4)
+- `cli-boot-once.test.ts`                   (3 tests, §5.2)
+- `cli-vty-isolation.test.ts`               (9 tests, §5.1)
+- `windows-session-isolation.test.ts`       (8 tests, §6)
+- `subshell-isolation.test.ts`              (5 tests, §7)
 
-Total : **37 nouveaux tests unitaires**. Suite complète sous `src/__tests__/unit/terminal/` :
-*50 fichiers, 392 tests, tous verts.*
+Total : **59 nouveaux tests unitaires**. Suite complète sous
+`src/__tests__/unit/terminal/` : *53 fichiers, 414 tests, tous verts.*
+
+### Roadmap items créés
+
+(a) **Huawei VRP vty isolation** — appliquer le pattern §5.1 à
+    `HuaweiVRPShell` (snapshotVtyState / applyVtyState ne sont implémentés
+    que sur `CiscoIOSShell`). La passerelle `Router.executeCommandInVty`
+    détecte l'absence des hooks et retombe sur la voie historique sans
+    perte fonctionnelle, juste sans l'isolation.
+
+(b) **PowerShell native delegations** — les appels
+    `device.executeCmdCommand(...)` à l'intérieur de `PowerShellExecutor`
+    devraient passer par `executeCommandInSession` afin que `cd C:\x ;
+    ipconfig > foo` capture le `%CD%` de la session, pas du device.
+    Ticket plus fin que les autres ; impact strictement cosmétique.
 
 ### Couverture event-bus
 

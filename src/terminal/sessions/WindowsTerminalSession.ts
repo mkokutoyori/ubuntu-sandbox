@@ -284,7 +284,12 @@ export class WindowsTerminalSession extends TerminalSession {
   // ── Sub-shell management ───────────────────────────────────────
 
   private enterPowerShell(): void {
-    const { subShell, banner } = PowerShellSubShell.create(this.device);
+    // Seed the PS sub-shell with THIS terminal's cwd so opening PowerShell
+    // from terminal A doesn't pick up terminal B's `cd D:\foo`
+    // (terminal_gap.md §7.5).
+    const { subShell, banner } = PowerShellSubShell.create(this.device, {
+      initialCwd: this.shell?.cwd,
+    });
     // If there's already an active subshell, push it onto the stack
     if (this.activeSubShell) {
       this.subShellStack.push(this.activeSubShell);
