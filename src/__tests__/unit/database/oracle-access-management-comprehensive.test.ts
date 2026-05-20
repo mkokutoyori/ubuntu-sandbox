@@ -310,71 +310,81 @@ describe('4. Role creation', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('5. GRANT system privileges', () => {
-  it('Grants every classic system privilege to roles and users', () => {
-    const cases: Case[] = [
-      { sql: 'GRANT CREATE SESSION TO alice;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE TABLE TO alice;',                                                                                          want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE VIEW TO alice;',                                                                                           want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE PROCEDURE TO alice;',                                                                                      want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE SEQUENCE TO alice;',                                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE SYNONYM TO alice;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE TRIGGER TO alice;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE TYPE TO alice;',                                                                                           want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE INDEX TO alice;',                                                                                          want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE MATERIALIZED VIEW TO alice;',                                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE ANY TABLE TO bob;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ANY TABLE TO bob;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT INSERT ANY TABLE TO bob;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT UPDATE ANY TABLE TO bob;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT DELETE ANY TABLE TO bob;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT EXECUTE ANY PROCEDURE TO bob;',                                                                                   want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE ANY VIEW TO carol;',                                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT DROP ANY TABLE TO dave;',                                                                                         want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER ANY TABLE TO dave;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE TABLESPACE TO ops_user;',                                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT DROP TABLESPACE TO ops_user;',                                                                                    want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER TABLESPACE TO ops_user;',                                                                                   want: /Grant succeeded/i },
-      { sql: 'GRANT MANAGE TABLESPACE TO ops_user;',                                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE USER TO ops_user;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER USER TO ops_user;',                                                                                         want: /Grant succeeded/i },
-      { sql: 'GRANT DROP USER TO ops_user;',                                                                                          want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER SYSTEM TO ops_user;',                                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER SESSION TO ops_user;',                                                                                      want: /Grant succeeded/i },
-      { sql: 'GRANT UNLIMITED TABLESPACE TO app_user;',                                                                               want: /Grant succeeded/i },
+  it.each<Case>([
+      { sql: 'GRANT CREATE SESSION TO alice;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE TABLE TO alice;',                                                                                          want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE VIEW TO alice;',                                                                                           want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE PROCEDURE TO alice;',                                                                                      want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE SEQUENCE TO alice;',                                                                                       want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE SYNONYM TO alice;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE TRIGGER TO alice;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE TYPE TO alice;',                                                                                           want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE INDEX TO alice;',                                                                                          want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE MATERIALIZED VIEW TO alice;',                                                                              want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE ANY TABLE TO bob;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT SELECT ANY TABLE TO bob;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT INSERT ANY TABLE TO bob;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT UPDATE ANY TABLE TO bob;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT DELETE ANY TABLE TO bob;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT EXECUTE ANY PROCEDURE TO bob;',                                                                                   want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE ANY VIEW TO carol;',                                                                                       want: /Grant succeeded\./i },
+      { sql: 'GRANT DROP ANY TABLE TO dave;',                                                                                         want: /Grant succeeded\./i },
+      { sql: 'GRANT ALTER ANY TABLE TO dave;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE TABLESPACE TO ops_user;',                                                                                  want: /Grant succeeded\./i },
+      { sql: 'GRANT DROP TABLESPACE TO ops_user;',                                                                                    want: /Grant succeeded\./i },
+      { sql: 'GRANT ALTER TABLESPACE TO ops_user;',                                                                                   want: /Grant succeeded\./i },
+      { sql: 'GRANT MANAGE TABLESPACE TO ops_user;',                                                                                  want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE USER TO ops_user;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT ALTER USER TO ops_user;',                                                                                         want: /Grant succeeded\./i },
+      { sql: 'GRANT DROP USER TO ops_user;',                                                                                          want: /Grant succeeded\./i },
+      { sql: 'GRANT ALTER SYSTEM TO ops_user;',                                                                                       want: /Grant succeeded\./i },
+      { sql: 'GRANT ALTER SESSION TO ops_user;',                                                                                      want: /Grant succeeded\./i },
+      { sql: 'GRANT UNLIMITED TABLESPACE TO app_user;',                                                                               want: /Grant succeeded\./i },
       // Multi-grantee list
-      { sql: 'GRANT CREATE SESSION TO bob, carol, dave, eve, frank;',                                                                 want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE SESSION TO grace, heidi, ivan, judy;',                                                                     want: /Grant succeeded/i },
+      { sql: 'GRANT CREATE SESSION TO bob, carol, dave, eve, frank;',                                                                 want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE SESSION TO grace, heidi, ivan, judy;',                                                                     want: /Grant succeeded\./i },
       // Multi-privilege list
-      { sql: 'GRANT INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE TO write_role;',                                            want: /Grant succeeded/i },
+      { sql: 'GRANT INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE TO write_role;',                                            want: /Grant succeeded\./i },
       // ALL PRIVILEGES
-      { sql: 'GRANT ALL PRIVILEGES TO admin_role;',                                                                                   want: /Grant succeeded/i },
+      { sql: 'GRANT ALL PRIVILEGES TO admin_role;',                                                                                   want: /Grant succeeded\./i },
       // Predefined roles
-      { sql: 'GRANT CONNECT TO alice;',                                                                                               want: /Grant succeeded/i },
-      { sql: 'GRANT RESOURCE TO alice;',                                                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT DBA TO ops_user WITH ADMIN OPTION;',                                                                              want: /Grant succeeded/i },
+      { sql: 'GRANT CONNECT TO alice;',                                                                                               want: /Grant succeeded\./i },
+      { sql: 'GRANT RESOURCE TO alice;',                                                                                              want: /Grant succeeded\./i },
+      { sql: 'GRANT DBA TO ops_user WITH ADMIN OPTION;',                                                                              want: /Grant succeeded\./i },
       // Role-to-role
-      { sql: 'GRANT CREATE SESSION TO app_role;',                                                                                     want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE TABLE TO app_role;',                                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE VIEW TO app_role;',                                                                                        want: /Grant succeeded/i },
-      { sql: 'GRANT CREATE PROCEDURE TO app_role;',                                                                                   want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ANY TABLE TO read_only_role;',                                                                             want: /Grant succeeded/i },
+      { sql: 'GRANT CREATE SESSION TO app_role;',                                                                                     want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE TABLE TO app_role;',                                                                                       want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE VIEW TO app_role;',                                                                                        want: /Grant succeeded\./i },
+      { sql: 'GRANT CREATE PROCEDURE TO app_role;',                                                                                   want: /Grant succeeded\./i },
+      { sql: 'GRANT SELECT ANY TABLE TO read_only_role;',                                                                             want: /Grant succeeded\./i },
       // WITH ADMIN OPTION
-      { sql: 'GRANT CREATE TABLE TO heidi WITH ADMIN OPTION;',                                                                        want: /Grant succeeded/i },
+      { sql: 'GRANT CREATE TABLE TO heidi WITH ADMIN OPTION;',                                                                        want: /Grant succeeded\./i },
       // Grants to unknown user/role
-      { sql: 'GRANT CREATE SESSION TO ghost_user;',                                                                                   want: /ORA-01917/i },
-      // Self-grant SYS (already implicit)
-      { sql: 'GRANT CREATE SESSION TO sys;',                                                                                          want: /(Grant succeeded|ORA-01931)/i },
-      // Verification
-      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'ALICE';",                                                           want: /\d+/ },
-      { sql: "SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB' AND privilege = 'SELECT ANY TABLE';",                         want: /SELECT ANY TABLE/ },
-      { sql: "SELECT grantee FROM dba_sys_privs WHERE privilege = 'CREATE SESSION' AND grantee IN ('BOB','CAROL','DAVE','EVE','FRANK');", want: /BOB/ },
-      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'APP_ROLE';",                                                        want: /\d+/ },
-      { sql: "SELECT admin_option FROM dba_sys_privs WHERE grantee = 'HEIDI' AND privilege = 'CREATE TABLE';",                        want: /YES/ },
-      { sql: "SELECT grantee FROM dba_sys_privs WHERE privilege = 'UNLIMITED TABLESPACE';",                                           want: /APP_USER/ },
-      { sql: "SELECT privilege FROM dba_sys_privs WHERE grantee = 'ADMIN_ROLE' ORDER BY 1 FETCH FIRST 5 ROWS ONLY;",                  want: { not: /ORA-00904/ } },
-      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'WRITE_ROLE';",                                                      want: /3/ },
-    ];
-    drive(sys, cases);
+      // Grant to a missing principal raises ORA-01917 specifically.
+      { sql: 'GRANT CREATE SESSION TO ghost_user;',                                                                                   want: /ORA-01917/ },
+      // SYS already owns every privilege — Oracle returns ORA-01931.
+      { sql: 'GRANT CREATE SESSION TO sys;',                                                                                          want: /ORA-01931/ },
+      // Dictionary verification — committed values, not "anything goes".
+      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'ALICE' AND privilege = 'CREATE SESSION';",                          want: /^\s*1\s*$/m },
+      { sql: "SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB' AND privilege = 'SELECT ANY TABLE';",                         want: /\bSELECT ANY TABLE\b/ },
+      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee IN ('BOB','CAROL','DAVE','EVE','FRANK') AND privilege = 'CREATE SESSION';", want: /^\s*5\s*$/m },
+      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'APP_ROLE' AND privilege IN ('CREATE SESSION','CREATE TABLE','CREATE VIEW','CREATE PROCEDURE');", want: /^\s*4\s*$/m },
+      { sql: "SELECT admin_option FROM dba_sys_privs WHERE grantee = 'HEIDI' AND privilege = 'CREATE TABLE';",                        want: /\bYES\b/ },
+      { sql: "SELECT grantee FROM dba_sys_privs WHERE privilege = 'UNLIMITED TABLESPACE' AND grantee = 'APP_USER';",                  want: /\bAPP_USER\b/ },
+      { sql: "SELECT admin_option FROM dba_sys_privs WHERE grantee = 'OPS_USER' AND privilege = 'ALTER SYSTEM';",                     want: /\bNO\b/ },
+      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'WRITE_ROLE' AND privilege IN ('INSERT ANY TABLE','UPDATE ANY TABLE','DELETE ANY TABLE');", want: /^\s*3\s*$/m },
+      // ALL PRIVILEGES expands to at least 100 system privileges.
+      { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE grantee = 'ADMIN_ROLE';",                                                      want: /^\s*[1-9]\d{2,}\s*$/m },
+      // CONNECT/RESOURCE were granted to alice.
+      { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'ALICE' AND granted_role IN ('CONNECT','RESOURCE');",                want: /^\s*2\s*$/m },
+      // DBA was granted to ops_user WITH ADMIN OPTION.
+      { sql: "SELECT admin_option FROM dba_role_privs WHERE grantee = 'OPS_USER' AND granted_role = 'DBA';",                          want: /\bYES\b/ },
+  ])('§5: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
