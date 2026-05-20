@@ -13,6 +13,16 @@ registerView({
   query({ catalog }) {
     const users = catalog.getAllUsers();
     const engine = catalog.getSecurityEngine();
+    // SYS-supplied / Oracle-maintained schemas — kept in sync with what
+    // a fresh 19c install actually carries. Any other user is reported
+    // as not Oracle-maintained.
+    const ORACLE_MAINTAINED = new Set([
+      'SYS', 'SYSTEM', 'PUBLIC', 'XDB', 'OUTLN', 'DBSNMP', 'APPQOSSYS',
+      'GSMADMIN_INTERNAL', 'WMSYS', 'XS$NULL', 'ORACLE_OCM', 'CTXSYS',
+      'ANONYMOUS', 'AUDSYS', 'DVSYS', 'DVF', 'LBACSYS', 'OJVMSYS',
+      'OLAPSYS', 'ORDDATA', 'ORDPLUGINS', 'ORDSYS', 'SI_INFORMTN_SCHEMA',
+      'SYSBACKUP', 'SYSDG', 'SYSKM', 'SYSRAC', 'MDSYS', 'EXFSYS',
+    ]);
     return queryResult(
       [
         { name: 'USERNAME', dataType: oracleVarchar2(128) },
@@ -25,10 +35,22 @@ registerView({
         { name: 'CREATED', dataType: oracleDate() },
         { name: 'PROFILE', dataType: oracleVarchar2(128) },
         { name: 'AUTHENTICATION_TYPE', dataType: oracleVarchar2(8) },
+        { name: 'EXTERNAL_NAME', dataType: oracleVarchar2(4000) },
+        { name: 'COMMON', dataType: oracleVarchar2(3) },
+        { name: 'ORACLE_MAINTAINED', dataType: oracleVarchar2(1) },
+        { name: 'INHERITED', dataType: oracleVarchar2(3) },
+        { name: 'DEFAULT_COLLATION', dataType: oracleVarchar2(100) },
+        { name: 'IMPLICIT', dataType: oracleVarchar2(3) },
+        { name: 'ALL_SHARD', dataType: oracleVarchar2(3) },
+        { name: 'PASSWORD_VERSIONS', dataType: oracleVarchar2(17) },
+        { name: 'EDITIONS_ENABLED', dataType: oracleVarchar2(1) },
+        { name: 'LAST_LOGIN', dataType: oracleDate() },
+        { name: 'LCOUNT', dataType: oracleNumber(10) },
       ],
       users.map(u => {
         let expiryDate: Date | null = u.expiryDate;
         let accountStatus: string = u.accountStatus;
+        let failedLoginCount = 0;
         if (engine) {
           const lifetimeDays = engine.profiles.resolvePasswordLifetimeDays(u.profile);
           expiryDate = engine.passwords.computeExpiryDate(u.username, lifetimeDays);
@@ -43,13 +65,27 @@ registerView({
           else if (isLocked) accountStatus = 'LOCKED';
           else if (isExpired) accountStatus = pwStatus === 'EXPIRED(GRACE)' ? 'EXPIRED(GRACE)' : 'EXPIRED';
           else accountStatus = 'OPEN';
+          const tracker = (engine as unknown as { loginTracker?: { getFailedCount?: (u: string) => number } }).loginTracker;
+          failedLoginCount = tracker?.getFailedCount?.(u.username) ?? 0;
         }
+        const oracleMaintained = ORACLE_MAINTAINED.has(u.username) ? 'Y' : 'N';
         return [
           u.username, u.userId, accountStatus,
           u.lockDate ? u.lockDate.toISOString() : null,
           expiryDate ? expiryDate.toISOString() : null,
           u.defaultTablespace, u.temporaryTablespace,
           u.created.toISOString(), u.profile, u.authenticationType,
+          u.externalName ?? null,
+          'NO',                                          // COMMON
+          oracleMaintained,                              // ORACLE_MAINTAINED
+          'NO',                                          // INHERITED
+          'USING_NLS_COMP',                              // DEFAULT_COLLATION
+          'NO',                                          // IMPLICIT
+          'NO',                                          // ALL_SHARD
+          '11G 12C',                                     // PASSWORD_VERSIONS
+          'N',                                           // EDITIONS_ENABLED
+          null,                                          // LAST_LOGIN
+          failedLoginCount,                              // LCOUNT
         ];
       })
     );

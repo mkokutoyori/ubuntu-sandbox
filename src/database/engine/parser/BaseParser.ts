@@ -800,7 +800,9 @@ export abstract class BaseParser {
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
       this.expectKeyword('REFERENCES');
-      const refTable = this.expectIdentifier();
+      // Accept schema.table for the referenced relation.
+      let refTable = this.expectIdentifier();
+      if (this.match(TokenType.DOT)) refTable = `${refTable}.${this.expectIdentifier()}`;
       let refColumns: string[] | undefined;
       if (this.match(TokenType.LPAREN)) {
         refColumns = this.parseIdentifierList();

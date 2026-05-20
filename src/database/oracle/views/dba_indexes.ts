@@ -14,7 +14,10 @@ registerView({
     for (const schema of storage.getSchemas()) {
       for (const idx of storage.getIndexes(schema)) {
         const isFunctionBased = idx.expressions?.some(e => e !== null) ?? false;
-        const indexType = isFunctionBased ? 'FUNCTION-BASED NORMAL' : 'NORMAL';
+        // 19c index types: NORMAL, BITMAP, NORMAL/REV (descending), FUNCTION-BASED NORMAL / BITMAP, IOT - TOP, CLUSTER.
+        const indexType = idx.bitmap
+          ? (isFunctionBased ? 'FUNCTION-BASED BITMAP' : 'BITMAP')
+          : (isFunctionBased ? 'FUNCTION-BASED NORMAL' : 'NORMAL');
         rows.push([schema, idx.name, idx.tableName, idx.unique ? 'UNIQUE' : 'NONUNIQUE', 'VALID', indexType]);
       }
     }
