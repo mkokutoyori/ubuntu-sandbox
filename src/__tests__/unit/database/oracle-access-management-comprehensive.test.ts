@@ -762,46 +762,54 @@ describe('12. Object-access enforcement under non-SYS sessions', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('13. Session, process, and resource inspection', () => {
-  it('Queries V$ session-related views for live state', () => {
-    const cases: Case[] = [
-      { sql: "SELECT sid, serial#, username, status, program FROM v$session WHERE username IS NOT NULL;",                              want: /SYS|ALICE|BOB/ },
-      { sql: 'SELECT COUNT(*) FROM v$session;',                                                                                       want: /\d+/ },
-      { sql: "SELECT COUNT(*) FROM v$session WHERE status = 'ACTIVE';",                                                              want: /\d+/ },
-      { sql: "SELECT COUNT(*) FROM v$session WHERE type = 'USER';",                                                                  want: /\d+/ },
-      { sql: "SELECT COUNT(*) FROM v$session WHERE type = 'BACKGROUND';",                                                            want: /\d+/ },
-      { sql: 'SELECT username, COUNT(*) FROM v$session WHERE username IS NOT NULL GROUP BY username;',                                want: { not: /ORA-/ } },
-      { sql: "SELECT sid, event, wait_class FROM v$session_wait WHERE wait_class != 'Idle' FETCH FIRST 10 ROWS ONLY;",               want: { not: /ORA-00942/ } },
-      { sql: "SELECT sid, machine, osuser, terminal, program FROM v$session WHERE username = 'SYS';",                                want: /SYS/ },
-      { sql: 'SELECT sid, logon_time FROM v$session WHERE username IS NOT NULL FETCH FIRST 3 ROWS ONLY;',                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$process FETCH FIRST 5 ROWS ONLY;',                                                                       want: { not: /ORA-00942/ } },
-      { sql: 'SELECT spid, pname FROM v$process WHERE pname IS NOT NULL FETCH FIRST 10 ROWS ONLY;',                                    want: { not: /ORA-/ } },
-      { sql: 'SELECT name, value FROM v$mystat WHERE ROWNUM <= 5;',                                                                    want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM v$sesstat WHERE statistic# = 0 FETCH FIRST 5 ROWS ONLY;',                                                  want: { not: /ORA-00942/ } },
-      { sql: "SELECT name, value FROM v$sysstat WHERE name LIKE 'logons%';",                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$lock FETCH FIRST 5 ROWS ONLY;',                                                                          want: { not: /ORA-00942/ } },
-      { sql: 'SELECT sid, type, lmode, request FROM v$lock WHERE block > 0;',                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                                                                   want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM v$open_cursor FETCH FIRST 5 ROWS ONLY;',                                                                   want: { not: /ORA-00942/ } },
-      { sql: 'SELECT sql_id, sql_text FROM v$sql FETCH FIRST 5 ROWS ONLY;',                                                            want: { not: /ORA-00942/ } },
-      { sql: 'SELECT sql_id, executions, elapsed_time FROM v$sqlarea FETCH FIRST 5 ROWS ONLY;',                                        want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM v$session_blockers FETCH FIRST 5 ROWS ONLY;',                                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$session_longops FETCH FIRST 5 ROWS ONLY;',                                                               want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$active_session_history FETCH FIRST 5 ROWS ONLY;',                                                        want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$resource_limit FETCH FIRST 5 ROWS ONLY;',                                                                want: { not: /ORA-00942/ } },
-      { sql: 'SELECT * FROM v$instance;',                                                                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$database;',                                                                                              want: { not: /ORA-/ } },
-      { sql: "SELECT * FROM v$parameter WHERE name LIKE '%audit%';",                                                                  want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$pwfile_users;',                                                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$session_connect_info FETCH FIRST 5 ROWS ONLY;',                                                          want: { not: /ORA-/ } },
-      { sql: "SELECT sid, command, server FROM v$session WHERE type = 'USER' FETCH FIRST 5 ROWS ONLY;",                              want: { not: /ORA-/ } },
-      { sql: 'SELECT name, total_size, used_size FROM v$sgainfo FETCH FIRST 5 ROWS ONLY;',                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$pgastat FETCH FIRST 5 ROWS ONLY;',                                                                       want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // V$SESSION — at minimum the SYS user session is visible.
+    { sql: "SELECT sid, serial#, username, status, program FROM v$session WHERE username = 'SYS' AND type = 'USER';", want: /\bSYS\b/ },
+    { sql: 'SELECT COUNT(*) FROM v$session;',                                                          want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM v$session WHERE status = 'ACTIVE';",                                  want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM v$session WHERE type = 'USER';",                                      want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM v$session WHERE type = 'BACKGROUND';",                                want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'SELECT username FROM v$session WHERE username IS NOT NULL GROUP BY username;',             want: /\bSYS\b/ },
+    { sql: "SELECT wait_class FROM v$session_wait WHERE ROWNUM <= 1;",                                  want: /\bWAIT_CLASS\b/i },
+    { sql: "SELECT machine FROM v$session WHERE username = 'SYS' AND ROWNUM = 1;",                    want: /\S/ },
+    { sql: 'SELECT sid, logon_time FROM v$session WHERE username IS NOT NULL FETCH FIRST 3 ROWS ONLY;', want: /\bSID\b/i },
+    // V$PROCESS / V$MYSTAT / V$SESSTAT / V$SYSSTAT
+    { sql: 'SELECT spid FROM v$process FETCH FIRST 5 ROWS ONLY;',                                       want: /\bSPID\b/i },
+    { sql: 'SELECT spid, pname FROM v$process WHERE pname IS NOT NULL FETCH FIRST 10 ROWS ONLY;',       want: /\b(PMON|SMON|DBW0|LGWR|CKPT)\b/i },
+    { sql: 'SELECT statistic#, name FROM v$mystat WHERE ROWNUM <= 5;',                                  want: /\bNAME\b/i },
+    { sql: 'SELECT sid, statistic#, value FROM v$sesstat WHERE statistic# = 0 FETCH FIRST 5 ROWS ONLY;', want: /\bVALUE\b/i },
+    { sql: "SELECT name FROM v$sysstat WHERE name LIKE 'logons%';",                                     want: /\blogons\b/i },
+    // V$LOCK / V$TRANSACTION
+    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /\bLMODE\b/i },
+    { sql: 'SELECT COUNT(*) FROM v$lock WHERE block > 0;',                                              want: /^\s*\d+\s*$/m },
+    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /\bSTATUS\b/i },
+    { sql: 'SELECT sid, sql_id FROM v$open_cursor FETCH FIRST 5 ROWS ONLY;',                             want: /\bSQL_ID\b/i },
+    // V$SQL / V$SQLAREA — at least the columns we asked for.
+    { sql: 'SELECT sql_id, sql_text FROM v$sql FETCH FIRST 5 ROWS ONLY;',                                 want: /\bSQL_ID\b/i },
+    { sql: 'SELECT sql_id, executions FROM v$sqlarea FETCH FIRST 5 ROWS ONLY;',                          want: /\bEXECUTIONS\b/i },
+    // ASH / blockers / longops — return rows or column headers.
+    { sql: 'SELECT sid, blocker_sid FROM v$session_blockers FETCH FIRST 5 ROWS ONLY;',                    want: /\bSID\b/i },
+    { sql: 'SELECT sid, opname FROM v$session_longops FETCH FIRST 5 ROWS ONLY;',                          want: /\bOPNAME\b/i },
+    { sql: 'SELECT sample_id FROM v$active_session_history FETCH FIRST 5 ROWS ONLY;',                     want: /\bSAMPLE_ID\b/i },
+    { sql: 'SELECT resource_name, current_utilization, max_utilization FROM v$resource_limit FETCH FIRST 5 ROWS ONLY;', want: /\bRESOURCE_NAME\b/i },
+    // Instance / database surfaces.
+    { sql: 'SELECT instance_number, instance_name, status FROM v$instance;',                              want: /\bOPEN\b/i },
+    { sql: 'SELECT name, open_mode FROM v$database;',                                                     want: /\bREAD WRITE\b/i },
+    { sql: "SELECT COUNT(*) FROM v$parameter WHERE name LIKE '%audit%';",                                 want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'SELECT username, sysdba FROM v$pwfile_users;',                                                want: /\bUSERNAME\b/i },
+    { sql: 'SELECT sid, authentication_type FROM v$session_connect_info FETCH FIRST 5 ROWS ONLY;',         want: /\bAUTHENTICATION_TYPE\b/i },
+    { sql: "SELECT sid, command, server FROM v$session WHERE type = 'USER' FETCH FIRST 5 ROWS ONLY;",     want: /\bSERVER\b/i },
+    { sql: "SELECT name, bytes FROM v$sgainfo WHERE name = 'Maximum SGA Size';",                          want: /\bMaximum SGA Size\b/i },
+    { sql: 'SELECT name, value FROM v$pgastat FETCH FIRST 5 ROWS ONLY;',                                  want: /\bVALUE\b/i },
+  ])('§13: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 14 — Dictionary inspection of users & privileges (44 cases)
 // ─────────────────────────────────────────────────────────────────
 
