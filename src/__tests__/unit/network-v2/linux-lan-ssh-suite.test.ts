@@ -2206,3 +2206,59 @@ describe('§34 — sudo over ssh', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 35 — exit codes propagation and disconnect on remote down
+
+describe('§35 — exit codes and disconnect semantics', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh host true → echo $? returns 0',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 true; echo "rc=$?"',
+      contains: [/^rc=0\s*$/m],
+    },
+    {
+      name: 'ssh host "exit 42" → 42',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 \'exit 42\'; echo "rc=$?"',
+      contains: [/^rc=42\s*$/m],
+    },
+    {
+      name: 'ssh to refused host → 255',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 hostname; echo "rc=$?"',
+      contains: [/^rc=255\s*$/m],
+    },
+    {
+      name: 'ssh to unknown host → 255',
+      on: l => l.pc1,
+      cmd: 'ssh alice@192.0.2.99 hostname; echo "rc=$?"',
+      contains: [/^rc=255\s*$/m],
+    },
+    {
+      name: 'ConnectTimeout 1 short-circuits a stalled connection',
+      setup: (l) => { void l.pc2.powerOff(); },
+      on: l => l.pc1,
+      cmd: 'time ssh -o ConnectTimeout=1 alice@10.0.0.2 hostname',
+      contains: [/Connection timed out|real\s+0m\d/],
+    },
+    {
+      name: 'remote killed mid-session prints "Connection closed by …"',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &');
+        l.pc2.powerOff();
+      },
+      on: l => l.pc1,
+      cmd: 'fg %1',
+      contains: [/Connection closed by 10\.0\.0\.2|closed by remote/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
