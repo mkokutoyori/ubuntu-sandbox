@@ -744,3 +744,67 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 12 — logging stopped: rsyslog / journald disabled ────────
+
+describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rsyslog stopped → auth.log no longer grows on SSH events',
+      setup: async (l) => {
+        await l.pc2.executeCommand(': > /var/log/auth.log');
+        await l.pc2.executeCommand('systemctl stop rsyslog');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+      },
+      on: l => l.pc2,
+      cmd: 'wc -l /var/log/auth.log',
+      contains: [/^\s*0\s/],
+      excludes: [/Accepted/],
+    },
+    {
+      name: 'rsyslog stopped → syslog also stops appending kernel/cron events',
+      setup: async (l) => {
+        await l.pc2.executeCommand(': > /var/log/syslog');
+        await l.pc2.executeCommand('systemctl stop rsyslog');
+        await l.pc2.executeCommand('logger "manual test entry"');
+      },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/syslog',
+      excludes: ['manual test entry'],
+    },
+    {
+      name: 'journald stopped → journalctl prints an empty / unavailable message',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop systemd-journald'); },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh.service',
+      contains: [/No journal files were found|service is not active|No entries/i],
+    },
+    {
+      name: 'after rsyslog is started again, new SSH events ARE logged',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop rsyslog');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc2.executeCommand('systemctl start rsyslog');
+        await l.pc1.executeCommand('ssh bob@10.0.0.2');
+      },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Accepted password for bob/],
+      excludes: [/Accepted password for alice/],
+    },
+    {
+      name: 'systemctl is-active rsyslog reflects the stop',
+      setup: (l) => { void l.pc2.executeCommand('systemctl stop rsyslog'); },
+      on: l => l.pc2,
+      cmd: 'systemctl is-active rsyslog',
+      contains: ['inactive'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
