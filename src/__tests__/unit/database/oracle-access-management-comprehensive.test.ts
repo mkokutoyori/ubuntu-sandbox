@@ -707,55 +707,57 @@ describe('11. Connection attempts under different identities', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('12. Object-access enforcement under non-SYS sessions', () => {
-  it('Honours grants and refuses on missing privileges', () => {
-    const cases: Case[] = [
-      { sql: 'CONNECT alice/ReturnPwd1#@orcl',                                                                                        want: /(Connected|ORA-)/i },
-      { sql: 'SELECT COUNT(*) FROM hr.employees;',                                                                                    want: /\d+/ },
-      { sql: 'SELECT first_name, last_name FROM hr.employees WHERE ROWNUM <= 3;',                                                      want: { not: /ORA-00942/ } },
-      // No INSERT grant
-      { sql: "INSERT INTO hr.employees (employee_id, first_name) VALUES (999, 'Z');",                                                 want: /ORA-01031/i },
-      // Bob has more privileges
-      { sql: 'CONNECT bob/Welcome1#@orcl',                                                                                            want: /(Connected|ORA-)/i },
-      { sql: 'SELECT COUNT(*) FROM hr.employees;',                                                                                    want: /\d+/ },
-      { sql: "INSERT INTO hr.employees (employee_id, first_name, last_name, email, hire_date, job_id) VALUES (4242, 'Test', 'User', 'TUSER', SYSDATE, 'IT_PROG');", want: /(1 row created|ORA-)/i },
-      { sql: 'UPDATE hr.employees SET salary = salary + 100 WHERE employee_id = 4242;',                                                want: /(1 row updated|0 rows|ORA-)/i },
-      { sql: 'DELETE FROM hr.employees WHERE employee_id = 4242;',                                                                    want: /(1 row deleted|0 rows|ORA-)/i },
-      { sql: 'COMMIT;',                                                                                                                want: /Commit complete/i },
-      // DDL not granted
-      { sql: 'DROP TABLE hr.employees;',                                                                                              want: /ORA-(01031|00942)/ },
-      // Use SYS-managed table — no grants
-      { sql: 'SELECT * FROM sys.user$;',                                                                                              want: /ORA-(00942|01031)/ },
-      // Bob has SELECT ANY TABLE
-      { sql: 'SELECT COUNT(*) FROM hr.departments;',                                                                                  want: /\d+/ },
-      { sql: 'SELECT COUNT(*) FROM scott.emp;',                                                                                       want: /\d+/ },
-      // Carol — limited
-      { sql: 'CONNECT carol/Welcome1#@orcl',                                                                                          want: /(Connected|ORA-)/i },
-      { sql: 'SELECT COUNT(*) FROM hr.employees;',                                                                                    want: /\d+/ },
-      { sql: 'UPDATE hr.employees SET salary = 1 WHERE ROWNUM = 1;',                                                                  want: /ORA-01031/i },
-      // dev_team — should have column read on first_name + employee_id
-      { sql: 'CONNECT dev_team/DevTeam1#@orcl',                                                                                       want: /(Connected|ORA-)/i },
-      { sql: 'SELECT employee_id, first_name FROM hr.employees FETCH FIRST 3 ROWS ONLY;',                                              want: { not: /ORA-00942/ } },
-      { sql: 'SELECT salary FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                                                want: /ORA-/ },
-      // app_user — UNLIMITED TABLESPACE + write_role
-      { sql: 'CONNECT app_user/App1#@orcl',                                                                                           want: /(Connected|ORA-)/i },
-      { sql: 'CREATE TABLE app_user.demo (x NUMBER);',                                                                                want: /(Table created|ORA-01031)/ },
-      { sql: 'INSERT INTO app_user.demo VALUES (1);',                                                                                  want: /(1 row created|ORA-)/i },
-      { sql: 'SELECT * FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                                                    want: { not: /ORA-00942/ } },
-      // PUBLIC grant — anyone may read hr.regions
-      { sql: 'CONNECT readonly/ReadOnly1#@orcl',                                                                                       want: /(Connected|ORA-)/i },
-      { sql: 'SELECT * FROM hr.regions;',                                                                                              want: { not: /ORA-00942/ } },
-      // Back to SYS
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                    want: /Connected/i },
-      { sql: 'SHOW USER',                                                                                                              want: /SYS/i },
-      // Cross-schema attempt without grant
-      { sql: 'CREATE USER nograntee IDENTIFIED BY "NoGrant1#";',                                                                       want: /User created/i },
-      { sql: 'GRANT CREATE SESSION TO nograntee;',                                                                                     want: /Grant succeeded/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Alice has SELECT on HR.EMPLOYEES but no INSERT.
+    { sql: 'CONNECT alice/ReturnPwd1#@orcl',                                                            want: /\bConnected\b/i },
+    { sql: 'SELECT COUNT(*) FROM hr.employees;',                                                        want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'SELECT first_name FROM hr.employees WHERE ROWNUM <= 1;',                                    want: /\bFIRST_NAME\b/i },
+    { sql: "INSERT INTO hr.employees (employee_id, first_name) VALUES (999, 'Z');",                     want: /ORA-01031/ },
+    // Bob has SELECT ANY TABLE + targeted DML on HR.EMPLOYEES.
+    { sql: 'CONNECT bob/Welcome1#@orcl',                                                                want: /\bConnected\b/i },
+    { sql: 'SELECT COUNT(*) FROM hr.employees;',                                                        want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "INSERT INTO hr.employees (employee_id, first_name, last_name, email, hire_date, job_id) VALUES (4242, 'Test', 'User', 'TUSER', SYSDATE, 'IT_PROG');", want: /1 row created\./i },
+    { sql: 'UPDATE hr.employees SET salary = NVL(salary,0) + 100 WHERE employee_id = 4242;',           want: /1 row updated\./i },
+    { sql: 'DELETE FROM hr.employees WHERE employee_id = 4242;',                                        want: /1 row deleted\./i },
+    { sql: 'COMMIT;',                                                                                    want: /Commit complete\./i },
+    // Bob lacks DROP ANY TABLE on HR — ORA-01031.
+    { sql: 'DROP TABLE hr.employees;',                                                                  want: /ORA-01031/ },
+    // SYS-owned dictionary base table is gated even from SELECT ANY TABLE.
+    { sql: 'SELECT * FROM sys.user$;',                                                                  want: /ORA-(00942|01031)/ },
+    // SELECT ANY TABLE lets Bob read other schemas.
+    { sql: 'SELECT COUNT(*) FROM hr.departments;',                                                      want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'SELECT COUNT(*) FROM scott.emp;',                                                           want: /^\s*[1-9]\d*\s*$/m },
+    // Carol — SELECT only, no UPDATE.
+    { sql: 'CONNECT carol/Welcome1#@orcl',                                                              want: /\bConnected\b/i },
+    { sql: 'SELECT COUNT(*) FROM hr.employees;',                                                        want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'UPDATE hr.employees SET salary = 1 WHERE ROWNUM = 1;',                                     want: /ORA-01031/ },
+    // dev_team has column-level SELECT on employee_id + first_name only.
+    { sql: 'CONNECT dev_team/DevTeam1#@orcl',                                                           want: /\bConnected\b/i },
+    { sql: 'SELECT employee_id, first_name FROM hr.employees FETCH FIRST 3 ROWS ONLY;',                 want: /\bFIRST_NAME\b/i },
+    { sql: 'SELECT salary FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                   want: /ORA-01031/ },
+    // app_user — UNLIMITED TABLESPACE + write_role.
+    { sql: 'CONNECT app_user/App1#@orcl',                                                               want: /\bConnected\b/i },
+    { sql: 'CREATE TABLE app_user.demo (x NUMBER);',                                                    want: /Table created\./i },
+    { sql: 'INSERT INTO app_user.demo VALUES (1);',                                                      want: /1 row created\./i },
+    { sql: 'SELECT * FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                        want: /\bFIRST_NAME\b/i },
+    // PUBLIC SELECT on HR.REGIONS — readonly user can see it.
+    { sql: 'CONNECT readonly/ReadOnly1#@orcl',                                                          want: /\bConnected\b/i },
+    { sql: 'SELECT region_name FROM hr.regions ORDER BY region_id;',                                    want: /\bEurope\b/i },
+    // Back to SYS.
+    { sql: 'CONNECT / AS SYSDBA',                                                                       want: /\bConnected\b/i },
+    { sql: 'SHOW USER',                                                                                  want: /USER\s+(?:is\s+)?["']?SYS["']?/i },
+    // Create a no-grant user we will reuse later in negative tests.
+    { sql: 'CREATE USER nograntee IDENTIFIED BY "NoGrant1#";',                                          want: /User created\./i },
+    { sql: 'GRANT CREATE SESSION TO nograntee;',                                                         want: /Grant succeeded\./i },
+  ])('§12: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 13 — Session and resource inspection (32 cases)
 // ─────────────────────────────────────────────────────────────────
 
