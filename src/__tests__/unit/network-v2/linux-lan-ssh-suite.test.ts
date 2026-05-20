@@ -452,7 +452,7 @@ describe('§7 — SSH refused when remote machine is powered off', () => {
   const rows: Row[] = [
     {
       name: 'powerOff(pc2) then ssh from pc1 → no route / refused',
-      setup: (l) => { l.pc2.setPoweredOn(false); },
+      setup: (l) => { l.pc2.powerOff(); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: [/No route to host|Connection timed out|Could not resolve|refused/],
@@ -460,21 +460,21 @@ describe('§7 — SSH refused when remote machine is powered off', () => {
     },
     {
       name: 'powering off srv1 also refuses ssh from any pc',
-      setup: (l) => { l.srv1.setPoweredOn(false); },
+      setup: (l) => { l.srv1.powerOff(); },
       on: l => l.pc3,
       cmd: 'ssh alice@10.0.0.10',
       contains: [/No route to host|Connection timed out|refused/],
     },
     {
       name: 'powering off then back on restores connectivity',
-      setup: (l) => { l.pc2.setPoweredOn(false); l.pc2.setPoweredOn(true); },
+      setup: (l) => { l.pc2.powerOff(); l.pc2.powerOn(); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'ping to a powered-off device also fails',
-      setup: (l) => { l.pc2.setPoweredOn(false); },
+      setup: (l) => { l.pc2.powerOff(); },
       on: l => l.pc1,
       cmd: 'ping -c 2 10.0.0.2',
       contains: [/100% packet loss|Destination Host Unreachable|Network is unreachable/],
@@ -482,7 +482,7 @@ describe('§7 — SSH refused when remote machine is powered off', () => {
     },
     {
       name: 'arping to a powered-off device gets no replies',
-      setup: (l) => { l.pc2.setPoweredOn(false); },
+      setup: (l) => { l.pc2.powerOff(); },
       on: l => l.pc1,
       cmd: 'arping -c 2 10.0.0.2',
       contains: [/Sent 2 probes \(2 broadcast\(s\)\)|Received 0 reply|Timeout/],
@@ -490,7 +490,7 @@ describe('§7 — SSH refused when remote machine is powered off', () => {
     },
     {
       name: 'a powered-off PC does not appear in ip neigh on its neighbours',
-      setup: (l) => { l.pc2.setPoweredOn(false); },
+      setup: (l) => { l.pc2.powerOff(); },
       on: l => l.pc1,
       cmd: 'ip neigh show 10.0.0.2',
       contains: [/FAILED|INCOMPLETE/],
@@ -1613,7 +1613,7 @@ describe('§25 — full end-to-end audit story', () => {
       name: 'turn srv1 off mid-session → pc1\'s ssh job ends',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
-        l.srv1.setPoweredOn(false);
+        l.srv1.powerOff();
       },
       on: l => l.pc1,
       cmd: 'jobs',
@@ -1633,8 +1633,8 @@ describe('§25 — full end-to-end audit story', () => {
     {
       name: 'reboot of srv1 resets uptime',
       setup: async (l) => {
-        l.srv1.setPoweredOn(false);
-        l.srv1.setPoweredOn(true);
+        l.srv1.powerOff();
+        l.srv1.powerOn();
       },
       on: l => l.srv1,
       cmd: 'uptime -p',
