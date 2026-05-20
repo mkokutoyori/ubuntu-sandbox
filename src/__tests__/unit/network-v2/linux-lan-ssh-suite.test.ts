@@ -680,3 +680,67 @@ describe('§10 — sshd Port directive (non-default)', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 11 — /var/log/auth.log entries match SSH activity ────────
+
+describe('§11 — /var/log/auth.log matches SSH activity', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'successful login appends an "Accepted password" line on the remote',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Accepted password for alice from 10\.0\.0\.1/],
+    },
+    {
+      name: 'refused login (sshd stopped) appends a "Failed password" line',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop ssh');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc2.executeCommand('systemctl start ssh');
+      },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Failed password for alice/, /from 10\.0\.0\.1/],
+    },
+    {
+      name: 'each login is a separate line (auth log grows monotonically)',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh bob@10.0.0.2');
+        await l.pc1.executeCommand('ssh carol@10.0.0.2');
+      },
+      on: l => l.pc2,
+      cmd: 'grep -c Accepted /var/log/auth.log',
+      contains: [/^3\b/],
+    },
+    {
+      name: 'auth.log contains the source hostname in parentheses',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/pc1/],
+    },
+    {
+      name: 'auth.log records port and protocol info per OpenSSH',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      on: l => l.pc2,
+      cmd: 'tail -1 /var/log/auth.log',
+      contains: [/port \d+ ssh2/],
+    },
+    {
+      name: 'a refused root login is recorded as "Failed password for root"',
+      setup: (l) => { void l.pc1.executeCommand('ssh root@10.0.0.2'); },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Failed password for root from 10\.0\.0\.1/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
