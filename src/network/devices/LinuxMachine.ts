@@ -34,6 +34,7 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { LinuxShellSession, TtyAllocator } from './linux/shell/LinuxShellSession';
 import type { LinuxProfile } from './linux/LinuxProfile';
 import type {
   IpNetworkContext,
@@ -1035,4 +1036,137 @@ export abstract class LinuxMachine extends EndHost {
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
+
+  // ── Shell sessions (per-terminal isolation, §2 of terminal_gap.md) ─
+
+  /** Per-device pty allocator. Recycles released slots like Linux pty(7). */
+  private readonly tty: TtyAllocator = new TtyAllocator();
+  /** Live shell sessions keyed by their internal id. */
+  private readonly shellSessions: Map<string, LinuxShellSession> = new Map();
+  /**
+   * Serialises concurrent executeCommandInSession calls so the swap-and-
+   * restore around the executor's mutable state is atomic per device. Without
+   * this, two terminals issuing commands at the same time would race on
+   * `executor.cwd`.
+   */
+  private execQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Allocate a fresh shell session — one per terminal window. Spawns a
+   * `-bash` process in the device's process table so `ps -ef` reports each
+   * open terminal as a distinct interactive shell, exactly like Linux.
+   *
+   * The initial cwd is the requesting user's `$HOME` (mirrors OpenSSH and a
+   * typical login). Caller may override via `init.cwd`.
+   */
+  openShellSession(init?: {
+    user?: string;
+    cwd?: string;
+    env?: Map<string, string>;
+  }): LinuxShellSession {
+    const userName = init?.user ?? this.executor.getCurrentUser();
+    const userEntry = this.executor.userMgr.getUser(userName);
+    const home = userEntry?.home ?? (userName === 'root' ? '/root' : `/home/${userName}`);
+    const cwd = init?.cwd ?? home;
+    const uid = userEntry?.uid ?? (userName === 'root' ? 0 : 1000);
+    const gid = userEntry?.gid ?? uid;
+
+    // Inherit the executor's exported environment as a starting point.
+    // Each session then owns an independent copy.
+    const env = new Map<string, string>(init?.env ?? new Map());
+    if (!init?.env) {
+      // Seed from the device's PATH so completion / which / etc. work.
+      const devPath = this.executor['env']?.get('PATH');
+      if (devPath) env.set('PATH', devPath);
+      env.set('HOME', home);
+      env.set('USER', userName);
+      env.set('LOGNAME', userName);
+      env.set('SHELL', '/bin/bash');
+    }
+
+    const tty = this.tty.allocate();
+    // Spawn a real "-bash" entry in the process table. Real Linux: each
+    // interactive login is its own bash PID, child of sshd or login.
+    const sshd = this.executor.processMgr.list({ comm: 'sshd' })[0];
+    const ppid = sshd?.pid ?? 1;
+    const proc = this.executor.processMgr.spawn({
+      command: '-bash',
+      comm: '-bash',
+      user: userName,
+      uid,
+      gid,
+      ppid,
+      tty,
+      cwd,
+    });
+
+    const session = new LinuxShellSession({
+      user: userName,
+      uid,
+      gid,
+      cwd,
+      env,
+      tty,
+      shellPid: proc.pid,
+      shellPpid: ppid,
+    });
+    this.shellSessions.set(session.id, session);
+    return session;
+  }
+
+  /** Tear down a shell session — kills its `-bash` and frees its pty slot. */
+  closeShellSession(sessionOrId: LinuxShellSession | string): void {
+    const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId.id;
+    const s = this.shellSessions.get(id);
+    if (!s) return;
+    try { this.executor.processMgr.kill(s.shellPid, 'SIGHUP'); } catch { /* ignore */ }
+    this.tty.release(s.tty);
+    s.dispose();
+    this.shellSessions.delete(id);
+  }
+
+  /** Lookup helper for the terminal layer. */
+  getShellSession(id: string): LinuxShellSession | undefined {
+    return this.shellSessions.get(id);
+  }
+
+  /**
+   * Like `executeCommand`, but uses the per-terminal session as the swap-in
+   * state holder. Calls are serialised per device so the executor's
+   * mutation window is never observed by another concurrent terminal.
+   */
+  executeCommandInSession(command: string, session: LinuxShellSession): Promise<string> {
+    const exec = this.executor;
+    const run = async () => {
+      if (!this.isPoweredOn) return 'Device is powered off';
+      if (session.disposed) return '';
+      const baseline = exec.snapshotState();
+      // Apply session state to executor for the full async chain.
+      exec.swapInSession(session);
+      try {
+        const out = await this.executeCommand(command);
+        exec.captureStateInto(session);
+        return out;
+      } finally {
+        exec.restoreFromSnapshot(baseline);
+      }
+    };
+    // Chain on the per-device queue: subsequent commands wait their turn.
+    const promise = this.execQueue.then(run, run) as Promise<string>;
+    this.execQueue = promise.catch(() => undefined);
+    return promise;
+  }
+
+  /** Tab completion against a specific shell session's cwd/env. */
+  getCompletionsForSession(partial: string, session: LinuxShellSession): string[] {
+    if (session.disposed || !this.isPoweredOn) return [];
+    const exec = this.executor;
+    const baseline = exec.snapshotState();
+    exec.swapInSession(session);
+    try {
+      return this.getCompletions(partial);
+    } finally {
+      exec.restoreFromSnapshot(baseline);
+    }
+  }
 }

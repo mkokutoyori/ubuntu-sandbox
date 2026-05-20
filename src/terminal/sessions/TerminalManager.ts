@@ -219,11 +219,11 @@ export class TerminalManager {
 
     const deviceId = session.device.getId();
 
-    // Reset Linux session state on close
-    if (session.getSessionType() === 'linux') {
-      const dev = session.device as any;
-      if (typeof dev.resetSession === 'function') dev.resetSession();
-    }
+    // Per-terminal cleanup (su stack, cwd, env, -bash PID, pts slot) is
+    // delegated to the session's tear-down hooks — which the LinuxTerminal
+    // session registers in its constructor. We must NOT call the executor's
+    // global resetSession() here: it would also clobber the state of any
+    // other terminal still open on the same device (terminal_gap.md §2.3).
 
     session.dispose();
     this.sessions.delete(sessionId);

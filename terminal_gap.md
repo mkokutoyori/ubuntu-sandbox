@@ -103,3 +103,143 @@ events/types.ts. Un nouveau type d'`InputMode` `disconnected` est ajouté ; la v
 le rend en lecture seule.
 
 ---
+
+## Section 2 — Isolation des sessions shell multiples sur une même machine
+
+### 2.1 Le cwd, l'utilisateur, l'`env`, la pile `su` et l'historique sont partagés
+
+**Anomalie majeure.** `LinuxCommandExecutor` (src/network/devices/linux/LinuxCommandExecutor.ts:55-66)
+détient un seul `cwd`, un seul `userMgr.currentUser`, un seul `env`, une seule
+`suStack`, un seul `commandHistory` et un seul `shellPid/shellPpid`. Ces champs
+sont mutés par les commandes (`cd`, `su`, `sudo`, `export`, etc.). Or, dans le
+projet, **un seul `LinuxCommandExecutor` est instancié par machine** (LinuxMachine.ts:86),
+quel que soit le nombre de terminaux ouverts.
+
+Reproduisable en 30 s :
+
+```
+1. Ouvrir terminal A sur PC1 → cd /tmp
+2. Ouvrir terminal B sur PC1 → on est en /tmp (réaliste eut été /home/user)
+3. Dans B : sudo su, cd /etc
+4. Le terminal A voit désormais le prompt `root@pc1:/etc#`
+```
+
+Sur une vraie machine, chaque session SSH/pty est un *processus shell distinct*
+avec son propre `cwd`, sa propre `environ(7)`, son propre `tty`, son propre PID
+et sa propre pile `setuid` (`su`, `sudo -s`). Le partage observé est factuellement
+faux et casse les flows pédagogiques (l'utilisateur perd la confiance que ce
+qu'il fait dans un terminal reste local à ce terminal).
+
+### 2.2 Réouvrir un terminal hérite de l'état du précédent
+
+**Anomalie.** `LinuxTerminalSession.constructor` (LinuxTerminalSession.ts:114) :
+```
+this.currentPath = device.getCwd() || '/home/user';
+```
+Comme `device.getCwd()` retourne le `cwd` partagé, un nouveau terminal s'ouvre
+là où était le précédent — exactement le comportement signalé dans le brief
+utilisateur (« Si on ouvre un terminal, il s'ouvre dans le pwd du terminal déjà
+ouvert »).
+
+### 2.3 Fermeture brutale : `resetSession` détruit l'état de TOUS les terminaux
+
+**Anomalie.** `TerminalManager.closeTerminal` (TerminalManager.ts:120) :
+```ts
+if (session.getSessionType() === 'linux') {
+  const dev = session.device as any;
+  if (typeof dev.resetSession === 'function') dev.resetSession();
+}
+```
+À la fermeture d'**un** terminal, on appelle `executor.resetSession()` qui
+remet à zéro la pile `su` *globale*. Si un second terminal était en mode `root`
+via `sudo -s`, il se retrouve subitement remis en mode `user` sans en être
+averti. Comportement non-déterministe selon l'ordre de fermeture.
+
+### 2.4 Côté Windows : même partage de cwd
+
+**Anomalie.** `WindowsPC.cwd` (src/network/devices/WindowsPC.ts:105) est unique
+par machine. Idem pour cmd.exe vs PowerShell. Ouvrir deux `cmd` sur le même PC
+Windows et faire `cd D:\foo` dans l'un mute le prompt de l'autre.
+
+### 2.5 Cisco/Huawei : le mode privilégié n'est pas par-session
+
+**Anomalie mineure.** Les routeurs Cisco gardent dans le device l'état CLI (mode
+`>` vs `#` vs `(config)#`). Deux terminaux concurrents sur le même routeur
+voient le même mode — non-réaliste : sur du vrai matériel, chaque session vty
+a son propre mode.
+
+### 2.6 Cause racine commune
+
+Le projet a confondu *device* (l'équipement physique, partagé) avec *session
+shell* (la conversation d'un utilisateur avec un processus bash/cmd/IOS). En
+POO, c'est le pattern Process/Session manquant. Tous les attributs « process »
+(cwd, env, uid, gid, umask, suStack, tty, pid, ppid, jobTable, lastExitCode)
+devraient vivre dans une entité `ShellSession` *attachée* au device, multipliable
+à volonté.
+
+### 2.7 Correctif implémenté
+
+**(a) Nouvelle classe `LinuxShellSession`** (`src/network/devices/linux/shell/LinuxShellSession.ts`) qui modélise un processus shell réaliste :
+
+```ts
+class LinuxShellSession {
+  readonly id: string;          // session-N
+  readonly tty: string;         // pts/0, pts/1, …
+  readonly shellPid: number;    // PID du -bash (alloué via processMgr)
+  readonly shellPpid: number;   // PID parent (sshd ou init)
+  cwd: string;
+  user: string;
+  uid: number;
+  gid: number;
+  umask: number;
+  env: Map<string, string>;     // variables exportées propres à la session
+  suStack: SuFrame[];           // pile setuid (su/sudo -s)
+  commandHistory: string[];     // HISTFILE in-memory
+  lastExitCode: number;
+  jobTable: LinuxJobTable;      // chaque session a ses propres jobs
+}
+```
+
+L'attribut `tty` est alloué via un `TtyAllocator` (un nouveau singleton par
+machine) qui distribue `pts/0`, `pts/1`, …, sans réutilisation tant que la
+session vit — exactement comme `openpty(3)` côté Linux. `shellPid` est
+*réellement* enregistré dans le `LinuxProcessManager` de la machine, de sorte
+que `ps -ef` voit tous les bash interactifs ouverts simultanément.
+
+**(b) `LinuxCommandExecutor.executeInSession(cmd, session)`** : on isole l'état
+mutable du moteur dans un *contexte* qui est swappé atomiquement le temps d'une
+commande. Le champ historique `this.cwd` reste pour la rétro-compat (sessions
+non-passées) mais devient implicitement la « default session » du noyau.
+
+**(c) `LinuxMachine.openShellSession()` / `closeShellSession(id)`** : API
+publique du device pour allouer/libérer une session — appelée par
+`LinuxTerminalSession.constructor` et `dispose()`. Pendaisons à la livraison :
+le processus `-bash` correspondant est tué via `processMgr.kill(SIGHUP)`.
+
+**(d) `LinuxTerminalSession` route toutes ses commandes** via la session
+qu'il a allouée. `getPrompt` et `getCwd` lisent depuis la session, plus depuis
+l'executor partagé. Le `cwd` initial d'un nouveau terminal est `~` (le home de
+l'utilisateur de la session), conforme à OpenSSH et `xterm`.
+
+**(e) Côté Windows :** `WindowsShellSession` analogue (cwd, env, drives, history,
+shellMode cmd/PS). `WindowsPC.openShellSession()` retourne la session ;
+`WindowsTerminalSession.getPrompt()` lit `session.cwd` au lieu de
+`device.getCwd()`.
+
+**(f) Suppression du `resetSession()` global** dans `TerminalManager.closeTerminal`.
+On dispose désormais la session shell concrète, qui n'affecte que ses propres
+piles.
+
+Tests unitaires ajoutés (`src/__tests__/unit/terminal/shell-session-isolation.test.ts`) :
+- deux terminaux sur la même machine ont des `cwd` indépendants
+- `cd` dans l'un n'affecte pas l'autre
+- `sudo su` dans un terminal n'élève pas les droits de l'autre
+- fermer un terminal préserve l'état du second
+- `ps -ef` voit autant de `-bash` que de terminaux
+
+> Note : la portée du correctif est volontairement minimale et rétro-compatible.
+> L'API publique `executeCommand(cmd)` reste valide pour les appelants non-UI
+> (tests programmatiques, daemons internes). Seuls les terminaux UI passent
+> par `executeInSession`.
+
+---
