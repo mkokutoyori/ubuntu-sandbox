@@ -808,3 +808,67 @@ describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 13 — ps output realism: headers, padding, alignment ──────
+
+describe('§13 — ps output table presentation (headers, padding)', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ps -ef header line is the standard 8 columns',
+      on: l => l.pc1,
+      cmd: 'ps -ef',
+      contains: [/UID\s+PID\s+PPID\s+C\s+STIME\s+TTY\s+TIME\s+CMD/],
+    },
+    {
+      name: 'ps aux header is the standard 11 columns',
+      on: l => l.pc1,
+      cmd: 'ps aux',
+      contains: [/USER\s+PID\s+%CPU\s+%MEM\s+VSZ\s+RSS\s+TTY\s+STAT\s+START\s+TIME\s+COMMAND/],
+    },
+    {
+      name: 'ps shows systemd as PID 1',
+      on: l => l.pc1,
+      cmd: 'ps -p 1 -o pid,comm',
+      contains: [/^\s*1\s+systemd/m],
+    },
+    {
+      name: 'ps shows sshd line because the service is up',
+      on: l => l.pc1,
+      cmd: 'ps -ef',
+      contains: [/sshd/],
+    },
+    {
+      name: 'columns are space-aligned, never tab-only',
+      on: l => l.pc1,
+      cmd: 'ps -ef',
+      excludes: ['\t'],
+    },
+    {
+      name: 'PID column is right-aligned numerically',
+      on: l => l.pc1,
+      cmd: 'ps -ef',
+      contains: [/\n\s+1\s+/],
+    },
+    {
+      name: 'ps -o custom format respects requested columns only',
+      on: l => l.pc1,
+      cmd: 'ps -ef -o pid,comm',
+      contains: [/^\s*PID\s+COMMAND/m],
+      excludes: ['UID', 'STIME', 'TTY'],
+    },
+    {
+      name: 'ps -C ssh filters by exact comm',
+      on: l => l.pc1,
+      cmd: 'ps -C sshd -o pid,comm',
+      contains: ['sshd'],
+      excludes: ['systemd', 'cron'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
