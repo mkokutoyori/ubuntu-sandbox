@@ -1446,3 +1446,69 @@ describe('§22 — concurrent SSH from multiple clients', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 23 — ssh + cron + at end-to-end correlation ──────────────
+
+describe('§23 — cron / at scheduling behind sshd', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'crontab -l after ssh shows the remote crontab',
+      setup: async (l) => {
+        await l.srv1.executeCommand('echo "* * * * * /bin/echo ping" | crontab -');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 crontab -l');
+      },
+      on: l => l.srv1,
+      cmd: 'crontab -l',
+      contains: ['* * * * * /bin/echo ping'],
+    },
+    {
+      name: 'cron service stopped → crontab -e still works but jobs do not fire',
+      setup: (l) => { void l.srv1.executeCommand('systemctl stop cron'); },
+      on: l => l.srv1,
+      cmd: 'systemctl is-active cron',
+      contains: ['inactive'],
+    },
+    {
+      name: 'atq lists queued at jobs after ssh schedules one',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 "echo \'date\' | at now + 1 minute"');
+      },
+      on: l => l.srv1,
+      cmd: 'atq',
+      contains: [/^\d+\s+/m],
+    },
+    {
+      name: 'atrm removes a queued job',
+      setup: async (l) => {
+        await l.srv1.executeCommand("echo 'date' | at now + 1 hour");
+        await l.srv1.executeCommand('atrm 1');
+      },
+      on: l => l.srv1,
+      cmd: 'atq',
+      excludes: [/^1\s+/m],
+    },
+    {
+      name: 'atd stopped → at command refuses',
+      setup: (l) => { void l.srv1.executeCommand('systemctl stop atd'); },
+      on: l => l.srv1,
+      cmd: "echo 'date' | at now + 1 minute",
+      contains: [/atd is not running|Can't open|cannot/i],
+    },
+    {
+      name: 'cron log entries appear in /var/log/syslog when cron fires',
+      setup: async (l) => {
+        await l.srv1.executeCommand('echo "* * * * * /bin/true" | crontab -');
+      },
+      on: l => l.srv1,
+      cmd: 'tail -100 /var/log/syslog',
+      contains: [/CRON.*\(alice\)|cron\[\d+\]/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
