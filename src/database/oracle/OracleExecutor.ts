@@ -2802,14 +2802,14 @@ export class OracleExecutor extends BaseExecutor {
       if (user !== 'SYS' && schema !== user && engine && !engine.privileges.isDba(user)) {
         // Non-owner / non-DBA may grant only if they hold the privilege
         // WITH GRANT OPTION on every privilege being granted.
+        const tabPrivs = (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string; objectSchema: string; objectName: string; grantable: boolean }[] }).tabPrivileges;
         const grantOptionHolder = stmt.privileges.every(priv =>
-          (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string; objectSchema: string; objectName: string; grantable?: string }[] })
-            .tabPrivileges.some(p =>
-              p.grantee === user
-              && p.privilege === priv.toUpperCase()
-              && p.objectSchema === schema
-              && p.objectName === objName
-              && p.grantable === 'YES'));
+          tabPrivs.some(p =>
+            p.grantee === user
+            && p.privilege === priv.toUpperCase()
+            && p.objectSchema === schema
+            && p.objectName === objName
+            && p.grantable === true));
         if (!grantOptionHolder) {
           throw new OracleError(1031, 'insufficient privileges');
         }
@@ -2946,25 +2946,34 @@ export class OracleExecutor extends BaseExecutor {
       const tabPrivs = (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string }[] }).tabPrivileges;
       const sysPrivs = (this.catalog as OracleCatalog & { sysPrivileges?: { grantee: string; privilege: string }[] }).sysPrivileges ?? [];
       const roleGrants = (this.catalog as OracleCatalog & { roleGrants?: { grantee: string; role: string }[] }).roleGrants ?? [];
+      // Expand REVOKE ALL PRIVILEGES into the catalog's full system set
+      // — mirrors the symmetric GRANT-time expansion. Track expansion
+      // so we don't raise ORA-01927 for individual misses.
+      const expanded: { name: string; fromAll: boolean }[] = [];
+      for (const priv of stmt.privileges) {
+        if (priv.toUpperCase() === 'ALL PRIVILEGES') {
+          for (const p of ORACLE_SYSTEM_PRIVILEGES) expanded.push({ name: p, fromAll: true });
+        } else {
+          expanded.push({ name: priv, fromAll: false });
+        }
+      }
       for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
+        for (const entry of expanded) {
           const granteeU = grantee.toUpperCase();
-          const privU = priv.toUpperCase();
-          if (catalog.roleExists(priv)) {
+          const privU = entry.name.toUpperCase();
+          if (catalog.roleExists(entry.name)) {
             const hadRole = roleGrants.some(r => r.grantee === granteeU && r.role === privU);
-            if (!hadRole) {
+            if (!hadRole && !entry.fromAll) {
               throw new OracleError(1924, `role '${privU}' not granted or does not exist`);
             }
-            catalog.revokeRole(grantee, priv);
+            catalog.revokeRole(grantee, entry.name);
           } else {
-            // ALL PRIVILEGES is allowed even when nothing matches.
-            const hadPriv = privU === 'ALL PRIVILEGES'
-              || sysPrivs.some(p => p.grantee === granteeU && p.privilege === privU)
+            const hadPriv = sysPrivs.some(p => p.grantee === granteeU && p.privilege === privU)
               || tabPrivs.some(p => p.grantee === granteeU && p.privilege === privU);
-            if (!hadPriv) {
+            if (!hadPriv && !entry.fromAll) {
               throw new OracleError(1927, `cannot REVOKE privileges you did not grant`);
             }
-            catalog.revokeSystemPrivilege(grantee, priv);
+            catalog.revokeSystemPrivilege(grantee, entry.name);
           }
         }
       }
