@@ -159,3 +159,55 @@ describe('§1 — SSH happy path across the LAN', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 2 — SSH banner, MOTD, /etc/issue.net ────────────────────
+
+describe('§2 — SSH banner, MOTD and issue.net', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'remote /etc/motd is displayed in the welcome',
+      setup: (l) => { void l.pc2.executeCommand("echo 'Property of ACME Corp' > /etc/motd"); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Property of ACME Corp'],
+    },
+    {
+      name: '/etc/issue.net is shown pre-auth',
+      setup: (l) => { void l.pc2.executeCommand("echo 'AUTHORIZED USE ONLY' > /etc/issue.net"); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['AUTHORIZED USE ONLY'],
+    },
+    {
+      name: 'Ubuntu LSB release line appears in the banner',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Ubuntu 22\.04|Ubuntu 20\.04|Ubuntu \d+\.\d+/],
+    },
+    {
+      name: 'kernel release line is included',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/GNU\/Linux 5\.\d+\.\d+/],
+    },
+    {
+      name: 'last login marker is appended',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Last login:/],
+    },
+    {
+      name: 'banner suppression with -q is honoured',
+      on: l => l.pc1,
+      cmd: 'ssh -q alice@10.0.0.2',
+      excludes: ['Welcome to Ubuntu', /Last login:/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
