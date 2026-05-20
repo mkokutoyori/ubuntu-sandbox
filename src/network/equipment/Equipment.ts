@@ -156,9 +156,34 @@ export abstract class Equipment {
 
   getIsPoweredOn(): boolean { return this.isPoweredOn; }
 
+  /**
+   * True iff the device has booted at least once since the last power
+   * cycle. Set by `powerOn()` on a *real* off→on transition, cleared by
+   * `powerOff()`. Consumed by CLI sessions to skip the boot banner when
+   * opening a second terminal on an already-running device (matches real
+   * Cisco / Huawei: plugging a console to a running router shows just a
+   * prompt, never the System Bootstrap banner).
+   */
+  private _bootShown: boolean = false;
+
+  /** Whether the post-boot banner has already been rendered for this device. */
+  hasBootBeenShown(): boolean { return this._bootShown; }
+
+  /**
+   * Mark the boot banner as shown — called by terminal sessions after they
+   * have rendered the boot lines on the FIRST opened session post power-on.
+   * Idempotent.
+   */
+  markBootShown(): void { this._bootShown = true; }
+
   powerOn(): void {
     const wasOn = this.isPoweredOn;
     this.isPoweredOn = true;
+    if (!wasOn) {
+      // A real power-cycle resets the "boot already rendered" flag so the
+      // very next terminal opens at boot-banner stage.
+      this._bootShown = false;
+    }
     Logger.info(this.id, 'equipment:power', `${this.name}: powered ON`);
     if (!wasOn) {
       this.getBus().publish({
@@ -171,6 +196,8 @@ export abstract class Equipment {
   powerOff(): void {
     const wasOn = this.isPoweredOn;
     this.isPoweredOn = false;
+    // Clear boot flag so the next powerOn replays the boot banner.
+    this._bootShown = false;
     Logger.info(this.id, 'equipment:power', `${this.name}: powered OFF`);
     if (wasOn) {
       this.getBus().publish({

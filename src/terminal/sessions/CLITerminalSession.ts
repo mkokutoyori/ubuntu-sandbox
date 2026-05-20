@@ -81,6 +81,21 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Boot sequence ───────────────────────────────────────────────
 
   async init(): Promise<void> {
+    // Real Cisco / Huawei: plugging a console to an already-running router
+    // shows just the prompt, not the System Bootstrap banner. We only
+    // replay the boot sequence on the FIRST session opened after a power
+    // cycle (cf. terminal_gap.md §5.2).
+    const alreadyBooted = this.device.hasBootBeenShown();
+    if (alreadyBooted) {
+      this.isBooting = false;
+      this.inputMode = { type: 'normal' };
+      // Still surface the MOTD banner — that's per-session on real gear.
+      const motd = this.cliDevice.getBanner('motd');
+      if (motd) this.addLine(motd);
+      this.updatePrompt();
+      return;
+    }
+
     this.isBooting = true;
     this.inputMode = { type: 'booting' };
     this.notify();
@@ -111,6 +126,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.addLine('');
     this.isBooting = false;
     this.inputMode = { type: 'normal' };
+    this.device.markBootShown();
     this.updatePrompt();
   }
 

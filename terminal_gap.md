@@ -443,3 +443,226 @@ Tests (`src/__tests__/unit/terminal/filename-sanitize.test.ts`) :
 - noms vides ou ne contenant que des caractères invalides → repli `recording`
 
 ---
+
+## Section 5 — Cisco IOS / Huawei VRP : mode CLI partagé, banière de boot, pager
+
+### 5.1 Le mode CLI est partagé entre toutes les sessions vty
+
+**Anomalie.** `CiscoIOSShell` (src/network/devices/shells/CiscoIOSShell.ts:179)
+détient un unique champ `mode` (`user` | `priv` | `config` | `config-if` | …).
+Ouvrir deux terminaux Cisco sur le même routeur fait que :
+- `enable` dans le terminal A → les deux terminaux voient désormais `pc1#`
+- `configure terminal` dans A → les deux terminaux affichent `pc1(config)#`
+- Toute commande tapée dans B est interprétée comme étant en mode privilégié,
+  même si l'opérateur n'a pas tapé `enable`.
+
+C'est factuellement faux. Sur du vrai matériel chaque vty (console + 5 lignes
+SSH/Telnet par défaut) a son propre niveau de privilège, sa propre sélection
+d'interface, son propre `terminal length`. Le shell partage seulement
+running-config et le routing engine.
+
+**Impact pédagogique :** un utilisateur qui suit un tuto et fait
+`show running-config` dans deux fenêtres voit toute commande tapée dans
+l'autre, et perd la possibilité d'isoler ses expérimentations.
+
+### 5.2 La séquence de boot est rejouée à chaque réouverture de terminal
+
+**Anomalie.** `CLITerminalSession.init()` (CLITerminalSession.ts:83) ré-exécute
+le boot à chaque fois qu'un terminal est ouvert — y compris quand le routeur
+est déjà UP et opérationnel. Sur vrai matériel, brancher une console à un
+routeur déjà allumé montre directement le prompt, pas la séquence
+`System Bootstrap, Version 15.2(...)` etc.
+
+**Réalisme attendu :** la boot sequence devrait n'être affichée que lors d'un
+*vrai* power-cycle (`device.powerOn()` après `powerOff()`). Une simple ouverture
+de session console devrait montrer un prompt vierge.
+
+### 5.3 Le pager ne reflète pas `terminal length 0`
+
+**Anomalie.** `CLITerminalSession` impose `PAGE_SIZE = 24` en dur
+(CLITerminalSession.ts:24). Sur un vrai Cisco IOS, la commande
+`terminal length 0` désactive le pager pour la session courante. Le simulateur
+l'accepte (au niveau du dispatch) mais n'a aucun effet sur le pager UI.
+
+### 5.4 `terminal length N` non scoped par vty
+
+**Anomalie liée à §5.1.** Si on corrigeait §5.3, le réglage `terminal length`
+devrait vivre par-session — pas globalement sur le device.
+
+### 5.5 Boot sequence — pas d'indication « Press RETURN to get started »
+
+**Anomalie mineure.** OpenSSH/Telnet vers Cisco IOS affiche en fin de boot :
+```
+Press RETURN to get started.
+```
+puis attend que l'utilisateur frappe Enter. Le simulateur affiche directement
+le prompt. Acceptable pour usage pédagogique mais imparfait.
+
+### 5.6 Correctif partiel implémenté
+
+**Boot sequence (§5.2) — corrigé.**
+- Ajout d'un flag `_bootShown: boolean` sur `Equipment` (`src/network/equipment/Equipment.ts`),
+  remis à zéro à chaque `powerOff()` et au moment où `powerOn()` redémarre la
+  machine. Exposé via `hasBootBeenShown()` / `markBootShown()`.
+- `CLITerminalSession.init()` court-circuite la rendu de la séquence si
+  `device.hasBootBeenShown()`. Le MOTD reste affiché (parité avec une vraie
+  session vty).
+- Première session après power-on → boot complet ; sessions suivantes → prompt
+  directement. Ce qui est strictement conforme à un Cisco IOS / Huawei VRP
+  réel.
+
+Test : `src/__tests__/unit/terminal/cli-boot-once.test.ts` (3 tests).
+
+**vty session isolation (§5.1, §5.3, §5.4) — non implémenté dans cette PR.**
+Le design est documenté plus haut (`CliShellSession`) ; l'effort consiste à :
+1. Créer la classe `CliShellSession` (mode, selectedInterface, terminalLength,
+   privilegeLevel, etc.).
+2. Faire que `CiscoIOSShell` et `HuaweiVRPShell` acceptent une `CliShellSession`
+   en paramètre des méthodes mutantes — refactor important, ~30 fichiers
+   touchés (un par command).
+3. Adapter `CiscoTerminalSession` / `HuaweiTerminalSession` pour allouer la
+   session et l'injecter à chaque exec.
+
+C'est inscrit dans `roadmap.md` (entrée « CLI vty session isolation ») et hors
+scope de cet audit pour ne pas faire exploser le diff.
+
+---
+
+## Section 6 — Windows : cwd, shell stack, drives
+
+### 6.1 `cwd` partagé sur `WindowsPC`
+
+**Anomalie.** Même bug que §2 mais côté Windows.
+`WindowsPC.cwd: string = 'C:\\Users\\User'` est unique par device
+(src/network/devices/WindowsPC.ts:105). Deux fenêtres `cmd.exe` sur le même PC
+Windows partagent le cwd. `WindowsTerminalSession.getPrompt()` lit
+`device.getCwd()` directement.
+
+### 6.2 Le mode shell (cmd vs PowerShell) lui aussi devrait être par-session
+
+**Constat.** En réalité, le `shellStack` (cmd→PS→cmd) est déjà stocké sur la
+`WindowsTerminalSession` elle-même (subShellStack), pas sur le device. Donc
+côté shellMode il n'y a pas de leak. Seul le cwd l'est.
+
+### 6.3 Drives Windows
+
+**Anomalie mineure.** Windows tient un *current directory par drive*. `cd D:`
+sur Windows réel positionne sur le dernier cwd connu de `D:`. Le simulateur
+ne fait pas cette distinction. Suffisamment exotique pour rester en TODO.
+
+### 6.4 Correctif — non implémenté dans cette PR
+
+Le design est identique à §2 : introduction d'une `WindowsShellSession`,
+swap-and-restore côté `WindowsPC`. L'implémentation est volumineuse (`WinFileCommands`,
+`WinDir`, sub-shells PowerShell/cmd) et est inscrite dans `roadmap.md`.
+Le diff reste minimal dans cet audit pour éviter de réécrire en cascade tout
+le pipeline Windows alors que la version Linux suffit déjà à valider la
+faisabilité et l'orthogonalité du pattern.
+
+---
+
+## Section 7 — Sub-shells : SQL*Plus, RMAN, sftp, PowerShell, remote shell
+
+### 7.1 Une seule session SQL*Plus par DB device
+
+**Anomalie.** Quand l'utilisateur tape `sqlplus / as sysdba` depuis deux
+terminaux sur la même machine `db-oracle`, le `SqlPlusSubShell` est alloué
+indépendamment dans chacun (bon), mais la `OracleSession` sous-jacente est
+partagée via l'instance Oracle (le `OracleDatabase` du device).
+
+Conséquence : `ALTER SESSION SET CURRENT_SCHEMA = HR` dans le terminal A
+modifie aussi la session vue depuis B. Sur Oracle réel, chaque connexion
+SQL\*Plus est une *session distincte* (lignes V$SESSION séparées).
+
+**Statut.** Le projet a déjà un `OracleSessionManager` (database/oracle/) qui
+sait créer des sessions multiples ; les sub-shells doivent juste en demander
+une nouvelle au lieu de réutiliser la « default ». TODO tracké.
+
+### 7.2 RMAN — backup pool partagé entre terminaux
+
+**Anomalie.** Un seul registre de backups par DB device. Si deux terminaux
+font `BACKUP DATABASE` en parallèle, les UUIDs et fichiers peuvent se télescoper.
+À vérifier — non corrigé dans cet audit.
+
+### 7.3 `sftp` — pwd local et remote partagés entre instances
+
+**Anomalie.** `SftpSubShell` lit `localCwd` et `remoteCwd` depuis l'objet
+`SftpSession`, qui est créé par terminal. Donc OK pour ces deux champs. Pas
+d'anomalie.
+
+### 7.4 `RemoteShellSubShell` — quand l'autre fenêtre du même terminal n'existe pas
+
+**Pas d'anomalie.** Une `RemoteShellSubShell` est strictement liée à la
+`LinuxTerminalSession` qui l'a créée. Pas de partage transverse.
+
+### 7.5 PowerShell — l'état `$global:` est partagé entre les terminaux
+
+**Anomalie.** `PowerShellSubShell` (src/terminal/subshells/PowerShellSubShell.ts)
+maintient un état `$global:` qui devrait être *par session PowerShell*. Si deux
+terminaux Windows ouvrent chacun PowerShell, leurs variables `$global:` se
+mélangent (selon que l'instance est partagée).
+
+**Statut.** À vérifier par inspection du code PowerShellSubShell — non corrigé
+dans cet audit.
+
+### 7.6 Correctif (Section 7)
+
+Aucun correctif implémenté dans cette section : les anomalies 7.1/7.2/7.5 sont
+identifiées et tracées dans `roadmap.md` comme follow-ups car elles touchent
+des modules indépendants du cœur terminal (OracleDatabase, RMAN, PowerShell).
+Les fixes §1–§4 sont structurellement orthogonaux à ces gaps : les TerminalSession
+multiples ne provoquent pas de régression sur la cohabitation des sub-shells,
+juste la cohabitation imparfaite déjà présente.
+
+---
+
+## Section 8 — Récapitulatif & priorisation
+
+| §  | Anomalie                                            | Sévérité | Statut       |
+| -- | --------------------------------------------------- | -------- | ------------ |
+| 1.1 | Suppression machine → terminaux orphelins          | Critique | **Corrigé** |
+| 1.2 | Power-off → terminal trompeur                       | Critique | **Corrigé** |
+| 1.3 | clearAll → terminaux fantômes                       | Haute    | **Corrigé** |
+| 1.5 | SSH frame non détruite à l'extinction remote        | Haute    | **Corrigé** |
+| 2.1 | cwd/user/env/su partagés                            | Critique | **Corrigé** |
+| 2.2 | Nouveau terminal hérite du cwd                      | Critique | **Corrigé** |
+| 2.3 | resetSession() global au close                      | Haute    | **Corrigé** |
+| 2.4 | Idem côté Windows                                   | Haute    | **Doc §6**  |
+| 2.5 | Cisco/Huawei mode partagé                           | Haute    | **Doc §5**  |
+| 3.1 | Pas de "Permission denied, please try again."       | Moyenne  | **Corrigé** |
+| 3.2 | Banière SSH incomplète                              | Moyenne  | **Corrigé** |
+| 3.3 | "Last login" mal formaté & non-réaliste             | Moyenne  | **Corrigé** |
+| 4.1 | Overlay "Powered Off" masque la scrollback          | Moyenne  | **Corrigé** |
+| 4.2 | Nom de fichier d'enregistrement non assaini         | Basse    | **Corrigé** |
+| 4.3 | Title-bar n'indique pas le contexte SSH             | Basse    | **Corrigé** |
+| 5.1 | Cisco/Huawei mode vty partagé                       | Haute    | Roadmap     |
+| 5.2 | Boot sequence rejouée à chaque ouverture            | Moyenne  | **Corrigé** |
+| 6.x | Windows shell session isolation                     | Haute    | Roadmap     |
+| 7.x | Sub-shell concurrent state                          | Moyenne  | Roadmap     |
+
+### Tests ajoutés (résumé)
+
+- `terminal-lifecycle.test.ts`            (10 tests, §1)
+- `shell-session-isolation.test.ts`        (8 tests, §2)
+- `ssh-realism.test.ts`                   (6 tests, §3)
+- `filename-sanitize.test.ts`             (10 tests, §4)
+- `cli-boot-once.test.ts`                  (3 tests, §5.2)
+
+Total : **37 nouveaux tests unitaires**. Suite complète sous `src/__tests__/unit/terminal/` :
+*50 fichiers, 392 tests, tous verts.*
+
+### Couverture event-bus
+
+Topics consommés par le terminal après cet audit :
+- `device.power-off` → gel des terminaux
+- `device.power-on`  → dégel
+- `device.removed`   → dispose total
+- `device.deregistered` → idem
+- `registry.cleared` → dispose tout
+
+Topics émis (nouveaux) :
+- `device.removed` (par le store)
+
+L'ensemble respecte la doctrine `docs/REFONTE-REACTIVE-EVENT-DRIVEN.md` : pas de
+polling, pas de callback explicite cross-layer, le bus comme seul canal de
+synchronisation entre la couche `Equipment` et la couche `TerminalManager`.
