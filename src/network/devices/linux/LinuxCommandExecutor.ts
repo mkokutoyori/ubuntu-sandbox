@@ -57,6 +57,8 @@ export class LinuxCommandExecutor {
   private env: Map<string, string> = new Map();
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
+  /** caller-supplied PID → OS-managed PID, so unregisterProcess can find the spawn back. */
+  private _externalToOsPid: Map<number, number> = new Map();
   // Stack for su sessions: stores previous user context
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
@@ -147,17 +149,29 @@ export class LinuxCommandExecutor {
   registerProcess(pid: number, user: string, command: string): void {
     this._systemProcesses.set(pid, { user, command, startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
     // Also surface this in the real process table so ps/top see it.
-    if (!this.processMgr.get(pid)) {
+    // The OS-managed PID differs from the caller-supplied one, so we
+    // remember the mapping for unregisterProcess to clean up later.
+    if (!this._externalToOsPid.has(pid)) {
       const uid = user === 'root' ? 0 : 1;
-      this.processMgr.spawn({ command, user, uid, gid: uid });
+      const proc = this.processMgr.spawn({ command, user, uid, gid: uid });
+      this._externalToOsPid.set(pid, proc.pid);
     }
+  }
+
+  /** Unregister a previously externally-registered process. */
+  unregisterProcess(externalPid: number): boolean {
+    const osPid = this._externalToOsPid.get(externalPid);
+    if (osPid !== undefined) this.processMgr.kill(osPid, 'SIGKILL');
+    this._externalToOsPid.delete(externalPid);
+    return this._systemProcesses.delete(externalPid);
   }
 
   /** Clear all registered system processes */
   clearSystemProcesses(): void {
-    for (const pid of this._systemProcesses.keys()) {
-      this.processMgr.kill(pid, 'SIGKILL');
+    for (const osPid of this._externalToOsPid.values()) {
+      this.processMgr.kill(osPid, 'SIGKILL');
     }
+    this._externalToOsPid.clear();
     this._systemProcesses.clear();
   }
 

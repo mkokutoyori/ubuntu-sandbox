@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-20T06:56:40.908Z
+Generated: 2026-05-20T07:09:01.530Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -575,7 +575,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *06:56:40.000 UTC Wed May 20 2026
+  *07:09:01.000 UTC Wed May 20 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -583,7 +583,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  06:56:40 UTC Wed May 20 2026
+  07:09:01 UTC Wed May 20 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1330,7 +1330,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *06:56:40.000 UTC Wed May 20 2026
+  *07:09:01.000 UTC Wed May 20 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
