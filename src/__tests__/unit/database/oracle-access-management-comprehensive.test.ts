@@ -393,63 +393,68 @@ describe('5. GRANT system privileges', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('6. GRANT object privileges', () => {
-  it('Provisions object grants on HR/SCOTT demo schemas', () => {
-    const cases: Case[] = [
-      { sql: 'GRANT SELECT ON hr.employees TO alice;',                                                                                want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON hr.employees TO bob;',                                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT INSERT ON hr.employees TO bob;',                                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT UPDATE ON hr.employees TO bob;',                                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT DELETE ON hr.employees TO bob;',                                                                                  want: /Grant succeeded/i },
-      { sql: 'GRANT REFERENCES ON hr.employees TO carol;',                                                                            want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER ON hr.employees TO ops_user;',                                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT INDEX ON hr.employees TO ops_user;',                                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT DEBUG ON hr.employees TO ops_user;',                                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT ALL ON hr.departments TO frank;',                                                                                 want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT, INSERT, UPDATE ON hr.departments TO grace;',                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON hr.jobs TO read_only_role;',                                                                            want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON hr.locations TO read_only_role;',                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON hr.countries TO read_only_role;',                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON hr.regions TO read_only_role;',                                                                         want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON scott.emp TO alice;',                                                                                   want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT, UPDATE ON scott.emp TO bob;',                                                                             want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON scott.dept TO dev_team;',                                                                               want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT ON scott.salgrade TO read_only_role;',                                                                     want: /Grant succeeded/i },
-      // Multi-grantee on object
-      { sql: 'GRANT SELECT ON hr.employees TO carol, dave, eve;',                                                                     want: /Grant succeeded/i },
-      // WITH GRANT OPTION
-      { sql: 'GRANT SELECT ON hr.employees TO heidi WITH GRANT OPTION;',                                                              want: /Grant succeeded/i },
-      // Sequence
-      { sql: 'GRANT SELECT ON hr.employees_seq TO alice;',                                                                            want: /Grant succeeded/i },
-      { sql: 'GRANT ALTER ON hr.employees_seq TO ops_user;',                                                                          want: /Grant succeeded/i },
-      // Non-existent object
-      { sql: 'GRANT SELECT ON hr.nonexistent_table TO alice;',                                                                        want: /ORA-00942/i },
-      { sql: 'GRANT SELECT ON nonexistent_schema.tbl TO alice;',                                                                      want: /ORA-/ },
-      // Grant to PUBLIC
-      { sql: 'GRANT SELECT ON hr.regions TO PUBLIC;',                                                                                 want: /Grant succeeded/i },
-      // Verification rows
-      { sql: "SELECT grantee, privilege FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB';",                       want: /SELECT/ },
-      { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB';",                                want: /4/ },
-      { sql: "SELECT grantable FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'HEIDI';",                              want: /YES/ },
-      { sql: "SELECT grantee FROM dba_tab_privs WHERE table_name = 'REGIONS' AND grantee = 'PUBLIC';",                                want: /PUBLIC/ },
-      { sql: "SELECT table_name FROM dba_tab_privs WHERE grantee = 'READ_ONLY_ROLE';",                                                want: /JOBS/ },
-      { sql: "SELECT DISTINCT owner, table_name FROM dba_tab_privs WHERE grantee = 'BOB';",                                           want: /HR/ },
-      { sql: "SELECT privilege FROM dba_tab_privs WHERE table_name = 'DEPARTMENTS' AND grantee = 'GRACE';",                            want: /(SELECT|INSERT|UPDATE)/ },
-      { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE grantee = 'PUBLIC' AND table_name = 'REGIONS';",                               want: /1/ },
-      { sql: "SELECT type FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB' AND ROWNUM = 1;",                     want: /TABLE/i },
-      { sql: "SELECT privilege FROM dba_tab_privs WHERE owner = 'SCOTT' AND grantee = 'BOB';",                                        want: /(SELECT|UPDATE)/ },
-      // PL/SQL execute
-      { sql: 'GRANT EXECUTE ON hr.add_employee TO grace;',                                                                            want: /(Grant succeeded|ORA-04042)/i },
-      { sql: 'GRANT DEBUG ON hr.add_employee TO ops_user;',                                                                           want: /(Grant succeeded|ORA-04042)/i },
-      // Negative — same priv twice
-      { sql: 'GRANT SELECT ON hr.employees TO bob;',                                                                                  want: /Grant succeeded/i },
-      // Cross-schema with self-grant prevention
-      { sql: 'GRANT SELECT ON hr.employees TO HR;',                                                                                   want: /(Grant succeeded|ORA-01749)/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Single-priv grants on HR.EMPLOYEES.
+    { sql: 'GRANT SELECT ON hr.employees TO alice;',                       want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT ON hr.employees TO bob;',                         want: /Grant succeeded\./i },
+    { sql: 'GRANT INSERT ON hr.employees TO bob;',                         want: /Grant succeeded\./i },
+    { sql: 'GRANT UPDATE ON hr.employees TO bob;',                         want: /Grant succeeded\./i },
+    { sql: 'GRANT DELETE ON hr.employees TO bob;',                         want: /Grant succeeded\./i },
+    { sql: 'GRANT REFERENCES ON hr.employees TO carol;',                   want: /Grant succeeded\./i },
+    { sql: 'GRANT ALTER ON hr.employees TO ops_user;',                     want: /Grant succeeded\./i },
+    { sql: 'GRANT INDEX ON hr.employees TO ops_user;',                     want: /Grant succeeded\./i },
+    { sql: 'GRANT DEBUG ON hr.employees TO ops_user;',                     want: /Grant succeeded\./i },
+    // ALL expands to every applicable object privilege.
+    { sql: 'GRANT ALL ON hr.departments TO frank;',                        want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT, INSERT, UPDATE ON hr.departments TO grace;',     want: /Grant succeeded\./i },
+    // Role-targeted grants.
+    { sql: 'GRANT SELECT ON hr.jobs TO read_only_role;',                   want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT ON hr.locations TO read_only_role;',              want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT ON hr.countries TO read_only_role;',              want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT ON hr.regions TO read_only_role;',                want: /Grant succeeded\./i },
+    // Cross-schema (SCOTT).
+    { sql: 'GRANT SELECT ON scott.emp TO alice;',                          want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT, UPDATE ON scott.emp TO bob;',                    want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT ON scott.dept TO dev_team;',                      want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT ON scott.salgrade TO read_only_role;',            want: /Grant succeeded\./i },
+    // Multi-grantee on the same object.
+    { sql: 'GRANT SELECT ON hr.employees TO carol, dave, eve;',            want: /Grant succeeded\./i },
+    // WITH GRANT OPTION propagates the grant authority.
+    { sql: 'GRANT SELECT ON hr.employees TO heidi WITH GRANT OPTION;',     want: /Grant succeeded\./i },
+    // Sequence grants.
+    { sql: 'GRANT SELECT ON hr.employees_seq TO alice;',                   want: /Grant succeeded\./i },
+    { sql: 'GRANT ALTER ON hr.employees_seq TO ops_user;',                 want: /Grant succeeded\./i },
+    // Non-existent object → ORA-00942 (table or view does not exist).
+    { sql: 'GRANT SELECT ON hr.nonexistent_table TO alice;',               want: /ORA-00942/ },
+    { sql: 'GRANT SELECT ON nonexistent_schema.tbl TO alice;',             want: /ORA-(00942|01435)/ },
+    // Grant to PUBLIC — anyone can SELECT.
+    { sql: 'GRANT SELECT ON hr.regions TO PUBLIC;',                        want: /Grant succeeded\./i },
+    // Verification rows — committed values.
+    { sql: "SELECT privilege FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB' AND privilege = 'SELECT';", want: /^\s*SELECT\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB' AND privilege IN ('SELECT','INSERT','UPDATE','DELETE');", want: /^\s*4\s*$/m },
+    { sql: "SELECT grantable FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'HEIDI' AND privilege = 'SELECT';", want: /\bYES\b/ },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name = 'REGIONS' AND grantee = 'PUBLIC';", want: /^\s*1\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name IN ('JOBS','LOCATIONS','COUNTRIES','REGIONS') AND grantee = 'READ_ONLY_ROLE' AND privilege = 'SELECT';", want: /^\s*4\s*$/m },
+    { sql: "SELECT COUNT(DISTINCT owner) FROM dba_tab_privs WHERE grantee = 'BOB';", want: /^\s*[12]\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE table_name = 'DEPARTMENTS' AND grantee = 'GRACE' AND privilege IN ('SELECT','INSERT','UPDATE');", want: /^\s*3\s*$/m },
+    { sql: "SELECT type FROM dba_tab_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'BOB' AND ROWNUM = 1;", want: /\bTABLE\b/i },
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE owner = 'SCOTT' AND grantee = 'BOB' AND privilege IN ('SELECT','UPDATE');", want: /^\s*2\s*$/m },
+    // PL/SQL EXECUTE on the HR.ADD_EMPLOYEE demo procedure.
+    { sql: 'GRANT EXECUTE ON hr.add_employee TO grace;',                                                                            want: /Grant succeeded\./i },
+    { sql: 'GRANT DEBUG ON hr.add_employee TO ops_user;',                                                                           want: /Grant succeeded\./i },
+    // Re-granting the same privilege is a no-op success.
+    { sql: 'GRANT SELECT ON hr.employees TO bob;',                                                                                  want: /Grant succeeded\./i },
+    // GRANT TO owner → ORA-01749 (self-grant prevention).
+    { sql: 'GRANT SELECT ON hr.employees TO HR;',                                                                                   want: /ORA-01749/ },
+  ])('§6: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 7 — Column-level grants (12 cases)
 // ─────────────────────────────────────────────────────────────────
 
