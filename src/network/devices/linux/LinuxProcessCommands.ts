@@ -388,7 +388,12 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
         );
       }
       lines.push('');
-      lines.push(`${allUnits.length} loaded units listed.`);
+      lines.push('LOAD   = Reflects whether the unit definition was properly loaded.');
+      lines.push('ACTIVE = The high-level unit activation state, i.e. generalization of SUB.');
+      lines.push('SUB    = The low-level unit activation state, values depend on unit type.');
+      lines.push('');
+      lines.push(`${allUnits.length} loaded units listed. Pass --all to see loaded but inactive units, too.`);
+      lines.push("To show all installed unit files use 'systemctl list-unit-files'.");
       return { output: lines.join('\n'), exitCode: 0 };
     }
 

@@ -851,10 +851,12 @@ describe('§13 — ps output table presentation (headers, padding)', () => {
       excludes: ['\t'],
     },
     {
-      name: 'PID column is right-aligned numerically',
+      name: 'PID column is right-aligned numerically (right-padded under PID header)',
       on: l => l.pc1,
       cmd: 'ps -ef',
-      contains: [/\n\s+1\s+/],
+      // header has `PID` at a known column; rows must have the PID digit
+      // sitting at the same column or to its right (right-aligned).
+      contains: [/PID\s+PPID/, /\s+1\s+\d+\s+\d/],
     },
     {
       name: 'ps -o custom format respects requested columns only',

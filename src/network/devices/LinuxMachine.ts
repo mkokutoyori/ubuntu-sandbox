@@ -63,6 +63,16 @@ import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { parseSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+
+/**
+ * Minimal sshd-style glob matcher: `*` matches any sequence including
+ * the empty string. Anchored on both sides like OpenSSH's `match_pattern`.
+ */
+function globMatch(pattern: string, candidate: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  return new RegExp('^' + escaped + '$').test(candidate);
+}
 
 // ─── Class ─────────────────────────────────────────────────────────────
 
@@ -165,14 +175,32 @@ export abstract class LinuxMachine extends EndHost {
   }
 
   /**
-   * Login policy check. Mirrors sshd's PermitRootLogin gate; future
-   * AllowUsers / DenyUsers / MaxAuthTries enforcement plugs in here.
+   * Login policy check — honours the full sshd_config surface:
+   *   - PermitRootLogin no / prohibit-password / yes / forced-commands-only
+   *   - DenyUsers patterns (glob *)
+   *   - AllowUsers patterns (glob *) — when present, user must match one
+   *   - DenyUsers takes precedence over AllowUsers
    */
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
-    const cfg = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-    const permitRoot = !/^\s*PermitRootLogin\s+no\b/im.test(cfg);
-    if (user === 'root' && !permitRoot) {
-      return { ok: false, reason: 'PermitRootLogin no' };
+    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const cfg = parseSshdConfig(raw);
+
+    // PermitRootLogin — anything other than `yes` blocks the root login
+    // path in our password-only simulator.
+    const rootDirective = /^\s*PermitRootLogin\s+(\S+)/im.exec(raw);
+    const policy = rootDirective?.[1]?.toLowerCase() ?? (cfg.permitRootLogin ? 'yes' : 'no');
+    if (user === 'root' && policy !== 'yes') {
+      return { ok: false, reason: `PermitRootLogin ${policy}` };
+    }
+
+    const matchesAny = (patterns: readonly string[]) =>
+      patterns.some(p => globMatch(p, user));
+
+    if (cfg.denyUsers.length > 0 && matchesAny(cfg.denyUsers)) {
+      return { ok: false, reason: 'DenyUsers match' };
+    }
+    if (cfg.allowUsers.length > 0 && !matchesAny(cfg.allowUsers)) {
+      return { ok: false, reason: 'not in AllowUsers' };
     }
     return { ok: true };
   }
