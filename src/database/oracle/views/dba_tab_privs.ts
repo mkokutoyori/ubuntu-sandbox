@@ -9,15 +9,29 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_TAB_PRIVS',
   comment: 'Object privileges',
-  query({ catalog }) {
-    const rows: (string | number | null)[][] = catalog.getTablePrivilegeGrants().map(p => [
+  query({ catalog, storage }) {
+    const cat = catalog as unknown as {
+      getTablePrivilegeGrants(): { grantee: string; objectSchema?: string; objectName?: string; privilege: string; grantable?: boolean }[];
+      getStoredUnits?: () => { schema: string; name: string; type: string }[];
+    };
+    const storedUnits = cat.getStoredUnits?.() ?? [];
+    /** Resolve the runtime object type — TABLE / VIEW / SEQUENCE / PROCEDURE / FUNCTION / PACKAGE. */
+    const resolveType = (schema: string, name: string): string => {
+      if (storage.getTableMeta(schema, name)) return 'TABLE';
+      if (storage.getViewMeta?.(schema, name)) return 'VIEW';
+      if (storage.getSequence?.(schema, name)) return 'SEQUENCE';
+      const unit = storedUnits.find(u => u.schema === schema && u.name === name);
+      if (unit) return unit.type;
+      return 'TABLE';
+    };
+    const rows: (string | number | null)[][] = cat.getTablePrivilegeGrants().map(p => [
       p.grantee,
       p.objectSchema ?? 'SYS',
       p.objectName ?? '',
       p.privilege,
       p.grantable ? 'YES' : 'NO',
       'SYS',
-      'OBJECT',
+      resolveType(p.objectSchema ?? 'SYS', p.objectName ?? ''),
     ]);
     return queryResult(
       [
