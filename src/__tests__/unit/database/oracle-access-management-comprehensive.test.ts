@@ -343,6 +343,8 @@ describe('5. GRANT system privileges', () => {
       // Multi-grantee list
       { sql: 'GRANT CREATE SESSION TO bob, carol, dave, eve, frank;',                                                                 want: /Grant succeeded\./i },
       { sql: 'GRANT CREATE SESSION TO grace, heidi, ivan, judy;',                                                                     want: /Grant succeeded\./i },
+      // Service / role-holder users also need CREATE SESSION to log in.
+      { sql: 'GRANT CREATE SESSION TO readonly, app_user, dev_team, ops_user;',                                                       want: /Grant succeeded\./i },
       // Multi-privilege list
       { sql: 'GRANT INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE TO write_role;',                                            want: /Grant succeeded\./i },
       // ALL PRIVILEGES

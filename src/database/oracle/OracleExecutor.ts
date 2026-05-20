@@ -2081,7 +2081,8 @@ export class OracleExecutor extends BaseExecutor {
       }
     }
 
-    return emptyResult(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} inserted.`, insertedCount);
+    // Oracle SQL*Plus reports "<n> row[s] created." (not "inserted").
+    return emptyResult(`${insertedCount} row${insertedCount !== 1 ? 's' : ''} created.`, insertedCount);
   }
 
   private buildInsertRow(tableMeta: import('../engine/storage/BaseStorage').TableMeta, columns: string[] | undefined, values: Expression[]): StorageRow {

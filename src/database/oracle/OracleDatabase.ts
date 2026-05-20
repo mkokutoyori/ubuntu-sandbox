@@ -413,6 +413,15 @@ export class OracleDatabase {
       return this.dropPackage(executor, trimmed);
     }
 
+    // ALTER {PROCEDURE | FUNCTION | PACKAGE} <name> COMPILE [BODY]
+    // is a no-op recompile in the simulator — emits the canonical message.
+    const alterCompile = trimmed.match(/^ALTER\s+(PROCEDURE|FUNCTION|PACKAGE)\s+(?:\w+\s*\.\s*)?\w+\s+COMPILE(\s+BODY)?\b/i);
+    if (alterCompile) {
+      const kind = alterCompile[1].toUpperCase();
+      const label = kind === 'PROCEDURE' ? 'Procedure' : kind === 'FUNCTION' ? 'Function' : 'Package';
+      return emptyResult(`${label} altered.`);
+    }
+
     const tokens = this.lexer.tokenize(trimmed);
     const parser = new OracleParser();
     const statements = parser.parseMultiple(tokens);
@@ -1131,13 +1140,16 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] PROCEDURE */
   private createStoredProcedure(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
+    // Accept `schema.name` as well as bare `name`. The qualified form
+    // takes precedence over the connected schema (real Oracle behaviour).
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const name = match[2].toUpperCase();
-    const paramStr = match[3] || '';
-    const body = match[4].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const name = match[3].toUpperCase();
+    const paramStr = match[4] || '';
+    const body = match[5].trim();
 
     const parameters = this.parseParameters(paramStr);
     const key = `${schema}.${name}`;
@@ -1158,14 +1170,15 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] FUNCTION */
   private createStoredFunction(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const name = match[2].toUpperCase();
-    const paramStr = match[3] || '';
-    const returnType = match[4].toUpperCase();
-    const body = match[5].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const name = match[3].toUpperCase();
+    const paramStr = match[4] || '';
+    const returnType = match[5].toUpperCase();
+    const body = match[6].trim();
 
     const parameters = this.parseParameters(paramStr);
     const key = `${schema}.${name}`;
@@ -1279,11 +1292,12 @@ export class OracleDatabase {
 
   /** DROP PROCEDURE/FUNCTION/PACKAGE BODY */
   private dropStoredUnit(_executor: OracleExecutor, sql: string, type: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE BODY'): ResultSet {
-    const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION|PACKAGE\s+BODY)\s+(\w+)/i);
+    const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION|PACKAGE\s+BODY)\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const name = match[1].toUpperCase();
-    const schema = (_executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[1] ?? ctxSchema).toUpperCase();
+    const name = match[2].toUpperCase();
 
     if (type === 'PACKAGE BODY') {
       const bodyKey = `${schema}.${name}.__BODY__`;
@@ -1321,12 +1335,13 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] PACKAGE (specification) */
   private createPackageSpec(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const name = match[2].toUpperCase();
-    const body = match[3].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const name = match[3].toUpperCase();
+    const body = match[4].trim();
     const key = `${schema}.${name}`;
 
     // If OR REPLACE, remove existing spec (but keep body and members)
@@ -1350,12 +1365,13 @@ export class OracleDatabase {
 
   /** Parse and store a CREATE [OR REPLACE] PACKAGE BODY */
   private createPackageBody(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
+    const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const pkgName = match[2].toUpperCase();
-    const bodyContent = match[3].trim();
-    const schema = (executor as any).context?.currentSchema || 'SYS';
+    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = (match[2] ?? ctxSchema).toUpperCase();
+    const pkgName = match[3].toUpperCase();
+    const bodyContent = match[4].trim();
     const bodyKey = `${schema}.${pkgName}`;
 
     // If OR REPLACE, remove existing body and its member units
