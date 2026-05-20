@@ -201,51 +201,59 @@ describe('2. Profile creation and lifecycle', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('3. User creation — every authentication variant', () => {
-  it('Creates users with password / external / global / hashed credentials', () => {
-    const cases: Case[] = [
-      { sql: 'CREATE USER alice IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER bob IDENTIFIED BY "Welcome1#";',                                                                            want: /User created/i },
-      { sql: 'CREATE USER carol IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER dave IDENTIFIED BY "Welcome1#";',                                                                           want: /User created/i },
-      { sql: 'CREATE USER eve IDENTIFIED BY "Welcome1#";',                                                                            want: /User created/i },
-      { sql: 'CREATE USER frank IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER grace IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER heidi IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER ivan IDENTIFIED BY "Welcome1#";',                                                                           want: /User created/i },
-      { sql: 'CREATE USER judy IDENTIFIED BY "Welcome1#";',                                                                           want: /User created/i },
-      { sql: 'CREATE USER mallory IDENTIFIED BY "Welcome1#";',                                                                        want: /User created/i },
-      { sql: 'CREATE USER oscar IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER peggy IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER trent IDENTIFIED BY "Welcome1#";',                                                                          want: /User created/i },
-      { sql: 'CREATE USER victor IDENTIFIED BY "Welcome1#";',                                                                         want: /User created/i },
-      { sql: 'CREATE USER walter IDENTIFIED BY "Welcome1#";',                                                                         want: /User created/i },
-      { sql: 'CREATE USER reporter IDENTIFIED BY "Reporter1#" DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp QUOTA 100M ON users;', want: /User created/i },
-      { sql: 'CREATE USER analyst IDENTIFIED BY "Analyst1#" QUOTA UNLIMITED ON users;',                                              want: /User created/i },
-      { sql: 'CREATE USER readonly IDENTIFIED BY "ReadOnly1#" PROFILE app_profile;',                                                  want: /User created/i },
-      { sql: 'CREATE USER batch_user IDENTIFIED BY "Batch1#" QUOTA 500M ON users PROFILE batch_profile;',                            want: /User created/i },
-      { sql: 'CREATE USER schema_owner IDENTIFIED BY "Owner1#" QUOTA UNLIMITED ON users TEMPORARY TABLESPACE temp;',                  want: /User created/i },
-      { sql: 'CREATE USER dev_team IDENTIFIED BY "DevTeam1#";',                                                                       want: /User created/i },
-      { sql: 'CREATE USER qa_team IDENTIFIED BY "QaTeam1#";',                                                                         want: /User created/i },
-      { sql: 'CREATE USER ops_user IDENTIFIED BY "Ops1#";',                                                                           want: /User created/i },
-      { sql: 'CREATE USER app_user IDENTIFIED BY "App1#";',                                                                           want: /User created/i },
-      { sql: "CREATE USER ops$oracle IDENTIFIED EXTERNALLY;",                                                                          want: /User created/i },
-      { sql: "CREATE USER kerb_user IDENTIFIED EXTERNALLY AS 'kerberos@REALM.LOCAL';",                                                want: /User created/i },
-      { sql: "CREATE USER global_user IDENTIFIED GLOBALLY AS 'CN=global,O=Acme';",                                                    want: /User created/i },
-      { sql: 'CREATE USER locked_user IDENTIFIED BY "Locked1#" ACCOUNT LOCK;',                                                        want: /User created/i },
-      { sql: 'CREATE USER expired_user IDENTIFIED BY "Expired1#" PASSWORD EXPIRE;',                                                   want: /User created/i },
-      { sql: 'CREATE USER expensive_user IDENTIFIED BY "Heavy1#" QUOTA 10G ON users QUOTA 5G ON sysaux;',                            want: /User created/i },
+  it.each<Case>([
+      { sql: 'CREATE USER alice IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER bob IDENTIFIED BY "Welcome1#";',                                                                            want: /User created\./i },
+      { sql: 'CREATE USER carol IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER dave IDENTIFIED BY "Welcome1#";',                                                                           want: /User created\./i },
+      { sql: 'CREATE USER eve IDENTIFIED BY "Welcome1#";',                                                                            want: /User created\./i },
+      { sql: 'CREATE USER frank IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER grace IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER heidi IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER ivan IDENTIFIED BY "Welcome1#";',                                                                           want: /User created\./i },
+      { sql: 'CREATE USER judy IDENTIFIED BY "Welcome1#";',                                                                           want: /User created\./i },
+      { sql: 'CREATE USER mallory IDENTIFIED BY "Welcome1#";',                                                                        want: /User created\./i },
+      { sql: 'CREATE USER oscar IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER peggy IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER trent IDENTIFIED BY "Welcome1#";',                                                                          want: /User created\./i },
+      { sql: 'CREATE USER victor IDENTIFIED BY "Welcome1#";',                                                                         want: /User created\./i },
+      { sql: 'CREATE USER walter IDENTIFIED BY "Welcome1#";',                                                                         want: /User created\./i },
+      { sql: 'CREATE USER reporter IDENTIFIED BY "Reporter1#" DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp QUOTA 100M ON users;', want: /User created\./i },
+      { sql: 'CREATE USER analyst IDENTIFIED BY "Analyst1#" QUOTA UNLIMITED ON users;',                                              want: /User created\./i },
+      { sql: 'CREATE USER readonly IDENTIFIED BY "ReadOnly1#" PROFILE app_profile;',                                                  want: /User created\./i },
+      { sql: 'CREATE USER batch_user IDENTIFIED BY "Batch1#" QUOTA 500M ON users PROFILE batch_profile;',                            want: /User created\./i },
+      { sql: 'CREATE USER schema_owner IDENTIFIED BY "Owner1#" QUOTA UNLIMITED ON users TEMPORARY TABLESPACE temp;',                  want: /User created\./i },
+      { sql: 'CREATE USER dev_team IDENTIFIED BY "DevTeam1#";',                                                                       want: /User created\./i },
+      { sql: 'CREATE USER qa_team IDENTIFIED BY "QaTeam1#";',                                                                         want: /User created\./i },
+      { sql: 'CREATE USER ops_user IDENTIFIED BY "Ops1#";',                                                                           want: /User created\./i },
+      { sql: 'CREATE USER app_user IDENTIFIED BY "App1#";',                                                                           want: /User created\./i },
+      { sql: "CREATE USER ops$oracle IDENTIFIED EXTERNALLY;",                                                                          want: /User created\./i },
+      { sql: "CREATE USER kerb_user IDENTIFIED EXTERNALLY AS 'kerberos@REALM.LOCAL';",                                                want: /User created\./i },
+      { sql: "CREATE USER global_user IDENTIFIED GLOBALLY AS 'CN=global,O=Acme';",                                                    want: /User created\./i },
+      { sql: 'CREATE USER locked_user IDENTIFIED BY "Locked1#" ACCOUNT LOCK;',                                                        want: /User created\./i },
+      { sql: 'CREATE USER expired_user IDENTIFIED BY "Expired1#" PASSWORD EXPIRE;',                                                   want: /User created\./i },
+      { sql: 'CREATE USER expensive_user IDENTIFIED BY "Heavy1#" QUOTA 10G ON users QUOTA 5G ON sysaux;',                            want: /User created\./i },
       // Already exists
-      { sql: 'CREATE USER alice IDENTIFIED BY "Welcome1#";',                                                                          want: /ORA-01920/i },
+      { sql: 'CREATE USER alice IDENTIFIED BY "Welcome1#";',                                                                          want: /ORA-01920/ },
       // Reserved word
-      { sql: 'CREATE USER select IDENTIFIED BY "X";',                                                                                  want: /ORA-/ },
+      { sql: 'CREATE USER select IDENTIFIED BY "X";',                                                                                  want: /ORA-(00903|00922|01935)/ },
       // Verification rows
-      { sql: "SELECT COUNT(*) FROM dba_users WHERE username IN ('ALICE','BOB','CAROL','DAVE','EVE','FRANK','GRACE');",                want: /7/ },
-      { sql: "SELECT username, account_status FROM dba_users WHERE username = 'LOCKED_USER';",                                       want: /LOCKED/ },
-      { sql: "SELECT username, account_status FROM dba_users WHERE username = 'EXPIRED_USER';",                                      want: /EXPIRED/ },
-      { sql: "SELECT username, default_tablespace, temporary_tablespace FROM dba_users WHERE username = 'REPORTER';",                want: /USERS/i },
-      { sql: "SELECT username, profile FROM dba_users WHERE username = 'BATCH_USER';",                                                want: /BATCH_PROFILE/ },
-    ];
-    drive(sys, cases);
+      { sql: "SELECT COUNT(*) FROM dba_users WHERE username IN ('ALICE','BOB','CAROL','DAVE','EVE','FRANK','GRACE');",                want: /^\s*7\s*$/m },
+      { sql: "SELECT username, account_status FROM dba_users WHERE username = 'LOCKED_USER';",                                       want: /\bLOCKED\b/ },
+      { sql: "SELECT username, account_status FROM dba_users WHERE username = 'EXPIRED_USER';",                                      want: /\bEXPIRED\b/ },
+      { sql: "SELECT default_tablespace FROM dba_users WHERE username = 'REPORTER';",                                          want: /\bUSERS\b/i },
+      { sql: "SELECT profile FROM dba_users WHERE username = 'BATCH_USER';",                                                          want: /\bBATCH_PROFILE\b/ },
+      { sql: "SELECT profile FROM dba_users WHERE username = 'READONLY';",                                                            want: /\bAPP_PROFILE\b/ },
+      { sql: "SELECT authentication_type FROM dba_users WHERE username = 'OPS$ORACLE';",                                              want: /\bEXTERNAL\b/ },
+      { sql: "SELECT authentication_type FROM dba_users WHERE username = 'GLOBAL_USER';",                                             want: /\bGLOBAL\b/ },
+      { sql: "SELECT external_name FROM dba_users WHERE username = 'KERB_USER';",                                                     want: /kerberos@REALM\.LOCAL/ },
+      { sql: "SELECT external_name FROM dba_users WHERE username = 'GLOBAL_USER';",                                                   want: /CN=global,O=Acme/ },
+  ])('§3: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
