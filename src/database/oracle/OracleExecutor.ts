@@ -23,6 +23,7 @@ import type { Statement, SelectStatement, InsertStatement, UpdateStatement, Dele
 } from '../engine/parser/ASTNode';
 import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
+import { ORACLE_SYSTEM_PRIVILEGES } from './security/systemPrivileges';
 import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta } from '../engine/storage/BaseStorage';
 import { parseOracleType } from '../engine/catalog/DataType';
@@ -2848,8 +2849,18 @@ export class OracleExecutor extends BaseExecutor {
       }
     } else {
       this.requireSystemPrivilege('GRANT ANY PRIVILEGE', 'GRANT ANY ROLE');
+      // Expand the ALL PRIVILEGES shortcut into the full set of system
+      // privileges, matching real Oracle's DBA_SYS_PRIVS expansion.
+      const expanded: string[] = [];
+      for (const p of stmt.privileges) {
+        if (p.toUpperCase() === 'ALL PRIVILEGES') {
+          expanded.push(...ORACLE_SYSTEM_PRIVILEGES);
+        } else {
+          expanded.push(p);
+        }
+      }
       for (const grantee of grantees) {
-        for (const priv of stmt.privileges) {
+        for (const priv of expanded) {
           if (catalog.roleExists(priv)) {
             // Cycle prevention — ORA-01934. Walk the role-grant
             // transitive closure to ensure the grantee is not already
@@ -3096,7 +3107,12 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeCreateRole(stmt: CreateRoleStatement): ResultSet {
+    this.requireSystemPrivilege('CREATE ROLE');
     const catalog = this.catalog as OracleCatalog;
+    const upper = stmt.name.toUpperCase();
+    if (catalog.roleExists(upper) || catalog.userExists(upper)) {
+      throw new OracleError(1921, `role name '${upper}' conflicts with another user or role name`);
+    }
     const authKind = stmt.authenticationKind ?? 'NONE';
     catalog.createRole(stmt.name, authKind);
     if (authKind === 'PASSWORD' && stmt.password) {
@@ -3106,7 +3122,12 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeDropRole(stmt: DropRoleStatement): ResultSet {
-    (this.catalog as OracleCatalog).dropRole(stmt.name);
+    this.requireSystemPrivilege('DROP ANY ROLE');
+    const catalog = this.catalog as OracleCatalog;
+    if (!catalog.roleExists(stmt.name)) {
+      throw new OracleError(1919, `role '${stmt.name.toUpperCase()}' does not exist`);
+    }
+    catalog.dropRole(stmt.name);
     return emptyResult('Role dropped.');
   }
 
