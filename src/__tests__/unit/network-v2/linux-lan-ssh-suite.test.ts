@@ -1190,3 +1190,64 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 19 — interface down / network unreachable ───────────────
+
+describe('§19 — interface down / network unreachable', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ifconfig eth0 down on the client → ssh fails locally',
+      setup: (l) => { void l.pc1.executeCommand('ifconfig eth0 down'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Network is unreachable|No route to host/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'ip link set eth0 down on the target → other peers fail to reach it',
+      setup: (l) => { void l.pc2.executeCommand('ip link set eth0 down'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/No route to host|Connection timed out|refused/],
+    },
+    {
+      name: 'after bringing the interface back up, ssh works again',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ifconfig eth0 down');
+        await l.pc1.executeCommand('ifconfig eth0 up');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'removing the IP makes ssh report "Cannot assign requested address" or fail',
+      setup: (l) => { void l.pc1.executeCommand('ip addr flush dev eth0'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Cannot assign requested address|Network is unreachable/],
+    },
+    {
+      name: 'ip route delete default makes off-subnet ssh fail (no gateway)',
+      setup: (l) => { void l.pc1.executeCommand('ip route del default'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@198.51.100.7',
+      contains: [/Network is unreachable|Could not resolve|No route to host/],
+    },
+    {
+      name: 'ifconfig output reflects the eth0 down state',
+      setup: (l) => { void l.pc1.executeCommand('ifconfig eth0 down'); },
+      on: l => l.pc1,
+      cmd: 'ifconfig eth0',
+      contains: [/DOWN|state DOWN|flags=4099/],
+      excludes: [/UP\b.*RUNNING/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
