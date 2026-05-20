@@ -383,7 +383,9 @@ export type AlterTableAction =
   | { action: 'ROW_MOVEMENT'; enabled: boolean }
   | { action: 'ADD_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string; columns: string[]; always: boolean }
   | { action: 'DROP_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string }
-  | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' };
+  | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' }
+  | { action: 'ENCRYPT_COLUMN'; columnName: string; algorithm?: string; salt?: boolean; integrity?: string }
+  | { action: 'DECRYPT_COLUMN'; columnName: string };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';
@@ -530,6 +532,25 @@ export interface AlterUserStatement extends ASTNode {
    *   EXCEPT {r1, …}      → every role default-on except the named ones
    */
   defaultRoleSpec?: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] };
+  /**
+   * Set when the statement uses `IDENTIFIED BY VALUES '<hash>'` — the
+   * password literal is an already-hashed verifier, not a clear-text
+   * password. The simulator accepts the hash as the new password but
+   * does not attempt to interpret it.
+   */
+  passwordByHash?: boolean;
+  /**
+   * `REPLACE <oldPassword>` suffix on `IDENTIFIED BY new`. Captured so
+   * the executor could enforce the user's existing password when the
+   * profile demands it; for now we only validate the syntax.
+   */
+  replacePassword?: string;
+  /**
+   * `GRANT|REVOKE CONNECT THROUGH <proxy> [WITH ROLE <role>]` proxy-
+   * authentication clause. The simulator persists it through the
+   * catalog so `PROXY_USERS` reports the relationship.
+   */
+  proxy?: { mode: 'GRANT' | 'REVOKE'; proxy: string; role?: string };
 }
 
 export interface DropUserStatement extends ASTNode {
@@ -879,6 +900,40 @@ export interface NoauditStatement extends ASTNode {
   byUser?: string;
 }
 
+/**
+ * `CREATE AUDIT POLICY <name> [ACTIONS …] [ON [schema.]obj] [ROLES …]`.
+ * The unified-audit definition is registered in the catalog; rows
+ * surface in `AUDIT_UNIFIED_POLICIES`.
+ */
+export interface CreateAuditPolicyStatement extends ASTNode {
+  type: 'CreateAuditPolicyStatement';
+  name: string;
+  /** ACTIONS list — verbs such as LOGON, LOGOFF, UPDATE, DELETE. */
+  actions: string[];
+  /** Optional ON [schema.]object qualifier scoping the actions. */
+  onObject?: AuditObjectTarget;
+  /** Optional ROLES list — roles whose member sessions trigger the policy. */
+  roles?: string[];
+}
+
+export interface DropAuditPolicyStatement extends ASTNode {
+  type: 'DropAuditPolicyStatement';
+  name: string;
+}
+
+/**
+ * `AUDIT POLICY <name> [BY user[, …]] [EXCEPT user[, …]]` — enables
+ * a previously-created unified-audit policy for one or more users.
+ */
+export interface AuditPolicyStatement extends ASTNode {
+  type: 'AuditPolicyStatement';
+  policyName: string;
+  byUsers?: string[];
+  exceptUsers?: string[];
+  /** `NOAUDIT POLICY` rather than `AUDIT POLICY`. */
+  disable?: boolean;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -914,5 +969,6 @@ export type Statement =
   | CreateProfileStatement | AlterProfileStatement | DropProfileStatement
   // Audit
   | AuditStatement | NoauditStatement
+  | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement
   // PL/SQL
   | PLSQLBlock;

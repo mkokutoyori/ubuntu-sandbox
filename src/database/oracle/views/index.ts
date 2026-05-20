@@ -370,4 +370,17 @@ import './role_tab_privs';
 import './role_role_privs';
 import './session_roles';
 
+// Encryption / Database Vault / proxy-auth views (mostly empty —
+// the features they describe aren't configured in the simulator).
+import './v_encryption_keys';
+import './v_encryption_wallet';
+import './dba_encrypted_columns';
+import './dba_dv_realm';
+import './dba_dv_role';
+import './dba_dv_realm_auth';
+import './dba_dv_command_rule';
+import './dba_dv_factor';
+import './proxy_users';
+import './audit_unified_policies';
+
 export { };

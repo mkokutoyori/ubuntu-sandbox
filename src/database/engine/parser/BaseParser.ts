@@ -1035,12 +1035,42 @@ export abstract class BaseParser {
     } else if (this.matchKeyword('MODIFY')) {
       // MODIFY PARTITION / SUBPARTITION / LOB (…) — administrative
       // clauses not modeled, swallowed as a no-op. Otherwise it's a
-      // standard MODIFY column.
+      // standard MODIFY column, optionally wrapped in parens and with
+      // an ENCRYPT/DECRYPT clause instead of a type spec.
       if (this.checkIdentifierOrKeyword('PARTITION')
           || this.checkIdentifierOrKeyword('SUBPARTITION')
           || this.checkIdentifierOrKeyword('LOB')) {
         this.consumeRestOfStatement();
         actions.push({ action: 'SHRINK_SPACE' });
+      } else if (this.match(TokenType.LPAREN)) {
+        // `MODIFY (col ENCRYPT [USING 'alg'] [NO SALT] [...])` or a
+        // standard `MODIFY (col TYPE [NOT NULL ...])` list. Peek the
+        // token after the column name to decide.
+        do {
+          const colName = this.expectIdentifier();
+          if (this.matchKeyword('ENCRYPT')) {
+            let algorithm: string | undefined;
+            let salt = true;
+            let integrity: string | undefined;
+            while (!this.check(TokenType.RPAREN) && !this.check(TokenType.COMMA)) {
+              if (this.matchKeyword('USING')) algorithm = this.expectIdentifierOrString();
+              else if (this.matchKeyword('NO')) { this.expectKeyword('SALT'); salt = false; }
+              else if (this.matchKeyword('SALT')) { salt = true; }
+              else if (this.matchKeyword('IDENTIFIED')) { this.expectKeyword('BY'); this.expectIdentifierOrString(); }
+              else if (this.matchKeyword('INTEGRITY')) integrity = this.expectIdentifierOrString();
+              else this.advance();
+            }
+            actions.push({ action: 'ENCRYPT_COLUMN', columnName: colName, algorithm, salt, integrity });
+          } else if (this.matchKeyword('DECRYPT')) {
+            actions.push({ action: 'DECRYPT_COLUMN', columnName: colName });
+          } else {
+            // Standard MODIFY (col TYPE …). Rewind so parseColumnDefinition
+            // sees the column name again.
+            this.pos -= 1;
+            actions.push({ action: 'MODIFY_COLUMN', column: this.parseColumnDefinition() });
+          }
+        } while (this.match(TokenType.COMMA));
+        this.expect(TokenType.RPAREN);
       } else {
         actions.push({ action: 'MODIFY_COLUMN', column: this.parseColumnDefinition() });
       }
@@ -1165,13 +1195,26 @@ export abstract class BaseParser {
     let authenticationKind: 'PASSWORD' | 'EXTERNAL' | 'GLOBAL' | undefined;
     let externalName: string | undefined;
     let defaultRoleSpec: { mode: 'ALL' | 'NONE' | 'LIST' | 'EXCEPT'; roles: string[] } | undefined;
+    let passwordByHash: boolean | undefined;
+    let replacePassword: string | undefined;
+    let proxy: { mode: 'GRANT' | 'REVOKE'; proxy: string; role?: string } | undefined;
     const quota: { size: string; tablespace: string }[] = [];
 
     while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
       if (this.matchKeyword('IDENTIFIED')) {
         if (this.matchKeyword('BY')) {
           authenticationKind = 'PASSWORD';
-          password = this.expectIdentifierOrString();
+          if (this.matchKeyword('VALUES')) {
+            // IDENTIFIED BY VALUES '<verifier-hash>' — hash login.
+            passwordByHash = true;
+            password = this.expectIdentifierOrString();
+          } else {
+            password = this.expectIdentifierOrString();
+            // Optional REPLACE <old> suffix (profile may demand it).
+            if (this.matchKeyword('REPLACE')) {
+              replacePassword = this.expectIdentifierOrString();
+            }
+          }
         } else if (this.matchKeyword('EXTERNALLY')) {
           authenticationKind = 'EXTERNAL';
           if (this.matchKeyword('AS')) externalName = this.expectIdentifierOrString();
@@ -1203,9 +1246,27 @@ export abstract class BaseParser {
         const tsName = this.expectIdentifier();
         quota.push({ size: sizeVal, tablespace: tsName });
       }
+      else if (this.matchKeyword('GRANT')) {
+        // GRANT CONNECT THROUGH <proxy> [WITH ROLE <role>]
+        this.expectKeyword('CONNECT');
+        this.expectKeyword('THROUGH');
+        const proxyName = this.expectIdentifier();
+        let proxyRole: string | undefined;
+        if (this.matchKeyword('WITH')) {
+          this.expectKeyword('ROLE');
+          proxyRole = this.expectIdentifier();
+        }
+        proxy = { mode: 'GRANT', proxy: proxyName, role: proxyRole };
+      }
+      else if (this.matchKeyword('REVOKE')) {
+        // REVOKE CONNECT THROUGH <proxy>
+        this.expectKeyword('CONNECT');
+        this.expectKeyword('THROUGH');
+        proxy = { mode: 'REVOKE', proxy: this.expectIdentifier() };
+      }
       else break;
     }
-    return { type: 'AlterUserStatement', position: pos, username, password, authenticationKind, externalName, accountLock, accountUnlock, passwordExpire, defaultTablespace, temporaryTablespace, profile, quota: quota.length > 0 ? quota : undefined, defaultRoleSpec };
+    return { type: 'AlterUserStatement', position: pos, username, password, authenticationKind, externalName, accountLock, accountUnlock, passwordExpire, defaultTablespace, temporaryTablespace, profile, quota: quota.length > 0 ? quota : undefined, defaultRoleSpec, passwordByHash, replacePassword, proxy };
   }
 
   /**
