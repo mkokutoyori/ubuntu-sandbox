@@ -1512,3 +1512,61 @@ describe('§23 — cron / at scheduling behind sshd', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 24 — Oracle DB on srv1: pmon visible via ssh ─────────────
+
+describe('§24 — Oracle DB processes visible across the LAN via ssh', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'after Oracle starts on srv1, remote ps -ef | grep ora_ via ssh finds pmon',
+      setup: (l) => { void l.srv1.executeCommand('sqlplus / as sysdba'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.10 "ps -ef | grep ora_pmon | grep -v grep"',
+      contains: [/oracle\s+\d+\s+\d+.*ora_pmon/],
+    },
+    {
+      name: 'ora_smon and ora_lgwr also appear via remote ps',
+      setup: (l) => { void l.srv1.executeCommand('sqlplus / as sysdba'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.10 ps -ef -o user,comm',
+      contains: [/oracle\s+ora_smon/, /oracle\s+ora_lgwr/],
+    },
+    {
+      name: 'after SHUTDOWN ABORT, ora_pmon disappears',
+      setup: async (l) => {
+        await l.srv1.executeCommand('sqlplus / as sysdba');
+        await l.srv1.executeCommand('echo "SHUTDOWN ABORT;" | sqlplus / as sysdba');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.10 ps -ef -o comm',
+      excludes: ['ora_pmon'],
+    },
+    {
+      name: 'srv2 has no Oracle running → ssh ps shows none',
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.11 ps -ef -o comm',
+      excludes: ['ora_pmon', 'ora_smon'],
+    },
+    {
+      name: 'lsnrctl status on srv1 shows the LISTENER as RUNNING',
+      setup: (l) => { void l.srv1.executeCommand('sqlplus / as sysdba'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.10 lsnrctl status',
+      contains: [/Listener Parameter File|Listening Endpoints Summary|TNS:listener/],
+    },
+    {
+      name: 'sqlplus from pc over ssh connects to ORCL',
+      setup: (l) => { void l.srv1.executeCommand('sqlplus / as sysdba'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.10 sqlplus -s system/oracle@ORCL "SELECT 1 FROM DUAL"',
+      contains: [/1\s*$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
