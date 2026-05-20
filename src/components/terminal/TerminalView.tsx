@@ -200,6 +200,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const isBooting = inputMode.type === 'booting';
   const isPager = inputMode.type === 'pager';
   const isReverseSearch = session.inputMode.type === 'reverse-search';
+  const isDisconnected = inputMode.type === 'disconnected';
 
   return (
     <div
@@ -320,8 +321,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </div>
         )}
 
+        {/* Disconnected — read-only line, no cursor */}
+        {isDisconnected && (
+          <div className="flex items-center" style={{ minHeight: '1.35em' }}>
+            <span style={{ color: theme.errorColor, fontStyle: 'italic' }}>
+              [session frozen — {(inputMode as { reason: string }).reason} — close this window or power the device back on]
+            </span>
+          </div>
+        )}
+
         {/* Normal input line */}
-        {!isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch && (
+        {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch && (
           <div className="flex items-center" style={{ minHeight: sessionType === 'windows' ? '1.25em' : '1.35em' }}>
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
             <input

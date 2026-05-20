@@ -62,6 +62,15 @@ export interface DeviceDeregisteredPayload {
   id: string;
 }
 
+export interface DeviceRemovedPayload {
+  /** Equipment id removed by user (distinct from registry.cleared). */
+  id: string;
+  /** Human-readable name at removal time (terminals can label the trace). */
+  name: string;
+  /** Whether the device was still powered on when removed. */
+  wasPoweredOn: boolean;
+}
+
 export interface DevicePowerOnPayload {
   id: string;
 }
@@ -203,6 +212,7 @@ export type DomainEvent =
   // Device lifecycle
   | { topic: 'device.registered'; payload: DeviceRegisteredPayload }
   | { topic: 'device.deregistered'; payload: DeviceDeregisteredPayload }
+  | { topic: 'device.removed'; payload: DeviceRemovedPayload }
   | { topic: 'device.power-on'; payload: DevicePowerOnPayload }
   | { topic: 'device.power-off'; payload: DevicePowerOffPayload }
   | { topic: 'device.position-changed'; payload: DevicePositionChangedPayload }

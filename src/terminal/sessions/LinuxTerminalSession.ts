@@ -12,8 +12,10 @@
 import { Equipment } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType,
-  KeyEvent, InputMode,
+  KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
+import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInput } from '@/terminal/core/TabCompletionHelper';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
@@ -96,6 +98,8 @@ export class LinuxTerminalSession extends TerminalSession {
     device: Equipment;
     user: string;
     path: string;
+    /** Local shell session paused while this remote frame is active. */
+    pausedShell: LinuxShellSession | null;
     /** Closing callback (e.g. ssh session disconnect). */
     onPop: () => void;
     /** Display string used in "Connection to <X> closed." line. */
@@ -109,13 +113,59 @@ export class LinuxTerminalSession extends TerminalSession {
    */
   private pendingSshIO: QueuedTerminalIO | null = null;
 
+  /**
+   * Per-terminal shell session (allocated on Linux machines). Holds the
+   * cwd/env/su-stack/job-table/history that belong to *this* terminal
+   * exclusively. Null when running on a non-Linux device (e.g. a future
+   * embedded board falling back to the legacy shared executor).
+   *
+   * See terminal_gap.md §2.
+   */
+  shell: LinuxShellSession | null = null;
+
   constructor(id: string, device: Equipment) {
     super(id, device);
-    this.currentPath = device.getCwd() || '/home/user';
-    this.currentUser = device.getCurrentUser() || 'user';
+    // Allocate a dedicated -bash on the device when possible so multiple
+    // terminals on the same machine have isolated cwd / env / su stack.
+    if (device instanceof LinuxMachine) {
+      this.shell = device.openShellSession();
+      this.currentPath = this.shell.cwd;
+      this.currentUser = this.shell.user;
+      // Make sure the terminal tears down its session when the manager
+      // disposes it (closing tty, killing -bash, releasing pts slot).
+      this.registerTearDown(() => {
+        const s = this.shell;
+        if (s && device instanceof LinuxMachine) {
+          device.closeShellSession(s);
+        }
+        this.shell = null;
+      });
+    } else {
+      this.currentPath = device.getCwd() || '/home/user';
+      this.currentUser = device.getCurrentUser() || 'user';
+    }
   }
 
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
+
+  /**
+   * Route every command through the per-terminal shell session so that
+   * cwd / env / su stack mutations stay local to this terminal. Falls back
+   * to the shared executor only when no session has been allocated (e.g.
+   * the device is not a LinuxMachine).
+   */
+  protected override async executeOnDevice(
+    command: string,
+    timeoutMs?: number,
+  ): Promise<string> {
+    const dev = this.device;
+    if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
+    if (this.shell && dev instanceof LinuxMachine) {
+      const promise = dev.executeCommandInSession(command, this.shell);
+      return timeoutMs != null ? withTimeout(promise, timeoutMs) : promise;
+    }
+    return super.executeOnDevice(command, timeoutMs);
+  }
 
   // ── Template implementations ────────────────────────────────────
 
@@ -481,7 +531,12 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(): void {
-    const completions = this.device.getCompletions(this.input);
+    // Tab completion must run in *this* terminal's session context so that
+    // path completion sees the per-session cwd, not the device-wide shared one.
+    const dev = this.device;
+    const completions = (this.shell && dev instanceof LinuxMachine)
+      ? dev.getCompletionsForSession(this.input, this.shell)
+      : this.device.getCompletions(this.input);
     if (completions.length === 0) return;
 
     const result = completeInput(this.input, completions);
@@ -528,9 +583,17 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Device state sync ───────────────────────────────────────────
 
   private syncDeviceState(): void {
-    const cwd = this.device.getCwd();
-    if (cwd) this.currentPath = cwd;
-    this.currentUser = this.device.getCurrentUser();
+    // When the terminal owns a shell session, the per-session state is
+    // authoritative — reading device.getCwd() would leak the shared default
+    // and cause cross-terminal cwd bleed-through (cf. terminal_gap.md §2).
+    if (this.shell) {
+      this.currentPath = this.shell.cwd;
+      this.currentUser = this.shell.user;
+    } else {
+      const cwd = this.device.getCwd();
+      if (cwd) this.currentPath = cwd;
+      this.currentUser = this.device.getCurrentUser();
+    }
     this.notify();
   }
 
@@ -1680,16 +1743,32 @@ export class LinuxTerminalSession extends TerminalSession {
     label: string,
     onPop: () => void = () => undefined,
   ): void {
+    // Stash the previous device + the local shell session, then allocate a
+    // fresh shell session on the remote so commands executed during the SSH
+    // chain run with the remote user's home / env / suStack — not the local
+    // one. On pop we close that remote session and restore the local pair.
+    const pausedShell = this.shell;
+    let remoteShell: LinuxShellSession | null = null;
+    if (remote instanceof LinuxMachine) {
+      remoteShell = remote.openShellSession({ user });
+    }
     this.sshStack.push({
       device: this.device,
       user: this.currentUser,
       path: this.currentPath,
-      onPop,
+      pausedShell,
+      onPop: () => {
+        if (remoteShell && remote instanceof LinuxMachine) {
+          remote.closeShellSession(remoteShell);
+        }
+        try { onPop(); } catch { /* swallow */ }
+      },
       label,
     });
     this.device = remote;
+    this.shell = remoteShell;
     this.currentUser = user;
-    this.currentPath = remote.getCwd() || `/home/${user}`;
+    this.currentPath = remoteShell?.cwd ?? remote.getCwd() ?? `/home/${user}`;
     this.notify();
   }
 
@@ -1708,6 +1787,7 @@ export class LinuxTerminalSession extends TerminalSession {
     this.addLine('logout');
     this.addLine(`Connection to ${frame.label} closed.`);
     this.device = frame.device;
+    this.shell = frame.pausedShell;
     this.currentUser = frame.user;
     this.currentPath = frame.path;
     this.notify();

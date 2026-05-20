@@ -63,7 +63,14 @@ export type InputMode =
   | { type: 'pager'; indicator: string }
   | { type: 'booting' }
   | { type: 'reverse-search' }
-  | { type: 'editor'; editorType: 'nano' | 'vi' | 'vim'; filePath: string; absolutePath: string; content: string; isNewFile: boolean };
+  | { type: 'editor'; editorType: 'nano' | 'vi' | 'vim'; filePath: string; absolutePath: string; content: string; isNewFile: boolean }
+  /**
+   * Terminal is read-only because the underlying device is unreachable
+   * (powered off, removed). Reason carries a short human label rendered by
+   * the view. The session keeps its scrollback so the user can still review
+   * what happened before the disconnect.
+   */
+  | { type: 'disconnected'; reason: string };
 
 export type SessionType = 'linux' | 'cisco' | 'huawei' | 'windows';
 
@@ -269,8 +276,77 @@ export abstract class TerminalSession {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    // Subclasses may register a teardown to release SSH sessions, sub-shells,
+    // remote-forwarders, etc. Run them BEFORE flagging disposed so handlers
+    // can still observe state if they want to.
+    try {
+      this.runTearDown();
+    } catch {
+      /* never propagate cleanup errors */
+    }
     this.disposed = true;
     this._listeners.clear();
+  }
+
+  // ── Disconnection / reconnection (driven by Equipment lifecycle bus) ─
+
+  /**
+   * Mark the terminal as disconnected. The scrollback is preserved so the
+   * user can re-read history, but new input is rejected. `notice` is written
+   * as an error line (similar to OpenSSH "Connection to X closed").
+   *
+   * Idempotent — calling twice with the same reason is a no-op.
+   */
+  markDisconnected(reason: string, notice?: string): void {
+    if (this.disposed) return;
+    if (this.inputMode.type === 'disconnected' && this.inputMode.reason === reason) {
+      return;
+    }
+    if (notice) this.addLine(notice, 'error');
+    this.inputMode = { type: 'disconnected', reason };
+    this.notify();
+  }
+
+  /**
+   * Restore an interactive mode after the device comes back online. Idempotent.
+   */
+  markReconnected(notice?: string): void {
+    if (this.disposed) return;
+    if (this.inputMode.type !== 'disconnected') return;
+    if (notice) this.addLine(notice);
+    this.inputMode = { type: 'normal' };
+    this.notify();
+  }
+
+  /** True iff the session is in the read-only disconnected mode. */
+  get isDisconnected(): boolean {
+    return this.inputMode.type === 'disconnected';
+  }
+
+  // ── Teardown hooks (run at dispose time) ───────────────────────────
+
+  private _tearDowns: Array<() => void> = [];
+
+  /**
+   * Register a callback fired exactly once when the session is disposed.
+   * Used by SSH sessions, sub-shells, port-forwarders, agent-forwarding to
+   * release their resources deterministically.
+   */
+  registerTearDown(cb: () => void): void {
+    if (this.disposed) {
+      try { cb(); } catch { /* ignore */ }
+      return;
+    }
+    this._tearDowns.push(cb);
+  }
+
+  private runTearDown(): void {
+    const cbs = this._tearDowns;
+    this._tearDowns = [];
+    for (const cb of cbs) {
+      try { cb(); } catch { /* swallow */ }
+    }
   }
 
   // ── Scrollback management ─────────────────────────────────────
@@ -482,6 +558,13 @@ export abstract class TerminalSession {
    */
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    // Disconnected — terminal is read-only. Only allow Ctrl+L (clear) and
+    // Ctrl+Shift+C copy (handled at the view level). Everything else is
+    // swallowed so the user can't desync the state by typing.
+    if (this.inputMode.type === 'disconnected') {
+      return true;
+    }
 
     // Reverse search mode — intercept all keys
     if (this.inputMode.type === 'reverse-search') {

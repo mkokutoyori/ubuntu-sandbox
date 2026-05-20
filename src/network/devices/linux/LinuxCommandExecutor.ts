@@ -31,6 +31,7 @@ import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } fro
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
+import type { LinuxShellSession } from './shell/LinuxShellSession';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -434,6 +435,102 @@ export class LinuxCommandExecutor {
    */
   /** Exit code of the most recent execute() call. Cleared per call. */
   lastExitCode = 0;
+
+  /**
+   * Run a command in the context of a specific shell session. Implements the
+   * per-terminal isolation required by terminal_gap.md §2.
+   *
+   * Real-OS analogy: the kernel scheduler pins one process state to the
+   * single CPU at a time. Here we briefly pin `session`'s state onto the
+   * executor's fields, run the synchronous bash interpreter (and any
+   * sync-dispatched builtins), then capture the mutations back into the
+   * session and restore the executor's default state.
+   *
+   * Safety: `execute()` and `dispatchFromInterpreter()` are synchronous, so
+   * no other code can interleave between swap-in and swap-out. Concurrent
+   * `executeInSession` calls from different terminals are serialised by the
+   * owning `LinuxMachine` (see `LinuxMachine.executeCommandInSession`).
+   */
+  executeInSession(input: string, session: LinuxShellSession): string {
+    if (session.disposed) return '';
+    const baseline = this.snapshotState();
+    this.swapInSession(session);
+    try {
+      const result = this.execute(input);
+      this.captureStateInto(session);
+      return result;
+    } finally {
+      this.restoreFromSnapshot(baseline);
+    }
+  }
+
+  /**
+   * Snapshot the per-process state of the executor (for swap-and-restore).
+   * @internal — used by LinuxMachine.executeCommandInSession. Do not call
+   * from outside the device layer.
+   */
+  snapshotState() {
+    return {
+      cwd: this.cwd,
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      umask: this.umask,
+      env: new Map(this.env),
+      suStack: [...this.suStack],
+      commandHistory: this.commandHistory,
+      shellPid: this.shellPid,
+      shellPpid: this.shellPpid,
+      jobTable: this.jobTable,
+      lastExitCode: this.lastExitCode,
+    };
+  }
+
+  /** @internal */
+  swapInSession(s: LinuxShellSession): void {
+    this.cwd = s.cwd;
+    this.userMgr.currentUser = s.user;
+    this.userMgr.currentUid = s.uid;
+    this.userMgr.currentGid = s.gid;
+    this.umask = s.umask;
+    this.env = new Map(s.env);
+    this.suStack = [...s.suStack];
+    this.commandHistory = s.commandHistory;
+    this.shellPid = s.shellPid;
+    this.shellPpid = s.shellPpid;
+    this.jobTable = s.jobTable;
+    this.lastExitCode = s.lastExitCode;
+  }
+
+  /** @internal */
+  captureStateInto(s: LinuxShellSession): void {
+    s.cwd = this.cwd;
+    s.user = this.userMgr.currentUser;
+    s.uid = this.userMgr.currentUid;
+    s.gid = this.userMgr.currentGid;
+    s.umask = this.umask;
+    s.env = new Map(this.env);
+    s.suStack = [...this.suStack];
+    s.lastExitCode = this.lastExitCode;
+    // commandHistory + jobTable are passed by reference, so any in-place
+    // mutations during execute() are already reflected on the session.
+  }
+
+  /** @internal */
+  restoreFromSnapshot(b: ReturnType<LinuxCommandExecutor['snapshotState']>): void {
+    this.cwd = b.cwd;
+    this.userMgr.currentUser = b.user;
+    this.userMgr.currentUid = b.uid;
+    this.userMgr.currentGid = b.gid;
+    this.umask = b.umask;
+    this.env = b.env;
+    this.suStack = b.suStack;
+    this.commandHistory = b.commandHistory;
+    this.shellPid = b.shellPid;
+    this.shellPpid = b.shellPpid;
+    this.jobTable = b.jobTable;
+    this.lastExitCode = b.lastExitCode;
+  }
 
   execute(input: string): string {
     const trimmed = input.trim();

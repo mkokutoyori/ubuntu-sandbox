@@ -15,6 +15,8 @@ import {
   generateId, resetCounters,
   Logger,
 } from '@/network';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { getDefaultEventBus } from '@/events/EventBus';
 
 /**
  * Network interface config for UI rendering
@@ -159,6 +161,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
 
   removeDevice: (id) => {
     const state = get();
+    const device = state.deviceInstances.get(id);
 
     // Disconnect all cables involving this device
     const connectionsToRemove = state.connections.filter(
@@ -166,6 +169,27 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     );
     for (const conn of connectionsToRemove) {
       conn.cable.disconnect();
+    }
+
+    // Notify the rest of the system BEFORE the device disappears from the
+    // store, so subscribers (TerminalManager, supervisors) can read final
+    // state. We emit `device.removed` (user-initiated) alongside the bus's
+    // own `device.deregistered`, which the registry will fire below.
+    if (device) {
+      getDefaultEventBus().publish({
+        topic: 'device.removed',
+        payload: {
+          id: device.getId(),
+          name: device.getName(),
+          wasPoweredOn: device.getIsPoweredOn(),
+        },
+      });
+      // Power-down side effects (services, supervisors) before dropping the
+      // registry entry so dependent listeners observe a clean shutdown.
+      if (device.getIsPoweredOn()) {
+        try { device.powerOff(); } catch { /* never block removal */ }
+      }
+      EquipmentRegistry.getInstance().deregister(id);
     }
 
     set(state => {
@@ -334,6 +358,17 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     for (const conn of state.connections) {
       conn.cable.disconnect();
     }
+
+    // Power down every device first, so each one emits its own
+    // `device.power-off` event (services stop, supervisors detach), then
+    // clear the registry which fires `registry.cleared` for the terminal
+    // manager and other reactive subscribers.
+    for (const dev of state.deviceInstances.values()) {
+      if (dev.getIsPoweredOn()) {
+        try { dev.powerOff(); } catch { /* swallow */ }
+      }
+    }
+    EquipmentRegistry.getInstance().clear();
 
     resetDeviceCounters();
     resetCounters();
