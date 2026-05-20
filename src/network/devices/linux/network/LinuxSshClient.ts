@@ -35,7 +35,12 @@ export interface SshClientOpts {
   /** Local user invoking ssh (defaults to "root"). */
   sourceUser: string;
   /** Local VFS — needed to read/write ~/.ssh/known_hosts. */
-  localVfs?: { readFile: (p: string) => string | null; writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void };
+  localVfs?: {
+    readFile: (p: string) => string | null;
+    writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
+    resolveInode?: (p: string) => unknown;
+    mkdirp?: (p: string, perm: number, uid: number, gid: number) => boolean;
+  };
   /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
   sourceHome?: string;
 }
@@ -207,6 +212,11 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
   }
   if (!found) {
     entries.push(new SshKnownHostEntry({ hostnames: [ip], keyType, publicKey }));
+    // mkdirp ~/.ssh if missing so the writeFile doesn't fail silently.
+    const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
+    if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
+      opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);
+    }
     opts.localVfs.writeFile(knownHostsPath, SshKnownHostEntry.serializeFile(entries), 0, 0, 0o022);
   }
   return false;

@@ -25,6 +25,8 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmd
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
+import { findHostByAddress } from './network/HostLookup';
+import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -192,6 +194,8 @@ export class LinuxCommandExecutor {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
           this.vfs.writeFile(p, c, uid, gid, umask),
+        resolveInode: (p: string) => this.vfs.resolveInode(p),
+        mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
       },
     };
   }
@@ -204,7 +208,6 @@ export class LinuxCommandExecutor {
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
     const host = args.find(a => !a.startsWith('-'));
     if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
-    const { findHostByAddress } = require('./network/HostLookup') as typeof import('./network/HostLookup');
     const found = findHostByAddress(host);
     if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
     const remoteVfs = (found.device as unknown as { executor: { vfs: { readFile: (p: string) => string | null } } }).executor?.vfs;
@@ -224,7 +227,6 @@ export class LinuxCommandExecutor {
     if (args[0] === '-R' && args[1]) {
       const home = this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`;
       const path = `${home}/.ssh/known_hosts`;
-      const { SshKnownHostEntry } = require('./network/SshKnownHostEntry') as typeof import('./network/SshKnownHostEntry');
       const existing = this.vfs.readFile(path) ?? '';
       const before = SshKnownHostEntry.parseFile(existing);
       const after = before.filter(e => !e.matches(args[1]));
