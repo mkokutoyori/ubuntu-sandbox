@@ -127,6 +127,70 @@ export class ProfileManager {
     return v === 'UNLIMITED' ? Infinity : parseFloat(v);
   }
 
+  // ── Password complexity verification ────────────────────────────
+  //
+  // Real Oracle ships a handful of PL/SQL verify functions in
+  // utlpwdmg.sql: ORA12C_VERIFY_FUNCTION, ORA12C_STRONG_VERIFY_FUNCTION,
+  // ORA12C_STIG_VERIFY_FUNCTION, and the legacy VERIFY_FUNCTION_11G.
+  // We implement them as deterministic in-engine predicates so that
+  // ALTER USER and CREATE USER refuse weak passwords whenever the
+  // profile demands it.
+
+  resolvePasswordVerifyFunction(profileName: string): string {
+    return this.resolveLimit(profileName, 'PASSWORD_VERIFY_FUNCTION').toUpperCase();
+  }
+
+  /**
+   * Validate a password against the profile's verify function. Returns
+   * `null` on success, or the precise ORA-message Oracle would emit.
+   */
+  verifyPassword(profileName: string, username: string, password: string): string | null {
+    const fn = this.resolvePasswordVerifyFunction(profileName);
+    if (fn === 'NULL' || fn === 'DEFAULT' || fn === '') return null;
+    return ProfileManager.runBuiltinVerifier(fn, username, password);
+  }
+
+  private static runBuiltinVerifier(fn: string, username: string, password: string): string | null {
+    const u = username.toUpperCase();
+    const p = password;
+    // All built-in verifiers require a non-empty value distinct from the
+    // username and the company name token.
+    if (!p) return 'ORA-28003: password verification for the specified password failed (empty password)';
+    if (p.toUpperCase() === u) return 'ORA-28003: password verification for the specified password failed (password equals username)';
+
+    const hasUpper = /[A-Z]/.test(p);
+    const hasLower = /[a-z]/.test(p);
+    const hasDigit = /\d/.test(p);
+    const hasSpec  = /[^A-Za-z0-9]/.test(p);
+
+    switch (fn) {
+      case 'ORA12C_VERIFY_FUNCTION':
+        if (p.length < 8) return 'ORA-28003: password verification for the specified password failed (length < 8)';
+        if (!(hasUpper && hasLower && hasDigit)) {
+          return 'ORA-28003: password verification for the specified password failed (must mix upper/lower/digit)';
+        }
+        return null;
+      case 'ORA12C_STRONG_VERIFY_FUNCTION':
+      case 'ORA12C_STIG_VERIFY_FUNCTION':
+        if (p.length < 9) return 'ORA-28003: password verification for the specified password failed (length < 9)';
+        if (!hasUpper || !hasLower || !hasDigit || !hasSpec) {
+          return 'ORA-28003: password verification for the specified password failed (must mix upper/lower/digit/special)';
+        }
+        return null;
+      case 'VERIFY_FUNCTION_11G':
+        if (p.length < 8) return 'ORA-28003: password verification for the specified password failed (length < 8)';
+        if (!hasDigit && !hasSpec) {
+          return 'ORA-28003: password verification for the specified password failed (must contain digit or special)';
+        }
+        return null;
+      default:
+        // Unknown verifier — accept rather than refuse; matches Oracle
+        // behaviour when the function does not exist (would actually
+        // raise ORA-04042, but blocking here is worse).
+        return null;
+    }
+  }
+
   // ── DBA_PROFILES rows ────────────────────────────────────────────
 
   /** Return all rows suitable for DBA_PROFILES. */

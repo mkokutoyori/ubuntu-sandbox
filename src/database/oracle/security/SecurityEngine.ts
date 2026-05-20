@@ -164,6 +164,13 @@ export class SecurityEngine {
   ): { ok: boolean; error?: string } {
     const upper = username.toUpperCase();
 
+    // Complexity check (PASSWORD_VERIFY_FUNCTION) runs first — Oracle
+    // refuses to even consider reuse if the verifier rejects the value.
+    const verifierError = this.profiles.verifyPassword(profileName, upper, newPassword);
+    if (verifierError) {
+      return { ok: false, error: verifierError };
+    }
+
     const reuseTime = this.profiles.resolvePasswordReuseTime(profileName);
     const reuseMax = this.profiles.resolvePasswordReuseMax(profileName);
 
@@ -176,6 +183,11 @@ export class SecurityEngine {
 
     this.passwords.setPassword(upper, newPassword);
     return { ok: true };
+  }
+
+  /** Standalone verifier check — used by CREATE USER. */
+  verifyPasswordForProfile(username: string, password: string, profileName: string): string | null {
+    return this.profiles.verifyPassword(profileName, username, password);
   }
 
   // ── Quota ────────────────────────────────────────────────────────

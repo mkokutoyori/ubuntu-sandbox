@@ -2827,6 +2827,13 @@ export class OracleExecutor extends BaseExecutor {
     }
     const username = stmt.username.toUpperCase();
     const authType = stmt.authenticationKind ?? (stmt.password ? 'PASSWORD' : 'PASSWORD');
+    // Reject weak passwords up-front when the chosen profile carries a
+    // PASSWORD_VERIFY_FUNCTION. Real Oracle calls the verifier before
+    // creating the row, so the user is never persisted.
+    if (authType === 'PASSWORD' && stmt.password) {
+      const verifierError = catalog.getSecurityEngine()?.verifyPasswordForProfile(username, stmt.password, profileName);
+      if (verifierError) throw new OracleError(28003, verifierError.replace(/^ORA-28003:\s*/, ''));
+    }
     catalog.createUser({
       username,
       userId: catalog.allocateUserId(),
