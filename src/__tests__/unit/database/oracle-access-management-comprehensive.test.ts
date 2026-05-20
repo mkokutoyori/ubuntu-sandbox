@@ -1514,46 +1514,51 @@ describe('29. Negative paths — privilege denial and bad input', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('30. Reporting and forensic queries', () => {
-  it('Produces typical compliance / security-officer reports', () => {
-    const cases: Case[] = [
-      // Top privileged users
-      { sql: "SELECT grantee, COUNT(*) AS priv_count FROM dba_sys_privs GROUP BY grantee ORDER BY priv_count DESC FETCH FIRST 10 ROWS ONLY;", want: { not: /ORA-/ } },
-      { sql: "SELECT username FROM dba_users WHERE username IN (SELECT grantee FROM dba_role_privs WHERE granted_role = 'DBA');",         want: { not: /ORA-/ } },
-      // Users without any system privilege
-      { sql: "SELECT u.username FROM dba_users u WHERE NOT EXISTS (SELECT 1 FROM dba_sys_privs s WHERE s.grantee = u.username) ORDER BY 1;", want: { not: /ORA-/ } },
-      // Users granted SELECT ANY TABLE — high-risk
-      { sql: "SELECT grantee FROM dba_sys_privs WHERE privilege = 'SELECT ANY TABLE';",                                                    want: { not: /ORA-/ } },
-      // Users granted WITH ADMIN OPTION
-      { sql: "SELECT grantee, privilege FROM dba_sys_privs WHERE admin_option = 'YES';",                                                    want: { not: /ORA-/ } },
-      { sql: "SELECT grantee, granted_role FROM dba_role_privs WHERE admin_option = 'YES';",                                                want: { not: /ORA-/ } },
-      // Users granted WITH GRANT OPTION on HR.EMPLOYEES
-      { sql: "SELECT grantee, privilege FROM dba_tab_privs WHERE owner = 'HR' AND table_name = 'EMPLOYEES' AND grantable = 'YES';",        want: { not: /ORA-/ } },
-      // Audited high-risk privileges
-      { sql: "SELECT privilege FROM dba_priv_audit_opts WHERE proxy_name IS NULL;",                                                        want: { not: /ORA-/ } },
-      // Recent password changes
-      { sql: "SELECT username, ptime FROM sys.user$ WHERE ptime > SYSDATE - 30;",                                                          want: /ORA-(00942|01031)/ },
-      // Account states snapshot
-      { sql: "SELECT account_status, COUNT(*) FROM dba_users GROUP BY account_status ORDER BY 2 DESC;",                                    want: { not: /ORA-/ } },
-      { sql: "SELECT profile, COUNT(*) FROM dba_users GROUP BY profile ORDER BY 2 DESC;",                                                  want: { not: /ORA-/ } },
-      // Inactive accounts (no recent audit activity)
-      { sql: "SELECT u.username FROM dba_users u WHERE NOT EXISTS (SELECT 1 FROM dba_audit_trail t WHERE t.username = u.username AND t.timestamp > SYSDATE - 30);", want: { not: /ORA-/ } },
-      // Most active audited operations
-      { sql: "SELECT action_name, COUNT(*) FROM dba_audit_trail GROUP BY action_name ORDER BY 2 DESC FETCH FIRST 10 ROWS ONLY;",            want: { not: /ORA-/ } },
-      // Roles with the most members
-      { sql: "SELECT granted_role, COUNT(*) FROM dba_role_privs GROUP BY granted_role ORDER BY 2 DESC FETCH FIRST 10 ROWS ONLY;",          want: { not: /ORA-/ } },
-      // Users with default tablespace = SYSTEM (anti-pattern)
-      { sql: "SELECT username FROM dba_users WHERE default_tablespace = 'SYSTEM';",                                                       want: { not: /ORA-/ } },
-      // Users with UNLIMITED quota on data tablespaces
-      { sql: "SELECT username, tablespace_name FROM dba_ts_quotas WHERE max_bytes = -1;",                                                  want: { not: /ORA-/ } },
-      // Listener access summary
-      { sql: "SELECT * FROM v$listener_network FETCH FIRST 5 ROWS ONLY;",                                                                    want: { not: /ORA-/ } },
-      // Cross-reference: every privilege bob has by direct grant or via role
-      { sql: "SELECT 'DIRECT' src, privilege FROM dba_sys_privs WHERE grantee = 'BOB' UNION ALL SELECT 'ROLE', p.privilege FROM dba_role_privs r JOIN dba_sys_privs p ON p.grantee = r.granted_role WHERE r.grantee = 'BOB';", want: { not: /ORA-/ } },
-      // Encrypted columns inventory
-      { sql: "SELECT owner, table_name, COUNT(*) FROM dba_encrypted_columns GROUP BY owner, table_name;",                                  want: { not: /ORA-/ } },
-      // FGA / RLS inventory
-      { sql: "SELECT object_owner, object_name, policy_name FROM dba_policies;",                                                            want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Top privileged users.
+    { sql: "SELECT COUNT(*) FROM (SELECT grantee FROM dba_sys_privs GROUP BY grantee);",                                                      want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE granted_role = 'DBA';",                                                                  want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT username FROM dba_users WHERE username IN (SELECT grantee FROM dba_role_privs WHERE granted_role = 'DBA') AND username = 'SYS';", want: /^\s*SYS\s*$/m },
+    // Users without any system privilege — must include PUBLIC at minimum.
+    { sql: "SELECT COUNT(*) FROM dba_users u WHERE NOT EXISTS (SELECT 1 FROM dba_sys_privs s WHERE s.grantee = u.username);",                  want: /^\s*\d+\s*$/m },
+    // SELECT ANY TABLE holders.
+    { sql: "SELECT COUNT(*) FROM dba_sys_privs WHERE privilege = 'SELECT ANY TABLE';",                                                          want: /^\s*\d+\s*$/m },
+    // WITH ADMIN OPTION inventory.
+    { sql: "SELECT grantee FROM dba_sys_privs WHERE admin_option = 'YES' AND grantee = 'HEIDI' AND privilege = 'CREATE TABLE';",              want: /\bHEIDI\b/ },
+    { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE admin_option = 'YES';",                                                                  want: /^\s*[1-9]\d*\s*$/m },
+    // WITH GRANT OPTION on HR.EMPLOYEES.
+    { sql: "SELECT COUNT(*) FROM dba_tab_privs WHERE owner = 'HR' AND table_name = 'EMPLOYEES' AND grantable = 'YES';",                       want: /^\s*[0-9]+\s*$/m },
+    // Audited high-risk privileges.
+    { sql: "SELECT COUNT(*) FROM dba_priv_audit_opts;",                                                                                          want: /^\s*\d+\s*$/m },
+    // SYS.USER\$ access from non-SYS should fail. We're still SYS here so we expect rows.
+    { sql: "SELECT COUNT(*) FROM sys.user\$ WHERE name = 'SYS';",                                                                                want: /^\s*1\s*$/m },
+    // Account-state snapshot.
+    { sql: "SELECT COUNT(*) FROM (SELECT account_status FROM dba_users GROUP BY account_status);",                                              want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM (SELECT profile FROM dba_users GROUP BY profile);",                                                            want: /^\s*[1-9]\d*\s*$/m },
+    // Inactive accounts.
+    { sql: "SELECT COUNT(*) FROM dba_users u WHERE NOT EXISTS (SELECT 1 FROM dba_audit_trail t WHERE t.username = u.username AND t.timestamp > SYSDATE - 30);", want: /^\s*\d+\s*$/m },
+    // Most active audited operations.
+    { sql: "SELECT COUNT(*) FROM (SELECT action_name FROM dba_audit_trail GROUP BY action_name);",                                              want: /^\s*\d+\s*$/m },
+    // Roles with the most members.
+    { sql: "SELECT COUNT(*) FROM (SELECT granted_role FROM dba_role_privs GROUP BY granted_role);",                                              want: /^\s*[1-9]\d*\s*$/m },
+    // Users with SYSTEM as default tablespace — anti-pattern, expect zero among ours.
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'ALICE' AND default_tablespace = 'SYSTEM';",                                       want: /^\s*0\s*$/m },
+    // UNLIMITED quota grantees.
+    { sql: "SELECT COUNT(*) FROM dba_ts_quotas WHERE max_bytes = -1 AND username = 'CAROL';",                                                  want: /^\s*1\s*$/m },
+    // Listener network surface.
+    { sql: 'SELECT network_name FROM v$listener_network FETCH FIRST 5 ROWS ONLY;',                                                              want: /\bNETWORK_NAME\b/i },
+    // Cross-reference: BOB's full effective privilege set must include CREATE SESSION.
+    { sql: "SELECT COUNT(*) FROM (SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB' UNION SELECT p.privilege FROM dba_role_privs r JOIN dba_sys_privs p ON p.grantee = r.granted_role WHERE r.grantee = 'BOB') WHERE privilege = 'CREATE SESSION';", want: /^\s*1\s*$/m },
+    // Encrypted columns inventory.
+    { sql: "SELECT COUNT(*) FROM dba_encrypted_columns WHERE owner = 'HR';",                                                                    want: /^\s*\d+\s*$/m },
+    // FGA / RLS inventory.
+    { sql: "SELECT COUNT(*) FROM dba_policies;",                                                                                                  want: /^\s*\d+\s*$/m },
+  ])('§30: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
+
