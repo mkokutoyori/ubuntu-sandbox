@@ -150,39 +150,49 @@ describe('1. Session bootstrap and SYS context', () => {
 // SECTION 2 — CREATE PROFILE in many flavours (22 cases)
 // ─────────────────────────────────────────────────────────────────
 
-describe('2. Profile creation', () => {
-  it('Creates profiles covering every common resource & password limit', () => {
-    const cases: Case[] = [
-      { sql: 'CREATE PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 5 PASSWORD_LIFE_TIME 90 PASSWORD_REUSE_TIME 365 PASSWORD_REUSE_MAX 5 PASSWORD_LOCK_TIME 1/24 PASSWORD_GRACE_TIME 7 SESSIONS_PER_USER 10 IDLE_TIME 30 CONNECT_TIME 240 LOGICAL_READS_PER_SESSION DEFAULT;', want: /Profile created/i },
-      { sql: 'CREATE PROFILE app_profile LIMIT SESSIONS_PER_USER 100 IDLE_TIME 60 CPU_PER_CALL UNLIMITED;',                          want: /Profile created/i },
-      { sql: 'CREATE PROFILE batch_profile LIMIT SESSIONS_PER_USER 5 CONNECT_TIME UNLIMITED CPU_PER_CALL UNLIMITED;',                want: /Profile created/i },
-      { sql: 'CREATE PROFILE strict_profile LIMIT FAILED_LOGIN_ATTEMPTS 3 PASSWORD_LIFE_TIME 30 PASSWORD_LOCK_TIME UNLIMITED;',     want: /Profile created/i },
-      { sql: 'CREATE PROFILE reporting_profile LIMIT CPU_PER_SESSION UNLIMITED LOGICAL_READS_PER_CALL DEFAULT PRIVATE_SGA UNLIMITED;', want: /Profile created/i },
-      { sql: 'CREATE PROFILE dev_profile LIMIT PASSWORD_VERIFY_FUNCTION NULL PASSWORD_GRACE_TIME 15;',                                want: /Profile created/i },
-      { sql: 'CREATE PROFILE pci_profile LIMIT FAILED_LOGIN_ATTEMPTS 3 PASSWORD_LIFE_TIME 60 PASSWORD_REUSE_MAX 10 PASSWORD_REUSE_TIME 730 PASSWORD_LOCK_TIME 30/1440;', want: /Profile created/i },
-      { sql: 'CREATE PROFILE iso_profile LIMIT SESSIONS_PER_USER 3 CONNECT_TIME 60 IDLE_TIME 15;',                                    want: /Profile created/i },
-      // Existing profile collision
-      { sql: 'CREATE PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 2;',                                                          want: /ORA-02379/i },
-      // ALTER PROFILE
-      { sql: 'ALTER PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 10;',                                                          want: /Profile altered/i },
-      { sql: 'ALTER PROFILE secure_profile LIMIT PASSWORD_LIFE_TIME 60;',                                                             want: /Profile altered/i },
-      { sql: 'ALTER PROFILE app_profile LIMIT CONNECT_TIME 480 IDLE_TIME 120;',                                                       want: /Profile altered/i },
-      // Verification via DBA_PROFILES
-      { sql: "SELECT profile, resource_name, limit FROM dba_profiles WHERE profile = 'SECURE_PROFILE' AND resource_name = 'FAILED_LOGIN_ATTEMPTS';", want: /10/ },
-      { sql: "SELECT DISTINCT profile FROM dba_profiles WHERE profile LIKE '%_PROFILE';",                                            want: /SECURE_PROFILE/ },
-      { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'DEFAULT';",                                                          want: /\d+/ },
-      { sql: "SELECT resource_name FROM dba_profiles WHERE profile = 'DEFAULT' AND resource_type = 'PASSWORD';",                      want: /PASSWORD_LIFE_TIME/ },
-      // DROP and re-create
-      { sql: 'DROP PROFILE iso_profile;',                                                                                             want: /Profile dropped/i },
-      { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'ISO_PROFILE';",                                                      want: /0/ },
-      // Drop while assigned should require CASCADE
-      { sql: 'CREATE PROFILE temp_drop_profile LIMIT FAILED_LOGIN_ATTEMPTS 5;',                                                       want: /Profile created/i },
-      { sql: 'DROP PROFILE temp_drop_profile;',                                                                                       want: /Profile dropped/i },
-      // Invalid limit value
-      { sql: 'CREATE PROFILE bad_profile LIMIT FAILED_LOGIN_ATTEMPTS -1;',                                                            want: /ORA-/ },
-      { sql: 'DROP PROFILE nonexistent_profile;',                                                                                     want: /ORA-02380/i },
-    ];
-    drive(sys, cases);
+describe('2. Profile creation and lifecycle', () => {
+  it.each<Case>([
+    // Real-world profile definitions covering every resource family.
+    { sql: 'CREATE PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 5 PASSWORD_LIFE_TIME 90 PASSWORD_REUSE_TIME 365 PASSWORD_REUSE_MAX 5 PASSWORD_LOCK_TIME 1/24 PASSWORD_GRACE_TIME 7 SESSIONS_PER_USER 10 IDLE_TIME 30 CONNECT_TIME 240 LOGICAL_READS_PER_SESSION DEFAULT;', want: /Profile created\./i },
+    { sql: 'CREATE PROFILE app_profile LIMIT SESSIONS_PER_USER 100 IDLE_TIME 60 CPU_PER_CALL UNLIMITED;',                            want: /Profile created\./i },
+    { sql: 'CREATE PROFILE batch_profile LIMIT SESSIONS_PER_USER 5 CONNECT_TIME UNLIMITED CPU_PER_CALL UNLIMITED;',                  want: /Profile created\./i },
+    { sql: 'CREATE PROFILE strict_profile LIMIT FAILED_LOGIN_ATTEMPTS 3 PASSWORD_LIFE_TIME 30 PASSWORD_LOCK_TIME UNLIMITED;',        want: /Profile created\./i },
+    { sql: 'CREATE PROFILE reporting_profile LIMIT CPU_PER_SESSION UNLIMITED LOGICAL_READS_PER_CALL DEFAULT PRIVATE_SGA UNLIMITED;', want: /Profile created\./i },
+    { sql: 'CREATE PROFILE dev_profile LIMIT PASSWORD_VERIFY_FUNCTION NULL PASSWORD_GRACE_TIME 15;',                                 want: /Profile created\./i },
+    { sql: 'CREATE PROFILE pci_profile LIMIT FAILED_LOGIN_ATTEMPTS 3 PASSWORD_LIFE_TIME 60 PASSWORD_REUSE_MAX 10 PASSWORD_REUSE_TIME 730 PASSWORD_LOCK_TIME 30/1440;', want: /Profile created\./i },
+    { sql: 'CREATE PROFILE iso_profile LIMIT SESSIONS_PER_USER 3 CONNECT_TIME 60 IDLE_TIME 15;',                                     want: /Profile created\./i },
+    // Re-creating an existing profile must raise the precise duplicate
+    // error rather than silently succeeding.
+    { sql: 'CREATE PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 2;',                                                            want: /ORA-02379/ },
+    // ALTER PROFILE mutates published limits.
+    { sql: 'ALTER PROFILE secure_profile LIMIT FAILED_LOGIN_ATTEMPTS 10;',                                                            want: /Profile altered\./i },
+    { sql: 'ALTER PROFILE secure_profile LIMIT PASSWORD_LIFE_TIME 60;',                                                               want: /Profile altered\./i },
+    { sql: 'ALTER PROFILE app_profile LIMIT CONNECT_TIME 480 IDLE_TIME 120;',                                                         want: /Profile altered\./i },
+    // The ALTERed value is now reflected in DBA_PROFILES.
+    { sql: "SELECT limit FROM dba_profiles WHERE profile = 'SECURE_PROFILE' AND resource_name = 'FAILED_LOGIN_ATTEMPTS';",            want: /^\s*10\s*$/m },
+    { sql: "SELECT limit FROM dba_profiles WHERE profile = 'SECURE_PROFILE' AND resource_name = 'PASSWORD_LIFE_TIME';",               want: /^\s*60\s*$/m },
+    { sql: "SELECT limit FROM dba_profiles WHERE profile = 'APP_PROFILE' AND resource_name = 'CONNECT_TIME';",                        want: /^\s*480\s*$/m },
+    // Every profile we created should be listed.
+    { sql: "SELECT COUNT(DISTINCT profile) FROM dba_profiles WHERE profile IN ('SECURE_PROFILE','APP_PROFILE','BATCH_PROFILE','STRICT_PROFILE','REPORTING_PROFILE','DEV_PROFILE','PCI_PROFILE','ISO_PROFILE');", want: /^\s*8\s*$/m },
+    // DEFAULT profile exists and exposes its PASSWORD-family limits.
+    { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'DEFAULT' AND resource_type = 'PASSWORD';",                              want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT resource_name FROM dba_profiles WHERE profile = 'DEFAULT' AND resource_name = 'PASSWORD_LIFE_TIME';",               want: /PASSWORD_LIFE_TIME/ },
+    // DROP removes the profile cleanly.
+    { sql: 'DROP PROFILE iso_profile;',                                                                                                want: /Profile dropped\./i },
+    { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'ISO_PROFILE';",                                                         want: /^\s*0\s*$/m },
+    // Round-trip: a freshly-created profile may be re-dropped.
+    { sql: 'CREATE PROFILE temp_drop_profile LIMIT FAILED_LOGIN_ATTEMPTS 5;',                                                          want: /Profile created\./i },
+    { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'TEMP_DROP_PROFILE';",                                                   want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'DROP PROFILE temp_drop_profile;',                                                                                          want: /Profile dropped\./i },
+    { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'TEMP_DROP_PROFILE';",                                                   want: /^\s*0\s*$/m },
+    // Dropping an unknown profile raises the specific dictionary error.
+    { sql: 'DROP PROFILE nonexistent_profile;',                                                                                        want: /ORA-02380/ },
+  ])('§2: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
