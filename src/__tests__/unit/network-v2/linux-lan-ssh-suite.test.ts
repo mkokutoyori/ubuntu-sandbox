@@ -1012,3 +1012,57 @@ describe('§15 — service ↔ process table reactive coherence', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 16 — pstree presentation and rooting on init ─────────────
+
+describe('§16 — pstree process tree presentation', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'pstree starts at systemd as the root',
+      on: l => l.pc1,
+      cmd: 'pstree',
+      contains: [/^systemd/m],
+    },
+    {
+      name: 'pstree -p shows PIDs in parentheses next to each comm',
+      on: l => l.pc1,
+      cmd: 'pstree -p',
+      contains: [/systemd\(1\)/],
+    },
+    {
+      name: 'pstree includes branch glyphs ├─ and └─',
+      on: l => l.pc1,
+      cmd: 'pstree',
+      contains: [/├─/, /└─/],
+    },
+    {
+      name: 'pstree -s 1 shows the chain up from PID 1',
+      on: l => l.pc1,
+      cmd: 'pstree -s 1',
+      contains: ['systemd'],
+    },
+    {
+      name: 'pstree on a non-existent PID reports "no process found"',
+      on: l => l.pc1,
+      cmd: 'pstree -p 999999',
+      contains: [/no process found|No such process/i],
+    },
+    {
+      name: 'on srv1 with Oracle started, pstree -p shows ora_pmon under systemd',
+      setup: async (l) => {
+        // touching the database boots the instance and emits the bg-process events
+        await l.srv1.executeCommand('sqlplus / as sysdba');
+      },
+      on: l => l.srv1,
+      cmd: 'pstree -p',
+      contains: [/ora_pmon/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
