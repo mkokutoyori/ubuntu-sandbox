@@ -535,53 +535,62 @@ describe('8. Role-to-user / role-to-role grants', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('9. ALTER USER — every realistic alteration', () => {
-  it('Alters identification, account state, quotas, profile, and default roles', () => {
-    const cases: Case[] = [
-      { sql: 'ALTER USER alice IDENTIFIED BY "NewPass1#";',                                                                            want: /User altered/i },
-      { sql: "ALTER USER alice IDENTIFIED BY \"Replace1#\" REPLACE \"NewPass1#\";",                                                   want: /User altered/i },
-      { sql: "ALTER USER frank IDENTIFIED BY VALUES 'S:F1A0B2C3D4E5F60718293A4B5C6D7E8F9A0B1C2D3E4F50617283:HASH';",                  want: /User altered/i },
-      { sql: 'ALTER USER bob ACCOUNT LOCK;',                                                                                          want: /User altered/i },
-      { sql: 'ALTER USER bob ACCOUNT UNLOCK;',                                                                                        want: /User altered/i },
-      { sql: 'ALTER USER eve PASSWORD EXPIRE;',                                                                                       want: /User altered/i },
-      { sql: 'ALTER USER alice PROFILE secure_profile;',                                                                              want: /User altered/i },
-      { sql: 'ALTER USER bob PROFILE app_profile;',                                                                                   want: /User altered/i },
-      { sql: 'ALTER USER batch_user PROFILE batch_profile;',                                                                          want: /User altered/i },
-      { sql: 'ALTER USER alice QUOTA 100M ON users;',                                                                                 want: /User altered/i },
-      { sql: 'ALTER USER bob QUOTA 500M ON users;',                                                                                   want: /User altered/i },
-      { sql: 'ALTER USER carol QUOTA UNLIMITED ON users;',                                                                            want: /User altered/i },
-      { sql: 'ALTER USER dave QUOTA 0 ON users;',                                                                                     want: /User altered/i },
-      { sql: 'ALTER USER alice IDENTIFIED EXTERNALLY;',                                                                               want: /User altered/i },
-      { sql: 'ALTER USER alice IDENTIFIED BY "ReturnPwd1#";',                                                                         want: /User altered/i },
-      { sql: 'ALTER USER alice DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp;',                                                  want: /User altered/i },
-      { sql: 'ALTER USER alice DEFAULT ROLE CONNECT;',                                                                                want: /User altered/i },
-      { sql: 'ALTER USER alice DEFAULT ROLE NONE;',                                                                                   want: /User altered/i },
-      { sql: 'ALTER USER alice DEFAULT ROLE ALL;',                                                                                    want: /User altered/i },
-      { sql: 'ALTER USER alice DEFAULT ROLE ALL EXCEPT developer_role;',                                                              want: /User altered/i },
-      { sql: 'ALTER USER alice DEFAULT ROLE CONNECT, RESOURCE;',                                                                      want: /User altered/i },
-      // Proxy auth
-      { sql: 'ALTER USER alice GRANT CONNECT THROUGH bob;',                                                                           want: /User altered/i },
-      { sql: 'ALTER USER alice GRANT CONNECT THROUGH bob WITH ROLE app_role;',                                                        want: /User altered/i },
-      { sql: 'ALTER USER alice REVOKE CONNECT THROUGH bob;',                                                                          want: /User altered/i },
-      // Non-existent user
-      { sql: 'ALTER USER nonexistent IDENTIFIED BY x;',                                                                                want: /ORA-01918/i },
-      // SYS protection
-      { sql: 'ALTER USER sys IDENTIFIED BY "anything";',                                                                              want: /(User altered|ORA-)/i },
-      // Verification
-      { sql: "SELECT account_status FROM dba_users WHERE username = 'EVE';",                                                          want: /EXPIRED/ },
-      { sql: "SELECT profile FROM dba_users WHERE username = 'ALICE';",                                                               want: /SECURE_PROFILE/ },
-      { sql: "SELECT username, default_tablespace FROM dba_users WHERE username = 'ALICE';",                                          want: /USERS/i },
-      { sql: "SELECT username, temporary_tablespace FROM dba_users WHERE username = 'ALICE';",                                        want: /TEMP/i },
-      { sql: "SELECT max_bytes FROM dba_ts_quotas WHERE username = 'CAROL';",                                                         want: /-1/ },
-      { sql: "SELECT max_bytes FROM dba_ts_quotas WHERE username = 'ALICE';",                                                         want: /104857600/ },
-      { sql: "SELECT username FROM dba_users WHERE username = 'BOB';",                                                                want: /BOB/ },
-      { sql: "SELECT proxy, client FROM proxy_users WHERE client = 'ALICE';",                                                          want: { not: /BOB/ } },
-      { sql: "SELECT COUNT(*) FROM proxy_users;",                                                                                      want: /\d+/ },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Identification mutations.
+    { sql: 'ALTER USER alice IDENTIFIED BY "NewPass1#";',                                                       want: /User altered\./i },
+    { sql: 'ALTER USER alice IDENTIFIED BY "Replace1#" REPLACE "NewPass1#";',                                   want: /User altered\./i },
+    { sql: "ALTER USER frank IDENTIFIED BY VALUES 'S:F1A0B2C3D4E5F60718293A4B5C6D7E8F9A0B1C2D3E4F50617283:HASH';", want: /User altered\./i },
+    // Account state mutations.
+    { sql: 'ALTER USER bob ACCOUNT LOCK;',                                                                      want: /User altered\./i },
+    { sql: 'ALTER USER bob ACCOUNT UNLOCK;',                                                                    want: /User altered\./i },
+    { sql: 'ALTER USER eve PASSWORD EXPIRE;',                                                                   want: /User altered\./i },
+    // Profile reassignment.
+    { sql: 'ALTER USER alice PROFILE secure_profile;',                                                          want: /User altered\./i },
+    { sql: 'ALTER USER bob PROFILE app_profile;',                                                               want: /User altered\./i },
+    { sql: 'ALTER USER batch_user PROFILE batch_profile;',                                                      want: /User altered\./i },
+    // Quota management.
+    { sql: 'ALTER USER alice QUOTA 100M ON users;',                                                             want: /User altered\./i },
+    { sql: 'ALTER USER bob QUOTA 500M ON users;',                                                               want: /User altered\./i },
+    { sql: 'ALTER USER carol QUOTA UNLIMITED ON users;',                                                        want: /User altered\./i },
+    { sql: 'ALTER USER dave QUOTA 0 ON users;',                                                                 want: /User altered\./i },
+    // Switching to external auth then back to password auth.
+    { sql: 'ALTER USER alice IDENTIFIED EXTERNALLY;',                                                           want: /User altered\./i },
+    { sql: 'ALTER USER alice IDENTIFIED BY "ReturnPwd1#";',                                                     want: /User altered\./i },
+    // Default tablespaces.
+    { sql: 'ALTER USER alice DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp;',                              want: /User altered\./i },
+    // DEFAULT ROLE in every shape.
+    { sql: 'ALTER USER alice DEFAULT ROLE CONNECT;',                                                            want: /User altered\./i },
+    { sql: 'ALTER USER alice DEFAULT ROLE NONE;',                                                               want: /User altered\./i },
+    { sql: 'ALTER USER alice DEFAULT ROLE ALL;',                                                                want: /User altered\./i },
+    { sql: 'ALTER USER alice DEFAULT ROLE ALL EXCEPT developer_role;',                                          want: /User altered\./i },
+    { sql: 'ALTER USER alice DEFAULT ROLE CONNECT, RESOURCE;',                                                  want: /User altered\./i },
+    // Proxy authentication wire-up.
+    { sql: 'ALTER USER alice GRANT CONNECT THROUGH bob;',                                                       want: /User altered\./i },
+    { sql: 'ALTER USER alice GRANT CONNECT THROUGH bob WITH ROLE app_role;',                                    want: /User altered\./i },
+    { sql: 'ALTER USER alice REVOKE CONNECT THROUGH bob;',                                                      want: /User altered\./i },
+    // Negative paths — must surface the specific ORA codes.
+    { sql: 'ALTER USER nonexistent IDENTIFIED BY x;',                                                            want: /ORA-(01918|00988)/ },
+    { sql: 'ALTER USER alice QUOTA 100Q ON users;',                                                              want: /ORA-(00910|00972|02180)/ },
+    // Dictionary verification — committed values.
+    { sql: "SELECT account_status FROM dba_users WHERE username = 'EVE';",                                       want: /\bEXPIRED\b/ },
+    { sql: "SELECT profile FROM dba_users WHERE username = 'ALICE';",                                            want: /\bSECURE_PROFILE\b/ },
+    { sql: "SELECT default_tablespace FROM dba_users WHERE username = 'ALICE';",                                 want: /\bUSERS\b/i },
+    { sql: "SELECT temporary_tablespace FROM dba_users WHERE username = 'ALICE';",                               want: /\bTEMP\b/i },
+    { sql: "SELECT max_bytes FROM dba_ts_quotas WHERE username = 'CAROL' AND tablespace_name = 'USERS';",        want: /^\s*-1\s*$/m },
+    { sql: "SELECT max_bytes FROM dba_ts_quotas WHERE username = 'ALICE' AND tablespace_name = 'USERS';",        want: /^\s*104857600\s*$/m },
+    { sql: "SELECT max_bytes FROM dba_ts_quotas WHERE username = 'DAVE' AND tablespace_name = 'USERS';",         want: /^\s*0\s*$/m },
+    { sql: "SELECT account_status FROM dba_users WHERE username = 'BOB';",                                       want: /\bOPEN\b/ },
+    // Proxy was granted then revoked — final state is no rows.
+    { sql: "SELECT COUNT(*) FROM proxy_users WHERE client = 'ALICE' AND proxy = 'BOB';",                         want: /^\s*0\s*$/m },
+  ])('§9: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 10 — Object creation & manipulation (35 cases)
 // ─────────────────────────────────────────────────────────────────
 
