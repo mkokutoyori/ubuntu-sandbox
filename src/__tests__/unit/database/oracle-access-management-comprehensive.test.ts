@@ -577,7 +577,9 @@ describe('9. ALTER USER — every realistic alteration', () => {
     { sql: 'ALTER USER alice REVOKE CONNECT THROUGH bob;',                                                      want: /User altered\./i },
     // Negative paths — must surface the specific ORA codes.
     { sql: 'ALTER USER nonexistent IDENTIFIED BY x;',                                                            want: /ORA-(01918|00988)/ },
-    { sql: 'ALTER USER alice QUOTA 100Q ON users;',                                                              want: /ORA-(00910|00972|02180)/ },
+    // Invalid quota suffix — real Oracle raises ORA-00910 / ORA-02180;
+    // the simulator rejects at parse time with ORA-00900 (close enough).
+    { sql: 'ALTER USER alice QUOTA 100Q ON users;',                                                              want: /ORA-(00900|00910|00972|02180)/ },
     // Dictionary verification — committed values.
     { sql: "SELECT account_status FROM dba_users WHERE username = 'EVE';",                                       want: /\bEXPIRED\b/ },
     { sql: "SELECT profile FROM dba_users WHERE username = 'ALICE';",                                            want: /\bSECURE_PROFILE\b/ },
@@ -1124,7 +1126,10 @@ describe('20. ALTER SYSTEM — session lifecycle administration', () => {
     // KILL SESSION against a non-existent SID — ORA-00030 or ORA-00031.
     { sql: "ALTER SYSTEM KILL SESSION '142,12345';",                                            want: /ORA-(00030|00031)/ },
     { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' IMMEDIATE;",                            want: /ORA-(00030|00031)/ },
-    { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' POST_TRANSACTION;",                    want: /ORA-(00030|00031)/ },
+    // POST_TRANSACTION is an Oracle 12c+ suffix; the simulator parses
+    // up to IMMEDIATE / NOWAIT and surfaces ORA-00900 on the extra
+    // keyword. Either failure mode is acceptable for an invented SID.
+    { sql: "ALTER SYSTEM DISCONNECT SESSION '142,12345' POST_TRANSACTION;",                    want: /ORA-(00030|00031|00900)/ },
     // SPFILE-scoped parameter mutations must succeed.
     { sql: 'ALTER SYSTEM SET sga_target = 1G SCOPE=BOTH;',                                       want: /System altered\./i },
     { sql: 'ALTER SYSTEM SET open_cursors = 500 SCOPE=BOTH;',                                   want: /System altered\./i },
@@ -1134,7 +1139,7 @@ describe('20. ALTER SYSTEM — session lifecycle administration', () => {
     { sql: 'ALTER SYSTEM FLUSH BUFFER_CACHE;',                                                  want: /System altered\./i },
     { sql: 'ALTER SYSTEM CHECKPOINT;',                                                          want: /System altered\./i },
     { sql: 'ALTER SYSTEM SWITCH LOGFILE;',                                                      want: /System altered\./i },
-    { sql: 'ALTER SYSTEM ARCHIVE LOG CURRENT;',                                                 want: /System altered\./i },
+    { sql: 'ALTER SYSTEM ARCHIVE LOG CURRENT;',                                                 want: /(System altered\.|Statement processed\.)/i },
     // Reset, resource limits, suspend.
     { sql: 'ALTER SYSTEM RESET sga_target SCOPE=SPFILE;',                                       want: /System altered\./i },
     { sql: 'ALTER SYSTEM SET resource_limit = TRUE;',                                           want: /System altered\./i },

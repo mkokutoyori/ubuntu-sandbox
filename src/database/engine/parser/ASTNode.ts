@@ -489,6 +489,12 @@ export interface RevokeStatement extends ASTNode {
   grantees: string[];
   grantee: string;
   privilegeColumns?: Record<string, string[]>;
+  /**
+   * Present when the statement is `REVOKE {ADMIN|GRANT} OPTION FOR p
+   * FROM g` — the privilege itself is preserved, only the option is
+   * stripped from the dictionary row.
+   */
+  strippingOption?: 'ADMIN' | 'GRANT';
 }
 
 // ── User/Role Management ────────────────────────────────────────────

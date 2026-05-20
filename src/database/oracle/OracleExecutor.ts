@@ -2426,8 +2426,9 @@ export class OracleExecutor extends BaseExecutor {
         }
         target.name = newUpper;
         // Migrate stored row keys when rows are dict-keyed.
-        for (const row of meta.rows) {
-          if (Object.prototype.hasOwnProperty.call(row, oldUpper)) {
+        const rows = this.storage.getRows?.(schema, tableName) ?? [];
+        for (const row of rows) {
+          if (row && Object.prototype.hasOwnProperty.call(row, oldUpper)) {
             (row as Record<string, unknown>)[newUpper] = (row as Record<string, unknown>)[oldUpper];
             delete (row as Record<string, unknown>)[oldUpper];
           }
@@ -2902,6 +2903,32 @@ export class OracleExecutor extends BaseExecutor {
       if (!catalog.userExists(gUpper) && !catalog.roleExists(gUpper)) {
         throw new OracleError(1917, `user or role '${gUpper}' does not exist`);
       }
+    }
+    // REVOKE {ADMIN|GRANT} OPTION FOR — only strip the option flag,
+    // keep the underlying privilege row.
+    if (stmt.strippingOption) {
+      const sysPrivs = (this.catalog as OracleCatalog & { sysPrivileges?: { grantee: string; privilege: string; grantable: boolean }[] }).sysPrivileges ?? [];
+      const tabPrivs = (this.catalog as OracleCatalog & { tabPrivileges: { grantee: string; privilege: string; grantable: boolean; objectSchema: string; objectName: string }[] }).tabPrivileges;
+      const roleGrants = (this.catalog as OracleCatalog & { roleGrants?: { grantee: string; role: string; adminOption: boolean }[] }).roleGrants ?? [];
+      for (const grantee of grantees) {
+        const g = grantee.toUpperCase();
+        for (const priv of stmt.privileges) {
+          const p = priv.toUpperCase();
+          if (stmt.objectName) {
+            const schema = (stmt.objectSchema ?? this.context.currentSchema).toUpperCase();
+            const objName = stmt.objectName.toUpperCase();
+            const row = tabPrivs.find(x => x.grantee === g && x.privilege === p && x.objectSchema === schema && x.objectName === objName);
+            if (row) row.grantable = false;
+          } else if (catalog.roleExists(p)) {
+            const row = roleGrants.find(r => r.grantee === g && r.role === p);
+            if (row) row.adminOption = false;
+          } else {
+            const row = sysPrivs.find(r => r.grantee === g && r.privilege === p);
+            if (row) row.grantable = false;
+          }
+        }
+      }
+      return emptyResult('Revoke succeeded.');
     }
     if (stmt.objectName) {
       const schema = stmt.objectSchema || this.context.currentSchema;

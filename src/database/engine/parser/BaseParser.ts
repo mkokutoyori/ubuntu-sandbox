@@ -1638,6 +1638,19 @@ export abstract class BaseParser {
   protected parseRevoke(): import('./ASTNode').RevokeStatement {
     const pos = this.current().position;
     this.expectKeyword('REVOKE');
+    // Optional `ADMIN OPTION FOR` / `GRANT OPTION FOR` prefix — strips
+    // the WITH-ADMIN/WITH-GRANT flag from the existing grant rather
+    // than removing the grant itself.
+    let strippingOption: 'ADMIN' | 'GRANT' | undefined;
+    if (this.matchKeyword('ADMIN')) {
+      this.expectKeyword('OPTION');
+      this.expectKeyword('FOR');
+      strippingOption = 'ADMIN';
+    } else if (this.matchKeyword('GRANT')) {
+      this.expectKeyword('OPTION');
+      this.expectKeyword('FOR');
+      strippingOption = 'GRANT';
+    }
     const { privileges, privilegeColumns } = this.parsePrivilegeListWithColumns();
     let objectName: string | undefined;
     let objectSchema: string | undefined;
@@ -1647,7 +1660,7 @@ export abstract class BaseParser {
     }
     this.expectKeyword('FROM');
     const grantees = this.parseIdentifierList();
-    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0] };
+    return { type: 'RevokeStatement', position: pos, privileges, privilegeColumns, objectSchema, objectName, grantees, grantee: grantees[0], strippingOption };
   }
 
   /**
