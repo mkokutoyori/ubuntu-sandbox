@@ -459,29 +459,38 @@ describe('6. GRANT object privileges', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('7. Column-level GRANT / REVOKE', () => {
-  it('Manages SELECT/UPDATE/INSERT on individual columns', () => {
-    const cases: Case[] = [
-      { sql: 'GRANT SELECT (employee_id, first_name) ON hr.employees TO dev_team;',                                                   want: /Grant succeeded/i },
-      { sql: 'GRANT UPDATE (salary) ON hr.employees TO grace;',                                                                       want: /Grant succeeded/i },
-      { sql: 'GRANT INSERT (department_id, department_name) ON hr.departments TO eve;',                                              want: /Grant succeeded/i },
-      { sql: 'GRANT REFERENCES (employee_id) ON hr.employees TO frank;',                                                              want: /Grant succeeded/i },
-      { sql: 'GRANT SELECT (deptno, dname) ON scott.dept TO heidi;',                                                                  want: /Grant succeeded/i },
-      // Verification
-      { sql: "SELECT column_name, privilege FROM dba_col_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'DEV_TEAM';",             want: /FIRST_NAME/ },
-      { sql: "SELECT column_name, privilege FROM dba_col_privs WHERE grantee = 'GRACE' AND privilege = 'UPDATE';",                    want: /SALARY/ },
-      { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'EVE';",                                                              want: /2/ },
-      // REVOKE column-level
-      { sql: 'REVOKE UPDATE (salary) ON hr.employees FROM grace;',                                                                    want: /Revoke succeeded/i },
-      { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'GRACE' AND privilege = 'UPDATE';",                                  want: /0/ },
-      // Unknown column
-      { sql: 'GRANT SELECT (nonexistent_col) ON hr.employees TO eve;',                                                                want: /ORA-/ },
-      { sql: 'GRANT SELECT (employee_id, first_name, last_name, email) ON hr.employees TO PUBLIC;',                                  want: /Grant succeeded/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // SELECT / UPDATE / INSERT / REFERENCES on a named column list.
+    { sql: 'GRANT SELECT (employee_id, first_name) ON hr.employees TO dev_team;',           want: /Grant succeeded\./i },
+    { sql: 'GRANT UPDATE (salary) ON hr.employees TO grace;',                               want: /Grant succeeded\./i },
+    { sql: 'GRANT INSERT (department_id, department_name) ON hr.departments TO eve;',       want: /Grant succeeded\./i },
+    { sql: 'GRANT REFERENCES (employee_id) ON hr.employees TO frank;',                      want: /Grant succeeded\./i },
+    { sql: 'GRANT SELECT (deptno, dname) ON scott.dept TO heidi;',                          want: /Grant succeeded\./i },
+    // Dictionary surfaces exactly the columns + privileges we granted.
+    { sql: "SELECT column_name FROM dba_col_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'DEV_TEAM' AND column_name = 'FIRST_NAME';", want: /^\s*FIRST_NAME\s*$/m },
+    { sql: "SELECT column_name FROM dba_col_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'DEV_TEAM' AND column_name = 'EMPLOYEE_ID';", want: /^\s*EMPLOYEE_ID\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'DEV_TEAM';",                                    want: /^\s*2\s*$/m },
+    { sql: "SELECT column_name FROM dba_col_privs WHERE grantee = 'GRACE' AND privilege = 'UPDATE';",                                        want: /^\s*SALARY\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'EVE' AND table_name = 'DEPARTMENTS' AND privilege = 'INSERT';",              want: /^\s*2\s*$/m },
+    { sql: "SELECT column_name FROM dba_col_privs WHERE grantee = 'FRANK' AND privilege = 'REFERENCES';",                                    want: /^\s*EMPLOYEE_ID\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE owner = 'SCOTT' AND grantee = 'HEIDI';",                                                want: /^\s*2\s*$/m },
+    // REVOKE column-level rolls back exactly one grant.
+    { sql: 'REVOKE UPDATE (salary) ON hr.employees FROM grace;',                                                                              want: /Revoke succeeded\./i },
+    { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE grantee = 'GRACE' AND privilege = 'UPDATE';",                                            want: /^\s*0\s*$/m },
+    // Unknown column → ORA-00904 (invalid identifier).
+    { sql: 'GRANT SELECT (nonexistent_col) ON hr.employees TO eve;',                                                                          want: /ORA-00904/ },
+    // PUBLIC column grant.
+    { sql: 'GRANT SELECT (employee_id, first_name, last_name, email) ON hr.employees TO PUBLIC;',                                            want: /Grant succeeded\./i },
+    { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'PUBLIC';",                                       want: /^\s*4\s*$/m },
+  ])('§7: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 8 — Role grants (composition) (20 cases)
 // ─────────────────────────────────────────────────────────────────
 
