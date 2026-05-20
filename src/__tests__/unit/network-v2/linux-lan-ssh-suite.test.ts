@@ -1858,3 +1858,70 @@ describe('§28 — ssh exec mode: remote command execution', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 29 — known_hosts handling ─────────────────────────────────
+
+describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'first ssh appends a known_hosts entry for the remote',
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      on: l => l.pc1,
+      cmd: 'cat /root/.ssh/known_hosts',
+      contains: [/^10\.0\.0\.2 ssh-(ed25519|rsa) /m],
+    },
+    {
+      name: 'second ssh to the same host reuses the entry (no prompt)',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+      },
+      on: l => l.pc1,
+      cmd: 'wc -l /root/.ssh/known_hosts',
+      contains: [/^\s*1\s/],
+    },
+    {
+      name: 'ssh-keyscan host prints the remote host keys',
+      on: l => l.pc1,
+      cmd: 'ssh-keyscan 10.0.0.2',
+      contains: [/^10\.0\.0\.2 ssh-(ed25519|rsa) /m],
+    },
+    {
+      name: 'changed host key triggers a "REMOTE HOST IDENTIFICATION HAS CHANGED!" warning',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        // simulate key rotation on the remote
+        await l.pc2.executeCommand('rm /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
+        await l.pc2.executeCommand('ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q');
+        await l.pc2.executeCommand('systemctl restart ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/REMOTE HOST IDENTIFICATION HAS CHANGED!/],
+    },
+    {
+      name: 'ssh-keygen -R 10.0.0.2 removes the offending entry',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh-keygen -R 10.0.0.2');
+      },
+      on: l => l.pc1,
+      cmd: 'cat /root/.ssh/known_hosts',
+      excludes: ['10.0.0.2'],
+    },
+    {
+      name: 'StrictHostKeyChecking=no auto-accepts without warning',
+      on: l => l.pc1,
+      cmd: 'ssh -o StrictHostKeyChecking=no alice@10.0.0.3',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/authenticity|fingerprint check failed/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
