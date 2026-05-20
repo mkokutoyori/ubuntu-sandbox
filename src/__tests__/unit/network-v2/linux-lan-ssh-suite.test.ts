@@ -1251,3 +1251,69 @@ describe('§19 — interface down / network unreachable', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 20 — firewall (iptables/ufw) blocking port 22 ────────────
+
+describe('§20 — firewall rules blocking port 22', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'iptables -A INPUT -p tcp --dport 22 -j DROP refuses ssh',
+      setup: (l) => { void l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Connection timed out|No route to host|refused/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'iptables -A INPUT -s 10.0.0.1 -j DROP blocks only pc1',
+      setup: (l) => { void l.pc2.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP'); },
+      on: l => l.pc3,  // pc3 should still reach pc2
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'ufw deny 22 has the same effect as iptables DROP on 22',
+      setup: async (l) => {
+        await l.pc2.executeCommand('ufw enable');
+        await l.pc2.executeCommand('ufw deny 22');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/refused|timed out|unreachable/i],
+    },
+    {
+      name: 'iptables -F restores connectivity',
+      setup: async (l) => {
+        await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
+        await l.pc2.executeCommand('iptables -F');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'iptables -L INPUT lists the DROP rule we added',
+      setup: (l) => { void l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      on: l => l.pc2,
+      cmd: 'iptables -L INPUT -n',
+      contains: [/DROP\s+tcp.*dpt:22/],
+    },
+    {
+      name: 'ufw status shows enabled + rule list',
+      setup: async (l) => {
+        await l.pc2.executeCommand('ufw enable');
+        await l.pc2.executeCommand('ufw deny 22');
+      },
+      on: l => l.pc2,
+      cmd: 'ufw status',
+      contains: [/Status: active/, /22.*DENY/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
