@@ -26,6 +26,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
+import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, SubnetMask } from '../../core/types';
 
 // ─── Per-device IPv6 state (WeakMap keyed by ctx.ports for test isolation) ──
@@ -239,8 +240,10 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
     return handleNetshHttp(ctx, args.slice(1));
   }
 
-  // netsh advfirewall ...
+  // netsh advfirewall ... — requires the Windows Firewall service (mpssvc).
   if (args[0].toLowerCase() === 'advfirewall') {
+    const gate = requireWindowsService(ctx, 'mpssvc');
+    if (!gate.ok) return gate.error;
     return handleNetshAdvfirewall(args.slice(1));
   }
 

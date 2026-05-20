@@ -22,6 +22,9 @@ import type { SocketTable } from '../../core/SocketTable';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { LinuxJobTable } from './jobs/LinuxJobTable';
+import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
+import { runSshClient } from './network/LinuxSshClient';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -55,6 +58,8 @@ export class LinuxCommandExecutor {
   private env: Map<string, string> = new Map();
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
+  /** caller-supplied PID → OS-managed PID, so unregisterProcess can find the spawn back. */
+  private _externalToOsPid: Map<number, number> = new Map();
   // Stack for su sessions: stores previous user context
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
@@ -65,6 +70,8 @@ export class LinuxCommandExecutor {
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
   private shellPpid = 0;
+  /** Per-shell job control table; populated by `cmd &`. */
+  private jobTable = new LinuxJobTable();
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -134,6 +141,17 @@ export class LinuxCommandExecutor {
     this.ipNetworkCtx = ctx;
   }
 
+  /** First non-loopback IPv4 address configured on this machine. */
+  private firstConfiguredIp(): string | null {
+    if (!this.ipNetworkCtx) return null;
+    for (const name of this.ipNetworkCtx.getInterfaceNames()) {
+      if (name === 'lo') continue;
+      const info = this.ipNetworkCtx.getInterfaceInfo(name);
+      if (info?.ip) return info.ip;
+    }
+    return null;
+  }
+
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
@@ -143,17 +161,29 @@ export class LinuxCommandExecutor {
   registerProcess(pid: number, user: string, command: string): void {
     this._systemProcesses.set(pid, { user, command, startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) });
     // Also surface this in the real process table so ps/top see it.
-    if (!this.processMgr.get(pid)) {
+    // The OS-managed PID differs from the caller-supplied one, so we
+    // remember the mapping for unregisterProcess to clean up later.
+    if (!this._externalToOsPid.has(pid)) {
       const uid = user === 'root' ? 0 : 1;
-      this.processMgr.spawn({ command, user, uid, gid: uid });
+      const proc = this.processMgr.spawn({ command, user, uid, gid: uid });
+      this._externalToOsPid.set(pid, proc.pid);
     }
+  }
+
+  /** Unregister a previously externally-registered process. */
+  unregisterProcess(externalPid: number): boolean {
+    const osPid = this._externalToOsPid.get(externalPid);
+    if (osPid !== undefined) this.processMgr.kill(osPid, 'SIGKILL');
+    this._externalToOsPid.delete(externalPid);
+    return this._systemProcesses.delete(externalPid);
   }
 
   /** Clear all registered system processes */
   clearSystemProcesses(): void {
-    for (const pid of this._systemProcesses.keys()) {
-      this.processMgr.kill(pid, 'SIGKILL');
+    for (const osPid of this._externalToOsPid.values()) {
+      this.processMgr.kill(osPid, 'SIGKILL');
     }
+    this._externalToOsPid.clear();
     this._systemProcesses.clear();
   }
 
@@ -166,6 +196,96 @@ export class LinuxCommandExecutor {
       tty: 'pts/0',
       shellPid: this.shellPid,
     };
+  }
+
+  /** Context for job builtins (jobs/bg/fg/wait/disown/pstree). */
+  private jobsCmdContext() {
+    return { pm: this.processMgr, jobs: this.jobTable };
+  }
+
+  /**
+   * Pre-scan the input for trailing `&` and, if present, treat the
+   * preceding command as a background job: spawn a process entry,
+   * register the job, and return the announcement.
+   *
+   * Returns null when the input is not a backgrounded command.
+   */
+  private handleBackgroundIfTrailing(input: string): string | null {
+    if (!endsWithUnquotedAmp(input)) return null;
+    let cmdLine = input.replace(/\s*&\s*$/, '').trim();
+    if (!cmdLine) return null;
+
+    // `nohup CMD &` — strip the nohup wrapper and detach from the shell.
+    let nohup = false;
+    if (/^nohup\s+/.test(cmdLine)) {
+      nohup = true;
+      cmdLine = cmdLine.replace(/^nohup\s+/, '');
+    }
+
+    const argv = simpleTokenize(cmdLine);
+    if (argv.length === 0) return null;
+    const c = this.ctx();
+    const proc = this.processMgr.spawn({
+      command: cmdLine,
+      comm: basenameOf(argv[0]),
+      user: this.userMgr.currentUser,
+      uid: c.uid,
+      gid: c.gid,
+      ppid: nohup ? 1 : this.shellPid,
+      tty: nohup ? '?' : 'pts/0',
+      cwd: this.cwd,
+    });
+    const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    const lines: string[] = [];
+    if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
+    lines.push(`[${job.id}] ${proc.pid}`);
+    return lines.join('\n');
+  }
+
+  /**
+   * Intercept job-control builtins and pstree so they bypass the bash
+   * interpreter (which doesn't know about them). Returns null when the
+   * input is not one of these commands.
+   */
+  private runJobBuiltinIfMatching(input: string): string | null {
+    const argv = simpleTokenize(input);
+    if (argv.length === 0) return null;
+    const cmd = argv[0];
+    const args = argv.slice(1);
+    const ctx = this.jobsCmdContext();
+    switch (cmd) {
+      case 'jobs':   return cmdJobs(args, ctx).output;
+      case 'fg':     return cmdFg(args, ctx).output;
+      case 'bg':     return cmdBg(args, ctx).output;
+      case 'wait':   return cmdWait(args, ctx).output;
+      case 'disown': return cmdDisown(args, ctx).output;
+      case 'pstree': return cmdPstree(args, ctx).output;
+      case 'kill': {
+        // Bash resolves %jobspec before invoking kill(2). Do the same so
+        // we can also drop the corresponding job from the table.
+        return this.runKillWithJobspecs(args);
+      }
+      default: return null;
+    }
+  }
+
+  /** kill with %jobspec support — drops resolved jobs from the table. */
+  private runKillWithJobspecs(args: string[]): string {
+    const resolved: string[] = [];
+    const droppedJobIds: number[] = [];
+    for (const a of args) {
+      if (a.startsWith('%')) {
+        const j = this.jobTable.resolve(a);
+        if (!j) return `bash: kill: ${a}: no such job`;
+        resolved.push(String(j.pid));
+        droppedJobIds.push(j.id);
+      } else {
+        resolved.push(a);
+      }
+    }
+    const r = cmdKill(resolved, this.processCmdContext());
+    if (r.exitCode === 0) droppedJobIds.forEach(id => this.jobTable.remove(id));
+    return r.output;
   }
 
   private ctx(): ShellContext {
@@ -189,6 +309,14 @@ export class LinuxCommandExecutor {
 
     // Track command in history (store the raw input, like bash)
     this.commandHistory.push(trimmed);
+
+    // Intercept builtins that the bash interpreter doesn't know about.
+    const builtin = this.runJobBuiltinIfMatching(trimmed);
+    if (builtin !== null) return builtin;
+
+    // Handle top-level background `cmd &` (and `nohup cmd &`).
+    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
+    if (bgHandled !== null) return bgHandled;
 
     // Route through the bash interpreter for full bash syntax support
     const io = this.buildIOContext();
@@ -781,9 +909,14 @@ export class LinuxCommandExecutor {
         return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
       }
       case 'ssh': {
-        const host = args.filter(a => !a.startsWith('-'))[0];
-        if (!host) return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
-        return { output: `ssh: connect to host ${host} port 22: Connection refused`, exitCode: 255 };
+        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
+        return runSshClient({
+          args,
+          sourceHostname: hostname,
+          sourceIp,
+          sourceUser: this.userMgr.currentUser,
+        });
       }
       case 'ssh-add':
         return this.handleSshAdd(args);
@@ -1644,4 +1777,62 @@ export class LinuxCommandExecutor {
 
     return matches.sort();
   }
+}
+
+// ─── small parsing helpers (kept private to this file) ────────────────
+
+/**
+ * True when the input ends with an unquoted `&` that is not part of
+ * `&&`. Used to detect a backgrounded command.
+ */
+function endsWithUnquotedAmp(input: string): boolean {
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  let lastAmpAt = -1;
+  let prevCh = '';
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    if (escaped) { escaped = false; prevCh = c; continue; }
+    if (c === '\\' && quote !== "'") { escaped = true; prevCh = c; continue; }
+    if (quote) {
+      if (c === quote) quote = null;
+      prevCh = c; continue;
+    }
+    if (c === '"' || c === "'") { quote = c; prevCh = c; continue; }
+    if (c === '&' && prevCh !== '&' && input[i + 1] !== '&') {
+      lastAmpAt = i;
+    }
+    prevCh = c;
+  }
+  if (lastAmpAt < 0) return false;
+  // Only treat as background if nothing but whitespace follows.
+  return /^\s*$/.test(input.slice(lastAmpAt + 1));
+}
+
+/** Minimal quote-aware tokenizer for the helpers above. */
+function simpleTokenize(input: string): string[] {
+  const out: string[] = [];
+  let buf = '';
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      else buf += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (/\s/.test(ch)) {
+      if (buf) { out.push(buf); buf = ''; }
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+function basenameOf(path: string): string {
+  const i = path.lastIndexOf('/');
+  return i >= 0 ? path.slice(i + 1) : path;
 }
