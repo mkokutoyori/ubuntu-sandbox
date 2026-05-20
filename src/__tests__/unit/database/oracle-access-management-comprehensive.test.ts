@@ -880,60 +880,61 @@ describe('14. Dictionary queries on users, roles, and privileges', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('15. Audit configuration', () => {
-  it('Sets up statement-level, object-level, FGA, and unified-audit policies', () => {
-    const cases: Case[] = [
-      // Statement-level
-      { sql: 'AUDIT CREATE SESSION;',                                                                                                  want: /Audit succeeded/i },
-      { sql: 'AUDIT CREATE TABLE BY ACCESS;',                                                                                          want: /Audit succeeded/i },
-      { sql: 'AUDIT ALTER USER BY SESSION;',                                                                                           want: /Audit succeeded/i },
-      { sql: 'AUDIT GRANT WHENEVER NOT SUCCESSFUL;',                                                                                    want: /Audit succeeded/i },
-      { sql: 'AUDIT DROP USER BY ops_user BY ACCESS;',                                                                                  want: /Audit succeeded/i },
-      { sql: 'AUDIT CREATE USER, ALTER USER, DROP USER;',                                                                              want: /Audit succeeded/i },
-      // Object-level
-      { sql: 'AUDIT SELECT, INSERT, UPDATE, DELETE ON hr.employees BY ACCESS;',                                                       want: /Audit succeeded/i },
-      { sql: 'AUDIT EXECUTE ON hr.add_employee;',                                                                                       want: /(Audit succeeded|ORA-)/i },
-      { sql: 'AUDIT ALL ON hr.departments;',                                                                                            want: /Audit succeeded/i },
-      // FGA via DBMS_FGA
-      { sql: "BEGIN DBMS_FGA.ADD_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_name=>'fga_hr_sal', audit_column=>'SALARY', statement_types=>'SELECT,UPDATE'); END;", want: /PL\/SQL procedure successfully completed/i },
-      { sql: "BEGIN DBMS_FGA.ADD_POLICY(object_schema=>'HR', object_name=>'DEPARTMENTS', policy_name=>'fga_hr_dept', audit_column=>'DEPARTMENT_NAME', statement_types=>'INSERT,DELETE'); END;", want: /PL\/SQL procedure successfully completed/i },
-      { sql: "BEGIN DBMS_FGA.ENABLE_POLICY('HR','EMPLOYEES','fga_hr_sal'); END;",                                                       want: /PL\/SQL/i },
-      { sql: "BEGIN DBMS_FGA.DISABLE_POLICY('HR','EMPLOYEES','fga_hr_sal'); END;",                                                      want: /PL\/SQL/i },
-      { sql: "BEGIN DBMS_FGA.DROP_POLICY('HR','DEPARTMENTS','fga_hr_dept'); END;",                                                       want: /PL\/SQL/i },
-      // Unified audit policies
-      { sql: 'CREATE AUDIT POLICY login_audit ACTIONS LOGON, LOGOFF;',                                                                 want: /Audit policy created/i },
-      { sql: 'CREATE AUDIT POLICY hr_audit ACTIONS UPDATE, DELETE ON hr.employees;',                                                  want: /Audit policy created/i },
-      { sql: 'CREATE AUDIT POLICY ddl_audit PRIVILEGES CREATE ANY TABLE, DROP ANY TABLE;',                                            want: /Audit policy created/i },
-      { sql: 'CREATE AUDIT POLICY all_role_grants ACTIONS GRANT, REVOKE;',                                                            want: /Audit policy created/i },
-      { sql: 'AUDIT POLICY login_audit;',                                                                                              want: /Audit succeeded/i },
-      { sql: 'AUDIT POLICY hr_audit BY alice, bob;',                                                                                   want: /Audit succeeded/i },
-      { sql: 'AUDIT POLICY ddl_audit EXCEPT carol;',                                                                                   want: /Audit succeeded/i },
-      { sql: 'AUDIT POLICY all_role_grants;',                                                                                          want: /Audit succeeded/i },
-      { sql: 'NOAUDIT POLICY login_audit;',                                                                                            want: /Noaudit succeeded/i },
-      { sql: 'DROP AUDIT POLICY all_role_grants;',                                                                                     want: /Audit policy dropped/i },
-      // Verification
-      { sql: "SELECT * FROM dba_priv_audit_opts FETCH FIRST 5 ROWS ONLY;",                                                              want: { not: /ORA-00942/ } },
-      { sql: "SELECT * FROM dba_stmt_audit_opts FETCH FIRST 5 ROWS ONLY;",                                                              want: { not: /ORA-00942/ } },
-      { sql: "SELECT * FROM dba_obj_audit_opts FETCH FIRST 5 ROWS ONLY;",                                                               want: { not: /ORA-00942/ } },
-      { sql: "SELECT policy_name FROM dba_audit_policies WHERE object_schema = 'HR' AND object_name = 'EMPLOYEES';",                  want: /FGA_HR_SAL/ },
-      { sql: "SELECT policy_name FROM audit_unified_policies WHERE policy_name = 'HR_AUDIT';",                                          want: /HR_AUDIT/ },
-      { sql: "SELECT policy_name, audit_option FROM audit_unified_policies WHERE policy_name = 'HR_AUDIT';",                            want: /UPDATE|DELETE/ },
-      { sql: "SELECT COUNT(*) FROM audit_unified_policies;",                                                                            want: /\d+/ },
-      // NOAUDIT
-      { sql: 'NOAUDIT SELECT ON hr.employees;',                                                                                         want: /Noaudit succeeded/i },
-      { sql: 'NOAUDIT CREATE TABLE;',                                                                                                   want: /Noaudit succeeded/i },
-      { sql: 'NOAUDIT ALTER USER;',                                                                                                    want: /Noaudit succeeded/i },
-      // Trigger an audited action
-      { sql: 'CREATE TABLE hr.audited_demo (x NUMBER);',                                                                                want: /Table created/i },
-      { sql: 'DROP TABLE hr.audited_demo PURGE;',                                                                                      want: /Table dropped/i },
-      // FGA log
-      { sql: "SELECT COUNT(*) FROM fga_log$;",                                                                                          want: { not: /ORA-00942/ } },
-      { sql: "SELECT * FROM dba_fga_audit_trail FETCH FIRST 5 ROWS ONLY;",                                                              want: { not: /ORA-00942/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Statement-level AUDIT with each by-mode and whenever clause.
+    { sql: 'AUDIT CREATE SESSION;',                                              want: /Audit succeeded\./i },
+    { sql: 'AUDIT CREATE TABLE BY ACCESS;',                                      want: /Audit succeeded\./i },
+    { sql: 'AUDIT ALTER USER BY SESSION;',                                       want: /Audit succeeded\./i },
+    { sql: 'AUDIT GRANT WHENEVER NOT SUCCESSFUL;',                               want: /Audit succeeded\./i },
+    { sql: 'AUDIT DROP USER BY ops_user BY ACCESS;',                             want: /Audit succeeded\./i },
+    { sql: 'AUDIT CREATE USER, ALTER USER, DROP USER;',                          want: /Audit succeeded\./i },
+    // Object-level AUDIT.
+    { sql: 'AUDIT SELECT, INSERT, UPDATE, DELETE ON hr.employees BY ACCESS;',    want: /Audit succeeded\./i },
+    { sql: 'AUDIT EXECUTE ON hr.add_employee;',                                  want: /Audit succeeded\./i },
+    { sql: 'AUDIT ALL ON hr.departments;',                                       want: /Audit succeeded\./i },
+    // Fine-grained audit (DBMS_FGA).
+    { sql: "BEGIN DBMS_FGA.ADD_POLICY(object_schema=>'HR', object_name=>'EMPLOYEES', policy_name=>'fga_hr_sal', audit_column=>'SALARY', statement_types=>'SELECT,UPDATE'); END;",         want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_FGA.ADD_POLICY(object_schema=>'HR', object_name=>'DEPARTMENTS', policy_name=>'fga_hr_dept', audit_column=>'DEPARTMENT_NAME', statement_types=>'INSERT,DELETE'); END;", want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_FGA.ENABLE_POLICY('HR','EMPLOYEES','fga_hr_sal'); END;",                                                                                                            want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_FGA.DISABLE_POLICY('HR','EMPLOYEES','fga_hr_sal'); END;",                                                                                                           want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "BEGIN DBMS_FGA.DROP_POLICY('HR','DEPARTMENTS','fga_hr_dept'); END;",                                                                                                            want: /PL\/SQL procedure successfully completed\./i },
+    // Unified audit policies — create, enable, disable, drop.
+    { sql: 'CREATE AUDIT POLICY login_audit ACTIONS LOGON, LOGOFF;',             want: /Audit policy created\./i },
+    { sql: 'CREATE AUDIT POLICY hr_audit ACTIONS UPDATE, DELETE ON hr.employees;',                          want: /Audit policy created\./i },
+    { sql: 'CREATE AUDIT POLICY ddl_audit PRIVILEGES CREATE ANY TABLE, DROP ANY TABLE;',                    want: /Audit policy created\./i },
+    { sql: 'CREATE AUDIT POLICY all_role_grants ACTIONS GRANT, REVOKE;',         want: /Audit policy created\./i },
+    { sql: 'AUDIT POLICY login_audit;',                                          want: /Audit succeeded\./i },
+    { sql: 'AUDIT POLICY hr_audit BY alice, bob;',                               want: /Audit succeeded\./i },
+    { sql: 'AUDIT POLICY ddl_audit EXCEPT carol;',                               want: /Audit succeeded\./i },
+    { sql: 'AUDIT POLICY all_role_grants;',                                      want: /Audit succeeded\./i },
+    { sql: 'NOAUDIT POLICY login_audit;',                                        want: /Noaudit succeeded\./i },
+    { sql: 'DROP AUDIT POLICY all_role_grants;',                                 want: /Audit policy dropped\./i },
+    // Verification — committed rows, not "no error".
+    { sql: "SELECT COUNT(*) FROM dba_stmt_audit_opts WHERE audit_option = 'CREATE SESSION';",            want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_priv_audit_opts WHERE privilege = 'GRANT ANY OBJECT PRIVILEGE';",   want: /^\s*\d+\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_obj_audit_opts WHERE owner = 'HR' AND object_name = 'EMPLOYEES';",  want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT policy_name FROM dba_audit_policies WHERE policy_name = 'FGA_HR_SAL';",               want: /^\s*FGA_HR_SAL\s*$/m },
+    { sql: "SELECT policy_name FROM audit_unified_policies WHERE policy_name = 'HR_AUDIT';",              want: /\bHR_AUDIT\b/ },
+    { sql: "SELECT COUNT(*) FROM audit_unified_policies WHERE policy_name = 'HR_AUDIT' AND audit_option IN ('UPDATE','DELETE');", want: /^\s*2\s*$/m },
+    { sql: "SELECT COUNT(*) FROM audit_unified_policies WHERE policy_name IN ('LOGIN_AUDIT','HR_AUDIT','DDL_AUDIT');",            want: /^\s*[3-9]\s*$/m },
+    // NOAUDIT removes the corresponding entries.
+    { sql: 'NOAUDIT SELECT ON hr.employees;',                                    want: /Noaudit succeeded\./i },
+    { sql: 'NOAUDIT CREATE TABLE;',                                              want: /Noaudit succeeded\./i },
+    { sql: 'NOAUDIT ALTER USER;',                                                want: /Noaudit succeeded\./i },
+    // Trigger an audited action — CREATE/DROP TABLE.
+    { sql: 'CREATE TABLE hr.audited_demo (x NUMBER);',                           want: /Table created\./i },
+    { sql: 'DROP TABLE hr.audited_demo PURGE;',                                  want: /Table dropped\./i },
+    // FGA log surface.
+    { sql: "SELECT COUNT(*) FROM dba_fga_audit_trail;",                          want: /^\s*\d+\s*$/m },
+  ])('§15: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 16 — Audit trail inspection (28 cases)
 // ─────────────────────────────────────────────────────────────────
 
