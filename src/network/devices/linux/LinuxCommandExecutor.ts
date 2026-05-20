@@ -75,6 +75,11 @@ export class LinuxCommandExecutor {
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
 
+  /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
+  _oracleBootstrap: ((args: string[]) => string | null) | null = null;
+  /** Optional Oracle listener hook — backs `lsnrctl`. */
+  _oracleListener: ((args: string[]) => string) | null = null;
+
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
@@ -1098,6 +1103,13 @@ export class LinuxCommandExecutor {
             exitCode: 0,
           };
         }
+        // Oracle Server profile: actually boot the instance the first
+        // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
+        // and lsnrctl status can read the listener state.
+        if (this.isServer && this._oracleBootstrap) {
+          const out = this._oracleBootstrap(args);
+          if (out !== null) return { output: out, exitCode: 0 };
+        }
         return {
           output:
             'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
@@ -1105,6 +1117,12 @@ export class LinuxCommandExecutor {
             'SP2-0157: unable to CONNECT to ORACLE after 3 attempts, exiting SQL*Plus',
           exitCode: 1,
         };
+      }
+      case 'lsnrctl': {
+        if (this.isServer && this._oracleListener) {
+          return { output: this._oracleListener(args), exitCode: 0 };
+        }
+        return { output: 'LSNRCTL: command not found on this host', exitCode: 1 };
       }
       case 'rman':
         return {

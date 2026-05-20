@@ -410,17 +410,15 @@ describe('§5 — SSH refused when remote sshd service is stopped', () => {
 
 // ─── Section 6 — SSH refused when sshd process is killed ──────────────
 
-describe('§6 — SSH refused when sshd process is killed directly', () => {
+describe('§6 — sshd process killed directly: supervisor brings it back', () => {
   let lan: Lan;
   beforeEach(() => { lan = buildLan(); });
 
   const rows: Row[] = [
     {
-      // ssh.service ships with Restart=on-failure (Ubuntu default), so
-      // the supervisor brings sshd back. Either outcome is realistic;
-      // we assert the service is observable in one of two coherent
-      // states (refused mid-restart OR resumed by the supervisor).
-      name: 'kill -9 of sshd PID briefly refuses or auto-restarts',
+      // ssh.service ships Restart=on-failure (Ubuntu default), so the
+      // reactive supervisor resurrects sshd after a SIGKILL.
+      name: 'kill -9 of sshd PID — supervisor restarts; subsequent ssh works',
       setup: async (l) => {
         const ps = await l.pc2.executeCommand('pgrep sshd');
         const pid = ps.trim().split(/\s+/)[0];
@@ -428,21 +426,24 @@ describe('§6 — SSH refused when sshd process is killed directly', () => {
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
-      contains: [/Welcome to Ubuntu|Connection refused/],
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Connection refused/],
     },
     {
-      name: 'pkill -f sshd has the same effect (refused or resumed)',
+      name: 'pkill -f sshd — same supervisor-driven recovery',
       setup: (l) => { void l.pc2.executeCommand('pkill -f sshd'); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
-      contains: [/Welcome to Ubuntu|Connection refused/],
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Connection refused/],
     },
     {
-      name: 'after pkill, systemctl status shows either active or failed',
+      name: 'after pkill, systemctl status reports active (running) again',
       setup: (l) => { void l.pc2.executeCommand('pkill -9 sshd'); },
       on: l => l.pc2,
       cmd: 'systemctl status ssh',
-      contains: [/Active:\s+(active \(running\)|inactive|failed)/],
+      contains: [/Active:\s+active \(running\)/],
+      excludes: [/failed/],
     },
     {
       name: 'after kill, restarting via systemctl restores service',
