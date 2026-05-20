@@ -1984,3 +1984,67 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 31 — /etc/passwd, /etc/shadow & user existence ───────────
+
+describe('§31 — user existence ↔ SSH login outcome', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh to an unknown remote user → Permission denied',
+      on: l => l.pc1,
+      cmd: 'ssh ghostuser@10.0.0.2',
+      contains: [/Permission denied/],
+      excludes: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'useradd alice on the remote makes alice loginable',
+      setup: async (l) => {
+        await l.pc2.executeCommand('userdel alice 2>/dev/null; useradd -m alice');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'userdel alice on the remote then ssh alice fails',
+      setup: (l) => { void l.pc2.executeCommand('userdel alice'); },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'locked account (passwd -l alice) is refused',
+      setup: async (l) => {
+        await l.pc2.executeCommand('useradd -m alice 2>/dev/null');
+        await l.pc2.executeCommand('passwd -l alice');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2',
+      contains: [/Permission denied|account locked/i],
+    },
+    {
+      name: '/etc/passwd reflects the user',
+      setup: (l) => { void l.pc2.executeCommand('useradd -m carol -s /bin/bash'); },
+      on: l => l.pc2,
+      cmd: 'getent passwd carol',
+      contains: [/^carol:x:\d+:\d+:.*:\/home\/carol:\/bin\/bash$/m],
+    },
+    {
+      name: 'expired shadow entry blocks login',
+      setup: async (l) => {
+        await l.pc2.executeCommand('useradd -m bob 2>/dev/null');
+        await l.pc2.executeCommand('chage -E 2020-01-01 bob');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh bob@10.0.0.2',
+      contains: [/expired|Permission denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
