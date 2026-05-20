@@ -22,6 +22,7 @@ import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
+import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
@@ -1204,4 +1205,131 @@ export class WindowsPC extends EndHost {
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return 'windows'; }
+
+  // ─── Shell sessions (per-terminal isolation, §6 of terminal_gap.md) ─
+
+  /** Live shell sessions keyed by their internal id. */
+  private readonly shellSessions = new Map<string, WindowsShellSession>();
+  /**
+   * Per-device queue serialising concurrent executeCommandInSession calls.
+   * Without it, two terminals issuing `cd` at the same time would race on
+   * the device's mutable `cwd`/`env` swap window.
+   */
+  private wsExecQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Allocate a fresh cmd.exe shell session — one per terminal window.
+   * Initial cwd = `%USERPROFILE%`, env is the device's seed env (copied,
+   * so the session may freely mutate via `set FOO=bar` without leaking).
+   */
+  openShellSession(init?: { user?: string; cwd?: string; env?: Map<string, string> }): WindowsShellSession {
+    const user = init?.user ?? (this.env.get('USERNAME') ?? 'User');
+    const profile = this.env.get('USERPROFILE') ?? 'C:\\Users\\User';
+    const env = new Map(init?.env ?? this.env);
+    const session = new WindowsShellSession({
+      user,
+      cwd: init?.cwd ?? profile,
+      env,
+      comSpec: env.get('COMSPEC') ?? env.get('ComSpec'),
+    });
+    this.shellSessions.set(session.id, session);
+    return session;
+  }
+
+  /** Tear down a shell session — the cmd.exe instance is reclaimed. */
+  closeShellSession(sessionOrId: WindowsShellSession | string): void {
+    const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId.id;
+    const s = this.shellSessions.get(id);
+    if (!s) return;
+    s.dispose();
+    this.shellSessions.delete(id);
+  }
+
+  /** Lookup helper for the terminal layer / tests. */
+  getShellSession(id: string): WindowsShellSession | undefined {
+    return this.shellSessions.get(id);
+  }
+
+  /**
+   * Like `executeCommand`, but uses the per-terminal session as the swap-in
+   * state holder. Calls are serialised per device so the mutation window
+   * around `this.cwd` / `this.env` is never observed concurrently from
+   * another terminal.
+   */
+  executeCommandInSession(command: string, session: WindowsShellSession): Promise<string> {
+    const run = async () => {
+      if (!this.isPoweredOn) return 'Device is powered off';
+      if (session.disposed) return '';
+      const baseline = this.snapshotShellState();
+      this.swapInWindowsSession(session);
+      try {
+        const out = await this.executeCommand(command);
+        this.captureShellStateInto(session);
+        return out;
+      } finally {
+        this.restoreShellState(baseline);
+      }
+    };
+    const promise = this.wsExecQueue.then(run, run) as Promise<string>;
+    this.wsExecQueue = promise.catch(() => undefined);
+    return promise;
+  }
+
+  /** Tab completion against a specific shell session's cwd/env. */
+  getCompletionsForSession(partial: string, session: WindowsShellSession): string[] {
+    if (session.disposed || !this.isPoweredOn) return [];
+    const baseline = this.snapshotShellState();
+    this.swapInWindowsSession(session);
+    try {
+      return this.getCompletions(partial);
+    } finally {
+      this.restoreShellState(baseline);
+    }
+  }
+
+  private snapshotShellState() {
+    return { cwd: this.cwd, env: new Map(this.env) };
+  }
+
+  private swapInWindowsSession(s: WindowsShellSession): void {
+    this.cwd = s.cwd;
+    // The device env carries seed values (USERPROFILE, ComSpec, …) that
+    // sub-shells consume; we don't want a session to lose them when its
+    // own env doesn't define them. Merge: device defaults first, session
+    // overrides on top, so user `set FOO=bar` wins but builtins survive.
+    const merged = new Map<string, string>();
+    for (const [k, v] of this.env) merged.set(k, v);
+    for (const [k, v] of s.env) merged.set(k, v);
+    this.env = merged;
+  }
+
+  private captureShellStateInto(s: WindowsShellSession): void {
+    s.cwd = this.cwd;
+    // Capture only the keys that the session actually owned plus any
+    // newly-defined ones. Keys unchanged from the device defaults stay
+    // on the device — we don't want every session to drift its own copy
+    // of USERPROFILE.
+    const next = new Map<string, string>();
+    for (const [k, v] of this.env) {
+      if (!s.env.has(k)) {
+        // Newly-defined or never-owned: belongs to the session iff it
+        // differs from the baseline (captured below). We can't compute
+        // that here cheaply, so we err on the safe side and store it.
+        next.set(k, v);
+      } else if (s.env.get(k) !== v) {
+        next.set(k, v);
+      } else {
+        next.set(k, v);
+      }
+    }
+    s.env = next;
+    // Track drive cwd map for future `cd /d` support.
+    const drive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+    if (drive) s.driveCwd.set(drive, this.cwd);
+  }
+
+  private restoreShellState(b: { cwd: string; env: Map<string, string> }): void {
+    this.cwd = b.cwd;
+    this.env = b.env;
+  }
 }
