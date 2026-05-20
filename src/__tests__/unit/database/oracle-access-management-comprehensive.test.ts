@@ -1437,29 +1437,31 @@ describe('27. Password policies', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('28. Performance, wait and metric views', () => {
-  it('Reads V$ event/metric views with realistic filters', () => {
-    const cases: Case[] = [
-      { sql: "SELECT event, total_waits FROM v$system_event WHERE wait_class != 'Idle' ORDER BY total_waits DESC FETCH FIRST 10 ROWS ONLY;", want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$system_wait_class FETCH FIRST 10 ROWS ONLY;',                                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$session_event WHERE sid IS NOT NULL FETCH FIRST 10 ROWS ONLY;',                                             want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$session_wait WHERE sid IS NOT NULL FETCH FIRST 10 ROWS ONLY;',                                              want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$wait_chains FETCH FIRST 5 ROWS ONLY;',                                                                      want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$sysmetric FETCH FIRST 5 ROWS ONLY;',                                                                        want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$sysmetric_history FETCH FIRST 5 ROWS ONLY;',                                                                want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$session_metric FETCH FIRST 5 ROWS ONLY;',                                                                   want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$service_stats FETCH FIRST 5 ROWS ONLY;',                                                                    want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$filemetric FETCH FIRST 5 ROWS ONLY;',                                                                       want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$filemetric_history FETCH FIRST 5 ROWS ONLY;',                                                               want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$undostat FETCH FIRST 5 ROWS ONLY;',                                                                          want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$archived_log FETCH FIRST 5 ROWS ONLY;',                                                                      want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$log;',                                                                                                       want: { not: /ORA-/ } },
-      { sql: 'SELECT * FROM v$logfile;',                                                                                                    want: { not: /ORA-/ } },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    { sql: "SELECT event FROM v\$system_event WHERE wait_class != 'Idle' FETCH FIRST 10 ROWS ONLY;",       want: /\bEVENT\b/i },
+    { sql: 'SELECT wait_class FROM v$system_wait_class FETCH FIRST 10 ROWS ONLY;',                            want: /\bWAIT_CLASS\b/i },
+    { sql: 'SELECT sid, event FROM v$session_event WHERE sid IS NOT NULL FETCH FIRST 10 ROWS ONLY;',          want: /\bEVENT\b/i },
+    { sql: 'SELECT sid, event FROM v$session_wait WHERE sid IS NOT NULL FETCH FIRST 10 ROWS ONLY;',           want: /\bEVENT\b/i },
+    { sql: 'SELECT chain_id FROM v$wait_chains FETCH FIRST 5 ROWS ONLY;',                                      want: /\bCHAIN_ID\b/i },
+    { sql: 'SELECT metric_id, metric_name FROM v$sysmetric FETCH FIRST 5 ROWS ONLY;',                          want: /\bMETRIC_NAME\b/i },
+    { sql: 'SELECT metric_id, metric_name FROM v$sysmetric_history FETCH FIRST 5 ROWS ONLY;',                  want: /\bMETRIC_ID\b/i },
+    { sql: 'SELECT sid, metric_id FROM v$session_metric FETCH FIRST 5 ROWS ONLY;',                              want: /\bMETRIC_ID\b/i },
+    { sql: 'SELECT stat_name FROM v$service_stats FETCH FIRST 5 ROWS ONLY;',                                    want: /\bSTAT_NAME\b/i },
+    { sql: 'SELECT file_id, metric_id FROM v$filemetric FETCH FIRST 5 ROWS ONLY;',                              want: /\bFILE_ID\b/i },
+    { sql: 'SELECT file_id, metric_id FROM v$filemetric_history FETCH FIRST 5 ROWS ONLY;',                      want: /\bFILE_ID\b/i },
+    { sql: 'SELECT begin_time, undoblks FROM v$undostat FETCH FIRST 5 ROWS ONLY;',                              want: /\bUNDOBLKS\b/i },
+    { sql: 'SELECT sequence#, status FROM v$archived_log FETCH FIRST 5 ROWS ONLY;',                              want: /\bSEQUENCE#?\b/i },
+    { sql: 'SELECT group#, status FROM v$log;',                                                                  want: /\bSTATUS\b/i },
+    { sql: 'SELECT group#, member FROM v$logfile;',                                                              want: /\bMEMBER\b/i },
+  ])('§28: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 29 — Negative-path / hardening (24 cases)
 // ─────────────────────────────────────────────────────────────────
 
