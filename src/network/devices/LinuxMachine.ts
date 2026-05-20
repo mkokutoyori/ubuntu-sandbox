@@ -64,6 +64,7 @@ import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { parseSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import { SshSessionTable } from './linux/network/SshSessionTable';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -210,12 +211,56 @@ export abstract class LinuxMachine extends EndHost {
    * Used by inbound SSH (this device) to log a login from a remote.
    */
   recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void {
-    const vfs = this.executor.vfs;
-    const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-    const verdict = accepted ? 'Accepted password' : 'Failed password';
-    const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
-    const existing = vfs.readFile('/var/log/auth.log') ?? '';
-    vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+    // Only write to auth.log when the local rsyslog is up — modelling
+    // the realistic dependency the suite exercises.
+    if (this.isServiceActive('rsyslog')) {
+      const vfs = this.executor.vfs;
+      const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+      const verdict = accepted ? 'Accepted password' : 'Failed password';
+      const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
+      const existing = vfs.readFile('/var/log/auth.log') ?? '';
+      vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+    }
+    // Track active sessions in the session table for `w`, `who`, `last`.
+    if (accepted) {
+      const userEntry = this.executor.userMgr.getUser(user);
+      const uid = userEntry?.uid ?? 1000;
+      this.sessionTable.open({
+        user, uid, sshdPid: 985 + this.sessionTable.list().length,
+        fromIp, fromHost,
+      });
+    }
+  }
+
+  /** Per-machine SSH session table — backs `w`, `who`, `last`. */
+  public readonly sessionTable = new SshSessionTable();
+
+  /**
+   * Match `w` / `who` / `last` invocations and render them from the
+   * live session table. Returns null when the command isn't one of
+   * them (so the normal pipeline handles it).
+   */
+  private renderSessionView(command: string): string | null {
+    const argv = command.split(/\s+/);
+    const cmd = argv[0];
+    if (cmd === 'w' && argv.length === 1) {
+      const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
+        `${this.sessionTable.list().length} users,  load average: 0.00, 0.00, 0.00\n` +
+        'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
+      const rows = this.sessionTable.list().map(s => s.toWRow());
+      return [header, ...rows].join('\n');
+    }
+    if (cmd === 'who' && argv.length === 1) {
+      return this.sessionTable.list().map(s =>
+        `${s.user.padEnd(8)} ${s.tty.padEnd(8)} ${s.loginAt.toISOString().slice(0, 16).replace('T', ' ')} (${s.fromIp})`,
+      ).join('\n');
+    }
+    if (cmd === 'last') {
+      const nIdx = argv.findIndex(a => a === '-n' || a === '--limit');
+      const limit = nIdx >= 0 ? Number.parseInt(argv[nIdx + 1] ?? '10', 10) : 10;
+      return this.sessionTable.recent(limit).map(s => s.toLastRow()).join('\n');
+    }
+    return null;
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
@@ -380,6 +425,11 @@ export abstract class LinuxMachine extends EndHost {
 
     const trimmed = command.trim();
     if (!trimmed) return '';
+
+    // Session-table views (`w`, `who`, `last`) override the legacy
+    // user-manager output because the session table is the live truth.
+    const sessionView = this.renderSessionView(trimmed);
+    if (sessionView !== null) return sessionView;
 
     // Fast path: no network command → straight to bash interpreter.
     if (!this.containsNetworkCommand(trimmed)) {
