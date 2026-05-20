@@ -1653,3 +1653,71 @@ describe('§25 — full end-to-end audit story', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 26 — SSH public-key authentication ───────────────────────
+
+describe('§26 — SSH public-key authentication', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh-keygen creates ~/.ssh/id_ed25519 and .pub',
+      on: l => l.pc1,
+      cmd: 'ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q',
+      contains: [''],
+      excludes: [/error|failed/i],
+    },
+    {
+      name: 'after keygen, both private and public files exist with 0600 / 0644',
+      setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q'); },
+      on: l => l.pc1,
+      cmd: 'ls -l /root/.ssh/',
+      contains: [/-rw-------\s+\d+\s+root\s+root.*id_ed25519$/m, /-rw-r--r--.*id_ed25519\.pub/],
+    },
+    {
+      name: 'ssh-copy-id installs the public key on the remote',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
+      },
+      on: l => l.pc2,
+      cmd: 'cat /home/alice/.ssh/authorized_keys',
+      contains: [/^ssh-ed25519 /m],
+    },
+    {
+      name: 'subsequent ssh uses public-key auth (Accepted publickey line)',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+      },
+      on: l => l.pc2,
+      cmd: 'tail -1 /var/log/auth.log',
+      contains: [/Accepted publickey for alice/],
+    },
+    {
+      name: 'PubkeyAuthentication no in sshd_config blocks pubkey login',
+      setup: async (l) => {
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.pc2.executeCommand('printf "PubkeyAuthentication no\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2',
+      contains: [/Permission denied \(publickey\)/],
+    },
+    {
+      name: 'ssh-keygen -y -f reads the private key and prints the public form',
+      setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q'); },
+      on: l => l.pc1,
+      cmd: 'ssh-keygen -y -f /root/.ssh/id_ed25519',
+      contains: [/^ssh-ed25519 /],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
