@@ -1399,34 +1399,40 @@ describe('26. PL/SQL procedures and privilege resolution', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('27. Password policies', () => {
-  it('Enforces password complexity, reuse, and lifetime', () => {
-    const cases: Case[] = [
-      // Weak password should be refused under strict_profile
-      { sql: 'CREATE USER weakpw IDENTIFIED BY "123" PROFILE strict_profile;',                                                          want: /ORA-(28003|20001|00910)/ },
-      { sql: 'CREATE USER weakpw IDENTIFIED BY "Strong1Pass#" PROFILE strict_profile;',                                                want: /User created/i },
-      { sql: 'ALTER USER weakpw IDENTIFIED BY "Strong1Pass#";',                                                                          want: /ORA-(28007|User altered)/i },
-      { sql: 'ALTER USER weakpw IDENTIFIED BY "Different1#";',                                                                            want: /User altered/i },
-      // Account lock after FAILED_LOGIN_ATTEMPTS
-      { sql: 'CONNECT weakpw/wrong1@orcl',                                                                                                want: /ORA-01017/i },
-      { sql: 'CONNECT weakpw/wrong2@orcl',                                                                                                want: /ORA-01017/i },
-      { sql: 'CONNECT weakpw/wrong3@orcl',                                                                                                want: /ORA-(01017|28000)/i },
-      { sql: 'CONNECT weakpw/wrong4@orcl',                                                                                                want: /ORA-(01017|28000)/i },
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                       want: /Connected/i },
-      { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                                                          want: /(LOCKED|OPEN)/ },
-      { sql: 'ALTER USER weakpw ACCOUNT UNLOCK;',                                                                                         want: /User altered/i },
-      // Verify failed login counters
-      { sql: "SELECT lcount FROM dba_users WHERE username = 'WEAKPW';",                                                                  want: { not: /ORA-00942/ } },
-      // Expire and force change
-      { sql: 'ALTER USER weakpw PASSWORD EXPIRE;',                                                                                       want: /User altered/i },
-      { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                                                          want: /EXPIRED/ },
-      { sql: 'ALTER USER weakpw IDENTIFIED BY "FreshPwd1#" REPLACE "Different1#";',                                                       want: /(User altered|ORA-)/i },
-      { sql: 'DROP USER weakpw;',                                                                                                         want: /User dropped/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    // Weak password under strict_profile — refused with ORA-28003 (verifier).
+    { sql: 'CREATE USER weakpw IDENTIFIED BY "123" PROFILE strict_profile;',                     want: /ORA-(28003|20001)/ },
+    { sql: 'CREATE USER weakpw IDENTIFIED BY "Strong1Pass#" PROFILE strict_profile;',           want: /User created\./i },
+    // Re-using the same password violates PASSWORD_REUSE_MAX — ORA-28007.
+    { sql: 'ALTER USER weakpw IDENTIFIED BY "Strong1Pass#";',                                    want: /ORA-28007/ },
+    { sql: 'ALTER USER weakpw IDENTIFIED BY "Different1#";',                                      want: /User altered\./i },
+    // Three wrong passwords lock the account (FAILED_LOGIN_ATTEMPTS = 3).
+    { sql: 'CONNECT weakpw/wrong1@orcl',                                                          want: /ORA-01017/ },
+    { sql: 'CONNECT weakpw/wrong2@orcl',                                                          want: /ORA-01017/ },
+    { sql: 'CONNECT weakpw/wrong3@orcl',                                                          want: /ORA-01017/ },
+    // Fourth attempt — account is now locked.
+    { sql: 'CONNECT weakpw/wrong4@orcl',                                                          want: /ORA-28000/ },
+    { sql: 'CONNECT / AS SYSDBA',                                                                  want: /\bConnected\b/i },
+    { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                    want: /\bLOCKED\b/ },
+    { sql: 'ALTER USER weakpw ACCOUNT UNLOCK;',                                                   want: /User altered\./i },
+    { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                    want: /\bOPEN\b/ },
+    // Lcount must be reset by the unlock.
+    { sql: "SELECT lcount FROM dba_users WHERE username = 'WEAKPW';",                            want: /^\s*0\s*$/m },
+    // Expire and force a change with REPLACE.
+    { sql: 'ALTER USER weakpw PASSWORD EXPIRE;',                                                  want: /User altered\./i },
+    { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                    want: /\bEXPIRED\b/ },
+    { sql: 'ALTER USER weakpw IDENTIFIED BY "FreshPwd1#" REPLACE "Different1#";',                want: /User altered\./i },
+    { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                    want: /\bOPEN\b/ },
+    { sql: 'DROP USER weakpw;',                                                                    want: /User dropped\./i },
+  ])('§27: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 28 — System-event / wait inspection (15 cases)
 // ─────────────────────────────────────────────────────────────────
 
