@@ -872,3 +872,68 @@ describe('§13 — ps output table presentation (headers, padding)', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 14 — systemctl list-units / status output presentation ───
+
+describe('§14 — systemctl list-units / status output', () => {
+  let lan: Lan;
+  beforeEach(() => { lan = buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'list-units --type=service has the canonical header',
+      on: l => l.pc1,
+      cmd: 'systemctl list-units --type=service',
+      contains: [/UNIT\s+LOAD\s+ACTIVE\s+SUB\s+DESCRIPTION/],
+    },
+    {
+      name: 'ssh.service appears with state active and sub running',
+      on: l => l.pc1,
+      cmd: 'systemctl list-units --type=service',
+      contains: [/ssh\.service\s+loaded\s+active\s+running/],
+    },
+    {
+      name: 'list-units footer summarises LOAD/ACTIVE/SUB',
+      on: l => l.pc1,
+      cmd: 'systemctl list-units --type=service',
+      contains: [/LOAD\s+=/, /ACTIVE\s+=/, /SUB\s+=/, /\d+\s+loaded units listed/],
+    },
+    {
+      name: 'systemctl status ssh shows Loaded / Active / Main PID',
+      on: l => l.pc1,
+      cmd: 'systemctl status ssh',
+      contains: [/Loaded:.*\/lib\/systemd\/system\/ssh\.service/, /Active:\s+active \(running\)/, /Main PID:\s+\d+/],
+    },
+    {
+      name: 'systemctl status of a stopped service shows inactive (dead)',
+      setup: (l) => { void l.pc1.executeCommand('systemctl stop cron'); },
+      on: l => l.pc1,
+      cmd: 'systemctl status cron',
+      contains: [/Active:\s+inactive \(dead\)/],
+      excludes: [/active \(running\)/],
+    },
+    {
+      name: 'systemctl status of an unknown unit reports "could not be found"',
+      on: l => l.pc1,
+      cmd: 'systemctl status nopesvc',
+      contains: [/could not be found|not loaded/i],
+    },
+    {
+      name: 'systemctl is-enabled ssh returns "enabled"',
+      on: l => l.pc1,
+      cmd: 'systemctl is-enabled ssh',
+      contains: ['enabled'],
+      excludes: ['disabled', 'masked'],
+    },
+    {
+      name: 'list-units --state=failed has zero entries on a fresh boot',
+      on: l => l.pc1,
+      cmd: 'systemctl list-units --state=failed',
+      contains: [/0 loaded units listed/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
