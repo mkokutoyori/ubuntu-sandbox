@@ -13,6 +13,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
+import { requireWindowsService } from './WinFeatureGate';
 
 const IPCONFIG_HELP = `
 USAGE:
@@ -73,8 +74,14 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
     return IPCONFIG_HELP;
   }
 
-  if (lower.includes('/release')) return ipconfigRelease(ctx, args);
-  if (lower.includes('/renew')) return ipconfigRenew(ctx, args);
+  if (lower.includes('/release')) {
+    const gate = requireWindowsService(ctx, 'Dhcp');
+    return gate.ok ? ipconfigRelease(ctx, args) : gate.error;
+  }
+  if (lower.includes('/renew')) {
+    const gate = requireWindowsService(ctx, 'Dhcp');
+    return gate.ok ? ipconfigRenew(ctx, args) : gate.error;
+  }
   if (lower.includes('/flushdns')) {
     return 'Windows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache.';
   }

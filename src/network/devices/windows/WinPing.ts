@@ -11,6 +11,7 @@
  */
 
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
+import { requireWindowsService } from './WinFeatureGate';
 
 const PING_HELP = `
 Usage: ping [-t] [-a] [-n count] [-l size] [-f] [-i TTL] [-v TOS]
@@ -68,6 +69,14 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
 
   if (!targetStr) return PING_HELP;
 
+  // A numeric target bypasses DNS entirely; a hostname requires Dnscache.
+  const isNumericIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(targetStr);
+  if (!isNumericIp) {
+    const gate = requireWindowsService(ctx, 'Dnscache');
+    if (!gate.ok) {
+      return `Ping request could not find host ${targetStr}. ${gate.error}`;
+    }
+  }
   const targetIP = ctx.resolveHostname(targetStr);
   if (!targetIP) {
     return `Ping request could not find host ${targetStr}. Please check the name and try again.`;
