@@ -1361,38 +1361,40 @@ describe('25. SYS_CONTEXT and USERENV', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('26. PL/SQL procedures and privilege resolution', () => {
-  it('Creates procedures, grants EXECUTE, and invokes under different users', () => {
-    const cases: Case[] = [
-      { sql: 'CREATE OR REPLACE PROCEDURE hr.bump_salary(p_id IN NUMBER, p_pct IN NUMBER) AS BEGIN UPDATE hr.employees SET salary = salary * (1 + p_pct/100) WHERE employee_id = p_id; END;', want: /Procedure created/i },
-      { sql: 'CREATE OR REPLACE FUNCTION hr.get_department(p_id NUMBER) RETURN VARCHAR2 AS v_name VARCHAR2(80); BEGIN SELECT department_name INTO v_name FROM hr.departments WHERE department_id = p_id; RETURN v_name; END;', want: /Function created/i },
-      { sql: "CREATE OR REPLACE PACKAGE hr.security_utils AS PROCEDURE log_attempt(u VARCHAR2); FUNCTION current_role RETURN VARCHAR2; END;", want: /Package created/i },
-      { sql: "CREATE OR REPLACE PACKAGE BODY hr.security_utils AS PROCEDURE log_attempt(u VARCHAR2) IS BEGIN NULL; END; FUNCTION current_role RETURN VARCHAR2 IS BEGIN RETURN 'NONE'; END; END;", want: /Package body created/i },
-      { sql: "CREATE OR REPLACE TRIGGER hr.trg_emp_audit BEFORE INSERT OR UPDATE OR DELETE ON hr.employees FOR EACH ROW BEGIN NULL; END;", want: /Trigger created/i },
-      { sql: 'GRANT EXECUTE ON hr.bump_salary TO grace;',                                                                                want: /Grant succeeded/i },
-      { sql: 'GRANT EXECUTE ON hr.get_department TO grace;',                                                                            want: /Grant succeeded/i },
-      { sql: 'GRANT EXECUTE ON hr.security_utils TO PUBLIC;',                                                                            want: /Grant succeeded/i },
-      // Verification
-      { sql: "SELECT object_name FROM dba_objects WHERE owner = 'HR' AND object_type IN ('PROCEDURE','FUNCTION','PACKAGE');",          want: /BUMP_SALARY/ },
-      { sql: "SELECT text FROM dba_source WHERE owner = 'HR' AND name = 'BUMP_SALARY' FETCH FIRST 1 ROW ONLY;",                          want: { not: /ORA-00942/ } },
-      { sql: "SELECT trigger_name, status FROM dba_triggers WHERE owner = 'HR';",                                                       want: /TRG_EMP_AUDIT/ },
-      { sql: "SELECT procedure_name FROM dba_procedures WHERE owner = 'HR';",                                                            want: { not: /ORA-00942/ } },
-      // Invocation
-      { sql: 'CONNECT grace/Welcome1#@orcl',                                                                                              want: /(Connected|ORA-)/i },
-      { sql: 'EXEC hr.bump_salary(100, 5);',                                                                                            want: /(PL\/SQL procedure successfully completed|ORA-)/i },
-      { sql: 'SELECT hr.get_department(10) FROM dual;',                                                                                  want: { not: /ORA-00904/ } },
-      // Re-connect as SYS
-      { sql: 'CONNECT / AS SYSDBA',                                                                                                     want: /Connected/i },
-      // Compilation errors
-      { sql: 'CREATE OR REPLACE PROCEDURE hr.bad_proc AS BEGIN no_such_thing; END;',                                                     want: /(Warning|Procedure created with compilation errors|ORA-)/i },
-      { sql: "SELECT * FROM dba_errors WHERE owner = 'HR' AND name = 'BAD_PROC' FETCH FIRST 5 ROWS ONLY;",                              want: { not: /ORA-/ } },
-      { sql: 'DROP PROCEDURE hr.bad_proc;',                                                                                              want: /Procedure dropped/i },
-      { sql: 'ALTER PROCEDURE hr.bump_salary COMPILE;',                                                                                  want: /(Procedure altered|ORA-)/i },
-    ];
-    drive(sys, cases);
+  it.each<Case>([
+    { sql: 'CREATE OR REPLACE PROCEDURE hr.bump_salary(p_id IN NUMBER, p_pct IN NUMBER) AS BEGIN UPDATE hr.employees SET salary = salary * (1 + p_pct/100) WHERE employee_id = p_id; END;', want: /Procedure created\./i },
+    { sql: 'CREATE OR REPLACE FUNCTION hr.get_department(p_id NUMBER) RETURN VARCHAR2 AS v_name VARCHAR2(80); BEGIN SELECT department_name INTO v_name FROM hr.departments WHERE department_id = p_id; RETURN v_name; END;', want: /Function created\./i },
+    { sql: "CREATE OR REPLACE PACKAGE hr.security_utils AS PROCEDURE log_attempt(u VARCHAR2); FUNCTION current_role RETURN VARCHAR2; END;",                                                  want: /Package created\./i },
+    { sql: "CREATE OR REPLACE PACKAGE BODY hr.security_utils AS PROCEDURE log_attempt(u VARCHAR2) IS BEGIN NULL; END; FUNCTION current_role RETURN VARCHAR2 IS BEGIN RETURN 'NONE'; END; END;", want: /Package body created\./i },
+    { sql: 'CREATE OR REPLACE TRIGGER hr.trg_emp_audit BEFORE INSERT OR UPDATE OR DELETE ON hr.employees FOR EACH ROW BEGIN NULL; END;',                                                    want: /Trigger created\./i },
+    { sql: 'GRANT EXECUTE ON hr.bump_salary TO grace;',                                                                                                                                       want: /Grant succeeded\./i },
+    { sql: 'GRANT EXECUTE ON hr.get_department TO grace;',                                                                                                                                    want: /Grant succeeded\./i },
+    { sql: 'GRANT EXECUTE ON hr.security_utils TO PUBLIC;',                                                                                                                                   want: /Grant succeeded\./i },
+    // Dictionary verification.
+    { sql: "SELECT object_name FROM dba_objects WHERE owner = 'HR' AND object_name = 'BUMP_SALARY' AND object_type = 'PROCEDURE';", want: /^\s*BUMP_SALARY\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_objects WHERE owner = 'HR' AND object_name = 'SECURITY_UTILS' AND object_type IN ('PACKAGE','PACKAGE BODY');", want: /^\s*2\s*$/m },
+    { sql: "SELECT COUNT(*) FROM dba_source WHERE owner = 'HR' AND name = 'BUMP_SALARY';",                                                                                                    want: /^\s*[1-9]\d*\s*$/m },
+    { sql: "SELECT trigger_name FROM dba_triggers WHERE owner = 'HR' AND trigger_name = 'TRG_EMP_AUDIT';",                                                                                    want: /^\s*TRG_EMP_AUDIT\s*$/m },
+    { sql: "SELECT procedure_name FROM dba_procedures WHERE owner = 'HR' AND procedure_name = 'BUMP_SALARY';",                                                                                want: /^\s*BUMP_SALARY\s*$/m },
+    // Invocation under a different user — must be allowed by the EXECUTE grant.
+    { sql: 'CONNECT grace/Welcome1#@orcl',                                                                                                                                                     want: /\bConnected\b/i },
+    { sql: 'EXEC hr.bump_salary(100, 5);',                                                                                                                                                    want: /PL\/SQL procedure successfully completed\./i },
+    { sql: "SELECT hr.get_department(10) FROM dual;",                                                                                                                                          want: /\S/ },
+    { sql: 'CONNECT / AS SYSDBA',                                                                                                                                                              want: /\bConnected\b/i },
+    // Compilation errors are recorded in DBA_ERRORS.
+    { sql: 'CREATE OR REPLACE PROCEDURE hr.bad_proc AS BEGIN no_such_thing; END;',                                                                                                            want: /(Warning|compilation errors)/i },
+    { sql: "SELECT COUNT(*) FROM dba_errors WHERE owner = 'HR' AND name = 'BAD_PROC';",                                                                                                       want: /^\s*[1-9]\d*\s*$/m },
+    { sql: 'DROP PROCEDURE hr.bad_proc;',                                                                                                                                                      want: /Procedure dropped\./i },
+    { sql: 'ALTER PROCEDURE hr.bump_salary COMPILE;',                                                                                                                                          want: /Procedure altered\./i },
+  ])('§26: $sql', ({ sql, want }) => {
+    const out = run(sys, sql);
+    expect(
+      matches(out, want),
+      `Expected ${describeExpectation(want)}\nActual:\n${out}`
+    ).toBe(true);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────
 // SECTION 27 — Password policy and account state (16 cases)
 // ─────────────────────────────────────────────────────────────────
 
