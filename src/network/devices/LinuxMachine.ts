@@ -34,6 +34,7 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import type { HardwareProfile } from './host/hardware';
 import { LinuxShellSession, TtyAllocator } from './linux/shell/LinuxShellSession';
 import type { LinuxProfile } from './linux/LinuxProfile';
 import type {
@@ -119,8 +120,9 @@ export abstract class LinuxMachine extends EndHost {
     this.createPortsFromProfile();
 
     // 2. Kernel / userspace — the executor shares this host's hardware
-    //    inventory so lscpu / free / /proc stay coherent with the device.
-    this.executor = new LinuxCommandExecutor(profile.isServer, this.hardware);
+    //    inventory and lifecycle so lscpu / free / /proc / uptime stay
+    //    coherent with the device.
+    this.executor = new LinuxCommandExecutor(profile.isServer, this.hardware, this.lifecycle);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
@@ -149,6 +151,17 @@ export abstract class LinuxMachine extends EndHost {
       // bind address.
       this.getSshServerHandler().register(conn, conn.remoteIp);
     });
+  }
+
+  /**
+   * Re-spec this host's hardware. Overrides {@link EndHost.setHardware} to
+   * also propagate the new profile into the command executor, so `lscpu`,
+   * `free`, `nproc` and the procfs stay coherent with `getHardware()` — the
+   * executor holds its own reference and would otherwise keep the old spec.
+   */
+  override setHardware(profile: HardwareProfile): void {
+    super.setHardware(profile);
+    this.executor.setHardware(profile);
   }
 
   /** Persist SSH server configuration + host key + MOTD on the VFS. */

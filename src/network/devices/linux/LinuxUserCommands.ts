@@ -182,8 +182,8 @@ export function cmdWho(ctx: ShellContext): string {
   return ctx.userMgr.who();
 }
 
-export function cmdW(ctx: ShellContext): string {
-  return ctx.userMgr.w();
+export function cmdW(ctx: ShellContext, uptimeSeconds = 0): string {
+  return ctx.userMgr.w(uptimeSeconds);
 }
 
 export function cmdLast(ctx: ShellContext, args: string[]): string {

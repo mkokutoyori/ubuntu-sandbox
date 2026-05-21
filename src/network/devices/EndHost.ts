@@ -49,6 +49,7 @@ import {
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { HardwareProfile } from './host/hardware';
+import { HostLifecycle } from './host/lifecycle';
 import { DHCPClient } from '../dhcp/DHCPClient';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
@@ -150,6 +151,12 @@ export abstract class EndHost extends Equipment {
    * role-appropriate preset; replaceable via {@link setHardware}.
    */
   protected hardware: HardwareProfile;
+
+  /**
+   * Power & boot state machine — the source of truth for the host's boot
+   * time and uptime, driving `uptime`, `w` and the `systeminfo` boot lines.
+   */
+  protected readonly lifecycle: HostLifecycle;
 
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
@@ -441,6 +448,8 @@ export abstract class EndHost extends Equipment {
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
     );
+    this.lifecycle = new HostLifecycle();
+    this.lifecycle.attachBus(this.getBus(), this.id, name);
     this.attachHostActors();
     this.dhcpClient = new DHCPClient(
       (iface: string) => {
@@ -476,6 +485,27 @@ export abstract class EndHost extends Equipment {
   /** Replace the hardware inventory — e.g. to model a differently-specced host. */
   setHardware(profile: HardwareProfile): void {
     this.hardware = profile;
+  }
+
+  // ─── Power & boot lifecycle ─────────────────────────────────────
+
+  /** The host's power & boot state machine. */
+  getLifecycle(): HostLifecycle {
+    return this.lifecycle;
+  }
+
+  /** Power the host on — also advances the lifecycle `off → running`. */
+  override powerOn(): void {
+    const wasOn = this.getIsPoweredOn();
+    super.powerOn();
+    if (!wasOn) this.lifecycle.powerOn();
+  }
+
+  /** Power the host off — also drives the lifecycle to `off`. */
+  override powerOff(): void {
+    const wasOn = this.getIsPoweredOn();
+    super.powerOff();
+    if (wasOn) this.lifecycle.powerOff();
   }
 
   // ─── Interface Configuration ───────────────────────────────────

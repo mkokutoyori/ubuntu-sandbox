@@ -18,6 +18,7 @@ import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { HardwareProfile } from '../host/hardware';
+import { HostLifecycle } from '../host/lifecycle';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -69,8 +70,14 @@ export class LinuxCommandExecutor {
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
-  /** Shared hardware inventory — source of truth for lscpu / free / /proc. */
-  readonly hardware: HardwareProfile;
+  /**
+   * Shared hardware inventory — source of truth for lscpu / free / /proc.
+   * Replaced coherently via {@link setHardware} (never reassigned directly,
+   * so the procfs cannot drift from the model).
+   */
+  hardware: HardwareProfile;
+  /** Shared power/boot state machine — source of truth for uptime. */
+  readonly lifecycle: HostLifecycle;
   private env: Map<string, string> = new Map();
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
@@ -96,8 +103,9 @@ export class LinuxCommandExecutor {
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
 
-  constructor(isServer = false, hardware?: HardwareProfile) {
+  constructor(isServer = false, hardware?: HardwareProfile, lifecycle?: HostLifecycle) {
     this.hardware = hardware ?? HardwareProfile.defaultFor(isServer ? 'server' : 'workstation');
+    this.lifecycle = lifecycle ?? new HostLifecycle();
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
@@ -157,6 +165,16 @@ export class LinuxCommandExecutor {
   private writeHardwareProcFiles(): void {
     this.vfs.writeFile('/proc/cpuinfo', this.hardware.cpu.toProcCpuinfo(), 0, 0, 0o022);
     this.vfs.writeFile('/proc/meminfo', this.hardware.memory.toProcMeminfo(), 0, 0, 0o022);
+  }
+
+  /**
+   * Re-spec the host's hardware. Swaps the inventory *and* re-materialises
+   * the procfs so `lscpu` / `free` / `nproc` / `/proc/cpuinfo` / `/proc/meminfo`
+   * stay coherent with the new profile. Called by `LinuxMachine.setHardware`.
+   */
+  setHardware(profile: HardwareProfile): void {
+    this.hardware = profile;
+    this.writeHardwareProcFiles();
   }
 
   /**
@@ -935,7 +953,7 @@ export class LinuxCommandExecutor {
       case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
       case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
       case 'who': return { output: cmdWho(c), exitCode: 0 };
-      case 'w': return { output: cmdW(c), exitCode: 0 };
+      case 'w': return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
       case 'last': return { output: cmdLast(c, args), exitCode: 0 };
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'getent': {
@@ -1079,7 +1097,7 @@ export class LinuxCommandExecutor {
 
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
       case 'date': return { output: cmdDate(args), exitCode: 0 };
-      case 'uptime': return { output: cmdUptime(args), exitCode: 0 };
+      case 'uptime': return { output: cmdUptime(args, this.lifecycle), exitCode: 0 };
       case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()), exitCode: 0 };
       case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
