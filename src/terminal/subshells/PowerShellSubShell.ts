@@ -19,6 +19,7 @@ import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
 import { PSParserError } from '@/powershell/parser/PSParserError';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 
 /**
  * Tokens that bypass the interpreter and go straight to the legacy
@@ -44,6 +45,14 @@ export class PowerShellSubShell implements ISubShell {
   private interp: PSInterpreter;
   private device: Equipment;
   private commandHistory: string[] = [];
+  /**
+   * Owning terminal's cmd.exe shell session. When set, every command
+   * dispatched through this sub-shell runs inside a session swap-window so
+   * the interpreter, the legacy executor, and any cmd-command delegation
+   * observe THIS terminal's cwd / env / driveCwd — not the device-wide
+   * shared fields (terminal_gap.md §7.x).
+   */
+  private session: WindowsShellSession | null = null;
 
   private constructor(device: Equipment) {
     this.device = device;
@@ -82,12 +91,13 @@ export class PowerShellSubShell implements ISubShell {
    */
   static create(
     device: Equipment,
-    opts?: { initialCwd?: string },
+    opts?: { initialCwd?: string; session?: WindowsShellSession | null },
   ): { subShell: PowerShellSubShell; banner: string[] } {
     const subShell = new PowerShellSubShell(device);
+    subShell.session = opts?.session ?? null;
     // Prefer the caller-provided cwd (per-terminal session); fall back to
     // the device's shared cwd so legacy call sites still work.
-    const startCwd = opts?.initialCwd ?? (device as any).getCwd();
+    const startCwd = opts?.initialCwd ?? opts?.session?.cwd ?? (device as any).getCwd();
     subShell.psExecutor.setCwd(startCwd);
     // Wire env-var resolution so $env:APPDATA etc. return Windows-accurate values
     subShell.interp.envVarHook = (name: string) => subShell.psExecutor.resolveEnvVar(name);
@@ -147,23 +157,24 @@ export class PowerShellSubShell implements ISubShell {
       return { output: [], exit: false, prompt: this.getPrompt(), clearScreen: true };
     }
 
-    // Sync cwd to PS executor BEFORE the command runs (so relative paths
-    // resolve from the right place).
-    this.psExecutor.setCwd((this.device as any).getCwd());
+    // Dispatch inside the owning terminal's session window when one is
+    // attached. Inside the window, `device.getCwd()` and any
+    // `device.executeCmdCommand(...)` delegation from PowerShellExecutor
+    // observe THIS terminal's cwd / env (terminal_gap.md §7.x).
+    const dispatch = async (): Promise<string | null> => {
+      this.psExecutor.setCwd((this.device as any).getCwd());
+      const out = await this.dispatchCommand(trimmed);
+      this.psExecutor.setCwd((this.device as any).getCwd());
+      return out;
+    };
 
-    // Execute the PowerShell command via the interpreter first, then fall back
-    // to the legacy executor for device-bound cmdlets or syntax the interpreter
-    // doesn't understand.
-    const result = await this.dispatchCommand(trimmed);
+    const result = (this.session && this.device instanceof WindowsPC)
+      ? await this.device.runInSession(this.session, dispatch)
+      : await dispatch();
 
     const output = (result !== null && result !== undefined && result !== '')
       ? result.split('\n')
       : [];
-
-    // Re-sync AFTER the command: Set-Location / cd / Push-Location change
-    // the device cwd, and the prompt must reflect the *new* directory
-    // immediately — not lag a command behind.
-    this.psExecutor.setCwd((this.device as any).getCwd());
 
     return {
       output,
@@ -341,7 +352,10 @@ export class PowerShellSubShell implements ISubShell {
   private completePath(token: string): string[] {
     if (!(this.device instanceof WindowsPC)) return [];
     const fs  = this.device.getFileSystem();
-    const cwd = this.device.getCwd();
+    // Prefer the per-terminal session cwd over the device-wide shared one
+    // so Tab-completion in PowerShell resolves paths in the terminal's own
+    // location (terminal_gap.md §7.x).
+    const cwd = this.session?.cwd ?? this.device.getCwd();
 
     const quote = token.startsWith('"') || token.startsWith("'")
       ? token[0] : '';

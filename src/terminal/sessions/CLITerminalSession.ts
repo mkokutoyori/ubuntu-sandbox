@@ -21,7 +21,8 @@ import {
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { InteractiveStep } from '@/terminal/core/types';
 
-const PAGE_SIZE = 24;
+/** Default pager page size — matches Cisco/Huawei `terminal length 24`. */
+const DEFAULT_PAGE_SIZE = 24;
 
 /** Sentinel value returned by shells to signal the session should close */
 export const CONNECTION_CLOSED = 'Connection closed.';
@@ -241,8 +242,12 @@ export abstract class CLITerminalSession extends TerminalSession {
 
       if (result) {
         const lines = result.split('\n');
-        if (lines.length > PAGE_SIZE) {
+        const pageSize = this.getPageSize();
+        if (pageSize > 0 && lines.length > pageSize) {
           this.startPager(lines);
+        } else if (pageSize <= 0 && lines.length > DEFAULT_PAGE_SIZE) {
+          // Pager disabled — addLines preserves line typing.
+          this.addLines(lines);
         } else {
           this.addLine(result);
         }
@@ -293,13 +298,28 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Pager ───────────────────────────────────────────────────────
 
+  /**
+   * Effective page size for this terminal. Subclasses with a per-vty
+   * session override to read `session.state.terminalLength`. Value 0
+   * means the pager is disabled (`terminal length 0` / `screen-length
+   * disable` — see terminal_gap.md §5.3). Default: 24 lines.
+   */
+  protected getPageSize(): number { return DEFAULT_PAGE_SIZE; }
+
   private startPager(allLines: string[]): void {
-    const firstPage = allLines.slice(0, PAGE_SIZE);
+    const pageSize = this.getPageSize();
+    // `terminal length 0` / `screen-length disable` — dump everything,
+    // no --More-- prompt.
+    if (pageSize <= 0) {
+      this.addLines(allLines);
+      return;
+    }
+    const firstPage = allLines.slice(0, pageSize);
     this.addLines(firstPage);
 
-    if (allLines.length > PAGE_SIZE) {
+    if (allLines.length > pageSize) {
       this.pagerLines = allLines;
-      this.pagerOffset = PAGE_SIZE;
+      this.pagerOffset = pageSize;
       this.inputMode = { type: 'pager', indicator: this.getPagerIndicator() };
       this.notify();
     }
@@ -307,12 +327,13 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   private pagerNextPage(): void {
     if (!this.pagerLines) return;
-    const next = this.pagerLines.slice(this.pagerOffset, this.pagerOffset + PAGE_SIZE);
+    const pageSize = this.getPageSize() || DEFAULT_PAGE_SIZE;
+    const next = this.pagerLines.slice(this.pagerOffset, this.pagerOffset + pageSize);
     this.addLines(next);
-    if (this.pagerOffset + PAGE_SIZE >= this.pagerLines.length) {
+    if (this.pagerOffset + pageSize >= this.pagerLines.length) {
       this.pagerQuit();
     } else {
-      this.pagerOffset += PAGE_SIZE;
+      this.pagerOffset += pageSize;
       this.notify();
     }
   }

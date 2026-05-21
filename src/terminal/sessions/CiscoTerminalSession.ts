@@ -73,6 +73,15 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /**
+   * Effective `terminal length` of this vty session.
+   * Real Cisco IOS scopes this preference per line — `terminal length 0`
+   * disables the pager for the current session only (terminal_gap.md §5.3).
+   */
+  protected override getPageSize(): number {
+    return this.vty?.state.terminalLength ?? 24;
+  }
+
+  /**
    * Override updatePrompt to read the prompt from the vty's swapped-in
    * shell state, not from the device's shared default state.
    */

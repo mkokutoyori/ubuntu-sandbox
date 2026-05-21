@@ -321,6 +321,17 @@ export class WindowsPC extends EndHost {
     const cmd = parts[0].toLowerCase();
     const args = parts.slice(1);
 
+    // Bare drive letter (e.g. "D:" or "D:\\path") — change current drive
+    // and restore the per-drive last cwd. Real cmd.exe: typing `D:` at the
+    // prompt does not run an external command, it switches to drive D and
+    // its remembered cwd (terminal_gap.md §6.3).
+    const driveOnly = /^([a-zA-Z]):$/.exec(parts[0]);
+    const drivePath = /^([a-zA-Z]):[\\/](.*)$/.exec(parts[0]);
+    if ((driveOnly || drivePath) && args.length === 0) {
+      const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
+      return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
+    }
+
     // File commands (use file context)
     const fileCtx = this.buildFileContext();
     switch (cmd) {
@@ -612,8 +623,66 @@ export class WindowsPC extends EndHost {
       cwd: this.cwd,
       hostname: this.hostname,
       env: this.env,
-      setCwd: (path: string) => { this.cwd = path; },
+      setCwd: (path: string) => {
+        // When the new cwd belongs to a different drive than the old one,
+        // remember the previous drive's cwd in the active session's
+        // per-drive map so a later bare `C:` returns to the right
+        // location (terminal_gap.md §6.3).
+        const oldDrive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+        const newDrive = path.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+        const s = this._activeShellSession;
+        if (s && oldDrive && newDrive && oldDrive !== newDrive) {
+          s.driveCwd.set(oldDrive, this.cwd);
+        }
+        if (s && newDrive) s.driveCwd.set(newDrive, path);
+        this.cwd = path;
+      },
     };
+  }
+
+  /**
+   * Handle a bare drive-letter command (`D:` / `D:\path`). When typed at
+   * the prompt this is *not* an external command — it changes the active
+   * drive. Real cmd.exe semantics:
+   *   - `D:` alone     → switch to D, restoring D's last-known cwd
+   *                      (or `D:\` if D has never been visited).
+   *   - `D:\some\path` → switch to D and chdir to `D:\some\path` (only if
+   *                      it exists; otherwise leave the cwd untouched).
+   * The previous drive's cwd is saved into the session's `driveCwd` map.
+   *
+   * If the drive does not exist on the simulated FS, mirror the real
+   * cmd.exe error.
+   */
+  private switchActiveDrive(letter: string, fullPath: string | null): string {
+    const target = fullPath ?? `${letter}:\\`;
+    const normalised = this.fs.normalizePath(target, this.cwd);
+    // Drives in the sim are virtual directories rooted at `<L>:\\`. Treat
+    // an unknown root as "system cannot find the drive specified".
+    const root = `${letter}:\\`;
+    if (!this.fs.isDirectory(root)) {
+      return 'The system cannot find the drive specified.';
+    }
+
+    const s = this._activeShellSession;
+    const oldDrive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+    // Save the current drive's cwd before leaving.
+    if (s && oldDrive) s.driveCwd.set(oldDrive, this.cwd);
+
+    let next: string;
+    if (fullPath) {
+      if (!this.fs.isDirectory(normalised)) {
+        return 'The system cannot find the path specified.';
+      }
+      next = normalised;
+    } else {
+      // No path given — go to the session's remembered cwd for that
+      // drive, fall back to its root.
+      next = (s?.driveCwd.get(letter)) ?? root;
+      if (!this.fs.isDirectory(next)) next = root;
+    }
+    this.cwd = next;
+    if (s) s.driveCwd.set(letter, next);
+    return '';
   }
 
   private buildNetContext(): WinCommandContext {
@@ -1275,6 +1344,35 @@ export class WindowsPC extends EndHost {
     return promise;
   }
 
+  /**
+   * Run an arbitrary callback inside a session swap-window. Used by
+   * PowerShellSubShell so the interpreter, the legacy executor, and every
+   * cmd-command delegation triggered during `processLine()` observe the
+   * caller terminal's cwd / env / driveCwd — not the device-wide shared
+   * fields. Serialised through the same per-device queue as
+   * executeCommandInSession (terminal_gap.md §7.x).
+   */
+  runInSession<T>(session: WindowsShellSession, fn: () => Promise<T>): Promise<T> {
+    const run = async (): Promise<T> => {
+      if (session.disposed) {
+        // Best-effort no-op so callers don't crash post-tear-down.
+        return fn();
+      }
+      const baseline = this.snapshotShellState();
+      this.swapInWindowsSession(session);
+      try {
+        const out = await fn();
+        this.captureShellStateInto(session);
+        return out;
+      } finally {
+        this.restoreShellState(baseline);
+      }
+    };
+    const promise = this.wsExecQueue.then(run, run) as Promise<T>;
+    this.wsExecQueue = promise.catch(() => undefined);
+    return promise;
+  }
+
   /** Tab completion against a specific shell session's cwd/env. */
   getCompletionsForSession(partial: string, session: WindowsShellSession): string[] {
     if (session.disposed || !this.isPoweredOn) return [];
@@ -1287,11 +1385,25 @@ export class WindowsPC extends EndHost {
     }
   }
 
+  /**
+   * Active shell session during executeCommandInSession / completion swap.
+   * Null outside the swap window. The bare drive-letter command and
+   * `cd /d` handler consult this to update the per-drive cwd map on the
+   * caller's WindowsShellSession (terminal_gap.md §6.3).
+   */
+  private _activeShellSession: WindowsShellSession | null = null;
+
+  /** @internal — exposed for the cd /d and `D:` drive-switch handlers. */
+  _getActiveShellSession(): WindowsShellSession | null {
+    return this._activeShellSession;
+  }
+
   private snapshotShellState() {
     return { cwd: this.cwd, env: new Map(this.env) };
   }
 
   private swapInWindowsSession(s: WindowsShellSession): void {
+    this._activeShellSession = s;
     this.cwd = s.cwd;
     // The device env carries seed values (USERPROFILE, ComSpec, …) that
     // sub-shells consume; we don't want a session to lose them when its
@@ -1331,5 +1443,6 @@ export class WindowsPC extends EndHost {
   private restoreShellState(b: { cwd: string; env: Map<string, string> }): void {
     this.cwd = b.cwd;
     this.env = b.env;
+    this._activeShellSession = null;
   }
 }

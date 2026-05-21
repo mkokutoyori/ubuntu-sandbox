@@ -256,10 +256,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       selectedIKEv2Keyring: this.selectedIKEv2Keyring,
       selectedIKEv2KeyringPeer: this.selectedIKEv2KeyringPeer,
       selectedIKEv2Profile: this.selectedIKEv2Profile,
-      // Per-vty exec preferences (currently read by CLITerminalSession via
-      // device API; stored here for completeness so the session round-trips).
-      terminalLength: 24,
-      terminalWidth: 80,
+      terminalLength: this.terminalLength,
+      terminalWidth: this.terminalWidth,
       privilegeLevel: this.mode === 'user' ? 1 : 15,
       historySize: 10,
       cmdHistory: this.cmdHistory,
@@ -288,6 +286,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.selectedIKEv2Keyring = s.selectedIKEv2Keyring;
     this.selectedIKEv2KeyringPeer = s.selectedIKEv2KeyringPeer;
     this.selectedIKEv2Profile = s.selectedIKEv2Profile;
+    this.terminalLength = s.terminalLength;
+    this.terminalWidth = s.terminalWidth;
     this.cmdHistory = s.cmdHistory;
   }
 
