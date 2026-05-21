@@ -550,39 +550,59 @@ côté shellMode il n'y a pas de leak. Seul le cwd l'est.
 sur Windows réel positionne sur le dernier cwd connu de `D:`. Le simulateur
 ne fait pas cette distinction. Suffisamment exotique pour rester en TODO.
 
-### 6.4 Correctif — non implémenté dans cette PR
+### 6.4 Correctif implémenté
 
-Le design est identique à §2 : introduction d'une `WindowsShellSession`,
-swap-and-restore côté `WindowsPC`. L'implémentation est volumineuse (`WinFileCommands`,
-`WinDir`, sub-shells PowerShell/cmd) et est inscrite dans `roadmap.md`.
-Le diff reste minimal dans cet audit pour éviter de réécrire en cascade tout
-le pipeline Windows alors que la version Linux suffit déjà à valider la
-faisabilité et l'orthogonalité du pattern.
+Introduction d'une `WindowsShellSession`
+(`src/network/devices/windows/shell/WindowsShellSession.ts`), même pattern
+que `LinuxShellSession` :
+- `cwd`, `env: Map<string, string>`, `driveCwd: Map<string, string>`,
+  `history: string[]`, `lastExitCode: number`, `echoOn: boolean`,
+  `codePage: number`, `comSpec: string`.
+
+`WindowsPC.openShellSession()` / `closeShellSession()` /
+`executeCommandInSession()` / `getCompletionsForSession()` analogues.
+`WindowsTerminalSession.constructor` alloue une session ; `getPrompt()`
+lit `session.cwd` ; `executeOnDevice` route via la session ; un
+tear-down dispose la session à la fermeture.
+
+La stratégie de fusion du `env` lors du swap-in préserve les valeurs
+système du device (USERPROFILE, ComSpec, PATHEXT) pour que les sub-shells
+et les modules cmd voient toujours leur seed, tandis que `set FOO=bar`
+ne mute que la session.
+
+Tests (`src/__tests__/unit/terminal/windows-session-isolation.test.ts`) :
+- `cd C:\Windows` dans le terminal A ne change pas le prompt du terminal B
+- `set FOO=hello` reste local
+- réouverture → on retombe sur `%USERPROFILE%`
+- commandes concurrentes sérialisées
+- la session est détruite à la fermeture du terminal
 
 ---
 
 ## Section 7 — Sub-shells : SQL*Plus, RMAN, sftp, PowerShell, remote shell
 
-### 7.1 Une seule session SQL*Plus par DB device
+### 7.1 SQL*Plus — déjà isolé correctement
 
-**Anomalie.** Quand l'utilisateur tape `sqlplus / as sysdba` depuis deux
-terminaux sur la même machine `db-oracle`, le `SqlPlusSubShell` est alloué
-indépendamment dans chacun (bon), mais la `OracleSession` sous-jacente est
-partagée via l'instance Oracle (le `OracleDatabase` du device).
+**Vérification.** Lecture du code (`createSQLPlusSession` →
+`new SQLPlusSession(db)` → `db.connect(...)` → `new OracleExecutor(...)` avec
+contexte fraîchement alloué incluant `currentSchema: upperUser`) confirme
+que chaque terminal SQL\*Plus a son propre executor et son propre context.
+`ALTER SESSION SET CURRENT_SCHEMA = HR` mute uniquement
+`executor.context.currentSchema` de cette session, pas les autres.
 
-Conséquence : `ALTER SESSION SET CURRENT_SCHEMA = HR` dans le terminal A
-modifie aussi la session vue depuis B. Sur Oracle réel, chaque connexion
-SQL\*Plus est une *session distincte* (lignes V$SESSION séparées).
+**Statut : pas d'anomalie.** Test ajouté pour figer la garantie de
+non-régression : `ALTER SESSION` dans shell A → shell B reste sur SYS.
 
-**Statut.** Le projet a déjà un `OracleSessionManager` (database/oracle/) qui
-sait créer des sessions multiples ; les sub-shells doivent juste en demander
-une nouvelle au lieu de réutiliser la « default ». TODO tracké.
+### 7.2 RMAN — catalog partagé conforme
 
-### 7.2 RMAN — backup pool partagé entre terminaux
+**Vérification.** `ReactiveRmanSubShell.create()` alloue un `sessionId`
+unique par appel (devId + horodatage + suffixe aléatoire). Le `catalog`
+RMAN est volontairement partagé au niveau du device — comportement
+attendu sur Oracle réel, où le catalog RMAN survit aux sessions et est
+explicitement *singleton par base*.
 
-**Anomalie.** Un seul registre de backups par DB device. Si deux terminaux
-font `BACKUP DATABASE` en parallèle, les UUIDs et fichiers peuvent se télescoper.
-À vérifier — non corrigé dans cet audit.
+**Statut : pas d'anomalie.** Le partage du catalog est conforme à la
+sémantique RMAN.
 
 ### 7.3 `sftp` — pwd local et remote partagés entre instances
 
@@ -595,24 +615,40 @@ d'anomalie.
 **Pas d'anomalie.** Une `RemoteShellSubShell` est strictement liée à la
 `LinuxTerminalSession` qui l'a créée. Pas de partage transverse.
 
-### 7.5 PowerShell — l'état `$global:` est partagé entre les terminaux
+### 7.5 PowerShell — `$global:` per-instance, mais cwd initial leak
 
-**Anomalie.** `PowerShellSubShell` (src/terminal/subshells/PowerShellSubShell.ts)
-maintient un état `$global:` qui devrait être *par session PowerShell*. Si deux
-terminaux Windows ouvrent chacun PowerShell, leurs variables `$global:` se
-mélangent (selon que l'instance est partagée).
+**Vérification.** Chaque `PowerShellSubShell.create(device)` instancie un
+nouveau `PowerShellExecutor` et un nouveau `PSInterpreter` ; les variables
+`$global:` vivent dans l'interpreter, donc strictement par-terminal.
 
-**Statut.** À vérifier par inspection du code PowerShellSubShell — non corrigé
-dans cet audit.
+**Vrai gap identifié : cwd initial.** `PowerShellSubShell.create()` faisait
+`psExecutor.setCwd(device.getCwd())` sans paramètre alternatif. Du coup
+ouvrir PowerShell depuis le terminal A, alors que B avait fait `cd D:\foo`,
+voyait le prompt PowerShell démarrer dans `D:\foo` — uniquement parce que
+`device.getCwd()` lisait le `cwd` partagé du device. Avec §6, le cwd
+*partagé* du device est protégé par swap-and-restore mais reste
+intermittent (le snapshot baseline ne coïncide pas toujours avec
+`%USERPROFILE%`). Pour fermer la fenêtre, `PowerShellSubShell.create()`
+accepte désormais `{ initialCwd?: string }` et `WindowsTerminalSession`
+passe `this.shell.cwd` lors de `enterPowerShell()`.
 
-### 7.6 Correctif (Section 7)
+**Limitation connue (documentée).** Les délégations natives (`ipconfig`,
+`ping`, etc.) depuis PowerShell passent encore par
+`device.executeCmdCommand(...)` qui utilise le `cwd` partagé. Cas marginal
+parce que ces commandes ne dépendent pas du cwd, mais à corriger si on
+voulait `cd C:\Foo; ipconfig > rapport.txt` 100% conforme au
+`%CD%` de la session. Ticket roadmap.
 
-Aucun correctif implémenté dans cette section : les anomalies 7.1/7.2/7.5 sont
-identifiées et tracées dans `roadmap.md` comme follow-ups car elles touchent
-des modules indépendants du cœur terminal (OracleDatabase, RMAN, PowerShell).
-Les fixes §1–§4 sont structurellement orthogonaux à ces gaps : les TerminalSession
-multiples ne provoquent pas de régression sur la cohabitation des sub-shells,
-juste la cohabitation imparfaite déjà présente.
+### 7.6 Correctif implémenté
+
+- `PowerShellSubShell.create(device, { initialCwd? })` — paramètre
+  optionnel pour seeder le `cwd` du sous-shell.
+- `WindowsTerminalSession.enterPowerShell()` passe `this.shell?.cwd`
+  pour que la fenêtre PowerShell démarre dans le cwd *de ce terminal*.
+- Tests d'isolation (`src/__tests__/unit/terminal/subshell-isolation.test.ts`) :
+  - deux SQL\*Plus indépendants ; `ALTER SESSION` ne fuit pas
+  - deux PowerShell ont des executors distincts
+  - PS ouvert depuis le terminal A démarre dans le cwd de A, pas de B
 
 ---
 
@@ -635,21 +671,271 @@ juste la cohabitation imparfaite déjà présente.
 | 4.1 | Overlay "Powered Off" masque la scrollback          | Moyenne  | **Corrigé** |
 | 4.2 | Nom de fichier d'enregistrement non assaini         | Basse    | **Corrigé** |
 | 4.3 | Title-bar n'indique pas le contexte SSH             | Basse    | **Corrigé** |
-| 5.1 | Cisco/Huawei mode vty partagé                       | Haute    | Roadmap     |
+| 5.1 | Cisco IOS mode vty partagé                          | Haute    | **Corrigé** |
 | 5.2 | Boot sequence rejouée à chaque ouverture            | Moyenne  | **Corrigé** |
-| 6.x | Windows shell session isolation                     | Haute    | Roadmap     |
-| 7.x | Sub-shell concurrent state                          | Moyenne  | Roadmap     |
+| 5.3 | Huawei VRP mode vty partagé                         | Moyenne  | **Corrigé** |
+| 6.x | Windows shell session isolation                     | Haute    | **Corrigé** |
+| 7.1 | SQL\*Plus session — déjà isolé (validé par test)    | —        | Vérifié     |
+| 7.2 | RMAN catalog partagé — conforme Oracle              | —        | Vérifié     |
+| 7.5 | PowerShell cwd initial leak                         | Moyenne  | **Corrigé** |
+| 7.x | PS native delegations utilisent cwd partagé         | Basse    | Roadmap (b) |
 
 ### Tests ajoutés (résumé)
 
-- `terminal-lifecycle.test.ts`            (10 tests, §1)
-- `shell-session-isolation.test.ts`        (8 tests, §2)
-- `ssh-realism.test.ts`                   (6 tests, §3)
-- `filename-sanitize.test.ts`             (10 tests, §4)
-- `cli-boot-once.test.ts`                  (3 tests, §5.2)
+- `terminal-lifecycle.test.ts`             (10 tests, §1)
+- `shell-session-isolation.test.ts`         (8 tests, §2)
+- `ssh-realism.test.ts`                     (6 tests, §3)
+- `filename-sanitize.test.ts`              (10 tests, §4)
+- `cli-boot-once.test.ts`                   (3 tests, §5.2)
+- `cli-vty-isolation.test.ts`               (9 tests, §5.1)
+- `windows-session-isolation.test.ts`       (8 tests, §6)
+- `subshell-isolation.test.ts`              (5 tests, §7)
+- `huawei-vty-isolation.test.ts`            (5 tests, §5.3)
 
-Total : **37 nouveaux tests unitaires**. Suite complète sous `src/__tests__/unit/terminal/` :
-*50 fichiers, 392 tests, tous verts.*
+Total : **64 nouveaux tests unitaires**. Suite complète sous
+`src/__tests__/unit/terminal/` : *54 fichiers, 419 tests, tous verts.*
+
+### Roadmap résiduelle
+
+(b) **PowerShell native delegations** — les appels
+    `device.executeCmdCommand(...)` à l'intérieur de `PowerShellExecutor`
+    devraient passer par `executeCommandInSession` afin que `cd C:\x ;
+    ipconfig > foo` capture le `%CD%` de la session, pas du device.
+    Ticket plus fin que les autres ; impact strictement cosmétique.
+
+---
+
+## Section 9 — Bugs d'affichage en double
+
+Trois bugs rapportés par l'utilisateur après le merge des §1-§7, ainsi qu'un
+quatrième identifié lors de l'audit qui les a accompagnés. Tous relèvent du
+même anti-pattern : *deux composants émettent la même information* — l'un
+parce qu'il est responsable de l'afficher, l'autre par sécurité/historique.
+La correction systématique a été de désigner *un seul* émetteur par
+information et de retirer les sources concurrentes.
+
+### 9.1 — Prompt sudo affiché deux fois
+
+**Anomalie.** Lorsqu'on tape `sudo whoami`, l'utilisateur voyait :
+```
+user@pc1:~$ sudo whoami
+[sudo] password for user:
+[sudo] password for user: █
+```
+La première ligne provient de `InteractiveFlowEngine.processUntilPause`
+(InteractiveFlow.ts:159-162) qui pushait `directive.prompt` dans
+`accumulatedLines` (donc dans la scrollback) avant de retourner le
+directive. Le `TerminalView` consomme ensuite ce directive et affiche le
+prompt UNE SECONDE FOIS via l'élément `<input type="password">` avec son
+label `promptText`. Résultat : le prompt apparaît deux fois.
+
+Le bug est identique côté `buildRetryResponse` après un mot de passe
+erroné : « Sorry, try again. » + prompt re-pushé + prompt dans l'input.
+
+**Correctif.**
+1. `InteractiveFlowEngine` n'ajoute plus le prompt à la scrollback pour
+   les steps `password` (sauf flow `text`/`confirmation` qui ne posent
+   pas ce problème). Seul l'input row le montre, vivant.
+2. `TerminalSession.handleFlowPasswordKey` écrit le prompt dans la
+   scrollback **au moment où l'utilisateur valide** (Enter), de sorte que
+   l'historique conserve la trace. Le mot de passe reste masqué.
+3. `handleFlowTextKey` fait de même pour les prompts texte interactifs :
+   écrit `prompt + valeur saisie` après Enter, pour symétrie.
+4. `LinuxTerminalSession.handleSshIOKey` applique le même traitement aux
+   prompts SSH (`yes/no/[fingerprint]?`, mot de passe SSH) qui passaient
+   par `QueuedTerminalIO.beginPrompt` — ils ne laissaient AUCUNE trace
+   en scrollback avant ce fix.
+
+### 9.2 — « Welcome to Ubuntu » affiché deux fois à la connexion SSH
+
+**Anomalie.** `composeLoginBanner` (LinuxTerminalSession.ts:~2080)
+synthétisait toujours une ligne *Welcome to Ubuntu 22.04 LTS (GNU/Linux …)*
+puis ajoutait le contenu de `/etc/motd`. Or `LinuxMachine.ts:160`
+provisionne `/etc/motd` avec cette ligne déjà à l'intérieur. Donc :
+```
+user@pc2's password: ********
+Welcome to Ubuntu 22.04 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+
+Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+
+Last login: …
+```
+
+**Correctif.** `composeLoginBanner` priorise `/etc/motd` quand il est
+non-vide ; sinon il génère le fallback à partir de `/etc/os-release`. Une
+seule source de vérité, exactement comme `pam_motd` sur du vrai Ubuntu.
+
+Idem pour `composeLoginBannerViaExec` (chemin synthétique).
+
+### 9.3 — Banière CMD affichée deux fois au passage PowerShell → cmd
+
+**Anomalie.** `PowerShellSubShell.processLine('cmd')` retournait
+`output: ['Microsoft Windows [Version 10.0.22631.6649]', '(c) Microsoft …']`
+ET le marqueur `_enterCmd: true`. La session :
+1. Pushe les `output` dans la scrollback via `addLine` — banière #1.
+2. Détecte `_enterCmd`, appelle `enterNestedCmd()` qui crée un
+   `CmdSubShell.create(device)` et pushe son `banner` — banière #2.
+
+**Correctif.** `PowerShellSubShell` retourne désormais `output: []` ;
+`enterNestedCmd` reste responsable de la banière.
+
+### 9.4 — Double notice « powered off » lors d'une mise hors tension en
+plein vol
+
+**Anomalie identifiée lors de l'audit.** Quand une commande est en cours
+d'exécution et que l'utilisateur met la machine hors tension, deux
+émetteurs concurrents écrivent un message :
+- la voie bus (`TerminalManager.onDevicePoweredOff`) : *Connection to
+  <host> lost: device powered off.* — émise immédiatement à réception de
+  `device.power-off`.
+- la voie réactive (`LinuxTerminalSession`/`CLITerminalSession`/
+  `WindowsTerminalSession` `catch (DeviceOfflineError)`) : *Connection
+  lost: device is powered off* — émise quand la commande pendante échoue
+  à cause du gating dans `executeOnDevice`.
+
+**Correctif.** Les trois `catch` testent désormais `this.isDisconnected`
+avant d'écrire — si la voie bus a déjà fait le boulot, on ne réécrit pas.
+La voie réactive devient un *fallback* pour les cas exotiques où le bus
+n'aurait pas notifié.
+
+### 9.5 — Tests verrous
+
+`src/__tests__/unit/terminal/duplicate-display-fixes.test.ts` (5 tests) :
+- prompt sudo absent de la scrollback pendant la saisie
+- prompt sudo exactement présent une fois après Enter
+- `/etc/motd` contient « Welcome to Ubuntu » une seule fois après
+  provisionning
+- `PowerShellSubShell.processLine('cmd')` retourne un `output` vide
+- bascule PS → cmd produit *exactement une* banière CMD dans la scrollback
+
+---
+
+## Section 10 — exit/sudo/su et éditeurs dans les chaînes `&&`
+
+Trois régressions héritées de la §2 (shell-session isolation) et un manque
+fonctionnel sur les éditeurs en chaîne. Les trois proviennent du fait que
+plusieurs API publiques de `LinuxMachine` lisent encore le `cwd` /
+`suStack` *partagés* de l'executor au lieu de la `LinuxShellSession` du
+terminal qui appelle.
+
+### 10.1 — `exit` depuis sudo/su ferme le terminal au lieu de remonter
+
+**Anomalie.** `LinuxTerminalSession.executeCommand` (autour de la ligne 415)
+appelle `this.device.handleExit()` pour décider si `exit` doit dépiler une
+frame `sudo` / `su` ou fermer la fenêtre. `handleExit()` regarde
+`executor.suStack`. Or depuis §2 le `suStack` réel vit dans la
+`LinuxShellSession` du terminal — l'`executor.suStack` reste à 0
+au repos. Donc :
+
+```
+user@pc1:~$ sudo su
+[sudo] password for user: ********
+root@pc1:/# cd /etc
+root@pc1:/etc# exit          ← FERME le terminal au lieu de revenir à user@pc1
+```
+
+C'est le bug rapporté par l'utilisateur ; aussi reproductible avec
+`su alice` puis `exit`.
+
+**Correctif.** Nouvelle méthode `LinuxMachine.handleExitInSession(shell)`
+qui exécute `executor.handleExit()` à l'intérieur d'un swap-and-restore
+sur la `LinuxShellSession` passée. La session voit donc son propre
+`suStack` ; la frame est correctement dépilée ; les champs `cwd`, `user`,
+`uid`, `gid`, `umask` sont restaurés à l'état pré-`sudo su`. Le terminal
+reste ouvert.
+
+`LinuxTerminalSession` appelle désormais `handleExitInSession(this.shell)`
+quand un shell est alloué, et retombe sur `handleExit()` historique
+seulement pour les devices non-Linux.
+
+### 10.2 — `sudo <admin-cmd>` doit propager l'élévation
+
+**Vérification.** Au tracé : `sudo useradd alice` passe par le flow
+`buildSudoFlow` (LinuxFlowBuilder) → `sudoStep` valide le mot de passe →
+`executeCommandStep` appelle `device.executeCommand('sudo useradd alice')`.
+La string `sudo useradd alice` retourne dans `LinuxCommandExecutor.execute`
+qui la passe à l'interpréteur bash, qui appelle
+`dispatchFromInterpreter(['sudo', 'useradd', 'alice'])`. Cette fonction
+détecte le préfixe `sudo`, sauvegarde le user courant, le bascule à root,
+appelle `dispatch('useradd', ['alice'], …)` — donc `useradd` *s'exécute
+bien* en root.
+
+**Résultat.** Pas de bug fonctionnel sur `sudo useradd / adduser /
+groupadd / mkdir / chown / chmod / touch / passwd …`. La suite de tests
+§2 du suite `linux-lan-shell-suite.test.ts` exerce cette matrice et
+vérifie l'état post-condition (`/etc/passwd`, `/etc/group`, droits
+`/opt/...`). Tous les cas passent.
+
+### 10.3 — `nano`, `vi`, `vim` doivent fonctionner en chaîne `&&` / `;` / `||`
+
+**Anomalie.** `LinuxTerminalSession.executeCommand` interceptait
+*uniquement* le cas où la ligne *commence* par `nano`/`vi`/`vim` (avec
+ou sans `sudo`). Une commande comme `mkdir foo && nano foo/x` était
+livrée telle quelle à l'interpréteur bash, qui ne sait pas exécuter
+nano (l'éditeur est un overlay React, pas un binaire interne) → erreur
+muette ou « command not found ».
+
+**Correctif.** Trois pièces :
+
+1. **Parser de chaîne `parseShellChain(line)`** (LinuxTerminalSession.ts,
+   en bas de fichier). Découpe la ligne sur `&&`, `||`, `;` top-level en
+   respectant les guillemets (simples, doubles, échappements `\`). Retourne
+   `Array<{ connector, cmd }>`. Les pipes (`|`) restent dans le segment
+   parce qu'ils ne déclenchent pas de chaîne conditionnelle.
+
+2. **Détection `isEditorSegment(cmd)`** et gating
+   `shouldExecuteSegment(connector, prevExit)`. Couvrent `sudo nano`,
+   `vi`, `vim`, et les trois opérateurs de chaînage standard.
+
+3. **Dispatch éditeur-aware dans `executeCommand`** :
+   - Si le segment éditeur est en tête (pas de préfixe) → ouvre
+     directement l'éditeur, stash le reste dans
+     `_pendingChainAfterEditor`.
+   - Sinon → exécute le préfixe via `executeOnDevice`, lit le `lastExitCode`
+     depuis `this.shell?.lastExitCode`, applique le connecteur, puis
+     ouvre l'éditeur (ou skip si gating négatif).
+   - Sur sortie de l'éditeur (`editorExit(saved)`), `executeChain(tail,
+     saved ? 0 : 1)` reprend les segments restants. Le saved flag mappe
+     au code de retour (vim `:wq` = 0, `:q!` peut être 1).
+
+**Bonus : per-session path resolution.** `LinuxMachine` expose désormais
+`resolveAbsolutePathInSession`, `readFileForEditorInSession`,
+`writeFileFromEditorInSession`. `openEditor` les utilise quand un shell
+session est alloué, sinon retombe sur la version device-wide. Conséquence :
+`cd /tmp/proj && nano file.txt` ouvre bien `/tmp/proj/file.txt` (et pas
+`/home/user/file.txt`) — régression latente avant §2.
+
+### 10.4 — Tests verrous
+
+`src/__tests__/unit/network-v2/linux-lan-shell-suite.test.ts` (22 tests
+réparties en trois sections, écrites dans le même style que
+`linux-lan-ssh-suite.test.ts`) :
+
+- **§1 exit/sudo/su** (4 tests) :
+  - `sudo su` → `cd /etc` → `exit` ramène au user/cwd d'origine, terminal
+    ouvert ;
+  - `su alice` → `exit` dépile sans fermer ;
+  - depuis l'intérieur d'un su, un `exit` n'est jamais une fermeture ;
+  - `exit` au top-level ferme bien.
+
+- **§2 sudo + admin commands** (7 tests) :
+  - `useradd`, `useradd -G sudo`, `groupadd`, `mkdir`, `chown`, `chmod`,
+    `adduser` interactif, `passwd <user>` puis `su <user>` —
+    chaque test vérifie la post-condition (lecture de `/etc/passwd`,
+    `groups`, `ls -l`, etc.).
+
+- **§3 éditeurs en chaîne** (11 tests) :
+  - `parseShellChain` + quotes, `isEditorSegment`,
+    `shouldExecuteSegment` unitairement ;
+  - `mkdir foo && nano foo/x.txt` ouvre l'éditeur dans le bon cwd ;
+  - `nano foo && echo done` exécute la queue après sortie ;
+  - `false || nano …` ouvre l'éditeur en branche d'erreur ;
+  - `true && false && nano …` **skip** l'éditeur ;
+  - parité vim, vi ;
+  - `cd /tmp/rel && nano file.txt` résout au cwd post-cd.
+
+**Suite complète post-§10** : 56 fichiers de tests sous `unit/terminal/`,
++ ce nouveau fichier sous `unit/network-v2/` — *446 tests verts* en local.
 
 ### Couverture event-bus
 

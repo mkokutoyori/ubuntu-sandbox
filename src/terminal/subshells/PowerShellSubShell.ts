@@ -72,12 +72,23 @@ export class PowerShellSubShell implements ISubShell {
   /**
    * Factory: create a PowerShell sub-shell for a Windows device.
    *
+   * @param device  The Windows device hosting the sub-shell.
+   * @param opts.initialCwd  Optional starting cwd — pass the parent
+   *  WindowsShellSession's cwd so PowerShell launched from terminal A
+   *  doesn't inherit terminal B's cwd via the device-wide shared field
+   *  (terminal_gap.md §7.5). When omitted, falls back to the device cwd
+   *  for backwards-compat with callers that do not yet thread a session.
    * @returns The sub-shell and banner lines.
    */
-  static create(device: Equipment): { subShell: PowerShellSubShell; banner: string[] } {
+  static create(
+    device: Equipment,
+    opts?: { initialCwd?: string },
+  ): { subShell: PowerShellSubShell; banner: string[] } {
     const subShell = new PowerShellSubShell(device);
-    // Sync initial cwd from the device
-    subShell.psExecutor.setCwd((device as any).getCwd());
+    // Prefer the caller-provided cwd (per-terminal session); fall back to
+    // the device's shared cwd so legacy call sites still work.
+    const startCwd = opts?.initialCwd ?? (device as any).getCwd();
+    subShell.psExecutor.setCwd(startCwd);
     // Wire env-var resolution so $env:APPDATA etc. return Windows-accurate values
     subShell.interp.envVarHook = (name: string) => subShell.psExecutor.resolveEnvVar(name);
     // Wire Test-Path to filesystem + registry
@@ -115,14 +126,14 @@ export class PowerShellSubShell implements ISubShell {
     }
     this.psExecutor.setHistory(this.commandHistory);
 
-    // "cmd" / "cmd.exe" → signal to the session that a nested cmd is needed
-    // The session will handle creating a CmdSubShell
+    // "cmd" / "cmd.exe" → signal to the session that a nested cmd is needed.
+    // The banner is intentionally NOT included in `output` here: the
+    // session's enterNestedCmd() owns banner rendering via
+    // CmdSubShell.create(). Returning it both places duplicated the
+    // "Microsoft Windows [Version …]" header (terminal_gap.md §9.3).
     if (trimmed.toLowerCase() === 'cmd' || trimmed.toLowerCase() === 'cmd.exe') {
       return {
-        output: [
-          'Microsoft Windows [Version 10.0.22631.6649]',
-          '(c) Microsoft Corporation. All rights reserved.',
-        ],
+        output: [],
         exit: false,
         prompt: this.getPrompt(),
         // The session detects this via a special marker

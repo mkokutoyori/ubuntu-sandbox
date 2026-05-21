@@ -1314,4 +1314,48 @@ export abstract class LinuxMachine extends EndHost {
       exec.restoreFromSnapshot(baseline);
     }
   }
+
+  /**
+   * Pop one frame off the session's su stack (the per-terminal one, not
+   * the device-wide shared executor stack). Mirrors `handleExit` but
+   * scoped to a session so `exit` from a `sudo su` only affects the
+   * terminal that ran it. Fix for terminal_gap.md §10.1.
+   */
+  handleExitInSession(session: LinuxShellSession): { output: string; inSu: boolean } {
+    if (session.disposed || !this.isPoweredOn) return { output: '', inSu: false };
+    const exec = this.executor;
+    const baseline = exec.snapshotState();
+    exec.swapInSession(session);
+    try {
+      const result = exec.handleExit();
+      exec.captureStateInto(session);
+      return result;
+    } finally {
+      exec.restoreFromSnapshot(baseline);
+    }
+  }
+
+  /**
+   * Resolve an absolute path using the per-terminal session's cwd, so
+   * editor opens (`nano file`) and file IO use the *active* shell's
+   * working directory, not the device-wide shared one.
+   */
+  resolveAbsolutePathInSession(path: string, session: LinuxShellSession): string {
+    if (session.disposed) return this.resolveAbsolutePath(path);
+    return this.executor.vfs.normalizePath(path, session.cwd);
+  }
+
+  /** Per-session variant of readFileForEditor. */
+  readFileForEditorInSession(path: string, session: LinuxShellSession): string | null {
+    if (session.disposed) return this.readFileForEditor(path);
+    const absPath = this.executor.vfs.normalizePath(path, session.cwd);
+    return this.executor.vfs.readFile(absPath);
+  }
+
+  /** Per-session variant of writeFileFromEditor. */
+  writeFileFromEditorInSession(path: string, content: string, session: LinuxShellSession): boolean {
+    if (session.disposed) return this.writeFileFromEditor(path, content);
+    const absPath = this.executor.vfs.normalizePath(path, session.cwd);
+    return this.executor.vfs.writeFile(absPath, content, session.uid, session.gid, session.umask);
+  }
 }

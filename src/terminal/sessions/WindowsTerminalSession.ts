@@ -14,8 +14,11 @@
 import { Equipment } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
+  withTimeout, DeviceOfflineError,
   type InputMode,
 } from './TerminalSession';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
@@ -69,8 +72,43 @@ export class WindowsTerminalSession extends TerminalSession {
   /** Saved input before history navigation started. */
   private subShellSavedInput: string = '';
 
+  /**
+   * Per-terminal cmd.exe session — allocated on Windows machines so that
+   * cwd / env / drive-cwd / history isolation is enforced per window.
+   * Null when the underlying device does not support shell sessions.
+   *
+   * See terminal_gap.md §6.
+   */
+  shell: WindowsShellSession | null = null;
+
   constructor(id: string, device: Equipment) {
     super(id, device);
+    if (device instanceof WindowsPC) {
+      this.shell = device.openShellSession();
+      this.registerTearDown(() => {
+        const s = this.shell;
+        if (s && device instanceof WindowsPC) device.closeShellSession(s);
+        this.shell = null;
+      });
+    }
+  }
+
+  /**
+   * Route command execution through the per-terminal session when one is
+   * allocated, so that `cd D:\foo` / `set FOO=bar` mutate only this window
+   * and not any other terminal on the same machine.
+   */
+  protected override async executeOnDevice(
+    command: string,
+    timeoutMs?: number,
+  ): Promise<string> {
+    const dev = this.device;
+    if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
+    if (this.shell && dev instanceof WindowsPC) {
+      const p = dev.executeCommandInSession(command, this.shell);
+      return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
+    }
+    return super.executeOnDevice(command, timeoutMs);
   }
 
   getSessionType(): SessionType { return 'windows'; }
@@ -98,7 +136,11 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.activeSubShell) {
       return this.activeSubShell.getPrompt();
     }
-    return `${(this.device as any).getCwd()}>`;
+    // Per-session cwd is authoritative when allocated (terminal_gap.md §6);
+    // falls back to the device-wide cwd for non-Windows devices or when
+    // the shell session has been disposed.
+    const cwd = this.shell?.cwd ?? (this.device as any).getCwd();
+    return `${cwd}>`;
   }
 
   override get currentInputMode(): InputMode {
@@ -226,7 +268,9 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
-        this.addLine('Device is powered off — session disconnected', 'error');
+        if (!this.isDisconnected) {
+          this.addLine('Device is powered off — session disconnected', 'error');
+        }
         return;
       }
       if (err instanceof Error && err.name === 'CommandTimeoutError') {
@@ -242,7 +286,12 @@ export class WindowsTerminalSession extends TerminalSession {
   // ── Sub-shell management ───────────────────────────────────────
 
   private enterPowerShell(): void {
-    const { subShell, banner } = PowerShellSubShell.create(this.device);
+    // Seed the PS sub-shell with THIS terminal's cwd so opening PowerShell
+    // from terminal A doesn't pick up terminal B's `cd D:\foo`
+    // (terminal_gap.md §7.5).
+    const { subShell, banner } = PowerShellSubShell.create(this.device, {
+      initialCwd: this.shell?.cwd,
+    });
     // If there's already an active subshell, push it onto the stack
     if (this.activeSubShell) {
       this.subShellStack.push(this.activeSubShell);
@@ -479,8 +528,13 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   protected onTab(): void {
-    // Root cmd tab completion — same as before
-    const completions = this.device.getCompletions(this.input);
+    // Root cmd tab completion runs in the per-session context so path
+    // completion uses *this* terminal's cwd, not the device-wide shared one
+    // (terminal_gap.md §6).
+    const dev = this.device;
+    const completions = (this.shell && dev instanceof WindowsPC)
+      ? dev.getCompletionsForSession(this.input, this.shell)
+      : this.device.getCompletions(this.input);
     if (completions.length === 0) return;
 
     const result = completeInputCaseInsensitive(this.input, completions);

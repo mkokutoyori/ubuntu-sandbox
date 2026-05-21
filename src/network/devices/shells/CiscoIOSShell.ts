@@ -219,6 +219,78 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getSelectedIKEv2Profile(): string | null { return this.selectedIKEv2Profile; }
   setSelectedIKEv2Profile(p: string | null): void { this.selectedIKEv2Profile = p; }
 
+  // ─── Per-vty state snapshot / swap (§5.1 of terminal_gap.md) ─────
+
+  /**
+   * Capture every mode-related field into a snapshot. The shell is
+   * single-instance per device — to give each terminal its own vty we
+   * snapshot, swap in the per-session state, run synchronously, then
+   * restore. Concurrent calls are serialised at the device layer (cf.
+   * Router.executeCommandInVty) so the swap window is never observed
+   * across terminals.
+   *
+   * Async commands (ping, traceroute) capture the field values BEFORE
+   * the await: by the time the Promise resolves the swap-out has
+   * already happened, but the closures hold the right state via
+   * `_pendingAsync`. The shell ensures it.
+   */
+  snapshotVtyState(): import('./vty/CliShellSession').VtySnapshot {
+    return {
+      mode: this.mode,
+      selectedInterface: this.selectedInterface,
+      selectedRoutingProto: this.selectedRoutingProto,
+      selectedTrack: this.selectedTrack,
+      selectedIpSla: this.selectedIpSla,
+      selectedRouteMap: this.selectedRouteMap,
+      selectedDHCPPool: this.selectedDHCPPool,
+      selectedACL: this.selectedACL,
+      selectedACLType: this.selectedACLType,
+      selectedISAKMPPriority: this.selectedISAKMPPriority,
+      selectedTransformSet: this.selectedTransformSet,
+      selectedCryptoMap: this.selectedCryptoMap,
+      selectedCryptoMapSeq: this.selectedCryptoMapSeq,
+      selectedCryptoMapIsDynamic: this.selectedCryptoMapIsDynamic,
+      selectedIPSecProfile: this.selectedIPSecProfile,
+      selectedIKEv2Proposal: this.selectedIKEv2Proposal,
+      selectedIKEv2Policy: this.selectedIKEv2Policy,
+      selectedIKEv2Keyring: this.selectedIKEv2Keyring,
+      selectedIKEv2KeyringPeer: this.selectedIKEv2KeyringPeer,
+      selectedIKEv2Profile: this.selectedIKEv2Profile,
+      // Per-vty exec preferences (currently read by CLITerminalSession via
+      // device API; stored here for completeness so the session round-trips).
+      terminalLength: 24,
+      terminalWidth: 80,
+      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      historySize: 10,
+      cmdHistory: this.cmdHistory,
+    };
+  }
+
+  /** Apply a session's snapshot onto this shell instance. */
+  applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
+    this.mode = s.mode as CiscoShellMode;
+    this.selectedInterface = s.selectedInterface;
+    this.selectedRoutingProto = s.selectedRoutingProto as typeof this.selectedRoutingProto;
+    this.selectedTrack = s.selectedTrack;
+    this.selectedIpSla = s.selectedIpSla;
+    this.selectedRouteMap = s.selectedRouteMap as typeof this.selectedRouteMap;
+    this.selectedDHCPPool = s.selectedDHCPPool;
+    this.selectedACL = s.selectedACL;
+    this.selectedACLType = s.selectedACLType;
+    this.selectedISAKMPPriority = s.selectedISAKMPPriority;
+    this.selectedTransformSet = s.selectedTransformSet;
+    this.selectedCryptoMap = s.selectedCryptoMap;
+    this.selectedCryptoMapSeq = s.selectedCryptoMapSeq;
+    this.selectedCryptoMapIsDynamic = s.selectedCryptoMapIsDynamic;
+    this.selectedIPSecProfile = s.selectedIPSecProfile;
+    this.selectedIKEv2Proposal = s.selectedIKEv2Proposal;
+    this.selectedIKEv2Policy = s.selectedIKEv2Policy;
+    this.selectedIKEv2Keyring = s.selectedIKEv2Keyring;
+    this.selectedIKEv2KeyringPeer = s.selectedIKEv2KeyringPeer;
+    this.selectedIKEv2Profile = s.selectedIKEv2Profile;
+    this.cmdHistory = s.cmdHistory;
+  }
+
   // ─── Abstract Method Implementations ─────────────────────────────
 
   protected getPromptMap(): PromptMap { return CISCO_IOS_PROMPTS; }

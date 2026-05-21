@@ -159,6 +159,55 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── HuaweiIPSecContext Implementation ──────────────────────────────
 
+  // ─── Per-vty state snapshot / swap (§5.1 of terminal_gap.md) ─────
+
+  /**
+   * Capture every mode-related field into a snapshot. Mirrors
+   * CiscoIOSShell.snapshotVtyState. Router.executeCommandInVty uses
+   * this to swap per-terminal state in for the duration of a command.
+   */
+  snapshotVtyState(): import('./vty/CliShellSession').VtySnapshot {
+    return {
+      mode: this.mode,
+      selectedInterface: this.selectedInterface,
+      selectedRoutingProto: null,                  // VRP: not modelled here
+      selectedTrack: null,
+      selectedIpSla: null,
+      selectedRouteMap: null,
+      selectedDHCPPool: this.selectedPool,
+      selectedACL: this.selectedACLName,
+      selectedACLType: null,
+      selectedISAKMPPriority: this.selectedIKEProposal,
+      selectedTransformSet: this.selectedIPSecProposal,
+      selectedCryptoMap: this.selectedIPSecPolicy,
+      selectedCryptoMapSeq: this.selectedIPSecPolicySeq,
+      selectedCryptoMapIsDynamic: false,
+      selectedIPSecProfile: null,
+      selectedIKEv2Proposal: null,
+      selectedIKEv2Policy: null,
+      selectedIKEv2Keyring: null,
+      selectedIKEv2KeyringPeer: null,
+      selectedIKEv2Profile: null,
+      terminalLength: 24,
+      terminalWidth: 80,
+      privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
+      historySize: 10,
+      cmdHistory: [],
+    };
+  }
+
+  /** Apply a session's snapshot onto this shell instance. */
+  applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
+    this.mode = (s.mode ?? 'user') as HuaweiShellMode;
+    this.selectedInterface = s.selectedInterface;
+    this.selectedPool = s.selectedDHCPPool;
+    this.selectedACLName = s.selectedACL;
+    this.selectedIKEProposal = s.selectedISAKMPPriority;
+    this.selectedIPSecProposal = s.selectedTransformSet;
+    this.selectedIPSecPolicy = s.selectedCryptoMap;
+    this.selectedIPSecPolicySeq = s.selectedCryptoMapSeq;
+  }
+
   setSelectedIKEProposal(n: number | null): void { this.selectedIKEProposal = n; }
   getSelectedIKEProposal(): number | null { return this.selectedIKEProposal; }
   setSelectedIKEPeer(name: string | null): void { this.selectedIKEPeer = name; }

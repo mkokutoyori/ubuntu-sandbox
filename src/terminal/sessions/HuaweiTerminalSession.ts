@@ -8,9 +8,11 @@
 
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
-import { TerminalTheme, SessionType } from './TerminalSession';
+import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
 import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
+import { Router } from '@/network/devices/Router';
+import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -27,12 +29,46 @@ const HUAWEI_THEME: TerminalTheme = {
 };
 
 export class HuaweiTerminalSession extends CLITerminalSession {
+  /** Per-terminal vty session — same model as CiscoTerminalSession (§5.1). */
+  vty: CliShellSession | null = null;
+
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
+    if (device instanceof Router) {
+      this.vty = device.openVtySession();
+      this.registerTearDown(() => {
+        const s = this.vty;
+        if (s && device instanceof Router) device.closeVtySession(s);
+        this.vty = null;
+      });
+    }
   }
 
   getSessionType(): SessionType { return 'huawei'; }
   getTheme(): TerminalTheme { return HUAWEI_THEME; }
+
+  protected override async executeOnDevice(
+    command: string,
+    timeoutMs?: number,
+  ): Promise<string> {
+    const dev = this.device;
+    if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
+    if (this.vty && dev instanceof Router) {
+      const p = dev.executeCommandInVty(command, this.vty);
+      return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
+    }
+    return super.executeOnDevice(command, timeoutMs);
+  }
+
+  override updatePrompt(): void {
+    const dev = this.device;
+    if (this.vty && dev instanceof Router) {
+      this.prompt = dev.getPromptForVty(this.vty);
+    } else {
+      this.prompt = this.cliDevice.getPrompt();
+    }
+    this.notify();
+  }
 
   protected getDefaultPrompt(): string {
     return `<${this.device.getHostname()}>`;
