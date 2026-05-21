@@ -14,6 +14,8 @@ import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdA
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
+import { parseUseraddArgs } from './iam/useraddOptions';
+import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -147,6 +149,7 @@ export class LinuxCommandExecutor {
   attachEventBus(bus: IEventBus, deviceId: string): void {
     this.processMgr.attachBus(bus, deviceId);
     this.serviceMgr.attachBus(bus, deviceId);
+    this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
   }
@@ -758,7 +761,7 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
 
     // Root-only commands — reject if not root
-    const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
+    const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
       'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
@@ -881,17 +884,18 @@ export class LinuxCommandExecutor {
       // User commands
       case 'useradd': {
         const out = cmdUseradd(c, args);
-        if (!out && args.includes('-m')) {
-          // Create skeleton files in new home dir
-          const username = args.filter(a => !a.startsWith('-')).find(a => !['bash', '/bin/bash', '/bin/sh', '/sbin/nologin', '/usr/sbin/nologin'].includes(a));
-          if (username) {
-            const user = this.userMgr.getUser(username);
+        if (!out) {
+          // Create skeleton files in the new home dir when `-m` was given.
+          const req = parseUseraddArgs(args);
+          if (req.username && req.createHome && !req.noCreateHome) {
+            const user = this.userMgr.getUser(req.username);
             if (user) this.createSkeletonFiles(user.home, user.uid, user.gid);
           }
         }
         return { output: out, exitCode: out ? 1 : 0 };
       }
       case 'adduser': return this.handleAdduser(args);
+      case 'addgroup': return this.handleAdduser(args, true);
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
       case 'userdel': return this.handleUserdel(args);
       case 'deluser': return this.handleDeluser(args);
@@ -1653,38 +1657,101 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private handleAdduser(args: string[]): { output: string; exitCode: number } {
-    // Debian-style adduser — creates user, home, skeleton files
-    // Interactive password prompts are handled by Terminal.tsx
-    let username = '';
-    let gecos: string | undefined;
-    let disabledPassword = false;
+  /**
+   * Debian/Ubuntu `adduser` front-end (also serves `addgroup` via the
+   * `addGroupAlias` flag). Faithful to the real tool: it is overloaded over
+   * three operations — create a user, add an existing user to a group, or
+   * create a group — and emits the same progress banner the real command
+   * prints. The interactive password / GECOS capture is layered on top by
+   * `LinuxFlowBuilder` when the terminal session runs the command.
+   */
+  private handleAdduser(args: string[], addGroupAlias = false): { output: string; exitCode: number } {
+    const req = parseAdduserArgs(args, addGroupAlias);
 
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--gecos') { gecos = args[++i]; continue; }
-      if (args[i] === '--disabled-password') { disabledPassword = true; continue; }
-      if (args[i] === '--disabled-login') { disabledPassword = true; continue; }
-      if (!args[i].startsWith('-')) { username = args[i]; }
+    if (req.mode === 'create-group') {
+      return this.adduserCreateGroup(req, addGroupAlias ? 'addgroup' : 'adduser');
     }
-    if (!username) return { output: 'adduser: missing username', exitCode: 1 };
+    if (!req.name) {
+      return { output: 'adduser: missing user name', exitCode: 1 };
+    }
+    if (req.mode === 'add-to-group') {
+      return this.adduserAddToGroup(req);
+    }
+    return this.adduserCreateUser(req);
+  }
 
-    const result = this.userMgr.useradd(username, { m: true, s: '/bin/bash', c: gecos });
-    if (result) return { output: result, exitCode: 1 };
+  /** `adduser <user>` / `adduser --system <user>` — create an account. */
+  private adduserCreateUser(req: AdduserRequest): { output: string; exitCode: number } {
+    if (this.userMgr.getUser(req.name)) {
+      return { output: `adduser: The user \`${req.name}' already exists.`, exitCode: 1 };
+    }
+    if (req.ingroup && !this.userMgr.getGroup(req.ingroup)) {
+      return { output: `adduser: The group \`${req.ingroup}' does not exist.`, exitCode: 1 };
+    }
 
-    const user = this.userMgr.getUser(username)!;
+    const createHome = !req.noCreateHome;
+    const shell = req.shell ?? (req.system ? '/usr/sbin/nologin' : '/bin/bash');
+    const result = this.userMgr.useradd(req.name, {
+      m: createHome,
+      M: req.noCreateHome,
+      s: shell,
+      d: req.home,
+      g: req.ingroup,
+      c: req.gecos,
+      u: req.uid,
+      r: req.system,
+    });
+    if (result) return { output: `adduser: ${result}`, exitCode: 1 };
 
-    // Create skeleton files in home directory
-    this.createSkeletonFiles(user.home, user.uid, user.gid);
+    const user = this.userMgr.getUser(req.name)!;
+    if (createHome) this.createSkeletonFiles(user.home, user.uid, user.gid);
 
-    // Return info output only (no password prompts — Terminal handles those)
-    const lines = [
-      `Adding user \`${username}' ...`,
-      `Adding new group \`${username}' (${user.gid}) ...`,
-      `Adding new user \`${username}' (${user.uid}) with group \`${username}' ...`,
-      `Creating home directory \`${user.home}' ...`,
-      `Copying files from \`/etc/skel' ...`,
-    ];
+    const groupName = this.userMgr.gidToName(user.gid);
+    const lines: string[] = [];
+    lines.push(req.system
+      ? `Adding system user \`${req.name}' (${user.uid}) ...`
+      : `Adding user \`${req.name}' ...`);
+    if (!req.ingroup) {
+      lines.push(`Adding new group \`${groupName}' (${user.gid}) ...`);
+    }
+    lines.push(`Adding new user \`${req.name}' (${user.uid}) with group \`${groupName}' ...`);
+    if (createHome) {
+      lines.push(`Creating home directory \`${user.home}' ...`);
+      lines.push(`Copying files from \`/etc/skel' ...`);
+    } else {
+      lines.push(`Not creating home directory \`${user.home}'.`);
+    }
     return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  /** `adduser <user> <group>` — add an existing user to an existing group. */
+  private adduserAddToGroup(req: AdduserRequest): { output: string; exitCode: number } {
+    if (!this.userMgr.getUser(req.name)) {
+      return { output: `adduser: The user \`${req.name}' does not exist.`, exitCode: 1 };
+    }
+    if (!this.userMgr.getGroup(req.group)) {
+      return { output: `adduser: The group \`${req.group}' does not exist.`, exitCode: 1 };
+    }
+    this.userMgr.usermod(req.name, { aG: req.group });
+    return {
+      output: `Adding user \`${req.name}' to group \`${req.group}' ...\nDone.`,
+      exitCode: 0,
+    };
+  }
+
+  /** `adduser --group <group>` / `addgroup <group>` — create a group. */
+  private adduserCreateGroup(req: AdduserRequest, cmd: string): { output: string; exitCode: number } {
+    if (!req.name) return { output: `${cmd}: missing group name`, exitCode: 1 };
+    if (this.userMgr.getGroup(req.name)) {
+      return { output: `${cmd}: The group \`${req.name}' already exists.`, exitCode: 1 };
+    }
+    const result = this.userMgr.groupadd(req.name, { g: req.gid });
+    if (result) return { output: `${cmd}: ${result}`, exitCode: 1 };
+    const group = this.userMgr.getGroup(req.name)!;
+    return {
+      output: `Adding group \`${req.name}' (GID ${group.gid}) ...\nDone.`,
+      exitCode: 0,
+    };
   }
 
   private handleChfn(args: string[]): { output: string; exitCode: number } {
@@ -1955,8 +2022,8 @@ export class LinuxCommandExecutor {
       'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
       // Users and groups
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
-      'useradd', 'usermod', 'userdel', 'passwd', 'chpasswd', 'chage',
-      'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
+      'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
+      'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',
       // Lookup
       'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',

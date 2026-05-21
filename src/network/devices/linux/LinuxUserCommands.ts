@@ -4,28 +4,36 @@
  */
 
 import { ShellContext } from './LinuxFileCommands';
+import { parseUseraddArgs } from './iam/useraddOptions';
 
 export function cmdUseradd(ctx: ShellContext, args: string[]): string {
-  let m = false, s: string | undefined, G: string | undefined, d: string | undefined;
-  let g: string | undefined, c: string | undefined;
-  let username = '';
+  const req = parseUseraddArgs(args);
+  if (!req.username) return 'useradd: missing username';
 
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '-m': m = true; break;
-      case '-s': s = args[++i]; break;
-      case '-G': G = args[++i]; break;
-      case '-d': d = args[++i]; break;
-      case '-g': g = args[++i]; break;
-      case '-c': c = args[++i]; break;
-      default:
-        if (!args[i].startsWith('-')) username = args[i];
-        break;
-    }
-  }
+  return ctx.userMgr.useradd(req.username, {
+    m: req.createHome,
+    M: req.noCreateHome,
+    s: req.shell,
+    G: req.supplementaryGroups.length > 0 ? req.supplementaryGroups.join(',') : undefined,
+    d: req.home,
+    g: req.primaryGroup,
+    c: req.comment,
+    u: req.uid,
+    o: req.nonUnique,
+    r: req.systemAccount,
+    N: req.noUserGroup,
+    p: req.passwordHash,
+    e: parseExpireDays(req.expireDate),
+    f: req.inactiveDays,
+  });
+}
 
-  if (!username) return 'useradd: missing username';
-  return ctx.userMgr.useradd(username, { m, s, G, d, g, c });
+/** Convert a `useradd -e` date string (YYYY-MM-DD) to days since the epoch. */
+function parseExpireDays(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return undefined;
+  return Math.floor(ms / 86_400_000);
 }
 
 export function cmdUsermod(ctx: ShellContext, args: string[]): string {

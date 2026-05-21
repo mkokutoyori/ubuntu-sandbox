@@ -13,9 +13,17 @@
  *   - passwd               (current password → new → retype → set)
  *   - passwd <user> (root) (new → retype → set)
  *   - adduser <user> (root)(create → password → GECOS → confirm)
+ *
+ * Faithfulness note: `adduser` is the interactive Debian/Ubuntu front-end —
+ * it is the command that prompts for a password and the GECOS finger
+ * fields. The low-level `useradd` command is intentionally given NO flow:
+ * on real equipment it is non-interactive and simply creates the account,
+ * so it falls through to plain (silent) execution.
  */
 
 import type { InteractiveStep, FlowContext } from '../core/types';
+import { tokenize } from '@/network/devices/linux/LinuxShellParser';
+import { parseAdduserArgs } from '@/network/devices/linux/iam/adduserOptions';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -212,10 +220,40 @@ export class LinuxFlowBuilder {
     }
 
     if (parts[0] === 'adduser' && parts.length >= 2 && isRoot) {
-      return LinuxFlowBuilder.buildRootAdduserFlow(parts, trimmed);
+      return LinuxFlowBuilder.buildRootAdduserFlow(trimmed, device);
     }
 
+    // Note: `useradd` is intentionally absent — it is non-interactive on
+    // real systems and must execute silently. `adduser` is the wrapper
+    // that prompts.
+
     return null;
+  }
+
+  /**
+   * Shared account-creation tail: the password capture and GECOS finger
+   * prompts that follow the `adduser` create step. Either half can be
+   * omitted when a flag already supplied that information.
+   */
+  private static userCreationTail(
+    targetUser: string,
+    withPassword: boolean,
+    withGecos: boolean,
+  ): InteractiveStep[] {
+    const passwordSteps: InteractiveStep[] = withPassword ? [
+      ...newPasswordSteps(),
+      {
+        type: 'execute',
+        action: async (ctx) => {
+          ctx.device.setUserPassword(targetUser, ctx.values.get('new_password')!);
+        },
+      },
+      { type: 'output', outputLines: ['passwd: password updated successfully'] },
+    ] : [];
+
+    const chfnSteps: InteractiveStep[] = withGecos ? gecosSteps(targetUser) : [];
+
+    return [...passwordSteps, ...chfnSteps];
   }
 
   /** Build sudo flow: authenticate → execute sub-command (with special cases for passwd/adduser) */
@@ -261,42 +299,31 @@ export class LinuxFlowBuilder {
     }
 
     // sudo adduser <user>
-    if (subCmd === 'adduser' && subParts.length >= 2) {
-      const targetUser = subParts.slice(1).filter(
-        a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login'
-      )[0];
-      const hasDisabledPassword = subParts.includes('--disabled-password') || subParts.includes('--disabled-login');
-      const hasGecos = subParts.indexOf('--gecos') >= 0;
+    if (subCmd === 'adduser') {
+      const req = parseAdduserArgs(tokenize(fullCommand).slice(2));
+      const interactive = req.mode === 'create-user'
+        && !!req.name
+        && !req.system
+        && !(typeof device.userExists === 'function' && device.userExists(req.name));
 
-      if (hasDisabledPassword && hasGecos) {
-        // Only sudo password + execute, no interactive prompts
-        return [
-          sudoStep,
-          executeCommandStep(fullCommand),
-        ];
+      if (!interactive) {
+        // create-group / add-to-group / system / existing user → run silently
+        // after authenticating; the command surfaces its own output.
+        return [sudoStep, executeCommandStep(fullCommand)];
       }
 
-      const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
-        ...newPasswordSteps(),
-        {
-          type: 'execute',
-          action: async (ctx) => {
-            ctx.device.setUserPassword(targetUser, ctx.values.get('new_password')!);
-          },
-        },
-        { type: 'output', outputLines: ['passwd: password updated successfully'] },
-      ];
-
-      const chfnSteps: InteractiveStep[] = hasGecos ? [] : gecosSteps(targetUser);
-
+      const withPassword = !req.disabledPassword;
+      const withGecos = req.gecos === undefined;
       return [
         sudoStep,
-        // Execute adduser command to create user
+        // Execute adduser command to create the user first.
         executeCommandStep(fullCommand),
-        ...passwordSteps,
-        ...chfnSteps,
+        ...LinuxFlowBuilder.userCreationTail(req.name, withPassword, withGecos),
       ];
     }
+
+    // sudo useradd — non-interactive on real systems: authenticate, then
+    // let `useradd` execute silently via the generic sudo path below.
 
     // sudo su
     if (subCmd === 'su') {
@@ -371,38 +398,33 @@ export class LinuxFlowBuilder {
     return null;
   }
 
-  /** Build adduser flow when already root (no sudo needed) */
+  /**
+   * Build the `adduser <user>` flow when already root (no sudo needed).
+   *
+   * Only a plain user creation is interactive. Returns null — deferring to
+   * silent execution — for the non-creating overloads (`adduser <user>
+   * <group>`, `adduser --group`), for system accounts (`--system`), for an
+   * already-existing account, and when both `--disabled-password` and
+   * `--gecos` have removed every prompt.
+   */
   private static buildRootAdduserFlow(
-    parts: string[],
     fullCommand: string,
+    device: any,
   ): InteractiveStep[] | null {
-    const targetUser = parts.slice(1).filter(
-      a => !a.startsWith('-') && a !== '--gecos' && a !== '--disabled-password' && a !== '--disabled-login'
-    )[0];
-    const hasDisabledPassword = parts.includes('--disabled-password') || parts.includes('--disabled-login');
-    const hasGecos = parts.indexOf('--gecos') >= 0;
+    const req = parseAdduserArgs(tokenize(fullCommand).slice(1));
+    if (req.mode !== 'create-user' || !req.name || req.system) return null;
+    if (typeof device.userExists === 'function' && device.userExists(req.name)) {
+      return null;
+    }
 
-    // If both flags are set, no interactive prompts
-    if (hasDisabledPassword && hasGecos) return null;
-
-    const passwordSteps: InteractiveStep[] = hasDisabledPassword ? [] : [
-      ...newPasswordSteps(),
-      {
-        type: 'execute',
-        action: async (ctx) => {
-          ctx.device.setUserPassword(targetUser, ctx.values.get('new_password')!);
-        },
-      },
-      { type: 'output', outputLines: ['passwd: password updated successfully'] },
-    ];
-
-    const chfnSteps: InteractiveStep[] = hasGecos ? [] : gecosSteps(targetUser);
+    const withPassword = !req.disabledPassword;
+    const withGecos = req.gecos === undefined;
+    if (!withPassword && !withGecos) return null;
 
     return [
-      // Execute adduser to create user first
+      // Execute adduser to create the user first.
       executeCommandStep(fullCommand),
-      ...passwordSteps,
-      ...chfnSteps,
+      ...LinuxFlowBuilder.userCreationTail(req.name, withPassword, withGecos),
     ];
   }
 }
