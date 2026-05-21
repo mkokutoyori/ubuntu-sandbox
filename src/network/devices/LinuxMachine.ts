@@ -113,7 +113,10 @@ export abstract class LinuxMachine extends EndHost {
     profile: LinuxProfile,
   ) {
     super(type, name, x, y);
-    this.profile = profile;
+    // Defensive copy — LINUX_PC_PROFILE / LINUX_SERVER_PROFILE are
+    // module-level singletons; mutating them via setHostname would
+    // leak across every device created from the same profile.
+    this.profile = { ...profile };
 
     // 1. Ports
     this.createPortsFromProfile();
@@ -342,6 +345,9 @@ export abstract class LinuxMachine extends EndHost {
    * lines, and auth.log entries all reflect the new value.
    */
   setHostname(hostname: string): void {
+    // Keep the Equipment-level field in sync too — getHostname() reads
+    // it, and DNS / NSS resolution walks the registry by hostname.
+    super.setHostname(hostname);
     (this.profile as { hostname: string }).hostname = hostname;
     this.syncHostnameFiles(hostname);
   }

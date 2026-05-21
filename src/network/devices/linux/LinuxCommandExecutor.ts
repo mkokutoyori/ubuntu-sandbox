@@ -13,7 +13,7 @@ import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdR
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
@@ -36,6 +36,11 @@ import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
 import type { LinuxShellSession } from './shell/LinuxShellSession';
 import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
+import { NameServiceSwitch } from './nss/NameServiceSwitch';
+import { FilesNssSource } from './nss/FilesNssSource';
+import { DnsNssSource } from './nss/DnsNssSource';
+import { ETC_NETWORKS, ETC_PROTOCOLS, ETC_RPC, ETC_SERVICES } from './nss/SystemFiles';
+import { runGetent } from './nss/GetentCommand';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -57,6 +62,21 @@ export class LinuxCommandExecutor {
    * when composing the post-login banner.
    */
   readonly lastlog: LinuxLastlogRegistry = new LinuxLastlogRegistry();
+  /**
+   * Name Service Switch — the resolver consulted by `getent`, `id`,
+   * `gethostbyname`-equivalent code paths. Owns the per-database
+   * source chain declared in `/etc/nsswitch.conf`; subscribes to IAM
+   * + topology events so future cache layers can invalidate without
+   * polling. Created lazily so VFS / userMgr exist before sources are
+   * wired (see `constructor`).
+   */
+  readonly nss: NameServiceSwitch;
+  /**
+   * Direct handle on the `files` source — kept so `getent -s files`
+   * can bypass the full resolver chain when the operator forces a
+   * source override.
+   */
+  private readonly filesNss: FilesNssSource;
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
@@ -103,6 +123,26 @@ export class LinuxCommandExecutor {
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.isServer = isServer;
+
+    // ── NSS provisioning ────────────────────────────────────────────
+    // Seed the canonical NSS-backed system files (a fresh Ubuntu
+    // install ships these). Each is created only when missing so an
+    // operator's runtime edits survive a reboot.
+    if (this.vfs.readFile('/etc/services')  == null) this.vfs.writeFile('/etc/services',  ETC_SERVICES,  0, 0, 0o022);
+    if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
+    if (this.vfs.readFile('/etc/networks')  == null) this.vfs.writeFile('/etc/networks',  ETC_NETWORKS,  0, 0, 0o022);
+    if (this.vfs.readFile('/etc/rpc')       == null) this.vfs.writeFile('/etc/rpc',       ETC_RPC,       0, 0, 0o022);
+
+    // ── NSS resolver ────────────────────────────────────────────────
+    this.filesNss = new FilesNssSource(this.vfs, this.userMgr);
+    this.nss = new NameServiceSwitch(
+      this.vfs,
+      new Map([
+        ['files', this.filesNss],
+        ['dns',   new DnsNssSource()],
+      ]),
+    );
+    this.nss.seedConfigIfMissing();
 
     // Default environment
     this.env.set('PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games');
@@ -158,6 +198,19 @@ export class LinuxCommandExecutor {
     // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
+    // Rebuild NSS with bus-aware invalidation. Re-use the same files
+    // source so the privileged-uid check still points at this executor.
+    this.nss.dispose();
+    (this as { nss: NameServiceSwitch }).nss = new NameServiceSwitch(
+      this.vfs,
+      new Map([
+        ['files', this.filesNss],
+        ['dns',   new DnsNssSource()],
+      ]),
+      bus,
+      deviceId,
+    );
+    this.nss.seedConfigIfMissing();
   }
 
   /** Set the network context for ip command support */
@@ -925,8 +978,10 @@ export class LinuxCommandExecutor {
       case 'last': return { output: cmdLast(c, args), exitCode: 0 };
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'getent': {
-        if (args[0] === 'hosts') return this.handleGetentHosts(args.slice(1));
-        return { output: cmdGetent(c, args), exitCode: 0 };
+        // Real getent consults `/etc/nsswitch.conf` and walks the
+        // declared sources per database. All output / exit-code logic
+        // lives in the NSS module; we just pass the argv through.
+        return runGetent(this.nss, args, this.filesNss);
       }
       case 'sudo': return this.handleSudoCmd(args);
 
@@ -1302,40 +1357,6 @@ export class LinuxCommandExecutor {
         return { output: `${cmd}: command not found`, exitCode: 127 };
       }
     }
-  }
-
-  private handleGetentHosts(args: string[]): { output: string; exitCode: number } {
-    const content = this.vfs.readFile('/etc/hosts');
-    if (!content) return { output: '', exitCode: 2 };
-
-    type HostEntry = { ip: string; names: string[] };
-    const entries: HostEntry[] = [];
-    for (const rawLine of content.split('\n')) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-      const parts = line.split(/\s+/);
-      if (parts.length < 2) continue;
-      if (parts[0].includes(':')) continue; // skip IPv6
-      entries.push({ ip: parts[0], names: parts.slice(1) });
-    }
-
-    const key = args[0];
-    if (!key) {
-      return {
-        output: entries.map(e => `${e.ip.padEnd(16)}${e.names.join(' ')}`).join('\n'),
-        exitCode: 0,
-      };
-    }
-
-    // Search by name or by IP
-    const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(key);
-    for (const e of entries) {
-      if (isIP ? e.ip === key : e.names.includes(key)) {
-        return { output: `${e.ip.padEnd(16)}${e.names.join(' ')}`, exitCode: 0 };
-      }
-    }
-
-    return { output: '', exitCode: 2 };
   }
 
   private handleHistory(args: string[]): { output: string; exitCode: number } {

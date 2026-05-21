@@ -706,6 +706,11 @@ export class LinuxUserManager {
     return username ? `${name} : ${groupNames}` : groupNames;
   }
 
+  /**
+   * @deprecated Direct in-memory lookup kept for legacy callers. New code
+   * should go through `LinuxCommandExecutor.nss` so `/etc/nsswitch.conf`
+   * (and the per-database source chain) is honoured.
+   */
   getent(db: string, key: string): string {
     if (db === 'group') {
       const group = this.groups.get(key);
