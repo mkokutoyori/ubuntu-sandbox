@@ -302,6 +302,17 @@ export class LinuxTerminalSession extends TerminalSession {
       const val = isPassword ? this._passwordBuf : this._inputBuf;
       if (isPassword) this._passwordBuf = '';
       else this._inputBuf = '';
+      // Echo the prompt (+ the non-secret answer) into scrollback so the
+      // SSH host-key / password dialogs leave a trace in history once
+      // submitted. Without this the prompt vanishes the moment the user
+      // hits Enter, which doesn't match OpenSSH's terminal-style flow.
+      // Passwords are intentionally not echoed.
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        const promptText = (this.inputMode as { promptText: string }).promptText;
+        if (promptText) {
+          this.addLine(isPassword ? promptText : `${promptText}${val}`);
+        }
+      }
       // endPrompt() is called inside submitInput → resets inputMode + notify
       this.pendingSshIO.submitInput(val);
       return true;
@@ -518,8 +529,16 @@ export class LinuxTerminalSession extends TerminalSession {
       this.syncDeviceState();
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
-        this.addLine(`\x1b[31mConnection lost: device is powered off\x1b[0m`, 'error');
-        this.inputMode = { type: 'normal' };
+        // The bus-driven path (TerminalManager.onDevicePoweredOff) already
+        // writes a "Connection to <host> lost: device powered off." notice
+        // and flips the session to `disconnected` mode. Only emit the
+        // ad-hoc "Connection lost" line when the session is NOT yet in
+        // that state — otherwise the two notices stack on top of each
+        // other (terminal_gap.md §9.4).
+        if (!this.isDisconnected) {
+          this.addLine(`\x1b[31mConnection lost: device is powered off\x1b[0m`, 'error');
+          this.inputMode = { type: 'normal' };
+        }
       } else if (err instanceof Error && err.name === 'CommandTimeoutError') {
         this.addLine(`\x1b[31mCommand timed out\x1b[0m`, 'error');
       } else {
@@ -1632,12 +1651,16 @@ export class LinuxTerminalSession extends TerminalSession {
     user: string,
   ): Promise<string[]> {
     const lines: string[] = [];
-    const welcome = await this.tryReadWelcome(session);
-    if (welcome) lines.push(welcome);
+    // Single source-of-truth for the Welcome line: motd if it has one,
+    // otherwise a synthesised line from /etc/os-release. Avoids the
+    // "Welcome to Ubuntu" duplicate (terminal_gap.md §9.2) that occurred
+    // when the remote already had a motd that began with that line.
     const motd = await this.tryReadRemoteMotd(session);
-    if (motd.length > 0) {
-      if (lines.length > 0) lines.push('');
+    if (motd.length > 0 && motd.some((l) => l.trim().length > 0)) {
       for (const m of motd) lines.push(m);
+    } else {
+      const welcome = await this.tryReadWelcome(session);
+      if (welcome) lines.push(welcome);
     }
     const lastLogin = await this.tryReadLastLogin(session, user);
     if (lastLogin) {
@@ -2098,16 +2121,21 @@ function composeLoginBanner(remote: Equipment, user: string): string[] {
 
   const lines: string[] = [];
 
-  const osRelease = exec.vfs.readFile('/etc/os-release') ?? '';
-  const pretty = /PRETTY_NAME="([^"]+)"/.exec(osRelease)?.[1] ?? 'Ubuntu 22.04 LTS';
-  // Kernel release would normally come from /proc/sys/kernel/osrelease.
-  // We do not synthesise one here; the line is purely cosmetic.
-  lines.push(`Welcome to ${pretty} (GNU/Linux 5.15.0-91-generic x86_64)`);
-
-  const motd = (exec.vfs.readFile('/etc/motd') ?? '').replace(/\n+$/, '');
-  if (motd.trim().length > 0) {
-    lines.push('');
-    for (const m of motd.split('\n')) lines.push(m);
+  // Single "Welcome to …" line — sourced ONCE.
+  //
+  // Ubuntu provisions /etc/motd at LinuxMachine setup time (LinuxMachine.ts:
+  // ~line 160) with the canonical line baked in. If the machine has a
+  // motd, use that as the authoritative source. If not, synthesise a
+  // fallback from /etc/os-release so unconfigured machines still get
+  // a banner. Either way the line appears exactly once
+  // (terminal_gap.md §9.2).
+  const motdRaw = (exec.vfs.readFile('/etc/motd') ?? '').replace(/\n+$/, '');
+  if (motdRaw.trim().length > 0) {
+    for (const m of motdRaw.split('\n')) lines.push(m);
+  } else {
+    const osRelease = exec.vfs.readFile('/etc/os-release') ?? '';
+    const pretty = /PRETTY_NAME="([^"]+)"/.exec(osRelease)?.[1] ?? 'Ubuntu 22.04 LTS';
+    lines.push(`Welcome to ${pretty} (GNU/Linux 5.15.0-91-generic x86_64)`);
   }
 
   const prev = exec.lastlog?.getPrevious(user);

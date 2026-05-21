@@ -844,6 +844,13 @@ export abstract class TerminalSession {
     if (e.key === 'Enter') {
       const pw = this._passwordBuf;
       this._passwordBuf = '';
+      // Echo the prompt into scrollback once the user has submitted, so
+      // the history shows what was asked. The password itself is masked
+      // and is never logged. Avoids the duplicate-prompt UX (the input
+      // row already showed the prompt while accepting input).
+      if (this.inputMode.type === 'password' && this.inputMode.promptText) {
+        this.addLine(this.inputMode.promptText);
+      }
       this.advanceFlow(pw);
       return true;
     }
@@ -867,6 +874,12 @@ export abstract class TerminalSession {
     if (e.key === 'Enter') {
       const val = this._inputBuf;
       this._inputBuf = '';
+      // Echo the prompt + entered value into scrollback so the user can
+      // re-read what was asked after submitting. Symmetric with
+      // handleFlowPasswordKey (which echoes prompt only, password hidden).
+      if (this.inputMode.type === 'interactive-text' && this.inputMode.promptText) {
+        this.addLine(`${this.inputMode.promptText}${val}`);
+      }
       this.advanceFlow(val);
       return true;
     }

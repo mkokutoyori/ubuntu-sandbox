@@ -126,14 +126,14 @@ export class PowerShellSubShell implements ISubShell {
     }
     this.psExecutor.setHistory(this.commandHistory);
 
-    // "cmd" / "cmd.exe" → signal to the session that a nested cmd is needed
-    // The session will handle creating a CmdSubShell
+    // "cmd" / "cmd.exe" → signal to the session that a nested cmd is needed.
+    // The banner is intentionally NOT included in `output` here: the
+    // session's enterNestedCmd() owns banner rendering via
+    // CmdSubShell.create(). Returning it both places duplicated the
+    // "Microsoft Windows [Version …]" header (terminal_gap.md §9.3).
     if (trimmed.toLowerCase() === 'cmd' || trimmed.toLowerCase() === 'cmd.exe') {
       return {
-        output: [
-          'Microsoft Windows [Version 10.0.22631.6649]',
-          '(c) Microsoft Corporation. All rights reserved.',
-        ],
+        output: [],
         exit: false,
         prompt: this.getPrompt(),
         // The session detects this via a special marker

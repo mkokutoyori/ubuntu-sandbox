@@ -156,10 +156,15 @@ export class InteractiveFlowEngine {
             attemptsRemaining: undefined,
           };
 
-          // Display the prompt as an output line
-          accumulatedLines.push(
-            ...this.formatter.formatOutput(directive.prompt, 'output'),
-          );
+          // NOTE: We intentionally do NOT push the prompt into
+          // accumulatedLines here. The TerminalView renders the prompt
+          // INLINE next to the password input field; adding it to the
+          // scrollback at the same time produced a visible duplicate
+          // (terminal_gap.md §9.1). The session's submit handler is
+          // responsible for echoing the prompt into history once the
+          // user has pressed Enter — that way the scrollback retains a
+          // record of what was asked without showing it twice while the
+          // input is active.
 
           return {
             lines: accumulatedLines,
@@ -255,8 +260,9 @@ export class InteractiveFlowEngine {
       lines.push(...this.formatter.formatOutput(errorMessage, 'error'));
     }
 
-    // Re-show the prompt
-    if (step.prompt) {
+    // Re-show the prompt for non-input modes; password prompts are shown
+    // by the password input row itself (see processUntilPause comment).
+    if (step.prompt && step.type !== 'password') {
       lines.push(...this.formatter.formatOutput(step.prompt, 'output'));
     }
 

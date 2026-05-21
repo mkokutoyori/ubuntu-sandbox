@@ -176,7 +176,11 @@ export abstract class CLITerminalSession extends TerminalSession {
         .then(() => this.updatePrompt())
         .catch((err) => {
           if (err instanceof Error && err.name === 'DeviceOfflineError') {
-            this.addLine('% Device is powered off', 'error');
+            // Bus-driven disconnect notice already covers the visible
+            // "device offline" trace; suppress this one to avoid stacking.
+            if (!this.isDisconnected) {
+              this.addLine('% Device is powered off', 'error');
+            }
           } else {
             this.addLine(`% Error: ${err}`, 'error');
           }
@@ -245,7 +249,9 @@ export abstract class CLITerminalSession extends TerminalSession {
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
-        this.addLine('% Device is powered off — session disconnected', 'error');
+        if (!this.isDisconnected) {
+          this.addLine('% Device is powered off — session disconnected', 'error');
+        }
         return;
       }
       if (err instanceof Error && err.name === 'CommandTimeoutError') {

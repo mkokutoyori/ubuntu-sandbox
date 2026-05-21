@@ -268,7 +268,9 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
-        this.addLine('Device is powered off — session disconnected', 'error');
+        if (!this.isDisconnected) {
+          this.addLine('Device is powered off — session disconnected', 'error');
+        }
         return;
       }
       if (err instanceof Error && err.name === 'CommandTimeoutError') {

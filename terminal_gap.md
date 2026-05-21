@@ -703,6 +703,111 @@ Total : **64 nouveaux tests unitaires**. Suite complète sous
     ipconfig > foo` capture le `%CD%` de la session, pas du device.
     Ticket plus fin que les autres ; impact strictement cosmétique.
 
+---
+
+## Section 9 — Bugs d'affichage en double
+
+Trois bugs rapportés par l'utilisateur après le merge des §1-§7, ainsi qu'un
+quatrième identifié lors de l'audit qui les a accompagnés. Tous relèvent du
+même anti-pattern : *deux composants émettent la même information* — l'un
+parce qu'il est responsable de l'afficher, l'autre par sécurité/historique.
+La correction systématique a été de désigner *un seul* émetteur par
+information et de retirer les sources concurrentes.
+
+### 9.1 — Prompt sudo affiché deux fois
+
+**Anomalie.** Lorsqu'on tape `sudo whoami`, l'utilisateur voyait :
+```
+user@pc1:~$ sudo whoami
+[sudo] password for user:
+[sudo] password for user: █
+```
+La première ligne provient de `InteractiveFlowEngine.processUntilPause`
+(InteractiveFlow.ts:159-162) qui pushait `directive.prompt` dans
+`accumulatedLines` (donc dans la scrollback) avant de retourner le
+directive. Le `TerminalView` consomme ensuite ce directive et affiche le
+prompt UNE SECONDE FOIS via l'élément `<input type="password">` avec son
+label `promptText`. Résultat : le prompt apparaît deux fois.
+
+Le bug est identique côté `buildRetryResponse` après un mot de passe
+erroné : « Sorry, try again. » + prompt re-pushé + prompt dans l'input.
+
+**Correctif.**
+1. `InteractiveFlowEngine` n'ajoute plus le prompt à la scrollback pour
+   les steps `password` (sauf flow `text`/`confirmation` qui ne posent
+   pas ce problème). Seul l'input row le montre, vivant.
+2. `TerminalSession.handleFlowPasswordKey` écrit le prompt dans la
+   scrollback **au moment où l'utilisateur valide** (Enter), de sorte que
+   l'historique conserve la trace. Le mot de passe reste masqué.
+3. `handleFlowTextKey` fait de même pour les prompts texte interactifs :
+   écrit `prompt + valeur saisie` après Enter, pour symétrie.
+4. `LinuxTerminalSession.handleSshIOKey` applique le même traitement aux
+   prompts SSH (`yes/no/[fingerprint]?`, mot de passe SSH) qui passaient
+   par `QueuedTerminalIO.beginPrompt` — ils ne laissaient AUCUNE trace
+   en scrollback avant ce fix.
+
+### 9.2 — « Welcome to Ubuntu » affiché deux fois à la connexion SSH
+
+**Anomalie.** `composeLoginBanner` (LinuxTerminalSession.ts:~2080)
+synthétisait toujours une ligne *Welcome to Ubuntu 22.04 LTS (GNU/Linux …)*
+puis ajoutait le contenu de `/etc/motd`. Or `LinuxMachine.ts:160`
+provisionne `/etc/motd` avec cette ligne déjà à l'intérieur. Donc :
+```
+user@pc2's password: ********
+Welcome to Ubuntu 22.04 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+
+Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+
+Last login: …
+```
+
+**Correctif.** `composeLoginBanner` priorise `/etc/motd` quand il est
+non-vide ; sinon il génère le fallback à partir de `/etc/os-release`. Une
+seule source de vérité, exactement comme `pam_motd` sur du vrai Ubuntu.
+
+Idem pour `composeLoginBannerViaExec` (chemin synthétique).
+
+### 9.3 — Banière CMD affichée deux fois au passage PowerShell → cmd
+
+**Anomalie.** `PowerShellSubShell.processLine('cmd')` retournait
+`output: ['Microsoft Windows [Version 10.0.22631.6649]', '(c) Microsoft …']`
+ET le marqueur `_enterCmd: true`. La session :
+1. Pushe les `output` dans la scrollback via `addLine` — banière #1.
+2. Détecte `_enterCmd`, appelle `enterNestedCmd()` qui crée un
+   `CmdSubShell.create(device)` et pushe son `banner` — banière #2.
+
+**Correctif.** `PowerShellSubShell` retourne désormais `output: []` ;
+`enterNestedCmd` reste responsable de la banière.
+
+### 9.4 — Double notice « powered off » lors d'une mise hors tension en
+plein vol
+
+**Anomalie identifiée lors de l'audit.** Quand une commande est en cours
+d'exécution et que l'utilisateur met la machine hors tension, deux
+émetteurs concurrents écrivent un message :
+- la voie bus (`TerminalManager.onDevicePoweredOff`) : *Connection to
+  <host> lost: device powered off.* — émise immédiatement à réception de
+  `device.power-off`.
+- la voie réactive (`LinuxTerminalSession`/`CLITerminalSession`/
+  `WindowsTerminalSession` `catch (DeviceOfflineError)`) : *Connection
+  lost: device is powered off* — émise quand la commande pendante échoue
+  à cause du gating dans `executeOnDevice`.
+
+**Correctif.** Les trois `catch` testent désormais `this.isDisconnected`
+avant d'écrire — si la voie bus a déjà fait le boulot, on ne réécrit pas.
+La voie réactive devient un *fallback* pour les cas exotiques où le bus
+n'aurait pas notifié.
+
+### 9.5 — Tests verrous
+
+`src/__tests__/unit/terminal/duplicate-display-fixes.test.ts` (5 tests) :
+- prompt sudo absent de la scrollback pendant la saisie
+- prompt sudo exactement présent une fois après Enter
+- `/etc/motd` contient « Welcome to Ubuntu » une seule fois après
+  provisionning
+- `PowerShellSubShell.processLine('cmd')` retourne un `output` vide
+- bascule PS → cmd produit *exactement une* banière CMD dans la scrollback
+
 ### Couverture event-bus
 
 Topics consommés par le terminal après cet audit :
