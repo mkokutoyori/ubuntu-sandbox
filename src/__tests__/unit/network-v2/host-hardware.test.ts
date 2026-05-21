@@ -232,6 +232,19 @@ describe('Linux host hardware coherence', () => {
     expect(meminfo).toContain(String(pc.getHardware().memory.totalKib));
   });
 
+  it('keeps the procfs coherent with in-place edits to the hardware model', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    // Mutate the live model directly — no setHardware() call.
+    pc.getHardware().cpu.modelName = 'Intel Custom 9000';
+    pc.getHardware().memory.totalKib = 9_999_999;
+    // procfs pseudo-files are generated on read, so they track the edit…
+    expect(await pc.executeCommand('cat /proc/cpuinfo')).toContain('Intel Custom 9000');
+    expect(await pc.executeCommand('cat /proc/meminfo')).toContain('9999999');
+    // …and stay consistent with the commands reading the same model.
+    expect(await pc.executeCommand('lscpu')).toContain('Intel Custom 9000');
+    expect(await pc.executeCommand('free')).toContain('9999999');
+  });
+
   it('re-specs lscpu / free / nproc / procfs coherently via setHardware', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const custom = new HardwareProfile({

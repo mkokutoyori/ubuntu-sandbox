@@ -23,6 +23,12 @@ export interface INode {
   atime: number;
   ctime: number;
   deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
+  /**
+   * Generated pseudo-file: when set, the content is produced by this
+   * function on every read (like a real procfs entry), never stored.
+   * Writes to such a node are ignored.
+   */
+  generator?: () => string;
 }
 
 export interface DirEntry {
@@ -347,6 +353,28 @@ export class VirtualFileSystem {
     return inode;
   }
 
+  /**
+   * Register a generated pseudo-file (a procfs-style entry). Its content is
+   * produced by `generator` on every read, so it never goes stale — the
+   * model behind it is the single source of truth. Writes are discarded.
+   * Idempotent: re-registering swaps the generator on the existing node.
+   */
+  registerGeneratedFile(
+    path: string,
+    generator: () => string,
+    permissions = 0o444,
+    uid = 0,
+    gid = 0,
+  ): void {
+    const existing = this.resolveInode(path);
+    if (existing && existing.type === 'file') {
+      existing.generator = generator;
+      return;
+    }
+    const inode = this.createFileAt(path, '', permissions, uid, gid);
+    if (inode) inode.generator = generator;
+  }
+
   touch(path: string, uid: number, gid: number, umask: number): boolean {
     const existing = this.resolveInode(path);
     if (existing) {
@@ -379,7 +407,8 @@ export class VirtualFileSystem {
 
     if (inode.type !== 'file') return null;
     inode.atime = Date.now();
-    return inode.content;
+    // Generated pseudo-files (procfs) are produced fresh on every read.
+    return inode.generator ? inode.generator() : inode.content;
   }
 
   readFileBytes(path: string, count: number): string {
@@ -401,7 +430,8 @@ export class VirtualFileSystem {
     }
 
     if (inode.type === 'file') {
-      return inode.content.slice(0, count);
+      const data = inode.generator ? inode.generator() : inode.content;
+      return data.slice(0, count);
     }
     return '';
   }
@@ -415,6 +445,8 @@ export class VirtualFileSystem {
     }
 
     if (inode?.type === 'file') {
+      // Generated pseudo-files (procfs) are read-only — writes are discarded.
+      if (inode.generator) return true;
       if (append) {
         inode.content += content;
       } else {

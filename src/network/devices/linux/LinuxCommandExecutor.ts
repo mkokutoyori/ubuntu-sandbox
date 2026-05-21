@@ -156,25 +156,34 @@ export class LinuxCommandExecutor {
     this.shellPid = shell.pid;
     this.shellPpid = shell.ppid;
 
-    // Materialise the hardware inventory onto the procfs so `cat
-    // /proc/cpuinfo` / `/proc/meminfo` stay coherent with `lscpu` / `free`.
-    this.writeHardwareProcFiles();
-  }
-
-  /** Write `/proc/cpuinfo` and `/proc/meminfo` from the hardware inventory. */
-  private writeHardwareProcFiles(): void {
-    this.vfs.writeFile('/proc/cpuinfo', this.hardware.cpu.toProcCpuinfo(), 0, 0, 0o022);
-    this.vfs.writeFile('/proc/meminfo', this.hardware.memory.toProcMeminfo(), 0, 0, 0o022);
+    // Expose the hardware inventory and boot clock as procfs pseudo-files.
+    this.registerHardwareProcFiles();
   }
 
   /**
-   * Re-spec the host's hardware. Swaps the inventory *and* re-materialises
-   * the procfs so `lscpu` / `free` / `nproc` / `/proc/cpuinfo` / `/proc/meminfo`
-   * stay coherent with the new profile. Called by `LinuxMachine.setHardware`.
+   * Register `/proc/cpuinfo`, `/proc/meminfo` and `/proc/uptime` as generated
+   * pseudo-files. Each is produced on read from the live model, so the procfs
+   * can never drift from `lscpu` / `free` / `uptime` — it stays coherent
+   * whether the hardware is swapped via {@link setHardware} or its fields are
+   * mutated in place, exactly like a real kernel procfs.
+   */
+  private registerHardwareProcFiles(): void {
+    this.vfs.registerGeneratedFile('/proc/cpuinfo', () => this.hardware.cpu.toProcCpuinfo());
+    this.vfs.registerGeneratedFile('/proc/meminfo', () => this.hardware.memory.toProcMeminfo());
+    this.vfs.registerGeneratedFile('/proc/uptime', () => {
+      const up = this.lifecycle.uptimeSeconds();
+      return `${up}.00 ${up}.00\n`;
+    });
+  }
+
+  /**
+   * Re-spec the host's hardware. Swapping the reference is enough: the procfs
+   * pseudo-files generate from `this.hardware` on every read, so `lscpu`,
+   * `free`, `nproc` and `/proc/*` all stay coherent. Called by
+   * `LinuxMachine.setHardware`.
    */
   setHardware(profile: HardwareProfile): void {
     this.hardware = profile;
-    this.writeHardwareProcFiles();
   }
 
   /**
