@@ -194,11 +194,6 @@ export function cmdLastb(ctx: ShellContext, args: string[]): string {
   return ctx.userMgr.lastb(args);
 }
 
-export function cmdGetent(ctx: ShellContext, args: string[]): string {
-  if (args.length < 2) return 'Usage: getent database key';
-  return ctx.userMgr.getent(args[0], args[1]);
-}
-
 export function cmdSudoCheck(ctx: ShellContext, args: string[]): string {
   // sudo -l -U username
   if (args[0] === '-l' && args[1] === '-U' && args[2]) {

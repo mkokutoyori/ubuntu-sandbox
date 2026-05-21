@@ -952,3 +952,126 @@ Topics émis (nouveaux) :
 L'ensemble respecte la doctrine `docs/REFONTE-REACTIVE-EVENT-DRIVEN.md` : pas de
 polling, pas de callback explicite cross-layer, le bus comme seul canal de
 synchronisation entre la couche `Equipment` et la couche `TerminalManager`.
+
+---
+
+## Section 11 — Implémentation des gaps résiduels (§5.3/5.4, §6.3, §7.x)
+
+Les sections §5.3/§5.4, §6.3 et §7.x étaient documentées comme « roadmap »
+dans le récapitulatif initial. Elles sont désormais entièrement
+implémentées, sur la même doctrine (snapshot-and-restore, file
+unique par device, source de vérité unique).
+
+### 11.1 — `terminal length N` / `screen-length N` per-vty (§5.3/§5.4)
+
+**Implémentation.**
+- `CiscoShellBase` détient désormais `terminalLength` et `terminalWidth`
+  (24 / 80 par défaut) ainsi qu'un vrai handler
+  `handleTerminalCommand(args)`. La registration `terminal` du trie passe
+  d'un no-op à ce handler, qui couvre :
+  - `terminal length <0-512>` — 0 désactive le pager
+  - `terminal width <0-512>`
+  - `terminal no length` / `terminal no width` — restaure 24 / 80
+  - `terminal history size N`, `terminal monitor` — acceptés
+  - tout le reste → `% Invalid input detected at '^' marker.`
+- `CiscoIOSShell.snapshotVtyState()` / `applyVtyState()` font rotater
+  `terminalLength` et `terminalWidth` (au lieu de les hard-coder à 24/80
+  comme avant).
+- `HuaweiVRPShell` ajoute `screenLength` / `screenWidth` et la méthode
+  `registerScreenSizeCommands(t)` qui réécrit les stubs de
+  `registerHuaweiCommonMgmt` avec de vrais handlers :
+  - `screen-length <0-512>` — `0` désactive le pager
+  - `screen-length disable` — alias de `screen-length 0`
+  - `screen-width <80-512>`
+  - `undo screen-length` / `undo screen-width` — restaure 24 / 80
+- `CLITerminalSession` expose une méthode protégée `getPageSize()`
+  (défaut 24) que `CiscoTerminalSession` et `HuaweiTerminalSession`
+  surchargent pour lire `this.vty?.state.terminalLength`. Le pager :
+  - taille 0 → dump intégral, pas de `--More--`
+  - taille N > 0 → pagination par paquets de N lignes
+- Les deux faces du seuil (`startPager` et le check post-exec) lisent
+  la même valeur, donc `terminal length 0` se traduit *réellement* par
+  un défilement libre sans intervention utilisateur.
+
+### 11.2 — Windows per-drive cwd (§6.3)
+
+**Implémentation.**
+- `WindowsPC` détient une référence faible `_activeShellSession` set
+  pendant chaque swap (`swapInWindowsSession` / `restoreShellState`),
+  consommée par les deux handlers concernés :
+- Le `setCwd` du `WinFileCommandContext` capture désormais la lettre
+  de drive avant *et après* le `cd`. Quand elles diffèrent, la session
+  apprend la cwd du *drive précédent* dans son `driveCwd` map (et la
+  nouvelle dans le nouveau drive). C'est la sémantique de `cd /d`.
+- Nouveau handler `switchActiveDrive(letter, fullPath)` détecté en tête
+  de `executeCmdCommand` quand `parts[0]` matche `^[A-Z]:$` ou
+  `^[A-Z]:[\\/].*$` (et sans arguments) — donc bare `D:` change
+  réellement de drive :
+  - `D:` seul → cwd ← `driveCwd.get('D') ?? 'D:\'`
+  - `D:\foo\bar` → cwd ← `D:\foo\bar` si dossier existe
+  - drive inexistant → « The system cannot find the drive specified. »
+  - chemin inexistant → « The system cannot find the path specified. »
+- La sauvegarde du drive précédent est faite avant la bascule, donc
+  `cd C:\Windows → D: → C:` retrouve `C:\Windows`.
+
+### 11.3 — PowerShell native delegations cwd (§7.x)
+
+**Implémentation.**
+- Nouvelle méthode `WindowsPC.runInSession<T>(session, fn)` —
+  équivalent générique de `executeCommandInSession` mais qui accepte un
+  callback arbitraire. Sérialisée via la même `wsExecQueue` donc
+  cohérente vis-à-vis du `cd` simultané.
+- `PowerShellSubShell.create(device, { initialCwd?, session? })` accepte
+  désormais aussi la `WindowsShellSession` propriétaire. Le sub-shell
+  garde cette référence en champ privé.
+- `PowerShellSubShell.processLine(line)` enroule la totalité de la
+  dispatch (interpreter + executor + délégations natives) dans
+  `device.runInSession(this.session, …)`. Ainsi :
+  - L'interprète PS voit `device.getCwd()` = cwd de la session
+  - `device.executeCmdCommand(...)` (ipconfig / ping / cd / ...) voit
+    le même cwd
+  - `set FOO=bar` ou `cd D:\foo` mute la session, pas le device-wide
+- `WindowsTerminalSession.enterPowerShell()` passe `session: this.shell`
+  à `PowerShellSubShell.create()`.
+- `completePath()` (Tab dans PS) lit `this.session?.cwd ?? device.getCwd()`
+  pour que la complétion respecte aussi le cwd local.
+
+### 11.4 — Tests verrous
+
+`src/__tests__/unit/terminal/` ajoute trois fichiers :
+
+- `cli-terminal-length.test.ts` (14 tests) — verrouille `terminal length`,
+  `terminal width`, `terminal no length`, validation des entrées,
+  isolation entre vty, alias Huawei `screen-length` / `screen-length
+  disable` / `undo screen-length`.
+- `windows-per-drive-cwd.test.ts` (8 tests) — `D:` / `D:\path` /
+  drive inexistant / chemin inexistant / aller-retour entre drives /
+  isolation entre sessions / `cd /d` / casse mixte.
+- `powershell-session-cwd.test.ts` (5 tests) — PS lancé depuis la
+  fenêtre A ne voit pas le `cd` de B, `cd` dans PS mute la session A
+  seule, deux PS concurrents restent isolés, fallback device-wide
+  préservé quand aucune session n'est attachée.
+
+**Suite complète après §11** : *55 fichiers, 380 tests verts* sous
+`unit/terminal/`. Les 100 échecs network-v2 préexistants (`linux-iptables`,
+`advanced-linux-ubuntu-system`, …) sont inchangés — bug de baseline
+indépendant.
+
+### 11.5 — Mise à jour du récapitulatif §8
+
+| §   | Anomalie                                          | Statut |
+| --- | ------------------------------------------------- | ------ |
+| 5.3 | `terminal length 0` non respecté par le pager     | **Corrigé** |
+| 5.4 | `terminal length N` non scoped par vty            | **Corrigé** |
+| 6.3 | Windows drives — pas de per-drive cwd             | **Corrigé** |
+| 7.x | PowerShell native delegations → device-wide cwd   | **Corrigé** |
+
+Items résiduels restants (intentionnellement non corrigés) :
+- §3.4 « Permanently added (RSA) to the list of known hosts » —
+  cosmétique côté client SSH.
+- §3.5 « (yes/no/[fingerprint])? » prompt première connexion —
+  cosmétique, déjà couvert par §3.7 mais sur le contenu textuel.
+- §5.5 « Press RETURN to get started. » entre boot et prompt — cosmétique
+  pédagogique pure.
+
+Tous les autres gaps du rapport sont implémentés.

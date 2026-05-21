@@ -57,6 +57,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
 
+  /**
+   * Per-vty pager / display preferences. Real Cisco IOS stores these on
+   * the line, not on the device: each vty (and the console) has its own
+   * `terminal length` (24 default) and `terminal width` (80 default).
+   * `terminal length 0` disables the pager for the current session.
+   *
+   * These fields exist on the shared shell so `terminal length N` has a
+   * real handler, but they rotate per-session via snapshotVtyState /
+   * applyVtyState. See terminal_gap.md §5.3/§5.4.
+   */
+  protected terminalLength: number = 24;
+  protected terminalWidth: number = 80;
+
   // ─── FSM ─────────────────────────────────────────────────────────
   protected abstract readonly fsm: CLIStateMachine;
 
@@ -278,7 +291,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showPrivilege(this.mode === 'user' ? 1 : 15));
     trie.register('show history', 'Display command history', () =>
       this.cmdHistory.slice(-20).join('\n'));
-    trie.registerGreedy('terminal', 'Set terminal parameters', () => '');
+    trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
+      this.handleTerminalCommand(args));
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
@@ -338,6 +352,71 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       default: return 'exec';
     }
   }
+
+  /**
+   * Handle `terminal length <n>` / `terminal width <n>` / `terminal no length`
+   * (Cisco IOS exec preference, per-session).
+   *
+   * Recognised forms:
+   *   terminal length <0-512>   — set pager rows (0 = pager off)
+   *   terminal no length        — restore default (24)
+   *   terminal width <0-512>    — set column hint
+   *   terminal no width         — restore default (80)
+   *   terminal history size <n> — display-history ring length (no-op stored)
+   *   terminal monitor          — accept silently (logging redirect to vty)
+   *   terminal no monitor       — accept silently
+   *
+   * Returns CISCO_ERRORS.INVALID_INPUT on unknown sub-commands so an
+   * operator typo doesn't look like a silent success.
+   */
+  protected handleTerminalCommand(args: string[]): string {
+    if (args.length === 0) {
+      return CISCO_ERRORS.INCOMPLETE;
+    }
+    const head = args[0].toLowerCase();
+    const rest = args.slice(1);
+
+    if (head === 'length') {
+      if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      const n = parseInt(rest[0], 10);
+      if (!Number.isFinite(n) || n < 0 || n > 512) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      this.terminalLength = n;
+      return '';
+    }
+    if (head === 'width') {
+      if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      const n = parseInt(rest[0], 10);
+      if (!Number.isFinite(n) || n < 0 || n > 512) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      this.terminalWidth = n;
+      return '';
+    }
+    if (head === 'no') {
+      const sub = (rest[0] ?? '').toLowerCase();
+      if (sub === 'length') { this.terminalLength = 24; return ''; }
+      if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    if (head === 'history') {
+      // `terminal history size N` — accepted, value ignored (history is
+      // capped by the session container, not by line config).
+      return '';
+    }
+    if (head === 'monitor') {
+      // `terminal monitor` — redirect logging to this vty. Acknowledged
+      // silently; the simulator does not gate logs by line.
+      return '';
+    }
+    return CISCO_ERRORS.INVALID_INPUT;
+  }
+
+  /** Public read accessor — used by CLITerminalSession to size the pager. */
+  getTerminalLength(): number { return this.terminalLength; }
+  /** Public read accessor — symmetric with getTerminalLength. */
+  getTerminalWidth(): number { return this.terminalWidth; }
 
   private registerCommonUserCommands(): void {
     this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
