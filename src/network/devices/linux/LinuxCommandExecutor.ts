@@ -16,6 +16,7 @@ import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } f
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
+import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -78,6 +79,8 @@ export class LinuxCommandExecutor {
   private commandHistory: string[] = [];
   /** Reactive service supervisor (auto-restart per Restart= policy). */
   private supervisor: LinuxServiceSupervisor | null = null;
+  /** Reactive projection: IAM domain events → /var/log/auth.log. */
+  private iamAuthLog: IamAuthLogProjection | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
@@ -152,6 +155,9 @@ export class LinuxCommandExecutor {
     this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
+    // Keep /var/log/auth.log coherent with account changes, reactively.
+    this.iamAuthLog?.dispose();
+    this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
   }
 
   /** Set the network context for ip command support */
@@ -1921,25 +1927,21 @@ export class LinuxCommandExecutor {
 
   // ─── Skeleton files ───────────────────────────────────────────────
 
+  /**
+   * Populate a freshly created home directory by copying `/etc/skel` — the
+   * same coherent path real `useradd -m` / `adduser` take. The skeleton
+   * directory itself is seeded by the IAM filesystem layer at boot.
+   */
   private createSkeletonFiles(home: string, uid: number, gid: number): void {
-    this.vfs.createFileAt(`${home}/.bash_logout`,
-      '# ~/.bash_logout: executed by bash(1) when login shell exits.\n\n' +
-      '# when leaving the console clear the screen to increase privacy\n\n' +
-      'if [ "$SHLVL" = 1 ]; then\n    [ -x /usr/bin/clear_console ] && /usr/bin/clear_console -q\nfi\n',
-      0o644, uid, gid);
-    this.vfs.createFileAt(`${home}/.bashrc`,
-      '# ~/.bashrc: executed by bash(1) for non-login shells.\n\n' +
-      '# If not running interactively, don\'t do anything\ncase $- in\n    *i*) ;;\n      *) return;;\nesac\n\n' +
-      '# don\'t put duplicate lines or lines starting with space in the history.\nHISTCONTROL=ignoreboth\n\n' +
-      'HISTSIZE=1000\nHISTFILESIZE=2000\n',
-      0o644, uid, gid);
-    this.vfs.createFileAt(`${home}/.profile`,
-      '# ~/.profile: executed by the command interpreter for login shells.\n\n' +
-      '# if running bash\nif [ -n "$BASH_VERSION" ]; then\n    # include .bashrc if it exists\n' +
-      '    if [ -f "$HOME/.bashrc" ]; then\n\t. "$HOME/.bashrc"\n    fi\nfi\n\n' +
-      '# set PATH so it includes user\'s private bin if it exists\nif [ -d "$HOME/bin" ] ; then\n' +
-      '    PATH="$HOME/bin:$PATH"\nfi\n',
-      0o644, uid, gid);
+    const entries = this.vfs.listDirectory('/etc/skel');
+    if (!entries) return;
+    for (const entry of entries) {
+      if (entry.name === '.' || entry.name === '..') continue;
+      const content = this.vfs.readFile(`/etc/skel/${entry.name}`);
+      if (content !== null) {
+        this.vfs.createFileAt(`${home}/${entry.name}`, content, 0o644, uid, gid);
+      }
+    }
   }
 
   // ─── Environment variable expansion ───────────────────────────────

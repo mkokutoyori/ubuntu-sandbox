@@ -135,6 +135,23 @@ export class LinuxLogManager {
     return '';
   }
 
+  /**
+   * Append an authentication-facility record — the bridge the IAM layer uses
+   * to keep `/var/log/auth.log` (and the journal) coherent with account
+   * changes. `tag` is the responsible program (`useradd`, `passwd`, …).
+   */
+  logAuth(tag: string, message: string): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.auth,
+      unit: tag,
+      tag,
+      message,
+      pid: this.nextPid++,
+      hostname: this.hostname,
+    });
+  }
+
   // ── journalctl command ─────────────────────────────────────────
   executeJournalctl(args: string[]): string {
     // Handle management commands first
