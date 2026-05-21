@@ -180,10 +180,23 @@ export interface HostLifecycleTransitionedPayload extends HostDeviceRef {
   uptimeSeconds: number;
 }
 
+// ── System identity ────────────────────────────────────────────────────
+
+/** Which mutable identity attribute changed (`timezone`, `locale`, …). */
+export type HostIdentityField = 'timezone' | 'locale' | 'keymap' | 'machine-id';
+
+/** Emitted when a mutable system-identity attribute is changed at runtime. */
+export interface HostIdentityChangedPayload extends HostDeviceRef {
+  field: HostIdentityField;
+  from: string;
+  to: string;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type HostDomainEvent =
   | { topic: 'host.lifecycle.transitioned'; payload: HostLifecycleTransitionedPayload }
+  | { topic: 'host.identity.changed'; payload: HostIdentityChangedPayload }
   | { topic: 'host.arp.entry-learned'; payload: HostArpEntryLearnedPayload }
   | { topic: 'host.arp.entry-expired'; payload: HostArpEntryExpiredPayload }
   | { topic: 'host.arp.request-sent'; payload: HostArpRequestSentPayload }

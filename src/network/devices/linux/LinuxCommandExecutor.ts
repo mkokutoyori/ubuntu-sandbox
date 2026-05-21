@@ -19,6 +19,7 @@ import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
+import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -32,7 +33,7 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/Job
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
-import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
+import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
@@ -78,6 +79,8 @@ export class LinuxCommandExecutor {
   hardware: HardwareProfile;
   /** Shared power/boot state machine — source of truth for uptime. */
   readonly lifecycle: HostLifecycle;
+  /** Shared system identity — source of truth for uname / hostnamectl / etc. */
+  readonly identity: SystemIdentity;
   private env: Map<string, string> = new Map();
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
@@ -91,6 +94,8 @@ export class LinuxCommandExecutor {
   private supervisor: LinuxServiceSupervisor | null = null;
   /** Reactive projection: IAM domain events → /var/log/auth.log. */
   private iamAuthLog: IamAuthLogProjection | null = null;
+  /** Unsubscribe handle for the identity-file re-seed subscription. */
+  private identityFilesUnsub: (() => void) | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
@@ -103,9 +108,15 @@ export class LinuxCommandExecutor {
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
 
-  constructor(isServer = false, hardware?: HardwareProfile, lifecycle?: HostLifecycle) {
+  constructor(
+    isServer = false,
+    hardware?: HardwareProfile,
+    lifecycle?: HostLifecycle,
+    identity?: SystemIdentity,
+  ) {
     this.hardware = hardware ?? HardwareProfile.defaultFor(isServer ? 'server' : 'workstation');
     this.lifecycle = lifecycle ?? new HostLifecycle();
+    this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
@@ -158,6 +169,38 @@ export class LinuxCommandExecutor {
 
     // Expose the hardware inventory and boot clock as procfs pseudo-files.
     this.registerHardwareProcFiles();
+    // Materialise the system identity onto /etc and /proc.
+    this.seedIdentityFiles();
+    this.registerKernelProcFiles();
+  }
+
+  /**
+   * Write the system-identity files to `/etc` from the live model:
+   * `/etc/os-release`, `/etc/lsb-release`, `/etc/machine-id`,
+   * `/etc/timezone`, `/etc/default/locale`. Re-run whenever the identity
+   * changes so the on-disk view never drifts from `hostnamectl` /
+   * `timedatectl` / `uname`.
+   */
+  private seedIdentityFiles(): void {
+    const id = this.identity;
+    this.vfs.writeFile('/etc/os-release', id.os.render(), 0, 0, 0o022);
+    this.vfs.writeFile('/etc/lsb-release', id.os.renderLsbRelease(), 0, 0, 0o022);
+    this.vfs.writeFile('/etc/machine-id', `${id.machineId}\n`, 0, 0, 0o022);
+    this.vfs.writeFile('/etc/timezone', `${id.timezone}\n`, 0, 0, 0o022);
+    this.vfs.writeFile('/etc/default/locale', id.toLocaleConf(), 0, 0, 0o022);
+  }
+
+  /**
+   * Register the kernel `/proc` entries as generated pseudo-files, so
+   * `/proc/version` and `/proc/sys/kernel/*` track the identity model live.
+   */
+  private registerKernelProcFiles(): void {
+    this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
+    const k = () => this.identity.kernel;
+    this.vfs.registerGeneratedFile('/proc/version', () => k().toProcVersion());
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
   }
 
   /**
@@ -199,6 +242,12 @@ export class LinuxCommandExecutor {
     // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
+    // Keep the /etc identity files coherent when the identity model changes.
+    this.identityFilesUnsub?.();
+    this.identityFilesUnsub = bus.subscribe(
+      'host.identity.changed',
+      () => this.seedIdentityFiles(),
+    );
   }
 
   /** Set the network context for ip command support */
@@ -1107,13 +1156,14 @@ export class LinuxCommandExecutor {
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
       case 'date': return { output: cmdDate(args), exitCode: 0 };
       case 'uptime': return { output: cmdUptime(args, this.lifecycle), exitCode: 0 };
-      case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()), exitCode: 0 };
+      case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(), this.identity.kernel), exitCode: 0 };
       case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
       case 'hostnamectl': {
         const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        return { output: cmdHostnamectl(hn), exitCode: 0 };
+        return { output: this.identity.toHostnamectl(hn), exitCode: 0 };
       }
+      case 'timedatectl': return { output: this.identity.toTimedatectl(), exitCode: 0 };
 
       // true/false
       case 'true': return { output: '', exitCode: 0 };
@@ -2073,6 +2123,7 @@ export class LinuxCommandExecutor {
       'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
       // System / processes / time
       'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+      'runlevel', 'hostnamectl', 'timedatectl',
       'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
       'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
       'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',

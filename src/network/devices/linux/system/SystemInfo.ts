@@ -10,11 +10,7 @@
  */
 
 import type { HostLifecycle } from '../../host/lifecycle';
-
-const KERNEL_RELEASE = '5.15.0-130-generic';
-const KERNEL_VERSION = '#140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025';
-const MACHINE = 'x86_64';
-const OS_NAME = 'GNU/Linux';
+import type { KernelInfo } from '../../host/identity';
 
 const LOAD_AVERAGE = '0.00, 0.01, 0.05';
 
@@ -88,28 +84,34 @@ export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
   return uptimeHeader(1, seconds);
 }
 
-export function cmdUname(args: string[], hostname = 'localhost'): string {
+/**
+ * `uname` — rendered from the host's {@link KernelInfo} so the kernel name,
+ * release, build version and architecture stay coherent with `/proc/version`
+ * and `/proc/sys/kernel/*`.
+ */
+export function cmdUname(args: string[], hostname: string, kernel: KernelInfo): string {
   const flags = args.filter(a => a.startsWith('-')).join('').replace(/-/g, '');
   const all = flags.includes('a');
   const want = (f: string): boolean => all || flags.includes(f);
 
   if (args.length === 0 || (flags === '' && args.length > 0)) {
-    return 'Linux';
+    return kernel.sysname;
   }
 
   // -a has a fixed canonical ordering: s n r v m p i o
   if (all) {
-    return `Linux ${hostname} ${KERNEL_RELEASE} ${KERNEL_VERSION} ${MACHINE} ${MACHINE} ${MACHINE} ${OS_NAME}`;
+    return `${kernel.sysname} ${hostname} ${kernel.release} ${kernel.version} ` +
+      `${kernel.machine} ${kernel.machine} ${kernel.machine} ${kernel.operatingSystem}`;
   }
 
   const parts: string[] = [];
-  if (want('s')) parts.push('Linux');
+  if (want('s')) parts.push(kernel.sysname);
   if (want('n')) parts.push(hostname);
-  if (want('r')) parts.push(KERNEL_RELEASE);
-  if (want('v')) parts.push(KERNEL_VERSION);
-  if (want('m') || want('p') || want('i')) parts.push(MACHINE);
-  if (want('o')) parts.push(OS_NAME);
-  return parts.length > 0 ? parts.join(' ') : 'Linux';
+  if (want('r')) parts.push(kernel.release);
+  if (want('v')) parts.push(kernel.version);
+  if (want('m') || want('p') || want('i')) parts.push(kernel.machine);
+  if (want('o')) parts.push(kernel.operatingSystem);
+  return parts.length > 0 ? parts.join(' ') : kernel.sysname;
 }
 
 export function cmdDate(args: string[]): string {
@@ -138,20 +140,6 @@ export function cmdTty(currentTty: string): string {
 /** Default systemd target is graphical (5) for a PC, multi-user (3) for a server. */
 export function cmdRunlevel(isServer: boolean): string {
   return isServer ? 'N 3' : 'N 5';
-}
-
-export function cmdHostnamectl(hostname: string): string {
-  return [
-    `   Static hostname: ${hostname}`,
-    `         Icon name: computer-vm`,
-    `           Chassis: vm`,
-    `        Machine ID: 0a1b2c3d4e5f60718293a4b5c6d7e8f9`,
-    `           Boot ID: f9e8d7c6b5a4039281706f5e4d3c2b1a`,
-    `    Virtualization: kvm`,
-    `  Operating System: Ubuntu 22.04.4 LTS`,
-    `            Kernel: Linux ${KERNEL_RELEASE}`,
-    `      Architecture: ${MACHINE}`,
-  ].join('\n');
 }
 
 /** Canonical /etc/os-release content for the simulated Ubuntu. */
