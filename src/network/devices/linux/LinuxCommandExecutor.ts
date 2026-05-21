@@ -17,6 +17,7 @@ import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, c
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
+import { HardwareProfile } from '../host/hardware';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -68,6 +69,8 @@ export class LinuxCommandExecutor {
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
+  /** Shared hardware inventory — source of truth for lscpu / free / /proc. */
+  readonly hardware: HardwareProfile;
   private env: Map<string, string> = new Map();
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
@@ -93,7 +96,8 @@ export class LinuxCommandExecutor {
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
 
-  constructor(isServer = false) {
+  constructor(isServer = false, hardware?: HardwareProfile) {
+    this.hardware = hardware ?? HardwareProfile.defaultFor(isServer ? 'server' : 'workstation');
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
     this.cron = new LinuxCronManager();
@@ -143,6 +147,16 @@ export class LinuxCommandExecutor {
     });
     this.shellPid = shell.pid;
     this.shellPpid = shell.ppid;
+
+    // Materialise the hardware inventory onto the procfs so `cat
+    // /proc/cpuinfo` / `/proc/meminfo` stay coherent with `lscpu` / `free`.
+    this.writeHardwareProcFiles();
+  }
+
+  /** Write `/proc/cpuinfo` and `/proc/meminfo` from the hardware inventory. */
+  private writeHardwareProcFiles(): void {
+    this.vfs.writeFile('/proc/cpuinfo', this.hardware.cpu.toProcCpuinfo(), 0, 0, 0o022);
+    this.vfs.writeFile('/proc/meminfo', this.hardware.memory.toProcMeminfo(), 0, 0, 0o022);
   }
 
   /**
@@ -1087,7 +1101,7 @@ export class LinuxCommandExecutor {
       case 'service': return cmdService(args, this.serviceMgr);
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
-      case 'free': return { output: cmdFree(args), exitCode: 0 };
+      case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'mount': return { output: cmdMount(c, args), exitCode: 0 };
       case 'umount': return { output: '', exitCode: 0 };
       case 'lsblk': return { output: cmdLsblk(args), exitCode: 0 };
@@ -1139,7 +1153,8 @@ export class LinuxCommandExecutor {
         if (args[0] === '-l' || args[0] === '--list') return { output: 'Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend\n||/ Name                Version          Architecture Description\n+++-===================-================-============-================================\nii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell\nii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities\nii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit', exitCode: 0 };
         return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
       }
-      case 'lscpu': return { output: 'Architecture:                    x86_64\nCPU op-mode(s):                  32-bit, 64-bit\nByte Order:                      Little Endian\nAddress sizes:                   46 bits physical, 48 bits virtual\nCPU(s):                          2\nOn-line CPU(s) list:             0,1\nThread(s) per core:              1\nCore(s) per socket:              2\nSocket(s):                       1\nModel name:                      Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz\nCPU MHz:                         2300.000\nBogoMIPS:                        4600.00\nL1d cache:                       64 KiB\nL1i cache:                       64 KiB\nL2 cache:                        512 KiB\nL3 cache:                        46080 KiB', exitCode: 0 };
+      case 'lscpu': return { output: this.hardware.cpu.toLscpu(), exitCode: 0 };
+      case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: 'COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\nsystemd     1   root  cwd    DIR    8,1     4096    2 /\nsshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)', exitCode: 0 };
       case 'file': {
         const target = args.filter(a => !a.startsWith('-'))[0];
@@ -2033,7 +2048,7 @@ export class LinuxCommandExecutor {
       'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
       'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
       'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
-      'renice', 'timeout', 'watch', 'env', 'printenv',
+      'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
       // Networking
       'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
       'ss', 'route', 'arp', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',

@@ -6,6 +6,7 @@
  */
 
 import type { ShellContext } from './LinuxFileCommands';
+import type { MemoryProfile } from '../host/hardware';
 
 // ─── Service / Unit Management ──────────────────────────────────────
 
@@ -237,31 +238,14 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
   }
 }
 
-export function cmdFree(args: string[]): string {
+/**
+ * `free` — report memory usage. Rendered from the host's {@link MemoryProfile}
+ * so it stays coherent with `/proc/meminfo` and the hardware inventory.
+ */
+export function cmdFree(args: string[], memory: MemoryProfile): string {
   const human = args.includes('-h') || args.includes('--human-readable');
   const wide = args.includes('-w') || args.includes('--wide');
-
-  if (human) {
-    return [
-      '               total        used        free      shared  buff/cache   available',
-      'Mem:           3.8Gi       1.2Gi       1.4Gi        24Mi       1.2Gi       2.4Gi',
-      'Swap:          2.0Gi          0B       2.0Gi',
-    ].join('\n');
-  }
-
-  if (wide) {
-    return [
-      '               total        used        free      shared     buffers       cache   available',
-      'Mem:         3981312     1258496     1468416       24576      204800     1049600     2519040',
-      'Swap:        2097152           0     2097152',
-    ].join('\n');
-  }
-
-  return [
-    '               total        used        free      shared  buff/cache   available',
-    'Mem:         3981312     1258496     1468416       24576     1254400     2519040',
-    'Swap:        2097152           0     2097152',
-  ].join('\n');
+  return memory.toFree(human, wide);
 }
 
 export function cmdMount(ctx: ShellContext, args: string[]): string {
