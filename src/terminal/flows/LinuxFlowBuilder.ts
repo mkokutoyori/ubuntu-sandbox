@@ -207,6 +207,32 @@ export class LinuxFlowBuilder {
     const parts = trimmed.split(/\s+/);
     const isRoot = currentUid === 0;
 
+    // Root running `sudo <cmd>` is the same as `<cmd>` from sudo's
+    // standpoint: real sudo exempts uid 0 from the password challenge
+    // (Defaults rootpw is the rare exception) and re-enters the standard
+    // exec path. Interactively, the simulator was *only* triggering
+    // adduser / passwd prompts on the bare command — `sudo adduser alice`
+    // when already root ran silently, dropping the GECOS / password
+    // prompts. Strip the prefix and recurse so the right per-command
+    // flow fires regardless of whether the user typed sudo or not.
+    //
+    // We skip the recursion when `-u <user>` is present: that overload
+    // executes the command as someone else, the dispatcher handles the
+    // identity swap, and the prompts for that target user are issued
+    // there. (Edge case — root rarely uses sudo -u as a flow driver.)
+    if (parts[0] === 'sudo' && isRoot) {
+      let i = 1;
+      // Skip valueless flags (-n -S -E -k -b -i -H -v -P).
+      while (i < parts.length && /^-[nSEkbiHvP]+$/.test(parts[i])) i++;
+      const hasTargetUser = i < parts.length && parts[i] === '-u';
+      if (hasTargetUser) {
+        return null; // dispatcher handles the identity swap silently
+      }
+      const rest = parts.slice(i).join(' ');
+      if (!rest) return null;
+      return LinuxFlowBuilder.build(rest, currentUser, currentUid, device);
+    }
+
     if (parts[0] === 'sudo' && !isRoot) {
       return LinuxFlowBuilder.buildSudoFlow(parts, trimmed, currentUser, device);
     }

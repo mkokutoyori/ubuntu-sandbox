@@ -291,6 +291,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // (terminal_gap.md §7.5).
     const { subShell, banner } = PowerShellSubShell.create(this.device, {
       initialCwd: this.shell?.cwd,
+      session: this.shell,
     });
     // If there's already an active subshell, push it onto the stack
     if (this.activeSubShell) {

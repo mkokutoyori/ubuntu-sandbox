@@ -70,6 +70,14 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     this.notify();
   }
 
+  /**
+   * Effective `screen-length` of this vty (terminal_gap.md §5.3).
+   * `screen-length 0` / `screen-length disable` returns 0 → pager off.
+   */
+  protected override getPageSize(): number {
+    return this.vty?.state.terminalLength ?? 24;
+  }
+
   protected getDefaultPrompt(): string {
     return `<${this.device.getHostname()}>`;
   }

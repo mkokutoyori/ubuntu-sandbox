@@ -97,6 +97,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   /** Pending async operation (e.g. tracert) — set by a command handler, consumed by execute() */
   private _pendingAsync: Promise<string> | null = null;
 
+  /**
+   * Per-vty pager / display preferences (Huawei VRP exec preferences,
+   * per-session — see terminal_gap.md §5.3). 24 lines × 80 columns are
+   * the VRP defaults; `screen-length 0` (or `screen-length disable`)
+   * turns the pager off.
+   */
+  private screenLength: number = 24;
+  private screenWidth: number = 80;
+
   // Per-mode command tries
   private userTrie = new CommandTrie();
   private systemTrie = new CommandTrie();
@@ -188,8 +197,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       selectedIKEv2Keyring: null,
       selectedIKEv2KeyringPeer: null,
       selectedIKEv2Profile: null,
-      terminalLength: 24,
-      terminalWidth: 80,
+      terminalLength: this.screenLength,
+      terminalWidth: this.screenWidth,
       privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
       historySize: 10,
       cmdHistory: [],
@@ -206,6 +215,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.selectedIPSecProposal = s.selectedTransformSet;
     this.selectedIPSecPolicy = s.selectedCryptoMap;
     this.selectedIPSecPolicySeq = s.selectedCryptoMapSeq;
+    this.screenLength = s.terminalLength;
+    this.screenWidth = s.terminalWidth;
   }
 
   setSelectedIKEProposal(n: number | null): void { this.selectedIKEProposal = n; }
@@ -460,6 +471,53 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // Command Registration (per-mode CommandTrie construction)
   // ═══════════════════════════════════════════════════════════════════
 
+  /**
+   * Overwrite the `screen-length` / `screen-width` greedy stubs from
+   * `registerHuaweiCommonMgmt` with handlers that actually mutate the
+   * shell's per-vty preferences. Called from each per-mode trie builder
+   * after the common-mgmt registration, so the latest action wins.
+   *
+   * Syntax (VRP):
+   *   screen-length <0-512> [temporary]   — set rows (0 = pager off)
+   *   screen-length disable               — alias for `screen-length 0`
+   *   undo screen-length                  — restore default (24)
+   *   screen-width <80-512>               — set columns
+   *   undo screen-width                   — restore default (80)
+   */
+  private registerScreenSizeCommands(t: CommandTrie): void {
+    t.registerGreedy('screen-length', 'Set terminal screen length', (args) => {
+      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE;
+      const head = args[0].toLowerCase();
+      if (head === 'disable') { this.screenLength = 0; return ''; }
+      const n = parseInt(head, 10);
+      if (!Number.isFinite(n) || n < 0 || n > 512) {
+        return HUAWEI_ERRORS.UNRECOGNIZED(args.join(' '));
+      }
+      this.screenLength = n;
+      return '';
+    });
+    t.registerGreedy('screen-width', 'Set terminal screen width', (args) => {
+      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE;
+      const n = parseInt(args[0], 10);
+      if (!Number.isFinite(n) || n < 80 || n > 512) {
+        return HUAWEI_ERRORS.UNRECOGNIZED(args.join(' '));
+      }
+      this.screenWidth = n;
+      return '';
+    });
+    t.registerGreedy('undo screen-length', 'Restore default screen length', () => {
+      this.screenLength = 24; return '';
+    });
+    t.registerGreedy('undo screen-width', 'Restore default screen width', () => {
+      this.screenWidth = 80; return '';
+    });
+  }
+
+  /** Read accessor used by CLITerminalSession to size the pager. */
+  getScreenLength(): number { return this.screenLength; }
+  /** Symmetric with getScreenLength — column hint. */
+  getScreenWidth(): number { return this.screenWidth; }
+
   // ─── User View (<hostname>) ──────────────────────────────────────
 
   private buildUserCommands(): void {
@@ -477,6 +535,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+    this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
 
     // OSPF display commands
@@ -559,6 +618,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+    this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurity(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
 
