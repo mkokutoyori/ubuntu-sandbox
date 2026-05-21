@@ -903,6 +903,10 @@ export class WindowsPC extends EndHost {
     lines.push(`OS Manufacturer:           Microsoft Corporation`);
     lines.push(`OS Configuration:          Member Workstation`);
     lines.push(`OS Build Type:             Multiprocessor Free`);
+    const bootedAt = this.getLifecycle().bootedAt();
+    if (bootedAt) {
+      lines.push(`System Boot Time:          ${bootedAt.toLocaleString('en-US')}`);
+    }
     lines.push(`System Manufacturer:       ${this.hardware.manufacturer}`);
     lines.push(`System Model:              ${this.hardware.productName}`);
     lines.push(`System Type:               x64-based PC`);

@@ -9,13 +9,13 @@
  * formatting so `uptime` and `w` cannot drift apart again.
  */
 
+import type { HostLifecycle } from '../../host/lifecycle';
+
 const KERNEL_RELEASE = '5.15.0-130-generic';
 const KERNEL_VERSION = '#140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025';
 const MACHINE = 'x86_64';
 const OS_NAME = 'GNU/Linux';
 
-/** Simulated, stable uptime (no real scheduler) — keeps uptime/w in sync. */
-const UPTIME_MINUTES = 17;
 const LOAD_AVERAGE = '0.00, 0.01, 0.05';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48,26 +48,44 @@ function prettyUptime(totalMin: number): string {
 }
 
 /**
- * The shared `uptime`/`w` header line:
- * ` 16:32:55 up 17 min,  1 user,  load average: 0.00, 0.01, 0.05`
+ * Format the `up …` clause of the uptime header: `5 min`, `2:05`,
+ * `1 day,  3:42` — the procps shape, derived from a live uptime.
  */
-export function uptimeHeader(users = 1): string {
+function uptimeClause(uptimeSeconds: number): string {
+  const days = Math.floor(uptimeSeconds / 86_400);
+  const hours = Math.floor((uptimeSeconds % 86_400) / 3600);
+  const mins = Math.floor((uptimeSeconds % 3600) / 60);
+  const hm = hours > 0 ? `${hours}:${two(mins)}` : `${mins} min`;
+  if (days > 0) return `${days} day${days > 1 ? 's' : ''}, ${hm}`;
+  return hm;
+}
+
+/**
+ * The shared `uptime`/`w` header line, e.g.
+ * ` 16:32:55 up 5 min,  1 user,  load average: 0.00, 0.01, 0.05`.
+ * `uptimeSeconds` comes from the host's {@link HostLifecycle}.
+ */
+export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
   const now = new Date();
-  const u = `${UPTIME_MINUTES} min`;
-  return ` ${hhmmss(now)} up ${u},  ${users} user${users !== 1 ? 's' : ''}, ` +
+  return ` ${hhmmss(now)} up ${uptimeClause(uptimeSeconds)},  ${users} user${users !== 1 ? 's' : ''}, ` +
     ` load average: ${LOAD_AVERAGE}`;
 }
 
-export function cmdUptime(args: string[]): string {
+/**
+ * `uptime` — rendered live from the host's {@link HostLifecycle} so it tracks
+ * real boot time and resets on power-cycle / reboot.
+ */
+export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
+  const seconds = lifecycle.uptimeSeconds();
   if (args.includes('-p') || args.includes('--pretty')) {
-    return prettyUptime(UPTIME_MINUTES);
+    return prettyUptime(Math.floor(seconds / 60));
   }
   if (args.includes('-s') || args.includes('--since')) {
-    const boot = new Date(Date.now() - UPTIME_MINUTES * 60_000);
+    const boot = lifecycle.bootedAt() ?? new Date();
     return `${boot.getUTCFullYear()}-${two(boot.getUTCMonth() + 1)}-${two(boot.getUTCDate())} ` +
       `${hhmmss(boot)}`;
   }
-  return uptimeHeader(1);
+  return uptimeHeader(1, seconds);
 }
 
 export function cmdUname(args: string[], hostname = 'localhost'): string {

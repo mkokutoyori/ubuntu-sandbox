@@ -751,11 +751,11 @@ export class LinuxUserManager {
     return `${this.currentUser}  pts/0  ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
   }
 
-  w(): string {
+  w(uptimeSeconds = 0): string {
     const now = new Date();
     const time = now.toTimeString().slice(0, 8);
     return [
-      uptimeHeader(1),
+      uptimeHeader(1, uptimeSeconds),
       `USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT`,
       `${this.currentUser.padEnd(8)} pts/0    -                ${time}  0.00s  0.00s  0.00s -bash`,
     ].join('\n');

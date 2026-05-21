@@ -231,6 +231,26 @@ describe('Linux host hardware coherence', () => {
     expect(meminfo).toContain('MemTotal:');
     expect(meminfo).toContain(String(pc.getHardware().memory.totalKib));
   });
+
+  it('re-specs lscpu / free / nproc / procfs coherently via setHardware', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const custom = new HardwareProfile({
+      cpu: new CpuSpec({
+        sockets: 2, coresPerSocket: 8, threadsPerCore: 2,
+        modelName: 'AMD EPYC 7763 64-Core Processor',
+      }),
+      memory: new MemoryProfile({ totalKib: 16_000_000 }),
+    });
+    pc.setHardware(custom);
+
+    // getHardware, the Linux commands and the procfs must all agree.
+    expect(pc.getHardware()).toBe(custom);
+    expect((await pc.executeCommand('nproc')).trim()).toBe('32');
+    expect(await pc.executeCommand('lscpu')).toContain('AMD EPYC 7763');
+    expect(await pc.executeCommand('free')).toContain('16000000');
+    expect(await pc.executeCommand('cat /proc/cpuinfo')).toContain('AMD EPYC 7763');
+    expect(await pc.executeCommand('cat /proc/meminfo')).toContain('16000000');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

@@ -159,9 +159,31 @@ export interface HostL3PacketTxRequestedPayload extends HostDeviceRef {
   needsArp: boolean;
 }
 
+// ── Lifecycle / power ──────────────────────────────────────────────────
+
+/** Power/boot states a host moves through — see `HostLifecycle`. */
+export type HostPowerState =
+  | 'off'
+  | 'booting'
+  | 'running'
+  | 'suspended'
+  | 'halting'
+  | 'rebooting';
+
+/** A single power-state transition (`off` → `booting`, `running` → `halting`…). */
+export interface HostLifecycleTransitionedPayload extends HostDeviceRef {
+  from: HostPowerState;
+  to: HostPowerState;
+  /** Completed boots in this host's life (incremented on each boot). */
+  bootCount: number;
+  /** Uptime in whole seconds at the moment of the transition. */
+  uptimeSeconds: number;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type HostDomainEvent =
+  | { topic: 'host.lifecycle.transitioned'; payload: HostLifecycleTransitionedPayload }
   | { topic: 'host.arp.entry-learned'; payload: HostArpEntryLearnedPayload }
   | { topic: 'host.arp.entry-expired'; payload: HostArpEntryExpiredPayload }
   | { topic: 'host.arp.request-sent'; payload: HostArpRequestSentPayload }
