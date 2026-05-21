@@ -897,9 +897,10 @@ export class WindowsPC extends EndHost {
 
   private cmdSysteminfo(): string {
     const lines: string[] = [];
+    const os = this.getIdentity().os;
     lines.push(`Host Name:                 ${this.hostname}`);
-    lines.push(`OS Name:                   Microsoft Windows 10 Pro`);
-    lines.push(`OS Version:                10.0.22631 N/A Build 22631`);
+    lines.push(`OS Name:                   ${os.prettyName}`);
+    lines.push(`OS Version:                ${os.version}`);
     lines.push(`OS Manufacturer:           Microsoft Corporation`);
     lines.push(`OS Configuration:          Member Workstation`);
     lines.push(`OS Build Type:             Multiprocessor Free`);

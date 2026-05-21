@@ -50,6 +50,7 @@ import {
 import { Logger } from '../core/Logger';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
+import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
@@ -157,6 +158,13 @@ export abstract class EndHost extends Equipment {
    * time and uptime, driving `uptime`, `w` and the `systeminfo` boot lines.
    */
   protected readonly lifecycle: HostLifecycle;
+
+  /**
+   * System identity & configuration — OS release, kernel, machine-id, time
+   * zone and locale. The source of truth behind `uname`, `hostnamectl`,
+   * `timedatectl`, `/etc/os-release`, `/etc/machine-id` and `/proc/version`.
+   */
+  protected readonly identity: SystemIdentity;
 
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
@@ -450,6 +458,10 @@ export abstract class EndHost extends Equipment {
     );
     this.lifecycle = new HostLifecycle();
     this.lifecycle.attachBus(this.getBus(), this.id, name);
+    this.identity = String(type).includes('windows')
+      ? SystemIdentity.windows()
+      : SystemIdentity.ubuntu();
+    this.identity.attachBus(this.getBus(), this.id);
     this.attachHostActors();
     this.dhcpClient = new DHCPClient(
       (iface: string) => {
@@ -506,6 +518,13 @@ export abstract class EndHost extends Equipment {
     const wasOn = this.getIsPoweredOn();
     super.powerOff();
     if (wasOn) this.lifecycle.powerOff();
+  }
+
+  // ─── System identity ────────────────────────────────────────────
+
+  /** The host's system identity & configuration (OS, kernel, locale, …). */
+  getIdentity(): SystemIdentity {
+    return this.identity;
   }
 
   // ─── Interface Configuration ───────────────────────────────────

@@ -163,6 +163,11 @@ describe('Linux host lifecycle integration', () => {
     const pretty = (await pc.executeCommand('uptime -p')).trim();
     expect(pretty).toMatch(/up 0 minute/);
   });
+
+  it('exposes /proc/uptime as a live generated pseudo-file', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    expect((await pc.executeCommand('cat /proc/uptime')).trim()).toMatch(/^\d+\.\d{2} \d+\.\d{2}$/);
+  });
 });
 
 describe('Windows host lifecycle integration', () => {

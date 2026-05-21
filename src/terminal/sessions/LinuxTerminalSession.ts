@@ -784,8 +784,13 @@ export class LinuxTerminalSession extends TerminalSession {
    * Returns true if a flow was started, false otherwise.
    */
   private startInteractiveFlow(command: string): boolean {
-    const currentUser = this.device.getCurrentUser();
-    const currentUid = this.device.getCurrentUid();
+    // Use the per-terminal shell session's identity, not the device-wide
+    // executor's: `su`/`sudo -s` push a frame onto *this* terminal's shell
+    // (see executeOnDevice), so after `su root` the device-level user is
+    // still stale. Reading it here would mis-classify a root terminal as
+    // non-root and skip the `adduser` / `passwd` interactive flows.
+    const currentUser = this.shell ? this.shell.user : this.device.getCurrentUser();
+    const currentUid = this.shell ? this.shell.uid : this.device.getCurrentUid();
 
     // Check for sudo sqlplus / sudo rman — special case: enter sub-shell after sudo auth
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
