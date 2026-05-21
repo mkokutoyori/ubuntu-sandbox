@@ -421,14 +421,15 @@ describe('Group 2: Gestion des Utilisateurs et Groupes', () => {
       const chageInfo = await server.executeCommand('sudo chage -l testuser2');
       expect(chageInfo).toContain('Minimum');
       expect(chageInfo).toContain('Maximum');
-      expect(chageInfo).toContain('Warning');
+      expect(chageInfo).toContain('warning');
       
       // Forcer le changement de mot de passe à la prochaine connexion
       await server.executeCommand('sudo chage -d 0 testuser2');
       
-      // Vérifier les dernières modifications de mot de passe
+      // Vérifier les dernières modifications de mot de passe : `chage -d 0`
+      // force un changement, ce que `chage -l` signale fidèlement.
       const lastChange = await server.executeCommand('sudo chage -l testuser2 | grep "Last password change"');
-      expect(lastChange).toContain('1970');
+      expect(lastChange).toContain('password must be changed');
       
       // Nettoyage
       await server.executeCommand('sudo userdel -r testuser2');

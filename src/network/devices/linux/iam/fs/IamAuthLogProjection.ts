@@ -19,6 +19,9 @@ import type {
   UserDeletedPayload,
   UserPasswordChangedPayload,
   UserLockStateChangedPayload,
+  UserAgingChangedPayload,
+  UserLockedOutPayload,
+  PasswordRejectedPayload,
   GroupCreatedPayload,
   GroupDeletedPayload,
   GroupMembershipChangedPayload,
@@ -37,6 +40,9 @@ export class IamAuthLogProjection {
       bus.subscribe('linux.iam.user.deleted', (e) => this.onUserDeleted(e.payload)),
       bus.subscribe('linux.iam.user.password-changed', (e) => this.onPasswordChanged(e.payload)),
       bus.subscribe('linux.iam.user.lock-state-changed', (e) => this.onLockStateChanged(e.payload)),
+      bus.subscribe('linux.iam.user.aging-changed', (e) => this.onAgingChanged(e.payload)),
+      bus.subscribe('linux.iam.user.locked-out', (e) => this.onLockedOut(e.payload)),
+      bus.subscribe('linux.iam.password.rejected', (e) => this.onPasswordRejected(e.payload)),
       bus.subscribe('linux.iam.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('linux.iam.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('linux.iam.group.membership-changed', (e) => this.onMembershipChanged(e.payload)),
@@ -75,6 +81,32 @@ export class IamAuthLogProjection {
     if (p.deviceId !== this.deviceId) return;
     const verb = p.locked ? 'lock' : 'unlock';
     this.logManager.logAuth('usermod', `${verb} user '${p.username}'`);
+  }
+
+  private onAgingChanged(p: UserAgingChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logAuth(
+      'chage',
+      `changed password aging for '${p.username}' (${p.changedFields.join(', ')})`,
+    );
+  }
+
+  private onLockedOut(p: UserLockedOutPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logAuth(
+      'pam_faillock',
+      `Consecutive login failures for user ${p.username} account temporarily locked ` +
+        `(${p.failedAttempts} failures, deny=${p.deny})`,
+    );
+  }
+
+  private onPasswordRejected(p: PasswordRejectedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    const verdict = p.blocked ? 'rejected' : 'weak password accepted with warning';
+    this.logManager.logAuth(
+      'passwd',
+      `pam_pwquality(passwd:chauthtok): ${verdict} for user ${p.username}: ${p.reasons[0] ?? 'policy violation'}`,
+    );
   }
 
   private onGroupCreated(p: GroupCreatedPayload): void {
