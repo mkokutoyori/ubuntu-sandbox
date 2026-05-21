@@ -28,6 +28,7 @@ import type { DhcpDomainEvent } from '@/network/dhcp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
+import type { LinuxIamDomainEvent } from '@/network/devices/linux/iam/events';
 import type { OracleDomainEvent } from '@/database/oracle/events';
 import type { RmanDomainEvent } from '@/terminal/subshells/rman/events';
 
@@ -254,6 +255,8 @@ export type DomainEvent =
   | HostDomainEvent
   // Linux process & service (sub-union, see src/network/devices/linux/events.ts)
   | LinuxProcessServiceDomainEvent
+  // Linux IAM: accounts & groups (sub-union, see src/network/devices/linux/iam/events.ts)
+  | LinuxIamDomainEvent
   // Oracle DBMS (sub-union, see src/database/oracle/events.ts)
   | OracleDomainEvent
   // RMAN sub-shell (sub-union, see src/terminal/subshells/rman/events.ts)
