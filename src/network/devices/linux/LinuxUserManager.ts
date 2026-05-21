@@ -23,6 +23,9 @@ import {
 } from './iam/LinuxUserAccount';
 import { LinuxGroup, type GroupEntry } from './iam/LinuxGroup';
 import type { LinuxIamDomainEvent } from './iam/events';
+import { LoginDefs } from './iam/fs/LoginDefs';
+import { UseraddDefaults } from './iam/fs/UseraddDefaults';
+import { IamFilesystem } from './iam/fs/IamFilesystem';
 
 // Re-export the structural contracts so existing importers keep working.
 export type { UserEntry } from './iam/LinuxUserAccount';
@@ -74,11 +77,11 @@ export class LinuxUserManager {
   private groups: Map<string, LinuxGroup> = new Map();
   /** Plaintext password store for simulation (username → password) */
   private passwords: Map<string, string> = new Map();
-  private nextUid = 1000;
-  private nextGid = 1000;
-  /** System accounts (`useradd -r` / `adduser --system`) draw from 100-999. */
-  private nextSystemUid = 100;
-  private nextSystemGid = 100;
+  /** UID/GID allocation cursors — seeded from the {@link LoginDefs} policy. */
+  private nextUid: number;
+  private nextGid: number;
+  private nextSystemUid: number;
+  private nextSystemGid: number;
   currentUser = 'root';
   currentUid = 0;
   currentGid = 0;
@@ -87,8 +90,32 @@ export class LinuxUserManager {
   private bus: IEventBus | null = null;
   private deviceId = '';
 
+  /** System-wide policy (`/etc/login.defs`) — drives UID/GID allocation. */
+  private readonly loginDefs: LoginDefs;
+  /** `useradd` fallback defaults (`/etc/default/useradd`). */
+  private readonly useraddDefaults: UseraddDefaults;
+  /** Keeps the on-disk account database, config and spools coherent. */
+  private readonly iamFs: IamFilesystem;
+
   constructor(private vfs: VirtualFileSystem) {
+    this.loginDefs = LoginDefs.defaults();
+    this.useraddDefaults = UseraddDefaults.defaults();
+    this.iamFs = new IamFilesystem(vfs);
+    this.nextUid = this.loginDefs.uidMin;
+    this.nextGid = this.loginDefs.gidMin;
+    this.nextSystemUid = this.loginDefs.sysUidMin;
+    this.nextSystemGid = this.loginDefs.sysGidMin;
     this.initDefaults();
+  }
+
+  /** The system login policy (`/etc/login.defs`). */
+  getLoginDefs(): LoginDefs {
+    return this.loginDefs;
+  }
+
+  /** The `useradd` fallback defaults (`/etc/default/useradd`). */
+  getUseraddDefaults(): UseraddDefaults {
+    return this.useraddDefaults;
   }
 
   /**
@@ -130,6 +157,9 @@ export class LinuxUserManager {
     this.addGroup(new LinuxGroup({ name: 'users', gid: 100, systemGroup: true }));
     this.addGroup(new LinuxGroup({ name: 'nogroup', gid: 65534, systemGroup: true }));
 
+    // Seed the policy / defaults configuration and the skeleton directory,
+    // then materialise the account database.
+    this.iamFs.seedConfiguration(this.loginDefs, this.useraddDefaults);
     this.syncToFilesystem();
   }
 
@@ -292,6 +322,11 @@ export class LinuxUserManager {
       this.vfs.mkdirp(home, 0o755, uid, gid);
     }
 
+    // Materialise the mailbox for interactive accounts (CREATE_MAIL_SPOOL).
+    if (this.useraddDefaults.createMailSpool && !account.systemAccount) {
+      this.iamFs.createMailSpool(username, uid, gid);
+    }
+
     this.syncToFilesystem();
     this.publish({
       topic: 'linux.iam.user.created',
@@ -385,6 +420,7 @@ export class LinuxUserManager {
     if (removeHome) {
       this.vfs.rmrf(user.home);
     }
+    this.iamFs.removeMailSpool(username);
 
     this.users.delete(username);
     this.passwords.delete(username);
@@ -813,15 +849,17 @@ export class LinuxUserManager {
 
   // ─── Filesystem sync ──────────────────────────────────────────────
 
+  /**
+   * Materialise the in-memory IAM state onto the filesystem — `/etc/passwd`,
+   * `/etc/shadow`, `/etc/group`, `/etc/gshadow`, the subordinate-id maps and
+   * the `-` backups. Delegated to {@link IamFilesystem} (Single
+   * Responsibility): the manager reasons about identities, not file formats.
+   */
   syncToFilesystem(): void {
-    const passwdLines = [...this.users.values()].map(u => u.toPasswdLine());
-    this.vfs.writeFile('/etc/passwd', passwdLines.join('\n') + '\n', 0, 0, 0o022);
-
-    const shadowLines = [...this.users.values()].map(u => u.toShadowLine());
-    this.vfs.writeFile('/etc/shadow', shadowLines.join('\n') + '\n', 0, 0, 0o022);
-
-    const groupLines = [...this.groups.values()].map(g => g.toGroupLine());
-    this.vfs.writeFile('/etc/group', groupLines.join('\n') + '\n', 0, 0, 0o022);
+    this.iamFs.writeAccountDatabase(
+      [...this.users.values()],
+      [...this.groups.values()],
+    );
   }
 }
 
