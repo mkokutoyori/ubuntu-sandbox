@@ -808,6 +808,135 @@ n'aurait pas notifié.
 - `PowerShellSubShell.processLine('cmd')` retourne un `output` vide
 - bascule PS → cmd produit *exactement une* banière CMD dans la scrollback
 
+---
+
+## Section 10 — exit/sudo/su et éditeurs dans les chaînes `&&`
+
+Trois régressions héritées de la §2 (shell-session isolation) et un manque
+fonctionnel sur les éditeurs en chaîne. Les trois proviennent du fait que
+plusieurs API publiques de `LinuxMachine` lisent encore le `cwd` /
+`suStack` *partagés* de l'executor au lieu de la `LinuxShellSession` du
+terminal qui appelle.
+
+### 10.1 — `exit` depuis sudo/su ferme le terminal au lieu de remonter
+
+**Anomalie.** `LinuxTerminalSession.executeCommand` (autour de la ligne 415)
+appelle `this.device.handleExit()` pour décider si `exit` doit dépiler une
+frame `sudo` / `su` ou fermer la fenêtre. `handleExit()` regarde
+`executor.suStack`. Or depuis §2 le `suStack` réel vit dans la
+`LinuxShellSession` du terminal — l'`executor.suStack` reste à 0
+au repos. Donc :
+
+```
+user@pc1:~$ sudo su
+[sudo] password for user: ********
+root@pc1:/# cd /etc
+root@pc1:/etc# exit          ← FERME le terminal au lieu de revenir à user@pc1
+```
+
+C'est le bug rapporté par l'utilisateur ; aussi reproductible avec
+`su alice` puis `exit`.
+
+**Correctif.** Nouvelle méthode `LinuxMachine.handleExitInSession(shell)`
+qui exécute `executor.handleExit()` à l'intérieur d'un swap-and-restore
+sur la `LinuxShellSession` passée. La session voit donc son propre
+`suStack` ; la frame est correctement dépilée ; les champs `cwd`, `user`,
+`uid`, `gid`, `umask` sont restaurés à l'état pré-`sudo su`. Le terminal
+reste ouvert.
+
+`LinuxTerminalSession` appelle désormais `handleExitInSession(this.shell)`
+quand un shell est alloué, et retombe sur `handleExit()` historique
+seulement pour les devices non-Linux.
+
+### 10.2 — `sudo <admin-cmd>` doit propager l'élévation
+
+**Vérification.** Au tracé : `sudo useradd alice` passe par le flow
+`buildSudoFlow` (LinuxFlowBuilder) → `sudoStep` valide le mot de passe →
+`executeCommandStep` appelle `device.executeCommand('sudo useradd alice')`.
+La string `sudo useradd alice` retourne dans `LinuxCommandExecutor.execute`
+qui la passe à l'interpréteur bash, qui appelle
+`dispatchFromInterpreter(['sudo', 'useradd', 'alice'])`. Cette fonction
+détecte le préfixe `sudo`, sauvegarde le user courant, le bascule à root,
+appelle `dispatch('useradd', ['alice'], …)` — donc `useradd` *s'exécute
+bien* en root.
+
+**Résultat.** Pas de bug fonctionnel sur `sudo useradd / adduser /
+groupadd / mkdir / chown / chmod / touch / passwd …`. La suite de tests
+§2 du suite `linux-lan-shell-suite.test.ts` exerce cette matrice et
+vérifie l'état post-condition (`/etc/passwd`, `/etc/group`, droits
+`/opt/...`). Tous les cas passent.
+
+### 10.3 — `nano`, `vi`, `vim` doivent fonctionner en chaîne `&&` / `;` / `||`
+
+**Anomalie.** `LinuxTerminalSession.executeCommand` interceptait
+*uniquement* le cas où la ligne *commence* par `nano`/`vi`/`vim` (avec
+ou sans `sudo`). Une commande comme `mkdir foo && nano foo/x` était
+livrée telle quelle à l'interpréteur bash, qui ne sait pas exécuter
+nano (l'éditeur est un overlay React, pas un binaire interne) → erreur
+muette ou « command not found ».
+
+**Correctif.** Trois pièces :
+
+1. **Parser de chaîne `parseShellChain(line)`** (LinuxTerminalSession.ts,
+   en bas de fichier). Découpe la ligne sur `&&`, `||`, `;` top-level en
+   respectant les guillemets (simples, doubles, échappements `\`). Retourne
+   `Array<{ connector, cmd }>`. Les pipes (`|`) restent dans le segment
+   parce qu'ils ne déclenchent pas de chaîne conditionnelle.
+
+2. **Détection `isEditorSegment(cmd)`** et gating
+   `shouldExecuteSegment(connector, prevExit)`. Couvrent `sudo nano`,
+   `vi`, `vim`, et les trois opérateurs de chaînage standard.
+
+3. **Dispatch éditeur-aware dans `executeCommand`** :
+   - Si le segment éditeur est en tête (pas de préfixe) → ouvre
+     directement l'éditeur, stash le reste dans
+     `_pendingChainAfterEditor`.
+   - Sinon → exécute le préfixe via `executeOnDevice`, lit le `lastExitCode`
+     depuis `this.shell?.lastExitCode`, applique le connecteur, puis
+     ouvre l'éditeur (ou skip si gating négatif).
+   - Sur sortie de l'éditeur (`editorExit(saved)`), `executeChain(tail,
+     saved ? 0 : 1)` reprend les segments restants. Le saved flag mappe
+     au code de retour (vim `:wq` = 0, `:q!` peut être 1).
+
+**Bonus : per-session path resolution.** `LinuxMachine` expose désormais
+`resolveAbsolutePathInSession`, `readFileForEditorInSession`,
+`writeFileFromEditorInSession`. `openEditor` les utilise quand un shell
+session est alloué, sinon retombe sur la version device-wide. Conséquence :
+`cd /tmp/proj && nano file.txt` ouvre bien `/tmp/proj/file.txt` (et pas
+`/home/user/file.txt`) — régression latente avant §2.
+
+### 10.4 — Tests verrous
+
+`src/__tests__/unit/network-v2/linux-lan-shell-suite.test.ts` (22 tests
+réparties en trois sections, écrites dans le même style que
+`linux-lan-ssh-suite.test.ts`) :
+
+- **§1 exit/sudo/su** (4 tests) :
+  - `sudo su` → `cd /etc` → `exit` ramène au user/cwd d'origine, terminal
+    ouvert ;
+  - `su alice` → `exit` dépile sans fermer ;
+  - depuis l'intérieur d'un su, un `exit` n'est jamais une fermeture ;
+  - `exit` au top-level ferme bien.
+
+- **§2 sudo + admin commands** (7 tests) :
+  - `useradd`, `useradd -G sudo`, `groupadd`, `mkdir`, `chown`, `chmod`,
+    `adduser` interactif, `passwd <user>` puis `su <user>` —
+    chaque test vérifie la post-condition (lecture de `/etc/passwd`,
+    `groups`, `ls -l`, etc.).
+
+- **§3 éditeurs en chaîne** (11 tests) :
+  - `parseShellChain` + quotes, `isEditorSegment`,
+    `shouldExecuteSegment` unitairement ;
+  - `mkdir foo && nano foo/x.txt` ouvre l'éditeur dans le bon cwd ;
+  - `nano foo && echo done` exécute la queue après sortie ;
+  - `false || nano …` ouvre l'éditeur en branche d'erreur ;
+  - `true && false && nano …` **skip** l'éditeur ;
+  - parité vim, vi ;
+  - `cd /tmp/rel && nano file.txt` résout au cwd post-cd.
+
+**Suite complète post-§10** : 56 fichiers de tests sous `unit/terminal/`,
++ ce nouveau fichier sous `unit/network-v2/` — *446 tests verts* en local.
+
 ### Couverture event-bus
 
 Topics consommés par le terminal après cet audit :

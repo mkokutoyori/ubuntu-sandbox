@@ -123,6 +123,18 @@ export class LinuxTerminalSession extends TerminalSession {
    */
   shell: LinuxShellSession | null = null;
 
+  /**
+   * Pending tail of a compound command (`mkdir foo && nano foo/x &&
+   * cat foo/x`) whose middle segment was an editor invocation. The
+   * editor overlay takes over the UI; once it exits, we resume the
+   * chain. Null while no editor is suspended.
+   *
+   * Each element is a [connector, command] pair: connector is the
+   * operator that ties the segment to the editor's exit code
+   * ('&&' = only-on-success, '||' = only-on-failure, ';' = always).
+   */
+  private _pendingChainAfterEditor: Array<{ connector: ';' | '&&' | '||'; cmd: string }> | null = null;
+
   constructor(id: string, device: Equipment) {
     super(id, device);
     // Allocate a dedicated -bash on the device when possible so multiple
@@ -412,7 +424,16 @@ export class LinuxTerminalSession extends TerminalSession {
       //   2. Once the device is at its root su level, the SSH stack
       //      frame is popped, returning to the previous device.
       //   3. If neither is active, the terminal closes.
-      const exitResult = this.device.handleExit();
+      //
+      // The su stack lives on the per-terminal LinuxShellSession (since
+      // §2). Calling the legacy device.handleExit() would consult the
+      // device-wide shared executor stack — which is always empty — and
+      // close the terminal prematurely. Route through the session-aware
+      // method when a shell session is allocated (terminal_gap.md §10.1).
+      const dev = this.device;
+      const exitResult = (this.shell && dev instanceof LinuxMachine)
+        ? dev.handleExitInSession(this.shell)
+        : dev.handleExit();
       if (exitResult.inSu) {
         if (exitResult.output) this.addLine(exitResult.output);
         this.syncDeviceState();
@@ -430,15 +451,30 @@ export class LinuxTerminalSession extends TerminalSession {
     // Add to history
     this.pushHistory(trimmed);
 
-    // Intercept editor commands
-    {
-      const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trim() : trimmed;
-      const parts = noSudo.split(/\s+/);
-      const editorCmd = parts[0];
-      if (editorCmd === 'nano' || editorCmd === 'vi' || editorCmd === 'vim') {
-        this.openEditor(editorCmd as 'nano' | 'vi' | 'vim', parts.slice(1));
+    // Intercept editor commands — at top level OR embedded in a chain
+    // (`mkdir foo && nano foo/x`). The chain is parsed up to the first
+    // editor invocation: the prefix runs through the device, then the
+    // editor opens with its tail stashed in _pendingChainAfterEditor.
+    // On editor exit we resume the tail using the exit code semantics
+    // (`&&` only on success, `||` only on failure, `;` always).
+    const chain = parseShellChain(trimmed);
+    const editorIdx = chain.findIndex((seg) => isEditorSegment(seg.cmd));
+    if (editorIdx >= 0) {
+      const prefix = chain.slice(0, editorIdx);
+      const editorSeg = chain[editorIdx];
+      const tail = chain.slice(editorIdx + 1);
+      // Run prefix; only open editor if connector semantics permit.
+      // For top-level (no prefix) editor invocation we open straight away.
+      if (prefix.length === 0) {
+        this.openEditorFromCmd(editorSeg.cmd);
+        if (tail.length > 0) this._pendingChainAfterEditor = tail;
         return;
       }
+      // Run the prefix as a regular compound command, then evaluate
+      // the editor segment's connector against the resulting exit code.
+      const prefixCmd = prefix.map((s, i) => i === 0 ? s.cmd : `${s.connector} ${s.cmd}`).join(' ');
+      this.runPrefixThenEditor(prefixCmd, editorSeg, tail);
+      return;
     }
 
     // Intercept Oracle CLI tools (only if no sudo prefix)
@@ -566,6 +602,99 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Editor integration ──────────────────────────────────────────
 
+  /**
+   * Parse a single editor segment (e.g. "nano /tmp/x" or "sudo vim foo")
+   * and open the editor with its args. Returns false when the segment
+   * is not actually an editor invocation (defensive — caller already
+   * checked).
+   */
+  private openEditorFromCmd(cmd: string): boolean {
+    const noSudo = cmd.startsWith('sudo ') ? cmd.slice(5).trim() : cmd;
+    const parts = noSudo.split(/\s+/);
+    const head = parts[0];
+    if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
+    this.openEditor(head, parts.slice(1));
+    return true;
+  }
+
+  /**
+   * Run the chain segments leading up to an editor, then open the editor
+   * (respecting the segment's connector). Implemented separately so the
+   * `mkdir foo && nano foo/x` UX matches a real shell: the prefix's
+   * stdout/stderr is rendered before the editor takes over.
+   */
+  private async runPrefixThenEditor(
+    prefixCmd: string,
+    editorSeg: { connector: ';' | '&&' | '||'; cmd: string },
+    tail: Array<{ connector: ';' | '&&' | '||'; cmd: string }>,
+  ): Promise<void> {
+    let prefixExitCode = 0;
+    try {
+      const result = await this.executeOnDevice(prefixCmd);
+      if (result) this.addLine(result);
+      // The executor's lastExitCode is captured back into the session
+      // by executeCommandInSession's captureStateInto.
+      prefixExitCode = this.shell?.lastExitCode ?? 0;
+    } catch (err) {
+      if (err instanceof Error && err.name !== 'DeviceOfflineError') {
+        this.addLine(`Error: ${err}`, 'error');
+      }
+      prefixExitCode = 1;
+    }
+    // Connector semantics — does the editor segment run?
+    const shouldRun = shouldExecuteSegment(editorSeg.connector, prefixExitCode);
+    if (!shouldRun) {
+      // Editor is skipped — fall through to the tail with the prefix's exit.
+      if (tail.length > 0) {
+        void this.executeChain(tail, prefixExitCode);
+      }
+      return;
+    }
+    if (this.openEditorFromCmd(editorSeg.cmd)) {
+      if (tail.length > 0) this._pendingChainAfterEditor = tail;
+    }
+  }
+
+  /**
+   * Resume an interrupted chain after the editor exits. Each remaining
+   * segment is gated by its connector against the running exit code.
+   */
+  private async executeChain(
+    chain: Array<{ connector: ';' | '&&' | '||'; cmd: string }>,
+    initialExitCode: number,
+  ): Promise<void> {
+    let exitCode = initialExitCode;
+    let i = 0;
+    while (i < chain.length) {
+      const seg = chain[i];
+      if (!shouldExecuteSegment(seg.connector, exitCode)) {
+        i++;
+        continue;
+      }
+      // Editor in the resumed tail? Stop here, open it, stash the rest.
+      if (isEditorSegment(seg.cmd)) {
+        if (this.openEditorFromCmd(seg.cmd)) {
+          const remainder = chain.slice(i + 1);
+          if (remainder.length > 0) this._pendingChainAfterEditor = remainder;
+          return;
+        }
+      }
+      // Otherwise run it like a normal command via executeOnDevice.
+      try {
+        const r = await this.executeOnDevice(seg.cmd);
+        if (r) this.addLine(r);
+        exitCode = this.shell?.lastExitCode ?? 0;
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'DeviceOfflineError') {
+          this.addLine(`Error: ${err}`, 'error');
+        }
+        exitCode = 1;
+      }
+      i++;
+    }
+    this.syncDeviceState();
+  }
+
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     let filePath = '';
     for (const arg of args) {
@@ -573,8 +702,16 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
 
-    const absolutePath = this.device.resolveAbsolutePath(filePath);
-    const existingContent = this.device.readFileForEditor(absolutePath);
+    // Resolve against the per-terminal cwd when a shell session is owned
+    // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
+    // non-Linux devices.
+    const dev = this.device;
+    const absolutePath = (this.shell && dev instanceof LinuxMachine)
+      ? dev.resolveAbsolutePathInSession(filePath, this.shell)
+      : this.device.resolveAbsolutePath(filePath);
+    const existingContent = (this.shell && dev instanceof LinuxMachine)
+      ? dev.readFileForEditorInSession(absolutePath, this.shell)
+      : this.device.readFileForEditor(absolutePath);
     const isNewFile = existingContent === null;
 
     this.inputMode = {
@@ -590,13 +727,32 @@ export class LinuxTerminalSession extends TerminalSession {
 
   /** Called by the view when editor saves a file. */
   editorSave(content: string, filePath: string): void {
-    this.device.writeFileFromEditor(filePath, content);
+    const dev = this.device;
+    if (this.shell && dev instanceof LinuxMachine) {
+      dev.writeFileFromEditorInSession(filePath, content, this.shell);
+    } else {
+      this.device.writeFileFromEditor(filePath, content);
+    }
   }
 
-  /** Called by the view when editor exits. */
-  editorExit(): void {
+  /**
+   * Called by the view when an editor exits. If the editor was opened
+   * as part of a compound command (`mkdir foo && nano foo/x`), run the
+   * tail of the chain — see openEditor / executeChain (§10.3).
+   * `saved=true` corresponds to exit-with-save (e.g. nano ^X→Y, vim :wq),
+   * making the editor "succeed" for chain semantics; `saved=false`
+   * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
+   */
+  editorExit(saved: boolean = true): void {
     this.inputMode = { type: 'normal' };
+    const tail = this._pendingChainAfterEditor;
+    this._pendingChainAfterEditor = null;
     this.notify();
+    if (tail && tail.length > 0) {
+      // Drive the rest of the chain asynchronously so the React tree
+      // can settle out of the editor overlay first.
+      void this.executeChain(tail, saved ? 0 : 1);
+    }
   }
 
   // ── Device state sync ───────────────────────────────────────────
@@ -2159,6 +2315,86 @@ function composeLoginBanner(remote: Equipment, user: string): string[] {
 }
 
 // ── ssh CLI argument parser ─────────────────────────────────────
+
+// ── Shell-chain parsing (used by the editor-in-chain dispatcher) ──────
+
+/**
+ * Split a command line on top-level `&&`, `||`, and `;` operators while
+ * respecting quotes (single, double) and escapes. Operators inside
+ * quoted strings are ignored — exactly the semantics POSIX shells use.
+ *
+ * Returns segments paired with the connector that ties the segment to
+ * its predecessor (`;` for the first segment, meaning "run unconditionally").
+ *
+ * Pipes (`|`) and process substitutions are left embedded in the segment
+ * — only conditional/sequence chaining matters for the editor flow.
+ */
+export function parseShellChain(
+  line: string,
+): Array<{ connector: ';' | '&&' | '||'; cmd: string }> {
+  const segments: Array<{ connector: ';' | '&&' | '||'; cmd: string }> = [];
+  let cur = '';
+  let connector: ';' | '&&' | '||' = ';';
+  let quote: '"' | "'" | null = null;
+  let escape = false;
+
+  const push = () => {
+    const cmd = cur.trim();
+    if (cmd.length > 0) segments.push({ connector, cmd });
+    cur = '';
+  };
+
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (escape) { cur += c; escape = false; continue; }
+    if (c === '\\' && quote !== "'") { cur += c; escape = true; continue; }
+    if (quote) {
+      cur += c;
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { cur += c; quote = c; continue; }
+
+    // Operators outside quotes.
+    if (c === '&' && line[i + 1] === '&') {
+      push();
+      connector = '&&';
+      i++;
+      continue;
+    }
+    if (c === '|' && line[i + 1] === '|') {
+      push();
+      connector = '||';
+      i++;
+      continue;
+    }
+    if (c === ';') {
+      push();
+      connector = ';';
+      continue;
+    }
+    cur += c;
+  }
+  push();
+  return segments;
+}
+
+/** Is this segment a `nano`/`vi`/`vim` invocation (with or without sudo)? */
+export function isEditorSegment(segment: string): boolean {
+  const noSudo = segment.startsWith('sudo ') ? segment.slice(5).trimStart() : segment;
+  const head = noSudo.split(/\s+/, 1)[0];
+  return head === 'nano' || head === 'vi' || head === 'vim';
+}
+
+/** Connector gating: should this segment run given the previous exit code? */
+export function shouldExecuteSegment(
+  connector: ';' | '&&' | '||',
+  previousExitCode: number,
+): boolean {
+  if (connector === ';') return true;
+  if (connector === '&&') return previousExitCode === 0;
+  return previousExitCode !== 0;
+}
 
 function hasSftpError(output: readonly string[]): boolean {
   return output.some((line) =>
