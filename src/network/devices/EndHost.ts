@@ -48,6 +48,7 @@ import {
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { HardwareProfile } from './host/hardware';
 import { DHCPClient } from '../dhcp/DHCPClient';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
@@ -140,6 +141,15 @@ export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
   protected readonly socketTable: SocketTable = new SocketTable();
+
+  // ─── Hardware inventory ─────────────────────────────────────────
+  /**
+   * Faithful model of the host's physical hardware — CPU, memory, storage,
+   * NICs, firmware. The single source of truth behind `lscpu`, `free`,
+   * `/proc/*`, `dmidecode` and Windows `systeminfo`. Initialised from a
+   * role-appropriate preset; replaceable via {@link setHardware}.
+   */
+  protected hardware: HardwareProfile;
 
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
@@ -428,6 +438,9 @@ export abstract class EndHost extends Equipment {
 
   constructor(type: any, name: string, x: number, y: number) {
     super(type, name, x, y);
+    this.hardware = HardwareProfile.defaultFor(
+      String(type).includes('server') ? 'server' : 'workstation',
+    );
     this.attachHostActors();
     this.dhcpClient = new DHCPClient(
       (iface: string) => {
@@ -451,6 +464,18 @@ export abstract class EndHost extends Equipment {
         this.dhcpInterfaces.delete(iface);
       },
     );
+  }
+
+  // ─── Hardware inventory ─────────────────────────────────────────
+
+  /** The host's hardware inventory (CPU, memory, storage, NICs, firmware). */
+  getHardware(): HardwareProfile {
+    return this.hardware;
+  }
+
+  /** Replace the hardware inventory — e.g. to model a differently-specced host. */
+  setHardware(profile: HardwareProfile): void {
+    this.hardware = profile;
   }
 
   // ─── Interface Configuration ───────────────────────────────────

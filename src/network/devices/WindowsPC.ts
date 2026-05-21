@@ -903,7 +903,10 @@ export class WindowsPC extends EndHost {
     lines.push(`OS Manufacturer:           Microsoft Corporation`);
     lines.push(`OS Configuration:          Member Workstation`);
     lines.push(`OS Build Type:             Multiprocessor Free`);
+    lines.push(`System Manufacturer:       ${this.hardware.manufacturer}`);
+    lines.push(`System Model:              ${this.hardware.productName}`);
     lines.push(`System Type:               x64-based PC`);
+    lines.push(...this.systeminfoHardwareLines());
     lines.push(`Network Card(s):           ${this.ports.size} NIC(s) Installed.`);
     let idx = 1;
     for (const [name, port] of this.ports) {
@@ -922,6 +925,27 @@ export class WindowsPC extends EndHost {
       idx++;
     }
     return lines.join('\n');
+  }
+
+  /**
+   * The processor / BIOS / memory block of `systeminfo`, rendered from the
+   * host's hardware inventory so it stays coherent with the device model.
+   */
+  private systeminfoHardwareLines(): string[] {
+    const { cpu, memory, firmware } = this.hardware;
+    const mb = (kib: number): string =>
+      `${Math.round(kib / 1024).toLocaleString('en-US')} MB`;
+    return [
+      `Processor(s):              ${cpu.sockets} Processor(s) Installed.`,
+      `                           [01]: Intel64 Family ${cpu.cpuFamily} ` +
+        `Model ${cpu.model} Stepping ${cpu.stepping} ${cpu.vendor} ` +
+        `~${cpu.clockMhz} Mhz`,
+      `BIOS Version:              ${firmware.vendor} ${firmware.version}, ` +
+        `${firmware.releaseDate}`,
+      `Total Physical Memory:     ${mb(memory.totalKib)}`,
+      `Available Physical Memory: ${mb(memory.availableKib)}`,
+      `Virtual Memory: Max Size:  ${mb(memory.totalKib + memory.swapTotalKib)}`,
+    ];
   }
 
   // ─── PSDeviceContext implementation ───────────────────────────

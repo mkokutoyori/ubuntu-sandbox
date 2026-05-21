@@ -121,8 +121,9 @@ export abstract class LinuxMachine extends EndHost {
     // 1. Ports
     this.createPortsFromProfile();
 
-    // 2. Kernel / userspace
-    this.executor = new LinuxCommandExecutor(profile.isServer);
+    // 2. Kernel / userspace — the executor shares this host's hardware
+    //    inventory so lscpu / free / /proc stay coherent with the device.
+    this.executor = new LinuxCommandExecutor(profile.isServer, this.hardware);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
