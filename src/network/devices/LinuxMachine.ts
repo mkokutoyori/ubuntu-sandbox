@@ -65,6 +65,7 @@ import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { parseSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import { SshSessionTable } from './linux/network/SshSessionTable';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -170,9 +171,23 @@ export abstract class LinuxMachine extends EndHost {
 
   // ─── Reactive surface for cross-device commands (ssh, scp, sftp) ─────
 
-  /** Whether the named systemd unit is currently active on this machine. */
+  /**
+   * Whether the named systemd unit is currently active. The unit must
+   * both be in 'active' state AND have a live process backing it — a
+   * `kill -9 <mainPid>` outside the supervisor leaves the unit's state
+   * stale, so we double-check the process table here.
+   */
   isServiceActive(name: string): boolean {
-    return this.executor.serviceMgr.isActive(name);
+    if (!this.executor.serviceMgr.isActive(name)) return false;
+    // For canonical daemons, require the named process to be alive too.
+    const knownDaemons: Record<string, string> = {
+      ssh: 'sshd', sshd: 'sshd',
+      cron: 'cron', rsyslog: 'rsyslogd',
+      'systemd-journald': 'systemd-journald',
+    };
+    const comm = knownDaemons[name];
+    if (!comm) return true;
+    return this.executor.processMgr.list({ comm }).length > 0;
   }
 
   /**
@@ -203,6 +218,38 @@ export abstract class LinuxMachine extends EndHost {
     if (cfg.allowUsers.length > 0 && !matchesAny(cfg.allowUsers)) {
       return { ok: false, reason: 'not in AllowUsers' };
     }
+
+    // User must exist in /etc/passwd. Test fixtures are responsible for
+    // calling useradd before relying on a login — sshd does not create
+    // accounts on the fly.
+    const userEntry = this.executor.userMgr.getUser(user) as
+      | { locked?: boolean; expireDate?: number; password?: string }
+      | undefined;
+    if (!userEntry) return { ok: false, reason: 'no such user' };
+
+    // Locked account: either the userMgr's in-memory flag is on, or
+    // /etc/shadow stores "!<hash>" / "!".
+    if (userEntry.locked) return { ok: false, reason: 'account locked' };
+    if (userEntry.password === '!') return { ok: false, reason: 'no password set' };
+    const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
+    const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
+    if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
+      return { ok: false, reason: 'account locked' };
+    }
+    // Expired account: userMgr.expireDate in days-since-epoch, or
+    // /etc/shadow column 8 in the past.
+    const now = Date.now();
+    if (userEntry.expireDate !== undefined && userEntry.expireDate > 0) {
+      if (userEntry.expireDate * 86_400_000 < now) {
+        return { ok: false, reason: 'account expired' };
+      }
+    }
+    if (shadowLine) {
+      const expireDays = Number.parseInt(shadowLine.split(':')[7] ?? '', 10);
+      if (Number.isFinite(expireDays) && expireDays > 0) {
+        if (expireDays * 86_400_000 < now) return { ok: false, reason: 'account expired' };
+      }
+    }
     return { ok: true };
   }
 
@@ -211,12 +258,80 @@ export abstract class LinuxMachine extends EndHost {
    * Used by inbound SSH (this device) to log a login from a remote.
    */
   recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void {
-    const vfs = this.executor.vfs;
-    const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-    const verdict = accepted ? 'Accepted password' : 'Failed password';
-    const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
-    const existing = vfs.readFile('/var/log/auth.log') ?? '';
-    vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+    // Only write to auth.log when the local rsyslog is up — modelling
+    // the realistic dependency the suite exercises.
+    if (this.isServiceActive('rsyslog')) {
+      const vfs = this.executor.vfs;
+      const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+      const verdict = accepted ? 'Accepted password' : 'Failed password';
+      const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
+      const existing = vfs.readFile('/var/log/auth.log') ?? '';
+      vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+    }
+    // Track active sessions in the session table for `w`, `who`, `last`.
+    if (accepted) {
+      const userEntry = this.executor.userMgr.getUser(user);
+      const uid = userEntry?.uid ?? 1000;
+      this.sessionTable.open({
+        user, uid, sshdPid: 985 + this.sessionTable.list().length,
+        fromIp, fromHost,
+      });
+    }
+  }
+
+  /** Per-machine SSH session table — backs `w`, `who`, `last`. */
+  public readonly sessionTable = (() => {
+    const t = new SshSessionTable();
+    // Seed the local console session so `who`/`w`/`last` show the
+    // currently logged-in user even before any SSH connect happens.
+    return t;
+  })();
+
+  /** Ensure a tty=tty1 console session exists for the local user. */
+  private ensureLocalConsoleSession(): void {
+    if (this.sessionTable.list().some(s => s.tty === 'tty1')) return;
+    const user = this.executor.userMgr.currentUser;
+    const userEntry = this.executor.userMgr.getUser(user);
+    this.sessionTable.open({
+      user,
+      uid: userEntry?.uid ?? 0,
+      sshdPid: 0,
+      tty: 'tty1',
+      fromIp: ':0',
+      fromHost: '',
+      transport: 'console',
+    });
+  }
+
+  /**
+   * Match `w` / `who` / `last` invocations and render them from the
+   * live session table. Returns null when the command isn't one of
+   * them (so the normal pipeline handles it).
+   */
+  private renderSessionView(command: string): string | null {
+    const argv = command.split(/\s+/);
+    const cmd = argv[0];
+    if (cmd === 'w' || cmd === 'who' || cmd === 'last') {
+      this.ensureLocalConsoleSession();
+    }
+    if (cmd === 'w' && argv.length === 1) {
+      const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
+        `${this.sessionTable.list().length} users,  load average: 0.00, 0.00, 0.00\n` +
+        'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
+      const rows = this.sessionTable.list().map(s => s.toWRow());
+      return [header, ...rows].join('\n');
+    }
+    if (cmd === 'who' && argv.length === 1) {
+      return this.sessionTable.list().map(s =>
+        `${s.user.padEnd(8)} ${s.tty.padEnd(8)} ${s.loginAt.toISOString().slice(0, 16).replace('T', ' ')} (${s.fromIp})`,
+      ).join('\n');
+    }
+    if (cmd === 'last') {
+      const nIdx = argv.findIndex(a => a === '-n' || a === '--limit');
+      const limit = nIdx >= 0 ? Number.parseInt(argv[nIdx + 1] ?? '10', 10) : 10;
+      return this.sessionTable.recent(limit).map(s => s.toLastRow()).join('\n');
+    }
+    return null;
   }
 
   // ─── Hostname sync ───────────────────────────────────────────────────
@@ -335,7 +450,32 @@ export abstract class LinuxMachine extends EndHost {
     };
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
-    this._sshLifecycleOff = () => { offRestart(); offReload(); };
+    // Reactive socket-table sync: unbind :22 on stop, rebind on start.
+    // Read the configured Port from sshd_config (or fall back to 22)
+    // so listener / unlistener honour custom Port directives.
+    const portsFromConfig = (): number[] => {
+      const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+      const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim)).map(m => Number(m[1])).filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+      return ports.length ? ports : [22];
+    };
+    const rebindPorts = (): void => {
+      // Drop any currently-bound 'sshd' listeners then bind the configured set.
+      for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
+        this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
+      }
+      for (const p of portsFromConfig()) {
+        try { this.socketTable.bind('tcp', '0.0.0.0', p, 985, 'sshd'); } catch { /* already bound */ }
+      }
+    };
+    const offStopped = bus.subscribeWhere('linux.service.stopped', isSsh, () => {
+      for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
+        this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
+      }
+    });
+    const offStarted = bus.subscribeWhere('linux.service.started', isSsh, rebindPorts);
+    const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
+    const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
+    this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
     return this._sshContext;
   }
 
@@ -381,6 +521,11 @@ export abstract class LinuxMachine extends EndHost {
 
     const trimmed = command.trim();
     if (!trimmed) return '';
+
+    // Session-table views (`w`, `who`, `last`) override the legacy
+    // user-manager output because the session table is the live truth.
+    const sessionView = this.renderSessionView(trimmed);
+    if (sessionView !== null) return sessionView;
 
     // Fast path: no network command → straight to bash interpreter.
     if (!this.containsNetworkCommand(trimmed)) {

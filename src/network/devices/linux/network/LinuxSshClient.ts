@@ -17,6 +17,7 @@
  */
 
 import { findHostByAddress } from './HostLookup';
+import { SshKnownHostEntry, type SshHostKeyType } from './SshKnownHostEntry';
 import type { LinuxMachine } from '../../LinuxMachine';
 
 export interface SshClientResult {
@@ -33,6 +34,15 @@ export interface SshClientOpts {
   sourceIp: string;
   /** Local user invoking ssh (defaults to "root"). */
   sourceUser: string;
+  /** Local VFS — needed to read/write ~/.ssh/known_hosts. */
+  localVfs?: {
+    readFile: (p: string) => string | null;
+    writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
+    resolveInode?: (p: string) => unknown;
+    mkdirp?: (p: string, perm: number, uid: number, gid: number) => boolean;
+  };
+  /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
+  sourceHome?: string;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
@@ -40,22 +50,79 @@ const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
 /** SSH options that consume a single value (so we can skip them in argv scan). */
 const SSH_OPTS_WITH_VALUE = new Set(['-p', '-i', '-l', '-o', '-L', '-R', '-D', '-F', '-c', '-m', '-J']);
 
-/** Walk argv: return positional args (host, then command tokens) and detected options. */
+/**
+ * Walk argv: return positional args (host, then command tokens) and
+ * detected options. Once the host token is found (the first positional),
+ * everything that follows is treated as the remote command — even tokens
+ * that look like options. This matches OpenSSH semantics where flags
+ * after the host belong to the remote shell, e.g. `ssh host sudo -l`.
+ */
 function splitSshArgs(args: string[]): { positional: string[]; flags: string[] } {
   const positional: string[] = [];
   const flags: string[] = [];
+  let hostFound = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
+    if (hostFound) { positional.push(a); continue; }
     if (a.startsWith('-') && SSH_OPTS_WITH_VALUE.has(a)) { flags.push(a, args[++i] ?? ''); continue; }
     if (a.startsWith('-')) { flags.push(a); continue; }
     positional.push(a);
+    hostFound = true;
   }
   return { positional, flags };
+}
+
+/**
+ * Ask the remote machine's iptables/ufw filter table whether an
+ * inbound TCP SYN from `srcIp` to `dstPort` would be accepted.
+ * Returns 'accept' / 'drop' / 'reject'. Defaults to 'accept' if the
+ * remote has no firewall manager (e.g. switches).
+ */
+function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: number): 'accept' | 'drop' | 'reject' {
+  const ipt = (machine as LinuxMachine & {
+    executor?: { iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' } };
+  }).executor?.iptables;
+  if (!ipt?.filterPacket) return 'accept';
+  const dstIp = machine.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
+  return ipt.filterPacket({
+    direction: 'in', protocol: 6, srcIP: srcIp, dstIP: dstIp,
+    srcPort: 50000, dstPort, iface: 'eth0',
+  });
+}
+
+/** Ports configured by sshd_config on the remote machine — defaults to [22]. */
+function sshdConfiguredPorts(machine: LinuxMachine): number[] {
+  const raw = (machine as LinuxMachine & {
+    executor: { vfs: { readFile: (p: string) => string | null } };
+  }).executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
+    .map(m => Number(m[1]))
+    .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+  return ports.length ? ports : [22];
+}
+
+/** Extract -p <port> from argv (default 22). */
+function clientPort(args: string[]): number {
+  const i = args.indexOf('-p');
+  if (i >= 0 && args[i + 1]) {
+    const n = Number.parseInt(args[i + 1], 10);
+    if (Number.isFinite(n) && n > 0 && n < 65536) return n;
+  }
+  return 22;
 }
 
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional } = splitSshArgs(opts.args);
   const target = positional[0];
+  const port = clientPort(opts.args);
+
+  // Local network plumbing must be up to even attempt a TCP handshake.
+  if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
+    return {
+      output: `ssh: connect to host ${target ?? ''} port ${port}: Network is unreachable\n`,
+      exitCode: 255,
+    };
+  }
   if (!target) {
     return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
   }
@@ -70,10 +137,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const remoteUser = parsed[1] ?? opts.sourceUser ?? 'root';
   const host = parsed[2];
 
-  const found = findHostByAddress(host);
+  const found = findHostByAddress(host, opts.localVfs);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
+      exitCode: 255,
+    };
+  }
+  if (found.poweredOff) {
+    return {
+      output: `ssh: connect to host ${host} port 22: No route to host\n`,
       exitCode: 255,
     };
   }
@@ -93,11 +166,32 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  // Reactive gate: only an active sshd accepts the TCP handshake.
+  // Reactive gate: only an active sshd accepts the TCP handshake AND
+  // the requested port must match a Port directive in sshd_config.
   if (!machine.isServiceActive('ssh')) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
-      output: `ssh: connect to host ${host} port 22: Connection refused\n`,
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+  const cfgPorts = sshdConfiguredPorts(machine);
+  if (!cfgPorts.includes(port)) {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+
+  // Inbound firewall (iptables/ufw): synth a SYN packet, ask filter.
+  const verdict = inboundFirewallVerdict(machine, opts.sourceIp, port);
+  if (verdict === 'drop' || verdict === 'reject') {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: verdict === 'reject'
+        ? `ssh: connect to host ${host} port ${port}: Connection refused\n`
+        : `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
       exitCode: 255,
     };
   }
@@ -113,6 +207,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   }
 
   machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, true);
+
+  // Update the local ~/.ssh/known_hosts with the remote's host key (or
+  // emit the OpenSSH-style identification-changed warning when the key
+  // already present differs from the remote's).
+  const keyChanged = updateKnownHosts(opts, machine, found.ip);
+  if (keyChanged) {
+    return {
+      output:
+        '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
+        '@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n' +
+        '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
+        'IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n' +
+        `Add correct host key in /root/.ssh/known_hosts to get rid of this message.\n` +
+        `Offending key in /root/.ssh/known_hosts:1\n`,
+      exitCode: 255,
+    };
+  }
 
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
@@ -159,6 +270,42 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
  * Switch the remote machine's "current user" context for the duration of
  * an exec-mode command, then restore it. Returns the restorer.
  */
+/**
+ * Read the remote's host public key, find/append the matching entry in
+ * the local ~/.ssh/known_hosts. Returns true when an existing entry's
+ * key differs from the remote's current key (host-key changed).
+ */
+function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string): boolean {
+  if (!opts.localVfs) return false;
+  const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
+  // Read the remote's ed25519 public key (the algorithm we seed everywhere).
+  const pubKeyRaw = remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
+  const tokens = pubKeyRaw.trim().split(/\s+/);
+  if (tokens.length < 2) return false;
+  const keyType = tokens[0] as SshHostKeyType;
+  const publicKey = tokens[1];
+
+  const home = opts.sourceHome ?? '/root';
+  const knownHostsPath = `${home}/.ssh/known_hosts`;
+  const existing = opts.localVfs.readFile(knownHostsPath) ?? '';
+  const entries = SshKnownHostEntry.parseFile(existing);
+  const found = entries.find(e => e.matches(ip));
+
+  if (found && found.keyType === keyType && found.publicKey !== publicKey) {
+    return true; // host key changed → caller emits the big warning
+  }
+  if (!found) {
+    entries.push(new SshKnownHostEntry({ hostnames: [ip], keyType, publicKey }));
+    // mkdirp ~/.ssh if missing so the writeFile doesn't fail silently.
+    const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
+    if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
+      opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);
+    }
+    opts.localVfs.writeFile(knownHostsPath, SshKnownHostEntry.serializeFile(entries), 0, 0, 0o022);
+  }
+  return false;
+}
+
 function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | null {
   const exec = (machine as LinuxMachine & {
     executor: {

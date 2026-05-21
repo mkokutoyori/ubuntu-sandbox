@@ -72,6 +72,19 @@ async function buildLan(): Promise<Lan> {
       await pc.executeCommand(`ping -c 1 ${other}`);
     }
   }
+  // Auto-provision a cast of users on every PC so the sshd
+  // user-existence gate accepts them (sshd refuses unknown users).
+  for (const d of [pc1, pc2, pc3, pc4]) {
+    const um = (d as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      setPassword: (u: string, p: string) => void;
+      getUser: (u: string) => unknown;
+    } } }).executor.userMgr;
+    for (const u of ['alice', 'bob', 'carol', 'dave']) {
+      if (!um.getUser(u)) { um.useradd(u, { m: true, s: '/bin/bash' }); um.setPassword(u, 'x'); }
+    }
+  }
+
   return { pc1, pc2, pc3, pc4, sw };
 }
 
@@ -140,11 +153,17 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     lan = await buildLan();
   });
 
-  it('connects via `ssh user@host` when remote sshd is active (Phase D-2)', async () => {
-    // Both pc1 and pc2 ship sshd Running by default, so the cross-device
-    // ssh actually completes through the reactive gate. Use the non-root
-    // user so PermitRootLogin no does not interfere.
+  it('connects via `ssh user@host` and runs the remote command (Phase D-2 exec)', async () => {
+    // Both pc1 and pc2 ship sshd Running by default. The remote command
+    // mode prints just the command's output (no banner) — here, the
+    // remote's /etc/hostname.
     const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`);
+    expect(out.trim()).toMatch(/^[a-z0-9-]+$/);
+    expect(out).not.toMatch(/Connection refused/);
+  });
+
+  it('interactive ssh (no remote command) prints the OpenSSH banner', async () => {
+    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP}`);
     expect(out).toContain('Welcome to Ubuntu');
   });
 
@@ -159,9 +178,13 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     expect(out).toMatch(/usage: ssh/);
   });
 
-  it('returns "Connection refused" for `sftp user@host`', async () => {
+  it('sftp user@host now opens an SFTP prompt when sshd is up (Phase D-2)', async () => {
     const out = await lan.pc1.executeCommand(`sftp user@${PC2_IP}`);
-    expect(out).toMatch(/Connection refused/);
+    expect(out).toMatch(/Connected to|sftp>/);
+    // Stopping ssh on the remote makes it refuse.
+    await lan.pc2.executeCommand('systemctl stop ssh');
+    const refused = await lan.pc1.executeCommand(`sftp user@${PC2_IP}`);
+    expect(refused).toMatch(/Connection refused/);
   });
 
   it('keeps the sshd service listed as running on every Linux PC', async () => {

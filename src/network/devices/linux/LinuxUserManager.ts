@@ -1,84 +1,178 @@
 /**
  * User and group management for Linux simulation.
- * Manages /etc/passwd, /etc/shadow, /etc/group, /etc/gshadow state.
+ *
+ * Owns the in-VM IAM state — accounts (`LinuxUserAccount`) and groups
+ * (`LinuxGroup`) — and projects it onto `/etc/passwd`, `/etc/shadow` and
+ * `/etc/group`.
+ *
+ * Reactive layer: once a device calls `attachBus()`, every mutation
+ * (`useradd`, `usermod`, `passwd`, `groupadd`, …) also publishes a
+ * deviceId-scoped domain event on the central `EventBus`. The legacy
+ * return-string API is unchanged, so existing callers keep working while
+ * new consumers (audit panels, toasts, supervisors) subscribe to the bus.
  */
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { uptimeHeader } from './system/SystemInfo';
+import type { IEventBus } from '@/events/EventBus';
+import { GecosInfo } from './iam/GecosInfo';
+import {
+  LinuxUserAccount,
+  daysSinceEpoch as daysSinceEpochOf,
+  type UserEntry,
+} from './iam/LinuxUserAccount';
+import { LinuxGroup, type GroupEntry } from './iam/LinuxGroup';
+import type { LinuxIamDomainEvent } from './iam/events';
+import { LoginDefs } from './iam/fs/LoginDefs';
+import { UseraddDefaults } from './iam/fs/UseraddDefaults';
+import { IamFilesystem } from './iam/fs/IamFilesystem';
 
-export interface UserEntry {
-  username: string;
-  uid: number;
-  gid: number;
-  gecos: string;
-  home: string;
-  shell: string;
-  password: string;  // hashed (simulated)
-  locked: boolean;
-  lastChange: number;  // days since epoch
-  minDays: number;
-  maxDays: number;
-  warnDays: number;
-  inactiveDays: number;
-  expireDate: number;
-}
+// Re-export the structural contracts so existing importers keep working.
+export type { UserEntry } from './iam/LinuxUserAccount';
+export type { GroupEntry } from './iam/LinuxGroup';
 
-export interface GroupEntry {
-  name: string;
-  gid: number;
-  members: string[];
-  admins: string[];
-  password: string;
+/** Default primary GID used by `useradd -N` (no user-private group). */
+const DEFAULT_USER_GID = 100;
+
+/**
+ * Options accepted by {@link LinuxUserManager.useradd}.
+ *
+ * The original six fields (`m s G d g c`) are preserved verbatim for
+ * backward compatibility; the remainder expose the real `useradd` surface
+ * (uid override, system accounts, pre-hashed password, account aging).
+ */
+export interface UseraddOptions {
+  /** `-m` create the home directory. */
+  m?: boolean;
+  /** `-M` never create the home directory (wins over `-m`). */
+  M?: boolean;
+  /** `-s` login shell. */
+  s?: string;
+  /** `-G` supplementary groups, comma-separated. */
+  G?: string;
+  /** `-d` home directory path. */
+  d?: string;
+  /** `-g` primary group, by name or numeric id. */
+  g?: string;
+  /** `-c` GECOS comment. */
+  c?: string;
+  /** `-u` explicit UID. */
+  u?: number;
+  /** `-o` allow a non-unique UID. */
+  o?: boolean;
+  /** `-r` create a system account. */
+  r?: boolean;
+  /** `-N` do not create a user-private group. */
+  N?: boolean;
+  /** `-p` pre-hashed password. */
+  p?: string;
+  /** `-e` account expiry date, days since epoch. */
+  e?: number;
+  /** `-f` password inactivity grace, in days. */
+  f?: number;
 }
 
 export class LinuxUserManager {
-  private users: Map<string, UserEntry> = new Map();
-  private groups: Map<string, GroupEntry> = new Map();
+  private users: Map<string, LinuxUserAccount> = new Map();
+  private groups: Map<string, LinuxGroup> = new Map();
   /** Plaintext password store for simulation (username → password) */
   private passwords: Map<string, string> = new Map();
-  private nextUid = 1000;
-  private nextGid = 1000;
+  /** UID/GID allocation cursors — seeded from the {@link LoginDefs} policy. */
+  private nextUid: number;
+  private nextGid: number;
+  private nextSystemUid: number;
+  private nextSystemGid: number;
   currentUser = 'root';
   currentUid = 0;
   currentGid = 0;
 
+  /** Reactive sink — null until the owning device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
+
+  /** System-wide policy (`/etc/login.defs`) — drives UID/GID allocation. */
+  private readonly loginDefs: LoginDefs;
+  /** `useradd` fallback defaults (`/etc/default/useradd`). */
+  private readonly useraddDefaults: UseraddDefaults;
+  /** Keeps the on-disk account database, config and spools coherent. */
+  private readonly iamFs: IamFilesystem;
+
   constructor(private vfs: VirtualFileSystem) {
+    this.loginDefs = LoginDefs.defaults();
+    this.useraddDefaults = UseraddDefaults.defaults();
+    this.iamFs = new IamFilesystem(vfs);
+    this.nextUid = this.loginDefs.uidMin;
+    this.nextGid = this.loginDefs.gidMin;
+    this.nextSystemUid = this.loginDefs.sysUidMin;
+    this.nextSystemGid = this.loginDefs.sysGidMin;
     this.initDefaults();
+  }
+
+  /** The system login policy (`/etc/login.defs`). */
+  getLoginDefs(): LoginDefs {
+    return this.loginDefs;
+  }
+
+  /** The `useradd` fallback defaults (`/etc/default/useradd`). */
+  getUseraddDefaults(): UseraddDefaults {
+    return this.useraddDefaults;
+  }
+
+  /**
+   * Attach the owning device's event bus so IAM mutations become
+   * observable. Idempotent; safe to call at any point after construction.
+   */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
+
+  private publish(event: LinuxIamDomainEvent): void {
+    this.bus?.publish(event);
   }
 
   private initDefaults(): void {
     // System users
-    this.addUser({ username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash',
-      password: 'x', locked: false, lastChange: this.daysSinceEpoch(), minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1 });
+    this.addUser(new LinuxUserAccount({
+      username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash',
+      password: 'x', locked: false, systemAccount: true,
+    }));
     this.passwords.set('root', 'admin');
-    this.addUser({ username: 'daemon', uid: 1, gid: 1, gecos: 'daemon', home: '/usr/sbin', shell: '/usr/sbin/nologin',
-      password: '*', locked: true, lastChange: this.daysSinceEpoch(), minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1 });
-    this.addUser({ username: 'nobody', uid: 65534, gid: 65534, gecos: 'nobody', home: '/nonexistent', shell: '/usr/sbin/nologin',
-      password: '*', locked: true, lastChange: this.daysSinceEpoch(), minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1 });
+    this.addUser(new LinuxUserAccount({
+      username: 'daemon', uid: 1, gid: 1, gecos: 'daemon', home: '/usr/sbin', shell: '/usr/sbin/nologin',
+      password: '*', locked: true, systemAccount: true,
+    }));
+    this.addUser(new LinuxUserAccount({
+      username: 'nobody', uid: 65534, gid: 65534, gecos: 'nobody', home: '/nonexistent', shell: '/usr/sbin/nologin',
+      password: '*', locked: true, systemAccount: true,
+    }));
 
     // System groups
-    this.addGroup({ name: 'root', gid: 0, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'daemon', gid: 1, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'adm', gid: 4, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'sudo', gid: 27, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'video', gid: 44, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'plugdev', gid: 46, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'users', gid: 100, members: [], admins: [], password: '' });
-    this.addGroup({ name: 'nogroup', gid: 65534, members: [], admins: [], password: '' });
+    this.addGroup(new LinuxGroup({ name: 'root', gid: 0, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'daemon', gid: 1, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'adm', gid: 4, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'sudo', gid: 27, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'video', gid: 44, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'plugdev', gid: 46, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'users', gid: 100, systemGroup: true }));
+    this.addGroup(new LinuxGroup({ name: 'nogroup', gid: 65534, systemGroup: true }));
 
+    // Seed the policy / defaults configuration and the skeleton directory,
+    // then materialise the account database.
+    this.iamFs.seedConfiguration(this.loginDefs, this.useraddDefaults);
     this.syncToFilesystem();
   }
 
   private daysSinceEpoch(): number {
-    return Math.floor(Date.now() / 86400000);
+    return daysSinceEpochOf();
   }
 
-  private addUser(u: UserEntry): void {
+  private addUser(u: LinuxUserAccount): void {
     this.users.set(u.username, u);
     if (u.uid >= this.nextUid && u.uid < 65534) this.nextUid = u.uid + 1;
   }
 
-  private addGroup(g: GroupEntry): void {
+  private addGroup(g: LinuxGroup): void {
     this.groups.set(g.name, g);
     if (g.gid >= this.nextGid && g.gid < 65534) this.nextGid = g.gid + 1;
   }
@@ -89,7 +183,16 @@ export class LinuxUserManager {
     return this.users.get(username);
   }
 
+  /** Typed accessor for the rich account entity (callers that need behaviour). */
+  getAccount(username: string): LinuxUserAccount | undefined {
+    return this.users.get(username);
+  }
+
   getGroup(name: string): GroupEntry | undefined {
+    return this.groups.get(name);
+  }
+
+  getGroupEntity(name: string): LinuxGroup | undefined {
     return this.groups.get(name);
   }
 
@@ -146,76 +249,151 @@ export class LinuxUserManager {
 
   // ─── User operations ──────────────────────────────────────────────
 
-  useradd(username: string, opts: { m?: boolean; s?: string; G?: string; d?: string; g?: string; c?: string }): string {
+  useradd(username: string, opts: UseraddOptions = {}): string {
     if (this.users.has(username)) return `useradd: user '${username}' already exists`;
 
-    const uid = this.nextUid++;
-    let gid: number;
+    // UID — explicit (`-u`) or auto-allocated. Uniqueness enforced unless `-o`.
+    let uid: number;
+    if (opts.u !== undefined) {
+      if (!opts.o && this.getUserByUid(opts.u)) {
+        return `useradd: UID ${opts.u} is not unique`;
+      }
+      uid = opts.u;
+      if (uid >= this.nextUid && uid < 65534) this.nextUid = uid + 1;
+    } else if (opts.r) {
+      uid = this.nextSystemUid++;
+    } else {
+      uid = this.nextUid++;
+    }
 
+    // Primary group resolution.
+    let gid: number;
+    let userPrivateGroupCreated = false;
     if (opts.g) {
-      const grp = this.groups.get(opts.g);
+      const grp = this.groups.get(opts.g) ?? this.findGroupByGidString(opts.g);
       if (!grp) return `useradd: group '${opts.g}' does not exist`;
       gid = grp.gid;
+    } else if (opts.N) {
+      gid = DEFAULT_USER_GID;
     } else {
-      // Create a group with the same name
-      gid = this.nextGid++;
-      this.addGroup({ name: username, gid, members: [], admins: [], password: '' });
+      // Create a user-private group with the same name. System accounts get
+      // their group from the system GID range too.
+      gid = opts.r ? this.nextSystemGid++ : this.nextGid++;
+      const pg = new LinuxGroup({ name: username, gid, userPrivateGroup: true });
+      this.addGroup(pg);
+      userPrivateGroupCreated = true;
+      this.publish({
+        topic: 'linux.iam.group.created',
+        payload: { deviceId: this.deviceId, groupName: pg.name, gid: pg.gid, systemGroup: pg.systemGroup, userPrivateGroup: true },
+      });
     }
 
     const home = opts.d || `/home/${username}`;
     const shell = opts.s || '/bin/sh';
-    const gecos = opts.c || '';
-
-    this.addUser({
-      username, uid, gid, gecos, home, shell,
-      password: '!', locked: false,
-      lastChange: this.daysSinceEpoch(),
-      minDays: 0, maxDays: 99999, warnDays: 7, inactiveDays: -1, expireDate: -1,
+    const account = new LinuxUserAccount({
+      username, uid, gid, home, shell,
+      gecos: opts.c ?? '',
+      password: opts.p ?? '!',
+      locked: false,
+      systemAccount: opts.r ?? undefined,
+      nonUnique: opts.o ?? false,
+      expireDate: opts.e ?? -1,
+      inactiveDays: opts.f ?? -1,
     });
+    this.addUser(account);
 
-    // Add to supplementary groups
+    // Supplementary groups.
+    const joinedGroups: string[] = [];
     if (opts.G) {
       for (const gName of opts.G.split(',')) {
         const grp = this.groups.get(gName.trim());
-        if (grp && !grp.members.includes(username)) {
-          grp.members.push(username);
+        if (grp && grp.addMember(username)) {
+          joinedGroups.push(grp.name);
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'added' },
+          });
         }
       }
     }
 
-    // Create home directory
-    if (opts.m) {
+    // Create home directory (`-m` requested and not vetoed by `-M`).
+    if (opts.m && !opts.M) {
       this.vfs.mkdirp(home, 0o755, uid, gid);
     }
 
+    // Materialise the mailbox for interactive accounts (CREATE_MAIL_SPOOL).
+    if (this.useraddDefaults.createMailSpool && !account.systemAccount) {
+      this.iamFs.createMailSpool(username, uid, gid);
+    }
+
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.created',
+      payload: {
+        deviceId: this.deviceId,
+        username, uid, gid, home, shell,
+        kind: account.kind,
+        supplementaryGroups: joinedGroups,
+        userPrivateGroupCreated,
+      },
+    });
     return '';
+  }
+
+  /** Resolve a `-g` argument that may be a numeric GID string. */
+  private findGroupByGidString(value: string): LinuxGroup | undefined {
+    const n = parseInt(value, 10);
+    if (Number.isNaN(n)) return undefined;
+    for (const g of this.groups.values()) {
+      if (g.gid === n) return g;
+    }
+    return undefined;
   }
 
   usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; L?: boolean; U?: boolean; g?: string }): string {
     const user = this.users.get(username);
     if (!user) return `usermod: user '${username}' does not exist`;
 
-    if (opts.s) user.shell = opts.s;
+    const changed: string[] = [];
+
+    if (opts.s) { user.shell = opts.s; changed.push('shell'); }
     if (opts.d) {
       user.home = opts.d;
+      changed.push('home');
       if (opts.m) {
         this.vfs.mkdirp(opts.d, 0o755, user.uid, user.gid);
       }
     }
-    if (opts.L) user.locked = true;
-    if (opts.U) user.locked = false;
+    if (opts.L && !user.locked) {
+      user.lock();
+      this.publish({ topic: 'linux.iam.user.lock-state-changed', payload: { deviceId: this.deviceId, username, uid: user.uid, locked: true } });
+    }
+    if (opts.U && user.locked) {
+      user.unlock();
+      this.publish({ topic: 'linux.iam.user.lock-state-changed', payload: { deviceId: this.deviceId, username, uid: user.uid, locked: false } });
+    }
 
     if (opts.aG) {
       for (const gName of opts.aG.split(',')) {
         const grp = this.groups.get(gName.trim());
-        if (grp && !grp.members.includes(username)) {
-          grp.members.push(username);
+        if (grp && grp.addMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'added' },
+          });
         }
       }
     }
 
     this.syncToFilesystem();
+    if (changed.length > 0) {
+      this.publish({
+        topic: 'linux.iam.user.modified',
+        payload: { deviceId: this.deviceId, username, uid: user.uid, changedFields: [...new Set(changed)] },
+      });
+    }
     return '';
   }
 
@@ -225,7 +403,7 @@ export class LinuxUserManager {
 
     // Remove from all groups
     for (const g of this.groups.values()) {
-      g.members = g.members.filter(m => m !== username);
+      g.removeMember(username);
       g.admins = g.admins.filter(a => a !== username);
     }
 
@@ -233,15 +411,24 @@ export class LinuxUserManager {
     const personalGroup = this.groups.get(username);
     if (personalGroup && personalGroup.members.length === 0) {
       this.groups.delete(username);
+      this.publish({
+        topic: 'linux.iam.group.deleted',
+        payload: { deviceId: this.deviceId, groupName: personalGroup.name, gid: personalGroup.gid },
+      });
     }
 
     if (removeHome) {
       this.vfs.rmrf(user.home);
     }
+    this.iamFs.removeMailSpool(username);
 
     this.users.delete(username);
     this.passwords.delete(username);
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.deleted',
+      payload: { deviceId: this.deviceId, username, uid: user.uid, homeRemoved: removeHome },
+    });
     return '';
   }
 
@@ -252,6 +439,10 @@ export class LinuxUserManager {
     user.lastChange = this.daysSinceEpoch();
     this.passwords.set(username, password);
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.password-changed',
+      payload: { deviceId: this.deviceId, username, uid: user.uid, disabled: false },
+    });
     return '';
   }
 
@@ -259,8 +450,12 @@ export class LinuxUserManager {
   setUserGecos(username: string, fullName: string, room: string, workPhone: string, homePhone: string, other: string): string {
     const user = this.users.get(username);
     if (!user) return `chfn: user '${username}' does not exist`;
-    user.gecos = [fullName, room, workPhone, homePhone, other].join(',');
+    user.gecosInfo = new GecosInfo(fullName, room, workPhone, homePhone, other);
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.gecos-changed',
+      payload: { deviceId: this.deviceId, username, uid: user.uid, gecos: user.gecos },
+    });
     return '';
   }
 
@@ -269,22 +464,19 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return `chfn: user '${username}' does not exist`;
 
-    // Parse existing GECOS subfields
-    const parts = user.gecos.split(',');
-    const fullName = parts[0] || '';
-    const room = parts[1] || '';
-    const workPhone = parts[2] || '';
-    const homePhone = parts[3] || '';
-    const other = parts[4] || '';
+    const current = user.gecosInfo;
+    let next = current;
+    if (opts.f !== undefined) next = next.withFullName(opts.f);
+    if (opts.r !== undefined) next = next.withRoomNumber(opts.r);
+    if (opts.w !== undefined) next = next.withWorkPhone(opts.w);
+    if (opts.h !== undefined) next = next.withHomePhone(opts.h);
 
-    // Update only what was specified
-    const newFullName = opts.f !== undefined ? opts.f : fullName;
-    const newRoom = opts.r !== undefined ? opts.r : room;
-    const newWorkPhone = opts.w !== undefined ? opts.w : workPhone;
-    const newHomePhone = opts.h !== undefined ? opts.h : homePhone;
-
-    user.gecos = [newFullName, newRoom, newWorkPhone, newHomePhone, other].join(',');
+    user.gecosInfo = next;
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.gecos-changed',
+      payload: { deviceId: this.deviceId, username, uid: user.uid, gecos: user.gecos },
+    });
     return '';
   }
 
@@ -294,18 +486,14 @@ export class LinuxUserManager {
     const user = this.users.get(name);
     if (!user) return `finger: ${name}: no such user.`;
 
-    const parts = user.gecos.split(',');
-    const fullName = parts[0] || '';
-    const groups = this.getUserGroups(name);
-    const primaryGroup = this.getGroupByGid(user.gid);
-
+    const info = user.gecosInfo;
     const lines = [
-      `Login: ${user.username}${' '.repeat(Math.max(1, 24 - user.username.length - 7))}Name: ${fullName}`,
+      `Login: ${user.username}${' '.repeat(Math.max(1, 24 - user.username.length - 7))}Name: ${info.fullName}`,
       `Directory: ${user.home}${' '.repeat(Math.max(1, 24 - user.home.length - 11))}Shell: ${user.shell}`,
     ];
-    if (parts[1]) lines.push(`Office: ${parts[1]}`);
-    if (parts[2]) lines.push(`Office Phone: ${parts[2]}`);
-    if (parts[3]) lines.push(`Home Phone: ${parts[3]}`);
+    if (info.roomNumber) lines.push(`Office: ${info.roomNumber}`);
+    if (info.workPhone) lines.push(`Office Phone: ${info.workPhone}`);
+    if (info.homePhone) lines.push(`Home Phone: ${info.homePhone}`);
 
     return lines.join('\n');
   }
@@ -349,12 +537,19 @@ export class LinuxUserManager {
       ].join('\n');
     }
 
-    if (opts.M !== undefined) user.maxDays = opts.M;
-    if (opts.m !== undefined) user.minDays = opts.m;
-    if (opts.W !== undefined) user.warnDays = opts.W;
-    if (opts.d !== undefined) user.lastChange = opts.d;
+    const changed: string[] = [];
+    if (opts.M !== undefined) { user.maxDays = opts.M; changed.push('maxDays'); }
+    if (opts.m !== undefined) { user.minDays = opts.m; changed.push('minDays'); }
+    if (opts.W !== undefined) { user.warnDays = opts.W; changed.push('warnDays'); }
+    if (opts.d !== undefined) { user.lastChange = opts.d; changed.push('lastChange'); }
 
     this.syncToFilesystem();
+    if (changed.length > 0) {
+      this.publish({
+        topic: 'linux.iam.user.modified',
+        payload: { deviceId: this.deviceId, username, uid: user.uid, changedFields: changed },
+      });
+    }
     return '';
   }
 
@@ -363,8 +558,13 @@ export class LinuxUserManager {
   groupadd(name: string, opts: { g?: number } = {}): string {
     if (this.groups.has(name)) return `groupadd: group '${name}' already exists`;
     const gid = opts.g ?? this.nextGid++;
-    this.addGroup({ name, gid, members: [], admins: [], password: '' });
+    const group = new LinuxGroup({ name, gid });
+    this.addGroup(group);
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.group.created',
+      payload: { deviceId: this.deviceId, groupName: name, gid, systemGroup: group.systemGroup, userPrivateGroup: false },
+    });
     return '';
   }
 
@@ -372,21 +572,34 @@ export class LinuxUserManager {
     const group = this.groups.get(name);
     if (!group) return `groupmod: group '${name}' does not exist`;
 
-    if (opts.g !== undefined) group.gid = opts.g;
+    const changed: string[] = [];
+    if (opts.g !== undefined) { group.gid = opts.g; changed.push('gid'); }
     if (opts.n) {
       this.groups.delete(name);
       group.name = opts.n;
       this.groups.set(opts.n, group);
+      changed.push('name');
     }
 
     this.syncToFilesystem();
+    if (changed.length > 0) {
+      this.publish({
+        topic: 'linux.iam.group.modified',
+        payload: { deviceId: this.deviceId, groupName: group.name, gid: group.gid, changedFields: changed },
+      });
+    }
     return '';
   }
 
   groupdel(name: string): string {
-    if (!this.groups.has(name)) return `groupdel: group '${name}' does not exist`;
+    const group = this.groups.get(name);
+    if (!group) return `groupdel: group '${name}' does not exist`;
     this.groups.delete(name);
     this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.group.deleted',
+      payload: { deviceId: this.deviceId, groupName: name, gid: group.gid },
+    });
     return '';
   }
 
@@ -399,7 +612,12 @@ export class LinuxUserManager {
     if (args[0] === '-d' && args.length >= 3) {
       const group = this.groups.get(args[2]);
       if (!group) return `gpasswd: group '${args[2]}' does not exist`;
-      group.members = group.members.filter(m => m !== args[1]);
+      if (group.removeMember(args[1])) {
+        this.publish({
+          topic: 'linux.iam.group.membership-changed',
+          payload: { deviceId: this.deviceId, groupName: group.name, gid: group.gid, username: args[1], action: 'removed' },
+        });
+      }
       this.syncToFilesystem();
       return '';
     }
@@ -407,16 +625,24 @@ export class LinuxUserManager {
     if (args[0] === '-A' && args.length >= 3) {
       const group = this.groups.get(args[2]);
       if (!group) return `gpasswd: group '${args[2]}' does not exist`;
-      group.admins = args[1].split(',').map(s => s.trim());
+      group.setAdmins(args[1].split(',').map(s => s.trim()));
       this.syncToFilesystem();
+      this.publish({
+        topic: 'linux.iam.group.modified',
+        payload: { deviceId: this.deviceId, groupName: group.name, gid: group.gid, changedFields: ['admins'] },
+      });
       return '';
     }
 
     if (args[0] === '-M' && args.length >= 3) {
       const group = this.groups.get(args[2]);
       if (!group) return `gpasswd: group '${args[2]}' does not exist`;
-      group.members = args[1].split(',').map(s => s.trim());
+      group.setMembers(args[1].split(',').map(s => s.trim()));
       this.syncToFilesystem();
+      this.publish({
+        topic: 'linux.iam.group.modified',
+        payload: { deviceId: this.deviceId, groupName: group.name, gid: group.gid, changedFields: ['members'] },
+      });
       return '';
     }
 
@@ -484,12 +710,12 @@ export class LinuxUserManager {
     if (db === 'group') {
       const group = this.groups.get(key);
       if (!group) return '';
-      return `${group.name}:x:${group.gid}:${group.members.join(',')}`;
+      return group.toGroupLine();
     }
     if (db === 'passwd') {
       const user = this.users.get(key);
       if (!user) return '';
-      return `${user.username}:x:${user.uid}:${user.gid}:${user.gecos}:${user.home}:${user.shell}`;
+      return user.toPasswdLine();
     }
     return '';
   }
@@ -623,28 +849,17 @@ export class LinuxUserManager {
 
   // ─── Filesystem sync ──────────────────────────────────────────────
 
+  /**
+   * Materialise the in-memory IAM state onto the filesystem — `/etc/passwd`,
+   * `/etc/shadow`, `/etc/group`, `/etc/gshadow`, the subordinate-id maps and
+   * the `-` backups. Delegated to {@link IamFilesystem} (Single
+   * Responsibility): the manager reasons about identities, not file formats.
+   */
   syncToFilesystem(): void {
-    // Write /etc/passwd
-    const passwdLines: string[] = [];
-    for (const u of this.users.values()) {
-      passwdLines.push(`${u.username}:x:${u.uid}:${u.gid}:${u.gecos}:${u.home}:${u.shell}`);
-    }
-    this.vfs.writeFile('/etc/passwd', passwdLines.join('\n') + '\n', 0, 0, 0o022);
-
-    // Write /etc/shadow
-    const shadowLines: string[] = [];
-    for (const u of this.users.values()) {
-      const pwd = u.locked ? `!${u.password}` : u.password;
-      shadowLines.push(`${u.username}:${pwd}:${u.lastChange}:${u.minDays}:${u.maxDays}:${u.warnDays}:${u.inactiveDays === -1 ? '' : u.inactiveDays}:${u.expireDate === -1 ? '' : u.expireDate}:`);
-    }
-    this.vfs.writeFile('/etc/shadow', shadowLines.join('\n') + '\n', 0, 0, 0o022);
-
-    // Write /etc/group
-    const groupLines: string[] = [];
-    for (const g of this.groups.values()) {
-      groupLines.push(`${g.name}:x:${g.gid}:${g.members.join(',')}`);
-    }
-    this.vfs.writeFile('/etc/group', groupLines.join('\n') + '\n', 0, 0, 0o022);
+    this.iamFs.writeAccountDatabase(
+      [...this.users.values()],
+      [...this.groups.values()],
+    );
   }
 }
 

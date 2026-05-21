@@ -14,6 +14,9 @@ import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdA
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdGetent, cmdSudoCheck } from './LinuxUserCommands';
+import { parseUseraddArgs } from './iam/useraddOptions';
+import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
+import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
@@ -25,6 +28,8 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmd
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
+import { findHostByAddress } from './network/HostLookup';
+import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel, cmdHostnamectl } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -74,12 +79,19 @@ export class LinuxCommandExecutor {
   private commandHistory: string[] = [];
   /** Reactive service supervisor (auto-restart per Restart= policy). */
   private supervisor: LinuxServiceSupervisor | null = null;
+  /** Reactive projection: IAM domain events → /var/log/auth.log. */
+  private iamAuthLog: IamAuthLogProjection | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
+
+  /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
+  _oracleBootstrap: ((args: string[]) => string | null) | null = null;
+  /** Optional Oracle listener hook — backs `lsnrctl`. */
+  _oracleListener: ((args: string[]) => string) | null = null;
 
   constructor(isServer = false) {
     this.vfs = new VirtualFileSystem();
@@ -140,8 +152,12 @@ export class LinuxCommandExecutor {
   attachEventBus(bus: IEventBus, deviceId: string): void {
     this.processMgr.attachBus(bus, deviceId);
     this.serviceMgr.attachBus(bus, deviceId);
+    this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
+    // Keep /var/log/auth.log coherent with account changes, reactively.
+    this.iamAuthLog?.dispose();
+    this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
   }
 
   /** Set the network context for ip command support */
@@ -156,8 +172,6 @@ export class LinuxCommandExecutor {
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
   private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[]): { output: string; exitCode: number } {
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
@@ -171,7 +185,7 @@ export class LinuxCommandExecutor {
     }
     const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
     // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({ args: [hostPart, 'true'], sourceHostname: hostname, sourceIp, sourceUser: this.userMgr.currentUser });
+    const probe = runSshClient({ ...this.buildSshClientOpts([hostPart, 'true']) });
     if (probe.exitCode !== 0) {
       // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
@@ -184,6 +198,93 @@ export class LinuxCommandExecutor {
         ? `${positional[0]}                                     100% 1024     1.0KB/s   00:00`
         : `sent 128 bytes  received 32 bytes  ${'160.00 bytes/sec'}\ntotal size is 1024  speedup is 6.40`;
     return { output: summary, exitCode: 0 };
+  }
+
+  /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
+  private buildSshClientOpts(args: string[]) {
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
+    const user = this.userMgr.currentUser;
+    const home = user === 'root' ? '/root' : `/home/${user}`;
+    return {
+      args,
+      sourceHostname: hostname,
+      sourceIp,
+      sourceUser: user,
+      sourceHome: home,
+      localVfs: {
+        readFile: (p: string) => this.vfs.readFile(p),
+        writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
+          this.vfs.writeFile(p, c, uid, gid, umask),
+        resolveInode: (p: string) => this.vfs.resolveInode(p),
+        mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
+      },
+    };
+  }
+
+  /**
+   * `ssh-keyscan <host>` — print the remote's host public key in the
+   * same format as a known_hosts line. Used to seed known_hosts non-
+   * interactively.
+   */
+  private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
+    const host = args.find(a => !a.startsWith('-'));
+    if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
+    const found = findHostByAddress(host);
+    if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
+    const remoteVfs = (found.device as unknown as { executor: { vfs: { readFile: (p: string) => string | null } } }).executor?.vfs;
+    if (!remoteVfs) return { output: `# ${host} no host key`, exitCode: 1 };
+    const pub = (remoteVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '').trim();
+    if (!pub) return { output: `# ${host} no host key`, exitCode: 1 };
+    const tokens = pub.split(/\s+/);
+    return { output: `${found.ip} ${tokens[0]} ${tokens[1]}`, exitCode: 0 };
+  }
+
+  /**
+   * `ssh-keygen -R <host>` — remove all entries matching the host from
+   * the local known_hosts. Other subcommands (-y, -F, -t) flow through
+   * the existing key-management dispatcher.
+   */
+  private runSshKeygen(args: string[]): { output: string; exitCode: number } {
+    if (args[0] === '-R' && args[1]) {
+      const home = this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`;
+      const path = `${home}/.ssh/known_hosts`;
+      const existing = this.vfs.readFile(path) ?? '';
+      const before = SshKnownHostEntry.parseFile(existing);
+      const after = before.filter(e => !e.matches(args[1]));
+      this.vfs.writeFile(path, SshKnownHostEntry.serializeFile(after), 0, 0, 0o022);
+      return { output: `# Host ${args[1]} found: line 1\n/root/.ssh/known_hosts updated.\nOriginal contents retained as /root/.ssh/known_hosts.old`, exitCode: 0 };
+    }
+    // Fall back to the keypair generator already wired into handleSshAdd
+    // path. The existing implementation only supports -t / -f / -N / -q
+    // / -y for the simulator, which is enough for the new tests.
+    return this.handleSshKeygenLegacy(args);
+  }
+
+  /**
+   * Bridge to the legacy ssh-keygen handler kept inside handleSshAdd.
+   * Wraps the simple `-t / -f / -N / -y / -q` interface that has lived
+   * here for a while.
+   */
+  private handleSshKeygenLegacy(args: string[]): { output: string; exitCode: number } {
+    // The legacy bash interpreter saw `ssh-keygen` as an unknown command
+    // and returned "command not found". Provide a minimal compatible
+    // implementation that creates a file pair under -f and -N.
+    const fIdx = args.indexOf('-f');
+    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`}/.ssh/id_ed25519`;
+    if (args.includes('-y')) {
+      // Read the private key, output its public form (stub).
+      return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
+    }
+    // Generate: write two files (private + .pub).
+    const sshDir = file.replace(/\/[^/]+$/, '');
+    if (!this.vfs.resolveInode(sshDir)) {
+      this.vfs.mkdirp(sshDir, 0o700, 0, 0);
+    }
+    const pubKey = `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
+    this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', 0, 0, 0o077);
+    this.vfs.writeFile(`${file}.pub`, pubKey + '\n', 0, 0, 0o022);
+    return { output: '', exitCode: 0 };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -526,6 +627,9 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
+      // Strip flags that don't consume a value (-n non-interactive, -S
+      // read password from stdin, -E preserve env, -k reset timestamp).
+      while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
@@ -533,6 +637,15 @@ export class LinuxCommandExecutor {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
+      }
+      // Audit: write a syslog-style sudo line to /var/log/auth.log
+      // (real sudo logs through pam_systemd → journald → rsyslog).
+      if (this.serviceMgr.isActive('rsyslog')) {
+        const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const line = `${ts} ${hostname} sudo: ${this.userMgr.currentUser} : TTY=pts/0 ; PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdArgs.join(' ')}\n`;
+        const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+        this.vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
       }
       let sudoTargetUser: string | null = null;
       if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
@@ -654,7 +767,7 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
 
     // Root-only commands — reject if not root
-    const rootOnlyCmds = ['useradd', 'adduser', 'usermod', 'userdel', 'deluser',
+    const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
       'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
@@ -777,17 +890,18 @@ export class LinuxCommandExecutor {
       // User commands
       case 'useradd': {
         const out = cmdUseradd(c, args);
-        if (!out && args.includes('-m')) {
-          // Create skeleton files in new home dir
-          const username = args.filter(a => !a.startsWith('-')).find(a => !['bash', '/bin/bash', '/bin/sh', '/sbin/nologin', '/usr/sbin/nologin'].includes(a));
-          if (username) {
-            const user = this.userMgr.getUser(username);
+        if (!out) {
+          // Create skeleton files in the new home dir when `-m` was given.
+          const req = parseUseraddArgs(args);
+          if (req.username && req.createHome && !req.noCreateHome) {
+            const user = this.userMgr.getUser(req.username);
             if (user) this.createSkeletonFiles(user.home, user.uid, user.gid);
           }
         }
         return { output: out, exitCode: out ? 1 : 0 };
       }
       case 'adduser': return this.handleAdduser(args);
+      case 'addgroup': return this.handleAdduser(args, true);
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
       case 'userdel': return this.handleUserdel(args);
       case 'deluser': return this.handleDeluser(args);
@@ -1052,17 +1166,12 @@ export class LinuxCommandExecutor {
         return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
-        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
-        return runSshClient({
-          args,
-          sourceHostname: hostname,
-          sourceIp,
-          sourceUser: this.userMgr.currentUser,
-        });
+        return runSshClient(this.buildSshClientOpts(args));
       }
       case 'ssh-add':
         return this.handleSshAdd(args);
+      case 'ssh-keyscan': return this.runSshKeyscan(args);
+      case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'xargs': {
         if (!stdin) return { output: '', exitCode: 0 };
         const xCmd = args[0] || 'echo';
@@ -1120,6 +1229,13 @@ export class LinuxCommandExecutor {
             exitCode: 0,
           };
         }
+        // Oracle Server profile: actually boot the instance the first
+        // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
+        // and lsnrctl status can read the listener state.
+        if (this.isServer && this._oracleBootstrap) {
+          const out = this._oracleBootstrap(args);
+          if (out !== null) return { output: out, exitCode: 0 };
+        }
         return {
           output:
             'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
@@ -1127,6 +1243,12 @@ export class LinuxCommandExecutor {
             'SP2-0157: unable to CONNECT to ORACLE after 3 attempts, exiting SQL*Plus',
           exitCode: 1,
         };
+      }
+      case 'lsnrctl': {
+        if (this.isServer && this._oracleListener) {
+          return { output: this._oracleListener(args), exitCode: 0 };
+        }
+        return { output: 'LSNRCTL: command not found on this host', exitCode: 1 };
       }
       case 'rman':
         return {
@@ -1541,38 +1663,101 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private handleAdduser(args: string[]): { output: string; exitCode: number } {
-    // Debian-style adduser — creates user, home, skeleton files
-    // Interactive password prompts are handled by Terminal.tsx
-    let username = '';
-    let gecos: string | undefined;
-    let disabledPassword = false;
+  /**
+   * Debian/Ubuntu `adduser` front-end (also serves `addgroup` via the
+   * `addGroupAlias` flag). Faithful to the real tool: it is overloaded over
+   * three operations — create a user, add an existing user to a group, or
+   * create a group — and emits the same progress banner the real command
+   * prints. The interactive password / GECOS capture is layered on top by
+   * `LinuxFlowBuilder` when the terminal session runs the command.
+   */
+  private handleAdduser(args: string[], addGroupAlias = false): { output: string; exitCode: number } {
+    const req = parseAdduserArgs(args, addGroupAlias);
 
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--gecos') { gecos = args[++i]; continue; }
-      if (args[i] === '--disabled-password') { disabledPassword = true; continue; }
-      if (args[i] === '--disabled-login') { disabledPassword = true; continue; }
-      if (!args[i].startsWith('-')) { username = args[i]; }
+    if (req.mode === 'create-group') {
+      return this.adduserCreateGroup(req, addGroupAlias ? 'addgroup' : 'adduser');
     }
-    if (!username) return { output: 'adduser: missing username', exitCode: 1 };
+    if (!req.name) {
+      return { output: 'adduser: missing user name', exitCode: 1 };
+    }
+    if (req.mode === 'add-to-group') {
+      return this.adduserAddToGroup(req);
+    }
+    return this.adduserCreateUser(req);
+  }
 
-    const result = this.userMgr.useradd(username, { m: true, s: '/bin/bash', c: gecos });
-    if (result) return { output: result, exitCode: 1 };
+  /** `adduser <user>` / `adduser --system <user>` — create an account. */
+  private adduserCreateUser(req: AdduserRequest): { output: string; exitCode: number } {
+    if (this.userMgr.getUser(req.name)) {
+      return { output: `adduser: The user \`${req.name}' already exists.`, exitCode: 1 };
+    }
+    if (req.ingroup && !this.userMgr.getGroup(req.ingroup)) {
+      return { output: `adduser: The group \`${req.ingroup}' does not exist.`, exitCode: 1 };
+    }
 
-    const user = this.userMgr.getUser(username)!;
+    const createHome = !req.noCreateHome;
+    const shell = req.shell ?? (req.system ? '/usr/sbin/nologin' : '/bin/bash');
+    const result = this.userMgr.useradd(req.name, {
+      m: createHome,
+      M: req.noCreateHome,
+      s: shell,
+      d: req.home,
+      g: req.ingroup,
+      c: req.gecos,
+      u: req.uid,
+      r: req.system,
+    });
+    if (result) return { output: `adduser: ${result}`, exitCode: 1 };
 
-    // Create skeleton files in home directory
-    this.createSkeletonFiles(user.home, user.uid, user.gid);
+    const user = this.userMgr.getUser(req.name)!;
+    if (createHome) this.createSkeletonFiles(user.home, user.uid, user.gid);
 
-    // Return info output only (no password prompts — Terminal handles those)
-    const lines = [
-      `Adding user \`${username}' ...`,
-      `Adding new group \`${username}' (${user.gid}) ...`,
-      `Adding new user \`${username}' (${user.uid}) with group \`${username}' ...`,
-      `Creating home directory \`${user.home}' ...`,
-      `Copying files from \`/etc/skel' ...`,
-    ];
+    const groupName = this.userMgr.gidToName(user.gid);
+    const lines: string[] = [];
+    lines.push(req.system
+      ? `Adding system user \`${req.name}' (${user.uid}) ...`
+      : `Adding user \`${req.name}' ...`);
+    if (!req.ingroup) {
+      lines.push(`Adding new group \`${groupName}' (${user.gid}) ...`);
+    }
+    lines.push(`Adding new user \`${req.name}' (${user.uid}) with group \`${groupName}' ...`);
+    if (createHome) {
+      lines.push(`Creating home directory \`${user.home}' ...`);
+      lines.push(`Copying files from \`/etc/skel' ...`);
+    } else {
+      lines.push(`Not creating home directory \`${user.home}'.`);
+    }
     return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  /** `adduser <user> <group>` — add an existing user to an existing group. */
+  private adduserAddToGroup(req: AdduserRequest): { output: string; exitCode: number } {
+    if (!this.userMgr.getUser(req.name)) {
+      return { output: `adduser: The user \`${req.name}' does not exist.`, exitCode: 1 };
+    }
+    if (!this.userMgr.getGroup(req.group)) {
+      return { output: `adduser: The group \`${req.group}' does not exist.`, exitCode: 1 };
+    }
+    this.userMgr.usermod(req.name, { aG: req.group });
+    return {
+      output: `Adding user \`${req.name}' to group \`${req.group}' ...\nDone.`,
+      exitCode: 0,
+    };
+  }
+
+  /** `adduser --group <group>` / `addgroup <group>` — create a group. */
+  private adduserCreateGroup(req: AdduserRequest, cmd: string): { output: string; exitCode: number } {
+    if (!req.name) return { output: `${cmd}: missing group name`, exitCode: 1 };
+    if (this.userMgr.getGroup(req.name)) {
+      return { output: `${cmd}: The group \`${req.name}' already exists.`, exitCode: 1 };
+    }
+    const result = this.userMgr.groupadd(req.name, { g: req.gid });
+    if (result) return { output: `${cmd}: ${result}`, exitCode: 1 };
+    const group = this.userMgr.getGroup(req.name)!;
+    return {
+      output: `Adding group \`${req.name}' (GID ${group.gid}) ...\nDone.`,
+      exitCode: 0,
+    };
   }
 
   private handleChfn(args: string[]): { output: string; exitCode: number } {
@@ -1742,25 +1927,21 @@ export class LinuxCommandExecutor {
 
   // ─── Skeleton files ───────────────────────────────────────────────
 
+  /**
+   * Populate a freshly created home directory by copying `/etc/skel` — the
+   * same coherent path real `useradd -m` / `adduser` take. The skeleton
+   * directory itself is seeded by the IAM filesystem layer at boot.
+   */
   private createSkeletonFiles(home: string, uid: number, gid: number): void {
-    this.vfs.createFileAt(`${home}/.bash_logout`,
-      '# ~/.bash_logout: executed by bash(1) when login shell exits.\n\n' +
-      '# when leaving the console clear the screen to increase privacy\n\n' +
-      'if [ "$SHLVL" = 1 ]; then\n    [ -x /usr/bin/clear_console ] && /usr/bin/clear_console -q\nfi\n',
-      0o644, uid, gid);
-    this.vfs.createFileAt(`${home}/.bashrc`,
-      '# ~/.bashrc: executed by bash(1) for non-login shells.\n\n' +
-      '# If not running interactively, don\'t do anything\ncase $- in\n    *i*) ;;\n      *) return;;\nesac\n\n' +
-      '# don\'t put duplicate lines or lines starting with space in the history.\nHISTCONTROL=ignoreboth\n\n' +
-      'HISTSIZE=1000\nHISTFILESIZE=2000\n',
-      0o644, uid, gid);
-    this.vfs.createFileAt(`${home}/.profile`,
-      '# ~/.profile: executed by the command interpreter for login shells.\n\n' +
-      '# if running bash\nif [ -n "$BASH_VERSION" ]; then\n    # include .bashrc if it exists\n' +
-      '    if [ -f "$HOME/.bashrc" ]; then\n\t. "$HOME/.bashrc"\n    fi\nfi\n\n' +
-      '# set PATH so it includes user\'s private bin if it exists\nif [ -d "$HOME/bin" ] ; then\n' +
-      '    PATH="$HOME/bin:$PATH"\nfi\n',
-      0o644, uid, gid);
+    const entries = this.vfs.listDirectory('/etc/skel');
+    if (!entries) return;
+    for (const entry of entries) {
+      if (entry.name === '.' || entry.name === '..') continue;
+      const content = this.vfs.readFile(`/etc/skel/${entry.name}`);
+      if (content !== null) {
+        this.vfs.createFileAt(`${home}/${entry.name}`, content, 0o644, uid, gid);
+      }
+    }
   }
 
   // ─── Environment variable expansion ───────────────────────────────
@@ -1843,8 +2024,8 @@ export class LinuxCommandExecutor {
       'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
       // Users and groups
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
-      'useradd', 'usermod', 'userdel', 'passwd', 'chpasswd', 'chage',
-      'groupadd', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
+      'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
+      'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',
       // Lookup
       'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',

@@ -65,6 +65,28 @@ function buildLan(): Lan {
   pc1.setHostname('pc1'); pc2.setHostname('pc2'); pc3.setHostname('pc3'); pc4.setHostname('pc4');
   srv1.setHostname('srv1'); srv2.setHostname('srv2');
 
+  // Provision a small cast of regular users on every device so the
+  // sshd-side "user exists in /etc/passwd" gate accepts them. Done via
+  // the user manager directly (not `useradd`) because that command is
+  // root-only and PCs default to the unprivileged 'user'.
+  for (const d of [pc1, pc2, pc3, pc4, srv1, srv2]) {
+    const um = (d as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      getUser: (u: string) => unknown;
+      setPassword: (u: string, p: string) => void;
+      usermod: (u: string, o: object) => void;
+    } } }).executor.userMgr;
+    for (const u of ['alice', 'bob', 'carol', 'dave', 'admin', 'charlie']) {
+      if (!um.getUser(u)) {
+        um.useradd(u, { m: true, s: '/bin/bash' });
+        um.setPassword(u, 'admin');
+        // alice and admin are sudoers (membership in the 'sudo' group);
+        // bob/carol/dave/charlie deliberately are not.
+        if (u === 'alice' || u === 'admin') um.usermod(u, { aG: 'sudo' });
+      }
+    }
+  }
+
   return {
     pc1, pc2, pc3, pc4, srv1, srv2, sw,
     ipOf: {
@@ -392,13 +414,15 @@ describe('§5 — SSH refused when remote sshd service is stopped', () => {
 
 // ─── Section 6 — SSH refused when sshd process is killed ──────────────
 
-describe('§6 — SSH refused when sshd process is killed directly', () => {
+describe('§6 — sshd process killed directly: supervisor brings it back', () => {
   let lan: Lan;
   beforeEach(() => { lan = buildLan(); });
 
   const rows: Row[] = [
     {
-      name: 'kill -9 of sshd PID also makes ssh refuse (parity with stop)',
+      // ssh.service ships Restart=on-failure (Ubuntu default), so the
+      // reactive supervisor resurrects sshd after a SIGKILL.
+      name: 'kill -9 of sshd PID — supervisor restarts; subsequent ssh works',
       setup: async (l) => {
         const ps = await l.pc2.executeCommand('pgrep sshd');
         const pid = ps.trim().split(/\s+/)[0];
@@ -406,22 +430,24 @@ describe('§6 — SSH refused when sshd process is killed directly', () => {
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
-      contains: [/Connection refused/],
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Connection refused/],
     },
     {
-      name: 'pkill -f sshd has the same effect',
+      name: 'pkill -f sshd — same supervisor-driven recovery',
       setup: (l) => { void l.pc2.executeCommand('pkill -f sshd'); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
-      contains: [/Connection refused/],
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Connection refused/],
     },
     {
-      name: 'killing sshd then systemctl shows it as failed',
+      name: 'after pkill, systemctl status reports active (running) again',
       setup: (l) => { void l.pc2.executeCommand('pkill -9 sshd'); },
       on: l => l.pc2,
       cmd: 'systemctl status ssh',
-      contains: [/inactive|failed/],
-      excludes: [/active \(running\)/],
+      contains: [/Active:\s+active \(running\)/],
+      excludes: [/failed/],
     },
     {
       name: 'after kill, restarting via systemctl restores service',
@@ -2016,16 +2042,27 @@ describe('§31 — user existence ↔ SSH login outcome', () => {
     },
     {
       name: 'userdel alice on the remote then ssh alice fails',
-      setup: (l) => { void l.pc2.executeCommand('userdel alice'); },
+      setup: (l) => {
+        // userdel is root-only in the bash shell; delete via the user
+        // manager so the test doesn't depend on becoming root.
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          userdel: (u: string) => void;
+        } } }).executor.userMgr;
+        um.userdel('alice');
+      },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: [/Permission denied/],
     },
     {
-      name: 'locked account (passwd -l alice) is refused',
-      setup: async (l) => {
-        await l.pc2.executeCommand('useradd -m alice 2>/dev/null');
-        await l.pc2.executeCommand('passwd -l alice');
+      name: 'locked account (usermod -L alice) is refused',
+      setup: (l) => {
+        // passwd / usermod are root-only in the bash shell; tunnel
+        // through the userMgr directly to lock the account.
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          usermod: (u: string, opts: object) => void;
+        } } }).executor.userMgr;
+        um.usermod('alice', { L: true });
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
@@ -2040,9 +2077,17 @@ describe('§31 — user existence ↔ SSH login outcome', () => {
     },
     {
       name: 'expired shadow entry blocks login',
-      setup: async (l) => {
-        await l.pc2.executeCommand('useradd -m bob 2>/dev/null');
-        await l.pc2.executeCommand('chage -E 2020-01-01 bob');
+      setup: (l) => {
+        // chage is root-only; set expireDate directly so the test
+        // doesn't depend on becoming root.
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          getUser: (u: string) => { expireDate?: number } | undefined;
+        } } }).executor.userMgr;
+        const u = um.getUser('bob');
+        if (u) {
+          // 18262 = days from 1970-01-01 to 2020-01-01 — already in the past.
+          u.expireDate = 18262;
+        }
       },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
@@ -2181,7 +2226,14 @@ describe('§34 — sudo over ssh', () => {
     },
     {
       name: 'non-sudoer ssh + sudo is rejected with "is not in the sudoers file"',
-      setup: (l) => { void l.pc2.executeCommand('useradd -m mallory'); },
+      setup: (l) => {
+        const um = (l.pc2 as unknown as { executor: { userMgr: {
+          useradd: (u: string, o?: object) => void;
+          setPassword: (u: string, p: string) => void;
+        } } }).executor.userMgr;
+        um.useradd('mallory', { m: true, s: '/bin/bash' });
+        um.setPassword('mallory', 'x');
+      },
       on: l => l.pc1,
       cmd: 'ssh mallory@10.0.0.2 sudo -n whoami',
       contains: [/is not in the sudoers file/],
