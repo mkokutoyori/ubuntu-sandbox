@@ -21,6 +21,9 @@ import type { LinuxUserAccount } from '../LinuxUserAccount';
 import type { LinuxGroup } from '../LinuxGroup';
 import type { LoginDefs } from './LoginDefs';
 import type { UseraddDefaults } from './UseraddDefaults';
+import type { PasswordPolicy } from '../policy/PasswordPolicy';
+import type { PasswordQualityPolicy } from '../policy/PasswordQualityPolicy';
+import type { AccountLockoutPolicy } from '../policy/AccountLockoutPolicy';
 import { IAM_PATHS, ACCOUNT_DB_BACKUPS } from './IamPaths';
 
 // ─── Skeleton templates (seeded into /etc/skel) ─────────────────────────
@@ -106,6 +109,48 @@ export class IamFilesystem {
     }
   }
 
+  // ─── Password policy projection ────────────────────────────────────────
+
+  /**
+   * Seed the PAM password-policy configuration: `/etc/security/pwquality.conf`,
+   * `/etc/security/faillock.conf` and `/etc/pam.d/common-password`. Idempotent
+   * — existing files (operator edits) are preserved.
+   */
+  seedPasswordPolicy(policy: PasswordPolicy): void {
+    this.vfs.mkdirp(IAM_PATHS.securityDir, 0o755, 0, 0);
+    this.vfs.mkdirp(IAM_PATHS.pamDir, 0o755, 0, 0);
+    this.vfs.mkdirp(IAM_PATHS.faillockTallyDir, 0o755, 0, 0);
+
+    this.writeIfAbsent(IAM_PATHS.pwqualityConf, policy.quality.render(), 0o644);
+    this.writeIfAbsent(IAM_PATHS.faillockConf, policy.lockout.render(), 0o644);
+    this.writeIfAbsent(
+      IAM_PATHS.pamCommonPassword,
+      renderCommonPassword(policy.quality),
+      0o644,
+    );
+  }
+
+  /**
+   * Rewrite `/etc/security/pwquality.conf` (and the `retry=` count in
+   * `/etc/pam.d/common-password`) after the quality policy changed.
+   */
+  writeQualityConfig(quality: PasswordQualityPolicy): void {
+    this.vfs.mkdirp(IAM_PATHS.securityDir, 0o755, 0, 0);
+    this.vfs.writeFile(IAM_PATHS.pwqualityConf, quality.render(), 0, 0, 0o022);
+    this.vfs.writeFile(IAM_PATHS.pamCommonPassword, renderCommonPassword(quality), 0, 0, 0o022);
+  }
+
+  /** Rewrite `/etc/security/faillock.conf` after the lockout policy changed. */
+  writeFaillockConfig(lockout: AccountLockoutPolicy): void {
+    this.vfs.mkdirp(IAM_PATHS.securityDir, 0o755, 0, 0);
+    this.vfs.writeFile(IAM_PATHS.faillockConf, lockout.render(), 0, 0, 0o022);
+  }
+
+  /** Rewrite `/etc/login.defs` after the aging policy changed. */
+  rewriteLoginDefs(loginDefs: LoginDefs): void {
+    this.vfs.writeFile(IAM_PATHS.loginDefs, loginDefs.render(), 0, 0, 0o022);
+  }
+
   // ─── Account database projection ───────────────────────────────────────
 
   /**
@@ -178,4 +223,23 @@ export class IamFilesystem {
 /** Join file lines, always terminating with a newline (empty file → ''). */
 function joinLines(lines: string[]): string {
   return lines.length > 0 ? lines.join('\n') + '\n' : '';
+}
+
+/**
+ * Render `/etc/pam.d/common-password` — the PAM stack `passwd` walks. The
+ * `pam_pwquality` line carries the policy's `retry` count so the file stays
+ * coherent with `/etc/security/pwquality.conf`.
+ */
+function renderCommonPassword(quality: PasswordQualityPolicy): string {
+  return [
+    '#',
+    '# /etc/pam.d/common-password - password-related modules common to all services',
+    '# Kept coherent with /etc/security/pwquality.conf by the simulator IAM layer.',
+    '#',
+    `password\trequisite\t\t\tpam_pwquality.so retry=${quality.retry}`,
+    'password\t[success=1 default=ignore]\tpam_unix.so obscure use_authtok try_first_pass yescrypt',
+    'password\trequisite\t\t\tpam_deny.so',
+    'password\trequired\t\t\tpam_permit.so',
+    '',
+  ].join('\n');
 }

@@ -72,11 +72,57 @@ export function cmdUserdel(ctx: ShellContext, args: string[]): string {
   return ctx.userMgr.userdel(username, removeHome);
 }
 
+/**
+ * `passwd` — account-maintenance overloads (the password *change* itself is
+ * driven by the interactive flow). Supports the status / lock / unlock /
+ * expire / delete and aging flags a real `passwd` carries.
+ */
 export function cmdPasswd(ctx: ShellContext, args: string[]): string {
-  if (args[0] === '-S' && args[1]) {
-    return ctx.userMgr.passwdStatus(args[1]);
+  if (args.length === 0) return '';
+
+  let lock = false, unlock = false, expire = false, deletePw = false, status = false;
+  let n: number | undefined, x: number | undefined, w: number | undefined;
+  let username = '';
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case '-S': case '--status': status = true; break;
+      case '-l': case '--lock': lock = true; break;
+      case '-u': case '--unlock': unlock = true; break;
+      case '-e': case '--expire': expire = true; break;
+      case '-d': case '--delete': deletePw = true; break;
+      case '-n': case '--mindays': n = parseInt(args[++i], 10); break;
+      case '-x': case '--maxdays': x = parseInt(args[++i], 10); break;
+      case '-w': case '--warndays': w = parseInt(args[++i], 10); break;
+      default:
+        if (!args[i].startsWith('-')) username = args[i];
+        break;
+    }
   }
-  return '';
+
+  // A bare `passwd` / `passwd <user>` is handled by the interactive flow.
+  if (!lock && !unlock && !expire && !deletePw && !status &&
+      n === undefined && x === undefined && w === undefined) {
+    return '';
+  }
+
+  const target = username || ctx.userMgr.currentUser;
+  if (status) return ctx.userMgr.passwdStatus(target);
+
+  const messages: string[] = [];
+  if (lock) push(messages, ctx.userMgr.usermod(target, { L: true }), `passwd: password expiry information changed.`);
+  if (unlock) push(messages, ctx.userMgr.usermod(target, { U: true }), `passwd: password expiry information changed.`);
+  if (expire) push(messages, ctx.userMgr.expirePassword(target), `passwd: password expiry information changed.`);
+  if (deletePw) push(messages, ctx.userMgr.deletePassword(target), `passwd: password expiry information changed.`);
+  if (n !== undefined || x !== undefined || w !== undefined) {
+    push(messages, ctx.userMgr.chage(target, { m: n, M: x, W: w }), `passwd: password expiry information changed.`);
+  }
+  return messages.join('\n');
+}
+
+/** Collect a manager result: its error string, or the success line on ''. */
+function push(into: string[], result: string, successLine: string): void {
+  into.push(result === '' ? successLine : result);
 }
 
 export function cmdChpasswd(ctx: ShellContext, stdin: string): string {
@@ -89,26 +135,101 @@ export function cmdChpasswd(ctx: ShellContext, stdin: string): string {
   return '';
 }
 
+/**
+ * `chage` — change or display a user's password-aging information.
+ *
+ * Supports the full real option surface: `-d`/`-E` accept either a calendar
+ * date (`YYYY-MM-DD`) or a plain day count; `-E -1` and `-I -1` disable
+ * account expiry / inactivity respectively. Long options are accepted too.
+ */
 export function cmdChage(ctx: ShellContext, args: string[]): string {
-  let M: number | undefined, m: number | undefined, W: number | undefined;
-  let d: number | undefined, l = false;
+  const opts: { M?: number; m?: number; W?: number; d?: number; E?: number; I?: number; l?: boolean } = {};
   let username = '';
 
   for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '-M': M = parseInt(args[++i], 10); break;
-      case '-m': m = parseInt(args[++i], 10); break;
-      case '-W': W = parseInt(args[++i], 10); break;
-      case '-d': d = parseInt(args[++i], 10); break;
-      case '-l': l = true; break;
+    const arg = CHAGE_LONG_OPTIONS[args[i]] ?? args[i];
+    switch (arg) {
+      case '-M': opts.M = parseInt(args[++i], 10); break;
+      case '-m': opts.m = parseInt(args[++i], 10); break;
+      case '-W': opts.W = parseInt(args[++i], 10); break;
+      case '-I': opts.I = parseInt(args[++i], 10); break;
+      case '-d': opts.d = parseChageDate(args[++i]); break;
+      case '-E': opts.E = parseChageDate(args[++i]); break;
+      case '-l': opts.l = true; break;
       default:
         if (!args[i].startsWith('-')) username = args[i];
         break;
     }
   }
 
-  if (!username) return 'chage: missing username';
-  return ctx.userMgr.chage(username, { M, m, W, d, l });
+  if (!username) return 'Usage: chage [options] LOGIN';
+  return ctx.userMgr.chage(username, opts);
+}
+
+/**
+ * `faillock` — display or reset the `pam_faillock` consecutive-failure tally.
+ *
+ *   faillock                       show every account that has failures
+ *   faillock --user LOGIN          show one account
+ *   faillock --reset               clear the tally for every account
+ *   faillock --user LOGIN --reset  clear the tally for one account
+ */
+export function cmdFaillock(ctx: ShellContext, args: string[]): string {
+  let user: string | undefined;
+  let reset = false;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--user' || args[i] === '-u') { user = args[++i]; continue; }
+    if (args[i] === '--reset') { reset = true; continue; }
+  }
+
+  if (reset) {
+    if (user) return ctx.userMgr.resetFaillock(user);
+    for (const report of ctx.userMgr.getFaillockReport()) {
+      ctx.userMgr.resetFaillock(report.username);
+    }
+    return '';
+  }
+
+  const reports = ctx.userMgr.getFaillockReport(user);
+  if (reports.length === 0) {
+    return user ? `${user}:\nWhen                Type  Source                                           Valid` : '';
+  }
+
+  const blocks = reports.map((r) => {
+    const header = `${r.username}:\nWhen                Type  Source                                           Valid`;
+    const rows = Array.from({ length: r.failures }, () =>
+      '                    TTY   localhost                                        V');
+    const note = r.lockedOut ? '\n(account is locked — too many authentication failures)' : '';
+    return [header, ...rows].join('\n') + note;
+  });
+  return blocks.join('\n\n');
+}
+
+/** Long-form `chage` flags mapped to their short equivalents. */
+const CHAGE_LONG_OPTIONS: Record<string, string> = {
+  '--maxdays': '-M',
+  '--mindays': '-m',
+  '--warndays': '-W',
+  '--inactive': '-I',
+  '--lastday': '-d',
+  '--expiredate': '-E',
+  '--list': '-l',
+};
+
+/**
+ * Parse a `chage` date argument. Accepts a `YYYY-MM-DD` calendar date, a plain
+ * day count (days since the epoch), or `-1` / `''` meaning "disabled" — all
+ * resolved to the shadow-file day unit.
+ */
+function parseChageDate(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed === '-1') return -1;
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+  const ms = Date.parse(trimmed);
+  if (Number.isNaN(ms)) return undefined;
+  return Math.floor(ms / 86_400_000);
 }
 
 export function cmdGroupadd(ctx: ShellContext, args: string[]): string {

@@ -29,6 +29,14 @@ export const IAM_PATHS = {
   defaultDir: '/etc/default',
   skel: '/etc/skel',
 
+  // ── Password policy (PAM security stack) ──────────────────────────────
+  securityDir: '/etc/security',
+  pwqualityConf: '/etc/security/pwquality.conf',
+  faillockConf: '/etc/security/faillock.conf',
+  pamCommonPassword: '/etc/pam.d/common-password',
+  pamDir: '/etc/pam.d',
+  faillockTallyDir: '/var/run/faillock',
+
   // ── Per-user spool ────────────────────────────────────────────────────
   mailSpoolDir: '/var/mail',
 

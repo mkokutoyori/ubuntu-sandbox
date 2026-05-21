@@ -13,10 +13,11 @@ import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdR
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
+import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
 import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { SystemIdentity } from '../host/identity';
@@ -114,6 +115,7 @@ export class LinuxCommandExecutor {
   private supervisor: LinuxServiceSupervisor | null = null;
   /** Reactive projection: IAM domain events → /var/log/auth.log. */
   private iamAuthLog: IamAuthLogProjection | null = null;
+  private iamPolicyFiles: IamPolicyFilesProjection | null = null;
   /** Unsubscribe handle for the identity-file re-seed subscription. */
   private identityFilesUnsub: (() => void) | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
@@ -282,6 +284,10 @@ export class LinuxCommandExecutor {
     // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
+    // Keep the PAM password-policy config files coherent with the policy
+    // model, reactively (pwquality.conf / login.defs / faillock.conf).
+    this.iamPolicyFiles?.dispose();
+    this.iamPolicyFiles = new IamPolicyFilesProjection(bus, this.userMgr, deviceId);
     // Keep the /etc identity files coherent when the identity model changes.
     this.identityFilesUnsub?.();
     this.identityFilesUnsub = bus.subscribe(
@@ -911,7 +917,7 @@ export class LinuxCommandExecutor {
 
     // Root-only commands — reject if not root
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'chown', 'chgrp', 'ufw',
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp', 'ufw',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
@@ -1051,6 +1057,7 @@ export class LinuxCommandExecutor {
       case 'passwd': return this.handlePasswd(args);
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
       case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
+      case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -1725,36 +1732,21 @@ export class LinuxCommandExecutor {
   // ─── Improved command handlers ────────────────────────────────────
 
   private handlePasswd(args: string[]): { output: string; exitCode: number } {
-    const c = this.ctx();
-    // passwd -l username (lock)
-    if (args[0] === '-l' && args[1]) {
-      const user = this.userMgr.getUser(args[1]);
-      if (!user) return { output: `passwd: user '${args[1]}' does not exist`, exitCode: 1 };
-      user.locked = true;
-      this.userMgr.syncToFilesystem();
-      return { output: 'passwd: password expiry information changed.', exitCode: 0 };
-    }
-    // passwd -u username (unlock)
-    if (args[0] === '-u' && args[1]) {
-      const user = this.userMgr.getUser(args[1]);
-      if (!user) return { output: `passwd: user '${args[1]}' does not exist`, exitCode: 1 };
-      user.locked = false;
-      this.userMgr.syncToFilesystem();
-      return { output: '', exitCode: 0 };
-    }
-    // passwd -S username (status)
-    if (args[0] === '-S' && args[1]) {
-      return { output: cmdPasswd(c, args), exitCode: 0 };
-    }
-    // passwd username — password change (Terminal handles interactive prompts)
-    if (args.length > 0 && !args[0].startsWith('-')) {
-      const user = this.userMgr.getUser(args[0]);
-      if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
-      // Password is set by Terminal after interactive prompt
+    // A bare `passwd` / `passwd <user>` is driven by the interactive flow —
+    // the Terminal applies the new secret after prompting.
+    const hasFlag = args.some((a) => a.startsWith('-'));
+    if (!hasFlag) {
+      if (args.length > 0) {
+        const user = this.userMgr.getUser(args[0]);
+        if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
+      }
       return { output: 'passwd: password updated successfully', exitCode: 0 };
     }
-    // passwd (no args) — own password change
-    return { output: 'passwd: password updated successfully', exitCode: 0 };
+
+    // Flag overloads — status / lock / unlock / expire / delete / aging.
+    const output = cmdPasswd(this.ctx(), args);
+    const exitCode = output.includes('does not exist') ? 1 : 0;
+    return { output, exitCode };
   }
 
   private handleUserdel(args: string[]): { output: string; exitCode: number } {
@@ -2138,6 +2130,7 @@ export class LinuxCommandExecutor {
       // Users and groups
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
       'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
+      'faillock',
       'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',
       // Lookup

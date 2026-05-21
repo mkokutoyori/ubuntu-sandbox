@@ -26,6 +26,11 @@ import type { LinuxIamDomainEvent } from './iam/events';
 import { LoginDefs } from './iam/fs/LoginDefs';
 import { UseraddDefaults } from './iam/fs/UseraddDefaults';
 import { IamFilesystem } from './iam/fs/IamFilesystem';
+import { PasswordPolicy } from './iam/policy/PasswordPolicy';
+import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
+import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
+import type { AccountLockoutPolicyInit } from './iam/policy/AccountLockoutPolicy';
+import { PASSWORD_NEVER_EXPIRES } from './iam/policy/PasswordAgingPolicy';
 
 // Re-export the structural contracts so existing importers keep working.
 export type { UserEntry } from './iam/LinuxUserAccount';
@@ -96,11 +101,18 @@ export class LinuxUserManager {
   private readonly useraddDefaults: UseraddDefaults;
   /** Keeps the on-disk account database, config and spools coherent. */
   private readonly iamFs: IamFilesystem;
+  /**
+   * The host's complete password posture — strength rules, aging defaults
+   * and account-lockout rules. Drives `passwd` quality checks, the aging
+   * fields stamped onto new accounts, and the faillock tally.
+   */
+  private readonly passwordPolicy: PasswordPolicy;
 
   constructor(private vfs: VirtualFileSystem) {
     this.loginDefs = LoginDefs.defaults();
     this.useraddDefaults = UseraddDefaults.defaults();
     this.iamFs = new IamFilesystem(vfs);
+    this.passwordPolicy = PasswordPolicy.defaults();
     this.nextUid = this.loginDefs.uidMin;
     this.nextGid = this.loginDefs.gidMin;
     this.nextSystemUid = this.loginDefs.sysUidMin;
@@ -116,6 +128,11 @@ export class LinuxUserManager {
   /** The `useradd` fallback defaults (`/etc/default/useradd`). */
   getUseraddDefaults(): UseraddDefaults {
     return this.useraddDefaults;
+  }
+
+  /** The host's password policy (quality / aging / lockout). */
+  getPasswordPolicy(): PasswordPolicy {
+    return this.passwordPolicy;
   }
 
   /**
@@ -158,8 +175,9 @@ export class LinuxUserManager {
     this.addGroup(new LinuxGroup({ name: 'nogroup', gid: 65534, systemGroup: true }));
 
     // Seed the policy / defaults configuration and the skeleton directory,
-    // then materialise the account database.
+    // the PAM password-policy stack, then materialise the account database.
     this.iamFs.seedConfiguration(this.loginDefs, this.useraddDefaults);
+    this.iamFs.seedPasswordPolicy(this.passwordPolicy);
     this.syncToFilesystem();
   }
 
@@ -290,6 +308,9 @@ export class LinuxUserManager {
 
     const home = opts.d || `/home/${username}`;
     const shell = opts.s || '/bin/sh';
+    // Stamp the new account with the host's password-aging policy so a later
+    // `configurePasswordAging` genuinely changes what fresh accounts inherit.
+    const aging = this.passwordPolicy.aging;
     const account = new LinuxUserAccount({
       username, uid, gid, home, shell,
       gecos: opts.c ?? '',
@@ -298,7 +319,10 @@ export class LinuxUserManager {
       systemAccount: opts.r ?? undefined,
       nonUnique: opts.o ?? false,
       expireDate: opts.e ?? -1,
-      inactiveDays: opts.f ?? -1,
+      inactiveDays: opts.f ?? aging.inactiveDays,
+      minDays: aging.minDays,
+      maxDays: aging.maxDays,
+      warnDays: aging.warnDays,
     });
     this.addUser(account);
 
@@ -435,6 +459,28 @@ export class LinuxUserManager {
   setPassword(username: string, password: string): string {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;
+
+    // Evaluate the new secret against the quality policy and surface any
+    // weakness reactively. The low-level setter is warn-only (mirroring
+    // `passwd` run by root); a non-root caller blocked by an enforcing
+    // policy is gated upstream via {@link evaluatePassword}.
+    const verdict = this.passwordPolicy.quality.evaluate(password, {
+      username,
+      gecos: user.gecos,
+      oldPassword: this.passwords.get(username),
+    });
+    if (!verdict.acceptable) {
+      this.publish({
+        topic: 'linux.iam.password.rejected',
+        payload: {
+          deviceId: this.deviceId,
+          username,
+          reasons: verdict.messages,
+          blocked: false,
+        },
+      });
+    }
+
     user.password = `$6$simulated$${password}`;
     user.lastChange = this.daysSinceEpoch();
     this.passwords.set(username, password);
@@ -442,6 +488,39 @@ export class LinuxUserManager {
     this.publish({
       topic: 'linux.iam.user.password-changed',
       payload: { deviceId: this.deviceId, username, uid: user.uid, disabled: false },
+    });
+    return '';
+  }
+
+  /**
+   * `passwd -e` — expire a password immediately, forcing a change at the next
+   * login (shadow `lastChange` is reset to 0).
+   */
+  expirePassword(username: string): string {
+    const user = this.users.get(username);
+    if (!user) return `passwd: user '${username}' does not exist`;
+    user.lastChange = 0;
+    this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.password-changed',
+      payload: { deviceId: this.deviceId, username, uid: user.uid, disabled: true },
+    });
+    return '';
+  }
+
+  /**
+   * `passwd -d` — delete a password, leaving the account passwordless (an
+   * empty shadow secret). The account can then log in with no password.
+   */
+  deletePassword(username: string): string {
+    const user = this.users.get(username);
+    if (!user) return `passwd: user '${username}' does not exist`;
+    user.password = '';
+    this.passwords.delete(username);
+    this.syncToFilesystem();
+    this.publish({
+      topic: 'linux.iam.user.password-changed',
+      payload: { deviceId: this.deviceId, username, uid: user.uid, disabled: true },
     });
     return '';
   }
@@ -498,59 +577,249 @@ export class LinuxUserManager {
     return lines.join('\n');
   }
 
-  /** Verify a user's password. Returns true if correct. */
+  /**
+   * Verify a user's password. Returns true if correct.
+   *
+   * Also drives the `pam_faillock` tally: a correct password clears the
+   * account's consecutive-failure counter (and records the login), a wrong
+   * one increments it and, on reaching the lockout `deny` threshold,
+   * publishes a `linux.iam.user.locked-out` event.
+   */
   checkPassword(username: string, password: string): boolean {
     const stored = this.passwords.get(username);
-    if (stored === undefined) return false;
-    return stored === password;
+    const correct = stored !== undefined && stored === password;
+
+    const account = this.users.get(username);
+    if (account) {
+      if (correct) {
+        account.recordLogin();
+      } else {
+        account.recordFailedLogin();
+        this.maybePublishLockout(account);
+      }
+    }
+    return correct;
+  }
+
+  /** `faillock --reset` — clear an account's consecutive-failure tally. */
+  resetFaillock(username: string): string {
+    const account = this.users.get(username);
+    if (!account) return `faillock: user '${username}' does not exist`;
+    account.failedLoginCount = 0;
+    return '';
+  }
+
+  /**
+   * Snapshot of the faillock tally — for the `faillock` command. With no
+   * `username` only accounts that currently carry failures are reported.
+   */
+  getFaillockReport(username?: string): Array<{ username: string; failures: number; lockedOut: boolean }> {
+    const accounts = username
+      ? (this.users.has(username) ? [this.users.get(username)!] : [])
+      : [...this.users.values()].filter((a) => a.failedLoginCount > 0);
+    return accounts.map((a) => ({
+      username: a.username,
+      failures: a.failedLoginCount,
+      lockedOut: this.isAccountLockedOut(a.username),
+    }));
+  }
+
+  /** True when an account has tripped the faillock lockout threshold. */
+  isAccountLockedOut(username: string): boolean {
+    const account = this.users.get(username);
+    if (!account) return false;
+    return this.passwordPolicy.lockout.shouldLockOut(
+      account.failedLoginCount,
+      account.uid === 0,
+    );
   }
 
   passwdStatus(username: string): string {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;
-    const status = user.locked ? 'L' : (user.password === '!' ? 'NP' : 'P');
+    const noPassword = user.password === '' || user.password === '!' || user.password === '!!';
+    const status = user.locked ? 'L' : (noPassword ? 'NP' : 'P');
     const lastChange = new Date(user.lastChange * 86400000).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
     return `${username} ${status} ${lastChange} ${user.minDays} ${user.maxDays} ${user.warnDays} ${user.inactiveDays}`;
   }
 
-  chage(username: string, opts: { M?: number; m?: number; W?: number; d?: number; l?: boolean }): string {
+  /**
+   * `chage` — query or modify a single account's password-aging record.
+   *
+   * `opts.l` produces the faithful `chage -l` report. Otherwise every
+   * supplied field is written to the account's `/etc/shadow` record and a
+   * `linux.iam.user.aging-changed` event is published so consumers (audit
+   * log, account inspector) stay coherent without polling.
+   */
+  chage(
+    username: string,
+    opts: { M?: number; m?: number; W?: number; d?: number; E?: number; I?: number; l?: boolean },
+  ): string {
     const user = this.users.get(username);
     if (!user) return `chage: user '${username}' does not exist`;
 
-    if (opts.l) {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const fmtDate = (days: number) => {
-        if (days <= 0) return 'Jan 01, 1970';
-        const d = new Date(days * 86400000);
-        return `${months[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}, ${d.getUTCFullYear()}`;
-      };
-      const lastChange = fmtDate(user.lastChange);
-      const expire = user.expireDate === -1 ? 'never' : fmtDate(user.expireDate);
-      return [
-        `Last password change\t\t\t\t\t: ${lastChange}`,
-        `Password expires\t\t\t\t\t: ${user.maxDays === 99999 ? 'never' : 'in ' + user.maxDays + ' days'}`,
-        `Password inactive\t\t\t\t\t: ${user.inactiveDays === -1 ? 'never' : 'in ' + user.inactiveDays + ' days'}`,
-        `Account expires\t\t\t\t\t\t: ${expire}`,
-        `Minimum number of days between password change\t\t: ${user.minDays}`,
-        `Maximum number of days between password change\t\t: ${user.maxDays}`,
-        `Number of days of Warning before password expires\t: ${user.warnDays}`,
-      ].join('\n');
-    }
+    if (opts.l) return this.formatAgingReport(user);
 
     const changed: string[] = [];
     if (opts.M !== undefined) { user.maxDays = opts.M; changed.push('maxDays'); }
     if (opts.m !== undefined) { user.minDays = opts.m; changed.push('minDays'); }
     if (opts.W !== undefined) { user.warnDays = opts.W; changed.push('warnDays'); }
     if (opts.d !== undefined) { user.lastChange = opts.d; changed.push('lastChange'); }
+    if (opts.E !== undefined) { user.expireDate = opts.E; changed.push('expireDate'); }
+    if (opts.I !== undefined) { user.inactiveDays = opts.I; changed.push('inactiveDays'); }
 
     this.syncToFilesystem();
     if (changed.length > 0) {
       this.publish({
-        topic: 'linux.iam.user.modified',
-        payload: { deviceId: this.deviceId, username, uid: user.uid, changedFields: changed },
+        topic: 'linux.iam.user.aging-changed',
+        payload: {
+          deviceId: this.deviceId,
+          username,
+          uid: user.uid,
+          changedFields: changed,
+          lastChange: user.lastChange,
+          minDays: user.minDays,
+          maxDays: user.maxDays,
+          warnDays: user.warnDays,
+          inactiveDays: user.inactiveDays,
+          expireDate: user.expireDate,
+        },
       });
     }
     return '';
+  }
+
+  /** Render the faithful `chage -l` aging report for an account. */
+  private formatAgingReport(user: LinuxUserAccount): string {
+    const fmtDate = (days: number) => {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const d = new Date(days * 86400000);
+      return `${months[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}, ${d.getUTCFullYear()}`;
+    };
+    const neverExpires = user.maxDays >= PASSWORD_NEVER_EXPIRES || user.maxDays < 0;
+    const mustChange = user.lastChange === 0;
+
+    const lastChange = mustChange ? 'password must be changed' : fmtDate(user.lastChange);
+    const passwordExpires = mustChange
+      ? 'password must be changed'
+      : neverExpires
+        ? 'never'
+        : fmtDate(user.lastChange + user.maxDays);
+    const passwordInactive = mustChange
+      ? 'password must be changed'
+      : neverExpires || user.inactiveDays < 0
+        ? 'never'
+        : fmtDate(user.lastChange + user.maxDays + user.inactiveDays);
+    const accountExpires = user.expireDate < 0 ? 'never' : fmtDate(user.expireDate);
+
+    return [
+      `Last password change\t\t\t\t\t: ${lastChange}`,
+      `Password expires\t\t\t\t\t: ${passwordExpires}`,
+      `Password inactive\t\t\t\t\t: ${passwordInactive}`,
+      `Account expires\t\t\t\t\t\t: ${accountExpires}`,
+      `Minimum number of days between password change\t\t: ${user.minDays}`,
+      `Maximum number of days between password change\t\t: ${user.maxDays}`,
+      `Number of days of warning before password expires\t: ${user.warnDays}`,
+    ].join('\n');
+  }
+
+  // ─── Password policy operations ───────────────────────────────────────
+
+  /**
+   * Evaluate a candidate password against the quality policy without setting
+   * it — the strength check `passwd` / `pwscore` run before accepting input.
+   */
+  evaluatePassword(username: string, password: string) {
+    const user = this.users.get(username);
+    return this.passwordPolicy.quality.evaluate(password, {
+      username,
+      gecos: user?.gecos,
+      oldPassword: this.passwords.get(username),
+    });
+  }
+
+  /**
+   * Reconfigure the password-strength rules. The model is mutated and a
+   * `linux.iam.password-policy.changed` event is published; the on-disk
+   * `/etc/security/pwquality.conf` is kept coherent reactively by
+   * {@link IamPolicyFilesProjection}.
+   */
+  configurePasswordQuality(changes: PasswordQualityPolicyInit): string {
+    const change = this.passwordPolicy.configureQuality(changes);
+    if (!change) return '';
+    this.publish({
+      topic: 'linux.iam.password-policy.changed',
+      payload: { deviceId: this.deviceId, section: 'quality', changedFields: change.changedFields },
+    });
+    return '';
+  }
+
+  /** Reconfigure the password-aging defaults (mirrored into `/etc/login.defs`). */
+  configurePasswordAging(changes: PasswordAgingPolicyInit): string {
+    const change = this.passwordPolicy.configureAging(changes);
+    if (!change) return '';
+    // Mirror the aging policy into the login.defs model so the rendered file
+    // stays the single source of truth a real host consults.
+    const aging = this.passwordPolicy.aging;
+    this.loginDefs.passMaxDays = aging.maxDays;
+    this.loginDefs.passMinDays = aging.minDays;
+    this.loginDefs.passWarnAge = aging.warnDays;
+    this.publish({
+      topic: 'linux.iam.password-policy.changed',
+      payload: { deviceId: this.deviceId, section: 'aging', changedFields: change.changedFields },
+    });
+    return '';
+  }
+
+  /** Reconfigure the account-lockout rules (`/etc/security/faillock.conf`). */
+  configureAccountLockout(changes: AccountLockoutPolicyInit): string {
+    const change = this.passwordPolicy.configureLockout(changes);
+    if (!change) return '';
+    this.publish({
+      topic: 'linux.iam.password-policy.changed',
+      payload: { deviceId: this.deviceId, section: 'lockout', changedFields: change.changedFields },
+    });
+    return '';
+  }
+
+  /**
+   * Re-materialise the on-disk file backing one password-policy section.
+   * Called by {@link IamPolicyFilesProjection} in reaction to a
+   * `linux.iam.password-policy.changed` event — the manager mutates and
+   * announces, the projection keeps the filesystem coherent.
+   */
+  applyPolicyToFilesystem(section: 'quality' | 'aging' | 'lockout'): void {
+    switch (section) {
+      case 'quality':
+        this.iamFs.writeQualityConfig(this.passwordPolicy.quality);
+        break;
+      case 'aging':
+        this.iamFs.rewriteLoginDefs(this.loginDefs);
+        break;
+      case 'lockout':
+        this.iamFs.writeFaillockConfig(this.passwordPolicy.lockout);
+        break;
+    }
+  }
+
+  /**
+   * Publish a faillock lockout event the first time an account's consecutive
+   * failure tally reaches the policy `deny` threshold.
+   */
+  private maybePublishLockout(account: LinuxUserAccount): void {
+    const lockout = this.passwordPolicy.lockout;
+    if (account.failedLoginCount !== lockout.deny) return;
+    if (!lockout.shouldLockOut(account.failedLoginCount, account.uid === 0)) return;
+    this.publish({
+      topic: 'linux.iam.user.locked-out',
+      payload: {
+        deviceId: this.deviceId,
+        username: account.username,
+        uid: account.uid,
+        failedAttempts: account.failedLoginCount,
+        deny: lockout.deny,
+      },
+    });
   }
 
   // ─── Group operations ─────────────────────────────────────────────
