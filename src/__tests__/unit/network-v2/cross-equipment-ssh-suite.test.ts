@@ -1375,3 +1375,54 @@ describe('§19 — PTY allocation, signals and window size', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §20 — Environment forwarding & sshd AcceptEnv ──────────────────
+//
+// ssh -o SendEnv=… + sshd AcceptEnv must propagate the named variables
+// from the client environment into the remote shell. PermitUserEnvironment
+// allows ~/.ssh/environment overrides.
+
+describe('§20 — Environment forwarding', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'LC_GREETING is forwarded when AcceptEnv allows it',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo AcceptEnv LC_GREETING >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'LC_GREETING=hello ssh -o SendEnv=LC_GREETING alice@10.0.0.2 \'echo $LC_GREETING\'',
+      contains: [/^hello$/m],
+    },
+    {
+      name: 'unlisted variable is NOT forwarded',
+      on: l => l.linux1,
+      cmd: 'MY_SECRET=oops ssh -o SendEnv=MY_SECRET alice@10.0.0.2 \'echo ${MY_SECRET:-empty}\'',
+      contains: [/^empty$/m],
+    },
+    {
+      name: 'PermitUserEnvironment yes lets ~/.ssh/environment seed the shell',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitUserEnvironment.*/PermitUserEnvironment yes/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await l.linux2.executeCommand('mkdir -p /home/alice/.ssh && echo MOOD=happy > /home/alice/.ssh/environment && chown -R alice:alice /home/alice/.ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 \'echo $MOOD\'',
+      contains: [/^happy$/m],
+    },
+    {
+      name: 'TERM is propagated from the client TTY to the remote shell',
+      on: l => l.linux1,
+      cmd: 'TERM=xterm-256color ssh -t alice@10.0.0.2 \'echo $TERM\'',
+      contains: [/^xterm-256color$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
