@@ -545,3 +545,46 @@ describe('§6 — Linux → Huawei VRP SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §7 — Windows → Cisco / Huawei SSH ──────────────────────────────
+//
+// The Windows OpenSSH client must speak the same transport as Linux
+// and bind to the platform-native CLI on the remote side (IOS / VRP),
+// never to cmd.exe or bash.
+
+describe('§7 — Windows → Cisco / Huawei SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Windows ssh.exe reaches IOS and runs show version',
+      on: l => l.win1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i], excludes: [/Microsoft Windows|cmd\.exe/i],
+    },
+    {
+      name: 'Windows ssh.exe reaches VRP and runs display version',
+      on: l => l.win1, cmd: 'ssh admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i], excludes: [/Microsoft Windows|cmd\.exe/i],
+    },
+    {
+      name: 'remote prompt on IOS is context-sensitive help, not cmd.exe',
+      on: l => l.win1, cmd: 'ssh admin@10.0.0.6 "?"',
+      excludes: [/Microsoft Windows|cmd\.exe|GNU bash/i],
+    },
+    {
+      name: 'PowerShell pipeline can pipe show output through Select-String',
+      on: l => l.win1,
+      cmd: 'powershell -Command "ssh admin@10.0.0.6 show version | Select-String IOS"',
+      contains: [/IOS/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
