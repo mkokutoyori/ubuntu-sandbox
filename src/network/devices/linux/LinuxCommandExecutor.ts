@@ -480,6 +480,122 @@ export class LinuxCommandExecutor {
     return { output: '', exitCode: 0 };
   }
 
+  /**
+   * `ssh-copy-id [-i identity] [-p port] [user@]host` — install the local
+   * public key into the remote user's ~/.ssh/authorized_keys so subsequent
+   * logins can use public-key authentication.
+   */
+  private runSshCopyId(args: string[]): { output: string; exitCode: number } {
+    let identity: string | null = null;
+    let target: string | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-i' && args[i + 1]) { identity = args[++i]; continue; }
+      if (a === '-p' && args[i + 1]) { i++; continue; }
+      if (a.startsWith('-')) continue;
+      if (!target) target = a;
+    }
+    if (!target) {
+      return { output: 'usage: ssh-copy-id [-i [identity_file]] [-p port] [user@]hostname', exitCode: 1 };
+    }
+
+    // Resolve the public key to install (honour -i, else the default set).
+    // The current user's ~/.ssh is searched first; /root/.ssh is also
+    // probed since key material is conventionally generated as root.
+    const home = this.userMgr.currentUser === 'root'
+      ? '/root'
+      : `/home/${this.userMgr.currentUser}`;
+    const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
+    const pubCandidates = identity
+      ? [identity.endsWith('.pub') ? identity : `${identity}.pub`]
+      : keyHomes.flatMap((h) => [
+          `${h}/.ssh/id_ed25519.pub`,
+          `${h}/.ssh/id_rsa.pub`,
+          `${h}/.ssh/id_ecdsa.pub`,
+        ]);
+    let pubKey: string | null = null;
+    let pubSource = pubCandidates[0];
+    for (const c of pubCandidates) {
+      const data = this.vfs.readFile(c);
+      if (data && data.trim()) { pubKey = data.trim(); pubSource = c; break; }
+    }
+    if (!pubKey) {
+      return {
+        output: '/usr/bin/ssh-copy-id: ERROR: No identities found',
+        exitCode: 1,
+      };
+    }
+
+    const parsed = /^(?:([\w.-]+)@)?([\w.-]+)$/.exec(target);
+    if (!parsed) {
+      return { output: `ssh-copy-id: Could not resolve hostname ${target}`, exitCode: 1 };
+    }
+    const remoteUser = parsed[1] ?? this.userMgr.currentUser;
+    const host = parsed[2];
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    if (!found || found.poweredOff || found.interfaceDown) {
+      return {
+        output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: No route to host`,
+        exitCode: 255,
+      };
+    }
+    const remoteExec = (found.device as unknown as {
+      isServiceActive?: (n: string) => boolean;
+      executor?: {
+        vfs: VirtualFileSystem;
+        userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
+      };
+    });
+    if (typeof remoteExec.isServiceActive !== 'function' || !remoteExec.isServiceActive('ssh')) {
+      return {
+        output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: Connection refused`,
+        exitCode: 255,
+      };
+    }
+    const rexec = remoteExec.executor;
+    const remoteUserEntry = rexec?.userMgr.getUser(remoteUser);
+    if (!rexec || !remoteUserEntry) {
+      return {
+        output: `/usr/bin/ssh-copy-id: ERROR: ${remoteUser}@${host}: Permission denied (publickey,password).`,
+        exitCode: 255,
+      };
+    }
+    const remoteHome = remoteUserEntry.home ?? `/home/${remoteUser}`;
+    const sshDir = `${remoteHome}/.ssh`;
+    const akPath = `${sshDir}/authorized_keys`;
+    if (!rexec.vfs.resolveInode(sshDir)) {
+      rexec.vfs.mkdirp(sshDir, 0o755, remoteUserEntry.uid, remoteUserEntry.gid);
+    }
+    const existing = rexec.vfs.readFile(akPath) ?? '';
+    if (existing.split('\n').some((l) => l.trim() === pubKey)) {
+      return {
+        output: '/usr/bin/ssh-copy-id: WARNING: All keys were skipped because they already exist on the remote system.',
+        exitCode: 0,
+      };
+    }
+    const sep = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+    rexec.vfs.writeFile(
+      akPath,
+      existing + sep + pubKey + '\n',
+      remoteUserEntry.uid,
+      remoteUserEntry.gid,
+      0o022,
+    );
+    rexec.vfs.chmod(akPath, 0o644);
+    return {
+      output: [
+        `/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "${pubSource}"`,
+        '/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed',
+        '',
+        'Number of key(s) added: 1',
+        '',
+        `Now try logging into the machine, with:   "ssh '${remoteUser}@${host}'"`,
+        'and check to make sure that only the key(s) you wanted were added.',
+      ].join('\n'),
+      exitCode: 0,
+    };
+  }
+
   /** First non-loopback IPv4 address configured on this machine. */
   private firstConfiguredIp(): string | null {
     if (!this.ipNetworkCtx) return null;
@@ -1395,6 +1511,7 @@ export class LinuxCommandExecutor {
         return this.handleSshAdd(args);
       case 'ssh-keyscan': return this.runSshKeyscan(args);
       case 'ssh-keygen':  return this.runSshKeygen(args);
+      case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {
         if (!stdin) return { output: '', exitCode: 0 };
         const xCmd = args[0] || 'echo';

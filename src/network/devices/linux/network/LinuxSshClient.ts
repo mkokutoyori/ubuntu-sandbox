@@ -101,6 +101,111 @@ function sshdConfiguredPorts(machine: LinuxMachine): number[] {
   return ports.length ? ports : [22];
 }
 
+/** Narrow view of a remote machine's executor needed for auth negotiation. */
+interface RemoteExecLike {
+  vfs: { readFile: (p: string) => string | null };
+  userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
+}
+
+/** Outcome of SSH authentication-method negotiation. */
+interface SshAuthResolution {
+  /** The method that will be used, or null when authentication fails. */
+  method: 'publickey' | 'password' | null;
+  /** Methods the client is willing to attempt — drives the failure message. */
+  clientMethods: string[];
+}
+
+/** Read a single sshd_config directive's first value (lower-cased). */
+function readRemoteSshdDirective(exec: RemoteExecLike, name: string): string | null {
+  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+  const m = new RegExp(`^\\s*${name}\\s+(\\S+)`, 'im').exec(raw);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Value of a client-side `-o Name=value` / `-o "Name value"` option. */
+function clientOption(args: string[], name: string): string | null {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-o' && args[i + 1] !== undefined) {
+      const parts = args[i + 1].trim().split(/[=\s]+/);
+      if (parts[0]?.toLowerCase() === name.toLowerCase()) {
+        return (parts[1] ?? '').toLowerCase();
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Local identity public key the client would offer (honours `-i`). The
+ * current user's ~/.ssh is searched first; /root/.ssh is also probed
+ * since key material is conventionally generated as root.
+ */
+function localIdentityPublicKey(opts: SshClientOpts): string | null {
+  if (!opts.localVfs) return null;
+  const home = opts.sourceHome ?? '/root';
+  const iIdx = opts.args.indexOf('-i');
+  const iVal = iIdx >= 0 ? opts.args[iIdx + 1] : undefined;
+  const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
+  const candidates = iVal
+    ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
+    : keyHomes.flatMap((h) => [
+        `${h}/.ssh/id_ed25519.pub`,
+        `${h}/.ssh/id_rsa.pub`,
+        `${h}/.ssh/id_ecdsa.pub`,
+      ]);
+  for (const c of candidates) {
+    const data = opts.localVfs.readFile(c);
+    if (data && data.trim()) return data.trim();
+  }
+  return null;
+}
+
+/** Whether the remote user's authorized_keys lists the offered identity. */
+function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: string): boolean {
+  const entry = exec.userMgr.getUser(remoteUser);
+  const home = entry?.home ?? `/home/${remoteUser}`;
+  const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
+  const id = identity.split(/\s+/);
+  return ak.split('\n').some((line) => {
+    const t = line.trim().split(/\s+/);
+    return t.length >= 2 && t[0] === id[0] && t[1] === id[1];
+  });
+}
+
+/**
+ * Negotiate the authentication method, mirroring OpenSSH's order: public
+ * key first, then password. Honours the server's PubkeyAuthentication /
+ * PasswordAuthentication directives and the client's `-o` overrides.
+ */
+function resolveSshAuthMethod(
+  opts: SshClientOpts,
+  exec: RemoteExecLike | undefined,
+  remoteUser: string,
+): SshAuthResolution {
+  const clientPubkey = clientOption(opts.args, 'PubkeyAuthentication') !== 'no';
+  const clientPassword = clientOption(opts.args, 'PasswordAuthentication') !== 'no';
+  const clientMethods: string[] = [];
+  if (clientPubkey) clientMethods.push('publickey');
+  if (clientPassword) clientMethods.push('password');
+
+  if (!exec) {
+    return { method: clientPassword ? 'password' : null, clientMethods };
+  }
+  const serverPubkey = readRemoteSshdDirective(exec, 'PubkeyAuthentication') !== 'no';
+  const serverPassword = readRemoteSshdDirective(exec, 'PasswordAuthentication') !== 'no';
+
+  if (clientPubkey && serverPubkey) {
+    const identity = localIdentityPublicKey(opts);
+    if (identity && remoteAcceptsKey(exec, remoteUser, identity)) {
+      return { method: 'publickey', clientMethods };
+    }
+  }
+  if (clientPassword && serverPassword) {
+    return { method: 'password', clientMethods };
+  }
+  return { method: null, clientMethods };
+}
+
 /** Extract -p <port> from argv (default 22). */
 function clientPort(args: string[]): number {
   const i = args.indexOf('-p');
@@ -162,7 +267,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
     sshdAcceptsLogin?: (u: string) => { ok: boolean; reason?: string };
-    recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
+    recordSshLogin?: (
+      u: string,
+      fromIp: string,
+      fromHost: string,
+      accepted: boolean,
+      authMethod?: 'password' | 'publickey',
+    ) => void;
     executor?: { execute: (cmd: string) => string; userMgr?: unknown; vfs?: unknown };
   };
   if (typeof machine.isServiceActive !== 'function') {
@@ -212,7 +323,28 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, true);
+  // Authentication-method negotiation: public key first, then password —
+  // honouring both the server's Pubkey/PasswordAuthentication directives
+  // and the client's `-o` overrides.
+  const remoteExec = machine.executor as unknown as RemoteExecLike | undefined;
+  const auth = resolveSshAuthMethod(opts, remoteExec, remoteUser);
+  if (!auth.method) {
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `${remoteUser}@${host}: Permission denied (${
+        auth.clientMethods.join(',') || 'publickey,password'
+      }).`,
+      exitCode: 255,
+    };
+  }
+
+  machine.recordSshLogin?.(
+    remoteUser,
+    opts.sourceIp,
+    opts.sourceHostname,
+    true,
+    auth.method,
+  );
 
   // Update the local ~/.ssh/known_hosts with the remote's host key (or
   // emit the OpenSSH-style identification-changed warning when the key
