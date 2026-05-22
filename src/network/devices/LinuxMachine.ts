@@ -278,13 +278,19 @@ export abstract class LinuxMachine extends EndHost {
    * Append a syslog-style line to /var/log/auth.log on this machine.
    * Used by inbound SSH (this device) to log a login from a remote.
    */
-  recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void {
+  recordSshLogin(
+    user: string,
+    fromIp: string,
+    fromHost: string,
+    accepted: boolean,
+    authMethod: 'password' | 'publickey' = 'password',
+  ): void {
     // Only write to auth.log when the local rsyslog is up — modelling
     // the realistic dependency the suite exercises.
     if (this.isServiceActive('rsyslog')) {
       const vfs = this.executor.vfs;
       const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-      const verdict = accepted ? 'Accepted password' : 'Failed password';
+      const verdict = accepted ? `Accepted ${authMethod}` : 'Failed password';
       const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
       const existing = vfs.readFile('/var/log/auth.log') ?? '';
       vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);

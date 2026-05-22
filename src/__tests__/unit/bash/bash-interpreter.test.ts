@@ -381,7 +381,12 @@ describe('Interpreter — External Commands', () => {
   it('passes arguments to external command', () => {
     const execCmd = vi.fn(() => '');
     run('ls -la /tmp', { execCmd });
-    expect(execCmd).toHaveBeenCalledWith(['ls', '-la', '/tmp']);
+    // The interpreter also passes an environment snapshot as a second
+    // argument so env-aware commands (ssh forwarding) can read it.
+    expect(execCmd).toHaveBeenCalledWith(
+      ['ls', '-la', '/tmp'],
+      expect.any(Object),
+    );
   });
 });
 

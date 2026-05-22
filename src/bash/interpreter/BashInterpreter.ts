@@ -26,8 +26,17 @@ export interface ExternalCommandResult {
   exitCode: number;
 }
 
-/** Callback type for executing external (non-builtin) commands. */
-export type ExternalCommandFn = (argv: string[]) => ExternalCommandResult | string;
+/**
+ * Callback type for executing external (non-builtin) commands.
+ *
+ * `env` carries a snapshot of the shell environment at dispatch time
+ * (exported variables plus any per-command `VAR=val` prefix assignments)
+ * so external commands such as `ssh` can honour environment forwarding.
+ */
+export type ExternalCommandFn = (
+  argv: string[],
+  env?: Record<string, string>,
+) => ExternalCommandResult | string;
 
 /** Normalize an external command result to the standard format. */
 function normalizeResult(result: ExternalCommandResult | string): ExternalCommandResult {
@@ -257,7 +266,8 @@ export class BashInterpreter {
       // External command
       try {
         const fullArgs = pipeInput ? [...args, pipeInput] : args;
-        const result = normalizeResult(this.executeCommand(fullArgs));
+        const envSnapshot = Object.fromEntries(this.env.getAll());
+        const result = normalizeResult(this.executeCommand(fullArgs, envSnapshot));
         if (result.output) this.output.push(result.output);
         this.env.lastExitCode = result.exitCode;
       } catch {

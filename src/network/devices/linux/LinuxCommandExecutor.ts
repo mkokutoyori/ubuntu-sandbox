@@ -126,6 +126,12 @@ export class LinuxCommandExecutor {
   /** Shared system identity — source of truth for uname / hostnamectl / etc. */
   readonly identity: SystemIdentity;
   private env: Map<string, string> = new Map();
+  /**
+   * Shell environment of the command currently being dispatched — exported
+   * variables plus per-command `VAR=val` prefix assignments. Consulted by
+   * env-aware commands (`ssh` SendEnv forwarding, `locale`).
+   */
+  private _cmdEnv?: Record<string, string>;
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
   /** caller-supplied PID → OS-managed PID, so unregisterProcess can find the spawn back. */
@@ -393,18 +399,30 @@ export class LinuxCommandExecutor {
     return { output: summary, exitCode: 0 };
   }
 
+  /**
+   * Home directory backing this host's SSH per-user state (~/.ssh).
+   * Interactive sessions on a simulated host run in root's environment —
+   * the executor's shell starts in /root — so SSH config, known_hosts and
+   * identities are rooted at /root/.ssh, the same base ssh-keygen defaults
+   * to and the location the whole SSH toolchain reads and writes.
+   */
+  private sshHomeDir(): string {
+    return this.userMgr.getUser('root')?.home ?? '/root';
+  }
+
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
-  private buildSshClientOpts(args: string[]) {
+  private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
-    const home = user === 'root' ? '/root' : `/home/${user}`;
+    const home = this.sshHomeDir();
     return {
       args,
       sourceHostname: hostname,
       sourceIp,
       sourceUser: user,
       sourceHome: home,
+      callerEnv,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -440,8 +458,7 @@ export class LinuxCommandExecutor {
    */
   private runSshKeygen(args: string[]): { output: string; exitCode: number } {
     if (args[0] === '-R' && args[1]) {
-      const home = this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`;
-      const path = `${home}/.ssh/known_hosts`;
+      const path = `${this.sshHomeDir()}/.ssh/known_hosts`;
       const existing = this.vfs.readFile(path) ?? '';
       const before = SshKnownHostEntry.parseFile(existing);
       const after = before.filter(e => !e.matches(args[1]));
@@ -464,7 +481,7 @@ export class LinuxCommandExecutor {
     // and returned "command not found". Provide a minimal compatible
     // implementation that creates a file pair under -f and -N.
     const fIdx = args.indexOf('-f');
-    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`}/.ssh/id_ed25519`;
+    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/id_ed25519`;
     if (args.includes('-y')) {
       // Read the private key, output its public form (stub).
       return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
@@ -478,6 +495,117 @@ export class LinuxCommandExecutor {
     this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', 0, 0, 0o077);
     this.vfs.writeFile(`${file}.pub`, pubKey + '\n', 0, 0, 0o022);
     return { output: '', exitCode: 0 };
+  }
+
+  /**
+   * `ssh-copy-id [-i identity] [-p port] [user@]host` — install the local
+   * public key into the remote user's ~/.ssh/authorized_keys so subsequent
+   * logins can use public-key authentication.
+   */
+  private runSshCopyId(args: string[]): { output: string; exitCode: number } {
+    let identity: string | null = null;
+    let target: string | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-i' && args[i + 1]) { identity = args[++i]; continue; }
+      if (a === '-p' && args[i + 1]) { i++; continue; }
+      if (a.startsWith('-')) continue;
+      if (!target) target = a;
+    }
+    if (!target) {
+      return { output: 'usage: ssh-copy-id [-i [identity_file]] [-p port] [user@]hostname', exitCode: 1 };
+    }
+
+    // Resolve the public key to install (honour -i, else the default set).
+    const home = this.sshHomeDir();
+    const pubCandidates = identity
+      ? [identity.endsWith('.pub') ? identity : `${identity}.pub`]
+      : [
+          `${home}/.ssh/id_ed25519.pub`,
+          `${home}/.ssh/id_rsa.pub`,
+          `${home}/.ssh/id_ecdsa.pub`,
+        ];
+    let pubKey: string | null = null;
+    let pubSource = pubCandidates[0];
+    for (const c of pubCandidates) {
+      const data = this.vfs.readFile(c);
+      if (data && data.trim()) { pubKey = data.trim(); pubSource = c; break; }
+    }
+    if (!pubKey) {
+      return {
+        output: '/usr/bin/ssh-copy-id: ERROR: No identities found',
+        exitCode: 1,
+      };
+    }
+
+    const parsed = /^(?:([\w.-]+)@)?([\w.-]+)$/.exec(target);
+    if (!parsed) {
+      return { output: `ssh-copy-id: Could not resolve hostname ${target}`, exitCode: 1 };
+    }
+    const remoteUser = parsed[1] ?? this.userMgr.currentUser;
+    const host = parsed[2];
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    if (!found || found.poweredOff || found.interfaceDown) {
+      return {
+        output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: No route to host`,
+        exitCode: 255,
+      };
+    }
+    const remoteExec = (found.device as unknown as {
+      isServiceActive?: (n: string) => boolean;
+      executor?: {
+        vfs: VirtualFileSystem;
+        userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
+      };
+    });
+    if (typeof remoteExec.isServiceActive !== 'function' || !remoteExec.isServiceActive('ssh')) {
+      return {
+        output: `/usr/bin/ssh-copy-id: ERROR: ssh: connect to host ${host} port 22: Connection refused`,
+        exitCode: 255,
+      };
+    }
+    const rexec = remoteExec.executor;
+    const remoteUserEntry = rexec?.userMgr.getUser(remoteUser);
+    if (!rexec || !remoteUserEntry) {
+      return {
+        output: `/usr/bin/ssh-copy-id: ERROR: ${remoteUser}@${host}: Permission denied (publickey,password).`,
+        exitCode: 255,
+      };
+    }
+    const remoteHome = remoteUserEntry.home ?? `/home/${remoteUser}`;
+    const sshDir = `${remoteHome}/.ssh`;
+    const akPath = `${sshDir}/authorized_keys`;
+    if (!rexec.vfs.resolveInode(sshDir)) {
+      rexec.vfs.mkdirp(sshDir, 0o755, remoteUserEntry.uid, remoteUserEntry.gid);
+    }
+    const existing = rexec.vfs.readFile(akPath) ?? '';
+    if (existing.split('\n').some((l) => l.trim() === pubKey)) {
+      return {
+        output: '/usr/bin/ssh-copy-id: WARNING: All keys were skipped because they already exist on the remote system.',
+        exitCode: 0,
+      };
+    }
+    const sep = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+    rexec.vfs.writeFile(
+      akPath,
+      existing + sep + pubKey + '\n',
+      remoteUserEntry.uid,
+      remoteUserEntry.gid,
+      0o022,
+    );
+    rexec.vfs.chmod(akPath, 0o644);
+    return {
+      output: [
+        `/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "${pubSource}"`,
+        '/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed',
+        '',
+        'Number of key(s) added: 1',
+        '',
+        `Now try logging into the machine, with:   "ssh '${remoteUser}@${host}'"`,
+        'and check to make sure that only the key(s) you wanted were added.',
+      ].join('\n'),
+      exitCode: 0,
+    };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -772,7 +900,7 @@ export class LinuxCommandExecutor {
       trimmed,
       'bash',
       [],
-      (argv) => this.dispatchFromInterpreter(argv),
+      (argv, env) => this.dispatchFromInterpreter(argv, env),
       initialVars,
       io,
       { pid: this.shellPid, ppid: this.shellPpid },
@@ -810,10 +938,39 @@ export class LinuxCommandExecutor {
   }
 
   /**
+   * Run a command line with extra environment variables overlaid for the
+   * duration of the command, then restore the prior environment. Used by
+   * inbound SSH exec-mode to apply AcceptEnv-forwarded variables on the
+   * remote side without leaking them into the persistent shell env.
+   */
+  executeWithEnv(input: string, extraEnv: Record<string, string>): string {
+    const saved = new Map<string, string | undefined>();
+    for (const [k, v] of Object.entries(extraEnv)) {
+      saved.set(k, this.env.has(k) ? this.env.get(k) : undefined);
+      this.env.set(k, v);
+    }
+    try {
+      return this.execute(input);
+    } finally {
+      for (const [k, v] of saved) {
+        if (v === undefined) this.env.delete(k);
+        else this.env.set(k, v);
+      }
+    }
+  }
+
+  /**
    * Bridge between the bash interpreter and the command dispatcher.
    * Called by the interpreter for external (non-builtin) commands.
    */
-  private dispatchFromInterpreter(argv: string[]): { output: string; exitCode: number } {
+  private dispatchFromInterpreter(
+    argv: string[],
+    env?: Record<string, string>,
+  ): { output: string; exitCode: number } {
+    // Remember the shell environment of the command currently being
+    // dispatched so env-aware commands (ssh forwarding, locale) can read
+    // exported variables and `VAR=val` prefix assignments.
+    this._cmdEnv = env;
     if (argv.length === 0) return { output: '', exitCode: 0 };
 
     // The last argument may be pipe input (passed by the interpreter)
@@ -1176,6 +1333,37 @@ export class LinuxCommandExecutor {
         return { output: lines.join('\n'), exitCode: 0 };
       }
 
+      // locale — report the active locale, sourced from the live shell
+      // environment so SSH-forwarded LANG / LC_* are reflected.
+      case 'locale': {
+        const e = this._cmdEnv ?? Object.fromEntries(this.env);
+        const lang = e['LANG'] ?? '';
+        const lcAll = e['LC_ALL'] ?? '';
+        const effective = lcAll || lang || 'C';
+        const cat = (name: string) =>
+          `${name}="${e[name] ?? effective}"`;
+        return {
+          output: [
+            `LANG=${lang}`,
+            `LANGUAGE=${e['LANGUAGE'] ?? ''}`,
+            cat('LC_CTYPE'),
+            cat('LC_NUMERIC'),
+            cat('LC_TIME'),
+            cat('LC_COLLATE'),
+            cat('LC_MONETARY'),
+            cat('LC_MESSAGES'),
+            cat('LC_PAPER'),
+            cat('LC_NAME'),
+            cat('LC_ADDRESS'),
+            cat('LC_TELEPHONE'),
+            cat('LC_MEASUREMENT'),
+            cat('LC_IDENTIFICATION'),
+            `LC_ALL=${lcAll}`,
+          ].join('\n'),
+          exitCode: 0,
+        };
+      }
+
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
 
@@ -1389,12 +1577,13 @@ export class LinuxCommandExecutor {
         return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
-        return runSshClient(this.buildSshClientOpts(args));
+        return runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
       }
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-keyscan': return this.runSshKeyscan(args);
       case 'ssh-keygen':  return this.runSshKeygen(args);
+      case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {
         if (!stdin) return { output: '', exitCode: 0 };
         const xCmd = args[0] || 'echo';
