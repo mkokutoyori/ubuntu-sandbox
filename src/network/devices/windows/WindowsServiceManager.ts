@@ -234,6 +234,15 @@ export class WindowsServiceManager {
     svc('Schedule', 'Task Scheduler', 'Enables a user to configure and schedule automated tasks',
       { dependencies: ['RpcSs'], account: 'NT AUTHORITY\\SYSTEM' });
 
+    // OpenSSH SSH Server — inbound `ssh` / SFTP transport on port 22.
+    svc('sshd', 'OpenSSH SSH Server',
+      'SSH protocol based service to provide secure encrypted communications between two untrusted hosts over an insecure network.',
+      {
+        dependencies: ['RpcSs'], processName: 'sshd.exe',
+        binaryPath: 'C:\\Windows\\System32\\OpenSSH\\sshd.exe',
+        account: 'NT AUTHORITY\\SYSTEM', serviceType: 'WIN32_OWN_PROCESS',
+      } as any);
+
     // Audio
     svc('AudioSrv', 'Windows Audio', 'Manages audio for Windows-based programs',
       { dependencies: ['RpcSs'], account: 'NT AUTHORITY\\LocalService' });
