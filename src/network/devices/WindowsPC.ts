@@ -187,6 +187,8 @@ export class WindowsPC extends EndHost {
     // a service via `sc`/`net stop` now releases its ports, starting it
     // rebinds them.
     this.svcMgr.attachSocketTable(this.socketTable);
+    // Journal service state changes into the System event log (SCM 7036).
+    this.svcMgr.attachEventLog(this.eventLog);
 
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.

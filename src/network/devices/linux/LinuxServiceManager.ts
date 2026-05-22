@@ -130,6 +130,15 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'auditd',
+    description: 'Security Auditing Service',
+    type: 'forking',
+    execStart: '/sbin/auditd',
+    after: ['local-fs.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
     name: 'systemd-resolved',
     description: 'Network Name Resolution',
     type: 'notify',

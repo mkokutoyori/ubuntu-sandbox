@@ -27,6 +27,9 @@ import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
 import type { SocketTable } from '../../core/SocketTable';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+import { LinuxAuditLog } from './audit/LinuxAuditLog';
+import { AuditTrailProjection } from './audit/AuditTrailProjection';
+import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
@@ -89,6 +92,10 @@ export class LinuxCommandExecutor {
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
+  /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
+  readonly auditLog: LinuxAuditLog;
+  /** Reactive bridge feeding security events into the audit trail. */
+  private auditTrail: AuditTrailProjection | null = null;
   readonly processMgr: LinuxProcessManager;
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
@@ -155,6 +162,7 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs);
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
+    this.auditLog = new LinuxAuditLog(this.vfs);
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.isServer = isServer;
@@ -291,9 +299,14 @@ export class LinuxCommandExecutor {
     this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
+    // The syslog daemon's lifecycle drives /var/log/* file coherence.
+    this.logMgr.attachBus(bus);
     // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
+    // Feed security events into the kernel audit trail, reactively.
+    this.auditTrail?.dispose();
+    this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
     this.iamPolicyFiles?.dispose();
@@ -946,6 +959,7 @@ export class LinuxCommandExecutor {
     // Root-only commands — reject if not root
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
       'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp', 'ufw',
+      'ausearch', 'aureport', 'auditctl',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
@@ -1086,6 +1100,9 @@ export class LinuxCommandExecutor {
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
       case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
+      case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
+      case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
+      case 'auditctl': return { output: cmdAuditctl(this.auditLog, args), exitCode: 0 };
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -2158,7 +2175,7 @@ export class LinuxCommandExecutor {
       // Users and groups
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
       'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-      'faillock',
+      'faillock', 'ausearch', 'aureport', 'auditctl',
       'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',
       // Lookup

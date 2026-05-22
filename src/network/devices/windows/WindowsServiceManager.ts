@@ -15,6 +15,15 @@
 import type { SocketTable } from '../../core/SocketTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
+/** Minimal slice of the event-log provider the service controller writes to. */
+export interface ServiceEventLogSink {
+  writeEventLog(
+    logName: string, source: string, eventId: number,
+    entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
+    message: string,
+  ): string;
+}
+
 export type ServiceState =
   | 'Running' | 'Stopped' | 'Paused'
   | 'StartPending' | 'StopPending'
@@ -114,9 +123,31 @@ export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
   /** Socket table kept coherent with service start/stop, when wired. */
   private socketTable: SocketTable | null = null;
+  /** Event-log sink — the Service Control Manager journals 7036 events. */
+  private eventLog: ServiceEventLogSink | null = null;
 
   constructor() {
     this.initDefaults();
+  }
+
+  /**
+   * Wire the Windows event log so service state changes are journaled as
+   * Service Control Manager event 7036 in the System log — the audit trail
+   * `Get-EventLog System` / `wevtutil` show.
+   */
+  attachEventLog(sink: ServiceEventLogSink): void {
+    this.eventLog = sink;
+  }
+
+  /** Journal a Service Control Manager state-change event (System log, 7036). */
+  private journalServiceState(svc: WindowsService, running: boolean): void {
+    this.eventLog?.writeEventLog(
+      'System',
+      'Service Control Manager',
+      7036,
+      'Information',
+      `The ${svc.displayName} service entered the ${running ? 'running' : 'stopped'} state.`,
+    );
   }
 
   /**
@@ -301,6 +332,7 @@ export class WindowsServiceManager {
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
     svc.state = 'Running';
     this.bindServiceSockets(svc.name);
+    this.journalServiceState(svc, true);
     return '';
   }
 
@@ -320,6 +352,7 @@ export class WindowsServiceManager {
 
     svc.state = 'Stopped';
     this.releaseServiceSockets(svc.name);
+    this.journalServiceState(svc, false);
     return '';
   }
 
