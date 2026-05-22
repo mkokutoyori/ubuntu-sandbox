@@ -1250,3 +1250,73 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §18 — Brute-force protection / rate-limit ──────────────────────
+//
+// MaxAuthTries on Linux, login block-for on Cisco, ssh server-source
+// max-attempts on Huawei, Account Lockout Policy on Windows — every
+// platform must throttle bursts of wrong passwords coming from the
+// same client IP.
+
+describe('§18 — Brute-force protection on every SSH server', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: MaxAuthTries=3 closes the connection on the 4th wrong attempt',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?MaxAuthTries.*/MaxAuthTries 3/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'for i in 1 2 3 4; do sshpass -p WRONG ssh -o NumberOfPasswordPrompts=1 alice@10.0.0.2 hostname; done',
+      contains: [/Too many authentication failures|Connection closed/i],
+    },
+    {
+      name: 'Cisco: login block-for blocks subsequent connect attempts',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+        await l.ciscoR1.executeCommand('end');
+        for (const _ of [1, 2, 3]) {
+          await l.linux1.executeCommand('sshpass -p WRONG ssh -o NumberOfPasswordPrompts=1 admin@10.0.0.6 "show version"');
+        }
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|Quiet-Mode|denied/i],
+    },
+    {
+      name: 'Huawei: ssh server authentication-retries limits attempts',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('ssh server authentication-retries 2');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'for i in 1 2 3; do sshpass -p WRONG ssh -o NumberOfPasswordPrompts=1 admin@10.0.0.8 "display version"; done',
+      contains: [/Too many|Authentication failed|disconnected/i],
+    },
+    {
+      name: 'Windows: Account Lockout Threshold disables the account',
+      setup: async (l) => {
+        await l.win1.executeCommand('net accounts /lockoutthreshold:3');
+        for (const _ of [1, 2, 3]) {
+          await l.linux1.executeCommand('sshpass -p WRONG ssh -o NumberOfPasswordPrompts=1 User@10.0.0.4 hostname');
+        }
+      },
+      on: l => l.linux1,
+      cmd: 'sshpass -p Passw0rd! ssh -o NumberOfPasswordPrompts=1 User@10.0.0.4 hostname',
+      contains: [/locked out|Account is currently locked|Permission denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
