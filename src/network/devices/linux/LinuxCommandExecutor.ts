@@ -1136,9 +1136,11 @@ export class LinuxCommandExecutor {
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
 
-    // Root-only commands — reject if not root
+    // Root-only commands — reject if not root. `ufw` is intentionally
+    // absent: like `iptables` (which the device router runs un-gated), the
+    // simulator's interactive operator manages the firewall directly.
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp', 'ufw',
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp',
       'ausearch', 'aureport', 'auditctl',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
@@ -1826,8 +1828,19 @@ export class LinuxCommandExecutor {
       return { output: '', exitCode: 0 };
     }
     if (args[0] === '-') {
-      // Read from stdin
-      if (stdin) this.cron.install(stdin);
+      // Read the new crontab from stdin.
+      if (stdin) {
+        const user = this.userMgr.currentUser;
+        this.cron.install(stdin, user);
+        // A running cron daemon picks up the new table: it logs the
+        // reload and fires any job already due in the current minute.
+        if (this.serviceMgr.isActive('cron')) {
+          this.logMgr.logDaemon('cron', `(${user}) RELOAD (crontabs/${user})`);
+          for (const job of this.cron.dueJobs()) {
+            this.logMgr.logDaemon('CRON', `(${user}) CMD (${job.command})`);
+          }
+        }
+      }
       return { output: '', exitCode: 0 };
     }
     return { output: '', exitCode: 0 };
