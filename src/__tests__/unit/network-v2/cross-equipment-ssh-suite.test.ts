@@ -1426,3 +1426,82 @@ describe('§20 — Environment forwarding', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §21 — sshd access control (allow/deny, ACLs, VTY ACL) ─────────
+//
+// AllowUsers / DenyUsers on Linux, access-class on Cisco VTY, acl
+// inbound on Huawei VTY, OpenSSH AllowGroups — every server must
+// enforce its own ACL before reaching the shell.
+
+describe('§21 — sshd access control', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: AllowUsers alice rejects bob',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo AllowUsers alice >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh bob@10.0.0.2 hostname',
+      contains: [/Permission denied|disallowed/i], excludes: [/^linux2$/m],
+    },
+    {
+      name: 'Linux: DenyUsers bob still lets alice through',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo DenyUsers bob >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Cisco: access-class on VTY blocks foreign client IP',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('access-list 20 permit 10.0.0.3');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('access-class 20 in');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+    {
+      name: 'Cisco: access-class still allows the permitted IP',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('access-list 21 permit 10.0.0.1');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('access-class 21 in');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'Huawei: acl inbound on VTY blocks foreign client IP',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('acl 2000');
+        await l.hwR1.executeCommand('rule 5 permit source 10.0.0.3 0');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('acl 2000 inbound');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
