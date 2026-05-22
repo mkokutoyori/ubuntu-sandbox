@@ -1544,11 +1544,41 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // env — print environment
+      // env — print the environment, or run a command in a modified one.
+      //   env                       → print every variable
+      //   env -i [VAR=v…] cmd       → run cmd with an empty base environment
+      //   env -u NAME … cmd         → run cmd with NAME removed
+      //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        const lines: string[] = [];
-        for (const [k, v] of this.env) { lines.push(`${k}=${v}`); }
-        return { output: lines.join('\n'), exitCode: 0 };
+        let i = 0;
+        let ignoreEnv = false;
+        const unset: string[] = [];
+        const overlay: Record<string, string> = {};
+        for (; i < args.length; i++) {
+          const a = args[i];
+          if (a === '-i' || a === '--ignore-environment' || a === '-') { ignoreEnv = true; continue; }
+          if (a === '-u' || a === '--unset') { if (args[i + 1] !== undefined) unset.push(args[++i]); continue; }
+          if (a.startsWith('-')) continue;       // -0, -C <dir>, … accepted as no-ops
+          const eq = a.indexOf('=');
+          if (eq > 0 && /^[A-Za-z_][A-Za-z_0-9]*$/.test(a.slice(0, eq))) {
+            overlay[a.slice(0, eq)] = a.slice(eq + 1);
+            continue;
+          }
+          break;                                  // first plain word → the command
+        }
+        const base = ignoreEnv ? {} : { ...(this._cmdEnv ?? Object.fromEntries(this.env)) };
+        for (const u of unset) delete base[u];
+        const resultEnv: Record<string, string> = { ...base, ...overlay };
+
+        const cmdline = args.slice(i);
+        if (cmdline.length === 0) {
+          return {
+            output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
+            exitCode: 0,
+          };
+        }
+        // Run the supplied command line under the computed environment.
+        return this.dispatchFromInterpreter(cmdline, resultEnv);
       }
 
       // printenv — print the whole environment, or specific variables.

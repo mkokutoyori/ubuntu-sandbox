@@ -2021,8 +2021,9 @@ export class PowerShellExecutor {
       return '';
     }
 
-    // [System.Environment]:: static method calls
-    const dotnetStaticMatch = trimmedLine.match(/^\[System\.Environment\]::(Set|Get)EnvironmentVariable\((.+)\)$/i);
+    // [System.Environment]:: / [Environment]:: static method calls —
+    // both namespaces are accepted, exactly as PowerShell resolves them.
+    const dotnetStaticMatch = trimmedLine.match(/^\[(?:System\.)?Environment\]::(Set|Get)EnvironmentVariable\((.+)\)$/i);
     if (dotnetStaticMatch) {
       const method = dotnetStaticMatch[1].toLowerCase(); // 'set' or 'get'
       const rawArgs = dotnetStaticMatch[2];
