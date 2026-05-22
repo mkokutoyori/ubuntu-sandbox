@@ -304,6 +304,23 @@ export abstract class LinuxMachine extends EndHost {
         user, uid, sshdPid: 985 + this.sessionTable.list().length,
         fromIp, fromHost,
       });
+      // The accepted session is a live ESTABLISHED socket on sshd's
+      // listening port — surface it through `ss` / `netstat`, and leave
+      // a packet trace for `tcpdump`, just as the kernel would.
+      const myIp = this.getPorts()
+        .map(p => p.getIPAddress()?.toString())
+        .find((ip): ip is string => !!ip) ?? '0.0.0.0';
+      const peerPort = 49152 + (this.sessionTable.list().length * 7) % 16000;
+      try {
+        this.socketTable.connect(
+          'tcp', myIp, 22, fromIp, peerPort,
+          985 + this.sessionTable.list().length, 'sshd',
+        );
+      } catch { /* socket accounting is best-effort */ }
+      this.executor.captureLog.captureTcpHandshake(
+        { ip: fromIp, port: peerPort },
+        { ip: myIp, port: 22 },
+      );
     }
   }
 

@@ -20,11 +20,24 @@ import { findHostByAddress } from './HostLookup';
 import { SshKnownHostEntry, type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { SshForwardingTable } from './SshForwardingTable';
+import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
+
+/** The four-tuple of a TCP handshake the SSH client performed. */
+export interface SshConnectionTuple {
+  localIp: string;
+  peerIp: string;
+  peerPort: number;
+}
 
 export interface SshClientResult {
   output: string;
   exitCode: number;
+  /**
+   * Set once the TCP handshake reached a live sshd. Lets the caller
+   * record the connection for `tcpdump` / socket accounting.
+   */
+  connection?: SshConnectionTuple;
 }
 
 export interface SshClientOpts {
@@ -55,6 +68,11 @@ export interface SshClientOpts {
    * bound here so the tunnel surfaces through `ss` / `netstat`.
    */
   localForwarding?: SshForwardingTable;
+  /**
+   * The local machine's ssh-agent — when `-A` (agent forwarding) is used,
+   * its identities are exposed to the remote command for its duration.
+   */
+  localAgent?: SshAgent;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
@@ -578,12 +596,25 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return { output: forwardingError, exitCode: 0 };
   }
 
+  // The TCP handshake reached a live sshd — record the four-tuple so the
+  // caller can feed `tcpdump` / socket accounting.
+  const connection: SshConnectionTuple = {
+    localIp: opts.sourceIp,
+    peerIp: found.ip,
+    peerPort: port,
+  };
+
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
   // This is OpenSSH's "exec mode" — no banner, no Last login.
-  const remoteCmd = positional.slice(1).join(' ').trim();
+  const remoteCmd = joinRemoteCommand(positional.slice(1));
   if (remoteCmd) {
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
+    // `-A` agent forwarding: expose the local agent's identities to the
+    // remote command, restoring the remote agent afterwards.
+    const restoreAgent = flags.includes('-A')
+      ? forwardSshAgent(opts, machine)
+      : null;
     let execOut = '';
     let execRc = 0;
     try {
@@ -603,12 +634,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
           : execMod?.execute?.(remoteCmd) ?? '';
       execRc = execMod?.lastExitCode ?? 0;
     } finally {
+      restoreAgent?.();
       remoteUidBeforeAfter?.();
     }
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    return { output: forwardingError + normalised, exitCode: execRc };
+    return { output: forwardingError + normalised, exitCode: execRc, connection };
   }
 
   // Interactive form (no command): the simulator returns the typical
@@ -622,7 +654,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // OpenSSH: stay silent on success.
   const quiet = flags.some(a => a === '-q' || a === '-Q');
   if (quiet) {
-    return { output: forwardingError, exitCode: 0 };
+    return { output: forwardingError, exitCode: 0, connection };
   }
 
   const lines: string[] = [];
@@ -631,7 +663,39 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceHostname}`);
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
-  return { output: forwardingError + lines.join('\n'), exitCode: 0 };
+  return { output: forwardingError + lines.join('\n'), exitCode: 0, connection };
+}
+
+/**
+ * Reconstruct the remote command from the positional argv that followed
+ * the host. A single token is the whole command verbatim
+ * (`ssh host "uname -a"`); multiple tokens are individual argv words, so
+ * any containing whitespace are re-quoted to survive the remote shell's
+ * re-parse intact (`ssh host bash -lc 'echo $0'`).
+ */
+function joinRemoteCommand(tokens: string[]): string {
+  if (tokens.length === 0) return '';
+  if (tokens.length === 1) return tokens[0].trim();
+  return tokens
+    .map((t) => (/\s/.test(t) ? `'${t.replace(/'/g, "'\\''")}'` : t))
+    .join(' ')
+    .trim();
+}
+
+/**
+ * `-A` agent forwarding: overlay the local ssh-agent's identities onto
+ * the remote machine's agent for the duration of the remote command.
+ * Returns a restorer that puts the remote agent back, or null when there
+ * is nothing to forward.
+ */
+function forwardSshAgent(opts: SshClientOpts, machine: LinuxMachine): (() => void) | null {
+  const remoteAgent = (machine as unknown as {
+    executor?: { sshAgent?: SshAgent };
+  }).executor?.sshAgent;
+  if (!opts.localAgent || !remoteAgent) return null;
+  const saved = remoteAgent.list();
+  remoteAgent.adopt(opts.localAgent.list());
+  return () => remoteAgent.adopt(saved);
 }
 
 /**

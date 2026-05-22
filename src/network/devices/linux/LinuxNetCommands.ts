@@ -7,6 +7,7 @@
 
 import type { IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry } from '../../core/SocketTable';
+import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
 
 // ─── ifconfig ───────────────────────────────────────────────────────
 
@@ -195,7 +196,12 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
     args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch)) ||
     args.includes(`--${ch}`);
 
-  const wantListening = hasFlag('l') || args.includes('--listening');
+  // `ss ... state <name>` — filter by TCP state (established, listening, …).
+  const stateIdx = args.indexOf('state');
+  const stateFilter = stateIdx >= 0 ? (args[stateIdx + 1] ?? '').toLowerCase() : null;
+
+  const wantListening = hasFlag('l') || args.includes('--listening')
+    || stateFilter === 'listening' || stateFilter === 'listen';
   const wantTcp       = hasFlag('t') || args.includes('--tcp');
   const wantUdp       = hasFlag('u') || args.includes('--udp');
   const showProcesses = hasFlag('p') || args.includes('--processes');
@@ -226,6 +232,8 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
       if (!showAll && isTcp && !wantTcp) continue;
       if (!showAll && isUdp && !wantUdp) continue;
       if (wantListening && sock.state !== 'LISTEN') continue;
+      if ((stateFilter === 'established' || stateFilter === 'connected')
+          && sock.state !== 'ESTABLISHED') continue;
 
       const localAddr  = `${sock.localAddress}:${sock.localPort}`;
       const remoteAddr = sock.state === 'LISTEN' ? '0.0.0.0:*' : `${sock.remoteAddress}:${sock.remotePort}`;
@@ -253,6 +261,70 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   }
 
   return lines.join('\n');
+}
+
+// ─── tcpdump ────────────────────────────────────────────────────────
+
+/**
+ * `tcpdump` — render captured TCP segments from the device's
+ * {@link PacketCaptureLog}. Supports the flags the suite exercises:
+ *   -i <iface>   capture interface (descriptive)
+ *   -n / -nn     numeric addresses/ports (always numeric in the sim)
+ *   -c <count>   stop after `count` packets
+ *   port <n>     Berkeley-packet-filter expression on the port
+ */
+export function cmdTcpdump(args: string[], log: PacketCaptureLog | null): string {
+  let iface = 'eth0';
+  let count = Infinity;
+  let portFilter: number | null = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === 'port') { portFilter = Number.parseInt(args[++i], 10) || null; continue; }
+    if (!a.startsWith('-')) continue;
+    // Expand a bundle of short flags: `-ni` → -n -i, `-c` takes a value.
+    const chars = a.slice(1);
+    for (let c = 0; c < chars.length; c++) {
+      const ch = chars[c];
+      if (ch === 'i' || ch === 'c') {
+        const glued = chars.slice(c + 1);
+        const value = glued !== '' ? glued : (args[++i] ?? '');
+        if (ch === 'i') iface = value || iface;
+        else count = Number.parseInt(value, 10) || Infinity;
+        break;
+      }
+      // -n / -nn / -v / -e / -x … — no-ops for the simulator.
+    }
+  }
+
+  const header = [
+    'tcpdump: verbose output suppressed, use -v[v]... for full protocol decode',
+    `listening on ${iface}, link-type EN10MB (Ethernet), snapshot length 262144 bytes`,
+  ];
+
+  const captured = log ? log.all() : [];
+  const matching = (portFilter !== null
+    ? captured.filter(p => p.srcPort === portFilter || p.dstPort === portFilter)
+    : [...captured]
+  ).slice(0, count === Infinity ? undefined : count);
+
+  const body = matching.map(formatTcpdumpPacket);
+  const footer = [
+    `${matching.length} packet${matching.length === 1 ? '' : 's'} captured`,
+    `${matching.length} packet${matching.length === 1 ? '' : 's'} received by filter`,
+    '0 packets dropped by kernel',
+  ];
+  return [...header, ...body, ...footer].join('\n');
+}
+
+/** Render one captured segment in tcpdump's default one-line form. */
+function formatTcpdumpPacket(p: CapturedPacket): string {
+  const ts = p.at.toTimeString().slice(0, 8) +
+    '.' + String(p.at.getMilliseconds()).padStart(3, '0') + '000';
+  const win = p.flags === 'S' ? 64240 : p.flags === 'S.' ? 65160 : 502;
+  const ackPart = p.flags === 'S' ? '' : `, ack ${p.ack}`;
+  return `${ts} IP ${p.srcIp}.${p.srcPort} > ${p.dstIp}.${p.dstPort}: ` +
+    `Flags [${p.flags}], seq ${p.seq}${ackPart}, win ${win}, length ${p.length}`;
 }
 
 // ─── arping ─────────────────────────────────────────────────────────

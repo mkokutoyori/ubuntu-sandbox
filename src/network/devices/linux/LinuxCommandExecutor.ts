@@ -24,7 +24,8 @@ import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
-import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
+import { PacketCaptureLog } from './network/PacketCaptureLog';
 import type { SocketTable } from '../../core/SocketTable';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
@@ -109,6 +110,8 @@ export class LinuxCommandExecutor {
   private socketTable: SocketTable | null = null;
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
+  /** Captured TCP traffic — rendered by `tcpdump`. */
+  readonly captureLog = new PacketCaptureLog();
   /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
   private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
   /** Reactive socket-table coherence for service-owned listening ports. */
@@ -150,6 +153,8 @@ export class LinuxCommandExecutor {
   private iamPolicyFiles: IamPolicyFilesProjection | null = null;
   /** Unsubscribe handle for the identity-file re-seed subscription. */
   private identityFilesUnsub: (() => void) | null = null;
+  /** Unsubscribe handle for the remote-device power-off subscription. */
+  private powerOffUnsub: (() => void) | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
@@ -347,6 +352,13 @@ export class LinuxCommandExecutor {
       'host.identity.changed',
       () => this.seedIdentityFiles(),
     );
+    // A background `ssh host …` job dies when its remote host powers off:
+    // react to the power-off event and reap the matching jobs.
+    this.powerOffUnsub?.();
+    this.powerOffUnsub = bus.subscribe(
+      'device.power-off',
+      (e: { payload: { id: string } }) => this.reapSshJobsForDevice(e.payload.id),
+    );
     // Rebuild NSS with bus-aware invalidation. Re-use the same files
     // source so the privileged-uid check still points at this executor.
     this.nss.dispose();
@@ -433,6 +445,7 @@ export class LinuxCommandExecutor {
       sourceHome: home,
       callerEnv,
       localForwarding: this.forwarding ?? undefined,
+      localAgent: this.sshAgent,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -754,7 +767,19 @@ export class LinuxCommandExecutor {
     const ctx = this.jobsCmdContext();
     switch (cmd) {
       case 'jobs':   return cmdJobs(args, ctx).output;
-      case 'fg':     return cmdFg(args, ctx).output;
+      case 'fg': {
+        // Bringing a remote-killed ssh job to the foreground surfaces the
+        // disconnect notice OpenSSH prints when its transport drops.
+        const j = ctx.jobs.resolve(args[0] ?? '%+');
+        if (j && j.state === 'Killed') {
+          const host = LinuxCommandExecutor.sshTargetHost(j.command);
+          if (host) {
+            ctx.jobs.remove(j.id);
+            return `Connection closed by ${host}`;
+          }
+        }
+        return cmdFg(args, ctx).output;
+      }
       case 'bg':     return cmdBg(args, ctx).output;
       case 'wait':   return cmdWait(args, ctx).output;
       case 'disown': return cmdDisown(args, ctx).output;
@@ -765,6 +790,45 @@ export class LinuxCommandExecutor {
         return this.runKillWithJobspecs(args);
       }
       default: return null;
+    }
+  }
+
+  /**
+   * Extract the host (IP or name) an `ssh` command line connects to, or
+   * null when the command is not an ssh invocation. Value-taking short
+   * options consume the following token so the host is not misread.
+   */
+  private static sshTargetHost(command: string): string | null {
+    const argv = simpleTokenize(command.replace(/\s*&\s*$/, ''));
+    if (argv[0] !== 'ssh') return null;
+    for (let i = 1; i < argv.length; i++) {
+      const a = argv[i];
+      if (a.startsWith('-')) {
+        // A bundle ending in a value-taking flag eats the next token.
+        if (/[bcDEeFIiJLlmOopRSWw]$/.test(a)) i++;
+        continue;
+      }
+      const at = a.indexOf('@');
+      return at >= 0 ? a.slice(at + 1) : a;
+    }
+    return null;
+  }
+
+  /**
+   * Reap background `ssh host …` jobs whose remote host is the device
+   * that just powered off — a real ssh client loses its transport and
+   * exits, so the job moves to `Killed`. Driven reactively by the
+   * `device.power-off` event.
+   */
+  private reapSshJobsForDevice(deadDeviceId: string): void {
+    for (const job of this.jobTable.list()) {
+      if (!job.isRunning()) continue;
+      const host = LinuxCommandExecutor.sshTargetHost(job.command);
+      if (!host) continue;
+      const found = findHostByAddress(host);
+      if (found && found.device.getId() === deadDeviceId) {
+        job.complete({ signal: 'SIGHUP' });
+      }
     }
   }
 
@@ -1701,8 +1765,20 @@ export class LinuxCommandExecutor {
         return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
-        return runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
+        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
+        // A completed TCP handshake leaves a trace `tcpdump` can render.
+        if (result.connection) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpHandshake(
+            { ip: result.connection.localIp, port: srcPort },
+            { ip: result.connection.peerIp, port: result.connection.peerPort },
+          );
+        }
+        return { output: result.output, exitCode: result.exitCode };
       }
+      case 'tcpdump':
+        return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-keyscan': return this.runSshKeyscan(args);

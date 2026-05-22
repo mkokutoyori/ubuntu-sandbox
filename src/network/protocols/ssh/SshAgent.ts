@@ -80,6 +80,16 @@ export class SshAgent {
   }
 
   /**
+   * Replace the agent's contents with a copy of `keys`. Used by `ssh -A`
+   * agent forwarding to expose the originating host's identities to a
+   * remote command, and to restore the remote agent once it completes.
+   */
+  adopt(keys: readonly AgentKey[]): void {
+    this.keys.clear();
+    for (const k of keys) this.keys.set(k.path, k);
+  }
+
+  /**
    * Walk `<home>/.ssh/` and load every default identity file present.
    * Returns the list of paths that were successfully added (in the
    * canonical OpenSSH order: ed25519, rsa, ecdsa, dsa).
