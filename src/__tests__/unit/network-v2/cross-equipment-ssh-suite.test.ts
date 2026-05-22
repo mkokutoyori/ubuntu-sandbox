@@ -1928,3 +1928,66 @@ describe('§28 — Key formats across platforms', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §29 — Hostname resolution under SSH ────────────────────────────
+//
+// /etc/hosts entries, DHCP-learned names and management hostnames on
+// Cisco/Huawei must be usable as SSH targets. The client should NOT
+// rely on numeric IPs to operate.
+
+describe('§29 — Hostname resolution under SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux /etc/hosts: name "linux2" resolves to 10.0.0.2',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo "10.0.0.2 linux2" >> /etc/hosts');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@linux2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Linux: unknown name returns Could not resolve hostname',
+      on: l => l.linux1, cmd: 'ssh alice@nope.invalid',
+      contains: [/Could not resolve hostname/i],
+    },
+    {
+      name: 'Cisco: ip host entry resolves to a remote IP',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('ip host pc1 10.0.0.1');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.ciscoR1, cmd: 'ssh -l alice pc1 exit',
+      contains: [/Welcome to Ubuntu/i],
+    },
+    {
+      name: 'Huawei: ip host-name entry resolves under stelnet',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('ip host pc1 10.0.0.1');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.hwR1, cmd: 'stelnet pc1',
+      contains: [/Welcome to Ubuntu/i],
+    },
+    {
+      name: 'Windows hosts file entry resolves',
+      setup: async (l) => {
+        await l.win1.executeCommand('echo 10.0.0.1 linux1 >> %SystemRoot%\\System32\\drivers\\etc\\hosts');
+      },
+      on: l => l.win1, cmd: 'ssh alice@linux1 hostname',
+      contains: [/^linux1$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
