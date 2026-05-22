@@ -1698,3 +1698,59 @@ describe('§24 — Telnet vs SSH coexistence on routers/switches', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §25 — PermitRootLogin policy across platforms ──────────────────
+
+describe('§25 — Root/Administrator login policy', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux default PermitRootLogin no refuses root',
+      on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
+      contains: [/Permission denied/i], excludes: [/Welcome to Ubuntu/i],
+    },
+    {
+      name: 'Linux PermitRootLogin yes accepts root',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
+      contains: [/Welcome to Ubuntu|root@linux2/i],
+    },
+    {
+      name: 'Linux PermitRootLogin prohibit-password still blocks password root',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
+      contains: [/Permission denied/i],
+    },
+    {
+      name: 'Windows Administrator can SSH in by default',
+      on: l => l.linux1, cmd: 'ssh Administrator@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'Cisco: enable secret gates privileged exec after SSH login',
+      setup: async (l) => { await enableCiscoSsh(l.ciscoR1); },
+      on: l => l.linux1,
+      cmd: 'ssh admin@10.0.0.6 "show privilege"',
+      contains: [/Current privilege level is 15/i],
+    },
+    {
+      name: 'Huawei: privilege level 15 grants system-view rights',
+      setup: async (l) => { await enableHuaweiSsh(l.hwR1); },
+      on: l => l.linux1,
+      cmd: 'ssh admin@10.0.0.8 "display users"',
+      contains: [/admin/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
