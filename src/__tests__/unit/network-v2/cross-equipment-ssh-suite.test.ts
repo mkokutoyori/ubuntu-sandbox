@@ -1051,3 +1051,78 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §15 — SCP / SFTP cross-platform file transfer ──────────────────
+//
+// File transfers must traverse the same SSH channel and land in the
+// remote VFS with correct ownership, mode and content. Both directions
+// (push & pull), all three platform pairs (Linux/Linux, Linux/Windows,
+// Linux/Cisco-running-config).
+
+describe('§15 — SCP / SFTP cross-platform transfer', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'scp file from linux1 to linux2 lands with the same content',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo "hello from linux1" > /tmp/payload.txt');
+        await l.linux1.executeCommand('scp /tmp/payload.txt alice@10.0.0.2:/tmp/payload.txt');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/payload.txt',
+      contains: [/^hello from linux1$/m],
+    },
+    {
+      name: 'scp -p preserves mtime and mode',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo data > /tmp/keep.txt && chmod 640 /tmp/keep.txt');
+        await l.linux1.executeCommand('scp -p /tmp/keep.txt alice@10.0.0.2:/tmp/keep.txt');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/keep.txt',
+      contains: [/^640$/m],
+    },
+    {
+      name: 'scp pull from win1 onto linux1 reads cmd.exe-style path',
+      setup: async (l) => {
+        await l.win1.executeCommand('echo win-payload > C:\\Users\\User\\payload.txt');
+        await l.linux1.executeCommand('scp User@10.0.0.4:/C:/Users/User/payload.txt /tmp/win-payload.txt');
+      },
+      on: l => l.linux1, cmd: 'cat /tmp/win-payload.txt',
+      contains: [/^win-payload$/m],
+    },
+    {
+      name: 'sftp put then get round-trips the file unchanged',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo roundtrip > /tmp/rt.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+        );
+        await l.linux1.executeCommand('rm /tmp/rt.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nget /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux1, cmd: 'cat /tmp/rt.txt',
+      contains: [/^roundtrip$/m],
+    },
+    {
+      name: 'copy running-config tftp via SSH (Cisco scp server)',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('ip scp server enable');
+        await l.ciscoR1.executeCommand('end');
+        await l.linux1.executeCommand('scp admin@10.0.0.6:running-config /tmp/running.txt');
+      },
+      on: l => l.linux1, cmd: 'grep hostname /tmp/running.txt',
+      contains: [/hostname ciscoR1/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
