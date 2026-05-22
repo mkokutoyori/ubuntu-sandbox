@@ -725,3 +725,86 @@ describe('§9 — Command flow respects aliases on every shell', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §10 — Authentication methods across the LAN ────────────────────
+//
+// password, publickey and keyboard-interactive must all be reachable
+// on every SSH server type. ssh -o PreferredAuthentications= drives
+// the negotiation explicitly.
+
+describe('§10 — SSH authentication methods', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux→Linux: password auth works for alice',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'Linux→Linux: publickey auth after ssh-keygen+ssh-copy-id works',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+      excludes: [/Permission denied/i],
+    },
+    {
+      name: 'Linux→Linux: publickey fails without prior key install',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/Permission denied/i],
+      excludes: [/^alice$/m],
+    },
+    {
+      name: 'Linux→Windows: password auth works for User',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password User@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'Linux→Cisco: password auth against local-user database',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'Linux→Huawei: password auth against AAA local-user',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i],
+    },
+    {
+      name: 'Linux→Huawei: publickey after ssh user admin assign rsa-key',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        const pub = await l.linux1.executeCommand('cat /root/.ssh/id_rsa.pub');
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand(`rsa peer-public-key linux1key encoding-type openssh`);
+        await l.hwR1.executeCommand(`public-key-code begin`);
+        await l.hwR1.executeCommand(pub.trim().split(' ')[1]);
+        await l.hwR1.executeCommand(`public-key-code end`);
+        await l.hwR1.executeCommand(`peer-public-key end`);
+        await l.hwR1.executeCommand('ssh user admin authentication-type rsa');
+        await l.hwR1.executeCommand('ssh user admin assign rsa-key linux1key');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
