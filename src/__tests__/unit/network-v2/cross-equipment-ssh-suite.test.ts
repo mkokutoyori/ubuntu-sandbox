@@ -878,3 +878,63 @@ describe('§11 — known_hosts coherence across platforms', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §12 — ~/.ssh/config Host blocks ────────────────────────────────
+//
+// Per-host options (User, Port, IdentityFile, ProxyJump, StrictHost…)
+// must be honoured by the client so operators stop typing flags.
+
+describe('§12 — ~/.ssh/config Host blocks', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const writeConfig = async (l: XLan, body: string) => {
+    await l.linux1.executeCommand('mkdir -p /root/.ssh');
+    await l.linux1.executeCommand(`cat > /root/.ssh/config <<'EOF'\n${body}\nEOF`);
+    await l.linux1.executeCommand('chmod 600 /root/.ssh/config');
+  };
+
+  const rows: Row[] = [
+    {
+      name: 'Host alias resolves HostName and User',
+      setup: async (l) => {
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice');
+      },
+      on: l => l.linux1, cmd: 'ssh two hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Wildcard Host * applies User and StrictHostKeyChecking',
+      setup: async (l) => {
+        await writeConfig(l, 'Host *\n  User alice\n  StrictHostKeyChecking accept-new');
+      },
+      on: l => l.linux1, cmd: 'ssh 10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'Per-host Port override is honoured',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice\n  Port 2222');
+      },
+      on: l => l.linux1, cmd: 'ssh two hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'IdentityFile is read for the matching Host only',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_two");
+        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_two.pub alice@10.0.0.2');
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice\n  IdentityFile /root/.ssh/id_two\n  IdentitiesOnly yes');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no two whoami',
+      contains: [/^alice$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
