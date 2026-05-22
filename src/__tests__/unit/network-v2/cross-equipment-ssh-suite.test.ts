@@ -16,15 +16,15 @@
  *     win1   ─┤
  *     win2   ─┼── core-sw (GenericSwitch) ── 10.0.0.0/24
  *     ciscoR1─┤
- *     ciscoS1─┤
+ *     ciscoS1─┤  (L2-only, no IP)
  *     hwR1   ─┤
- *     hwS1   ─┘
+ *     hwS1   ─┘  (L2-only, no IP)
  *
  * Conventions:
  *   - linux1=10.0.0.1 linux2=10.0.0.2 lxsrv1=10.0.0.3
  *     win1=10.0.0.4   win2=10.0.0.5
- *     ciscoR1=10.0.0.6 ciscoS1=10.0.0.7
- *     hwR1=10.0.0.8    hwS1=10.0.0.9
+ *     ciscoR1=10.0.0.6 hwR1=10.0.0.8
+ *     (ciscoS1, hwS1 are pure L2 switches — no L3 address)
  *   - Linux user: `alice` / `admin` (sudoer); fallback default `user` / `admin`.
  *   - Windows user: `User` / `Passw0rd!` (Administrator / `Passw0rd!`).
  *   - Cisco / Huawei VTY user: `admin` / `Admin@123`.
@@ -63,14 +63,17 @@ async function buildXLan(): Promise<XLan> {
   const lxsrv1 = new LinuxServer('linux-server', 'lxsrv1', 0, 0);
   const win1 = new WindowsPC('windows-pc', 'win1', 0, 0);
   const win2 = new WindowsPC('windows-pc', 'win2', 0, 0);
-  const ciscoR1 = new CiscoRouter('cisco-router', 'ciscoR1', 0, 0);
-  const ciscoS1 = new CiscoSwitch('cisco-switch', 'ciscoS1', 0, 0);
-  const hwR1 = new HuaweiRouter('huawei-router', 'hwR1', 0, 0);
-  const hwS1 = new HuaweiSwitch('huawei-switch', 'hwS1', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
+  const ciscoR1 = new CiscoRouter('ciscoR1', 0, 0);
+  const ciscoS1 = new CiscoSwitch('switch-cisco', 'ciscoS1', 24, 0, 0);
+  const hwR1 = new HuaweiRouter('hwR1', 0, 0);
+  const hwS1 = new HuaweiSwitch('switch-huawei', 'hwS1', 24, 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'core-sw', 16, 0, 0);
 
   const all = [linux1, linux2, lxsrv1, win1, win2, ciscoR1, ciscoS1, hwR1, hwS1];
-  all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
+  all.forEach((d, i) => {
+    const cable = new Cable(`c${i}`);
+    cable.connect(d.getPorts()[0], sw.getPorts()[i]);
+  });
 
   const mask = new SubnetMask('255.255.255.0');
   linux1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
@@ -89,12 +92,9 @@ async function buildXLan(): Promise<XLan> {
   await ciscoR1.executeCommand('no shutdown');
   await ciscoR1.executeCommand('end');
 
-  await ciscoS1.executeCommand('enable');
-  await ciscoS1.executeCommand('configure terminal');
-  await ciscoS1.executeCommand('interface vlan 1');
-  await ciscoS1.executeCommand('ip address 10.0.0.7 255.255.255.0');
-  await ciscoS1.executeCommand('no shutdown');
-  await ciscoS1.executeCommand('end');
+  // ciscoS1 / hwS1 are pure L2 switches in this project — they forward
+  // frames but have no L3 routing or management IP, so no `interface
+  // vlan` IP is configured on them.
 
   await hwR1.executeCommand('system-view');
   await hwR1.executeCommand('interface GigabitEthernet0/0/0');
@@ -103,12 +103,7 @@ async function buildXLan(): Promise<XLan> {
   await hwR1.executeCommand('quit');
   await hwR1.executeCommand('quit');
 
-  await hwS1.executeCommand('system-view');
-  await hwS1.executeCommand('interface Vlanif 1');
-  await hwS1.executeCommand('ip address 10.0.0.9 255.255.255.0');
-  await hwS1.executeCommand('undo shutdown');
-  await hwS1.executeCommand('quit');
-  await hwS1.executeCommand('quit');
+  // hwS1: pure L2, see ciscoS1 above.
 
   // Hostnames match the test labels for ssh banner / auth.log realism.
   linux1.setHostname('linux1'); linux2.setHostname('linux2'); lxsrv1.setHostname('lxsrv1');
@@ -138,8 +133,8 @@ async function buildXLan(): Promise<XLan> {
     ipOf: {
       linux1: '10.0.0.1', linux2: '10.0.0.2', lxsrv1: '10.0.0.3',
       win1: '10.0.0.4', win2: '10.0.0.5',
-      ciscoR1: '10.0.0.6', ciscoS1: '10.0.0.7',
-      hwR1: '10.0.0.8', hwS1: '10.0.0.9',
+      ciscoR1: '10.0.0.6', hwR1: '10.0.0.8',
+      // ciscoS1 / hwS1 are L2-only and have no management IP.
     },
   };
 }
@@ -442,7 +437,6 @@ describe('§5 — Linux → Cisco IOS SSH', () => {
   beforeEach(async () => {
     lan = await buildXLan();
     await enableCiscoSsh(lan.ciscoR1);
-    await enableCiscoSsh(lan.ciscoS1);
   });
 
   const rows: Row[] = [
@@ -452,9 +446,9 @@ describe('§5 — Linux → Cisco IOS SSH', () => {
       contains: [/IOS|Cisco/i], excludes: [/bash:|command not found/i],
     },
     {
-      name: 'show interfaces status on the Cisco switch lists ports',
-      on: l => l.linux1, cmd: 'ssh admin@10.0.0.7 "show interfaces status"',
-      contains: [/connected|notconnect|Port\s+Name/i],
+      name: 'show interfaces status lists router data ports',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show interfaces status"',
+      contains: [/connected|notconnect|Port\s+Name|GigabitEthernet/i],
     },
     {
       name: 'remote prompt is the IOS hostname, never bash',
@@ -496,7 +490,6 @@ describe('§6 — Linux → Huawei VRP SSH', () => {
   beforeEach(async () => {
     lan = await buildXLan();
     await enableHuaweiSsh(lan.hwR1);
-    await enableHuaweiSsh(lan.hwS1);
   });
 
   const rows: Row[] = [
@@ -506,9 +499,9 @@ describe('§6 — Linux → Huawei VRP SSH', () => {
       contains: [/VRP|Huawei/i], excludes: [/bash:|command not found/i],
     },
     {
-      name: 'display interface brief on the Huawei switch lists Vlanif1',
-      on: l => l.linux1, cmd: 'ssh admin@10.0.0.9 "display interface brief"',
-      contains: [/Interface\s+PHY|Vlanif1/i],
+      name: 'display interface brief lists the router data interfaces',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display interface brief"',
+      contains: [/Interface\s+PHY|GigabitEthernet0\/0\/0/i],
     },
     {
       name: 'display current-configuration shows stelnet server enabled',
@@ -2184,9 +2177,7 @@ describe('§33 — Full SSH reachability matrix', () => {
   beforeEach(async () => {
     lan = await buildXLan();
     await enableCiscoSsh(lan.ciscoR1);
-    await enableCiscoSsh(lan.ciscoS1);
     await enableHuaweiSsh(lan.hwR1);
-    await enableHuaweiSsh(lan.hwS1);
   });
 
   interface MatrixRow {
@@ -2196,6 +2187,9 @@ describe('§33 — Full SSH reachability matrix', () => {
     contains: (string | RegExp)[];
   }
 
+  // L2 switches (ciscoS1, hwS1) are intentionally absent from the
+  // matrix: in this project they have no L3 stack and therefore no SSH
+  // server. They still forward frames for every other pair.
   const targets: { ip: string; user: string; probe: string; want: RegExp }[] = [
     { ip: '10.0.0.1', user: 'alice', probe: 'hostname', want: /^linux1$/m },
     { ip: '10.0.0.2', user: 'alice', probe: 'hostname', want: /^linux2$/m },
@@ -2203,9 +2197,7 @@ describe('§33 — Full SSH reachability matrix', () => {
     { ip: '10.0.0.4', user: 'User',  probe: 'hostname', want: /^win1$/m },
     { ip: '10.0.0.5', user: 'User',  probe: 'hostname', want: /^win2$/m },
     { ip: '10.0.0.6', user: 'admin', probe: 'show version',    want: /IOS|Cisco/i },
-    { ip: '10.0.0.7', user: 'admin', probe: 'show version',    want: /IOS|Cisco/i },
     { ip: '10.0.0.8', user: 'admin', probe: 'display version', want: /VRP|Huawei/i },
-    { ip: '10.0.0.9', user: 'admin', probe: 'display version', want: /VRP|Huawei/i },
   ];
 
   const clients: (keyof XLan)[] = ['linux1', 'lxsrv1', 'win1'];
