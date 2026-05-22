@@ -383,8 +383,14 @@ export class LinuxCommandExecutor {
       return { output: usage, exitCode: 1 };
     }
     const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
+    // scp / sftp select an alternate port with -P (rsync uses -e); translate
+    // it into the ssh client's own -p so the probe targets the right port.
+    const pIdx = args.indexOf('-P');
+    const probeArgs = pIdx >= 0 && args[pIdx + 1]
+      ? ['-p', args[pIdx + 1], hostPart, 'true']
+      : [hostPart, 'true'];
     // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({ ...this.buildSshClientOpts([hostPart, 'true']) });
+    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
       // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
@@ -711,6 +717,12 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    // Actually carry out the work: the only thing "background" skips is
+    // blocking the foreground shell. Side effects — an SSH connection's
+    // auth.log line and session-table entry, file writes, … — must still
+    // happen so `jobs`, `who`, `w` and the logs stay coherent. The
+    // command's own stdout is detached from the terminal.
+    try { this.execute(cmdLine); } catch { /* background failures are silent */ }
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${job.id}] ${proc.pid}`);
@@ -985,6 +997,11 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
+      // `-S` reads the sudo password from stdin — detect it before the
+      // flag group is stripped below.
+      const readsStdinPassword = cmdArgs.some(
+        (a) => a.startsWith('-') && !a.startsWith('--') && a.includes('S'),
+      );
       // Strip flags that don't consume a value (-n non-interactive, -S
       // read password from stdin, -E preserve env, -k reset timestamp).
       while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
@@ -995,6 +1012,38 @@ export class LinuxCommandExecutor {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
+      }
+      // `sudo -S` authenticates against the invoking user's password,
+      // piped in on stdin. A wrong password is rejected and audited
+      // through PAM, exactly as on a real host.
+      if (readsStdinPassword) {
+        const last = cmdArgs[cmdArgs.length - 1];
+        const supplied = last && last.includes('\n')
+          ? (last.replace(/\n+$/, '').split('\n').pop() ?? '').trim()
+          : '';
+        if (!this.userMgr.checkPassword(this.userMgr.currentUser, supplied)) {
+          if (this.serviceMgr.isActive('rsyslog')) {
+            const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+            const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+            const u = this.userMgr.currentUser;
+            const cmdStr = cmdArgs.filter((a) => !a.includes('\n')).join(' ');
+            const fail =
+              `${ts} ${hostname} sudo: pam_unix(sudo:auth): authentication failure; ` +
+              `logname=${u} uid=${this.userMgr.currentUid} euid=0 tty=pts/0 ruser=${u} rhost=  user=${u}\n` +
+              `${ts} ${hostname} sudo:  ${u} : 1 incorrect password attempt ; TTY=pts/0 ; ` +
+              `PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdStr}\n`;
+            const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+            this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
+          }
+          return {
+            output: `[sudo] password for ${this.userMgr.currentUser}: \n` +
+              'Sorry, try again.\nsudo: 1 incorrect password attempt',
+            exitCode: 1,
+          };
+        }
+        // Correct password — drop the stdin token so the command never
+        // sees it as an argument.
+        if (last && last.includes('\n')) cmdArgs.pop();
       }
       // Audit: write a syslog-style sudo line to /var/log/auth.log
       // (real sudo logs through pam_systemd → journald → rsyslog).
@@ -1105,14 +1154,22 @@ export class LinuxCommandExecutor {
 
   /** Build initial environment variables for the bash interpreter. */
   private buildEnvVars(): Record<string, string> {
+    const user = this.userMgr.currentUser;
+    const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const vars: Record<string, string> = {
-      HOME: this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`,
+      HOME: home,
       PWD: this.cwd,
-      USER: this.userMgr.currentUser,
-      LOGNAME: this.userMgr.currentUser,
+      USER: user,
+      LOGNAME: user,
       UID: String(this.userMgr.currentUid),
       SHELL: '/bin/bash',
       PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      // Standard interactive-session variables a real login shell exports.
+      HOSTNAME: hostname,
+      TERM: 'xterm-256color',
+      MAIL: `/var/mail/${user}`,
+      SHLVL: '1',
     };
     // Include exported env vars
     for (const [k, v] of this.env) {
@@ -1124,9 +1181,11 @@ export class LinuxCommandExecutor {
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
     const c = this.ctx();
 
-    // Root-only commands — reject if not root
+    // Root-only commands — reject if not root. `ufw` is intentionally
+    // absent: like `iptables` (which the device router runs un-gated), the
+    // simulator's interactive operator manages the firewall directly.
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp', 'ufw',
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp',
       'ausearch', 'aureport', 'auditctl',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
@@ -1333,6 +1392,42 @@ export class LinuxCommandExecutor {
         return { output: lines.join('\n'), exitCode: 0 };
       }
 
+      // printenv — print the whole environment, or specific variables.
+      // With names, one value per line; exit 1 if any name is unset.
+      case 'printenv': {
+        const envView = this._cmdEnv ?? Object.fromEntries(this.env);
+        const names = args.filter((a) => !a.startsWith('-'));
+        if (names.length === 0) {
+          return {
+            output: Object.entries(envView).map(([k, v]) => `${k}=${v}`).join('\n'),
+            exitCode: 0,
+          };
+        }
+        const out: string[] = [];
+        let missing = false;
+        for (const name of names) {
+          const v = envView[name];
+          if (v === undefined) missing = true;
+          else out.push(v);
+        }
+        return { output: out.join('\n'), exitCode: missing ? 1 : 0 };
+      }
+
+      // time — run a command and report its elapsed wall/user/sys time
+      case 'time': {
+        if (args.length === 0) {
+          return { output: '\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s', exitCode: 0 };
+        }
+        const started = Date.now();
+        const inner = this.dispatchFromInterpreter(args, this._cmdEnv);
+        const elapsed = ((Date.now() - started) / 1000).toFixed(3);
+        const body = inner.output ? inner.output.replace(/\n$/, '') + '\n' : '';
+        return {
+          output: `${body}\nreal\t0m${elapsed}s\nuser\t0m0.001s\nsys\t0m0.001s`,
+          exitCode: inner.exitCode,
+        };
+      }
+
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
       case 'locale': {
@@ -1370,13 +1465,30 @@ export class LinuxCommandExecutor {
       // Script execution
       case 'bash':
       case 'sh': {
-        const execCmd = (argv: string[]) => this.dispatchFromInterpreter(argv);
-        if (args[0] === '-c' && args.length > 1) {
-          const result = runScriptContent(args[1], cmd, args.slice(2), execCmd, this.buildEnvVars(), this.buildIOContext());
+        const execCmd = (argv: string[], env?: Record<string, string>) =>
+          this.dispatchFromInterpreter(argv, env);
+        // Parse the leading option group(s). bash accepts combined flags
+        // such as `-lc` (login + command); `-l` makes $0 a login `-bash`.
+        let i = 0;
+        let login = false;
+        let cmdString: string | null = null;
+        while (i < args.length && args[i].startsWith('-') && args[i] !== '-') {
+          const flags = args[i].slice(1);
+          if (flags.includes('l')) login = true;
+          if (flags.includes('c')) {
+            cmdString = args[i + 1] ?? '';
+            i += 2;
+            break;
+          }
+          i++;
+        }
+        const arg0 = login ? '-bash' : cmd;
+        if (cmdString !== null) {
+          const result = runScriptContent(cmdString, arg0, args.slice(i), execCmd, this.buildEnvVars(), this.buildIOContext());
           return { output: result.output, exitCode: result.exitCode };
         }
-        if (args.length > 0) {
-          const result = runScript(c, args[0], args.slice(1), execCmd);
+        if (i < args.length) {
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -1782,8 +1894,19 @@ export class LinuxCommandExecutor {
       return { output: '', exitCode: 0 };
     }
     if (args[0] === '-') {
-      // Read from stdin
-      if (stdin) this.cron.install(stdin);
+      // Read the new crontab from stdin.
+      if (stdin) {
+        const user = this.userMgr.currentUser;
+        this.cron.install(stdin, user);
+        // A running cron daemon picks up the new table: it logs the
+        // reload and fires any job already due in the current minute.
+        if (this.serviceMgr.isActive('cron')) {
+          this.logMgr.logDaemon('cron', `(${user}) RELOAD (crontabs/${user})`);
+          for (const job of this.cron.dueJobs()) {
+            this.logMgr.logDaemon('CRON', `(${user}) CMD (${job.command})`);
+          }
+        }
+      }
       return { output: '', exitCode: 0 };
     }
     return { output: '', exitCode: 0 };

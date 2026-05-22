@@ -10,6 +10,7 @@
  */
 
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+import { HostsFile } from '../HostsFile';
 
 /**
  * `%SystemRoot%\System32\drivers\etc\services` content — rendered from the
@@ -153,6 +154,10 @@ export class WindowsFileSystem {
       this.mkdirp(dir);
     }
 
+    // The static name table — seeded with this machine's own name so it
+    // resolves itself, mirroring the Linux 127.0.1.1 convention.
+    const hostsContent = HostsFile.defaultWindows(hostname).serialize();
+
     // Realistic system files
     const systemFiles: Array<[string, string, number, string[]]> = [
       // [path, content, size, attributes]
@@ -180,7 +185,7 @@ export class WindowsFileSystem {
       ['C:\\Windows\\System32\\dism.exe', '', 280064, ['system']],
       ['C:\\Windows\\System32\\wbem\\wmic.exe', '', 47104, ['system']],
       ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '', 452608, ['system']],
-      ['C:\\Windows\\System32\\drivers\\etc\\hosts', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This is a sample HOSTS file used by Microsoft TCP/IP for Windows.\n#\n# This file contains the mappings of IP addresses to host names. Each\n# entry should be kept on an individual line. The IP address should\n# be placed in the first column followed by the corresponding host name.\n# The IP address and the host name should be separated by at least one\n# space.\n#\n# For example:\n#\n#      102.54.94.97     rhino.acme.com          # source server\n#       38.25.63.10     x.acme.com              # x client host\n\n# localhost name resolution is handled within DNS itself.\n127.0.0.1       localhost\n::1             localhost\n', 824, []],
+      ['C:\\Windows\\System32\\drivers\\etc\\hosts', hostsContent, hostsContent.length, []],
       ['C:\\Windows\\System32\\drivers\\etc\\networks', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This file contains network name/number mappings.\n#\nloopback        127\n', 407, []],
       ['C:\\Windows\\System32\\drivers\\etc\\protocol', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\nicmp    1   ICMP\ntcp     6   TCP\nudp    17   UDP\n', 1795, []],
       ['C:\\Windows\\System32\\drivers\\etc\\services', WINDOWS_SERVICES_FILE, WINDOWS_SERVICES_FILE.length, []],

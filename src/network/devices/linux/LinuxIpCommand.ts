@@ -7,6 +7,8 @@
  * Error messages and output match real iproute2 behavior.
  */
 
+import { findHostByAddress } from './network/HostLookup';
+
 // ─── Network Context Interface ──────────────────────────────────────
 
 export interface IpInterfaceInfo {
@@ -691,12 +693,39 @@ function ipNeigh(ctx: IpNetworkContext, args: string[]): string {
   return ipNeighShow(ctx, args);
 }
 
-function ipNeighShow(ctx: IpNetworkContext, _args: string[]): string {
-  const neighbors = ctx.getNeighborTable();
-  if (neighbors.length === 0) return '';
-  return neighbors
-    .map(n => `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
-    .join('\n');
+function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
+  // Optional filters: a target address and/or `dev <iface>`.
+  let addr: string | null = null;
+  let devFilter: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'dev' && args[i + 1]) { devFilter = args[++i]; }
+    else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(args[i])) addr = args[i];
+  }
+
+  let neighbors = ctx.getNeighborTable();
+  if (devFilter) neighbors = neighbors.filter(n => n.iface === devFilter);
+  if (addr) neighbors = neighbors.filter(n => n.ip === addr);
+  if (neighbors.length > 0) {
+    return neighbors
+      .map(n => `${n.ip} dev ${n.iface} lladdr ${n.mac} ${n.state}`)
+      .join('\n');
+  }
+
+  // A specific on-link address with no cache entry: when the peer is
+  // unreachable (powered off, NIC down, off-topology) the kernel keeps a
+  // FAILED entry. A reachable-but-unprobed peer simply has no entry.
+  if (addr) {
+    const route = ctx.getRoutingTable().find(
+      r => r.type === 'connected' && isInSubnet(addr!, r.network, r.cidr),
+    );
+    if (route) {
+      const found = findHostByAddress(addr);
+      if (!found || found.poweredOff || found.interfaceDown) {
+        return `${addr} dev ${route.iface}  FAILED`;
+      }
+    }
+  }
+  return '';
 }
 
 // ip neigh add <IP> lladdr <MAC> dev <DEV> [nud permanent|static]

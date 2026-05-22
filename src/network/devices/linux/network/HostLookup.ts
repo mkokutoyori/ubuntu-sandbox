@@ -9,6 +9,7 @@
 
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
+import { HostsFile } from '../../HostsFile';
 
 export interface RemoteHost {
   device: Equipment;
@@ -70,19 +71,21 @@ export function findHostByAddress(
   const needle = target.toLowerCase();
   const shortNeedle = needle.split('.')[0];
 
-  // /etc/hosts of the caller — checked first to match real resolver order.
+  // Static hosts table of the caller — checked first to match real
+  // resolver order. Both the Linux (`/etc/hosts`) and Windows
+  // (`drivers\etc\hosts`) locations are consulted so the lookup is
+  // OS-agnostic for whatever device issued the command.
   if (resolverVfs) {
-    const hosts = resolverVfs.readFile('/etc/hosts') ?? '';
-    for (const line of hosts.split('\n')) {
-      const trimmed = line.replace(/#.*/, '').trim();
-      if (!trimmed) continue;
-      const tokens = trimmed.split(/\s+/);
-      const [ip, ...names] = tokens;
-      if (names.some(n => n.toLowerCase() === needle || n.toLowerCase() === shortNeedle)) {
+    const hostsRaw =
+      resolverVfs.readFile('/etc/hosts') ??
+      resolverVfs.readFile('C:\\Windows\\System32\\drivers\\etc\\hosts');
+    for (const entry of HostsFile.parse(hostsRaw).entries) {
+      if (entry.hasName(needle) || entry.hasName(shortNeedle)) {
         const dev = registry.getAll().find(d =>
-          d.getIsPoweredOn() && d.getPorts().some(p => p.getIPAddress()?.toString() === ip),
+          d.getIsPoweredOn() &&
+          d.getPorts().some(p => p.getIPAddress()?.toString() === entry.ip),
         );
-        if (dev) return { device: dev, ip, resolvedFrom: target };
+        if (dev) return { device: dev, ip: entry.ip, resolvedFrom: target };
       }
     }
   }

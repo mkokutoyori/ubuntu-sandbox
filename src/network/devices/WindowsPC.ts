@@ -22,6 +22,8 @@ import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
+import { HostsFile } from './HostsFile';
+import { findDnsServerByIP } from './linux/LinuxDnsService';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
@@ -268,24 +270,68 @@ export class WindowsPC extends EndHost {
 
   // ─── Hosts file ──────────────────────────────────────────────
 
-  addHostsEntry(ip: string, hostname: string): void {
-    this.fs.appendFile(WindowsPC.HOSTS_FILE, `${ip}       ${hostname}\n`);
+  /** Read the Windows hosts file into a parsed {@link HostsFile}. */
+  private readHostsFile(): HostsFile {
+    const result = this.fs.readFile(WindowsPC.HOSTS_FILE);
+    return HostsFile.parse(result.ok ? result.content : null);
   }
 
+  /** Append a static name → IP mapping to the Windows hosts file. */
+  addHostsEntry(ip: string, hostname: string): void {
+    const updated = this.readHostsFile().withEntry(ip, hostname);
+    this.fs.createFile(WindowsPC.HOSTS_FILE, updated.serialize());
+  }
+
+  /**
+   * Re-sync the hosts file's self entry after a hostname change so the
+   * machine keeps resolving its own name — the Windows analogue of the
+   * Linux 127.0.1.1 convention.
+   */
+  private syncHostsFile(hostname: string): void {
+    this.fs.createFile(
+      WindowsPC.HOSTS_FILE,
+      HostsFile.defaultWindows(hostname).serialize(),
+    );
+  }
+
+  /**
+   * Rename the machine. Besides the Equipment-level field, the hosts file
+   * is rewritten so the new computer name keeps resolving locally and
+   * `COMPUTERNAME` stays coherent.
+   */
+  override setHostname(hostname: string): void {
+    super.setHostname(hostname);
+    this.env.set('COMPUTERNAME', hostname);
+    this.syncHostsFile(hostname);
+  }
+
+  /**
+   * Resolve a name to an IPv4 address, mirroring the Windows resolver
+   * order: literal IP → hosts file → the machine's own name → DNS.
+   */
   resolveHostname(name: string): IPAddress | null {
+    // 1. Already a literal IP address.
     try { return new IPAddress(name); } catch { /* not an IP */ }
-    const result = this.fs.readFile(WindowsPC.HOSTS_FILE);
-    if (result.ok && result.content) {
-      for (const line of result.content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const parts = trimmed.split(/[\s\t]+/);
-        if (parts.length >= 2) {
-          const ip = parts[0];
-          const hostnames = parts.slice(1).filter(h => !h.startsWith('#'));
-          if (hostnames.some(h => h.toLowerCase() === name.toLowerCase())) {
-            try { return new IPAddress(ip); } catch { /* skip invalid */ }
-          }
+
+    // 2. Static hosts file.
+    const ip = this.readHostsFile().resolve(name, 4);
+    if (ip) {
+      try { return new IPAddress(ip); } catch { /* malformed entry */ }
+    }
+
+    // 3. The machine's own name always resolves to loopback.
+    if (name.toLowerCase() === this.hostname.toLowerCase()) {
+      return new IPAddress('127.0.0.1');
+    }
+
+    // 4. DNS fallback — query every statically/DHCP-configured server.
+    for (const cfg of this.dnsConfig.values()) {
+      for (const server of cfg.servers) {
+        const dns = findDnsServerByIP(server);
+        if (!dns) continue;
+        const records = dns.query(name, 'A');
+        if (records.length > 0) {
+          try { return new IPAddress(records[0].value); } catch { /* skip */ }
         }
       }
     }
@@ -620,7 +666,7 @@ export class WindowsPC extends EndHost {
       const prefix = (parts[0] || '').toLowerCase();
       const commands = [
         'help', 'ipconfig', 'netsh', 'ping', 'arp', 'getmac', 'tracert', 'route',
-        'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
+        'nslookup', 'wevtutil', 'hostname', 'ver', 'cls', 'systeminfo', 'tasklist',
         'netstat', 'dir', 'cd', 'mkdir', 'md', 'rmdir', 'rd', 'type',
         'copy', 'move', 'ren', 'rename', 'del', 'erase', 'echo', 'set',
         'tree', 'powershell', 'exit',
@@ -1253,8 +1299,19 @@ export class WindowsPC extends EndHost {
 
   /** nslookup command implementation for Windows */
   private cmdNslookup(args: string[]): string {
+    const host = args.find(a => !a.startsWith('-')) ?? '';
+    // The static hosts table (including the machine's own name) is
+    // answered locally, ahead of any DNS query — same order as the
+    // resolveHostname() resolver.
+    if (host && !/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      const hostsIp = this.readHostsFile().resolve(host, 4)
+        ?? (host.toLowerCase() === this.hostname.toLowerCase() ? '127.0.0.1' : null);
+      if (hostsIp) {
+        return 'Server:  UnKnown\nAddress:  127.0.0.1\n\n' +
+               `Name:    ${host}\nAddress:  ${hostsIp}`;
+      }
+    }
     if (this.svcMgr.getService('Dnscache')?.state !== 'Running') {
-      const host = args.find(a => !a.startsWith('-')) ?? '';
       return `*** Can't find ${host}: No DNS servers available\n` +
              `The DNS Client (Dnscache) service is not running.`;
     }

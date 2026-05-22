@@ -1285,13 +1285,14 @@ export class LinuxFirewallManager {
 
   // ─── Logging to /var/log/ufw.log ───────────────────────────────
 
-  private logUfw(message: string): void {
+  /** Append one raw kernel-tagged line to /var/log/ufw.log. */
+  private appendUfwLine(kernelMessage: string): void {
     if (!this.vfs) return;
 
     const now = new Date();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const ts = `${months[now.getMonth()]} ${String(now.getDate()).padStart(2, ' ')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    const line = `${ts} localhost kernel: [UFW] ${message}`;
+    const line = `${ts} localhost kernel: ${kernelMessage}`;
 
     const existing = this.vfs.readFile('/var/log/ufw.log');
     if (existing !== null) {
@@ -1299,6 +1300,32 @@ export class LinuxFirewallManager {
     } else {
       this.vfs.createFileAt('/var/log/ufw.log', line + '\n', 0o640, 0, 4);
     }
+  }
+
+  private logUfw(message: string): void {
+    this.appendUfwLine(`[UFW] ${message}`);
+  }
+
+  /**
+   * Reactively record a packet the firewall just dropped or rejected,
+   * mirroring the `[UFW BLOCK]` / `[UFW REJECT]` kernel lines real ufw
+   * emits into /var/log/ufw.log. A no-op while ufw is disabled.
+   */
+  logBlockedPacket(opts: {
+    verdict: 'drop' | 'reject';
+    iface: string;
+    src: string;
+    dst: string;
+    proto: string;
+    sport: number;
+    dport: number;
+  }): void {
+    if (!this.enabled) return;
+    const tag = opts.verdict === 'reject' ? '[UFW REJECT]' : '[UFW BLOCK]';
+    this.appendUfwLine(
+      `${tag} IN=${opts.iface} OUT= SRC=${opts.src} DST=${opts.dst} ` +
+      `PROTO=${opts.proto.toUpperCase()} SPT=${opts.sport} DPT=${opts.dport}`,
+    );
   }
 
   // ─── Usage ───────────────────────────────────────────────────────

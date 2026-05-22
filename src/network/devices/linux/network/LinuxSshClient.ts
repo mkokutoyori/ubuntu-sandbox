@@ -84,15 +84,32 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
  * remote has no firewall manager (e.g. switches).
  */
 function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: number): 'accept' | 'drop' | 'reject' {
-  const ipt = (machine as LinuxMachine & {
-    executor?: { iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' } };
-  }).executor?.iptables;
+  const exec = (machine as LinuxMachine & {
+    executor?: {
+      iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
+      firewall?: {
+        logBlockedPacket: (o: {
+          verdict: 'drop' | 'reject'; iface: string; src: string;
+          dst: string; proto: string; sport: number; dport: number;
+        }) => void;
+      };
+    };
+  }).executor;
+  const ipt = exec?.iptables;
   if (!ipt?.filterPacket) return 'accept';
   const dstIp = machine.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
-  return ipt.filterPacket({
+  const verdict = ipt.filterPacket({
     direction: 'in', protocol: 6, srcIP: srcIp, dstIP: dstIp,
     srcPort: 50000, dstPort, iface: 'eth0',
   });
+  // Reactively record the drop in /var/log/ufw.log, as the kernel does.
+  if (verdict === 'drop' || verdict === 'reject') {
+    exec?.firewall?.logBlockedPacket({
+      verdict, iface: 'eth0', src: srcIp, dst: dstIp,
+      proto: 'tcp', sport: 50000, dport: dstPort,
+    });
+  }
+  return verdict;
 }
 
 /** Ports configured by sshd_config on the remote machine — defaults to [22]. */
@@ -334,7 +351,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const remoteUser = parsed[1] ?? opts.sourceUser ?? 'root';
   const host = parsed[2];
 
-  const found = findHostByAddress(host, opts.localVfs);
+  // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
+  // look it up via the local source IP, which the registry knows.
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  const lookupHost = isLoopback ? opts.sourceIp : host;
+  const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,

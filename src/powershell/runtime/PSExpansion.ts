@@ -152,7 +152,11 @@ function resolveVar(name: string, env: PSEnvironment): PSValue {
     const scope = lower.slice(0, colonIdx);
     const varName = name.slice(colonIdx + 1);
     if (scope === 'global') return env.getGlobal(varName);
-    if (scope === 'env') return process.env[varName.toUpperCase()] ?? null;
+    // `env:` must be resolved by the host-supplied resolver, which is
+    // backed by the simulated device. The default resolver has no device
+    // handle, so it reports the variable as unset rather than leaking the
+    // real Node.js process environment.
+    if (scope === 'env') return null;
     // local:, script: — treat as plain local read
     return env.get(varName);
   }
