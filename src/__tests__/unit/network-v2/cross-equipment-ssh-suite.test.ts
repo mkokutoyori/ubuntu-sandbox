@@ -271,12 +271,51 @@ describe('§2 — Linux → Linux SSH happy path', () => {
   });
 
   test('non-zero remote exit code is surfaced to the local shell', async () => {
-    // Run the SSH command, then read $? on the local shell — both
-    // commands share the same bash session via executeCommand.
     await lan.linux1.executeCommand(
       `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux2} false`,
     );
     const out = await lan.linux1.executeCommand('echo $?');
     assertOutput(out, { contains: [/^1\s*$/m] });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+// §3 — Linux → Windows SSH
+// ════════════════════════════════════════════════════════════════════
+//
+// A Linux operator must be able to manage a Windows host through SSH
+// (OpenSSH for Windows). The remote shell on the Windows side may be
+// cmd.exe or PowerShell — both must be reachable.
+
+describe('§3 — Linux → Windows SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  test('ssh User@win1 hostname returns the Windows machine name', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new User@${IPS.win1} hostname`,
+    );
+    assertOutput(out, { contains: ['win1'] });
+  });
+
+  test('cmd.exe builtin commands run through the SSH channel', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new User@${IPS.win1} "ver"`,
+    );
+    assertOutput(out, { contains: [/Microsoft Windows|Version/i] });
+  });
+
+  test('PowerShell can be selected as the remote shell', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new User@${IPS.win1} powershell -Command "Get-Host | Select-Object -ExpandProperty Name"`,
+    );
+    assertOutput(out, { contains: [/ConsoleHost|PowerShell/i] });
+  });
+
+  test('wrong Windows password fails authentication', async () => {
+    const out = await lan.linux1.executeCommand(
+      `sshpass -p Wrong! ssh -o StrictHostKeyChecking=accept-new User@${IPS.win1} whoami`,
+    );
+    assertOutput(out, { contains: [/Permission denied|Authentication failed/i] });
   });
 });
