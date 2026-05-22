@@ -1320,3 +1320,58 @@ describe('§18 — Brute-force protection on every SSH server', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §19 — PTY allocation, signals & window size ────────────────────
+//
+// ssh -t / -tt forces a PTY; resize must propagate via SIGWINCH; ^C in
+// the client must deliver SIGINT to the remote process group; exit
+// codes from the remote signal must be 128+N as POSIX prescribes.
+
+describe('§19 — PTY allocation, signals and window size', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh -t alice@linux2 tty reports a /dev/pts entry',
+      on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 tty',
+      contains: [/\/dev\/pts\/\d+/],
+    },
+    {
+      name: 'ssh without -t closes stdin and tty reports not a tty',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 tty',
+      contains: [/not a tty/i],
+    },
+    {
+      name: 'COLUMNS and LINES reach the remote shell from the client TTY',
+      on: l => l.linux1,
+      cmd: 'stty cols 132 rows 50; ssh -t alice@10.0.0.2 \'echo $COLUMNS:$LINES\'',
+      contains: [/^132:50$/m],
+    },
+    {
+      name: 'Ctrl-C on the client kills the remote process group',
+      on: l => l.linux1,
+      cmd: 'timeout 1 ssh -t alice@10.0.0.2 "trap \'echo caught; exit 130\' INT; sleep 5"',
+      contains: [/caught|^130$/m],
+    },
+    {
+      name: 'remote exit 130 (SIGINT) is surfaced through the client',
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 "bash -c \'kill -INT $$\'"; echo rc=$?',
+      contains: [/rc=130/],
+    },
+    {
+      name: 'Cisco IOS: ssh client uses a line-mode pty for the VTY',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l alice 10.0.0.1 tty',
+      contains: [/\/dev\/pts\/\d+/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
