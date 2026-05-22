@@ -1810,3 +1810,64 @@ describe('§26 — Idle timeout & keepalive across platforms', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §27 — Strict-mode permission coherence on ~/.ssh ───────────────
+//
+// sshd refuses to use authorized_keys when ~/.ssh or the file itself
+// has overly-permissive ownership / mode. Filesystem must therefore
+// stay coherent with the simulated user/group/mode model.
+
+describe('§27 — Strict-mode permission coherence', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'authorized_keys mode 0644 is accepted',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.linux2.executeCommand('chmod 0644 /home/alice/.ssh/authorized_keys');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'authorized_keys mode 0777 is refused (StrictModes yes)',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.linux2.executeCommand('chmod 0777 /home/alice/.ssh/authorized_keys');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/Permission denied/i],
+    },
+    {
+      name: '~/.ssh owned by another user is refused',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.linux2.executeCommand('chown -R bob:bob /home/alice/.ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/Permission denied/i],
+    },
+    {
+      name: 'private key mode 0644 triggers UNPROTECTED PRIVATE KEY warning',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('chmod 0644 /root/.ssh/id_rsa');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no -i /root/.ssh/id_rsa alice@10.0.0.2 whoami',
+      contains: [/UNPROTECTED PRIVATE KEY|too open/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
