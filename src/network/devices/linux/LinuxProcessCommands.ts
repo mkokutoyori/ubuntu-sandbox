@@ -8,7 +8,7 @@
 
 import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
-import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
+import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServiceManager';
 import { runPs } from './ps/PsCommand';
 import { memPercent, kbToMiB } from './system/ProcFormat';
 import { LinuxService } from './service/LinuxService';
@@ -234,6 +234,46 @@ export function cmdPkill(args: string[], ctx: ProcessCmdContext): KillResult {
   return { output: '', exitCode: count > 0 ? 0 : 1 };
 }
 
+/**
+ * `killall` — signal every process whose command name matches *exactly*.
+ * PID 1 (init/systemd) is protected: it can never be signalled, exactly as
+ * on a real host.
+ */
+export function cmdKillall(args: string[], ctx: ProcessCmdContext): KillResult {
+  let signal: Signal = 'SIGTERM';
+  const names: string[] = [];
+  for (const a of args) {
+    if (a.startsWith('-')) {
+      const sig = parseSignalArg(a);
+      if (sig) signal = sig;
+      continue; // ignore other flags (-q -v -w -e -I …)
+    }
+    names.push(a);
+  }
+  if (names.length === 0) {
+    return { output: 'killall: usage: killall [OPTION]... [--] NAME...', exitCode: 1 };
+  }
+
+  const out: string[] = [];
+  let signalled = 0;
+  for (const name of names) {
+    const pids = ctx.pm.pidof(name);
+    if (pids.length === 0) {
+      out.push(`${name}: no process found`);
+      continue;
+    }
+    for (const pid of pids) {
+      if (pid === 1) {
+        out.push(`${name}(1): Operation not permitted`);
+        continue;
+      }
+      ctx.pm.kill(pid, signal);
+      signalled++;
+    }
+  }
+  return { output: out.join('\n'), exitCode: signalled === 0 ? 1 : 0 };
+}
+
 // ─── systemctl ────────────────────────────────────────────────────────
 
 export interface SysCtlResult {
@@ -377,8 +417,14 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
 
     case 'list-units':
     case 'list-unit-files': {
-      const showFailed = args.includes('--failed');
-      const allUnits = showFailed ? sm.list({ state: 'failed' }) : sm.list();
+      // Honour both the legacy `--failed` shortcut and `--state=<state>`.
+      const stateArg = args.find((a) => a.startsWith('--state='));
+      const stateFilter = args.includes('--failed')
+        ? 'failed'
+        : stateArg?.slice('--state='.length);
+      const allUnits = stateFilter
+        ? sm.list({ state: stateFilter as ServiceState })
+        : sm.list();
       const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
       for (const u of allUnits) {
         const active = u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive';

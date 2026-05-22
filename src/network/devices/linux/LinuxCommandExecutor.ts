@@ -24,7 +24,7 @@ import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
-import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping } from './LinuxNetCommands';
 import type { SocketTable } from '../../core/SocketTable';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
@@ -35,7 +35,7 @@ import { ServicePortProjection } from './ports/ServicePortProjection';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
@@ -1241,6 +1241,12 @@ export class LinuxCommandExecutor {
         const r = cmdPkill(args, this.processCmdContext());
         return r;
       }
+      case 'killall': {
+        const r = cmdKillall(args, this.processCmdContext());
+        return r;
+      }
+      case 'arping':
+        return { output: cmdArping(args), exitCode: 0 };
       case 'pgrep': {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
@@ -2184,11 +2190,12 @@ export class LinuxCommandExecutor {
       'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
       'runlevel', 'hostnamectl', 'timedatectl',
       'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
+      'pkill', 'pgrep', 'pidof', 'killall',
       'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
       'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
       // Networking
       'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
-      'ss', 'route', 'arp', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
+      'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
       'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat',
       'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
       // Editors

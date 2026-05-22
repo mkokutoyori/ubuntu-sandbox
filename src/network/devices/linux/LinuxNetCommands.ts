@@ -255,6 +255,35 @@ export function cmdSs(args: string[], isServer: boolean, socketTable?: SocketTab
   return lines.join('\n');
 }
 
+// ─── arping ─────────────────────────────────────────────────────────
+
+/**
+ * `arping` — probe a host at the link layer with ARP requests.
+ *
+ * The simulator has no live ARP responder on this path, so a probe to an
+ * unreachable / powered-off target faithfully reports zero responses. The
+ * `Sent N probes (N broadcast(s))` summary line matches real `arping`.
+ */
+export function cmdArping(args: string[]): string {
+  let count = 0;
+  let target = '';
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-c') { count = parseInt(args[++i], 10) || 0; continue; }
+    if (a === '-I' || a === '-i' || a === '-s' || a === '-w') { i++; continue; }
+    if (!a.startsWith('-')) target = a;
+  }
+  if (!target) {
+    return 'Usage: arping [-fqbDUAV] [-c count] [-w timeout] [-I device] destination';
+  }
+  const probes = count > 0 ? count : 1;
+  return [
+    `ARPING ${target}`,
+    `Sent ${probes} probes (${probes} broadcast(s))`,
+    `Received 0 response(s)`,
+  ].join('\n');
+}
+
 // ─── curl ───────────────────────────────────────────────────────────
 
 export function cmdCurl(args: string[]): string {
