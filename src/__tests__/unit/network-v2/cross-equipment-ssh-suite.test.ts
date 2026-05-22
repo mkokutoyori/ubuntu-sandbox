@@ -639,3 +639,89 @@ describe('§8 — Cisco / Huawei → Linux & Windows SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §9 — Command flow: alias must drive the same handler as the canonical command ──
+//
+// Core grievance: today `sudo` triggers behaviour by *name match*. After
+// `alias sudo=please`, typing `please …` should follow the exact same
+// privilege-escalation flow, not a no-op or a recursive lookup. Same on
+// Windows (Set-Alias), Cisco (alias exec), Huawei (command-privilege /
+// alias). This section is the design oracle: aliasing must rebind the
+// command name to the same flow descriptor, never duplicate behaviour
+// by string-matching the typed token.
+
+describe('§9 — Command flow respects aliases on every shell', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'bash: alias sudo=please then please whoami runs as root',
+      setup: async (l) => {
+        await l.linux1.executeCommand('su - alice');
+        await l.linux1.executeCommand("alias sudo='please'");
+        await l.linux1.executeCommand("alias please='sudo'");
+      },
+      on: l => l.linux1, cmd: 'please whoami',
+      contains: [/^root$/m],
+      excludes: [/command not found|please: not found/i],
+    },
+    {
+      name: 'bash: alias ll="ls -la" routes through the ls handler',
+      setup: (l) => { void l.linux1.executeCommand("alias ll='ls -la'"); },
+      on: l => l.linux1, cmd: 'll /etc',
+      contains: [/passwd/, /hosts/],
+    },
+    {
+      name: 'bash: shell function shadows the same name as a builtin',
+      setup: (l) => {
+        void l.linux1.executeCommand("function cd { echo CUSTOM:$1; }");
+      },
+      on: l => l.linux1, cmd: 'cd /tmp',
+      contains: [/^CUSTOM:\/tmp$/m],
+    },
+    {
+      name: 'PowerShell: Set-Alias sudo Invoke-Elevated runs the elevation flow',
+      setup: async (l) => {
+        await l.win1.executeCommand(
+          'powershell -Command "function Invoke-Elevated { whoami }; Set-Alias sudo Invoke-Elevated"',
+        );
+      },
+      on: l => l.win1,
+      cmd: 'powershell -Command "Invoke-Elevated"',
+      contains: [/User/],
+    },
+    {
+      name: 'cmd.exe: doskey macro routes to the same dir handler',
+      setup: async (l) => { await l.win1.executeCommand('doskey ll=dir /a $*'); },
+      on: l => l.win1, cmd: 'll',
+      contains: [/Directory of/i],
+    },
+    {
+      name: 'IOS: alias exec sr "show running-config" runs the show handler',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('enable');
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('alias exec sr show running-config');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.ciscoR1, cmd: 'sr | include hostname',
+      contains: [/hostname ciscoR1/i],
+    },
+    {
+      name: 'VRP: command-privilege alias dis-cur for display current-configuration',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('command-alias enable');
+        await l.hwR1.executeCommand('command-alias alias dis-cur display current-configuration');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.hwR1, cmd: 'dis-cur',
+      contains: [/interface GigabitEthernet0\/0\/0/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
