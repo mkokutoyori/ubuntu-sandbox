@@ -19,6 +19,8 @@ import { cmdAusearch, cmdAureport, cmdAuditctl } from '@/network/devices/linux/a
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { EventBus } from '@/events/EventBus';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
+import { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
+import { WindowsSecurityAudit } from '@/network/devices/windows/WindowsSecurityAudit';
 
 // ═══════════════════════════════════════════════════════════════════
 // LinuxAuditRecord / LinuxAuditLog
@@ -236,5 +238,84 @@ describe('Windows service journalisation', () => {
     const scm = events.filter((e) => e.id === 7036 && e.log === 'System');
     expect(scm.some((e) => e.message.includes('stopped'))).toBe(true);
     expect(scm.some((e) => e.message.includes('running'))).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Windows — Security event-log audit trail
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Windows Security audit trail', () => {
+  function wired() {
+    const events: Array<{ log: string; id: number; type: string; message: string }> = [];
+    const audit = new WindowsSecurityAudit({
+      writeEventLog: (log, _src, id, type, message) => {
+        events.push({ log, id, type, message });
+        return '';
+      },
+    });
+    const mgr = new WindowsUserManager();
+    mgr.currentUser = 'Administrator';
+    mgr.attachSecurityAudit(audit);
+    return { events, mgr };
+  }
+
+  it('journals event 4720 when a user account is created', () => {
+    const { events, mgr } = wired();
+    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    expect(events.some((e) => e.id === 4720 && e.log === 'Security')).toBe(true);
+  });
+
+  it('journals event 4726 when a user account is deleted', () => {
+    const { events, mgr } = wired();
+    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    mgr.deleteUser('bob');
+    expect(events.some((e) => e.id === 4726)).toBe(true);
+  });
+
+  it('journals event 4724 when a password is reset', () => {
+    const { events, mgr } = wired();
+    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    mgr.setUserProperty('bob', 'password', 'New@Pass!2024');
+    expect(events.some((e) => e.id === 4724)).toBe(true);
+  });
+
+  it('journals 4722 / 4725 on account enable and disable', () => {
+    const { events, mgr } = wired();
+    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    mgr.disableUser('bob');
+    mgr.enableUser('bob');
+    expect(events.some((e) => e.id === 4725)).toBe(true);
+    expect(events.some((e) => e.id === 4722)).toBe(true);
+  });
+
+  it('journals 4732 when a member is added to a group', () => {
+    const { events, mgr } = wired();
+    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    mgr.createGroup('Engineers');
+    mgr.addGroupMember('Engineers', 'bob');
+    expect(events.some((e) => e.id === 4731)).toBe(true);
+    expect(events.some((e) => e.id === 4732)).toBe(true);
+  });
+
+  it('journals a 4624 success / 4625 failure logon audit', () => {
+    const { events, mgr } = wired();
+    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    mgr.checkPassword('bob', 'P@ssw0rd!2024');
+    mgr.checkPassword('bob', 'wrong');
+    expect(events.some((e) => e.id === 4624 && e.type === 'SuccessAudit')).toBe(true);
+    expect(events.some((e) => e.id === 4625 && e.type === 'FailureAudit')).toBe(true);
+  });
+
+  it('surfaces audited account creation in the device Security event log', () => {
+    const events: Array<{ id: number }> = [];
+    const audit = new WindowsSecurityAudit({
+      writeEventLog: (_l, _s, id) => { events.push({ id }); return ''; },
+    });
+    const mgr = new WindowsUserManager();
+    mgr.currentUser = 'Administrator';
+    mgr.attachSecurityAudit(audit);
+    mgr.createUser('carol', 'C@rol!Pass24', { fullName: 'Carol' });
+    expect(events).toContainEqual({ id: 4720 });
   });
 });

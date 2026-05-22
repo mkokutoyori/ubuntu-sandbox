@@ -24,6 +24,7 @@ import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
+import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
@@ -167,6 +168,8 @@ export class WindowsPC extends EndHost {
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     this.userMgr = new WindowsUserManager();
+    // Journal account / group / logon operations into the Security event log.
+    this.userMgr.attachSecurityAudit(new WindowsSecurityAudit(this.eventLog));
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.initEnv();

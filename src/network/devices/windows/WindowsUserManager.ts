@@ -10,6 +10,8 @@
  *   - Built-in groups matching real Windows defaults
  */
 
+import type { WindowsSecurityAudit } from './WindowsSecurityAudit';
+
 export interface WindowsUser {
   name: string;
   fullName: string;
@@ -93,9 +95,19 @@ export class WindowsUserManager {
   private passwords: Map<string, string> = new Map();
   private nextRid = 1001;
   currentUser = 'User';
+  /** Security event-log audit trail — null until the device wires it. */
+  private audit: WindowsSecurityAudit | null = null;
 
   constructor() {
     this.initDefaults();
+  }
+
+  /**
+   * Wire the Security event-log audit trail so account, group and logon
+   * operations are journaled with the faithful Windows Event IDs.
+   */
+  attachSecurityAudit(audit: WindowsSecurityAudit): void {
+    this.audit = audit;
   }
 
   private initDefaults(): void {
@@ -243,6 +255,7 @@ export class WindowsUserManager {
     if (!opts.noPassword) {
       this.passwords.set(name.toLowerCase(), password);
     }
+    this.audit?.accountCreated(name);
     return '';
   }
 
@@ -265,6 +278,7 @@ export class WindowsUserManager {
     }
     this.users.delete(name.toLowerCase());
     this.passwords.delete(name.toLowerCase());
+    this.audit?.accountDeleted(user.name);
     return '';
   }
 
@@ -276,18 +290,25 @@ export class WindowsUserManager {
     switch (property.toLowerCase()) {
       case 'fullname':
         user.fullName = value;
+        this.audit?.accountChanged(user.name);
         break;
       case 'description':
       case 'comment':
         user.description = value;
+        this.audit?.accountChanged(user.name);
         break;
       case 'password':
         this.passwords.set(name.toLowerCase(), value);
         user.passwordLastSet = new Date();
+        this.audit?.passwordReset(user.name);
         break;
-      case 'active':
-        user.enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+      case 'active': {
+        const enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+        user.enabled = enabled;
+        if (enabled) this.audit?.accountEnabled(user.name);
+        else this.audit?.accountDisabled(user.name);
         break;
+      }
       default:
         return `Invalid property: ${property}`;
     }
@@ -299,6 +320,7 @@ export class WindowsUserManager {
     const user = this.users.get(name.toLowerCase());
     if (!user) return `User '${name}' was not found.`;
     user.enabled = true;
+    this.audit?.accountEnabled(user.name);
     return '';
   }
 
@@ -307,11 +329,19 @@ export class WindowsUserManager {
     const user = this.users.get(name.toLowerCase());
     if (!user) return `User '${name}' was not found.`;
     user.enabled = false;
+    this.audit?.accountDisabled(user.name);
     return '';
   }
 
+  /**
+   * Verify a password. Journals a 4624 (success) or 4625 (failure) Security
+   * event — the Windows logon audit trail.
+   */
   checkPassword(name: string, password: string): boolean {
-    return this.passwords.get(name.toLowerCase()) === password;
+    const ok = this.passwords.get(name.toLowerCase()) === password;
+    if (ok) this.audit?.logonSuccess(name);
+    else this.audit?.logonFailure(name);
+    return ok;
   }
 
   // ─── Group Operations ───────────────────────────────────────────
@@ -323,6 +353,7 @@ export class WindowsUserManager {
     }
     const sid = `S-1-5-32-${1000 + this.nextRid++}`;
     this.addGroup({ name, description, sid, members: [], builtIn: false });
+    this.audit?.groupCreated(name);
     return '';
   }
 
@@ -332,6 +363,7 @@ export class WindowsUserManager {
     if (!group) return `The specified group could not be found.`;
     if (group.builtIn) return `Cannot delete built-in group '${group.name}'.`;
     this.groups.delete(name.toLowerCase());
+    this.audit?.groupDeleted(group.name);
     return '';
   }
 
@@ -345,6 +377,7 @@ export class WindowsUserManager {
       return `The specified account name is already a member of the group.`;
     }
     group.members.push(user.name);
+    this.audit?.groupMemberAdded(group.name, user.name);
     return '';
   }
 
@@ -354,7 +387,9 @@ export class WindowsUserManager {
     if (!group) return `Group '${groupName}' was not found.`;
     const idx = group.members.findIndex(m => m.toLowerCase() === memberName.toLowerCase());
     if (idx === -1) return `The specified member was not found.`;
+    const removed = group.members[idx];
     group.members.splice(idx, 1);
+    this.audit?.groupMemberRemoved(group.name, removed);
     return '';
   }
 
