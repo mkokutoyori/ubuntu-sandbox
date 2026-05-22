@@ -1754,3 +1754,59 @@ describe('§25 — Root/Administrator login policy', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §26 — SSH idle timeout / keepalive ─────────────────────────────
+
+describe('§26 — Idle timeout & keepalive across platforms', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: ClientAliveInterval is reflected in sshd_config',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?ClientAliveInterval.*/ClientAliveInterval 30/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux2, cmd: 'grep ^ClientAliveInterval /etc/ssh/sshd_config',
+      contains: [/ClientAliveInterval 30/],
+    },
+    {
+      name: 'Cisco: exec-timeout on VTY is persisted',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('exec-timeout 5 0');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show running-config | include exec-timeout"',
+      contains: [/exec-timeout 5 0/i],
+    },
+    {
+      name: 'Huawei: idle-timeout on user-interface is persisted',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('idle-timeout 5 0');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display current-configuration | include idle-timeout"',
+      contains: [/idle-timeout 5 0/i],
+    },
+    {
+      name: 'Linux client: ServerAliveInterval flag is accepted without error',
+      on: l => l.linux1,
+      cmd: 'ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m], excludes: [/Bad configuration option|unknown option/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
