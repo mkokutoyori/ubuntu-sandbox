@@ -319,3 +319,44 @@ describe('§3 — Linux → Windows SSH', () => {
     assertOutput(out, { contains: [/Permission denied|Authentication failed/i] });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// §4 — Windows → Linux SSH
+// ════════════════════════════════════════════════════════════════════
+//
+// Symmetric counterpart of §3: a Windows operator drives the OpenSSH
+// client (ssh.exe) from cmd.exe or PowerShell against a Linux peer.
+
+describe('§4 — Windows → Linux SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  test('ssh user@linux1 hostname returns linux1', async () => {
+    const out = await lan.win1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux1} hostname`,
+    );
+    assertOutput(out, { contains: ['linux1'] });
+  });
+
+  test('uname -a from Windows reflects the Linux kernel banner', async () => {
+    const out = await lan.win1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux1} uname -a`,
+    );
+    assertOutput(out, { contains: [/Linux/] });
+  });
+
+  test('PowerShell pipeline can capture remote stdout into a variable', async () => {
+    const out = await lan.win1.executeCommand(
+      `powershell -Command "$h = ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux1} hostname; $h"`,
+    );
+    assertOutput(out, { contains: ['linux1'] });
+  });
+
+  test('Windows ssh client surfaces a connection refused when sshd is down', async () => {
+    await lan.linux1.executeCommand('sudo systemctl stop ssh');
+    const out = await lan.win1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=2 user@${IPS.linux1} whoami`,
+    );
+    assertOutput(out, { contains: [/Connection refused|Could not connect/i] });
+  });
+});
