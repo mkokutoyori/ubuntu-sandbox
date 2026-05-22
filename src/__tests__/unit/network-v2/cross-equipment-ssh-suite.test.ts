@@ -302,3 +302,48 @@ describe('§2 — Linux → Linux SSH happy path', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §3 — Linux → Windows SSH ───────────────────────────────────────
+//
+// A Linux operator manages Windows hosts via OpenSSH for Windows. The
+// remote shell may be cmd.exe (default) or PowerShell — both must be
+// reachable through the SSH channel without leaking to bash.
+
+describe('§3 — Linux → Windows SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh User@win1 hostname returns the Windows machine name',
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'ver shows the Microsoft Windows version banner',
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4 ver',
+      contains: [/Microsoft Windows|Version/i],
+    },
+    {
+      name: 'PowerShell can be invoked as remote shell',
+      on: l => l.linux1,
+      cmd: 'ssh User@10.0.0.4 powershell -Command "Get-Host | Select-Object -ExpandProperty Name"',
+      contains: [/ConsoleHost|PowerShell/i],
+    },
+    {
+      name: 'whoami over SSH includes the Windows User form',
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4 whoami',
+      contains: [/User/],
+    },
+    {
+      name: 'wrong Windows password is rejected by sshd',
+      on: l => l.linux1, cmd: 'sshpass -p Wrong! ssh User@10.0.0.4 hostname',
+      contains: [/Permission denied|Authentication failed/i],
+      excludes: [/^win1$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
