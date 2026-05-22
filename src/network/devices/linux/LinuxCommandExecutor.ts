@@ -393,12 +393,23 @@ export class LinuxCommandExecutor {
     return { output: summary, exitCode: 0 };
   }
 
+  /**
+   * Home directory backing this host's SSH per-user state (~/.ssh).
+   * Interactive sessions on a simulated host run in root's environment —
+   * the executor's shell starts in /root — so SSH config, known_hosts and
+   * identities are rooted at /root/.ssh, the same base ssh-keygen defaults
+   * to and the location the whole SSH toolchain reads and writes.
+   */
+  private sshHomeDir(): string {
+    return this.userMgr.getUser('root')?.home ?? '/root';
+  }
+
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
   private buildSshClientOpts(args: string[]) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
-    const home = user === 'root' ? '/root' : `/home/${user}`;
+    const home = this.sshHomeDir();
     return {
       args,
       sourceHostname: hostname,
@@ -440,8 +451,7 @@ export class LinuxCommandExecutor {
    */
   private runSshKeygen(args: string[]): { output: string; exitCode: number } {
     if (args[0] === '-R' && args[1]) {
-      const home = this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`;
-      const path = `${home}/.ssh/known_hosts`;
+      const path = `${this.sshHomeDir()}/.ssh/known_hosts`;
       const existing = this.vfs.readFile(path) ?? '';
       const before = SshKnownHostEntry.parseFile(existing);
       const after = before.filter(e => !e.matches(args[1]));
@@ -464,7 +474,7 @@ export class LinuxCommandExecutor {
     // and returned "command not found". Provide a minimal compatible
     // implementation that creates a file pair under -f and -N.
     const fIdx = args.indexOf('-f');
-    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.userMgr.currentUser === 'root' ? '/root' : `/home/${this.userMgr.currentUser}`}/.ssh/id_ed25519`;
+    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/id_ed25519`;
     if (args.includes('-y')) {
       // Read the private key, output its public form (stub).
       return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
@@ -500,19 +510,14 @@ export class LinuxCommandExecutor {
     }
 
     // Resolve the public key to install (honour -i, else the default set).
-    // The current user's ~/.ssh is searched first; /root/.ssh is also
-    // probed since key material is conventionally generated as root.
-    const home = this.userMgr.currentUser === 'root'
-      ? '/root'
-      : `/home/${this.userMgr.currentUser}`;
-    const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
+    const home = this.sshHomeDir();
     const pubCandidates = identity
       ? [identity.endsWith('.pub') ? identity : `${identity}.pub`]
-      : keyHomes.flatMap((h) => [
-          `${h}/.ssh/id_ed25519.pub`,
-          `${h}/.ssh/id_rsa.pub`,
-          `${h}/.ssh/id_ecdsa.pub`,
-        ]);
+      : [
+          `${home}/.ssh/id_ed25519.pub`,
+          `${home}/.ssh/id_rsa.pub`,
+          `${home}/.ssh/id_ecdsa.pub`,
+        ];
     let pubKey: string | null = null;
     let pubSource = pubCandidates[0];
     for (const c of pubCandidates) {
