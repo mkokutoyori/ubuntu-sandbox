@@ -327,6 +327,100 @@ export abstract class LinuxMachine extends EndHost {
     }
   }
 
+  isSshActive(): boolean { return this.isServiceActive('ssh'); }
+
+  sshBanner(): string {
+    const issue = this.executor.vfs.readFile('/etc/issue.net') ?? '';
+    return issue.replace(/\n*$/, '') || `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`;
+  }
+
+  async runSshCommand(
+    user: string,
+    command: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const result = this.runSshCommandSync(user, command);
+    return result ?? { output: '', exitCode: 0 };
+  }
+
+
+  getSshHostname(): string { return this.hostname; }
+
+  getSshBanner(): string {
+    return this.executor.vfs.readFile('/etc/issue.net') ?? '';
+  }
+
+  getSshMotd(): string {
+    return this.executor.vfs.readFile('/etc/motd') ?? '';
+  }
+
+  getSshPolicy(): {
+    readonly active: boolean;
+    readonly ports: readonly number[];
+    readonly permitRootLogin: boolean;
+    readonly passwordAuthentication: boolean;
+    readonly pubkeyAuthentication: boolean;
+    readonly maxAuthTries: number;
+    readonly permitEmptyPasswords: boolean;
+  } {
+    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const directive = (n: string): string | null => {
+      const m = new RegExp(`^\\s*${n}\\s+(\\S+)`, 'im').exec(raw);
+      return m ? m[1].toLowerCase() : null;
+    };
+    const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
+      .map(m => Number(m[1]))
+      .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+    return Object.freeze({
+      active: this.isSshActive(),
+      ports: ports.length ? Object.freeze(ports) : Object.freeze([22]),
+      permitRootLogin: directive('PermitRootLogin') !== 'no',
+      passwordAuthentication: directive('PasswordAuthentication') !== 'no',
+      pubkeyAuthentication: directive('PubkeyAuthentication') !== 'no',
+      maxAuthTries: Number(directive('MaxAuthTries') ?? 6),
+      permitEmptyPasswords: directive('PermitEmptyPasswords') === 'yes',
+    });
+  }
+
+  getSshHostKey(): {
+    readonly type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+    readonly fingerprintSha256: string;
+    readonly publicKey: string;
+  } {
+    return Object.freeze({
+      type: 'ssh-ed25519' as const,
+      fingerprintSha256: `SHA256:linux-${this.id}`,
+      publicKey: `ssh-ed25519 AAAA-linux-${this.id}`,
+    });
+  }
+
+  runSshCommandSync(
+    user: string,
+    command: string,
+  ): { output: string; exitCode: number } | null {
+    const um = this.executor.userMgr;
+    const previousUser = um.currentUser;
+    const previousUid = um.currentUid;
+    const previousGid = um.currentGid;
+    const previousCwd = this.executor.cwd;
+    const userEntry = um.getUser(user);
+    if (userEntry) {
+      um.currentUser = user;
+      um.currentUid = userEntry.uid;
+      um.currentGid = userEntry.gid;
+      this.executor.cwd = userEntry.home ?? `/home/${user}`;
+    }
+    try {
+      const output = this.executor.execute(command);
+      const normalised = output && !output.endsWith('\n') ? `${output}\n` : output;
+      return { output: normalised, exitCode: this.executor.lastExitCode ?? 0 };
+    } finally {
+      um.currentUser = previousUser;
+      um.currentUid = previousUid;
+      um.currentGid = previousGid;
+      this.executor.cwd = previousCwd;
+    }
+  }
+
   /** Per-machine SSH session table — backs `w`, `who`, `last`. */
   public readonly sessionTable = (() => {
     const t = new SshSessionTable();
