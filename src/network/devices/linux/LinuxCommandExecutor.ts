@@ -32,6 +32,8 @@ import { AuditTrailProjection } from './audit/AuditTrailProjection';
 import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { ServicePortProjection } from './ports/ServicePortProjection';
+import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
+import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
@@ -96,6 +98,10 @@ export class LinuxCommandExecutor {
   readonly auditLog: LinuxAuditLog;
   /** Reactive bridge feeding security events into the audit trail. */
   private auditTrail: AuditTrailProjection | null = null;
+  /** Reactive bridge writing systemd unit lifecycle lines to the journal. */
+  private serviceJournal: LinuxServiceJournalProjection | null = null;
+  /** `at` deferred-job spool, drained by the `atd` daemon. */
+  private readonly atQueue: LinuxAtQueue = new LinuxAtQueue();
   readonly processMgr: LinuxProcessManager;
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
@@ -301,6 +307,9 @@ export class LinuxCommandExecutor {
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
     // The syslog daemon's lifecycle drives /var/log/* file coherence.
     this.logMgr.attachBus(bus);
+    // Record systemd "Started/Stopped <unit>" lines in the journal.
+    this.serviceJournal?.dispose();
+    this.serviceJournal = new LinuxServiceJournalProjection(bus, this.logMgr, deviceId);
     // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
@@ -1100,6 +1109,13 @@ export class LinuxCommandExecutor {
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
       case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
+      case 'at': {
+        const atdActive = this.serviceMgr.status('atd')?.state === 'active';
+        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive);
+        return { output: out, exitCode: atdActive ? 0 : 1 };
+      }
+      case 'atq': return { output: cmdAtq(this.atQueue), exitCode: 0 };
+      case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
       case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
       case 'auditctl': return { output: cmdAuditctl(this.auditLog, args), exitCode: 0 };
@@ -2187,7 +2203,7 @@ export class LinuxCommandExecutor {
       // Lookup
       'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
       // System / processes / time
-      'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+      'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
       'runlevel', 'hostnamectl', 'timedatectl',
       'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
       'pkill', 'pgrep', 'pidof', 'killall',

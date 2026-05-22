@@ -200,6 +200,23 @@ export class LinuxLogManager {
     });
   }
 
+  /**
+   * Append a systemd-facility record attributed to a specific unit — used by
+   * the service-journal projection so `journalctl -u <unit>` shows the
+   * "Started / Stopped …" lines systemd writes on every state change.
+   */
+  logSystemd(unit: string, message: string): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.daemon,
+      unit,
+      tag: 'systemd',
+      message,
+      pid: 1,
+      hostname: this.hostname,
+    });
+  }
+
   // ── journalctl command ─────────────────────────────────────────
   executeJournalctl(args: string[]): string {
     // Handle management commands first

@@ -139,6 +139,15 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'atd',
+    description: 'Deferred execution scheduler',
+    type: 'forking',
+    execStart: '/usr/sbin/atd -f',
+    after: ['network.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
     name: 'systemd-resolved',
     description: 'Network Name Resolution',
     type: 'notify',
