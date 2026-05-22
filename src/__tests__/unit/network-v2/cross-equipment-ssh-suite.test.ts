@@ -360,3 +360,65 @@ describe('§4 — Windows → Linux SSH', () => {
     assertOutput(out, { contains: [/Connection refused|Could not connect/i] });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// §5 — Linux → Cisco IOS SSH (router & switch)
+// ════════════════════════════════════════════════════════════════════
+//
+// A Linux operator must be able to SSH into a Cisco IOS device. The
+// remote prompt belongs to CiscoIOSShell — the SSH server on the
+// device delegates the channel to the VTY/CLI state machine, not to
+// a bash shell.
+
+describe('§5 — Linux → Cisco IOS SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    // Enable VTY ssh with a local account on both Cisco devices.
+    for (const dev of [lan.ciscoR1, lan.ciscoS1]) {
+      await dev.executeCommand('enable');
+      await dev.executeCommand('configure terminal');
+      await dev.executeCommand('username admin privilege 15 secret Admin@123');
+      await dev.executeCommand('enable secret Admin@123');
+      await dev.executeCommand('ip domain-name lab.local');
+      await dev.executeCommand('crypto key generate rsa modulus 2048');
+      await dev.executeCommand('line vty 0 4');
+      await dev.executeCommand('login local');
+      await dev.executeCommand('transport input ssh');
+      await dev.executeCommand('exit');
+      await dev.executeCommand('end');
+    }
+  });
+
+  test('remote prompt on Cisco router is the IOS user-exec banner', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.ciscoR1} "show version"`,
+    );
+    assertOutput(out, { contains: [/IOS|Cisco/i] });
+  });
+
+  test('remote prompt on Cisco switch shows port hardware info', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.ciscoS1} "show interfaces status"`,
+    );
+    assertOutput(out, { contains: [/Port\s+Name|connected|notconnect/i] });
+  });
+
+  test('show running-config requires enable then prints VTY config', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.ciscoR1} "enable\\nshow running-config"`,
+    );
+    assertOutput(out, { contains: [/line vty 0 4/, /transport input ssh/] });
+  });
+
+  test('transport input none refuses SSH on the VTY', async () => {
+    await lan.ciscoR1.executeCommand('configure terminal');
+    await lan.ciscoR1.executeCommand('line vty 0 4');
+    await lan.ciscoR1.executeCommand('transport input none');
+    await lan.ciscoR1.executeCommand('end');
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=2 admin@${IPS.ciscoR1} "show version"`,
+    );
+    assertOutput(out, { contains: [/Connection (closed|refused)|denied/i] });
+  });
+});
