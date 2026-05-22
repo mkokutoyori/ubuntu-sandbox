@@ -27,6 +27,7 @@ import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
+import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
@@ -129,6 +130,8 @@ export class WindowsPC extends EndHost {
   private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
   /** Reactive consumer: service lifecycle events → System event log. */
   private eventLogProjection: WindowsEventLogProjection | null = null;
+  /** Reactive consumer: service lifecycle events → socket-table ports. */
+  private servicePortProjection: WindowsServicePortProjection | null = null;
   /** Service manager (service lifecycle, dependencies) */
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
@@ -196,6 +199,7 @@ export class WindowsPC extends EndHost {
       bus, new WindowsSecurityAudit(this.eventLog), this.id,
     );
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
+    this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
   }
 
   private initDefaultSockets(): void {
@@ -207,11 +211,6 @@ export class WindowsPC extends EndHost {
     this.socketTable.bind('tcp', '0.0.0.0', 445, 4, 'System');
     // NetBIOS Session Service (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
-
-    // Keep the socket table coherent with the service controller: stopping
-    // a service via `sc`/`net stop` now releases its ports, starting it
-    // rebinds them.
-    this.svcMgr.attachSocketTable(this.socketTable);
 
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.

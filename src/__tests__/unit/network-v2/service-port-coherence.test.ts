@@ -23,6 +23,7 @@ import { PortActivityLogProjection } from '@/network/devices/linux/ports/PortAct
 import type { ServicePortSource } from '@/network/devices/linux/ports/ServicePortProjection';
 import type { ServicePortBinding } from '@/network/devices/linux/LinuxServiceManager';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
+import { WindowsServicePortProjection } from '@/network/devices/windows/WindowsServicePortProjection';
 import type { DomainEvent } from '@/events/types';
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -207,11 +208,14 @@ describe('Linux end-to-end port coherence', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Windows port coherence', () => {
-  it('releases a service port on stop and rebinds it on start', () => {
+  it('releases a service port on stop and rebinds it on start, reactively', () => {
     const mgr = new WindowsServiceManager();
     const table = new SocketTable();
     table.bind('tcp', '0.0.0.0', 445, 4, 'System');
-    mgr.attachSocketTable(table);
+    const bus = new EventBus();
+    mgr.attachBus(bus, 'win-1');
+    // The reactive consumer keeps the socket table coherent with sc/net.
+    new WindowsServicePortProjection(bus, 'win-1', table);
 
     expect(mgr.stopService('LanmanServer', true)).toBe('');
     expect(table.isPortBound(445, 'tcp')).toBe(false);

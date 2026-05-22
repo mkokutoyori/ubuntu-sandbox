@@ -12,7 +12,6 @@
  *   - Service creation/deletion with protection on built-in services
  */
 
-import type { SocketTable } from '../../core/SocketTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -113,8 +112,6 @@ const START_TYPE_NAMES: Record<ServiceStartType, string> = {
 
 export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
-  /** Socket table kept coherent with service start/stop, when wired. */
-  private socketTable: SocketTable | null = null;
   /** Reactive sink — null until the device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
@@ -125,8 +122,8 @@ export class WindowsServiceManager {
 
   /**
    * Attach the device event bus so service lifecycle changes are published.
-   * Reactive consumers (the System event-log projection, a future port
-   * projection) subscribe and keep their derived views coherent.
+   * Reactive consumers — the System event-log projection and the socket-table
+   * port projection — subscribe and keep their derived views coherent.
    */
   attachBus(bus: IEventBus, deviceId: string): void {
     this.bus = bus;
@@ -144,39 +141,6 @@ export class WindowsServiceManager {
         running,
       },
     });
-  }
-
-  /**
-   * Wire the device socket table so a service's listening ports follow its
-   * lifecycle — bound on start, released on stop. Already-running services
-   * are reconciled immediately.
-   */
-  attachSocketTable(table: SocketTable): void {
-    this.socketTable = table;
-    for (const svc of this.services.values()) {
-      if (svc.state === 'Running') this.bindServiceSockets(svc.name);
-    }
-  }
-
-  /** Bind every listening socket a running service owns. */
-  private bindServiceSockets(name: string): void {
-    const spec = WINDOWS_SERVICE_LISTENERS[name.toLowerCase()];
-    if (!spec || !this.socketTable) return;
-    for (const s of spec.sockets) {
-      if (this.socketTable.isPortBound(s.port, s.protocol)) continue;
-      try {
-        this.socketTable.bind(s.protocol, s.address ?? '0.0.0.0', s.port, spec.pid, spec.processName);
-      } catch { /* already bound — keep the existing entry */ }
-    }
-  }
-
-  /** Release every listening socket a stopped service owned. */
-  private releaseServiceSockets(name: string): void {
-    const spec = WINDOWS_SERVICE_LISTENERS[name.toLowerCase()];
-    if (!spec || !this.socketTable) return;
-    for (const s of spec.sockets) {
-      this.socketTable.unbind(s.protocol, s.address ?? '0.0.0.0', s.port);
-    }
   }
 
   private initDefaults(): void {
@@ -327,7 +291,6 @@ export class WindowsServiceManager {
     if (svc.state === 'Running') return `An instance of the service is already running.`;
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
     svc.state = 'Running';
-    this.bindServiceSockets(svc.name);
     this.publishServiceState(svc, true);
     return '';
   }
@@ -347,7 +310,6 @@ export class WindowsServiceManager {
     }
 
     svc.state = 'Stopped';
-    this.releaseServiceSockets(svc.name);
     this.publishServiceState(svc, false);
     return '';
   }
