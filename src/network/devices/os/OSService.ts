@@ -11,6 +11,8 @@
  * show output, sc config flags).
  */
 
+import type { PortSpec } from '../../core/ports/PortNumber';
+
 export type ServiceState = 'inactive' | 'activating' | 'active' | 'deactivating' | 'failed';
 export type EnabledState = 'enabled' | 'disabled' | 'static' | 'masked' | 'alias' | 'indirect';
 export type StartType = 'automatic' | 'manual' | 'disabled' | 'delayed-auto' | 'triggered';
@@ -58,6 +60,12 @@ export interface OSServiceInit {
   configFiles?: string[];
   logFiles?: string[];
   listenPorts?: number[];
+  /**
+   * Protocol-qualified listening endpoints the daemon opens once active.
+   * Drives the reactive socket-table coherence: bound on start, released
+   * on stop. Richer than {@link listenPorts} (which is TCP-only, legacy).
+   */
+  listenSockets?: PortSpec[];
   environment?: Record<string, string>;
   environmentFiles?: string[];
   workingDirectory?: string;
@@ -126,6 +134,8 @@ export class OSService {
   configFiles: string[];
   logFiles: string[];
   listenPorts: number[];
+  /** Protocol-qualified listening endpoints (see {@link OSServiceInit}). */
+  listenSockets: PortSpec[];
   workingDirectory: string;
 
   // ─── env ───────────────────────────────────────────────────────────
@@ -200,6 +210,7 @@ export class OSService {
     this.configFiles = init.configFiles ?? [];
     this.logFiles = init.logFiles ?? [];
     this.listenPorts = init.listenPorts ?? [];
+    this.listenSockets = init.listenSockets ?? [];
     this.environment = init.environment ?? {};
     this.environmentFiles = init.environmentFiles ?? [];
     this.workingDirectory = init.workingDirectory ?? '/';

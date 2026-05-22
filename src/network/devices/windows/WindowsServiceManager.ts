@@ -12,6 +12,9 @@
  *   - Service creation/deletion with protection on built-in services
  */
 
+import type { SocketTable } from '../../core/SocketTable';
+import type { PortSpec } from '../../core/ports/PortNumber';
+
 export type ServiceState =
   | 'Running' | 'Stopped' | 'Paused'
   | 'StartPending' | 'StopPending'
@@ -41,6 +44,38 @@ export interface WindowsService {
   /** Critical OS services that cannot be stopped */
   critical?: boolean;
 }
+
+/**
+ * The listening sockets a Windows service opens once running. Drives the
+ * socket-table coherence: `sc start`/`net start` binds them, `sc stop`
+ * releases them — exactly as the service controller does on real Windows.
+ */
+export interface WindowsServiceListenerSpec {
+  /** Process the kernel attributes the socket to (`netstat -b`/`-o`). */
+  processName: string;
+  /** PID shown by `netstat -o`. */
+  pid: number;
+  sockets: PortSpec[];
+}
+
+/** Default Windows service → listening-port mapping (keyed lower-case). */
+export const WINDOWS_SERVICE_LISTENERS: Readonly<Record<string, WindowsServiceListenerSpec>> = {
+  lanmanserver: {
+    processName: 'System',
+    pid: 4,
+    sockets: [{ port: 445, protocol: 'tcp' }, { port: 139, protocol: 'tcp' }],
+  },
+  termservice: {
+    processName: 'svchost.exe',
+    pid: 1096,
+    sockets: [{ port: 3389, protocol: 'tcp' }],
+  },
+  sshd: {
+    processName: 'sshd.exe',
+    pid: 1088,
+    sockets: [{ port: 22, protocol: 'tcp' }],
+  },
+};
 
 /** State codes for sc query output */
 const STATE_CODES: Record<ServiceState, number> = {
@@ -77,9 +112,44 @@ const START_TYPE_NAMES: Record<ServiceStartType, string> = {
 
 export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
+  /** Socket table kept coherent with service start/stop, when wired. */
+  private socketTable: SocketTable | null = null;
 
   constructor() {
     this.initDefaults();
+  }
+
+  /**
+   * Wire the device socket table so a service's listening ports follow its
+   * lifecycle — bound on start, released on stop. Already-running services
+   * are reconciled immediately.
+   */
+  attachSocketTable(table: SocketTable): void {
+    this.socketTable = table;
+    for (const svc of this.services.values()) {
+      if (svc.state === 'Running') this.bindServiceSockets(svc.name);
+    }
+  }
+
+  /** Bind every listening socket a running service owns. */
+  private bindServiceSockets(name: string): void {
+    const spec = WINDOWS_SERVICE_LISTENERS[name.toLowerCase()];
+    if (!spec || !this.socketTable) return;
+    for (const s of spec.sockets) {
+      if (this.socketTable.isPortBound(s.port, s.protocol)) continue;
+      try {
+        this.socketTable.bind(s.protocol, s.address ?? '0.0.0.0', s.port, spec.pid, spec.processName);
+      } catch { /* already bound — keep the existing entry */ }
+    }
+  }
+
+  /** Release every listening socket a stopped service owned. */
+  private releaseServiceSockets(name: string): void {
+    const spec = WINDOWS_SERVICE_LISTENERS[name.toLowerCase()];
+    if (!spec || !this.socketTable) return;
+    for (const s of spec.sockets) {
+      this.socketTable.unbind(s.protocol, s.address ?? '0.0.0.0', s.port);
+    }
   }
 
   private initDefaults(): void {
@@ -230,6 +300,7 @@ export class WindowsServiceManager {
     if (svc.state === 'Running') return `An instance of the service is already running.`;
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
     svc.state = 'Running';
+    this.bindServiceSockets(svc.name);
     return '';
   }
 
@@ -248,6 +319,7 @@ export class WindowsServiceManager {
     }
 
     svc.state = 'Stopped';
+    this.releaseServiceSockets(svc.name);
     return '';
   }
 

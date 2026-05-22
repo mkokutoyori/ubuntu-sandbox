@@ -152,6 +152,23 @@ export class LinuxLogManager {
     });
   }
 
+  /**
+   * Append a daemon-facility record — used by the port subsystem to log a
+   * socket bind / release the way systemd-journald notes a daemon opening
+   * or closing its listening port.
+   */
+  logDaemon(tag: string, message: string): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.daemon,
+      unit: tag,
+      tag,
+      message,
+      pid: this.nextPid++,
+      hostname: this.hostname,
+    });
+  }
+
   // ── journalctl command ─────────────────────────────────────────
   executeJournalctl(args: string[]): string {
     // Handle management commands first

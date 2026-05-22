@@ -16,6 +16,7 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxService } from './service/LinuxService';
+import type { PortSpec } from '../../core/ports/PortNumber';
 
 /** systemd-equivalent activation state for a unit. */
 export type ServiceState =
@@ -244,6 +245,52 @@ const SERVER_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
 ];
+
+/**
+ * The listening sockets a daemon opens once active — the well-known
+ * daemon→port mapping a real host carries. `processName` is the argv[0]
+ * basename `netstat -p` / `ss -p` shows (it differs from the unit name for
+ * several daemons, e.g. the `mysql` unit runs `mysqld`).
+ */
+export interface ServiceListenerSpec {
+  processName: string;
+  sockets: PortSpec[];
+}
+
+/**
+ * Default daemon→listener mapping. The reactive {@link ServicePortProjection}
+ * consults this so a `systemctl start <unit>` genuinely opens the port and
+ * `systemctl stop` closes it — port/service/process coherence.
+ */
+export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = {
+  ssh: { processName: 'sshd', sockets: [{ port: 22, protocol: 'tcp' }] },
+  'systemd-resolved': {
+    processName: 'systemd-resolved',
+    sockets: [
+      { port: 53, protocol: 'udp', address: '127.0.0.53' },
+      { port: 53, protocol: 'tcp', address: '127.0.0.53' },
+    ],
+  },
+  apache2: {
+    processName: 'apache2',
+    sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],
+  },
+  nginx: {
+    processName: 'nginx',
+    sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],
+  },
+  mysql: { processName: 'mysqld', sockets: [{ port: 3306, protocol: 'tcp' }] },
+  postgresql: { processName: 'postgres', sockets: [{ port: 5432, protocol: 'tcp' }] },
+  'oracle-ohasd': { processName: 'tnslsnr', sockets: [{ port: 1521, protocol: 'tcp' }] },
+};
+
+/** A service plus the runtime data the port projection needs to bind it. */
+export interface ServicePortBinding {
+  name: string;
+  mainPid?: number;
+  processName: string;
+  sockets: PortSpec[];
+}
 
 export type ServiceLifecycleEvent = 'start' | 'stop' | 'restart' | 'reload';
 export type ServiceLifecycleListener = (
@@ -531,6 +578,9 @@ export class LinuxServiceManager {
         mainPid: previous?.mainPid,
         activeSince: previous?.activeSince,
       });
+      // Stamp the daemon's well-known listening sockets onto the unit so the
+      // model carries them and the port projection can keep them coherent.
+      unit.listenSockets = (SERVICE_LISTENERS[name]?.sockets ?? []).map((s) => ({ ...s }));
       this.units.set(name, unit);
     }
 
@@ -542,6 +592,36 @@ export class LinuxServiceManager {
         this.units.delete(name);
       }
     }
+  }
+
+  // ─── Port projection support ──────────────────────────────────────
+
+  /**
+   * The listening-port binding for a single unit — its main PID, the
+   * `netstat`-visible process name, and the sockets it opens. Returns
+   * `undefined` when the unit is unknown or opens no ports.
+   */
+  getPortBinding(name: string): ServicePortBinding | undefined {
+    const unit = this.units.get(name);
+    const listener = SERVICE_LISTENERS[name];
+    if (!unit || !listener || listener.sockets.length === 0) return undefined;
+    return {
+      name,
+      mainPid: unit.mainPid,
+      processName: listener.processName,
+      sockets: listener.sockets.map((s) => ({ ...s })),
+    };
+  }
+
+  /** Port bindings for every unit currently `active` that opens a port. */
+  activePortBindings(): ServicePortBinding[] {
+    const out: ServicePortBinding[] = [];
+    for (const unit of this.units.values()) {
+      if (unit.state !== 'active') continue;
+      const binding = this.getPortBinding(unit.name);
+      if (binding) out.push(binding);
+    }
+    return out;
   }
 
   // ─── Private helpers ──────────────────────────────────────────────

@@ -128,11 +128,13 @@ export abstract class LinuxMachine extends EndHost {
     this.executor = new LinuxCommandExecutor(
       profile.isServer, this.hardware, this.lifecycle, this.identity,
     );
+    // Wire the socket table before the event bus: the reactive
+    // ServicePortProjection created in attachEventBus needs the table.
+    this.initDefaultSockets(profile.isServer);
+    this.executor.setSocketTable(this.socketTable);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
-    this.initDefaultSockets(profile.isServer);
-    this.executor.setSocketTable(this.socketTable);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();

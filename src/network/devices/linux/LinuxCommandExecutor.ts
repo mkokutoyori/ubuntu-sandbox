@@ -26,6 +26,10 @@ import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
 import type { SocketTable } from '../../core/SocketTable';
+import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+import { PortsFilesystem } from './ports/PortsFilesystem';
+import { ServicePortProjection } from './ports/ServicePortProjection';
+import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
@@ -89,6 +93,12 @@ export class LinuxCommandExecutor {
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
+  /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
+  private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
+  /** Reactive socket-table coherence for service-owned listening ports. */
+  private servicePortProjection: ServicePortProjection | null = null;
+  /** Records port bind / release activity into the system log, reactively. */
+  private portActivityLog: PortActivityLogProjection | null = null;
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
@@ -288,6 +298,18 @@ export class LinuxCommandExecutor {
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
     this.iamPolicyFiles?.dispose();
     this.iamPolicyFiles = new IamPolicyFilesProjection(bus, this.userMgr, deviceId);
+    // Keep the socket table coherent with the service layer: a service's
+    // listening ports are bound on start and released on stop.
+    this.servicePortProjection?.dispose();
+    this.portActivityLog?.dispose();
+    if (this.socketTable) {
+      // Log port activity *before* the port projection runs its initial
+      // reconcile, so boot-time binds are recorded too.
+      this.portActivityLog = new PortActivityLogProjection(bus, this.logMgr, deviceId);
+      this.servicePortProjection = new ServicePortProjection(
+        bus, deviceId, this.socketTable, this.serviceMgr,
+      );
+    }
     // Keep the /etc identity files coherent when the identity model changes.
     this.identityFilesUnsub?.();
     this.identityFilesUnsub = bus.subscribe(
@@ -450,6 +472,12 @@ export class LinuxCommandExecutor {
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
+    // Now that the socket table exists, keep the port subsystem coherent on
+    // disk: seed /etc/services and expose /proc/net/{tcp,udp} as generated
+    // files that always reflect the live table.
+    const portsFs = new PortsFilesystem(this.vfs);
+    portsFs.seedServicesFile(this.ianaServices);
+    portsFs.registerProcNet(table);
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */

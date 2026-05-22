@@ -183,6 +183,11 @@ export class WindowsPC extends EndHost {
     // NetBIOS Session Service (LanmanServer)
     this.socketTable.bind('tcp', '0.0.0.0', 139, 4, 'System');
 
+    // Keep the socket table coherent with the service controller: stopping
+    // a service via `sc`/`net stop` now releases its ports, starting it
+    // rebinds them.
+    this.svcMgr.attachSocketTable(this.socketTable);
+
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.
     this.getSshServerContext();
