@@ -2060,3 +2060,62 @@ describe('§30 — Command flow respects aliases through SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §31 — Filesystem coherence after remote operations ─────────────
+//
+// Files created, edited, chmod-ed or moved through an SSH channel
+// must be visible with the same metadata to a local shell on the
+// remote — no shadow VFS, no staleness, no permission drift.
+
+describe('§31 — Filesystem coherence across SSH/local boundary', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'file created via SSH is visible to a local ls on the target',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/remote-mark"');
+      },
+      on: l => l.linux2, cmd: 'ls -l /tmp/remote-mark',
+      contains: [/remote-mark/, /alice/],
+    },
+    {
+      name: 'chmod via SSH propagates to stat run locally on the target',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/perm && chmod 600 /tmp/perm"');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a %U" /tmp/perm',
+      contains: [/^600 alice$/m],
+    },
+    {
+      name: 'file appended via local cat is read back identical via SSH',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo first > /tmp/joint && echo second >> /tmp/joint');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 "cat /tmp/joint"',
+      contains: [/^first$/m, /^second$/m],
+    },
+    {
+      name: 'sftp put then local cat sees the exact bytes',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo bridged > /tmp/x');
+        await l.linux1.executeCommand("sftp alice@10.0.0.2 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF");
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/x',
+      contains: [/^bridged$/m],
+    },
+    {
+      name: 'directory created via SSH appears with correct owner locally',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "mkdir -p /home/alice/work && touch /home/alice/work/.keep"');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%U:%G" /home/alice/work',
+      contains: [/^alice:alice$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
