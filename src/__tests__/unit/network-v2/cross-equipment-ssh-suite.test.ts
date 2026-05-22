@@ -422,3 +422,66 @@ describe('§5 — Linux → Cisco IOS SSH', () => {
     assertOutput(out, { contains: [/Connection (closed|refused)|denied/i] });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// §6 — Linux → Huawei VRP SSH (router & switch)
+// ════════════════════════════════════════════════════════════════════
+//
+// Same idea as §5 but for VRP: the SSH server on the Huawei side
+// delegates the channel to HuaweiVRPShell. Authentication uses an
+// AAA local user with `service-type ssh`.
+
+describe('§6 — Linux → Huawei VRP SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    for (const dev of [lan.huaweiR1, lan.huaweiS1]) {
+      await dev.executeCommand('system-view');
+      await dev.executeCommand('aaa');
+      await dev.executeCommand('local-user admin password cipher Admin@123');
+      await dev.executeCommand('local-user admin service-type ssh');
+      await dev.executeCommand('local-user admin privilege level 15');
+      await dev.executeCommand('quit');
+      await dev.executeCommand('rsa local-key-pair create');
+      await dev.executeCommand('stelnet server enable');
+      await dev.executeCommand('user-interface vty 0 4');
+      await dev.executeCommand('authentication-mode aaa');
+      await dev.executeCommand('protocol inbound ssh');
+      await dev.executeCommand('quit');
+      await dev.executeCommand('ssh user admin authentication-type password');
+      await dev.executeCommand('ssh user admin service-type stelnet');
+      await dev.executeCommand('quit');
+    }
+  });
+
+  test('display version through SSH on the Huawei router', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.huaweiR1} "display version"`,
+    );
+    assertOutput(out, { contains: [/VRP|Huawei/i] });
+  });
+
+  test('display interface brief through SSH on the Huawei switch', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.huaweiS1} "display interface brief"`,
+    );
+    assertOutput(out, { contains: [/Interface\s+PHY|Vlanif1/i] });
+  });
+
+  test('display current-configuration shows ssh server enabled', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.huaweiR1} "display current-configuration"`,
+    );
+    assertOutput(out, { contains: [/stelnet server enable/, /protocol inbound ssh/] });
+  });
+
+  test('undo stelnet server enable refuses SSH', async () => {
+    await lan.huaweiR1.executeCommand('system-view');
+    await lan.huaweiR1.executeCommand('undo stelnet server enable');
+    await lan.huaweiR1.executeCommand('quit');
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=2 admin@${IPS.huaweiR1} "display version"`,
+    );
+    assertOutput(out, { contains: [/Connection (closed|refused)/i] });
+  });
+});
