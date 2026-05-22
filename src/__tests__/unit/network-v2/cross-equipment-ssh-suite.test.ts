@@ -1126,3 +1126,57 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §16 — SSH agent & agent forwarding ─────────────────────────────
+//
+// ssh-agent must store unlocked keys; -A must forward the agent socket
+// so a hop can authenticate further with the same identity. Works
+// across Linux→Linux→Cisco/Huawei.
+
+describe('§16 — SSH agent & agent forwarding', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await lan.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+    await lan.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await lan.linux1.executeCommand('ssh-copy-id alice@10.0.0.3');
+    await lan.linux1.executeCommand('eval $(ssh-agent -s) && ssh-add /root/.ssh/id_rsa');
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh-add -l lists the loaded key',
+      on: l => l.linux1, cmd: 'ssh-add -l',
+      contains: [/2048 SHA256:|RSA|\/root\/\.ssh\/id_rsa/i],
+    },
+    {
+      name: 'agent-backed connection works without a password prompt',
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: '-A: agent forwarded to first hop authenticates the next hop',
+      on: l => l.linux1,
+      cmd: 'ssh -A alice@10.0.0.2 "ssh -o PasswordAuthentication=no alice@10.0.0.3 hostname"',
+      contains: [/^lxsrv1$/m],
+    },
+    {
+      name: 'no -A: agent NOT forwarded — second hop fails publickey',
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 "ssh -o PasswordAuthentication=no alice@10.0.0.3 hostname"',
+      contains: [/Permission denied/i], excludes: [/^lxsrv1$/m],
+    },
+    {
+      name: 'SSH_AUTH_SOCK is exported into the remote shell when -A is used',
+      on: l => l.linux1,
+      cmd: 'ssh -A alice@10.0.0.2 \'echo $SSH_AUTH_SOCK\'',
+      contains: [/\/tmp\/ssh-/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
