@@ -133,6 +133,9 @@ export abstract class LinuxMachine extends EndHost {
     // ServicePortProjection created in attachEventBus needs the table.
     this.initDefaultSockets(profile.isServer);
     this.executor.setSocketTable(this.socketTable);
+    // Share the SSH session table so `who`/`w`/`last` render from one
+    // source of truth — including via compound commands and ssh exec.
+    this.executor.setSessionTable(this.sessionTable);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
@@ -334,24 +337,16 @@ export abstract class LinuxMachine extends EndHost {
 
   /** Ensure a tty=tty1 console session exists for the local user. */
   private ensureLocalConsoleSession(): void {
-    if (this.sessionTable.list().some(s => s.tty === 'tty1')) return;
     const user = this.executor.userMgr.currentUser;
-    const userEntry = this.executor.userMgr.getUser(user);
-    this.sessionTable.open({
-      user,
-      uid: userEntry?.uid ?? 0,
-      sshdPid: 0,
-      tty: 'tty1',
-      fromIp: ':0',
-      fromHost: '',
-      transport: 'console',
-    });
+    const uid = this.executor.userMgr.getUser(user)?.uid ?? 0;
+    this.sessionTable.ensureConsoleSession(user, uid);
   }
 
   /**
-   * Match `w` / `who` / `last` invocations and render them from the
-   * live session table. Returns null when the command isn't one of
-   * them (so the normal pipeline handles it).
+   * Match standalone `w` / `who` / `last` invocations and render them
+   * from the live session table. Returns null when the command isn't
+   * one of them (so the normal pipeline handles it — including compound
+   * commands, which the executor renders from the same table).
    */
   private renderSessionView(command: string): string | null {
     const argv = command.split(/\s+/);
@@ -359,22 +354,12 @@ export abstract class LinuxMachine extends EndHost {
     if (cmd === 'w' || cmd === 'who' || cmd === 'last') {
       this.ensureLocalConsoleSession();
     }
-    if (cmd === 'w' && argv.length === 1) {
-      const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
-        `${this.sessionTable.list().length} users,  load average: 0.00, 0.00, 0.00\n` +
-        'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
-      const rows = this.sessionTable.list().map(s => s.toWRow());
-      return [header, ...rows].join('\n');
-    }
-    if (cmd === 'who' && argv.length === 1) {
-      return this.sessionTable.list().map(s =>
-        `${s.user.padEnd(8)} ${s.tty.padEnd(8)} ${s.loginAt.toISOString().slice(0, 16).replace('T', ' ')} (${s.fromIp})`,
-      ).join('\n');
-    }
+    if (cmd === 'w' && argv.length === 1) return this.sessionTable.renderW();
+    if (cmd === 'who' && argv.length === 1) return this.sessionTable.renderWho();
     if (cmd === 'last') {
       const nIdx = argv.findIndex(a => a === '-n' || a === '--limit');
       const limit = nIdx >= 0 ? Number.parseInt(argv[nIdx + 1] ?? '10', 10) : 10;
-      return this.sessionTable.recent(limit).map(s => s.toLastRow()).join('\n');
+      return this.sessionTable.renderLast(limit);
     }
     return null;
   }

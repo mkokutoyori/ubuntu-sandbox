@@ -24,12 +24,33 @@ export class LinuxServer extends LinuxMachine {
     super(type, name, x, y, LINUX_SERVER_PROFILE);
     // Wire Oracle bootstrap so `sqlplus` from the bash interpreter
     // actually boots the instance (pmon/smon/lgwr appear in ps -ef).
-    this.executor._oracleBootstrap = (args: string[]) => {
+    this.executor._oracleBootstrap = (args: string[], stdin?: string) => {
       const db = getOracleDatabase(this.id);
+      const banner =
+        'SQL*Plus: Release 19.0.0.0.0 - Production\n\n' +
+        'Connected to:\nOracle Database 19c Enterprise Edition Release 19.0.0.0.0\n';
+      // SQL commands can arrive on the command line or piped on stdin
+      // (`echo "SHUTDOWN ABORT;" | sqlplus / as sysdba`).
+      const script = `${args.join(' ')}\n${stdin ?? ''}`;
+
+      // SHUTDOWN [ABORT|IMMEDIATE|TRANSACTIONAL|NORMAL] — stop the
+      // instance; OracleInstance.shutdown publishes background-process-
+      // stopped, which clears ora_pmon/ora_smon from the process table.
+      const shut = /\bSHUTDOWN\b\s*(ABORT|IMMEDIATE|TRANSACTIONAL|NORMAL)?/i.exec(script);
+      if (shut) {
+        const mode = (shut[1]?.toUpperCase() ?? 'NORMAL') as
+          'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT';
+        const lines = db.instance.shutdown(mode);
+        return `${banner}\nSQL> ${lines.join('\n')}\nSQL> Disconnected from Oracle Database 19c.`;
+      }
+      // STARTUP piped in re-opens a stopped instance.
+      if (/\bSTARTUP\b/i.test(script) && db.instance.state === 'SHUTDOWN') {
+        const lines = db.instance.startup();
+        return `${banner}\nSQL> ${lines.join('\n')}\nSQL> Disconnected from Oracle Database 19c.`;
+      }
+
       if (args.length === 0 || args.join(' ').match(/^\s*\/\s*as\s+sysdba\s*$/i)) {
-        return `SQL*Plus: Release 19.0.0.0.0 - Production\n\n` +
-               `Connected to:\nOracle Database 19c Enterprise Edition Release 19.0.0.0.0\n` +
-               `\nSQL> Disconnected from Oracle Database 19c.`;
+        return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
       }
       // -s user/pass@SID "SELECT 1 FROM DUAL" → run the query and return rows.
       const sqlText = args.find(a => /select|insert|update|delete/i.test(a));

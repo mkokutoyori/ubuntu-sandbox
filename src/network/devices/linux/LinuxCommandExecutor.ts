@@ -45,6 +45,7 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
+import type { SshSessionTable } from './network/SshSessionTable';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -112,6 +113,8 @@ export class LinuxCommandExecutor {
   private forwarding: SshForwardingTable | null = null;
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
+  /** Shared SSH session table — backs `who` / `w` / `last`. */
+  private sessionTable: SshSessionTable | null = null;
   /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
   private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
   /** Reactive socket-table coherence for service-owned listening ports. */
@@ -163,7 +166,7 @@ export class LinuxCommandExecutor {
   private jobTable = new LinuxJobTable();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
-  _oracleBootstrap: ((args: string[]) => string | null) | null = null;
+  _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
 
@@ -661,6 +664,15 @@ export class LinuxCommandExecutor {
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
   get forwardingTable(): SshForwardingTable | null {
     return this.forwarding;
+  }
+
+  /**
+   * Share the owning machine's SSH session table so `who` / `w` / `last`
+   * render from it — even inside compound commands and ssh exec mode,
+   * which bypass LinuxMachine's standalone-only fast path.
+   */
+  setSessionTable(table: SshSessionTable): void {
+    this.sessionTable = table;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -1425,9 +1437,29 @@ export class LinuxCommandExecutor {
       }
       case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
       case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
-      case 'who': return { output: cmdWho(c), exitCode: 0 };
-      case 'w': return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
-      case 'last': return { output: cmdLast(c, args), exitCode: 0 };
+      case 'who': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          return { output: this.sessionTable.renderWho(), exitCode: 0 };
+        }
+        return { output: cmdWho(c), exitCode: 0 };
+      }
+      case 'w': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          return { output: this.sessionTable.renderW(), exitCode: 0 };
+        }
+        return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
+      }
+      case 'last': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          const nIdx = args.findIndex(a => a === '-n' || a === '--limit');
+          const limit = nIdx >= 0 ? Number.parseInt(args[nIdx + 1] ?? '10', 10) : 10;
+          return { output: this.sessionTable.renderLast(limit), exitCode: 0 };
+        }
+        return { output: cmdLast(c, args), exitCode: 0 };
+      }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
@@ -1845,7 +1877,7 @@ export class LinuxCommandExecutor {
         // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
         // and lsnrctl status can read the listener state.
         if (this.isServer && this._oracleBootstrap) {
-          const out = this._oracleBootstrap(args);
+          const out = this._oracleBootstrap(args, stdin);
           if (out !== null) return { output: out, exitCode: 0 };
         }
         return {
