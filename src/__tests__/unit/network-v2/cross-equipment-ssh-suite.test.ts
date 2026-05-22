@@ -1571,3 +1571,60 @@ describe('§22 — Reactive event bus: SSH lifecycle subscribers', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §23 — Concurrent SSH sessions stay isolated ────────────────────
+//
+// Multiple sessions to the same target must not share state: each one
+// has its own VFS cwd, env, history. `who` on the target must list
+// them all simultaneously.
+
+describe('§23 — Concurrent SSH sessions are isolated', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'two parallel sessions: each cd does not bleed into the other',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "cd /tmp && pwd > /tmp/from-pc1"');
+        await l.lxsrv1.executeCommand('ssh alice@10.0.0.2 "cd /var && pwd > /tmp/from-srv"');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/from-pc1 /tmp/from-srv',
+      contains: [/^\/tmp$/m, /^\/var$/m],
+    },
+    {
+      name: 'who lists every active SSH session in parallel',
+      setup: async (l) => {
+        // Keep three long-lived sessions open.
+        await l.linux1.executeCommand('ssh -f -N alice@10.0.0.2');
+        await l.lxsrv1.executeCommand('ssh -f -N alice@10.0.0.2');
+        await l.linux2.executeCommand('ssh -f -N alice@10.0.0.3');
+      },
+      on: l => l.linux2, cmd: 'who',
+      contains: [/alice.*pts\/\d+.*10\.0\.0\.1/i, /alice.*pts\/\d+.*10\.0\.0\.3/i],
+    },
+    {
+      name: 'env from session A does not leak into session B',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "export TAG=A && echo $TAG > /tmp/tagA"');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 \'echo "${TAG:-empty}"\'',
+      contains: [/^empty$/m],
+    },
+    {
+      name: 'history on a per-session basis is not shared',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "history -c && ls /tmp"');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 "history"',
+      contains: [/^$|^\s*\d+\s+history$/m],
+      excludes: [/ls \/tmp/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
