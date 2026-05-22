@@ -10,6 +10,12 @@
 import { Router } from './Router';
 import type { IRouterShell } from './shells/IRouterShell';
 import { CiscoIOSShell } from './shells/CiscoIOSShell';
+import {
+  showVersion,
+  showInterfacesStatus,
+  showRunningConfig,
+  showIpIntBrief,
+} from './shells/cisco/CiscoShowCommands';
 
 export class CiscoRouter extends Router {
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
@@ -22,6 +28,41 @@ export class CiscoRouter extends Router {
 
   protected createShell(): IRouterShell {
     return new CiscoIOSShell();
+  }
+
+  /** Synchronous IOS exec whitelist consumed by the SSH cross-platform dispatch. */
+  override runSshCommandSync(
+    _user: string,
+    command: string,
+  ): { output: string; exitCode: number } | null {
+    const cmd = command.trim();
+    if (!cmd) return { output: '', exitCode: 0 };
+
+    // `show version` — model + IOS banner.
+    if (/^show\s+version\s*$/i.test(cmd)) {
+      return { output: `${showVersion(this)}\n`, exitCode: 0 };
+    }
+    // `show interfaces status` — link state per port.
+    if (/^show\s+int(?:erfaces)?\s+status\s*$/i.test(cmd)) {
+      return { output: `${showInterfacesStatus(this)}\n`, exitCode: 0 };
+    }
+    // `show ip interface brief`.
+    if (/^show\s+ip\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
+      return { output: `${showIpIntBrief(this)}\n`, exitCode: 0 };
+    }
+    // `show running-config [ | include … ]` — pipe filter supported.
+    const runMatch = /^show\s+run(?:ning-config)?(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
+    if (runMatch) {
+      const full = showRunningConfig(this);
+      if (!runMatch[1]) return { output: `${full}\n`, exitCode: 0 };
+      const needle = runMatch[2].trim();
+      const lines = full.split('\n');
+      const filtered = runMatch[1].toLowerCase() === 'include'
+        ? lines.filter(l => l.includes(needle))
+        : lines.filter(l => !l.includes(needle));
+      return { output: `${filtered.join('\n')}\n`, exitCode: 0 };
+    }
+    return null;
   }
 
   getBootSequence(): string {

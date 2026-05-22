@@ -534,7 +534,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('aaa', 'AAA configuration', () => '');
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', () => '');
     this.configTrie.registerGreedy('enable password', 'Set enable password', () => '');
-    this.configTrie.registerGreedy('username', 'Configure a local user', () => '');
+    // `username <name> [privilege N] [secret|password] <pwd>` — captures
+    // the local-user database so the sshd dispatch can validate inbound
+    // logins. Anything we don't parse is still accepted silently.
+    this.configTrie.registerGreedy('username', 'Configure a local user', (args) => {
+      const dev = this.d() as unknown as {
+        _addLocalUser?: (name: string, privilege: number, secret: string) => void;
+      };
+      const name = args[0];
+      if (name && typeof dev._addLocalUser === 'function') {
+        let privilege = 1;
+        let secret = '';
+        for (let i = 1; i < args.length; i++) {
+          if (args[i] === 'privilege' && /^\d+$/.test(args[i + 1] ?? '')) {
+            privilege = Number(args[i + 1]); i++;
+          } else if ((args[i] === 'secret' || args[i] === 'password') && args[i + 1]) {
+            secret = args.slice(i + 1).join(' '); i = args.length;
+          }
+        }
+        dev._addLocalUser(name, privilege, secret);
+      }
+      return '';
+    });
     this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');
     this.configTrie.registerGreedy('service', 'Service configuration', () => '');
     this.configTrie.registerGreedy('no service', 'Disable a service', () => '');
@@ -546,12 +567,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.mode = 'config-line';
       return '';
     });
-    for (const kw of ['transport', 'login', 'password', 'exec-timeout',
+    for (const kw of ['login', 'password', 'exec-timeout',
       'logging', 'access-class', 'privilege', 'no', 'speed', 'stopbits',
       'session-timeout', 'history', 'length', 'width', 'authorization',
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, () => '');
     }
+    // `transport input {all|ssh|telnet|none}` — the only line directive
+    // we *do* react to today, because the sshd dispatch needs to know
+    // whether SSH is administratively allowed on the VTY. Anything we
+    // don't recognise is accepted silently, matching real IOS.
+    this.configLineTrie.registerGreedy('transport', 'transport input/output', (args) => {
+      const dev = this.d() as unknown as {
+        _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void;
+      };
+      if (args[0]?.toLowerCase() === 'input' && typeof dev._setVtyTransportInput === 'function') {
+        const proto = (args[1] ?? '').toLowerCase();
+        if (proto === 'all' || proto === 'ssh' || proto === 'telnet' || proto === 'none') {
+          dev._setVtyTransportInput(proto);
+        }
+      }
+      return '';
+    });
 
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());

@@ -1337,6 +1337,115 @@ export abstract class Router extends Equipment {
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
+
+  // ─── SSH server surface (SshExecTarget) ────────────────────────
+  //
+  // Routers and switches that grow an `ip ssh / stelnet server`
+  // configuration expose a synchronous SSH server surface so the
+  // cross-platform client dispatch can talk to them uniformly.
+  // Concrete answers to vendor commands (show / display) come from
+  // the per-vendor subclasses (CiscoRouter, HuaweiRouter).
+  //
+  // Defaults below assume a freshly-provisioned device: SSH is
+  // enabled by default but the per-vendor `transport input none`
+  // path can flip the flag through `_setSshServerEnabled`.
+
+  /** Whether ssh/stelnet is currently advertised on the VTY. */
+  protected sshServerEnabled: boolean = true;
+  /** Inbound transport list (telnet/ssh/all/none) — mirrors VTY config. */
+  protected vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
+  /**
+   * Local-user database (vendor-agnostic). Populated by the per-vendor
+   * shell when `username … secret …` (Cisco) or `local-user … password
+   * …` (Huawei) is executed.
+   */
+  protected localUsers: Map<string, { name: string; privilege: number; secret: string }> = new Map();
+
+  /** @internal — vendor shell records a configured local user. */
+  _addLocalUser(name: string, privilege: number, secret: string): void {
+    this.localUsers.set(name, { name, privilege, secret });
+  }
+  /** @internal — vendor shell removes a configured local user. */
+  _removeLocalUser(name: string): void { this.localUsers.delete(name); }
+  /** @internal — vendor shell inspects local-user table. */
+  _getLocalUser(name: string): { name: string; privilege: number; secret: string } | undefined {
+    return this.localUsers.get(name);
+  }
+  /** @internal — vendor shell lists all configured local users. */
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string }> {
+    return Array.from(this.localUsers.values());
+  }
+
+  /** @internal — flipped by per-vendor shell when transport input changes. */
+  _setSshServerEnabled(enabled: boolean): void { this.sshServerEnabled = enabled; }
+  /** @internal — flipped by per-vendor shell on transport input. */
+  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
+    this.vtyTransportInput = t;
+    this.sshServerEnabled = (t === 'all' || t === 'ssh');
+  }
+
+  /** SshExecTarget. */
+  getSshHostname(): string { return this.hostname; }
+  isSshActive(): boolean { return this.sshServerEnabled; }
+  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+    if (!user) return { ok: false, reason: 'empty user' };
+    // When a local-user database has been configured, only those names
+    // are accepted (login local / AAA local-user model). Empty database
+    // accepts any name — matches the default IOS / VRP behaviour where
+    // an unauthenticated VTY accepts the enable password directly.
+    if (this.localUsers.size > 0 && !this.localUsers.has(user)) {
+      return { ok: false, reason: 'no such user' };
+    }
+    return { ok: true };
+  }
+  recordSshLogin(
+    _user: string, _fromIp: string, _fromHost: string,
+    _accepted: boolean, _method?: 'password' | 'publickey' | 'keyboard-interactive',
+  ): void {
+    // Routers log via syslog / info-center elsewhere — the audit hook
+    // is implemented per vendor when those subscribers wire in.
+  }
+  getSshBanner(): string { return ''; }
+  getSshMotd(): string { return ''; }
+  getSshPolicy(): {
+    readonly active: boolean;
+    readonly ports: readonly number[];
+    readonly permitRootLogin: boolean;
+    readonly passwordAuthentication: boolean;
+    readonly pubkeyAuthentication: boolean;
+    readonly maxAuthTries: number;
+    readonly permitEmptyPasswords: boolean;
+  } {
+    return Object.freeze({
+      active: this.sshServerEnabled,
+      ports: Object.freeze([22]),
+      permitRootLogin: true,
+      passwordAuthentication: true,
+      pubkeyAuthentication: true,
+      maxAuthTries: 6,
+      permitEmptyPasswords: false,
+    });
+  }
+  getSshHostKey(): {
+    readonly type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+    readonly fingerprintSha256: string;
+    readonly publicKey: string;
+  } {
+    return Object.freeze({
+      type: 'ssh-rsa' as const,
+      fingerprintSha256: `SHA256:router-${this.id}`,
+      publicKey: `ssh-rsa AAAA-router-${this.id}`,
+    });
+  }
+
+  /**
+   * Per-vendor sync command whitelist. Default returns null so the
+   * caller falls back; CiscoRouter and HuaweiRouter override with
+   * their own pure show/display dispatch.
+   */
+  runSshCommandSync(_user: string, _command: string): { output: string; exitCode: number } | null {
+    return null;
+  }
   /** @internal Used by CLI shells */
   setInterfaceDescription(portName: string, desc: string): void { this.interfaceDescriptions.set(portName, desc); }
   /** @internal Used by CLI shells */
