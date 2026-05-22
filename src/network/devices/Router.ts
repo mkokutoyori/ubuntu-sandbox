@@ -1446,6 +1446,15 @@ export abstract class Router extends Equipment {
   runSshCommandSync(_user: string, _command: string): { output: string; exitCode: number } | null {
     return null;
   }
+
+  async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
+    const sync = this.runSshCommandSync(user, command);
+    if (sync) return sync;
+    const output = await this.executeCommand(command);
+    return { output, exitCode: 0 };
+  }
+
+  sshBanner(): string { return this.getSshBanner(); }
   /** @internal Used by CLI shells */
   setInterfaceDescription(portName: string, desc: string): void { this.interfaceDescriptions.set(portName, desc); }
   /** @internal Used by CLI shells */
