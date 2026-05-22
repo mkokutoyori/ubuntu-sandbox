@@ -994,3 +994,60 @@ describe('§13 — ProxyJump across heterogeneous hops', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §14 — Local / Remote / Dynamic port forwarding ─────────────────
+//
+// ssh -L / -R / -D must open real TCP listeners on the side that owns
+// the forwarding direction, forward bytes through the SSH channel and
+// drop them onto a real TCP socket on the other side. Tested with the
+// in-memory http server on each Linux peer.
+
+describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await lan.lxsrv1.executeCommand('python3 -m http.server 8080 --bind 127.0.0.1 &');
+  });
+
+  const rows: Row[] = [
+    {
+      name: '-L 9000:127.0.0.1:8080 forwards localhost:9000 to lxsrv1:8080',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -L 9000:127.0.0.1:8080 alice@10.0.0.3');
+      },
+      on: l => l.linux1, cmd: 'curl -s http://127.0.0.1:9000/',
+      contains: [/<html|Directory listing|<title/i],
+    },
+    {
+      name: '-R 9100:127.0.0.1:80 forwards a port back to the client',
+      setup: async (l) => {
+        await l.linux1.executeCommand('python3 -m http.server 80 --bind 127.0.0.1 &');
+        await l.linux1.executeCommand('ssh -f -N -R 9100:127.0.0.1:80 alice@10.0.0.3');
+      },
+      on: l => l.lxsrv1, cmd: 'curl -s http://127.0.0.1:9100/',
+      contains: [/<html|Directory listing|<title/i],
+    },
+    {
+      name: '-D 1080 opens a SOCKS proxy that reaches remote hosts',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -D 1080 alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'curl -s --socks5 127.0.0.1:1080 http://10.0.0.3:8080/',
+      contains: [/<html|Directory listing|<title/i],
+    },
+    {
+      name: 'GatewayPorts no: -L bind is local-only (refused from a peer)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -L 9000:127.0.0.1:8080 alice@10.0.0.3');
+      },
+      on: l => l.linux2,
+      cmd: 'curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 http://10.0.0.1:9000/',
+      contains: [/^000$|Connection refused/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
