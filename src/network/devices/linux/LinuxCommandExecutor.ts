@@ -717,6 +717,12 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    // Actually carry out the work: the only thing "background" skips is
+    // blocking the foreground shell. Side effects — an SSH connection's
+    // auth.log line and session-table entry, file writes, … — must still
+    // happen so `jobs`, `who`, `w` and the logs stay coherent. The
+    // command's own stdout is detached from the terminal.
+    try { this.execute(cmdLine); } catch { /* background failures are silent */ }
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${job.id}] ${proc.pid}`);
@@ -1337,6 +1343,21 @@ export class LinuxCommandExecutor {
         const lines: string[] = [];
         for (const [k, v] of this.env) { lines.push(`${k}=${v}`); }
         return { output: lines.join('\n'), exitCode: 0 };
+      }
+
+      // time — run a command and report its elapsed wall/user/sys time
+      case 'time': {
+        if (args.length === 0) {
+          return { output: '\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s', exitCode: 0 };
+        }
+        const started = Date.now();
+        const inner = this.dispatchFromInterpreter(args, this._cmdEnv);
+        const elapsed = ((Date.now() - started) / 1000).toFixed(3);
+        const body = inner.output ? inner.output.replace(/\n$/, '') + '\n' : '';
+        return {
+          output: `${body}\nreal\t0m${elapsed}s\nuser\t0m0.001s\nsys\t0m0.001s`,
+          exitCode: inner.exitCode,
+        };
       }
 
       // locale — report the active locale, sourced from the live shell

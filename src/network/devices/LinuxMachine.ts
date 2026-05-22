@@ -570,11 +570,14 @@ export abstract class LinuxMachine extends EndHost {
       return this.executor.execute(trimmed);
     }
 
-    // Compound commands: split on `;` and recurse.
-    if (trimmed.includes(';')) {
-      const parts = trimmed.split(';').map(s => s.trim()).filter(Boolean);
+    // Compound commands: split on a top-level `;` and recurse. Quoted
+    // separators (e.g. inside `sh -c "a; b"`) are left intact.
+    const semiParts = LinuxMachine.splitTopLevel(trimmed, ';')
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (semiParts.length > 1) {
       const outputs: string[] = [];
-      for (const p of parts) {
+      for (const p of semiParts) {
         const out = await this.executeCommand(p);
         if (out) outputs.push(out);
       }
@@ -583,7 +586,8 @@ export abstract class LinuxMachine extends EndHost {
 
     // Piped command: route the head through the network dispatcher,
     // then apply the remaining text filters through the bash interpreter.
-    if (/\|(?!\|)/.test(trimmed)) {
+    // Only a top-level `|` (outside quotes) counts as a pipe.
+    if (LinuxMachine.splitTopLevel(trimmed, '|').length > 1) {
       return this.executePipedCommand(trimmed);
     }
 
@@ -599,6 +603,39 @@ export abstract class LinuxMachine extends EndHost {
    * Try to handle a command as a network-aware command. Returns null if
    * the command should be delegated to the bash interpreter.
    */
+  /**
+   * Split a command line on a top-level separator, ignoring occurrences
+   * inside single or double quotes so that `sh -c "a; b | c"` is treated
+   * as one command rather than being torn apart by the shell router.
+   */
+  private static splitTopLevel(input: string, sep: ';' | '|'): string[] {
+    const parts: string[] = [];
+    let buf = '';
+    let quote: '"' | "'" | null = null;
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      if (quote) {
+        if (ch === quote) quote = null;
+        buf += ch;
+        continue;
+      }
+      if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
+      if (ch === sep) {
+        // `||` is the logical OR operator, not a pipe separator.
+        if (sep === '|' && (input[i + 1] === '|' || input[i - 1] === '|')) {
+          buf += ch;
+          continue;
+        }
+        parts.push(buf);
+        buf = '';
+        continue;
+      }
+      buf += ch;
+    }
+    parts.push(buf);
+    return parts;
+  }
+
   private async tryNetworkCommand(input: string): Promise<string | null> {
     const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
     const firstCmd = noSudo.split(/[\s|;&]/)[0];
