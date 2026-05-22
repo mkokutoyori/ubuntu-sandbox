@@ -24,6 +24,7 @@ import { WindowsProcessManager } from '@/network/devices/windows/WindowsProcessM
 import { WindowsSecurityAudit } from '@/network/devices/windows/WindowsSecurityAudit';
 import { WindowsSecurityAuditProjection } from '@/network/devices/windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from '@/network/devices/windows/WindowsEventLogProjection';
+import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 
 // ═══════════════════════════════════════════════════════════════════
 // LinuxAuditRecord / LinuxAuditLog
@@ -327,5 +328,31 @@ describe('Windows Security audit trail (reactive)', () => {
       payload: { deviceId: 'other', account: 'bob', change: 'created' },
     });
     expect(events).toHaveLength(0);
+  });
+});
+
+describe('Windows event-log filesystem materialisation', () => {
+  it('materialises the event logs as .evtx files under winevt\\Logs', async () => {
+    const { WindowsPC } = await import('@/network/devices/WindowsPC');
+    const pc = new WindowsPC('win-pc', 'WIN1');
+    const system = await pc.executeCommand('type C:\\Windows\\System32\\winevt\\Logs\\System.evtx');
+    expect(system).toContain('Windows Event Log: System');
+    const security = await pc.executeCommand('type C:\\Windows\\System32\\winevt\\Logs\\Security.evtx');
+    expect(security).toContain('Windows Event Log: Security');
+  });
+
+  it('reflects a freshly written event in the .evtx file', () => {
+    const fsCalls: Record<string, string> = {};
+    const fakeFs = {
+      mkdirp: () => { /* noop */ },
+      createFile: (path: string, content: string) => { fsCalls[path] = content; return { ok: true }; },
+    };
+    const provider = new PSEventLogProvider();
+    provider.attachFilesystem(fakeFs);
+    provider.writeEventLog(
+      'System', 'Service Control Manager', 7036, 'Information',
+      'The Print Spooler service entered the stopped state.',
+    );
+    expect(fsCalls['C:\\Windows\\System32\\winevt\\Logs\\System.evtx']).toContain('Print Spooler');
   });
 });

@@ -176,6 +176,8 @@ export class WindowsPC extends EndHost {
     super(type, name, x, y);
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    // Materialise the event logs as .evtx files under winevt\Logs.
+    this.eventLog.attachFilesystem(this.fs);
     this.userMgr = new WindowsUserManager();
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
