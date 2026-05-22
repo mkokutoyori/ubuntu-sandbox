@@ -1871,3 +1871,60 @@ describe('§27 — Strict-mode permission coherence', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §28 — Key formats (rsa / ed25519 / ecdsa) ──────────────────────
+
+describe('§28 — Key formats across platforms', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh-keygen -t rsa produces a usable identity',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -b 2048 -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_rsa alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'ssh-keygen -t ed25519 produces a usable identity',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
+        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_ed25519.pub alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_ed25519 alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'ssh-keygen -t ecdsa -b 256 produces a usable identity',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t ecdsa -b 256 -N '' -f /root/.ssh/id_ecdsa");
+        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_ecdsa.pub alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_ecdsa alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'ssh-keygen -l -f reports the public-key fingerprint',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
+      },
+      on: l => l.linux1, cmd: 'ssh-keygen -l -f /root/.ssh/id_ed25519.pub',
+      contains: [/SHA256:[A-Za-z0-9+\/]+/, /ED25519/i],
+    },
+    {
+      name: 'sshd HostKey ed25519 is advertised in the algorithms list',
+      on: l => l.linux1, cmd: 'ssh -v alice@10.0.0.2 exit 2>&1',
+      contains: [/Server host key:.*ED25519|ssh-ed25519/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
