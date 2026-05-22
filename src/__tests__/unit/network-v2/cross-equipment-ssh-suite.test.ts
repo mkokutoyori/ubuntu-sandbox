@@ -1506,3 +1506,68 @@ describe('§21 — sshd access control', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §22 — Reactive event bus: subscribers react to SSH events ──────
+//
+// Every SSH session lifecycle event (auth attempt, login, exec, close)
+// must be published on the network event bus, and *consumers* on the
+// target device must react: append to /var/log/auth.log on Linux,
+// `terminal monitor` on Cisco, info-center on Huawei, Event Log on
+// Windows. The subscriber must observe the event without polling.
+
+describe('§22 — Reactive event bus: SSH lifecycle subscribers', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+    // Trigger one successful login per platform to publish events.
+    await lan.linux1.executeCommand('ssh alice@10.0.0.2 exit');
+    await lan.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    await lan.linux1.executeCommand('ssh admin@10.0.0.8 "display version"');
+    await lan.linux1.executeCommand('ssh User@10.0.0.4 hostname');
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: /var/log/auth.log records the Accepted password line',
+      on: l => l.linux2, cmd: 'cat /var/log/auth.log',
+      contains: [/sshd.*Accepted password for alice from 10\.0\.0\.1/i],
+    },
+    {
+      name: 'Linux: failed login is logged with Failed password',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -o NumberOfPasswordPrompts=1 ghost@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'cat /var/log/auth.log',
+      contains: [/sshd.*Failed password for (invalid user )?ghost from 10\.0\.0\.1/i],
+    },
+    {
+      name: 'Cisco: show logging contains a %SEC_LOGIN-5-LOGIN_SUCCESS event',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show logging"',
+      contains: [/SEC_LOGIN-5-LOGIN_SUCCESS|SSH-5-SSH2_SESSION/i],
+    },
+    {
+      name: 'Huawei: display logbuffer contains an SSH/AUTHENTICATION event',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display logbuffer"',
+      contains: [/SSH\/|AUTHEN|stelnet/i],
+    },
+    {
+      name: 'Windows: Get-WinEvent Security/4624 lists the SSH login',
+      on: l => l.linux1,
+      cmd: 'ssh User@10.0.0.4 powershell -Command "Get-WinEvent -LogName Security -MaxEvents 5 | Where-Object {$_.Id -eq 4624}"',
+      contains: [/4624|Logon Type:\s*\d+/i],
+    },
+    {
+      name: 'reactive bus: stopping sshd publishes a service-down event consumed by the inventory',
+      setup: async (l) => { await l.linux2.executeCommand('sudo systemctl stop ssh'); },
+      on: l => l.linux2,
+      cmd: 'systemctl status ssh',
+      contains: [/inactive \(dead\)|stopped/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
