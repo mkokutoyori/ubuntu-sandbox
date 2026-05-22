@@ -588,3 +588,54 @@ describe('§7 — Windows → Cisco / Huawei SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §8 — Cisco / Huawei → Linux & Windows SSH (outbound) ───────────
+//
+// Network OSes must include an SSH client in privileged exec / system
+// view that traverses the LAN to reach Linux and Windows hosts.
+
+describe('§8 — Cisco / Huawei → Linux & Windows SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'IOS: ssh -l alice 10.0.0.1 reaches a Linux PC',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l alice 10.0.0.1',
+      contains: [/Welcome to Ubuntu/i],
+      excludes: [/Invalid input|Unknown command/i],
+    },
+    {
+      name: 'IOS: ssh -l User 10.0.0.4 reaches a Windows PC',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l User 10.0.0.4',
+      contains: [/Microsoft Windows|win1/i],
+    },
+    {
+      name: 'IOS: ssh -l admin 10.0.0.8 reaches the Huawei router',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l admin 10.0.0.8',
+      contains: [/VRP|Huawei|<hwR1>/i],
+    },
+    {
+      name: 'VRP: stelnet 10.0.0.1 reaches a Linux PC',
+      on: l => l.hwR1, cmd: 'stelnet 10.0.0.1',
+      contains: [/Welcome to Ubuntu/i],
+      excludes: [/Unrecognized|Error: Unrecognized/i],
+    },
+    {
+      name: 'VRP: stelnet 10.0.0.6 reaches the Cisco router',
+      on: l => l.hwR1, cmd: 'stelnet 10.0.0.6',
+      contains: [/IOS|Cisco|ciscoR1/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
