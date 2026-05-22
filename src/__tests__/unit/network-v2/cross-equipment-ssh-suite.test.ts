@@ -808,3 +808,73 @@ describe('§10 — SSH authentication methods', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §11 — Host key TOFU & known_hosts coherence ────────────────────
+//
+// First connection to any peer must register its host key in
+// ~/.ssh/known_hosts (TOFU). A mismatched key on a subsequent connect
+// must be rejected loudly with the standard "REMOTE HOST IDENTIFICATION
+// HAS CHANGED" banner — on every client platform.
+
+describe('§11 — known_hosts coherence across platforms', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: first connect with accept-new persists host key',
+      setup: async (l) => {
+        await l.linux1.executeCommand('rm -f /root/.ssh/known_hosts');
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux1, cmd: 'cat /root/.ssh/known_hosts',
+      contains: [/10\.0\.0\.2/, /ssh-(rsa|ed25519|ecdsa)/i],
+    },
+    {
+      name: 'Linux: second connect uses stored host key (no prompt)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m], excludes: [/authenticity of host/i, /yes\/no/i],
+    },
+    {
+      name: 'Linux: regenerated remote host key triggers identification-changed',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh -t rsa');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2 hostname',
+      contains: [/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i],
+      excludes: [/^linux2$/m],
+    },
+    {
+      name: 'Windows: ssh.exe stores host key in %USERPROFILE%\\.ssh\\known_hosts',
+      setup: async (l) => {
+        await l.win1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1 hostname');
+      },
+      on: l => l.win1, cmd: 'type %USERPROFILE%\\.ssh\\known_hosts',
+      contains: [/10\.0\.0\.1/],
+    },
+    {
+      name: 'Cisco: ip ssh known-hosts records server keys for outbound ssh',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('enable');
+        await l.ciscoR1.executeCommand('ssh -l alice 10.0.0.1');
+      },
+      on: l => l.ciscoR1, cmd: 'show ip ssh known-hosts',
+      contains: [/10\.0\.0\.1/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
