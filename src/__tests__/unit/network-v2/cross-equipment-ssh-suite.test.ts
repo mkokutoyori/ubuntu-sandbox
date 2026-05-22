@@ -938,3 +938,59 @@ describe('§12 — ~/.ssh/config Host blocks', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §13 — ProxyJump across heterogeneous hops ──────────────────────
+//
+// ssh -J jumpbox target must traverse the real network: TCP from
+// client → jumpbox, then nested TCP from jumpbox → target, then the
+// SSH transport piggy-backs on that pipe. Works with mixed platforms.
+
+describe('§13 — ProxyJump across heterogeneous hops', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux→Linux→Linux: ssh -J linux2 lxsrv1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2 alice@10.0.0.3 hostname',
+      contains: [/^lxsrv1$/m],
+      excludes: [/refused|denied/i],
+    },
+    {
+      name: 'Linux→Linux→Windows: ssh -J linux2 win1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2 User@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'Linux→Linux→Cisco: ssh -J linux2 ciscoR1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2 admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'two-hop ProxyJump: linux1 → linux2 → lxsrv1 → ciscoR1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2,alice@10.0.0.3 admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'ProxyJump uses ~/.ssh/config Host alias',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /root/.ssh');
+        await l.linux1.executeCommand("cat > /root/.ssh/config <<'EOF'\nHost jump\n  HostName 10.0.0.2\n  User alice\nHost target\n  HostName 10.0.0.3\n  User alice\n  ProxyJump jump\nEOF");
+      },
+      on: l => l.linux1, cmd: 'ssh target hostname',
+      contains: [/^lxsrv1$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
