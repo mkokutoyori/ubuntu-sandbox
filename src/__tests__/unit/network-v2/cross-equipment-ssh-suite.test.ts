@@ -170,6 +170,42 @@ async function runRow(lan: XLan, row: Row): Promise<string> {
   return (row.on(lan) as { executeCommand: (c: string) => Promise<string> }).executeCommand(row.cmd);
 }
 
+/** Enable SSH server on a Cisco IOS device with a local AAA user. */
+async function enableCiscoSsh(dev: CiscoRouter | CiscoSwitch): Promise<void> {
+  await dev.executeCommand('enable');
+  await dev.executeCommand('configure terminal');
+  await dev.executeCommand('hostname ' + (dev as { name: string }).name);
+  await dev.executeCommand('username admin privilege 15 secret Admin@123');
+  await dev.executeCommand('enable secret Admin@123');
+  await dev.executeCommand('ip domain-name lab.local');
+  await dev.executeCommand('crypto key generate rsa modulus 2048');
+  await dev.executeCommand('ip ssh version 2');
+  await dev.executeCommand('line vty 0 4');
+  await dev.executeCommand('login local');
+  await dev.executeCommand('transport input ssh');
+  await dev.executeCommand('exit');
+  await dev.executeCommand('end');
+}
+
+/** Enable SSH (stelnet) server on a Huawei VRP device with a local AAA user. */
+async function enableHuaweiSsh(dev: HuaweiRouter | HuaweiSwitch): Promise<void> {
+  await dev.executeCommand('system-view');
+  await dev.executeCommand('aaa');
+  await dev.executeCommand('local-user admin password cipher Admin@123');
+  await dev.executeCommand('local-user admin service-type ssh');
+  await dev.executeCommand('local-user admin privilege level 15');
+  await dev.executeCommand('quit');
+  await dev.executeCommand('rsa local-key-pair create');
+  await dev.executeCommand('stelnet server enable');
+  await dev.executeCommand('user-interface vty 0 4');
+  await dev.executeCommand('authentication-mode aaa');
+  await dev.executeCommand('protocol inbound ssh');
+  await dev.executeCommand('quit');
+  await dev.executeCommand('ssh user admin authentication-type password');
+  await dev.executeCommand('ssh user admin service-type stelnet');
+  await dev.executeCommand('quit');
+}
+
 function assertRow(out: string, row: Row): void {
   for (const c of row.contains ?? []) {
     if (c instanceof RegExp) expect(out).toMatch(c);
@@ -387,6 +423,60 @@ describe('§4 — Windows → Linux SSH', () => {
       },
       on: l => l.win1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.1 whoami',
       contains: [/Connection refused|Could not connect/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §5 — Linux → Cisco IOS SSH ─────────────────────────────────────
+//
+// The remote channel is bound to CiscoIOSShell, not to bash. Login
+// authenticates against the local-user database, the prompt belongs
+// to user-exec, and `transport input none` rejects SSH at the VTY.
+
+describe('§5 — Linux → Cisco IOS SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableCiscoSsh(lan.ciscoS1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'show version on the Cisco router prints the IOS banner',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i], excludes: [/bash:|command not found/i],
+    },
+    {
+      name: 'show interfaces status on the Cisco switch lists ports',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.7 "show interfaces status"',
+      contains: [/connected|notconnect|Port\s+Name/i],
+    },
+    {
+      name: 'remote prompt is the IOS hostname, never bash',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show running-config | include hostname"',
+      contains: [/hostname ciscoR1/i], excludes: [/GNU bash|sh-\d/],
+    },
+    {
+      name: 'transport input none refuses SSH at the VTY',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('transport input none');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+    {
+      name: 'wrong VTY password is rejected',
+      on: l => l.linux1, cmd: 'sshpass -p Wrong! ssh admin@10.0.0.6 "show version"',
+      contains: [/Permission denied|Authentication failed/i],
     },
   ];
 
