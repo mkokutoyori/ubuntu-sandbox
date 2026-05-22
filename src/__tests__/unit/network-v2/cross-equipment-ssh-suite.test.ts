@@ -246,3 +246,59 @@ describe('§1 — LAN bootstrap & L3 reachability', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §2 — Linux → Linux SSH happy path ──────────────────────────────
+//
+// A Linux operator drives `ssh` exactly as a real user would; the
+// client traffic must traverse core-sw to reach sshd on the peer.
+
+describe('§2 — Linux → Linux SSH happy path', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'PC→PC: ssh alice@linux2 greets and closes cleanly',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu', /Connection to 10\.0\.0\.2 closed/],
+      excludes: [/refused/, /Permission denied/],
+    },
+    {
+      name: 'PC→Server: ssh alice@lxsrv1 reaches the server',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.3',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/refused/],
+    },
+    {
+      name: 'Server→PC: lxsrv1 reaches linux2 for admin',
+      on: l => l.lxsrv1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'one-shot remote command returns remote stdout',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+      excludes: [/Permission denied/],
+    },
+    {
+      name: 'remote hostname matches the target device',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'when the user is omitted the local user is used',
+      on: l => l.linux1, cmd: 'ssh 10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Permission denied/],
+    },
+    {
+      name: 'ssh -l alice host is equivalent to alice@host',
+      on: l => l.linux1, cmd: 'ssh -l alice 10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
