@@ -132,6 +132,52 @@ export function parseSshdConfig(content: string): SshdConfig {
   return Object.freeze({ ...DEFAULT_SSHD_CONFIG, ...cfg });
 }
 
+/** Outcome of an `sshd -t` style configuration test. */
+export interface SshdConfigValidation {
+  readonly ok: boolean;
+  readonly errors: readonly string[];
+}
+
+/**
+ * Validate /etc/ssh/sshd_config the way `sshd -t` does before a reload.
+ *
+ * Unknown directives are tolerated (the simulator's parser silently ignores
+ * directives it does not model, and tests legitimately append things like
+ * `AcceptEnv`). Only directives we *do* model are range-checked, so a reload
+ * is rejected solely for values real sshd would also refuse.
+ */
+export function validateSshdConfig(
+  content: string,
+  path = '/etc/ssh/sshd_config',
+): SshdConfigValidation {
+  const errors: string[] = [];
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith('#')) continue;
+    const idx = line.search(/\s/);
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).toLowerCase();
+    const value = line.slice(idx + 1).trim();
+    if (key === 'port') {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 1 || n > 65535) {
+        errors.push(
+          `${path} line ${i + 1}: Bad configuration option: invalid port number "${value}" — out of range 1..65535.`,
+        );
+      }
+    } else if (key === 'maxauthtries' || key === 'maxsessions') {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n < 0) {
+        errors.push(
+          `${path} line ${i + 1}: Bad configuration option: invalid ${key} value "${value}".`,
+        );
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export function serializeSshdConfig(cfg: SshdConfig): string {
   const lines = [
     `Port ${cfg.listenPort}`,

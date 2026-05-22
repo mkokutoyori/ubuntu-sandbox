@@ -321,6 +321,12 @@ export class LinuxServiceManager {
   private units = new Map<string, LinuxService>();
   /** Lifecycle listeners (BRD SSH-07-R6: sshd reloads its config on restart). */
   private listeners: ServiceLifecycleListener[] = [];
+  /**
+   * Per-service configuration pre-checks, run before a `reload` is applied —
+   * the simulator's analogue of systemd's `ExecReload=/usr/sbin/sshd -t`.
+   * A failing check aborts the reload and surfaces the error to the caller.
+   */
+  private configChecks = new Map<string, () => OperationResult>();
   /** Reactive sink — null until a device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
@@ -342,6 +348,15 @@ export class LinuxServiceManager {
   attachBus(bus: IEventBus, deviceId: string): void {
     this.bus = bus;
     this.deviceId = deviceId;
+  }
+
+  /**
+   * Register a configuration pre-check for a service. Invoked before every
+   * `reload` so an invalid on-disk config is rejected exactly as `sshd -t`
+   * would reject it, instead of being silently applied.
+   */
+  registerConfigCheck(name: string, check: () => OperationResult): void {
+    this.configChecks.set(name.replace(/\.service$/, ''), check);
   }
 
   /** Subscribe to service lifecycle changes. Returns an unsubscribe handle. */
@@ -436,6 +451,11 @@ export class LinuxServiceManager {
     }
     if (!u.execReload) {
       return { ok: false, error: `${name}.service: Refusing to reload: ExecReload= is not set.` };
+    }
+    const check = this.configChecks.get(u.name);
+    if (check) {
+      const verdict = check();
+      if (!verdict.ok) return verdict;
     }
     this.processMgr.kill(u.mainPid, 'SIGHUP');
     this.emitLifecycle('reload', u.name);
