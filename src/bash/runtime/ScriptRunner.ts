@@ -30,7 +30,7 @@ export function runScript(
   ctx: ShellContext,
   scriptPath: string,
   scriptArgs: string[],
-  executeCommand: (args: string[]) => { output: string; exitCode: number },
+  executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -68,7 +68,7 @@ export function runScriptContent(
   content: string,
   scriptName: string,
   scriptArgs: string[],
-  executeCommand: (args: string[]) => { output: string; exitCode: number },
+  executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
   variables?: Record<string, string>,
   io?: IOContext,
   identity?: { pid?: number; ppid?: number },
@@ -84,7 +84,7 @@ export function runScriptContent(
     const ast = parser.parse(tokens);
 
     const interp = new BashInterpreter({
-      executeCommand: (args) => executeCommand(args),
+      executeCommand: (args, env) => executeCommand(args, env),
       variables: variables ?? {},
       scriptName,
       positionalArgs: scriptArgs,

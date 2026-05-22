@@ -126,6 +126,12 @@ export class LinuxCommandExecutor {
   /** Shared system identity — source of truth for uname / hostnamectl / etc. */
   readonly identity: SystemIdentity;
   private env: Map<string, string> = new Map();
+  /**
+   * Shell environment of the command currently being dispatched — exported
+   * variables plus per-command `VAR=val` prefix assignments. Consulted by
+   * env-aware commands (`ssh` SendEnv forwarding, `locale`).
+   */
+  private _cmdEnv?: Record<string, string>;
   /** Registered system processes (pid → {user, command}) for ps command */
   private _systemProcesses: Map<number, { user: string; command: string; startTime: string }> = new Map();
   /** caller-supplied PID → OS-managed PID, so unregisterProcess can find the spawn back. */
@@ -405,7 +411,7 @@ export class LinuxCommandExecutor {
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
-  private buildSshClientOpts(args: string[]) {
+  private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>) {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
@@ -416,6 +422,7 @@ export class LinuxCommandExecutor {
       sourceIp,
       sourceUser: user,
       sourceHome: home,
+      callerEnv,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -893,7 +900,7 @@ export class LinuxCommandExecutor {
       trimmed,
       'bash',
       [],
-      (argv) => this.dispatchFromInterpreter(argv),
+      (argv, env) => this.dispatchFromInterpreter(argv, env),
       initialVars,
       io,
       { pid: this.shellPid, ppid: this.shellPpid },
@@ -931,10 +938,39 @@ export class LinuxCommandExecutor {
   }
 
   /**
+   * Run a command line with extra environment variables overlaid for the
+   * duration of the command, then restore the prior environment. Used by
+   * inbound SSH exec-mode to apply AcceptEnv-forwarded variables on the
+   * remote side without leaking them into the persistent shell env.
+   */
+  executeWithEnv(input: string, extraEnv: Record<string, string>): string {
+    const saved = new Map<string, string | undefined>();
+    for (const [k, v] of Object.entries(extraEnv)) {
+      saved.set(k, this.env.has(k) ? this.env.get(k) : undefined);
+      this.env.set(k, v);
+    }
+    try {
+      return this.execute(input);
+    } finally {
+      for (const [k, v] of saved) {
+        if (v === undefined) this.env.delete(k);
+        else this.env.set(k, v);
+      }
+    }
+  }
+
+  /**
    * Bridge between the bash interpreter and the command dispatcher.
    * Called by the interpreter for external (non-builtin) commands.
    */
-  private dispatchFromInterpreter(argv: string[]): { output: string; exitCode: number } {
+  private dispatchFromInterpreter(
+    argv: string[],
+    env?: Record<string, string>,
+  ): { output: string; exitCode: number } {
+    // Remember the shell environment of the command currently being
+    // dispatched so env-aware commands (ssh forwarding, locale) can read
+    // exported variables and `VAR=val` prefix assignments.
+    this._cmdEnv = env;
     if (argv.length === 0) return { output: '', exitCode: 0 };
 
     // The last argument may be pipe input (passed by the interpreter)
@@ -1297,6 +1333,37 @@ export class LinuxCommandExecutor {
         return { output: lines.join('\n'), exitCode: 0 };
       }
 
+      // locale — report the active locale, sourced from the live shell
+      // environment so SSH-forwarded LANG / LC_* are reflected.
+      case 'locale': {
+        const e = this._cmdEnv ?? Object.fromEntries(this.env);
+        const lang = e['LANG'] ?? '';
+        const lcAll = e['LC_ALL'] ?? '';
+        const effective = lcAll || lang || 'C';
+        const cat = (name: string) =>
+          `${name}="${e[name] ?? effective}"`;
+        return {
+          output: [
+            `LANG=${lang}`,
+            `LANGUAGE=${e['LANGUAGE'] ?? ''}`,
+            cat('LC_CTYPE'),
+            cat('LC_NUMERIC'),
+            cat('LC_TIME'),
+            cat('LC_COLLATE'),
+            cat('LC_MONETARY'),
+            cat('LC_MESSAGES'),
+            cat('LC_PAPER'),
+            cat('LC_NAME'),
+            cat('LC_ADDRESS'),
+            cat('LC_TELEPHONE'),
+            cat('LC_MEASUREMENT'),
+            cat('LC_IDENTIFICATION'),
+            `LC_ALL=${lcAll}`,
+          ].join('\n'),
+          exitCode: 0,
+        };
+      }
+
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
 
@@ -1510,7 +1577,7 @@ export class LinuxCommandExecutor {
         return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
-        return runSshClient(this.buildSshClientOpts(args));
+        return runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
       }
       case 'ssh-add':
         return this.handleSshAdd(args);
