@@ -19,6 +19,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -244,6 +245,74 @@ export class WindowsPC extends EndHost {
   /** Build a SshServerHandler ready to be hooked onto a TcpConnection. */
   getSshServerHandler(): SshServerHandler {
     return new SshServerHandler(this.getSshServerContext());
+  }
+
+  // ─── SSH server surface (consumed by the outbound ssh client) ───────
+
+  /** Whether the OpenSSH server (`sshd` service) is accepting connections. */
+  isSshActive(): boolean {
+    return this.svcMgr.getService('sshd')?.state === 'Running';
+  }
+
+  /**
+   * Login-policy decision for an inbound SSH user. Honours account
+   * existence and the enabled flag; further policy (allowed groups,
+   * `PermitRootLogin`-style gates) is layered on as the suite grows.
+   */
+  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+    const account = this.userMgr.getUser(user);
+    if (!account) return { ok: false, reason: 'no such user' };
+    if (!account.enabled) return { ok: false, reason: 'account disabled' };
+    return { ok: true };
+  }
+
+  /**
+   * Record an inbound SSH connection attempt in the audit trail. The
+   * logon event feeds the Security event-log projection, exactly as a
+   * real network logon (type 3) would.
+   */
+  recordSshLogin(user: string, _fromIp: string, _fromHost: string, accepted: boolean): void {
+    this.getBus().publish({
+      topic: 'windows.account.logon',
+      payload: { deviceId: this.id, account: user, success: accepted, logonType: 3 },
+    });
+  }
+
+  /** The remote command-prompt banner shown to an interactive SSH client. */
+  sshBanner(): string {
+    return 'Microsoft Windows [Version 10.0.22631.6649]\n' +
+      '(c) Microsoft Corporation. All rights reserved.';
+  }
+
+  /** Run a command on this machine for an SSH exec-mode request. */
+  async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
+    const previous = this.userMgr.currentUser;
+    if (this.userMgr.getUser(user)) this.userMgr.currentUser = user;
+    try {
+      const output = await this.executeCmdCommand(command);
+      return { output, exitCode: 0 };
+    } finally {
+      this.userMgr.currentUser = previous;
+    }
+  }
+
+  /** First IPv4 address configured on an up interface, or null. */
+  private firstConfiguredIp(): string | null {
+    for (const port of this.ports.values()) {
+      const ip = port.getIPAddress()?.toString();
+      if (ip && port.getIsUp()) return ip;
+    }
+    return null;
+  }
+
+  /** `ssh user@host [command]` — outbound SSH client. */
+  private cmdSsh(args: string[]): Promise<string> {
+    return runWindowsSshClient({
+      args,
+      sourceHostname: this.hostname,
+      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
+      sourceUser: this.userMgr.currentUser,
+    }).then(r => r.output);
   }
 
   private createPorts(): void {
@@ -514,6 +583,7 @@ export class WindowsPC extends EndHost {
       case 'route':    return cmdRoute(netCtx, args);
       case 'wevtutil': return cmdWevtutil(netCtx, args);
       case 'nslookup': return this.cmdNslookup(args);
+      case 'ssh':      return this.cmdSsh(args);
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
