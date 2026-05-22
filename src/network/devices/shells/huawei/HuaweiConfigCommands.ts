@@ -114,6 +114,13 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
+  // `undo stelnet server enable` — disables the SSH server admin flag
+  // so a subsequent ssh attempt is refused by the SshExecTarget gate.
+  if (args[0] === 'stelnet' && args[1] === 'server' && (args[2] === 'enable' || args[2] === undefined)) {
+    router._setSshServerEnabled(false);
+    return '';
+  }
+
   if (args[0] === 'dhcp' && args[1] === 'enable') {
     router._getDHCPServerInternal().disable();
     return '';
