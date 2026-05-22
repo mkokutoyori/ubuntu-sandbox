@@ -464,8 +464,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const lookupHost = isLoopback ? opts.sourceIp : host;
   const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
+    // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
+    // failure (OpenSSH prints "No route to host"). Strings that merely
+    // look like IPs but have out-of-range octets ("10.0.0.999") are
+    // treated as hostnames by the resolver, so they keep the original
+    // name-resolution error.
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+    const isValidIPv4 = m !== null
+      && m.slice(1).every(o => Number(o) >= 0 && Number(o) <= 255);
     return {
-      output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
+      output: isValidIPv4
+        ? `ssh: connect to host ${host} port ${port}: No route to host\n`
+        : `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
       exitCode: 255,
     };
   }

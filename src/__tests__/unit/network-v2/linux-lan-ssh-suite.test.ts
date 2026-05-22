@@ -1200,10 +1200,10 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
       contains: [/Connection refused|connection unexpectedly closed/],
     },
     {
-      name: 'scp to a bad host fails with "Could not resolve"',
+      name: 'scp to an off-topology IP fails with "No route to host"',
       on: l => l.pc1,
       cmd: 'scp /tmp/x alice@192.0.2.99:/tmp/',
-      contains: [/Could not resolve hostname|lost connection/],
+      contains: [/No route to host|Could not resolve hostname|lost connection/],
     },
     {
       name: 'scp with -P 2222 uses the alternate port',
