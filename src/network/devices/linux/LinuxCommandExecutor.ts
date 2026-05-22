@@ -1117,14 +1117,22 @@ export class LinuxCommandExecutor {
 
   /** Build initial environment variables for the bash interpreter. */
   private buildEnvVars(): Record<string, string> {
+    const user = this.userMgr.currentUser;
+    const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const vars: Record<string, string> = {
-      HOME: this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`,
+      HOME: home,
       PWD: this.cwd,
-      USER: this.userMgr.currentUser,
-      LOGNAME: this.userMgr.currentUser,
+      USER: user,
+      LOGNAME: user,
       UID: String(this.userMgr.currentUid),
       SHELL: '/bin/bash',
       PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      // Standard interactive-session variables a real login shell exports.
+      HOSTNAME: hostname,
+      TERM: 'xterm-256color',
+      MAIL: `/var/mail/${user}`,
+      SHLVL: '1',
     };
     // Include exported env vars
     for (const [k, v] of this.env) {
@@ -1345,6 +1353,27 @@ export class LinuxCommandExecutor {
         const lines: string[] = [];
         for (const [k, v] of this.env) { lines.push(`${k}=${v}`); }
         return { output: lines.join('\n'), exitCode: 0 };
+      }
+
+      // printenv — print the whole environment, or specific variables.
+      // With names, one value per line; exit 1 if any name is unset.
+      case 'printenv': {
+        const envView = this._cmdEnv ?? Object.fromEntries(this.env);
+        const names = args.filter((a) => !a.startsWith('-'));
+        if (names.length === 0) {
+          return {
+            output: Object.entries(envView).map(([k, v]) => `${k}=${v}`).join('\n'),
+            exitCode: 0,
+          };
+        }
+        const out: string[] = [];
+        let missing = false;
+        for (const name of names) {
+          const v = envView[name];
+          if (v === undefined) missing = true;
+          else out.push(v);
+        }
+        return { output: out.join('\n'), exitCode: missing ? 1 : 0 };
       }
 
       // time — run a command and report its elapsed wall/user/sys time

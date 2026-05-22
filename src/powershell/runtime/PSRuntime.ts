@@ -1004,7 +1004,8 @@ export class PSRuntime {
         const v = this.envVarHook(varName);
         if (v !== null) return v;
       }
-      return process.env[varName.toUpperCase()] ?? null;
+      // Unset on the device → $null (never the Node.js host environment).
+      return null;
     }
     if (scope === 'global' || scope === 'script') return env.getGlobal(varName);
     if (scope === 'local')                        return env.get(varName) ?? null;
@@ -1032,7 +1033,8 @@ export class PSRuntime {
         const v = this.envVarHook(name);
         if (v !== null) return v;
       }
-      return process.env[name.toUpperCase()] ?? null;
+      // Unset on the device → $null (never the Node.js host environment).
+      return null;
     }
 
     const val = env.get(name);
