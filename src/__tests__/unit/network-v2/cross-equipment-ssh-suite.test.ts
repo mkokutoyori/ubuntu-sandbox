@@ -2119,3 +2119,111 @@ describe('§31 — Filesystem coherence across SSH/local boundary', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §32 — Negative paths: unreachable, refused, key mismatch ───────
+
+describe('§32 — Negative paths', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'unreachable IP returns No route to host',
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 alice@192.0.2.99',
+      contains: [/No route to host|Network is unreachable|timed out|Connection timed out/i],
+    },
+    {
+      name: 'invalid IP literal is rejected before any TCP',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.999',
+      contains: [/Could not resolve|Name or service not known|invalid/i],
+    },
+    {
+      name: 'sshd stopped → Connection refused',
+      setup: async (l) => { await l.linux2.executeCommand('sudo systemctl stop ssh'); },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.2',
+      contains: [/Connection refused/i],
+    },
+    {
+      name: 'StrictHostKeyChecking=yes with no known_hosts entry refuses',
+      setup: async (l) => { await l.linux1.executeCommand('rm -f /root/.ssh/known_hosts'); },
+      on: l => l.linux1,
+      cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2',
+      contains: [/Host key verification failed|No matching host key|not known/i],
+    },
+    {
+      name: 'usage line on bare ssh with no host',
+      on: l => l.linux1, cmd: 'ssh',
+      contains: [/usage:\s*ssh/i],
+    },
+    {
+      name: 'usage line on bare scp with no source',
+      on: l => l.linux1, cmd: 'scp',
+      contains: [/usage:\s*scp/i],
+    },
+    {
+      name: 'usage line on bare sftp with no host',
+      on: l => l.linux1, cmd: 'sftp',
+      contains: [/usage:\s*sftp/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §33 — Full N×N reachability matrix over SSH ────────────────────
+//
+// Final guard: every pair (client × server) in the heterogeneous LAN
+// must complete an SSH session. Generated programmatically so adding
+// a new device type only requires adding it to the matrix.
+
+describe('§33 — Full SSH reachability matrix', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableCiscoSsh(lan.ciscoS1);
+    await enableHuaweiSsh(lan.hwR1);
+    await enableHuaweiSsh(lan.hwS1);
+  });
+
+  interface MatrixRow {
+    name: string;
+    client: keyof XLan;
+    cmd: string;
+    contains: (string | RegExp)[];
+  }
+
+  const targets: { ip: string; user: string; probe: string; want: RegExp }[] = [
+    { ip: '10.0.0.1', user: 'alice', probe: 'hostname', want: /^linux1$/m },
+    { ip: '10.0.0.2', user: 'alice', probe: 'hostname', want: /^linux2$/m },
+    { ip: '10.0.0.3', user: 'alice', probe: 'hostname', want: /^lxsrv1$/m },
+    { ip: '10.0.0.4', user: 'User',  probe: 'hostname', want: /^win1$/m },
+    { ip: '10.0.0.5', user: 'User',  probe: 'hostname', want: /^win2$/m },
+    { ip: '10.0.0.6', user: 'admin', probe: 'show version',    want: /IOS|Cisco/i },
+    { ip: '10.0.0.7', user: 'admin', probe: 'show version',    want: /IOS|Cisco/i },
+    { ip: '10.0.0.8', user: 'admin', probe: 'display version', want: /VRP|Huawei/i },
+    { ip: '10.0.0.9', user: 'admin', probe: 'display version', want: /VRP|Huawei/i },
+  ];
+
+  const clients: (keyof XLan)[] = ['linux1', 'lxsrv1', 'win1'];
+  const matrix: MatrixRow[] = clients.flatMap((c) =>
+    targets.map((t) => ({
+      name: `${String(c)} → ${t.ip}: ssh ${t.user}@${t.ip} "${t.probe}"`,
+      client: c,
+      cmd: `ssh ${t.user}@${t.ip} "${t.probe}"`,
+      contains: [t.want],
+    })),
+  );
+
+  test.each(matrix)('$name', async (m) => {
+    const dev = lan[m.client] as { executeCommand: (c: string) => Promise<string> };
+    const out = await dev.executeCommand(m.cmd);
+    for (const c of m.contains) {
+      if (c instanceof RegExp) expect(out).toMatch(c);
+      else expect(out).toContain(c);
+    }
+  });
+});
