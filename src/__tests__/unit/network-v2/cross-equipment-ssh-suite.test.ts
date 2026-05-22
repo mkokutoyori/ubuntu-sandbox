@@ -227,3 +227,56 @@ describe('§1 — Cross-equipment LAN bootstrap & reachability', () => {
     assertOutput(out, { contains: [/Reply from|bytes from|Request time out/i] });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// §2 — Linux → Linux SSH happy path
+// ════════════════════════════════════════════════════════════════════
+//
+// Drives `ssh` from a Linux PC CLI exactly as a real user would, making
+// sure the client traverses the network (TCP through core-sw), reaches
+// sshd on the peer, authenticates with the seeded `user`/`admin`
+// credentials, runs the remote command, prints its output and closes
+// the connection cleanly. Nothing here may bypass the network layer.
+
+describe('§2 — Linux → Linux SSH happy path', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  test('one-shot remote command returns remote stdout', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux2} whoami`,
+    );
+    assertOutput(out, { contains: ['user'], excludes: [/permission denied/i] });
+  });
+
+  test('remote hostname matches the target device', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux2} hostname`,
+    );
+    assertOutput(out, { contains: ['linux2'] });
+  });
+
+  test('SSH to a LinuxServer behaves the same as to a LinuxPC', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.lxsrv1} hostname`,
+    );
+    assertOutput(out, { contains: ['lxsrv1'] });
+  });
+
+  test('the connection-closed line terminates an interactive session', async () => {
+    const out = await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux2} exit`,
+    );
+    assertOutput(out, { contains: [/Connection to .* closed/i] });
+  });
+
+  test('non-zero remote exit code is surfaced to the local shell', async () => {
+    // Run the SSH command, then read $? on the local shell — both
+    // commands share the same bash session via executeCommand.
+    await lan.linux1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new user@${IPS.linux2} false`,
+    );
+    const out = await lan.linux1.executeCommand('echo $?');
+    assertOutput(out, { contains: [/^1\s*$/m] });
+  });
+});
