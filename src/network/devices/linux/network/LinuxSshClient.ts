@@ -22,6 +22,7 @@ import { SshPortForward } from './SshPortForward';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
+import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -492,6 +493,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  // Cross-platform dispatch (Windows / Cisco / Huawei). A target that
+  // implements SshExecTarget but is *not* a LinuxMachine (no in-process
+  // `executor` shortcut) handles its own auth + exec synchronously.
+  const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
+  if (!linuxLike && isSshExecTarget(found.device)) {
+    return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
+  }
+
   // The discovered Equipment may be a router/switch — only LinuxMachine
   // (PC or Server) ships a sshd; everything else refuses on principle.
   const machine = found.device as LinuxMachine & {
@@ -774,4 +783,74 @@ function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | nul
     exec.userMgr.currentGid = before.gid;
     exec.cwd = before.cwd;
   };
+}
+
+/**
+ * Cross-platform SSH exec dispatch for non-Linux targets (Windows,
+ * Cisco IOS, Huawei VRP). The target's polymorphic `SshExecTarget`
+ * surface handles auth, audit and the synchronous command whitelist.
+ *
+ * The dispatch returns the same `SshClientResult` shape as the Linux
+ * path so callers (LinuxCommandExecutor) don't need to know which
+ * platform answered.
+ */
+function runCrossPlatformExec(
+  target: SshExecTarget,
+  remoteUser: string,
+  positional: string[],
+  port: number,
+  host: string,
+  opts: SshClientOpts,
+): SshClientResult {
+  // sshd state gate — refuse the TCP handshake if the service is down.
+  if (!target.isSshActive()) {
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+  // Listening-port gate — `Port` directive must include the requested
+  // port (defaults to [22]).
+  const policy = target.getSshPolicy();
+  if (!policy.ports.includes(port)) {
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+  // Login-policy gate (account exists, enabled, root permissions, …).
+  const login = target.sshdAcceptsLogin(remoteUser);
+  if (!login.ok) {
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
+      exitCode: 255,
+    };
+  }
+  target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
+
+  const remoteCmd = joinRemoteCommand(positional.slice(1));
+  if (remoteCmd) {
+    const result = target.runSshCommandSync(remoteUser, remoteCmd);
+    if (result) return { output: result.output, exitCode: result.exitCode };
+    // Command outside the curated sync surface — surface an explicit
+    // diagnostic instead of silently dropping it. A future iteration
+    // will await the async exec path and remove this branch.
+    return {
+      output: `ssh: remote shell rejected '${remoteCmd}' (command not yet supported over the sync bridge)\n`,
+      exitCode: 1,
+    };
+  }
+
+  // Interactive form (no remote command): return the banner + MOTD
+  // composition the platform announces.
+  const lines: string[] = [];
+  const banner = target.getSshBanner();
+  const motd = target.getSshMotd();
+  if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
+  if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
+  lines.push(`Connection to ${host} closed.`);
+  return { output: lines.join('\n'), exitCode: 0 };
 }

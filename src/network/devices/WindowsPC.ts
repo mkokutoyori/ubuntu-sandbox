@@ -296,6 +296,104 @@ export class WindowsPC extends EndHost {
     }
   }
 
+  // ─── SshExecTarget surface (sync path used by cross-platform clients) ───
+
+  /** Hostname as it would appear in the remote shell's prompt. */
+  getSshHostname(): string { return this.hostname; }
+
+  /** Pre-auth banner. Windows ships an empty Banner by default. */
+  getSshBanner(): string { return ''; }
+
+  /** Post-auth MOTD; Windows shows the cmd.exe version line. */
+  getSshMotd(): string { return this.sshBanner(); }
+
+  /** Polymorphic alias for `isSshActive` so any caller can ask by name. */
+  isServiceActive(name: string): boolean {
+    if (name === 'ssh' || name === 'sshd') return this.isSshActive();
+    return this.svcMgr.getService(name)?.state === 'Running';
+  }
+
+  /**
+   * Frozen view of OpenSSH-for-Windows policy. Reads from C:\ProgramData\
+   * ssh\sshd_config when present, falls back to OpenSSH defaults.
+   */
+  getSshPolicy(): {
+    readonly active: boolean;
+    readonly ports: readonly number[];
+    readonly permitRootLogin: boolean;
+    readonly passwordAuthentication: boolean;
+    readonly pubkeyAuthentication: boolean;
+    readonly maxAuthTries: number;
+    readonly permitEmptyPasswords: boolean;
+  } {
+    const cfgResult = this.fs.readFile('C:\\ProgramData\\ssh\\sshd_config');
+    const cfg = cfgResult.ok && cfgResult.content ? cfgResult.content : '';
+    const directive = (n: string): string | null => {
+      const m = new RegExp(`^\\s*${n}\\s+(\\S+)`, 'im').exec(cfg);
+      return m ? m[1].toLowerCase() : null;
+    };
+    const ports = Array.from(cfg.matchAll(/^\s*Port\s+(\d+)/gim))
+      .map(m => Number(m[1]))
+      .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+    return Object.freeze({
+      active: this.isSshActive(),
+      ports: ports.length ? Object.freeze(ports) : Object.freeze([22]),
+      permitRootLogin: directive('PermitRootLogin') !== 'no',
+      passwordAuthentication: directive('PasswordAuthentication') !== 'no',
+      pubkeyAuthentication: directive('PubkeyAuthentication') !== 'no',
+      maxAuthTries: Number(directive('MaxAuthTries') ?? 6),
+      permitEmptyPasswords: directive('PermitEmptyPasswords') === 'yes',
+    });
+  }
+
+  /** Stable host-key identity surfaced to known_hosts. */
+  getSshHostKey(): {
+    readonly type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+    readonly fingerprintSha256: string;
+    readonly publicKey: string;
+  } {
+    return this.getSshServerContext().hostKey as unknown as {
+      readonly type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+      readonly fingerprintSha256: string;
+      readonly publicKey: string;
+    };
+  }
+
+  /**
+   * Curated, *synchronous* exec entry point used by the cross-platform
+   * SSH client dispatch. Returns `null` for anything outside this
+   * whitelist — the caller falls back to the async surface.
+   *
+   * The whitelist mirrors what an operator types right after
+   * `ssh User@host` on a Windows box: identification, identity check,
+   * trivial transforms. Everything else (PowerShell pipelines,
+   * `dir`, `reg add`, …) goes through async cmd.exe.
+   */
+  runSshCommandSync(user: string, command: string): { output: string; exitCode: number } | null {
+    const cmd = command.trim();
+    if (!cmd) return { output: '', exitCode: 0 };
+
+    // `hostname` → the configured machine name.
+    if (/^hostname\s*$/i.test(cmd)) {
+      return { output: `${this.hostname}\n`, exitCode: 0 };
+    }
+    // `ver` → cmd.exe Windows-version banner.
+    if (/^ver\s*$/i.test(cmd)) {
+      return { output: `\n${this.sshBanner().split('\n')[0]}\n\n`, exitCode: 0 };
+    }
+    // `whoami` → the SSH user. Real Windows returns "host\user"; we
+    // keep that shape so AD-aware scripts see something coherent.
+    if (/^whoami\s*$/i.test(cmd)) {
+      return { output: `${this.hostname.toLowerCase()}\\${user}\n`, exitCode: 0 };
+    }
+    // `echo something` → literal echo (no variable expansion).
+    const echoMatch = /^echo\s+(.*)$/i.exec(cmd);
+    if (echoMatch) {
+      return { output: `${echoMatch[1]}\n`, exitCode: 0 };
+    }
+    return null;
+  }
+
   /** First IPv4 address configured on an up interface, or null. */
   private firstConfiguredIp(): string | null {
     for (const port of this.ports.values()) {
