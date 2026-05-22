@@ -1180,3 +1180,73 @@ describe('§16 — SSH agent & agent forwarding', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §17 — Banner, MOTD, last-login per platform ────────────────────
+//
+// Pre-auth banner (/etc/issue.net on Linux, banner motd on Cisco/Huawei,
+// LegalNoticeText on Windows) must reach the client before the password
+// prompt. /etc/motd and last-login show post-auth.
+
+describe('§17 — Banner, MOTD and last-login per platform', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: /etc/issue.net is displayed pre-auth',
+      setup: (l) => { void l.linux2.executeCommand("echo 'AUTHORIZED USE ONLY' > /etc/issue.net"); },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['AUTHORIZED USE ONLY'],
+    },
+    {
+      name: 'Linux: /etc/motd is shown after auth',
+      setup: (l) => { void l.linux2.executeCommand("echo 'Property of ACME' > /etc/motd"); },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['Property of ACME'],
+    },
+    {
+      name: 'Linux: last login line appears on subsequent connect',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 exit');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: [/Last login:.* from 10\.0\.0\.1/i],
+    },
+    {
+      name: 'Cisco: banner motd is shown to SSH clients',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('banner motd # AUTHORIZED USE ONLY #');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6',
+      contains: ['AUTHORIZED USE ONLY'],
+    },
+    {
+      name: 'Huawei: header login information is shown to SSH clients',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('header login information "VRP AUTH NOTICE"');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8',
+      contains: ['VRP AUTH NOTICE'],
+    },
+    {
+      name: 'Windows: LegalNoticeText reaches the SSH client',
+      setup: async (l) => {
+        await l.win1.executeCommand('reg add "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v LegalNoticeText /d "WIN BANNER" /f');
+      },
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4',
+      contains: ['WIN BANNER'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
