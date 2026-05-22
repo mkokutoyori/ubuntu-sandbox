@@ -486,7 +486,9 @@ export class LinuxCommandExecutor {
     for (const name of this.ipNetworkCtx.getInterfaceNames()) {
       if (name === 'lo') continue;
       const info = this.ipNetworkCtx.getInterfaceInfo(name);
-      if (info?.ip) return info.ip;
+      // An administratively-down NIC cannot source traffic, so its address
+      // is unusable until the interface is brought back up.
+      if (info?.ip && info.isUp) return info.ip;
     }
     return null;
   }

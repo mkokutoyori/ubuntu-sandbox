@@ -17,6 +17,12 @@ export interface RemoteHost {
   resolvedFrom: string;
   /** True when the IP is configured but the device is powered off — ssh returns "No route to host". */
   poweredOff?: boolean;
+  /**
+   * True when the IP is configured on an administratively-down NIC. Such an
+   * interface does not answer ARP, so a peer trying to reach it gets
+   * "No route to host" exactly as it would on real hardware.
+   */
+  interfaceDown?: boolean;
 }
 
 /**
@@ -44,6 +50,10 @@ export function findHostByAddress(
         if (ip && ip.toString() === target) {
           if (!dev.getIsPoweredOn()) {
             off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
+            continue;
+          }
+          if (!port.getIsUp()) {
+            off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
             continue;
           }
           return { device: dev, ip: target, resolvedFrom: target };

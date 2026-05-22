@@ -279,8 +279,22 @@ function ipAddr(ctx: IpNetworkContext, args: string[]): string {
   }
   if (args[0] === 'add') return ipAddrAdd(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipAddrDel(ctx, args.slice(1));
+  if (args[0] === 'flush') return ipAddrFlush(ctx, args.slice(1));
   if (args[0] === 'help') return IP_ADDR_HELP;
   return `Command "${args[0]}" is unknown, try "ip addr help".`;
+}
+
+function ipAddrFlush(ctx: IpNetworkContext, args: string[]): string {
+  // ip addr flush dev <name> — drop every address configured on the device.
+  let devName: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'dev' && args[i + 1]) {
+      devName = args[i + 1];
+      i++;
+    }
+  }
+  if (!devName) return 'Not enough information: "dev" argument is required.';
+  return ctx.removeInterfaceIP(devName);
 }
 
 function ipAddrShow(ctx: IpNetworkContext, args: string[]): string {

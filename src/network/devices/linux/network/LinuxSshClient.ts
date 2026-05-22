@@ -150,6 +150,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  if (found.interfaceDown) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
+      exitCode: 255,
+    };
+  }
 
   // The discovered Equipment may be a router/switch — only LinuxMachine
   // (PC or Server) ships a sshd; everything else refuses on principle.
