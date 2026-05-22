@@ -17,6 +17,7 @@ import {
   ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
+import { AliasTable } from '@/bash/runtime/AliasTable';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
 
@@ -69,6 +70,11 @@ export interface InterpreterOptions {
   pid?: number;
   /** Parent PID ($PPID). */
   ppid?: number;
+  /**
+   * Shared alias table. When provided, the interpreter mutates it in
+   * place so `alias` / `unalias` definitions persist across commands.
+   */
+  aliases?: AliasTable;
 }
 
 export class BashInterpreter {
@@ -77,10 +83,13 @@ export class BashInterpreter {
   private io: IOContext | null;
   private output: string[] = [];
   private functions: Map<string, Command> = new Map();
+  /** Command aliases — shared with the owning shell when one is passed. */
+  readonly aliases: AliasTable;
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
     this.io = options.io ?? null;
+    this.aliases = options.aliases ?? new AliasTable();
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -233,7 +242,8 @@ export class BashInterpreter {
       return;
     }
 
-    const args = expandWords(node.words, this.env, cmdExec);
+    // Command-position alias expansion happens before any resolution.
+    const args = this.expandAliases(expandWords(node.words, this.env, cmdExec));
     const cmdName = args[0];
 
     // Handle eval: re-parse and execute the joined args
@@ -256,10 +266,13 @@ export class BashInterpreter {
 
     // Check for function
     const fn = this.functions.get(cmdName);
-    if (fn) {
+    if (cmdName === 'command') {
+      // `command` runs its operand skipping function and alias lookup.
+      this.runCommandWord(args.slice(1), pipeInput);
+    } else if (fn) {
       this.callFunction(fn, args.slice(1));
     } else if (isBuiltin(cmdName)) {
-      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined, pipeInput);
+      const result = executeBuiltin(cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined, pipeInput, this.aliases);
       if (result.output) this.output.push(result.output);
       this.env.lastExitCode = result.exitCode;
     } else {
@@ -281,6 +294,102 @@ export class BashInterpreter {
       this.output = savedOutput;
       this.applyRedirections(node.redirections, capturedOutput, cmdExec);
     }
+  }
+
+  /**
+   * Command-position alias expansion. Substitutes the first word with its
+   * alias body, repeating while the new head is itself an alias — but
+   * never re-expanding a name already seen, so `alias ls='ls -p'`
+   * terminates instead of looping forever.
+   */
+  private expandAliases(args: string[]): string[] {
+    if (args.length === 0 || this.aliases.size === 0) return args;
+    let result = args;
+    const seen = new Set<string>();
+    while (result.length > 0) {
+      const head = result[0];
+      if (seen.has(head)) break;
+      const alias = this.aliases.get(head);
+      if (!alias) break;
+      seen.add(head);
+      result = [...alias.tokens(), ...result.slice(1)];
+    }
+    return result;
+  }
+
+  /**
+   * The `command` builtin: run an operand skipping function and alias
+   * lookup, or — with `-v` / `-V` — describe how it would resolve.
+   */
+  private runCommandWord(rest: string[], pipeInput?: string): void {
+    let mode: 'run' | 'v' | 'V' = 'run';
+    let i = 0;
+    for (; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === '-v') { mode = 'v'; continue; }
+      if (a === '-V') { mode = 'V'; continue; }
+      if (a === '-p') continue;            // "use a default PATH" — accepted
+      if (a === '--') { i++; break; }
+      break;
+    }
+    const target = rest.slice(i);
+    if (target.length === 0) { this.env.lastExitCode = 0; return; }
+    const name = target[0];
+
+    if (mode !== 'run') {
+      const desc = this.describeResolution(name, mode === 'V');
+      if (desc !== null) {
+        this.output.push(desc + '\n');
+        this.env.lastExitCode = 0;
+      } else {
+        if (mode === 'V') this.output.push(`bash: command: ${name}: not found\n`);
+        this.env.lastExitCode = 1;
+      }
+      return;
+    }
+
+    // Execute, skipping function and alias resolution.
+    if (isBuiltin(name)) {
+      const r = executeBuiltin(
+        name, target.slice(1), this.env, this.functions,
+        this.io ?? undefined, pipeInput, this.aliases,
+      );
+      if (r.output) this.output.push(r.output);
+      this.env.lastExitCode = r.exitCode;
+      return;
+    }
+    try {
+      const fullArgs = pipeInput ? [...target, pipeInput] : target;
+      const envSnapshot = Object.fromEntries(this.env.getAll());
+      const result = normalizeResult(this.executeCommand(fullArgs, envSnapshot));
+      if (result.output) this.output.push(result.output);
+      this.env.lastExitCode = result.exitCode;
+    } catch {
+      this.env.lastExitCode = 127;
+    }
+  }
+
+  /**
+   * Describe how `name` resolves for `command -v` (terse) / `-V`
+   * (verbose). Builtins and functions are answered here; any other name
+   * is probed against the external executor, which owns the command
+   * registry and the VFS.
+   */
+  private describeResolution(name: string, verbose: boolean): string | null {
+    if (isBuiltin(name)) {
+      return verbose ? `${name} is a shell builtin` : name;
+    }
+    if (this.functions.has(name)) {
+      return verbose ? `${name} is a function` : name;
+    }
+    try {
+      const probe = normalizeResult(
+        this.executeCommand(['command', verbose ? '-V' : '-v', name]),
+      );
+      const text = probe.output.trim();
+      if (probe.exitCode === 0 && text) return text;
+    } catch { /* fall through to "not found" */ }
+    return null;
   }
 
   /** Apply output redirections to captured output. */

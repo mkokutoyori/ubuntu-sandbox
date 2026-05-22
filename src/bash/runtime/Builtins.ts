@@ -15,6 +15,7 @@ import {
   ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
 } from '@/bash/errors/BashError';
 import { evaluateArithmetic } from './Expansion';
+import type { AliasTable } from './AliasTable';
 
 /** Minimal IO interface for builtins that need filesystem access. */
 export interface BuiltinIO {
@@ -32,7 +33,7 @@ const BUILTIN_NAMES = new Set([
   'local', 'read', 'true', 'false',
   'exit', 'return', 'break', 'continue',
   'shift', 'type', 'source', '.', 'declare', 'readonly', 'let',
-  'eval',
+  'eval', 'alias', 'unalias',
 ]);
 
 export function isBuiltin(name: string): boolean {
@@ -46,6 +47,7 @@ export function executeBuiltin(
   functions: Map<string, Command>,
   io?: BuiltinIO,
   pipeInput?: string,
+  aliases?: AliasTable,
 ): BuiltinResult {
   switch (name) {
     case 'echo': return builtinEcho(args);
@@ -63,15 +65,69 @@ export function executeBuiltin(
     case 'shift': return builtinShift(args, env);
     case 'local': return builtinLocal(args, env);
     case 'read': return builtinRead(args, env, pipeInput);
-    case 'type': return builtinType(args, functions);
+    case 'type': return builtinType(args, functions, aliases);
     case 'set': return builtinSet(args, env);
     case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
     case 'declare': return builtinDeclare(args, env, false);
     case 'readonly': return builtinDeclare(args, env, true);
     case 'let': return builtinLet(args, env);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
+    case 'alias': return builtinAlias(args, aliases);
+    case 'unalias': return builtinUnalias(args, aliases);
     default: return { output: '', exitCode: 127 };
   }
+}
+
+// ─── alias / unalias ────────────────────────────────────────────
+
+function builtinAlias(args: string[], aliases?: AliasTable): BuiltinResult {
+  if (!aliases) return { output: '', exitCode: 0 };
+  // No operands (or -p) → list every alias in definition form.
+  if (args.length === 0 || (args.length === 1 && args[0] === '-p')) {
+    const list = aliases.list();
+    return {
+      output: list.map(a => a.format()).join('\n') + (list.length ? '\n' : ''),
+      exitCode: 0,
+    };
+  }
+  let output = '';
+  let exitCode = 0;
+  for (const arg of args) {
+    if (arg === '-p') continue;
+    const eq = arg.indexOf('=');
+    if (eq >= 0) {
+      // `alias name=value` — define (or redefine).
+      aliases.define(arg.slice(0, eq), arg.slice(eq + 1));
+    } else {
+      // `alias name` — print just that binding.
+      const a = aliases.get(arg);
+      if (a) {
+        output += a.format() + '\n';
+      } else {
+        output += `bash: alias: ${arg}: not found\n`;
+        exitCode = 1;
+      }
+    }
+  }
+  return { output, exitCode };
+}
+
+function builtinUnalias(args: string[], aliases?: AliasTable): BuiltinResult {
+  if (!aliases) return { output: '', exitCode: 0 };
+  if (args.includes('-a')) {
+    aliases.clear();
+    return { output: '', exitCode: 0 };
+  }
+  let output = '';
+  let exitCode = 0;
+  for (const name of args) {
+    if (name.startsWith('-')) continue;
+    if (!aliases.remove(name)) {
+      output += `bash: unalias: ${name}: not found\n`;
+      exitCode = 1;
+    }
+  }
+  return { output, exitCode };
 }
 
 // ─── echo ───────────────────────────────────────────────────────
@@ -641,16 +697,26 @@ function builtinRead(args: string[], env: Environment, pipeInput?: string): Buil
 
 // ─── type ───────────────────────────────────────────────────────
 
-function builtinType(args: string[], functions: Map<string, Command>): BuiltinResult {
+function builtinType(
+  args: string[],
+  functions: Map<string, Command>,
+  aliases?: AliasTable,
+): BuiltinResult {
+  // `-t` prints only the one-word type; other flags are accepted as no-ops.
+  const terse = args.includes('-t');
+  const names = args.filter(a => !a.startsWith('-'));
   const outputs: string[] = [];
   let exitCode = 0;
-  for (const name of args) {
-    if (BUILTIN_NAMES.has(name)) {
-      outputs.push(`${name} is a shell builtin\n`);
+  for (const name of names) {
+    const alias = aliases?.get(name);
+    if (alias) {
+      outputs.push(terse ? 'alias\n' : `${name} is aliased to \`${alias.value}'\n`);
+    } else if (BUILTIN_NAMES.has(name)) {
+      outputs.push(terse ? 'builtin\n' : `${name} is a shell builtin\n`);
     } else if (functions.has(name)) {
-      outputs.push(`${name} is a function\n`);
+      outputs.push(terse ? 'function\n' : `${name} is a function\n`);
     } else {
-      outputs.push(`bash: type: ${name}: not found\n`);
+      if (!terse) outputs.push(`bash: type: ${name}: not found\n`);
       exitCode = 1;
     }
   }

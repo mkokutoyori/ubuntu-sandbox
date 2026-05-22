@@ -38,12 +38,17 @@ export class BashLexer {
     const tokens: Token[] = [];
 
     while (!this.isAtEnd()) {
+      const posBeforeSkip = this.pos;
       this.skipSpacesAndTabs();
       if (this.isAtEnd()) break;
+      const noWhitespaceBefore = this.pos === posBeforeSkip;
 
       const tok = this.scanToken();
       if (tok) {
         if (strip && tok.type === TokenType.WORD && tok.value.startsWith('#')) continue;
+        // Mark tokens that butt directly against the previous one so the
+        // parser can fuse `name='a b'` / `pre"$x"` into one word.
+        if (noWhitespaceBefore && tokens.length > 0) tok.adjacent = true;
         tokens.push(tok);
       }
     }

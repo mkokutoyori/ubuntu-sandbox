@@ -93,6 +93,12 @@ export interface Token {
   type: TokenType;
   value: string;
   position: SourcePosition;
+  /**
+   * True when this token immediately follows the previous one with no
+   * intervening whitespace. The parser uses it to concatenate adjacent
+   * word atoms into a single word — e.g. `name='a b'` or `pre"$x"post`.
+   */
+  adjacent?: boolean;
 }
 
 /** Create a token (convenience factory). */

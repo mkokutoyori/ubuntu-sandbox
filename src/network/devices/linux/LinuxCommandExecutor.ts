@@ -22,6 +22,7 @@ import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
+import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
 import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
@@ -63,6 +64,53 @@ const STDIN_COMMANDS = new Set([
   'sort', 'wc', 'grep', 'head', 'tail', 'tr', 'cut', 'uniq', 'tee',
   'awk', 'sed', 'cat', 'xargs', 'less', 'more',
 ]);
+
+/**
+ * Every command name the Linux executor knows how to run. Backs shell
+ * completion and `command -v` / `which` / `type` resolution — the
+ * simulator's stand-in for walking `$PATH`.
+ */
+const KNOWN_LINUX_COMMANDS: readonly string[] = [
+  // File/dir basics
+  'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
+  'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
+  'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
+  'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+  'less', 'more', 'diff', 'cmp', 'patch',
+  // Shell builtins and basics
+  'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
+  'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
+  'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
+  'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
+  // Users and groups
+  'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
+  'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
+  'faillock', 'ausearch', 'aureport', 'auditctl',
+  'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
+  'login', 'logout',
+  // Lookup
+  'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
+  // System / processes / time
+  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+  'runlevel', 'hostnamectl', 'timedatectl',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
+  'pkill', 'pgrep', 'pidof', 'killall',
+  'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
+  'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
+  // Networking
+  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
+  'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
+  'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
+  'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
+  // Editors
+  'nano', 'vi', 'vim', 'emacs', 'ed',
+  // Archives / packages
+  'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
+  'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
+];
+
+/** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
+const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -164,6 +212,8 @@ export class LinuxCommandExecutor {
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
+  /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
+  readonly aliases = new AliasTable();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
@@ -1004,6 +1054,7 @@ export class LinuxCommandExecutor {
       initialVars,
       io,
       { pid: this.shellPid, ppid: this.shellPpid },
+      this.aliases,
     );
 
     // Sync interpreter state back to executor
@@ -1371,7 +1422,7 @@ export class LinuxCommandExecutor {
       case 'locate': return { output: cmdLocate(c, args), exitCode: 0 };
       case 'which': return { output: cmdWhich(c, args), exitCode: 0 };
       case 'whereis': return { output: cmdWhereis(c, args), exitCode: 0 };
-      case 'command': return { output: cmdCommand(c, args), exitCode: cmdCommand(c, args) ? 0 : 1 };
+      case 'command': return cmdCommand(c, args, KNOWN_LINUX_COMMAND_SET);
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
@@ -1592,11 +1643,14 @@ export class LinuxCommandExecutor {
         }
         const arg0 = login ? '-bash' : cmd;
         if (cmdString !== null) {
-          const result = runScriptContent(cmdString, arg0, args.slice(i), execCmd, this.buildEnvVars(), this.buildIOContext());
+          const result = runScriptContent(
+            cmdString, arg0, args.slice(i), execCmd,
+            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases,
+          );
           return { output: result.output, exitCode: result.exitCode };
         }
         if (i < args.length) {
-          const result = runScript(c, args[i], args.slice(i + 1), execCmd);
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -1821,10 +1875,11 @@ export class LinuxCommandExecutor {
         const xCmd = args[0] || 'echo';
         return { output: stdin.split('\n').filter(l => l.trim()).map(l => `${xCmd} ${l.trim()}`).join('\n'), exitCode: 0 };
       }
+      // alias / unalias / type / set / unset / declare / local / readonly
+      // are shell builtins resolved inside the bash interpreter; they only
+      // reach this dispatcher when the interpreter is bypassed.
       case 'tput':
       case 'stty':
-      case 'alias':
-      case 'unalias':
       case 'type':
       case 'set':
       case 'unset':
@@ -1938,7 +1993,10 @@ export class LinuxCommandExecutor {
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
           if (this.vfs.exists(absPath)) {
-            const result = runScript(c, cmd, args, (argv) => this.dispatchFromInterpreter(argv));
+            const result = runScript(
+              c, cmd, args,
+              (argv) => this.dispatchFromInterpreter(argv), this.aliases,
+            );
             return { output: result.output, exitCode: result.exitCode };
           }
         }
@@ -2616,46 +2674,7 @@ export class LinuxCommandExecutor {
   }
 
   private getCommandCompletions(prefix: string): string[] {
-    const commands = [
-      // File/dir basics
-      'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
-      'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
-      'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
-      'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
-      'less', 'more', 'diff', 'cmp', 'patch',
-      // Shell builtins and basics
-      'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
-      'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
-      'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
-      'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
-      // Users and groups
-      'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
-      'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-      'faillock', 'ausearch', 'aureport', 'auditctl',
-      'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
-      'login', 'logout',
-      // Lookup
-      'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
-      // System / processes / time
-      'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
-      'runlevel', 'hostnamectl', 'timedatectl',
-      'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
-      'pkill', 'pgrep', 'pidof', 'killall',
-      'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
-      'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
-      // Networking
-      'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
-      'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
-      'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat',
-      'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
-      // Editors
-      'nano', 'vi', 'vim', 'emacs', 'ed',
-      // Archives / packages
-      'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
-      'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
-    ];
-    // Dedup
-    const unique = Array.from(new Set(commands));
+    const unique = Array.from(new Set(KNOWN_LINUX_COMMANDS));
     if (!prefix) return unique.sort();
     return unique.filter(c => c.startsWith(prefix)).sort();
   }
