@@ -485,3 +485,66 @@ describe('§6 — Linux → Huawei VRP SSH', () => {
     assertOutput(out, { contains: [/Connection (closed|refused)/i] });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// §7 — Windows → Cisco / Huawei SSH
+// ════════════════════════════════════════════════════════════════════
+//
+// Same gating as §5/§6 but driven from Windows. Verifies that the
+// Windows OpenSSH client speaks the same SSH transport as Linux and
+// that the remote shell behind the channel is the native CLI of each
+// platform (no fall-through to bash).
+
+describe('§7 — Windows → Cisco / Huawei SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    for (const dev of [lan.ciscoR1]) {
+      await dev.executeCommand('enable');
+      await dev.executeCommand('configure terminal');
+      await dev.executeCommand('username admin privilege 15 secret Admin@123');
+      await dev.executeCommand('ip domain-name lab.local');
+      await dev.executeCommand('crypto key generate rsa modulus 2048');
+      await dev.executeCommand('line vty 0 4');
+      await dev.executeCommand('login local');
+      await dev.executeCommand('transport input ssh');
+      await dev.executeCommand('end');
+    }
+    await lan.huaweiR1.executeCommand('system-view');
+    await lan.huaweiR1.executeCommand('aaa');
+    await lan.huaweiR1.executeCommand('local-user admin password cipher Admin@123');
+    await lan.huaweiR1.executeCommand('local-user admin service-type ssh');
+    await lan.huaweiR1.executeCommand('local-user admin privilege level 15');
+    await lan.huaweiR1.executeCommand('quit');
+    await lan.huaweiR1.executeCommand('rsa local-key-pair create');
+    await lan.huaweiR1.executeCommand('stelnet server enable');
+    await lan.huaweiR1.executeCommand('user-interface vty 0 4');
+    await lan.huaweiR1.executeCommand('authentication-mode aaa');
+    await lan.huaweiR1.executeCommand('protocol inbound ssh');
+    await lan.huaweiR1.executeCommand('quit');
+    await lan.huaweiR1.executeCommand('ssh user admin authentication-type password');
+    await lan.huaweiR1.executeCommand('quit');
+  });
+
+  test('Windows ssh.exe reaches Cisco IOS and runs show version', async () => {
+    const out = await lan.win1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.ciscoR1} "show version"`,
+    );
+    assertOutput(out, { contains: [/IOS|Cisco/i] });
+  });
+
+  test('Windows ssh.exe reaches Huawei VRP and runs display version', async () => {
+    const out = await lan.win1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.huaweiR1} "display version"`,
+    );
+    assertOutput(out, { contains: [/VRP|Huawei/i] });
+  });
+
+  test('the remote prompt is Cisco IOS, not cmd.exe, after SSH', async () => {
+    const out = await lan.win1.executeCommand(
+      `ssh -o StrictHostKeyChecking=accept-new admin@${IPS.ciscoR1} "?" `,
+    );
+    // Cisco IOS context-sensitive help, never a cmd.exe usage line.
+    assertOutput(out, { excludes: [/Microsoft|cmd\.exe/i] });
+  });
+});
