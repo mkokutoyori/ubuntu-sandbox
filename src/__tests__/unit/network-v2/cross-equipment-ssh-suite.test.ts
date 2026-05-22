@@ -1991,3 +1991,72 @@ describe('§29 — Hostname resolution under SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §30 — Command flow: dispatcher resolves by *flow descriptor* ───
+//
+// The grievance restated for SSH-bound shells: the typed token must
+// resolve to a *flow descriptor* (Privilege, Builtin, External, Alias,
+// Function…) before dispatch. So `please …` after `alias please=sudo`
+// drives the very same privilege-escalation flow as `sudo`, including
+// through an SSH channel.
+
+describe('§30 — Command flow respects aliases through SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'aliased sudo via SSH escalates exactly like the canonical command',
+      setup: async (l) => {
+        await l.linux2.executeCommand('su - alice');
+        await l.linux2.executeCommand("echo \"alias please='sudo'\" >> /home/alice/.bashrc");
+        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+      },
+      on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "please whoami"',
+      contains: [/^root$/m],
+      excludes: [/please: not found|command not found/i],
+    },
+    {
+      name: 'shell function defined remotely is invoked through SSH',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo "myfn() { echo CUSTOM:$1; }" >> /home/alice/.bashrc');
+        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+      },
+      on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "myfn ping"',
+      contains: [/^CUSTOM:ping$/m],
+    },
+    {
+      name: 'alias inside a heredoc-sent script is honoured on the remote shell',
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 \'bash -lc "shopt -s expand_aliases; alias greet=echo; greet bonjour"\'',
+      contains: [/^bonjour$/m],
+    },
+    {
+      name: 'Cisco: aliased show command via SSH runs the dispatcher entry, not a string echo',
+      setup: async (l) => {
+        await enableCiscoSsh(l.ciscoR1);
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('alias exec si show ip interface brief');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "si"',
+      contains: [/Interface\s+IP-Address|GigabitEthernet0\/0/i],
+    },
+    {
+      name: 'Huawei: command-alias via SSH dispatches the display handler',
+      setup: async (l) => {
+        await enableHuaweiSsh(l.hwR1);
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('command-alias enable');
+        await l.hwR1.executeCommand('command-alias alias dis-int display interface');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "dis-int GigabitEthernet0/0/0"',
+      contains: [/GigabitEthernet0\/0\/0 current state/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
