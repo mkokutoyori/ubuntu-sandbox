@@ -30,6 +30,8 @@ import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
 import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
 import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
+import { PortProxyTable } from './windows/PortProxyTable';
+import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
@@ -134,6 +136,10 @@ export class WindowsPC extends EndHost {
   private eventLogProjection: WindowsEventLogProjection | null = null;
   /** Reactive consumer: service lifecycle events → socket-table ports. */
   private servicePortProjection: WindowsServicePortProjection | null = null;
+  /** `netsh interface portproxy` rules — port-forwarding entries. */
+  readonly portProxyTable: PortProxyTable = new PortProxyTable();
+  /** Reactive consumer: port-proxy events → socket-table listeners. */
+  private portProxySocketProjection: PortProxySocketProjection | null = null;
   /** Service manager (service lifecycle, dependencies) */
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
@@ -204,6 +210,10 @@ export class WindowsPC extends EndHost {
     );
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
+    // Port-proxy rules announce on the bus; the projection keeps the
+    // socket table coherent so `netstat` reflects every active rule.
+    this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
+    this.portProxyTable.attachBus(bus, this.id);
   }
 
   private initDefaultSockets(): void {
@@ -884,6 +894,9 @@ export class WindowsPC extends EndHost {
         const svc = this.svcMgr.getService(name);
         return svc ? svc.state === 'Running' : false;
       },
+
+      // Port-proxy rules (netsh interface portproxy)
+      portProxy: this.portProxyTable,
     };
   }
 

@@ -125,4 +125,7 @@ export interface WinCommandContext {
 
   // Service state query (for netsh dhcpclient show state, etc.)
   isServiceRunning(name: string): boolean;
+
+  // Port-proxy rules (netsh interface portproxy)
+  portProxy: import('./PortProxyTable').PortProxyTable;
 }

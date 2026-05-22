@@ -70,6 +70,21 @@ export interface WindowsProcessEventPayload extends WindowsDeviceRef {
   started: boolean;
 }
 
+// ─── Port-proxy lifecycle (netsh interface portproxy) ───────────────────
+
+export interface WindowsPortProxyEventPayload extends WindowsDeviceRef {
+  /** Address family pairing: v4tov4 / v4tov6 / v6tov4 / v6tov6. */
+  protocol: string;
+  /** Address the proxy listens on. */
+  listenAddress: string;
+  /** Port the proxy listens on. */
+  listenPort: number;
+  /** Address connections are forwarded to. */
+  connectAddress: string;
+  /** Port connections are forwarded to. */
+  connectPort: number;
+}
+
 // ─── Discriminated union ────────────────────────────────────────────────
 
 export type WindowsDomainEvent =
@@ -81,4 +96,6 @@ export type WindowsDomainEvent =
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }
   | { topic: 'windows.process.started'; payload: WindowsProcessEventPayload }
-  | { topic: 'windows.process.stopped'; payload: WindowsProcessEventPayload };
+  | { topic: 'windows.process.stopped'; payload: WindowsProcessEventPayload }
+  | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
+  | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload };
