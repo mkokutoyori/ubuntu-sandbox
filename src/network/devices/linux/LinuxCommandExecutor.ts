@@ -43,6 +43,7 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/Job
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
+import { SshForwardingTable } from './network/SshForwardingTable';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -106,6 +107,8 @@ export class LinuxCommandExecutor {
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
+  /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
+  private forwarding: SshForwardingTable | null = null;
   /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
   private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
   /** Reactive socket-table coherence for service-owned listening ports. */
@@ -429,6 +432,7 @@ export class LinuxCommandExecutor {
       sourceUser: user,
       sourceHome: home,
       callerEnv,
+      localForwarding: this.forwarding ?? undefined,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -630,12 +634,20 @@ export class LinuxCommandExecutor {
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
+    // SSH port-forwards bind their listeners on the very same table, so
+    // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
+    this.forwarding = new SshForwardingTable(table);
     // Now that the socket table exists, keep the port subsystem coherent on
     // disk: seed /etc/services and expose /proc/net/{tcp,udp} as generated
     // files that always reflect the live table.
     const portsFs = new PortsFilesystem(this.vfs);
     portsFs.seedServicesFile(this.ianaServices);
     portsFs.registerProcNet(table);
+  }
+
+  /** The SSH port-forwarding table — `-R` listeners are bound here too. */
+  get forwardingTable(): SshForwardingTable | null {
+    return this.forwarding;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */

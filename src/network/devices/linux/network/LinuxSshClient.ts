@@ -18,6 +18,8 @@
 
 import { findHostByAddress } from './HostLookup';
 import { SshKnownHostEntry, type SshHostKeyType } from './SshKnownHostEntry';
+import { SshPortForward } from './SshPortForward';
+import type { SshForwardingTable } from './SshForwardingTable';
 import type { LinuxMachine } from '../../LinuxMachine';
 
 export interface SshClientResult {
@@ -48,19 +50,34 @@ export interface SshClientOpts {
    * `VAR=val` prefix assignments). Drives SendEnv/AcceptEnv forwarding.
    */
   callerEnv?: Record<string, string>;
+  /**
+   * The local machine's port-forwarding table — `-L` / `-D` listeners are
+   * bound here so the tunnel surfaces through `ss` / `netstat`.
+   */
+  localForwarding?: SshForwardingTable;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
 
-/** SSH options that consume a single value (so we can skip them in argv scan). */
-const SSH_OPTS_WITH_VALUE = new Set(['-p', '-i', '-l', '-o', '-L', '-R', '-D', '-F', '-c', '-m', '-J']);
+/**
+ * Short `ssh` options that consume a value — the character right after
+ * the dash (`-p 22`, `-L spec`, `-o Name=val`, …). `-q` / `-Q` are
+ * deliberately excluded: the simulator treats them as the quiet switch.
+ */
+const SSH_VALUE_FLAGS = new Set(
+  ['b', 'c', 'D', 'E', 'e', 'F', 'I', 'i', 'J', 'L', 'l', 'm', 'O', 'o', 'p', 'R', 'S', 'W', 'w'],
+);
 
 /**
- * Walk argv: return positional args (host, then command tokens) and
- * detected options. Once the host token is found (the first positional),
- * everything that follows is treated as the remote command — even tokens
- * that look like options. This matches OpenSSH semantics where flags
- * after the host belong to the remote shell, e.g. `ssh host sudo -l`.
+ * Walk argv: separate option flags from positionals (host, then remote
+ * command tokens). Combined short-flag bundles (`-fNL`) are expanded into
+ * their constituents, and a value-taking flag captures its argument
+ * whether it is glued on (`-p22`) or a separate token (`-p 22`).
+ *
+ * Once the host token (the first positional) is found, everything after
+ * it is the remote command — even tokens that look like options — which
+ * matches OpenSSH semantics where flags after the host belong to the
+ * remote shell, e.g. `ssh host sudo -l`.
  */
 function splitSshArgs(args: string[]): { positional: string[]; flags: string[] } {
   const positional: string[] = [];
@@ -68,11 +85,23 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
   let hostFound = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (hostFound) { positional.push(a); continue; }
-    if (a.startsWith('-') && SSH_OPTS_WITH_VALUE.has(a)) { flags.push(a, args[++i] ?? ''); continue; }
-    if (a.startsWith('-')) { flags.push(a); continue; }
-    positional.push(a);
-    hostFound = true;
+    if (hostFound || !a.startsWith('-') || a === '-') {
+      positional.push(a);
+      hostFound = true;
+      continue;
+    }
+    if (a.startsWith('--')) { flags.push(a); continue; }
+    // Expand a bundle of short flags: `-fNL` → -f -N -L, `-p22` → -p 22.
+    const chars = a.slice(1);
+    for (let c = 0; c < chars.length; c++) {
+      const ch = chars[c];
+      flags.push('-' + ch);
+      if (SSH_VALUE_FLAGS.has(ch)) {
+        const glued = chars.slice(c + 1);
+        flags.push(glued !== '' ? glued : (args[++i] ?? ''));
+        break;
+      }
+    }
   }
   return { positional, flags };
 }
@@ -162,11 +191,11 @@ function clientOption(args: string[], name: string): string | null {
  * current user's ~/.ssh is searched first; /root/.ssh is also probed
  * since key material is conventionally generated as root.
  */
-function localIdentityPublicKey(opts: SshClientOpts): string | null {
+function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | null {
   if (!opts.localVfs) return null;
   const home = opts.sourceHome ?? '/root';
-  const iIdx = opts.args.indexOf('-i');
-  const iVal = iIdx >= 0 ? opts.args[iIdx + 1] : undefined;
+  const iIdx = flags.indexOf('-i');
+  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
   const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
   const candidates = iVal
     ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
@@ -201,11 +230,12 @@ function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: st
  */
 function resolveSshAuthMethod(
   opts: SshClientOpts,
+  flags: string[],
   exec: RemoteExecLike | undefined,
   remoteUser: string,
 ): SshAuthResolution {
-  const clientPubkey = clientOption(opts.args, 'PubkeyAuthentication') !== 'no';
-  const clientPassword = clientOption(opts.args, 'PasswordAuthentication') !== 'no';
+  const clientPubkey = clientOption(flags, 'PubkeyAuthentication') !== 'no';
+  const clientPassword = clientOption(flags, 'PasswordAuthentication') !== 'no';
   const clientMethods: string[] = [];
   if (clientPubkey) clientMethods.push('publickey');
   if (clientPassword) clientMethods.push('password');
@@ -217,7 +247,7 @@ function resolveSshAuthMethod(
   const serverPassword = readRemoteSshdDirective(exec, 'PasswordAuthentication') !== 'no';
 
   if (clientPubkey && serverPubkey) {
-    const identity = localIdentityPublicKey(opts);
+    const identity = localIdentityPublicKey(opts, flags);
     if (identity && remoteAcceptsKey(exec, remoteUser, identity)) {
       return { method: 'publickey', clientMethods };
     }
@@ -273,9 +303,9 @@ function collectDirective(content: string, name: string): string[] {
 }
 
 /** Patterns the client will send: defaults + ~/.ssh/config, or `-o SendEnv`. */
-function clientSendEnvPatterns(opts: SshClientOpts): string[] {
+function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
   // An explicit `-o SendEnv ...` overrides the config and the defaults.
-  const override = clientOptionRaw(opts.args, 'SendEnv');
+  const override = clientOptionRaw(flags, 'SendEnv');
   if (override !== null) {
     return override.trim().split(/\s+/).filter(Boolean);
   }
@@ -300,11 +330,12 @@ function serverAcceptEnvPatterns(exec: RemoteExecLike): string[] {
  */
 function computeForwardedEnv(
   opts: SshClientOpts,
+  flags: string[],
   exec: RemoteExecLike,
 ): Record<string, string> {
   const callerEnv = opts.callerEnv;
   if (!callerEnv) return {};
-  const send = clientSendEnvPatterns(opts);
+  const send = clientSendEnvPatterns(opts, flags);
   const accept = serverAcceptEnvPatterns(exec);
   const forwarded: Record<string, string> = {};
   for (const [name, value] of Object.entries(callerEnv)) {
@@ -325,10 +356,68 @@ function clientPort(args: string[]): number {
   return 22;
 }
 
+// ─── SSH port forwarding (-L / -R / -D) ─────────────────────────────
+
+/** PID attributed to a backgrounded `ssh` client holding a -L/-D listener. */
+const SSH_CLIENT_FORWARD_PID = 2200;
+/** PID of the remote sshd that owns a -R listener (matches initDefaultSockets). */
+const SSHD_PID = 985;
+
+/**
+ * Honour the `-L` / `-R` / `-D` flags: open a listening socket for each
+ * forward on whichever host owns it — the client for `-L`/`-D`, the SSH
+ * server for `-R`. The server's `AllowTcpForwarding` directive gates the
+ * request: `no` blocks everything, `local` permits only `-L`/`-D`,
+ * `remote` permits only `-R`, anything else (default) permits all.
+ *
+ * Returns OpenSSH-style diagnostic text for any forward the policy
+ * rejects — empty when every forward is permitted (or none were asked).
+ */
+function setupPortForwards(
+  opts: SshClientOpts,
+  flags: string[],
+  machine: LinuxMachine,
+  remoteExec: RemoteExecLike | undefined,
+): string {
+  const forwards = SshPortForward.collect(flags);
+  if (forwards.length === 0) return '';
+
+  const policy = remoteExec
+    ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding')
+    : null;
+  const permits = (f: SshPortForward): boolean => {
+    if (policy === 'no') return false;
+    if (policy === 'local') return f.kind !== 'remote';
+    if (policy === 'remote') return f.kind === 'remote';
+    return true; // null / 'yes' / 'all' / unrecognised → OpenSSH default
+  };
+
+  const remoteForwarding = (machine as unknown as {
+    executor?: { forwardingTable?: SshForwardingTable | null };
+  }).executor?.forwardingTable;
+
+  let diagnostics = '';
+  for (const fwd of forwards) {
+    if (!permits(fwd)) {
+      diagnostics +=
+        'channel 0: open failed: administratively prohibited: open failed\n';
+      continue;
+    }
+    if (fwd.listensOnServer) {
+      // -R : the listener lives on the SSH server, owned by its sshd.
+      remoteForwarding?.open(fwd, SSHD_PID, 'sshd');
+    } else {
+      // -L / -D : the listener lives on the client host, owned by ssh.
+      opts.localForwarding?.open(fwd, SSH_CLIENT_FORWARD_PID, 'ssh');
+    }
+  }
+  return diagnostics;
+}
+
 export function runSshClient(opts: SshClientOpts): SshClientResult {
-  const { positional } = splitSshArgs(opts.args);
+  const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
-  const port = clientPort(opts.args);
+  const port = clientPort(flags);
 
   // Local network plumbing must be up to even attempt a TCP handshake.
   if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
@@ -440,7 +529,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // honouring both the server's Pubkey/PasswordAuthentication directives
   // and the client's `-o` overrides.
   const remoteExec = machine.executor as unknown as RemoteExecLike | undefined;
-  const auth = resolveSshAuthMethod(opts, remoteExec, remoteUser);
+  const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser);
   if (!auth.method) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
@@ -476,6 +565,19 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  // ── SSH port forwarding (-L / -R / -D) ──────────────────────────────
+  // Each requested forward opens a listening socket on whichever host
+  // owns it (the client for -L/-D, the SSH server for -R). The server's
+  // `AllowTcpForwarding` directive decides whether the request stands.
+  const forwardingError = setupPortForwards(opts, flags, machine, remoteExec);
+
+  // `-N` (no remote command) — paired with `-f` to hold a tunnel open.
+  // The session carries no shell, so there is no banner: only forwarding
+  // diagnostics, if any, are surfaced.
+  if (flags.includes('-N')) {
+    return { output: forwardingError, exitCode: 0 };
+  }
+
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
   // This is OpenSSH's "exec mode" — no banner, no Last login.
@@ -493,7 +595,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // SendEnv/AcceptEnv forwarding: variables the client offers and the
       // server accepts are overlaid on the remote shell for this command.
       const forwarded = remoteExec
-        ? computeForwardedEnv(opts, remoteExec)
+        ? computeForwardedEnv(opts, flags, remoteExec)
         : {};
       execOut =
         Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
@@ -506,7 +608,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    return { output: normalised, exitCode: execRc };
+    return { output: forwardingError + normalised, exitCode: execRc };
   }
 
   // Interactive form (no command): the simulator returns the typical
@@ -518,9 +620,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   // -q / -Q (quiet) suppresses banner output (still connects). Match
   // OpenSSH: stay silent on success.
-  const quiet = opts.args.some(a => a === '-q' || a === '-Q');
+  const quiet = flags.some(a => a === '-q' || a === '-Q');
   if (quiet) {
-    return { output: '', exitCode: 0 };
+    return { output: forwardingError, exitCode: 0 };
   }
 
   const lines: string[] = [];
@@ -529,7 +631,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceHostname}`);
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
-  return { output: lines.join('\n'), exitCode: 0 };
+  return { output: forwardingError + lines.join('\n'), exitCode: 0 };
 }
 
 /**
