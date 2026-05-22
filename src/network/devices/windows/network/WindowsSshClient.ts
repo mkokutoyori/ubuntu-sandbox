@@ -134,7 +134,10 @@ export async function runWindowsSshClient(
   const remoteUser = parsed[1] ?? clientLoginUser(flags) ?? opts.sourceUser;
   const host = parsed[2];
 
-  const found = findHostByAddress(host);
+  // A loopback target resolves to this very machine — look it up by the
+  // local source IP, which the topology registry knows.
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  const found = findHostByAddress(isLoopback ? opts.sourceIp : host);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
@@ -185,6 +188,11 @@ export async function runWindowsSshClient(
     const r = await remote.runSshCommand(remoteUser, remoteCmd);
     const normalised = r.output && !r.output.endsWith('\n') ? `${r.output}\n` : r.output;
     return { output: normalised, exitCode: r.exitCode };
+  }
+
+  // `-q` (quiet) connects but suppresses banner output.
+  if (flags.includes('-q')) {
+    return { output: '', exitCode: 0 };
   }
 
   // Interactive form: the remote command-prompt banner, then the

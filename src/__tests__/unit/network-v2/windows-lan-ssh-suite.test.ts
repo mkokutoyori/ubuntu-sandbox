@@ -132,3 +132,185 @@ describe('§1 — Windows SSH happy path across the LAN', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 2 — SSH command-prompt banner ──────────────────────────
+
+describe('§2 — Windows SSH banner', () => {
+  let lan: WinLan;
+  beforeEach(() => { lan = buildWinLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'the Windows version line appears in the banner',
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.2',
+      contains: [/Microsoft Windows \[Version \d+\.\d+/],
+    },
+    {
+      name: 'the Microsoft copyright line is included',
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.2',
+      contains: [/\(c\) Microsoft Corporation/i],
+    },
+    {
+      name: 'the connection-closed line terminates the transcript',
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.2',
+      contains: [/Connection to 10\.0\.0\.2 closed/],
+    },
+    {
+      name: '-q suppresses the banner output',
+      on: l => l.win1,
+      cmd: 'ssh -q User@10.0.0.2',
+      excludes: ['Microsoft Windows', /Connection to .* closed/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── Section 3 — SSH by hostname rather than IP ─────────────────────
+
+describe('§3 — Windows SSH by hostname', () => {
+  let lan: WinLan;
+  beforeEach(() => { lan = buildWinLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'machine name resolves: ssh User@win2',
+      on: l => l.win1,
+      cmd: 'ssh User@win2',
+      contains: ['Microsoft Windows'],
+      excludes: [/Could not resolve hostname/],
+    },
+    {
+      name: 'another machine name resolves: ssh User@win4',
+      on: l => l.win1,
+      cmd: 'ssh User@win4',
+      contains: ['Microsoft Windows'],
+    },
+    {
+      name: 'an unknown name yields "Could not resolve hostname"',
+      on: l => l.win1,
+      cmd: 'ssh User@nope.invalid',
+      contains: [/Could not resolve hostname/],
+      excludes: ['Microsoft Windows'],
+    },
+    {
+      name: 'IPv4 address resolution still works',
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.3',
+      contains: ['Microsoft Windows'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── Section 4 — SSH connection failures: address / target ──────────
+
+describe('§4 — Windows SSH connection failures', () => {
+  let lan: WinLan;
+  beforeEach(() => { lan = buildWinLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'IP off-topology cannot be resolved',
+      on: l => l.win1,
+      cmd: 'ssh User@192.0.2.99',
+      contains: [/Could not resolve hostname|No route to host/],
+      excludes: ['Microsoft Windows'],
+    },
+    {
+      name: 'IPv4 with an octet > 255 is rejected',
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.999',
+      contains: [/Could not resolve hostname/],
+      excludes: ['Microsoft Windows'],
+    },
+    {
+      name: 'no target yields usage',
+      on: l => l.win1,
+      cmd: 'ssh',
+      contains: [/usage:\s*ssh/],
+      excludes: ['Microsoft Windows'],
+    },
+    {
+      name: 'only options (no host) yields usage',
+      on: l => l.win1,
+      cmd: 'ssh -v -q',
+      contains: [/usage:\s*ssh/],
+    },
+    {
+      name: 'a hostname with spaces is rejected',
+      on: l => l.win1,
+      cmd: 'ssh "User@bad host"',
+      contains: [/Could not resolve hostname/],
+    },
+    {
+      name: 'loopback connects when sshd is up',
+      on: l => l.win1,
+      cmd: 'ssh User@127.0.0.1',
+      contains: ['Microsoft Windows'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── Section 5 — SSH refused when the sshd service is stopped ────────
+
+/** Reach the service manager to drive the `sshd` service in setup. */
+function svcMgrOf(pc: WindowsPC): {
+  stopService(name: string, isAdmin: boolean): string;
+  startService(name: string, isAdmin: boolean): string;
+} {
+  return (pc as unknown as { svcMgr: {
+    stopService(name: string, isAdmin: boolean): string;
+    startService(name: string, isAdmin: boolean): string;
+  } }).svcMgr;
+}
+
+describe('§5 — Windows SSH refused when sshd is stopped', () => {
+  let lan: WinLan;
+  beforeEach(() => { lan = buildWinLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'after the sshd service is stopped → Connection refused',
+      setup: (l) => { svcMgrOf(l.win2).stopService('sshd', true); },
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.2',
+      contains: [/Connection refused/],
+      excludes: ['Microsoft Windows'],
+    },
+    {
+      name: 'one host with sshd stopped does not affect another',
+      setup: (l) => { svcMgrOf(l.win2).stopService('sshd', true); },
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.3',
+      contains: ['Microsoft Windows'],
+    },
+    {
+      name: 'after the service is started again the connection works',
+      setup: (l) => {
+        svcMgrOf(l.win2).stopService('sshd', true);
+        svcMgrOf(l.win2).startService('sshd', true);
+      },
+      on: l => l.win1,
+      cmd: 'ssh User@10.0.0.2',
+      contains: ['Microsoft Windows'],
+      excludes: [/Connection refused/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
