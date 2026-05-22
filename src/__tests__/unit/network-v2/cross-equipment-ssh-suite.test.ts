@@ -1628,3 +1628,73 @@ describe('§23 — Concurrent SSH sessions are isolated', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §24 — Telnet vs SSH transport coexistence ──────────────────────
+//
+// Network OSes can run both telnet (legacy) and ssh on VTY. Only the
+// permitted transport must answer; switching `transport input` /
+// `protocol inbound` updates the listening sockets dynamically.
+
+describe('§24 — Telnet vs SSH coexistence on routers/switches', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Cisco: transport input all accepts both telnet and ssh',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('transport input all');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'Cisco: transport input telnet refuses SSH',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('transport input telnet');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+    {
+      name: 'Huawei: protocol inbound all permits both telnet and stelnet',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('telnet server enable');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('protocol inbound all');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i],
+    },
+    {
+      name: 'Huawei: undo protocol inbound ssh disables SSH while keeping telnet',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('telnet server enable');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('protocol inbound telnet');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
