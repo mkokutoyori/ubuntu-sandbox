@@ -22,6 +22,7 @@
 
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
+import { HostsFile } from '../../HostsFile';
 import type { INssSource } from './INssSource';
 import type {
   NssEnumResult, NssResult,
@@ -243,19 +244,13 @@ export class FilesNssSource implements INssSource {
   }
 
   private *iterateHosts(): Generator<NssHostEntry> {
-    const lines = readRecords(this.vfs, '/etc/hosts');
-    if (!lines) return;
-    for (const line of lines) {
-      const parts = line.split(/\s+/);
-      if (parts.length < 2) continue;
-      const address = parts[0];
-      const names = parts.slice(1);
-      const addressFamily = address.includes(':') ? 10 : 2;
+    const table = HostsFile.parse(this.vfs.readFile('/etc/hosts'));
+    for (const entry of table.entries) {
       yield {
-        address,
-        addressFamily,
-        canonicalName: names[0],
-        aliases: names.slice(1),
+        address: entry.ip,
+        addressFamily: entry.isIPv6 ? 10 : 2,
+        canonicalName: entry.canonicalName,
+        aliases: [...entry.aliases],
       };
     }
   }

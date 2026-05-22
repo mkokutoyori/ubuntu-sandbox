@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
+import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
 import {
   IPAddress,
@@ -379,13 +380,11 @@ export abstract class LinuxMachine extends EndHost {
   private syncHostnameFiles(hostname: string): void {
     const vfs = this.executor.vfs;
     vfs.writeFile('/etc/hostname', hostname + '\n', 0, 0, 0o022);
-    vfs.writeFile('/etc/hosts',
-      '127.0.0.1\tlocalhost\n' +
-      `127.0.1.1\t${hostname}\n` +
-      '\n' +
-      '# The following lines are desirable for IPv6 capable hosts\n' +
-      '::1\tlocalhost ip6-localhost ip6-loopback\n',
-      0, 0, 0o022);
+    vfs.writeFile(
+      '/etc/hosts',
+      HostsFile.defaultLinux(hostname).serialize(),
+      0, 0, 0o022,
+    );
   }
 
   // ─── Default OS sockets ──────────────────────────────────────────────
@@ -709,22 +708,12 @@ export abstract class LinuxMachine extends EndHost {
     // 1. Already a valid IPv4 address → pass through
     try { return new IPAddress(name); } catch { /* not an IP */ }
 
-    // 2. /etc/hosts lookup
+    // 2. /etc/hosts lookup (IPv4 only — the netkernel speaks IPv4).
     const hostsContent = executor.readFile('/etc/hosts');
     if (hostsContent) {
-      for (const rawLine of hostsContent.split('\n')) {
-        const line = rawLine.trim();
-        if (!line || line.startsWith('#')) continue;
-        const parts = line.split(/\s+/);
-        if (parts.length < 2) continue;
-        const ip = parts[0];
-        // Skip IPv6 entries
-        if (ip.includes(':')) continue;
-        for (let i = 1; i < parts.length; i++) {
-          if (parts[i] === name) {
-            try { return new IPAddress(ip); } catch { break; }
-          }
-        }
+      const ip = HostsFile.parse(hostsContent).resolve(name, 4);
+      if (ip) {
+        try { return new IPAddress(ip); } catch { /* malformed entry */ }
       }
     }
 
