@@ -997,6 +997,11 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
+      // `-S` reads the sudo password from stdin — detect it before the
+      // flag group is stripped below.
+      const readsStdinPassword = cmdArgs.some(
+        (a) => a.startsWith('-') && !a.startsWith('--') && a.includes('S'),
+      );
       // Strip flags that don't consume a value (-n non-interactive, -S
       // read password from stdin, -E preserve env, -k reset timestamp).
       while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
@@ -1007,6 +1012,38 @@ export class LinuxCommandExecutor {
           output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
+      }
+      // `sudo -S` authenticates against the invoking user's password,
+      // piped in on stdin. A wrong password is rejected and audited
+      // through PAM, exactly as on a real host.
+      if (readsStdinPassword) {
+        const last = cmdArgs[cmdArgs.length - 1];
+        const supplied = last && last.includes('\n')
+          ? (last.replace(/\n+$/, '').split('\n').pop() ?? '').trim()
+          : '';
+        if (!this.userMgr.checkPassword(this.userMgr.currentUser, supplied)) {
+          if (this.serviceMgr.isActive('rsyslog')) {
+            const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+            const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+            const u = this.userMgr.currentUser;
+            const cmdStr = cmdArgs.filter((a) => !a.includes('\n')).join(' ');
+            const fail =
+              `${ts} ${hostname} sudo: pam_unix(sudo:auth): authentication failure; ` +
+              `logname=${u} uid=${this.userMgr.currentUid} euid=0 tty=pts/0 ruser=${u} rhost=  user=${u}\n` +
+              `${ts} ${hostname} sudo:  ${u} : 1 incorrect password attempt ; TTY=pts/0 ; ` +
+              `PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdStr}\n`;
+            const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+            this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
+          }
+          return {
+            output: `[sudo] password for ${this.userMgr.currentUser}: \n` +
+              'Sorry, try again.\nsudo: 1 incorrect password attempt',
+            exitCode: 1,
+          };
+        }
+        // Correct password — drop the stdin token so the command never
+        // sees it as an argument.
+        if (last && last.includes('\n')) cmdArgs.pop();
       }
       // Audit: write a syslog-style sudo line to /var/log/auth.log
       // (real sudo logs through pam_systemd → journald → rsyslog).
