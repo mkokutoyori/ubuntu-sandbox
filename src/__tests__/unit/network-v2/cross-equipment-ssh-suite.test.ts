@@ -347,3 +347,50 @@ describe('§3 — Linux → Windows SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §4 — Windows → Linux SSH ───────────────────────────────────────
+//
+// Symmetric counterpart of §3: ssh.exe driven from cmd.exe or
+// PowerShell on a Windows host, targeting a Linux peer. Same transport
+// must be spoken from both sides.
+
+describe('§4 — Windows → Linux SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh alice@linux1 returns linux1 as hostname',
+      on: l => l.win1, cmd: 'ssh alice@10.0.0.1 hostname',
+      contains: [/^linux1$/m],
+    },
+    {
+      name: 'uname -a from Windows reflects the Linux kernel banner',
+      on: l => l.win1, cmd: 'ssh alice@10.0.0.1 uname -a',
+      contains: [/Linux/],
+    },
+    {
+      name: 'remote whoami returns the Linux user, not the Windows User',
+      on: l => l.win1, cmd: 'ssh alice@10.0.0.1 whoami',
+      contains: [/^alice$/m], excludes: [/^User$/m],
+    },
+    {
+      name: 'PowerShell pipeline captures remote stdout into a variable',
+      on: l => l.win1,
+      cmd: 'powershell -Command "$h = ssh alice@10.0.0.1 hostname; $h"',
+      contains: ['linux1'],
+    },
+    {
+      name: 'ssh client surfaces connection refused when sshd is stopped',
+      setup: async (l) => {
+        await l.linux1.executeCommand('sudo systemctl stop ssh');
+      },
+      on: l => l.win1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.1 whoami',
+      contains: [/Connection refused|Could not connect/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
