@@ -484,3 +484,64 @@ describe('§5 — Linux → Cisco IOS SSH', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §6 — Linux → Huawei VRP SSH ────────────────────────────────────
+//
+// stelnet server binds the channel to HuaweiVRPShell. Authentication
+// uses an AAA local-user with `service-type ssh`. `undo stelnet server
+// enable` must refuse the connection.
+
+describe('§6 — Linux → Huawei VRP SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableHuaweiSsh(lan.hwR1);
+    await enableHuaweiSsh(lan.hwS1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'display version on the Huawei router prints the VRP banner',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i], excludes: [/bash:|command not found/i],
+    },
+    {
+      name: 'display interface brief on the Huawei switch lists Vlanif1',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.9 "display interface brief"',
+      contains: [/Interface\s+PHY|Vlanif1/i],
+    },
+    {
+      name: 'display current-configuration shows stelnet server enabled',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display current-configuration"',
+      contains: [/stelnet server enable/, /protocol inbound ssh/],
+    },
+    {
+      name: 'undo stelnet server enable refuses SSH',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('undo stelnet server enable');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)/i],
+    },
+    {
+      name: 'protocol inbound telnet alone refuses SSH at the VTY',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('protocol inbound telnet');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
