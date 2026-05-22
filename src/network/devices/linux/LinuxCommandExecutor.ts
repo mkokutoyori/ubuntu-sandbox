@@ -383,8 +383,14 @@ export class LinuxCommandExecutor {
       return { output: usage, exitCode: 1 };
     }
     const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
+    // scp / sftp select an alternate port with -P (rsync uses -e); translate
+    // it into the ssh client's own -p so the probe targets the right port.
+    const pIdx = args.indexOf('-P');
+    const probeArgs = pIdx >= 0 && args[pIdx + 1]
+      ? ['-p', args[pIdx + 1], hostPart, 'true']
+      : [hostPart, 'true'];
     // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({ ...this.buildSshClientOpts([hostPart, 'true']) });
+    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
       // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
@@ -1370,13 +1376,30 @@ export class LinuxCommandExecutor {
       // Script execution
       case 'bash':
       case 'sh': {
-        const execCmd = (argv: string[]) => this.dispatchFromInterpreter(argv);
-        if (args[0] === '-c' && args.length > 1) {
-          const result = runScriptContent(args[1], cmd, args.slice(2), execCmd, this.buildEnvVars(), this.buildIOContext());
+        const execCmd = (argv: string[], env?: Record<string, string>) =>
+          this.dispatchFromInterpreter(argv, env);
+        // Parse the leading option group(s). bash accepts combined flags
+        // such as `-lc` (login + command); `-l` makes $0 a login `-bash`.
+        let i = 0;
+        let login = false;
+        let cmdString: string | null = null;
+        while (i < args.length && args[i].startsWith('-') && args[i] !== '-') {
+          const flags = args[i].slice(1);
+          if (flags.includes('l')) login = true;
+          if (flags.includes('c')) {
+            cmdString = args[i + 1] ?? '';
+            i += 2;
+            break;
+          }
+          i++;
+        }
+        const arg0 = login ? '-bash' : cmd;
+        if (cmdString !== null) {
+          const result = runScriptContent(cmdString, arg0, args.slice(i), execCmd, this.buildEnvVars(), this.buildIOContext());
           return { output: result.output, exitCode: result.exitCode };
         }
-        if (args.length > 0) {
-          const result = runScript(c, args[0], args.slice(1), execCmd);
+        if (i < args.length) {
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };

@@ -334,7 +334,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const remoteUser = parsed[1] ?? opts.sourceUser ?? 'root';
   const host = parsed[2];
 
-  const found = findHostByAddress(host, opts.localVfs);
+  // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
+  // look it up via the local source IP, which the registry knows.
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  const lookupHost = isLoopback ? opts.sourceIp : host;
+  const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
