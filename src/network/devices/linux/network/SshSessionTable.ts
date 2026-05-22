@@ -53,6 +53,41 @@ export class SshSessionTable {
   /** Total count (active + historical) — used by `last`. */
   size(): number { return this.active.size + this.history.length; }
 
+  /**
+   * Seed the local tty1 console session if absent — `who`/`w`/`last` show
+   * the interactively logged-in user even before any SSH login happens.
+   */
+  ensureConsoleSession(user: string, uid: number): void {
+    if (this.list().some(s => s.tty === 'tty1')) return;
+    this.open({
+      user, uid, sshdPid: 0, tty: 'tty1',
+      fromIp: ':0', fromHost: '', transport: 'console',
+    });
+  }
+
+  // ─── Command renderers (who / w / last all read this table) ──────────
+
+  /** Render `who` — one line per active session. */
+  renderWho(): string {
+    return this.list().map(s =>
+      `${s.user.padEnd(8)} ${s.tty.padEnd(8)} ` +
+      `${s.loginAt.toISOString().slice(0, 16).replace('T', ' ')} (${s.fromIp})`,
+    ).join('\n');
+  }
+
+  /** Render `w` — uptime/header line followed by one row per session. */
+  renderW(): string {
+    const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
+      `${this.list().length} users,  load average: 0.00, 0.00, 0.00\n` +
+      'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
+    return [header, ...this.list().map(s => s.toWRow())].join('\n');
+  }
+
+  /** Render `last` — most recent `limit` sessions, newest first. */
+  renderLast(limit = 10): string {
+    return this.recent(limit).map(s => s.toLastRow()).join('\n');
+  }
+
   private allocateTty(): string {
     return `pts/${this.nextPts++}`;
   }

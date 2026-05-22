@@ -22,9 +22,11 @@ import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
+import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
-import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
+import { PacketCaptureLog } from './network/PacketCaptureLog';
 import type { SocketTable } from '../../core/SocketTable';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
@@ -43,6 +45,8 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/Job
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
+import { SshForwardingTable } from './network/SshForwardingTable';
+import type { SshSessionTable } from './network/SshSessionTable';
 import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
@@ -60,6 +64,53 @@ const STDIN_COMMANDS = new Set([
   'sort', 'wc', 'grep', 'head', 'tail', 'tr', 'cut', 'uniq', 'tee',
   'awk', 'sed', 'cat', 'xargs', 'less', 'more',
 ]);
+
+/**
+ * Every command name the Linux executor knows how to run. Backs shell
+ * completion and `command -v` / `which` / `type` resolution — the
+ * simulator's stand-in for walking `$PATH`.
+ */
+const KNOWN_LINUX_COMMANDS: readonly string[] = [
+  // File/dir basics
+  'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
+  'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
+  'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
+  'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+  'less', 'more', 'diff', 'cmp', 'patch',
+  // Shell builtins and basics
+  'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
+  'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
+  'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
+  'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
+  // Users and groups
+  'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
+  'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
+  'faillock', 'ausearch', 'aureport', 'auditctl',
+  'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
+  'login', 'logout',
+  // Lookup
+  'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
+  // System / processes / time
+  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+  'runlevel', 'hostnamectl', 'timedatectl',
+  'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
+  'pkill', 'pgrep', 'pidof', 'killall',
+  'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
+  'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
+  // Networking
+  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
+  'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
+  'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
+  'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
+  // Editors
+  'nano', 'vi', 'vim', 'emacs', 'ed',
+  // Archives / packages
+  'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
+  'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
+];
+
+/** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
+const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -106,6 +157,12 @@ export class LinuxCommandExecutor {
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
+  /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
+  private forwarding: SshForwardingTable | null = null;
+  /** Captured TCP traffic — rendered by `tcpdump`. */
+  readonly captureLog = new PacketCaptureLog();
+  /** Shared SSH session table — backs `who` / `w` / `last`. */
+  private sessionTable: SshSessionTable | null = null;
   /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
   private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
   /** Reactive socket-table coherence for service-owned listening ports. */
@@ -147,15 +204,19 @@ export class LinuxCommandExecutor {
   private iamPolicyFiles: IamPolicyFilesProjection | null = null;
   /** Unsubscribe handle for the identity-file re-seed subscription. */
   private identityFilesUnsub: (() => void) | null = null;
+  /** Unsubscribe handle for the remote-device power-off subscription. */
+  private powerOffUnsub: (() => void) | null = null;
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
   private shellPpid = 0;
   /** Per-shell job control table; populated by `cmd &`. */
   private jobTable = new LinuxJobTable();
+  /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
+  readonly aliases = new AliasTable();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
-  _oracleBootstrap: ((args: string[]) => string | null) | null = null;
+  _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
   /** Optional Oracle listener hook — backs `lsnrctl`. */
   _oracleListener: ((args: string[]) => string) | null = null;
 
@@ -344,6 +405,13 @@ export class LinuxCommandExecutor {
       'host.identity.changed',
       () => this.seedIdentityFiles(),
     );
+    // A background `ssh host …` job dies when its remote host powers off:
+    // react to the power-off event and reap the matching jobs.
+    this.powerOffUnsub?.();
+    this.powerOffUnsub = bus.subscribe(
+      'device.power-off',
+      (e: { payload: { id: string } }) => this.reapSshJobsForDevice(e.payload.id),
+    );
     // Rebuild NSS with bus-aware invalidation. Re-use the same files
     // source so the privileged-uid check still points at this executor.
     this.nss.dispose();
@@ -429,6 +497,8 @@ export class LinuxCommandExecutor {
       sourceUser: user,
       sourceHome: home,
       callerEnv,
+      localForwarding: this.forwarding ?? undefined,
+      localAgent: this.sshAgent,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -630,12 +700,29 @@ export class LinuxCommandExecutor {
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
+    // SSH port-forwards bind their listeners on the very same table, so
+    // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
+    this.forwarding = new SshForwardingTable(table);
     // Now that the socket table exists, keep the port subsystem coherent on
     // disk: seed /etc/services and expose /proc/net/{tcp,udp} as generated
     // files that always reflect the live table.
     const portsFs = new PortsFilesystem(this.vfs);
     portsFs.seedServicesFile(this.ianaServices);
     portsFs.registerProcNet(table);
+  }
+
+  /** The SSH port-forwarding table — `-R` listeners are bound here too. */
+  get forwardingTable(): SshForwardingTable | null {
+    return this.forwarding;
+  }
+
+  /**
+   * Share the owning machine's SSH session table so `who` / `w` / `last`
+   * render from it — even inside compound commands and ssh exec mode,
+   * which bypass LinuxMachine's standalone-only fast path.
+   */
+  setSessionTable(table: SshSessionTable): void {
+    this.sessionTable = table;
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -742,7 +829,19 @@ export class LinuxCommandExecutor {
     const ctx = this.jobsCmdContext();
     switch (cmd) {
       case 'jobs':   return cmdJobs(args, ctx).output;
-      case 'fg':     return cmdFg(args, ctx).output;
+      case 'fg': {
+        // Bringing a remote-killed ssh job to the foreground surfaces the
+        // disconnect notice OpenSSH prints when its transport drops.
+        const j = ctx.jobs.resolve(args[0] ?? '%+');
+        if (j && j.state === 'Killed') {
+          const host = LinuxCommandExecutor.sshTargetHost(j.command);
+          if (host) {
+            ctx.jobs.remove(j.id);
+            return `Connection closed by ${host}`;
+          }
+        }
+        return cmdFg(args, ctx).output;
+      }
       case 'bg':     return cmdBg(args, ctx).output;
       case 'wait':   return cmdWait(args, ctx).output;
       case 'disown': return cmdDisown(args, ctx).output;
@@ -753,6 +852,45 @@ export class LinuxCommandExecutor {
         return this.runKillWithJobspecs(args);
       }
       default: return null;
+    }
+  }
+
+  /**
+   * Extract the host (IP or name) an `ssh` command line connects to, or
+   * null when the command is not an ssh invocation. Value-taking short
+   * options consume the following token so the host is not misread.
+   */
+  private static sshTargetHost(command: string): string | null {
+    const argv = simpleTokenize(command.replace(/\s*&\s*$/, ''));
+    if (argv[0] !== 'ssh') return null;
+    for (let i = 1; i < argv.length; i++) {
+      const a = argv[i];
+      if (a.startsWith('-')) {
+        // A bundle ending in a value-taking flag eats the next token.
+        if (/[bcDEeFIiJLlmOopRSWw]$/.test(a)) i++;
+        continue;
+      }
+      const at = a.indexOf('@');
+      return at >= 0 ? a.slice(at + 1) : a;
+    }
+    return null;
+  }
+
+  /**
+   * Reap background `ssh host …` jobs whose remote host is the device
+   * that just powered off — a real ssh client loses its transport and
+   * exits, so the job moves to `Killed`. Driven reactively by the
+   * `device.power-off` event.
+   */
+  private reapSshJobsForDevice(deadDeviceId: string): void {
+    for (const job of this.jobTable.list()) {
+      if (!job.isRunning()) continue;
+      const host = LinuxCommandExecutor.sshTargetHost(job.command);
+      if (!host) continue;
+      const found = findHostByAddress(host);
+      if (found && found.device.getId() === deadDeviceId) {
+        job.complete({ signal: 'SIGHUP' });
+      }
     }
   }
 
@@ -916,6 +1054,7 @@ export class LinuxCommandExecutor {
       initialVars,
       io,
       { pid: this.shellPid, ppid: this.shellPpid },
+      this.aliases,
     );
 
     // Sync interpreter state back to executor
@@ -1283,7 +1422,7 @@ export class LinuxCommandExecutor {
       case 'locate': return { output: cmdLocate(c, args), exitCode: 0 };
       case 'which': return { output: cmdWhich(c, args), exitCode: 0 };
       case 'whereis': return { output: cmdWhereis(c, args), exitCode: 0 };
-      case 'command': return { output: cmdCommand(c, args), exitCode: cmdCommand(c, args) ? 0 : 1 };
+      case 'command': return cmdCommand(c, args, KNOWN_LINUX_COMMAND_SET);
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
@@ -1349,9 +1488,29 @@ export class LinuxCommandExecutor {
       }
       case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
       case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
-      case 'who': return { output: cmdWho(c), exitCode: 0 };
-      case 'w': return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
-      case 'last': return { output: cmdLast(c, args), exitCode: 0 };
+      case 'who': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          return { output: this.sessionTable.renderWho(), exitCode: 0 };
+        }
+        return { output: cmdWho(c), exitCode: 0 };
+      }
+      case 'w': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          return { output: this.sessionTable.renderW(), exitCode: 0 };
+        }
+        return { output: cmdW(c, this.lifecycle.uptimeSeconds()), exitCode: 0 };
+      }
+      case 'last': {
+        if (this.sessionTable) {
+          this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
+          const nIdx = args.findIndex(a => a === '-n' || a === '--limit');
+          const limit = nIdx >= 0 ? Number.parseInt(args[nIdx + 1] ?? '10', 10) : 10;
+          return { output: this.sessionTable.renderLast(limit), exitCode: 0 };
+        }
+        return { output: cmdLast(c, args), exitCode: 0 };
+      }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
@@ -1385,11 +1544,41 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // env — print environment
+      // env — print the environment, or run a command in a modified one.
+      //   env                       → print every variable
+      //   env -i [VAR=v…] cmd       → run cmd with an empty base environment
+      //   env -u NAME … cmd         → run cmd with NAME removed
+      //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        const lines: string[] = [];
-        for (const [k, v] of this.env) { lines.push(`${k}=${v}`); }
-        return { output: lines.join('\n'), exitCode: 0 };
+        let i = 0;
+        let ignoreEnv = false;
+        const unset: string[] = [];
+        const overlay: Record<string, string> = {};
+        for (; i < args.length; i++) {
+          const a = args[i];
+          if (a === '-i' || a === '--ignore-environment' || a === '-') { ignoreEnv = true; continue; }
+          if (a === '-u' || a === '--unset') { if (args[i + 1] !== undefined) unset.push(args[++i]); continue; }
+          if (a.startsWith('-')) continue;       // -0, -C <dir>, … accepted as no-ops
+          const eq = a.indexOf('=');
+          if (eq > 0 && /^[A-Za-z_][A-Za-z_0-9]*$/.test(a.slice(0, eq))) {
+            overlay[a.slice(0, eq)] = a.slice(eq + 1);
+            continue;
+          }
+          break;                                  // first plain word → the command
+        }
+        const base = ignoreEnv ? {} : { ...(this._cmdEnv ?? Object.fromEntries(this.env)) };
+        for (const u of unset) delete base[u];
+        const resultEnv: Record<string, string> = { ...base, ...overlay };
+
+        const cmdline = args.slice(i);
+        if (cmdline.length === 0) {
+          return {
+            output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
+            exitCode: 0,
+          };
+        }
+        // Run the supplied command line under the computed environment.
+        return this.dispatchFromInterpreter(cmdline, resultEnv);
       }
 
       // printenv — print the whole environment, or specific variables.
@@ -1484,11 +1673,14 @@ export class LinuxCommandExecutor {
         }
         const arg0 = login ? '-bash' : cmd;
         if (cmdString !== null) {
-          const result = runScriptContent(cmdString, arg0, args.slice(i), execCmd, this.buildEnvVars(), this.buildIOContext());
+          const result = runScriptContent(
+            cmdString, arg0, args.slice(i), execCmd,
+            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases,
+          );
           return { output: result.output, exitCode: result.exitCode };
         }
         if (i < args.length) {
-          const result = runScript(c, args[i], args.slice(i + 1), execCmd);
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -1689,8 +1881,20 @@ export class LinuxCommandExecutor {
         return this.runSshTransport(cmd, args);
       }
       case 'ssh': {
-        return runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
+        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
+        // A completed TCP handshake leaves a trace `tcpdump` can render.
+        if (result.connection) {
+          const srcPort = this.socketTable?.allocateEphemeralPort()
+            ?? 49152 + Math.floor(Math.random() * 16000);
+          this.captureLog.captureTcpHandshake(
+            { ip: result.connection.localIp, port: srcPort },
+            { ip: result.connection.peerIp, port: result.connection.peerPort },
+          );
+        }
+        return { output: result.output, exitCode: result.exitCode };
       }
+      case 'tcpdump':
+        return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-keyscan': return this.runSshKeyscan(args);
@@ -1701,10 +1905,11 @@ export class LinuxCommandExecutor {
         const xCmd = args[0] || 'echo';
         return { output: stdin.split('\n').filter(l => l.trim()).map(l => `${xCmd} ${l.trim()}`).join('\n'), exitCode: 0 };
       }
+      // alias / unalias / type / set / unset / declare / local / readonly
+      // are shell builtins resolved inside the bash interpreter; they only
+      // reach this dispatcher when the interpreter is bypassed.
       case 'tput':
       case 'stty':
-      case 'alias':
-      case 'unalias':
       case 'type':
       case 'set':
       case 'unset':
@@ -1757,7 +1962,7 @@ export class LinuxCommandExecutor {
         // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
         // and lsnrctl status can read the listener state.
         if (this.isServer && this._oracleBootstrap) {
-          const out = this._oracleBootstrap(args);
+          const out = this._oracleBootstrap(args, stdin);
           if (out !== null) return { output: out, exitCode: 0 };
         }
         return {
@@ -1818,7 +2023,10 @@ export class LinuxCommandExecutor {
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
           if (this.vfs.exists(absPath)) {
-            const result = runScript(c, cmd, args, (argv) => this.dispatchFromInterpreter(argv));
+            const result = runScript(
+              c, cmd, args,
+              (argv) => this.dispatchFromInterpreter(argv), this.aliases,
+            );
             return { output: result.output, exitCode: result.exitCode };
           }
         }
@@ -2496,46 +2704,7 @@ export class LinuxCommandExecutor {
   }
 
   private getCommandCompletions(prefix: string): string[] {
-    const commands = [
-      // File/dir basics
-      'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
-      'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
-      'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
-      'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
-      'less', 'more', 'diff', 'cmp', 'patch',
-      // Shell builtins and basics
-      'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
-      'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
-      'read', 'type', 'eval', 'exec', 'trap', 'return', 'break', 'continue',
-      'let', 'history', 'jobs', 'bg', 'fg', 'wait', 'disown',
-      // Users and groups
-      'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
-      'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-      'faillock', 'ausearch', 'aureport', 'auditctl',
-      'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
-      'login', 'logout',
-      // Lookup
-      'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
-      // System / processes / time
-      'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
-      'runlevel', 'hostnamectl', 'timedatectl',
-      'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
-      'pkill', 'pgrep', 'pidof', 'killall',
-      'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
-      'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
-      // Networking
-      'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
-      'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
-      'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat',
-      'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
-      // Editors
-      'nano', 'vi', 'vim', 'emacs', 'ed',
-      // Archives / packages
-      'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
-      'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
-    ];
-    // Dedup
-    const unique = Array.from(new Set(commands));
+    const unique = Array.from(new Set(KNOWN_LINUX_COMMANDS));
     if (!prefix) return unique.sort();
     return unique.filter(c => c.startsWith(prefix)).sort();
   }

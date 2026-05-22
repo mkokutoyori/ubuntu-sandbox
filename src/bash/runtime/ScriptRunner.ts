@@ -15,6 +15,7 @@ import type { INode } from '@/network/devices/linux/VirtualFileSystem';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
 import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
+import type { AliasTable } from '@/bash/runtime/AliasTable';
 
 export interface ScriptResult {
   output: string;
@@ -31,6 +32,7 @@ export function runScript(
   scriptPath: string,
   scriptArgs: string[],
   executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+  aliases?: AliasTable,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -57,7 +59,10 @@ export function runScript(
 
   // 4. Execute
   const io = buildIOContext(ctx);
-  return runScriptContent(content, scriptPath, scriptArgs, executeCommand, buildEnvVars(ctx), io);
+  return runScriptContent(
+    content, scriptPath, scriptArgs, executeCommand,
+    buildEnvVars(ctx), io, undefined, aliases,
+  );
 }
 
 /**
@@ -72,6 +77,7 @@ export function runScriptContent(
   variables?: Record<string, string>,
   io?: IOContext,
   identity?: { pid?: number; ppid?: number },
+  aliases?: AliasTable,
 ): ScriptResult {
   // Strip shebang, then preprocess heredocs
   const source = preprocessHeredocs(stripShebang(content));
@@ -91,6 +97,7 @@ export function runScriptContent(
       io,
       pid: identity?.pid,
       ppid: identity?.ppid,
+      aliases,
     });
 
     const result = interp.execute(ast);

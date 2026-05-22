@@ -28,6 +28,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, SubnetMask } from '../../core/types';
+import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 
 // ─── Per-device IPv6 state (WeakMap keyed by ctx.ports for test isolation) ──
 
@@ -350,6 +351,11 @@ function handleNetshInterface(ctx: WinCommandContext, args: string[]): string {
     return handleNetshInterfaceSet(ctx, args.slice(1));
   }
 
+  // netsh interface portproxy ...
+  if (sub === 'portproxy') {
+    return handleNetshPortproxy(ctx, args.slice(1));
+  }
+
   if (sub === 'help') return NETSH_INTERFACE_HELP;
 
   return `The subcommand "${args[0]}" was not found.\nType "netsh interface ?" for more information.`;
@@ -427,6 +433,134 @@ function handleNetshInterfaceSet(ctx: WinCommandContext, args: string[]): string
 
   ctx.setInterfaceAdmin(portName, enable);
   return 'Ok.';
+}
+
+// ─── netsh interface portproxy ──────────────────────────────────────
+
+const NETSH_PORTPROXY_HELP = [
+  'The following commands are available:',
+  '',
+  'Commands in this context:',
+  'add       - Adds a configuration entry to a table.',
+  'delete    - Deletes a configuration entry from a table.',
+  'reset     - Resets the port proxy configuration state.',
+  'set       - Updates configuration settings.',
+  'show      - Displays information.',
+].join('\n');
+
+/** Default listen address for a port-proxy family. */
+function defaultListenAddress(family: PortProxyFamily): string {
+  return family === 'v6tov4' || family === 'v6tov6' ? '::' : '0.0.0.0';
+}
+
+/** Parse `key=value` (and `key = value`) parameter tokens. */
+function parsePortproxyParams(tokens: string[]): Map<string, string> {
+  const params = new Map<string, string>();
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const eq = tok.indexOf('=');
+    if (eq > 0) {
+      params.set(tok.slice(0, eq).toLowerCase(), tok.slice(eq + 1));
+    } else if (tokens[i + 1] === '=' && tokens[i + 2] !== undefined) {
+      params.set(tok.toLowerCase(), tokens[i + 2]);
+      i += 2;
+    }
+  }
+  return params;
+}
+
+function handleNetshPortproxy(ctx: WinCommandContext, args: string[]): string {
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+    return NETSH_PORTPROXY_HELP;
+  }
+  const sub = args[0].toLowerCase();
+  const rest = args.slice(1);
+  if (sub === 'add' || sub === 'set') return handlePortproxyAddSet(ctx, rest);
+  if (sub === 'delete') return handlePortproxyDelete(ctx, rest);
+  if (sub === 'show') return handlePortproxyShow(ctx, rest);
+  if (sub === 'reset') { ctx.portProxy.reset(); return ''; }
+  if (sub === 'help') return NETSH_PORTPROXY_HELP;
+  return `The following command was not found: portproxy ${args.join(' ')}.`;
+}
+
+function handlePortproxyAddSet(ctx: WinCommandContext, rest: string[]): string {
+  const family = (rest[0] ?? '').toLowerCase() as PortProxyFamily;
+  if (!PORT_PROXY_FAMILIES.includes(family)) {
+    return `The following command was not found: portproxy add ${rest.join(' ')}.`;
+  }
+  const p = parsePortproxyParams(rest.slice(1));
+  const listenPort = Number.parseInt(p.get('listenport') ?? '', 10);
+  if (!Number.isInteger(listenPort) || listenPort <= 0 || listenPort > 65535) {
+    return 'The parameter is incorrect.';
+  }
+  const connectPort = Number.parseInt(p.get('connectport') ?? '', 10);
+  const listenAddress = p.get('listenaddress') || defaultListenAddress(family);
+  const connectAddress = p.get('connectaddress') || '';
+  const rule = new PortProxyRule(
+    family,
+    listenAddress,
+    listenPort,
+    connectAddress,
+    Number.isInteger(connectPort) && connectPort > 0 ? connectPort : listenPort,
+  );
+  ctx.portProxy.add(rule);
+  return '';            // netsh prints nothing on a successful add/set
+}
+
+function handlePortproxyDelete(ctx: WinCommandContext, rest: string[]): string {
+  const family = (rest[0] ?? '').toLowerCase() as PortProxyFamily;
+  if (!PORT_PROXY_FAMILIES.includes(family)) {
+    return `The following command was not found: portproxy delete ${rest.join(' ')}.`;
+  }
+  const p = parsePortproxyParams(rest.slice(1));
+  const listenPort = Number.parseInt(p.get('listenport') ?? '', 10);
+  if (!Number.isInteger(listenPort) || listenPort <= 0) {
+    return 'The parameter is incorrect.';
+  }
+  const listenAddress = p.get('listenaddress') || defaultListenAddress(family);
+  return ctx.portProxy.remove(family, listenAddress, listenPort)
+    ? ''
+    : 'The system cannot find the file specified.';
+}
+
+function handlePortproxyShow(ctx: WinCommandContext, rest: string[]): string {
+  const what = (rest[0] ?? 'all').toLowerCase();
+  const families: PortProxyFamily[] = what === 'all'
+    ? [...PORT_PROXY_FAMILIES]
+    : PORT_PROXY_FAMILIES.includes(what as PortProxyFamily)
+      ? [what as PortProxyFamily]
+      : [];
+  if (families.length === 0) {
+    return `The following command was not found: portproxy show ${rest.join(' ')}.`;
+  }
+  const sections: string[] = [];
+  for (const family of families) {
+    const rules = ctx.portProxy.byFamily(family);
+    if (rules.length === 0 && what === 'all') continue;
+    sections.push(renderPortproxySection(family, rules));
+  }
+  if (sections.length === 0) return '';
+  return sections.join('\n\n');
+}
+
+/** Render one address-family section of `netsh ... portproxy show`. */
+function renderPortproxySection(family: PortProxyFamily, rules: PortProxyRule[]): string {
+  const listenFam = family.startsWith('v6') ? 'ipv6' : 'ipv4';
+  const connectFam = family.endsWith('v6') ? 'ipv6' : 'ipv4';
+  const lines = [
+    '',
+    `Listen on ${listenFam}:             Connect to ${connectFam}:`,
+    '',
+    'Address         Port        Address         Port',
+    '--------------- ----------  --------------- ----------',
+  ];
+  for (const r of rules) {
+    lines.push(
+      `${r.listenAddress.padEnd(16)}${String(r.listenPort).padEnd(12)}` +
+      `${r.connectAddress.padEnd(16)}${r.connectPort}`,
+    );
+  }
+  return lines.join('\n');
 }
 
 // ─── netsh interface ip ─────────────────────────────────────────────

@@ -369,7 +369,25 @@ export class BashParser {
 
   // ─── Word Parsing ─────────────────────────────────────────────
 
+  /**
+   * Parse a word, fusing any immediately-adjacent atoms into a single
+   * {@link CompoundWord}. This is how `name='a b'`, `pre"$x"post` and
+   * `foo'bar'` become one shell word rather than several.
+   */
   private parseWord(): Word {
+    const first = this.parseWordAtom();
+    if (this.isAtEnd() || !this.peek().adjacent || !this.isWordToken() || this.isCompoundEnd()) {
+      return first;
+    }
+    const parts: Word[] = [first];
+    while (!this.isAtEnd() && this.peek().adjacent && this.isWordToken() && !this.isCompoundEnd()) {
+      parts.push(this.parseWordAtom());
+    }
+    return { type: 'CompoundWord', parts, position: first.position };
+  }
+
+  /** Parse exactly one word token into its Word AST node. */
+  private parseWordAtom(): Word {
     const tok = this.advance();
     const pos = tok.position;
 
