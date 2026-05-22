@@ -10,6 +10,9 @@
  *   - Built-in groups matching real Windows defaults
  */
 
+import type { IEventBus } from '@/events/EventBus';
+import type { WindowsAccountChange } from './events';
+
 export interface WindowsUser {
   name: string;
   fullName: string;
@@ -93,9 +96,38 @@ export class WindowsUserManager {
   private passwords: Map<string, string> = new Map();
   private nextRid = 1001;
   currentUser = 'User';
+  /** Reactive sink — null until the device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
 
   constructor() {
     this.initDefaults();
+  }
+
+  /**
+   * Attach the device event bus so account, group and logon operations are
+   * published. The reactive WindowsSecurityAuditProjection subscribes and
+   * writes the faithful Security event-log entries.
+   */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
+
+  /** Publish an account-change event on the central bus. */
+  private publishAccount(account: string, change: WindowsAccountChange): void {
+    this.bus?.publish({
+      topic: 'windows.account.changed',
+      payload: { deviceId: this.deviceId, account, change },
+    });
+  }
+
+  /** Publish a group-membership-change event on the central bus. */
+  private publishMembership(group: string, member: string, added: boolean): void {
+    this.bus?.publish({
+      topic: 'windows.group.membership-changed',
+      payload: { deviceId: this.deviceId, group, member, added },
+    });
   }
 
   private initDefaults(): void {
@@ -243,6 +275,7 @@ export class WindowsUserManager {
     if (!opts.noPassword) {
       this.passwords.set(name.toLowerCase(), password);
     }
+    this.publishAccount(name, 'created');
     return '';
   }
 
@@ -265,6 +298,7 @@ export class WindowsUserManager {
     }
     this.users.delete(name.toLowerCase());
     this.passwords.delete(name.toLowerCase());
+    this.publishAccount(user.name, 'deleted');
     return '';
   }
 
@@ -276,18 +310,25 @@ export class WindowsUserManager {
     switch (property.toLowerCase()) {
       case 'fullname':
         user.fullName = value;
+        this.publishAccount(user.name, 'modified');
         break;
       case 'description':
       case 'comment':
         user.description = value;
+        this.publishAccount(user.name, 'modified');
         break;
       case 'password':
         this.passwords.set(name.toLowerCase(), value);
         user.passwordLastSet = new Date();
+        this.publishAccount(user.name, 'password-reset');
         break;
-      case 'active':
-        user.enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+      case 'active': {
+        const enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
+        user.enabled = enabled;
+        if (enabled) this.publishAccount(user.name, 'enabled');
+        else this.publishAccount(user.name, 'disabled');
         break;
+      }
       default:
         return `Invalid property: ${property}`;
     }
@@ -299,6 +340,7 @@ export class WindowsUserManager {
     const user = this.users.get(name.toLowerCase());
     if (!user) return `User '${name}' was not found.`;
     user.enabled = true;
+    this.publishAccount(user.name, 'enabled');
     return '';
   }
 
@@ -307,11 +349,21 @@ export class WindowsUserManager {
     const user = this.users.get(name.toLowerCase());
     if (!user) return `User '${name}' was not found.`;
     user.enabled = false;
+    this.publishAccount(user.name, 'disabled');
     return '';
   }
 
+  /**
+   * Verify a password. Publishes a logon event so the security-audit
+   * projection journals a 4624 (success) or 4625 (failure) Security entry.
+   */
   checkPassword(name: string, password: string): boolean {
-    return this.passwords.get(name.toLowerCase()) === password;
+    const ok = this.passwords.get(name.toLowerCase()) === password;
+    this.bus?.publish({
+      topic: 'windows.account.logon',
+      payload: { deviceId: this.deviceId, account: name, success: ok, logonType: 2 },
+    });
+    return ok;
   }
 
   // ─── Group Operations ───────────────────────────────────────────
@@ -323,6 +375,7 @@ export class WindowsUserManager {
     }
     const sid = `S-1-5-32-${1000 + this.nextRid++}`;
     this.addGroup({ name, description, sid, members: [], builtIn: false });
+    this.bus?.publish({ topic: 'windows.group.created', payload: { deviceId: this.deviceId, group: name } });
     return '';
   }
 
@@ -332,6 +385,7 @@ export class WindowsUserManager {
     if (!group) return `The specified group could not be found.`;
     if (group.builtIn) return `Cannot delete built-in group '${group.name}'.`;
     this.groups.delete(name.toLowerCase());
+    this.bus?.publish({ topic: 'windows.group.deleted', payload: { deviceId: this.deviceId, group: group.name } });
     return '';
   }
 
@@ -345,6 +399,7 @@ export class WindowsUserManager {
       return `The specified account name is already a member of the group.`;
     }
     group.members.push(user.name);
+    this.publishMembership(group.name, user.name, true);
     return '';
   }
 
@@ -354,7 +409,9 @@ export class WindowsUserManager {
     if (!group) return `Group '${groupName}' was not found.`;
     const idx = group.members.findIndex(m => m.toLowerCase() === memberName.toLowerCase());
     if (idx === -1) return `The specified member was not found.`;
+    const removed = group.members[idx];
     group.members.splice(idx, 1);
+    this.publishMembership(group.name, removed, false);
     return '';
   }
 

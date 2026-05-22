@@ -12,6 +12,9 @@
  *   - Service creation/deletion with protection on built-in services
  */
 
+import type { PortSpec } from '../../core/ports/PortNumber';
+import type { IEventBus } from '@/events/EventBus';
+
 export type ServiceState =
   | 'Running' | 'Stopped' | 'Paused'
   | 'StartPending' | 'StopPending'
@@ -41,6 +44,38 @@ export interface WindowsService {
   /** Critical OS services that cannot be stopped */
   critical?: boolean;
 }
+
+/**
+ * The listening sockets a Windows service opens once running. Drives the
+ * socket-table coherence: `sc start`/`net start` binds them, `sc stop`
+ * releases them — exactly as the service controller does on real Windows.
+ */
+export interface WindowsServiceListenerSpec {
+  /** Process the kernel attributes the socket to (`netstat -b`/`-o`). */
+  processName: string;
+  /** PID shown by `netstat -o`. */
+  pid: number;
+  sockets: PortSpec[];
+}
+
+/** Default Windows service → listening-port mapping (keyed lower-case). */
+export const WINDOWS_SERVICE_LISTENERS: Readonly<Record<string, WindowsServiceListenerSpec>> = {
+  lanmanserver: {
+    processName: 'System',
+    pid: 4,
+    sockets: [{ port: 445, protocol: 'tcp' }, { port: 139, protocol: 'tcp' }],
+  },
+  termservice: {
+    processName: 'svchost.exe',
+    pid: 1096,
+    sockets: [{ port: 3389, protocol: 'tcp' }],
+  },
+  sshd: {
+    processName: 'sshd.exe',
+    pid: 1088,
+    sockets: [{ port: 22, protocol: 'tcp' }],
+  },
+};
 
 /** State codes for sc query output */
 const STATE_CODES: Record<ServiceState, number> = {
@@ -77,9 +112,35 @@ const START_TYPE_NAMES: Record<ServiceStartType, string> = {
 
 export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
+  /** Reactive sink — null until the device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
 
   constructor() {
     this.initDefaults();
+  }
+
+  /**
+   * Attach the device event bus so service lifecycle changes are published.
+   * Reactive consumers — the System event-log projection and the socket-table
+   * port projection — subscribe and keep their derived views coherent.
+   */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
+
+  /** Publish a service-lifecycle event on the central bus. */
+  private publishServiceState(svc: WindowsService, running: boolean): void {
+    this.bus?.publish({
+      topic: running ? 'windows.service.started' : 'windows.service.stopped',
+      payload: {
+        deviceId: this.deviceId,
+        serviceName: svc.name,
+        displayName: svc.displayName,
+        running,
+      },
+    });
   }
 
   private initDefaults(): void {
@@ -230,6 +291,7 @@ export class WindowsServiceManager {
     if (svc.state === 'Running') return `An instance of the service is already running.`;
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
     svc.state = 'Running';
+    this.publishServiceState(svc, true);
     return '';
   }
 
@@ -248,6 +310,7 @@ export class WindowsServiceManager {
     }
 
     svc.state = 'Stopped';
+    this.publishServiceState(svc, false);
     return '';
   }
 

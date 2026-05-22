@@ -65,7 +65,7 @@ import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
-import { parseSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
+import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import { SshSessionTable } from './linux/network/SshSessionTable';
 
 /**
@@ -128,11 +128,13 @@ export abstract class LinuxMachine extends EndHost {
     this.executor = new LinuxCommandExecutor(
       profile.isServer, this.hardware, this.lifecycle, this.identity,
     );
+    // Wire the socket table before the event bus: the reactive
+    // ServicePortProjection created in attachEventBus needs the table.
+    this.initDefaultSockets(profile.isServer);
+    this.executor.setSocketTable(this.socketTable);
     this.executor.attachEventBus(this.getBus(), this.id);
     this.executor.setIpNetworkContext(this.buildIpNetworkContext());
     this.syncHostnameFiles(profile.hostname);
-    this.initDefaultSockets(profile.isServer);
-    this.executor.setSocketTable(this.socketTable);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
@@ -466,6 +468,15 @@ export abstract class LinuxMachine extends EndHost {
     // reloaded — BRD SSH-07-R6.
     this._sshLifecycleOff?.();
     const bus = this.getBus();
+    // systemd's ExecReload tests the config (`sshd -t`) before applying it:
+    // register that pre-check so a malformed sshd_config aborts the reload.
+    this.executor.serviceMgr.registerConfigCheck('ssh', () => {
+      const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+      const verdict = validateSshdConfig(raw);
+      return verdict.ok
+        ? { ok: true }
+        : { ok: false, error: verdict.errors.join('\n') };
+    });
     const isSsh = (p: { name: string }): boolean => p.name === 'ssh' || p.name === 'sshd';
     const reload = (): void => {
       this._sshContext = this._sshContext?.reloadConfig() ?? null;

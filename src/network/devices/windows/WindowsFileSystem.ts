@@ -9,6 +9,14 @@
  *   - NTFS-style ACLs (owner + access control entries)
  */
 
+import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+
+/**
+ * `%SystemRoot%\System32\drivers\etc\services` content — rendered from the
+ * shared IANA registry so the Windows and Linux port⇄name databases match.
+ */
+const WINDOWS_SERVICES_FILE = IanaServiceRegistry.standard().render();
+
 export type WinFileType = 'file' | 'directory';
 
 /** Access Control Entry — one permission rule in a DACL */
@@ -175,7 +183,7 @@ export class WindowsFileSystem {
       ['C:\\Windows\\System32\\drivers\\etc\\hosts', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This is a sample HOSTS file used by Microsoft TCP/IP for Windows.\n#\n# This file contains the mappings of IP addresses to host names. Each\n# entry should be kept on an individual line. The IP address should\n# be placed in the first column followed by the corresponding host name.\n# The IP address and the host name should be separated by at least one\n# space.\n#\n# For example:\n#\n#      102.54.94.97     rhino.acme.com          # source server\n#       38.25.63.10     x.acme.com              # x client host\n\n# localhost name resolution is handled within DNS itself.\n127.0.0.1       localhost\n::1             localhost\n', 824, []],
       ['C:\\Windows\\System32\\drivers\\etc\\networks', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This file contains network name/number mappings.\n#\nloopback        127\n', 407, []],
       ['C:\\Windows\\System32\\drivers\\etc\\protocol', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\nicmp    1   ICMP\ntcp     6   TCP\nudp    17   UDP\n', 1795, []],
-      ['C:\\Windows\\System32\\drivers\\etc\\services', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\necho           7/tcp\nftp           21/tcp\nssh           22/tcp\ntelnet        23/tcp\nsmtp          25/tcp\ndns           53/tcp\nhttp          80/tcp\nhttps        443/tcp\n', 17463, []],
+      ['C:\\Windows\\System32\\drivers\\etc\\services', WINDOWS_SERVICES_FILE, WINDOWS_SERVICES_FILE.length, []],
       ['C:\\Windows\\notepad.exe', '', 201216, ['system']],
       ['C:\\Windows\\explorer.exe', '', 4883944, ['system']],
       ['C:\\Windows\\regedit.exe', '', 360448, ['system']],

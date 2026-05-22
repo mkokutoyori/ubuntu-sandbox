@@ -29,6 +29,7 @@ import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
 import type { LinuxIamDomainEvent } from '@/network/devices/linux/iam/events';
+import type { WindowsDomainEvent } from '@/network/devices/windows/events';
 import type { OracleDomainEvent } from '@/database/oracle/events';
 import type { RmanDomainEvent } from '@/terminal/subshells/rman/events';
 
@@ -260,7 +261,10 @@ export type DomainEvent =
   // Oracle DBMS (sub-union, see src/database/oracle/events.ts)
   | OracleDomainEvent
   // RMAN sub-shell (sub-union, see src/terminal/subshells/rman/events.ts)
-  | RmanDomainEvent;
+  | RmanDomainEvent
+  // Windows device: services, accounts, groups, processes
+  // (sub-union, see src/network/devices/windows/events.ts)
+  | WindowsDomainEvent;
 
 export type DomainEventTopic = DomainEvent['topic'];
 

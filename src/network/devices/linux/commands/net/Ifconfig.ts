@@ -62,6 +62,13 @@ export const ifconfigCommand: LinuxCommand = {
     // ── Single-interface show ─────────────────────────────────
     if (args.length === 1) return ctx.fmt.formatInterface(port);
 
+    // ── ifconfig <if> up|down ─────────────────────────────────
+    const verb = args[1].toLowerCase();
+    if (verb === 'up' || verb === 'down') {
+      ctx.net.setInterfaceAdmin(ifName, verb === 'up');
+      return '';
+    }
+
     // ── ifconfig <if> <ip> [netmask M] ────────────────────────
     const ipStr = args[1];
     let maskStr = '255.255.255.0';

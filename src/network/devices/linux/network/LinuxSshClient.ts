@@ -150,6 +150,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  if (found.interfaceDown) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
+      exitCode: 255,
+    };
+  }
 
   // The discovered Equipment may be a router/switch — only LinuxMachine
   // (PC or Server) ships a sshd; everything else refuses on principle.
@@ -240,7 +246,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     } finally {
       remoteUidBeforeAfter?.();
     }
-    return { output: execOut, exitCode: execRc };
+    // Terminate the remote command's output with a newline (as a real TTY
+    // does) so a following local command starts on its own line.
+    const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
+    return { output: normalised, exitCode: execRc };
   }
 
   // Interactive form (no command): the simulator returns the typical

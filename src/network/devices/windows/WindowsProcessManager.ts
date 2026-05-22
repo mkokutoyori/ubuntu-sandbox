@@ -11,6 +11,7 @@
  */
 
 import type { WindowsServiceManager } from './WindowsServiceManager';
+import type { IEventBus } from '@/events/EventBus';
 
 export type ProcessSession = 'Services' | 'Console';
 
@@ -51,9 +52,28 @@ const CRITICAL_PROCESSES = new Set([
 export class WindowsProcessManager {
   private processes: Map<number, WindowsProcess> = new Map();
   private nextPid = 100;
+  /** Reactive sink — null until the device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
 
   constructor() {
     this.initDefaults();
+  }
+
+  /**
+   * Attach the device event bus so process spawn / termination is published.
+   * The reactive security-audit projection journals 4688 / 4689 entries.
+   */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
+
+  private publishProcess(pid: number, name: string, started: boolean): void {
+    this.bus?.publish({
+      topic: started ? 'windows.process.started' : 'windows.process.stopped',
+      payload: { deviceId: this.deviceId, pid, name, started },
+    });
   }
 
   private initDefaults(): void {
@@ -223,6 +243,7 @@ export class WindowsProcessManager {
       hostedServices: opts.hostedServices ?? [],
     };
     this.processes.set(pid, proc);
+    this.publishProcess(pid, name, true);
     return proc;
   }
 
@@ -237,6 +258,7 @@ export class WindowsProcessManager {
     if (proc.critical) return `ERROR: The process "${proc.name}" with PID ${pid} is critical and cannot be terminated.`;
 
     this.processes.delete(pid);
+    this.publishProcess(pid, proc.name, false);
     return '';
   }
 

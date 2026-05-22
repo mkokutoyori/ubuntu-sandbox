@@ -4,6 +4,7 @@
  */
 
 import { VirtualFileSystem } from './VirtualFileSystem';
+import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -90,11 +91,41 @@ export class LinuxLogManager {
   private hostname = 'localhost';
   private nextPid = 100;
   private monotonicCounter = 0;
+  /**
+   * Whether the syslog daemon (`rsyslog`) is running. When it is stopped
+   * the on-disk `/var/log/*` files stop receiving new lines — exactly as on
+   * a real host — while the systemd journal (kept in memory by journald)
+   * keeps recording, so `journalctl` still works.
+   */
+  private syslogDaemonActive = true;
+  private busUnsub: Unsubscribe[] = [];
 
   constructor(private vfs: VirtualFileSystem) {
     this.bootTime = new Date();
     this.bootId = this.generateBootId();
     this.populateBootMessages();
+  }
+
+  /**
+   * Attach the device event bus so the syslog daemon's lifecycle drives
+   * file-logging coherence: stopping `rsyslog` freezes `/var/log/*`,
+   * starting it resumes them.
+   */
+  attachBus(bus: IEventBus): void {
+    for (const off of this.busUnsub) off();
+    const isSyslog = (p: { name: string }): boolean =>
+      p.name === 'rsyslog' || p.name === 'syslog' || p.name === 'systemd-journald';
+    this.busUnsub = [
+      bus.subscribeWhere('linux.service.stopped', isSyslog, (e) => {
+        if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = false;
+      }),
+      bus.subscribeWhere('linux.service.started', isSyslog, (e) => {
+        if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = true;
+      }),
+      bus.subscribeWhere('linux.service.restarted', isSyslog, () => {
+        this.syslogDaemonActive = true;
+      }),
+    ];
   }
 
   // ── logger command ─────────────────────────────────────────────
@@ -148,6 +179,40 @@ export class LinuxLogManager {
       tag,
       message,
       pid: this.nextPid++,
+      hostname: this.hostname,
+    });
+  }
+
+  /**
+   * Append a daemon-facility record — used by the port subsystem to log a
+   * socket bind / release the way systemd-journald notes a daemon opening
+   * or closing its listening port.
+   */
+  logDaemon(tag: string, message: string): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.daemon,
+      unit: tag,
+      tag,
+      message,
+      pid: this.nextPid++,
+      hostname: this.hostname,
+    });
+  }
+
+  /**
+   * Append a systemd-facility record attributed to a specific unit — used by
+   * the service-journal projection so `journalctl -u <unit>` shows the
+   * "Started / Stopped …" lines systemd writes on every state change.
+   */
+  logSystemd(unit: string, message: string): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.daemon,
+      unit,
+      tag: 'systemd',
+      message,
+      pid: 1,
       hostname: this.hostname,
     });
   }
@@ -343,13 +408,16 @@ export class LinuxLogManager {
       pid: opts.pid,
       hostname: opts.hostname,
     };
+    // journald keeps the in-memory journal regardless of rsyslog's state.
     this.journal.push(entry);
 
-    // Write to log files
+    // The on-disk /var/log/* files are written by rsyslog: when that daemon
+    // is stopped they freeze, but `journalctl` keeps working.
+    if (!this.syslogDaemonActive) return;
+
     const facilityName = this.facilityName(opts.facility);
     const logLine = this.formatSyslogLine(entry);
 
-    // Always write to syslog (except for auth-only)
     this.appendToLogFile('/var/log/syslog', logLine);
 
     // Route to facility-specific log

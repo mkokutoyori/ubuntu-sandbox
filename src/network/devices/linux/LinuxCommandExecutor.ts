@@ -24,11 +24,20 @@ import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdMount, cmdLsblk } from './LinuxSystemCommands';
-import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdSs, cmdCurl, cmdWget, cmdArping } from './LinuxNetCommands';
 import type { SocketTable } from '../../core/SocketTable';
+import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+import { LinuxAuditLog } from './audit/LinuxAuditLog';
+import { AuditTrailProjection } from './audit/AuditTrailProjection';
+import { cmdAusearch, cmdAureport, cmdAuditctl } from './audit/AuditCommands';
+import { PortsFilesystem } from './ports/PortsFilesystem';
+import { ServicePortProjection } from './ports/ServicePortProjection';
+import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
+import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
+import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
@@ -85,10 +94,24 @@ export class LinuxCommandExecutor {
   readonly iptables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
+  /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
+  readonly auditLog: LinuxAuditLog;
+  /** Reactive bridge feeding security events into the audit trail. */
+  private auditTrail: AuditTrailProjection | null = null;
+  /** Reactive bridge writing systemd unit lifecycle lines to the journal. */
+  private serviceJournal: LinuxServiceJournalProjection | null = null;
+  /** `at` deferred-job spool, drained by the `atd` daemon. */
+  private readonly atQueue: LinuxAtQueue = new LinuxAtQueue();
   readonly processMgr: LinuxProcessManager;
   readonly serviceMgr: LinuxServiceManager;
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
+  /** IANA port⇄name registry — backs `/etc/services` and `getent services`. */
+  private readonly ianaServices: IanaServiceRegistry = IanaServiceRegistry.standard();
+  /** Reactive socket-table coherence for service-owned listening ports. */
+  private servicePortProjection: ServicePortProjection | null = null;
+  /** Records port bind / release activity into the system log, reactively. */
+  private portActivityLog: PortActivityLogProjection | null = null;
   private cwd = '/root';
   private umask = 0o022;
   private isServer: boolean;
@@ -145,6 +168,7 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs);
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
     this.logMgr = new LinuxLogManager(this.vfs);
+    this.auditLog = new LinuxAuditLog(this.vfs);
     this.processMgr = new LinuxProcessManager();
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer });
     this.isServer = isServer;
@@ -281,13 +305,33 @@ export class LinuxCommandExecutor {
     this.userMgr.attachBus(bus, deviceId);
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
+    // The syslog daemon's lifecycle drives /var/log/* file coherence.
+    this.logMgr.attachBus(bus);
+    // Record systemd "Started/Stopped <unit>" lines in the journal.
+    this.serviceJournal?.dispose();
+    this.serviceJournal = new LinuxServiceJournalProjection(bus, this.logMgr, deviceId);
     // Keep /var/log/auth.log coherent with account changes, reactively.
     this.iamAuthLog?.dispose();
     this.iamAuthLog = new IamAuthLogProjection(bus, this.logMgr, deviceId);
+    // Feed security events into the kernel audit trail, reactively.
+    this.auditTrail?.dispose();
+    this.auditTrail = new AuditTrailProjection(bus, this.auditLog, deviceId);
     // Keep the PAM password-policy config files coherent with the policy
     // model, reactively (pwquality.conf / login.defs / faillock.conf).
     this.iamPolicyFiles?.dispose();
     this.iamPolicyFiles = new IamPolicyFilesProjection(bus, this.userMgr, deviceId);
+    // Keep the socket table coherent with the service layer: a service's
+    // listening ports are bound on start and released on stop.
+    this.servicePortProjection?.dispose();
+    this.portActivityLog?.dispose();
+    if (this.socketTable) {
+      // Log port activity *before* the port projection runs its initial
+      // reconcile, so boot-time binds are recorded too.
+      this.portActivityLog = new PortActivityLogProjection(bus, this.logMgr, deviceId);
+      this.servicePortProjection = new ServicePortProjection(
+        bus, deviceId, this.socketTable, this.serviceMgr,
+      );
+    }
     // Keep the /etc identity files coherent when the identity model changes.
     this.identityFilesUnsub?.();
     this.identityFilesUnsub = bus.subscribe(
@@ -442,7 +486,9 @@ export class LinuxCommandExecutor {
     for (const name of this.ipNetworkCtx.getInterfaceNames()) {
       if (name === 'lo') continue;
       const info = this.ipNetworkCtx.getInterfaceInfo(name);
-      if (info?.ip) return info.ip;
+      // An administratively-down NIC cannot source traffic, so its address
+      // is unusable until the interface is brought back up.
+      if (info?.ip && info.isUp) return info.ip;
     }
     return null;
   }
@@ -450,6 +496,12 @@ export class LinuxCommandExecutor {
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
+    // Now that the socket table exists, keep the port subsystem coherent on
+    // disk: seed /etc/services and expose /proc/net/{tcp,udp} as generated
+    // files that always reflect the live table.
+    const portsFs = new PortsFilesystem(this.vfs);
+    portsFs.seedServicesFile(this.ianaServices);
+    portsFs.registerProcNet(table);
   }
 
   /** Register a system process (e.g. Oracle background processes) visible via `ps` */
@@ -918,6 +970,7 @@ export class LinuxCommandExecutor {
     // Root-only commands — reject if not root
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
       'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp', 'ufw',
+      'ausearch', 'aureport', 'auditctl',
       'iptables', 'iptables-save', 'iptables-restore'];
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
@@ -1058,6 +1111,16 @@ export class LinuxCommandExecutor {
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
       case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
+      case 'at': {
+        const atdActive = this.serviceMgr.status('atd')?.state === 'active';
+        const out = cmdAt(this.atQueue, args, stdin ?? '', this.userMgr.currentUser, atdActive);
+        return { output: out, exitCode: atdActive ? 0 : 1 };
+      }
+      case 'atq': return { output: cmdAtq(this.atQueue), exitCode: 0 };
+      case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
+      case 'ausearch': return { output: cmdAusearch(this.auditLog, args), exitCode: 0 };
+      case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
+      case 'auditctl': return { output: cmdAuditctl(this.auditLog, args), exitCode: 0 };
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -1196,6 +1259,12 @@ export class LinuxCommandExecutor {
         const r = cmdPkill(args, this.processCmdContext());
         return r;
       }
+      case 'killall': {
+        const r = cmdKillall(args, this.processCmdContext());
+        return r;
+      }
+      case 'arping':
+        return { output: cmdArping(args), exitCode: 0 };
       case 'pgrep': {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
@@ -2130,20 +2199,21 @@ export class LinuxCommandExecutor {
       // Users and groups
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
       'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-      'faillock',
+      'faillock', 'ausearch', 'aureport', 'auditctl',
       'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
       'login', 'logout',
       // Lookup
       'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
       // System / processes / time
-      'crontab', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+      'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
       'runlevel', 'hostnamectl', 'timedatectl',
       'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
+      'pkill', 'pgrep', 'pidof', 'killall',
       'systemctl', 'service', 'journalctl', 'dmesg', 'lsof', 'fuser', 'nice',
       'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
       // Networking
       'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'netstat',
-      'ss', 'route', 'arp', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
+      'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
       'ssh', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat',
       'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
       // Editors

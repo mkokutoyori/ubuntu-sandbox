@@ -101,11 +101,22 @@ function buildSecurityLog(next: () => number): EventLogEntry[] {
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
+/** Directory holding the materialised `.evtx` log files. */
+const EVTX_DIR = 'C:\\Windows\\System32\\winevt\\Logs';
+
+/** The slice of the Windows filesystem the provider materialises logs onto. */
+export interface EvtxFilesystem {
+  mkdirp(absPath: string): void;
+  createFile(absPath: string, content: string): { ok: boolean; error?: string };
+}
+
 export class PSEventLogProvider {
   private logs: Map<string, EventLogMetadata>;
   /** Per-instance RecordId counter (see RECORD_ID_BASE note above). */
   private recordId = RECORD_ID_BASE;
   private nextIndex = (): number => this.recordId++;
+  /** Windows filesystem the `.evtx` files are written onto, when wired. */
+  private fs: EvtxFilesystem | null = null;
 
   constructor() {
     this.logs = new Map();
@@ -213,6 +224,25 @@ export class PSEventLogProvider {
     return lines.join('\n') + '\n';
   }
 
+  /**
+   * Wire the Windows filesystem so each event log is materialised as a
+   * `.evtx` file under `winevt\Logs`. Idempotent; an initial render runs
+   * immediately so the files exist from first boot.
+   */
+  attachFilesystem(fs: EvtxFilesystem): void {
+    this.fs = fs;
+    this.fs.mkdirp(EVTX_DIR);
+    this.materialize();
+  }
+
+  /** Re-render every event log to its `.evtx` file (no-op when unwired). */
+  private materialize(): void {
+    if (!this.fs) return;
+    for (const meta of this.logs.values()) {
+      this.fs.createFile(`${EVTX_DIR}\\${meta.logName}.evtx`, renderEvtx(meta));
+    }
+  }
+
   writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string): string {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
@@ -226,6 +256,7 @@ export class PSEventLogProvider {
       category: '(0)',
       message,
     });
+    this.materialize();
     return '';
   }
 
@@ -233,6 +264,7 @@ export class PSEventLogProvider {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Clear-EventLog : No log with name "${logName}" was found.`;
     this.logs.get(key)!.entries = [];
+    this.materialize();
     return '';
   }
 
@@ -301,4 +333,26 @@ export class PSEventLogProvider {
     const min = String(d.getMinutes()).padStart(2, '0');
     return `${mo}/${day} ${hr}:${min}`;
   }
+}
+
+/**
+ * Render an event log to the text representation written to its `.evtx`
+ * file. Real `.evtx` is a binary format; the simulator keeps a faithful,
+ * `type`-able plain-text projection of the record stream instead.
+ */
+function renderEvtx(meta: EventLogMetadata): string {
+  const lines = [
+    `# Windows Event Log: ${meta.logName}`,
+    `# Records: ${meta.entries.length}  MaxSize: ${meta.maxSizeKB} KB  Retention: ${meta.overflow}`,
+    '',
+  ];
+  for (const e of meta.entries) {
+    lines.push(
+      `Record #${e.index}  ${e.timeGenerated.toISOString()}  [${e.entryType}]`,
+      `  Source: ${e.source}  Event ID: ${e.eventId}  Category: ${e.category}`,
+      `  ${e.message.split('\n')[0]}`,
+      '',
+    );
+  }
+  return lines.join('\n');
 }

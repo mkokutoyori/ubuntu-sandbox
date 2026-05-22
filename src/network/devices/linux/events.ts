@@ -94,6 +94,31 @@ export interface ServiceFailedPayload extends ServiceRef {
   reason: string;
 }
 
+// ── Port / socket lifecycle ─────────────────────────────────────────────
+
+/** Identifies a listening transport endpoint on a device. */
+export interface PortRef extends LinuxDeviceRef {
+  /** The port number. */
+  port: number;
+  /** Transport protocol the port is bound on. */
+  protocol: 'tcp' | 'udp';
+  /** Local bind address (`0.0.0.0` = all interfaces). */
+  address: string;
+}
+
+/** A listening socket was opened — a service began accepting connections. */
+export interface PortBoundPayload extends PortRef {
+  /** PID of the owning process, when known. */
+  pid?: number;
+  /** Short process name shown by `netstat -p` / `ss -p`. */
+  processName: string;
+  /** The systemd unit that owns the socket, when the bind was service-driven. */
+  serviceName?: string;
+}
+
+/** A listening socket was closed — a service stopped accepting connections. */
+export type PortReleasedPayload = PortBoundPayload;
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type LinuxProcessServiceDomainEvent =
@@ -112,4 +137,6 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.service.disabled'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.masked'; payload: ServiceEnablementChangedPayload }
   | { topic: 'linux.service.unmasked'; payload: ServiceEnablementChangedPayload }
-  | { topic: 'linux.service.failed'; payload: ServiceFailedPayload };
+  | { topic: 'linux.service.failed'; payload: ServiceFailedPayload }
+  | { topic: 'linux.port.bound'; payload: PortBoundPayload }
+  | { topic: 'linux.port.released'; payload: PortReleasedPayload };
