@@ -20,7 +20,10 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { EventBus } from '@/events/EventBus';
 import { WindowsServiceManager } from '@/network/devices/windows/WindowsServiceManager';
 import { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
+import { WindowsProcessManager } from '@/network/devices/windows/WindowsProcessManager';
 import { WindowsSecurityAudit } from '@/network/devices/windows/WindowsSecurityAudit';
+import { WindowsSecurityAuditProjection } from '@/network/devices/windows/WindowsSecurityAuditProjection';
+import { WindowsEventLogProjection } from '@/network/devices/windows/WindowsEventLogProjection';
 
 // ═══════════════════════════════════════════════════════════════════
 // LinuxAuditRecord / LinuxAuditLog
@@ -218,22 +221,36 @@ describe('rsyslog coherence', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// Windows — Service Control Manager journalisation
+// Windows — event-driven journalisation (pub/sub)
 // ═══════════════════════════════════════════════════════════════════
 
-describe('Windows service journalisation', () => {
-  it('journals a 7036 System-log event on service stop and start', () => {
-    const mgr = new WindowsServiceManager();
-    const events: Array<{ log: string; id: number; message: string }> = [];
-    mgr.attachEventLog({
-      writeEventLog: (log, _src, eventId, _type, message) => {
-        events.push({ log, id: eventId, message });
-        return '';
-      },
-    });
+/** A Windows device wired to a bus with both reactive log projections. */
+function wiredWindows() {
+  const bus = new EventBus();
+  const events: Array<{ log: string; id: number; type: string; message: string }> = [];
+  const sink = {
+    writeEventLog: (log: string, _src: string, id: number, type: string, message: string) => {
+      events.push({ log, id, type, message });
+      return '';
+    },
+  };
+  const userMgr = new WindowsUserManager();
+  userMgr.currentUser = 'Administrator';
+  userMgr.attachBus(bus, 'win-1');
+  const svcMgr = new WindowsServiceManager();
+  svcMgr.attachBus(bus, 'win-1');
+  const procMgr = new WindowsProcessManager();
+  procMgr.attachBus(bus, 'win-1');
+  new WindowsSecurityAuditProjection(bus, new WindowsSecurityAudit(sink), 'win-1');
+  new WindowsEventLogProjection(bus, sink, 'win-1');
+  return { events, userMgr, svcMgr, procMgr };
+}
 
-    mgr.stopService('LanmanServer', true);
-    mgr.startService('LanmanServer', true);
+describe('Windows service journalisation (reactive)', () => {
+  it('journals a 7036 System-log event on service stop and start', () => {
+    const { events, svcMgr } = wiredWindows();
+    svcMgr.stopService('LanmanServer', true);
+    svcMgr.startService('LanmanServer', true);
 
     const scm = events.filter((e) => e.id === 7036 && e.log === 'System');
     expect(scm.some((e) => e.message.includes('stopped'))).toBe(true);
@@ -241,81 +258,74 @@ describe('Windows service journalisation', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// Windows — Security event-log audit trail
-// ═══════════════════════════════════════════════════════════════════
-
-describe('Windows Security audit trail', () => {
-  function wired() {
-    const events: Array<{ log: string; id: number; type: string; message: string }> = [];
-    const audit = new WindowsSecurityAudit({
-      writeEventLog: (log, _src, id, type, message) => {
-        events.push({ log, id, type, message });
-        return '';
-      },
-    });
-    const mgr = new WindowsUserManager();
-    mgr.currentUser = 'Administrator';
-    mgr.attachSecurityAudit(audit);
-    return { events, mgr };
-  }
-
+describe('Windows Security audit trail (reactive)', () => {
   it('journals event 4720 when a user account is created', () => {
-    const { events, mgr } = wired();
-    mgr.createUser('bob', 'P@ssw0rd!2024', {});
+    const { events, userMgr } = wiredWindows();
+    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
     expect(events.some((e) => e.id === 4720 && e.log === 'Security')).toBe(true);
   });
 
   it('journals event 4726 when a user account is deleted', () => {
-    const { events, mgr } = wired();
-    mgr.createUser('bob', 'P@ssw0rd!2024', {});
-    mgr.deleteUser('bob');
+    const { events, userMgr } = wiredWindows();
+    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
+    userMgr.deleteUser('bob');
     expect(events.some((e) => e.id === 4726)).toBe(true);
   });
 
   it('journals event 4724 when a password is reset', () => {
-    const { events, mgr } = wired();
-    mgr.createUser('bob', 'P@ssw0rd!2024', {});
-    mgr.setUserProperty('bob', 'password', 'New@Pass!2024');
+    const { events, userMgr } = wiredWindows();
+    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
+    userMgr.setUserProperty('bob', 'password', 'New@Pass!2024');
     expect(events.some((e) => e.id === 4724)).toBe(true);
   });
 
   it('journals 4722 / 4725 on account enable and disable', () => {
-    const { events, mgr } = wired();
-    mgr.createUser('bob', 'P@ssw0rd!2024', {});
-    mgr.disableUser('bob');
-    mgr.enableUser('bob');
+    const { events, userMgr } = wiredWindows();
+    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
+    userMgr.disableUser('bob');
+    userMgr.enableUser('bob');
     expect(events.some((e) => e.id === 4725)).toBe(true);
     expect(events.some((e) => e.id === 4722)).toBe(true);
   });
 
-  it('journals 4732 when a member is added to a group', () => {
-    const { events, mgr } = wired();
-    mgr.createUser('bob', 'P@ssw0rd!2024', {});
-    mgr.createGroup('Engineers');
-    mgr.addGroupMember('Engineers', 'bob');
+  it('journals 4731 / 4732 on group creation and membership', () => {
+    const { events, userMgr } = wiredWindows();
+    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
+    userMgr.createGroup('Engineers');
+    userMgr.addGroupMember('Engineers', 'bob');
     expect(events.some((e) => e.id === 4731)).toBe(true);
     expect(events.some((e) => e.id === 4732)).toBe(true);
   });
 
   it('journals a 4624 success / 4625 failure logon audit', () => {
-    const { events, mgr } = wired();
-    mgr.createUser('bob', 'P@ssw0rd!2024', {});
-    mgr.checkPassword('bob', 'P@ssw0rd!2024');
-    mgr.checkPassword('bob', 'wrong');
+    const { events, userMgr } = wiredWindows();
+    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
+    userMgr.checkPassword('bob', 'P@ssw0rd!2024');
+    userMgr.checkPassword('bob', 'wrong');
     expect(events.some((e) => e.id === 4624 && e.type === 'SuccessAudit')).toBe(true);
     expect(events.some((e) => e.id === 4625 && e.type === 'FailureAudit')).toBe(true);
   });
 
-  it('surfaces audited account creation in the device Security event log', () => {
-    const events: Array<{ id: number }> = [];
-    const audit = new WindowsSecurityAudit({
-      writeEventLog: (_l, _s, id) => { events.push({ id }); return ''; },
+  it('journals 4688 / 4689 on process creation and termination', () => {
+    const { events, procMgr } = wiredWindows();
+    const proc = procMgr.spawnProcess('notepad.exe', 100, 'User');
+    procMgr.killProcess(proc.pid, true, true);
+    expect(events.some((e) => e.id === 4688)).toBe(true);
+    expect(events.some((e) => e.id === 4689)).toBe(true);
+  });
+
+  it('does not react to events from another device', () => {
+    const bus = new EventBus();
+    const events: number[] = [];
+    new WindowsSecurityAuditProjection(
+      bus,
+      new WindowsSecurityAudit({ writeEventLog: (_l, _s, id) => { events.push(id); return ''; } }),
+      'win-1',
+    );
+    bus.publish({
+      topic: 'windows.account.changed',
+      payload: { deviceId: 'other', account: 'bob', change: 'created' },
     });
-    const mgr = new WindowsUserManager();
-    mgr.currentUser = 'Administrator';
-    mgr.attachSecurityAudit(audit);
-    mgr.createUser('carol', 'C@rol!Pass24', { fullName: 'Carol' });
-    expect(events).toContainEqual({ id: 4720 });
+    expect(events).toHaveLength(0);
   });
 });

@@ -14,15 +14,7 @@
 
 import type { SocketTable } from '../../core/SocketTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
-
-/** Minimal slice of the event-log provider the service controller writes to. */
-export interface ServiceEventLogSink {
-  writeEventLog(
-    logName: string, source: string, eventId: number,
-    entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
-    message: string,
-  ): string;
-}
+import type { IEventBus } from '@/events/EventBus';
 
 export type ServiceState =
   | 'Running' | 'Stopped' | 'Paused'
@@ -123,31 +115,35 @@ export class WindowsServiceManager {
   private services: Map<string, WindowsService> = new Map();
   /** Socket table kept coherent with service start/stop, when wired. */
   private socketTable: SocketTable | null = null;
-  /** Event-log sink — the Service Control Manager journals 7036 events. */
-  private eventLog: ServiceEventLogSink | null = null;
+  /** Reactive sink — null until the device attaches its bus. */
+  private bus: IEventBus | null = null;
+  private deviceId = '';
 
   constructor() {
     this.initDefaults();
   }
 
   /**
-   * Wire the Windows event log so service state changes are journaled as
-   * Service Control Manager event 7036 in the System log — the audit trail
-   * `Get-EventLog System` / `wevtutil` show.
+   * Attach the device event bus so service lifecycle changes are published.
+   * Reactive consumers (the System event-log projection, a future port
+   * projection) subscribe and keep their derived views coherent.
    */
-  attachEventLog(sink: ServiceEventLogSink): void {
-    this.eventLog = sink;
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
   }
 
-  /** Journal a Service Control Manager state-change event (System log, 7036). */
-  private journalServiceState(svc: WindowsService, running: boolean): void {
-    this.eventLog?.writeEventLog(
-      'System',
-      'Service Control Manager',
-      7036,
-      'Information',
-      `The ${svc.displayName} service entered the ${running ? 'running' : 'stopped'} state.`,
-    );
+  /** Publish a service-lifecycle event on the central bus. */
+  private publishServiceState(svc: WindowsService, running: boolean): void {
+    this.bus?.publish({
+      topic: running ? 'windows.service.started' : 'windows.service.stopped',
+      payload: {
+        deviceId: this.deviceId,
+        serviceName: svc.name,
+        displayName: svc.displayName,
+        running,
+      },
+    });
   }
 
   /**
@@ -332,7 +328,7 @@ export class WindowsServiceManager {
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
     svc.state = 'Running';
     this.bindServiceSockets(svc.name);
-    this.journalServiceState(svc, true);
+    this.publishServiceState(svc, true);
     return '';
   }
 
@@ -352,7 +348,7 @@ export class WindowsServiceManager {
 
     svc.state = 'Stopped';
     this.releaseServiceSockets(svc.name);
-    this.journalServiceState(svc, false);
+    this.publishServiceState(svc, false);
     return '';
   }
 

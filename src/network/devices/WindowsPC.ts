@@ -25,6 +25,8 @@ import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
 import { WindowsUserManager } from './windows/WindowsUserManager';
 import { WindowsSecurityAudit } from './windows/WindowsSecurityAudit';
+import { WindowsSecurityAuditProjection } from './windows/WindowsSecurityAuditProjection';
+import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServiceManager } from './windows/WindowsServiceManager';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
@@ -123,6 +125,10 @@ export class WindowsPC extends EndHost {
   private dnsSuffix: string = '';
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
+  /** Reactive consumer: account/group/logon events → Security event log. */
+  private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
+  /** Reactive consumer: service lifecycle events → System event log. */
+  private eventLogProjection: WindowsEventLogProjection | null = null;
   /** Service manager (service lifecycle, dependencies) */
   private svcMgr: WindowsServiceManager;
   /** Process manager (process table, PIDs, kill, tree) */
@@ -168,12 +174,28 @@ export class WindowsPC extends EndHost {
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     this.userMgr = new WindowsUserManager();
-    // Journal account / group / logon operations into the Security event log.
-    this.userMgr.attachSecurityAudit(new WindowsSecurityAudit(this.eventLog));
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.initEnv();
     this.initDefaultSockets();
+    this.wireReactiveProjections();
+  }
+
+  /**
+   * Wire the Windows managers to the central event bus and stand up the
+   * reactive consumers: account / group / logon changes flow to the Security
+   * event log, service lifecycle to the System log. The managers only
+   * announce — the projections keep the derived views coherent.
+   */
+  private wireReactiveProjections(): void {
+    const bus = this.getBus();
+    this.userMgr.attachBus(bus, this.id);
+    this.svcMgr.attachBus(bus, this.id);
+    this.procMgr.attachBus(bus, this.id);
+    this.securityAuditProjection = new WindowsSecurityAuditProjection(
+      bus, new WindowsSecurityAudit(this.eventLog), this.id,
+    );
+    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
   }
 
   private initDefaultSockets(): void {
@@ -190,8 +212,6 @@ export class WindowsPC extends EndHost {
     // a service via `sc`/`net stop` now releases its ports, starting it
     // rebinds them.
     this.svcMgr.attachSocketTable(this.socketTable);
-    // Journal service state changes into the System event log (SCM 7036).
-    this.svcMgr.attachEventLog(this.eventLog);
 
     // Persist SSH server config + host key under C:\ProgramData\ssh\ on
     // first boot so OpenSSH-for-Windows files are visible from the shell.

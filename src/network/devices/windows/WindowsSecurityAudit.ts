@@ -38,6 +38,8 @@ export const SECURITY_EVENT = {
   GROUP_MEMBER_REMOVED: 4733,
   GROUP_CREATED: 4731,
   GROUP_DELETED: 4734,
+  PROCESS_CREATED: 4688,
+  PROCESS_TERMINATED: 4689,
 } as const;
 
 const SECURITY_LOG = 'Security';
@@ -107,6 +109,16 @@ export class WindowsSecurityAudit {
 
   accountLockedOut(name: string): void {
     this.failure(SECURITY_EVENT.ACCOUNT_LOCKED_OUT, `A user account was locked out.\n\nAccount That Was Locked Out:\n\tAccount Name:\t${name}`);
+  }
+
+  // ─── Process tracking ──────────────────────────────────────────────────
+
+  processCreated(name: string, pid: number): void {
+    this.success(SECURITY_EVENT.PROCESS_CREATED, `A new process has been created.\n\nProcess Information:\n\tNew Process ID:\t0x${pid.toString(16)}\n\tNew Process Name:\t${name}`);
+  }
+
+  processTerminated(name: string, pid: number): void {
+    this.success(SECURITY_EVENT.PROCESS_TERMINATED, `A process has exited.\n\nProcess Information:\n\tProcess ID:\t0x${pid.toString(16)}\n\tProcess Name:\t${name}`);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────
