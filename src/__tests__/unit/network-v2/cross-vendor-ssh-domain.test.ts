@@ -4,6 +4,11 @@ import {
   type SshdAddressFamily,
   type SshdLogLevel,
 } from '@/network/protocols/ssh/server/SshdServerConfig';
+import {
+  SshHostKeyMaterial,
+  SshHostKeyset,
+  type SshHostKeyAlgorithm,
+} from '@/network/protocols/ssh/server/SshHostKeyset';
 
 describe('§Q — SshdServerConfig immutable directive value object', () => {
   test('defaults match OpenSSH 9.x out-of-the-box', () => {
@@ -189,5 +194,88 @@ describe('§Q — SshdServerConfig immutable directive value object', () => {
       .withAllowUsers([]);
     expect(cfg.isUserAllowed('alice', ['wheel'])).toBe(true);
     expect(cfg.isUserAllowed('alice', ['users'])).toBe(false);
+  });
+});
+
+describe('§R — SshHostKeyMaterial faithfully models a server host key', () => {
+  test('factory generates a deterministic ed25519 key from a seed', () => {
+    const k = SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'router-r1' });
+    expect(k.algorithm).toBe('ssh-ed25519');
+    expect(k.keySizeBits).toBe(256);
+    expect(k.publicKey).toMatch(/^ssh-ed25519\s+/);
+    expect(k.privateKeyPem).toMatch(/BEGIN OPENSSH PRIVATE KEY/);
+    expect(k.fingerprintSha256).toMatch(/^SHA256:[A-Za-z0-9+/]+$/);
+    expect(k.fingerprintMd5).toMatch(/^MD5:([0-9a-f]{2}:){15}[0-9a-f]{2}$/);
+    expect(k.fingerprintBabble).toMatch(/^x[a-z-]+x$/);
+    expect(k.createdAt).toBeGreaterThan(0);
+    expect(k.serialized()).toContain('ssh-ed25519');
+  });
+
+  test('rsa key reports its bit length', () => {
+    const k = SshHostKeyMaterial.generate('ssh-rsa', { seed: 'router-r1', bits: 4096 });
+    expect(k.algorithm).toBe('ssh-rsa');
+    expect(k.keySizeBits).toBe(4096);
+  });
+
+  test('ecdsa key reports curve and size', () => {
+    const k = SshHostKeyMaterial.generate('ecdsa-sha2-nistp256', { seed: 'r1' });
+    expect(k.curveName).toBe('nistp256');
+    expect(k.keySizeBits).toBe(256);
+  });
+
+  test('two keys built from the same seed are byte-identical', () => {
+    const a = SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'same' });
+    const b = SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'same' });
+    expect(a.publicKey).toBe(b.publicKey);
+    expect(a.fingerprintSha256).toBe(b.fingerprintSha256);
+  });
+
+  test('different seeds produce different keys', () => {
+    const a = SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'x' });
+    const b = SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'y' });
+    expect(a.fingerprintSha256).not.toBe(b.fingerprintSha256);
+  });
+
+  test('known_hosts line matches the OpenSSH format', () => {
+    const k = SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'host' });
+    expect(k.knownHostsLine('10.0.0.1')).toBe(`10.0.0.1 ${k.publicKey}`);
+  });
+});
+
+describe('§R2 — SshHostKeyset manages multiple algorithms per device', () => {
+  test('default keyset ships ed25519 + rsa + ecdsa', () => {
+    const ks = SshHostKeyset.defaults('r1');
+    expect(ks.algorithms().sort()).toEqual<SshHostKeyAlgorithm[]>(
+      ['ecdsa-sha2-nistp256', 'ssh-ed25519', 'ssh-rsa'].sort() as SshHostKeyAlgorithm[],
+    );
+    expect(ks.get('ssh-ed25519')?.algorithm).toBe('ssh-ed25519');
+  });
+
+  test('preferred returns the strongest available', () => {
+    const ks = SshHostKeyset.defaults('r1');
+    expect(ks.preferred().algorithm).toBe('ssh-ed25519');
+  });
+
+  test('regenerate replaces a single key but leaves the others', () => {
+    const ks = SshHostKeyset.defaults('r1');
+    const before = ks.get('ssh-ed25519')!.fingerprintSha256;
+    const ks2 = ks.regenerate('ssh-ed25519', { seed: 'rotated' });
+    expect(ks2.get('ssh-ed25519')!.fingerprintSha256).not.toBe(before);
+    expect(ks2.get('ssh-rsa')!.fingerprintSha256).toBe(ks.get('ssh-rsa')!.fingerprintSha256);
+  });
+
+  test('add() inserts a new algorithm', () => {
+    const ks = new SshHostKeyset([SshHostKeyMaterial.generate('ssh-ed25519', { seed: 'r1' })]);
+    const ks2 = ks.add(SshHostKeyMaterial.generate('ssh-rsa', { seed: 'r1' }));
+    expect(ks2.algorithms()).toContain('ssh-rsa');
+  });
+
+  test('fingerprintsBundle returns every fingerprint keyed by algorithm', () => {
+    const ks = SshHostKeyset.defaults('r1');
+    const bundle = ks.fingerprintsBundle();
+    expect(Object.keys(bundle).sort()).toEqual(
+      ['ecdsa-sha2-nistp256', 'ssh-ed25519', 'ssh-rsa'],
+    );
+    expect(bundle['ssh-ed25519']).toMatch(/^SHA256:/);
   });
 });
