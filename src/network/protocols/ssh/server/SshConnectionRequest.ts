@@ -24,6 +24,12 @@ export interface SshPtyRequest {
   readonly modes?: ReadonlyMap<string, number>;
 }
 
+export interface SshCredentialsOffer {
+  readonly password?: string;
+  readonly publicKey?: string;
+  readonly publicKeySignature?: string;
+}
+
 export interface SshConnectionRequestSnapshot {
   readonly requestedUser: string;
   readonly requestedHost: string;
@@ -43,6 +49,7 @@ export interface SshConnectionRequestSnapshot {
   readonly forwarding: SshForwardingRequest;
   readonly requestedSubsystem: string | null;
   readonly command: string | null;
+  readonly credentials: SshCredentialsOffer;
   readonly receivedAt: number;
 }
 
@@ -65,6 +72,7 @@ export class SshConnectionRequest implements SshConnectionRequestSnapshot {
   readonly forwarding: SshForwardingRequest;
   readonly requestedSubsystem: string | null;
   readonly command: string | null;
+  readonly credentials: SshCredentialsOffer;
   readonly receivedAt: number;
 
   private constructor(s: SshConnectionRequestSnapshot) {
@@ -86,6 +94,7 @@ export class SshConnectionRequest implements SshConnectionRequestSnapshot {
     this.forwarding = s.forwarding;
     this.requestedSubsystem = s.requestedSubsystem;
     this.command = s.command;
+    this.credentials = s.credentials;
     this.receivedAt = s.receivedAt;
   }
 
@@ -100,6 +109,7 @@ export class SshConnectionRequest implements SshConnectionRequestSnapshot {
     forwarding: SshForwardingRequest;
     requestedSubsystem: string | null;
     command: string | null;
+    credentials?: SshCredentialsOffer;
     now: number;
   }): SshConnectionRequest {
     return new SshConnectionRequest({
@@ -121,6 +131,7 @@ export class SshConnectionRequest implements SshConnectionRequestSnapshot {
       forwarding: init.forwarding,
       requestedSubsystem: init.requestedSubsystem,
       command: init.command,
+      credentials: Object.freeze({ ...(init.credentials ?? {}) }),
       receivedAt: init.now,
     });
   }

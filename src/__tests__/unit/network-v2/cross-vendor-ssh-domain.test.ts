@@ -13,6 +13,10 @@ import {
   SshConnectionRequest,
   SshConnectionDecision,
 } from '@/network/protocols/ssh/server/SshConnectionRequest';
+import { CrossVendorSshHost } from '@/network/protocols/ssh/server/CrossVendorSshHost';
+import { EventBus } from '@/events/EventBus';
+import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
+import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
 
 describe('§Q — SshdServerConfig immutable directive value object', () => {
   test('defaults match OpenSSH 9.x out-of-the-box', () => {
@@ -370,3 +374,117 @@ describe('§S2 — SshConnectionDecision tracks outcome and reason', () => {
     expect(d.ok).toBe(false);
   });
 });
+
+describe('§T — CrossVendorSshHost composes config + keys + credentials uniformly', () => {
+  let bus: EventBus;
+  let store: NetworkOsCredentialStore;
+  let host: CrossVendorSshHost;
+
+  beforeEach(() => {
+    bus = new EventBus();
+    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    host = new CrossVendorSshHost({
+      deviceId: 'r1',
+      hostname: 'r1',
+      vendor: 'cisco',
+      bus,
+      credentials: store,
+      now: () => 1_700_000_000_000,
+    });
+  });
+
+  test('exposes deviceId, hostname, vendor, banner, motd, keyset, config', () => {
+    expect(host.deviceId).toBe('r1');
+    expect(host.hostname).toBe('r1');
+    expect(host.vendor).toBe('cisco');
+    expect(host.config).toBeInstanceOf(SshdServerConfig);
+    expect(host.keyset).toBeInstanceOf(SshHostKeyset);
+    expect(host.banner).toBe('');
+    expect(host.motd).toBe('');
+  });
+
+  test('isSshActive reflects the admin flag (true by default)', () => {
+    expect(host.isSshActive()).toBe(true);
+    host.setSshActive(false);
+    expect(host.isSshActive()).toBe(false);
+  });
+
+  test('decide() refuses when sshd is inactive', () => {
+    host.setSshActive(false);
+    const req = makeRequest({ user: 'admin' });
+    const d = host.decide(req);
+    expect(d.outcome).toBe('dropped');
+    expect(d.reason).toMatch(/sshd|inactive|refused/i);
+  });
+
+  test('decide() refuses an unknown user when local DB is configured', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('a'));
+    const d = host.decide(makeRequest({ user: 'ghost' }));
+    expect(d.outcome).toBe('rejected');
+    expect(d.reason).toMatch(/no such user/);
+  });
+
+  test('decide() refuses a wrong password when password is offered', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2'));
+    const d = host.decide(makeRequest({ user: 'admin', password: 'WRONG' }));
+    expect(d.outcome).toBe('rejected');
+  });
+
+  test('decide() accepts a matching password', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2'));
+    const d = host.decide(makeRequest({ user: 'admin', password: 'hunter2' }));
+    expect(d.outcome).toBe('accepted');
+    expect(d.method).toBe('password');
+    expect(d.sessionId).toMatch(/^ssh-/);
+  });
+
+  test('decide() accepts a publickey present in account.publicKeys', () => {
+    const key = 'ssh-ed25519 AAAA... alice@laptop';
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('').withPublicKey(key));
+    const d = host.decide(makeRequest({ user: 'admin', offeredPublicKey: key }));
+    expect(d.outcome).toBe('accepted');
+    expect(d.method).toBe('publickey');
+  });
+
+  test('decide() refuses an account locked / disabled / expired', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x').lock('admin'));
+    const denied = host.decide(makeRequest({ user: 'admin', password: 'x' }));
+    expect(denied.outcome).toBe('rejected');
+    expect(denied.reason).toMatch(/locked|disabled|admin/);
+  });
+
+  test('decide() refuses when sshd Match block sets PasswordAuthentication no', () => {
+    host.applyConfig(host.config
+      .withMatchBlock({
+        criteria: [{ keyword: 'User', value: 'admin' }],
+        overrides: { passwordAuthentication: false, pubkeyAuthentication: false },
+      }));
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x'));
+    const d = host.decide(makeRequest({ user: 'admin', password: 'x' }));
+    expect(d.outcome).toBe('rejected');
+  });
+});
+
+function makeRequest(init: { user: string; password?: string; offeredPublicKey?: string }): SshConnectionRequest {
+  const methods: ('password' | 'publickey')[] = [];
+  if (init.password !== undefined) methods.push('password');
+  if (init.offeredPublicKey) methods.push('publickey');
+  return SshConnectionRequest.create({
+    requestedUser: init.user,
+    requestedHost: 'r1',
+    requestedPort: 22,
+    sourceIp: '10.0.0.1',
+    sourcePort: 50_000,
+    sourceHostname: 'pc1',
+    clientVersion: 'SSH-2.0-OpenSSH_9.6',
+    offeredAuthMethods: methods.length === 0 ? ['password'] : methods,
+    offeredCiphers: [], offeredMacs: [], offeredKex: [],
+    offeredHostKeyAlgorithms: [], offeredCompression: [],
+    sentEnv: {}, pty: null,
+    forwarding: { agent: false, x11: false, locals: [], remotes: [], dynamics: [] },
+    requestedSubsystem: null,
+    command: 'show version',
+    credentials: { password: init.password, publicKey: init.offeredPublicKey },
+    now: 1,
+  });
+}
