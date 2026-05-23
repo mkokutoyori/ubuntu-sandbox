@@ -9,6 +9,10 @@ import {
   SshHostKeyset,
   type SshHostKeyAlgorithm,
 } from '@/network/protocols/ssh/server/SshHostKeyset';
+import {
+  SshConnectionRequest,
+  SshConnectionDecision,
+} from '@/network/protocols/ssh/server/SshConnectionRequest';
 
 describe('§Q — SshdServerConfig immutable directive value object', () => {
   test('defaults match OpenSSH 9.x out-of-the-box', () => {
@@ -277,5 +281,92 @@ describe('§R2 — SshHostKeyset manages multiple algorithms per device', () => 
       ['ecdsa-sha2-nistp256', 'ssh-ed25519', 'ssh-rsa'],
     );
     expect(bundle['ssh-ed25519']).toMatch(/^SHA256:/);
+  });
+});
+
+describe('§S — SshConnectionRequest captures every inbound handshake parameter', () => {
+  test('factory carries source, destination and offered algorithms', () => {
+    const req = SshConnectionRequest.create({
+      requestedUser: 'alice',
+      requestedHost: 'r1',
+      requestedPort: 22,
+      sourceIp: '10.0.0.1',
+      sourcePort: 50_000,
+      sourceHostname: 'pc1',
+      clientVersion: 'SSH-2.0-OpenSSH_9.6',
+      offeredAuthMethods: ['publickey', 'password'],
+      offeredCiphers: ['[email protected]'],
+      offeredMacs: ['[email protected]'],
+      offeredKex: ['curve25519-sha256'],
+      offeredHostKeyAlgorithms: ['ssh-ed25519'],
+      offeredCompression: ['none'],
+      sentEnv: { LANG: 'en_US.UTF-8' },
+      pty: { termType: 'xterm-256color', cols: 132, rows: 50 },
+      forwarding: { agent: true, x11: false, locals: [], remotes: [], dynamics: [] },
+      requestedSubsystem: null,
+      command: 'show version',
+      now: 1,
+    });
+    expect(req.requestedUser).toBe('alice');
+    expect(req.sourceIp).toBe('10.0.0.1');
+    expect(req.clientVersion).toBe('SSH-2.0-OpenSSH_9.6');
+    expect(req.offeredAuthMethods).toEqual(['publickey', 'password']);
+    expect(req.pty?.termType).toBe('xterm-256color');
+    expect(req.forwarding.agent).toBe(true);
+    expect(req.command).toBe('show version');
+    expect(req.isExecMode()).toBe(true);
+    expect(req.isInteractive()).toBe(false);
+  });
+
+  test('isInteractive returns true when no command and no subsystem', () => {
+    const req = SshConnectionRequest.create({
+      requestedUser: 'alice', requestedHost: 'r1', requestedPort: 22,
+      sourceIp: '10.0.0.1', sourcePort: 50000, sourceHostname: 'pc1',
+      clientVersion: 'SSH-2.0', offeredAuthMethods: ['password'],
+      offeredCiphers: [], offeredMacs: [], offeredKex: [],
+      offeredHostKeyAlgorithms: [], offeredCompression: [],
+      sentEnv: {}, pty: null, forwarding: { agent: false, x11: false, locals: [], remotes: [], dynamics: [] },
+      requestedSubsystem: null, command: null, now: 1,
+    });
+    expect(req.isInteractive()).toBe(true);
+    expect(req.isExecMode()).toBe(false);
+    expect(req.isSubsystem()).toBe(false);
+  });
+
+  test('isSubsystem true for sftp', () => {
+    const req = SshConnectionRequest.create({
+      requestedUser: 'alice', requestedHost: 'r1', requestedPort: 22,
+      sourceIp: '10.0.0.1', sourcePort: 50000, sourceHostname: 'pc1',
+      clientVersion: 'SSH-2.0', offeredAuthMethods: ['password'],
+      offeredCiphers: [], offeredMacs: [], offeredKex: [],
+      offeredHostKeyAlgorithms: [], offeredCompression: [],
+      sentEnv: {}, pty: null, forwarding: { agent: false, x11: false, locals: [], remotes: [], dynamics: [] },
+      requestedSubsystem: 'sftp', command: null, now: 1,
+    });
+    expect(req.isSubsystem()).toBe(true);
+  });
+});
+
+describe('§S2 — SshConnectionDecision tracks outcome and reason', () => {
+  test('accept() stores the negotiated auth method', () => {
+    const d = SshConnectionDecision.accept('password', { sessionId: 'ssh-1' });
+    expect(d.outcome).toBe('accepted');
+    expect(d.method).toBe('password');
+    expect(d.sessionId).toBe('ssh-1');
+    expect(d.ok).toBe(true);
+  });
+
+  test('reject() carries a reason', () => {
+    const d = SshConnectionDecision.reject('no such user');
+    expect(d.outcome).toBe('rejected');
+    expect(d.reason).toBe('no such user');
+    expect(d.ok).toBe(false);
+  });
+
+  test('drop() carries timeout/connection-refused semantics', () => {
+    const d = SshConnectionDecision.drop('Quiet-Mode');
+    expect(d.outcome).toBe('dropped');
+    expect(d.reason).toBe('Quiet-Mode');
+    expect(d.ok).toBe(false);
   });
 });
