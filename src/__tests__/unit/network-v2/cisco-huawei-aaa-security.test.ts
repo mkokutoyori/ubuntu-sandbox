@@ -424,3 +424,50 @@ describe('§I — login block-for / authentication-retries wired into Router', (
     expect(out?.output).toMatch(/ssh server authentication-retries 3/);
   });
 });
+
+async function provisionCiscoSsh(r: CiscoRouter): Promise<void> {
+  await r.executeCommand('enable');
+  await r.executeCommand('configure terminal');
+  await r.executeCommand('username admin privilege 15 secret Admin@123');
+  await r.executeCommand('crypto key generate rsa modulus 2048');
+  await r.executeCommand('line vty 0 4');
+  await r.executeCommand('login local');
+  await r.executeCommand('transport input ssh');
+  await r.executeCommand('end');
+}
+
+describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); await provisionCiscoSsh(lab.ciscoR1); });
+
+  test('successful SSH login emits router.aaa.account.login.success', async () => {
+    const seen: string[] = [];
+    lab.ciscoR1.getBus().subscribe('router.aaa.account.login.success', e => seen.push((e.payload as { account: { name: string } }).account.name));
+    await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    expect(seen).toContain('admin');
+  });
+
+  test('failed SSH login (unknown user) emits router.aaa.account.login.failure', async () => {
+    const seen: string[] = [];
+    lab.ciscoR1.getBus().subscribe('router.aaa.account.login.failure', e => seen.push((e.payload as { account: { name: string } }).account.name));
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+    expect(seen).toContain('ghost');
+  });
+
+  test('show logging after a wrong login contains LOGIN_FAILED', async () => {
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    expect(out?.output).toMatch(/%SEC_LOGIN-4-LOGIN_FAILED/);
+    expect(out?.output).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('login block-for refuses subsequent attempts after threshold', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+    await lab.ciscoR1.executeCommand('end');
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+    await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"');
+    const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    expect(blocked).toMatch(/Connection (closed|refused)|denied|Quiet-Mode/i);
+  });
+});

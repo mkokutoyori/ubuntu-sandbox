@@ -808,33 +808,47 @@ function runCrossPlatformExec(
   host: string,
   opts: SshClientOpts,
 ): SshClientResult {
-  // sshd state gate — refuse the TCP handshake if the service is down.
+  const router = target as unknown as {
+    getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null;
+    getCredentialStore?: () => {
+      recordLoginSuccess: (n: string, f: string, m: 'password' | 'publickey' | 'keyboard-interactive') => void;
+      recordLoginFailure: (n: string, f: string, r: string) => void;
+    };
+  };
+  const blocker = router.getLoginBlocker?.();
+  if (blocker && blocker.isBlocked(opts.sourceIp)) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused (Quiet-Mode)\n`,
+      exitCode: 255,
+    };
+  }
   if (!target.isSshActive()) {
+    router.getCredentialStore?.().recordLoginFailure(remoteUser, opts.sourceIp, 'sshd inactive');
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
       output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
       exitCode: 255,
     };
   }
-  // Listening-port gate — `Port` directive must include the requested
-  // port (defaults to [22]).
   const policy = target.getSshPolicy();
   if (!policy.ports.includes(port)) {
+    router.getCredentialStore?.().recordLoginFailure(remoteUser, opts.sourceIp, 'port not listening');
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
       output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
       exitCode: 255,
     };
   }
-  // Login-policy gate (account exists, enabled, root permissions, …).
   const login = target.sshdAcceptsLogin(remoteUser);
   if (!login.ok) {
+    router.getCredentialStore?.().recordLoginFailure(remoteUser, opts.sourceIp, login.reason ?? 'denied');
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     return {
       output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
       exitCode: 255,
     };
   }
+  router.getCredentialStore?.().recordLoginSuccess(remoteUser, opts.sourceIp, 'password');
   target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
 
   const remoteCmd = joinRemoteCommand(positional.slice(1));
