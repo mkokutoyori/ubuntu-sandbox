@@ -66,6 +66,7 @@ import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore'
 import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
+import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
@@ -1395,9 +1396,12 @@ export abstract class Router extends Equipment {
     });
   }
 
+  private _sshSessionRegistry: SshSessionRegistry | null = null;
+
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
+      this._sshSessionRegistry = new SshSessionRegistry({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
     }
     return this._credentialStore;
@@ -1406,6 +1410,11 @@ export abstract class Router extends Equipment {
   getSecurityAuditLog(): SecurityAuditLog {
     if (!this._securityAuditLog) this.getCredentialStore();
     return this._securityAuditLog!;
+  }
+
+  getSshSessionRegistry(): SshSessionRegistry {
+    if (!this._sshSessionRegistry) this.getCredentialStore();
+    return this._sshSessionRegistry!;
   }
 
   _addLocalUser(name: string, privilege: number, secret: string): void {

@@ -543,3 +543,34 @@ describe('§K — SshSessionRegistry tracks active VTY sessions reactively', () 
     expect(registry.list()[0].idleSeconds).toBe(0);
   });
 });
+
+describe('§L — Router wires SshSessionRegistry into show users / display users', () => {
+  let lab: Lab;
+  beforeEach(async () => {
+    lab = await buildLab();
+    await provisionCiscoSsh(lab.ciscoR1);
+  });
+
+  test('Cisco show users lists vty 0 admin host 10.0.0.1 after SSH login', () => {
+    lab.ciscoR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
+    lab.ciscoR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
+    const out = lab.ciscoR1.runSshCommandSync('', 'show users');
+    expect(out?.output).toMatch(/vty 0\s+admin/);
+    expect(out?.output).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('Huawei display users lists the SSH session reactively', () => {
+    lab.hwR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
+    lab.hwR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
+    const out = lab.hwR1.runSshCommandSync('', 'display users');
+    expect(out?.output).toMatch(/SSH/);
+    expect(out?.output).toMatch(/admin/);
+    expect(out?.output).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('Sessions are auto-closed at the end of one-shot exec mode', async () => {
+    await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    expect(lab.ciscoR1.getSshSessionRegistry().list().length).toBe(0);
+    expect(lab.ciscoR1.getSshSessionRegistry().history().length).toBe(1);
+  });
+});

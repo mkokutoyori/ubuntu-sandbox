@@ -850,27 +850,35 @@ function runCrossPlatformExec(
   }
   router.getCredentialStore?.().recordLoginSuccess(remoteUser, opts.sourceIp, 'password');
   target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
+  const sessionRegistry = (target as unknown as {
+    getSshSessionRegistry?: () => {
+      list: () => ReadonlyArray<{ id: string; user: string; fromIp: string }>;
+      close: (id: string, reason?: string) => void;
+    };
+  }).getSshSessionRegistry?.();
+  const closeSession = () => {
+    if (!sessionRegistry) return;
+    const open = sessionRegistry.list().find(s => s.user === remoteUser && s.fromIp === opts.sourceIp);
+    if (open) sessionRegistry.close(open.id, 'logout');
+  };
 
   const remoteCmd = joinRemoteCommand(positional.slice(1));
   if (remoteCmd) {
     const result = target.runSshCommandSync(remoteUser, remoteCmd);
+    closeSession();
     if (result) return { output: result.output, exitCode: result.exitCode };
-    // Command outside the curated sync surface — surface an explicit
-    // diagnostic instead of silently dropping it. A future iteration
-    // will await the async exec path and remove this branch.
     return {
       output: `ssh: remote shell rejected '${remoteCmd}' (command not yet supported over the sync bridge)\n`,
       exitCode: 1,
     };
   }
 
-  // Interactive form (no remote command): return the banner + MOTD
-  // composition the platform announces.
   const lines: string[] = [];
   const banner = target.getSshBanner();
   const motd = target.getSshMotd();
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
+  closeSession();
   return { output: lines.join('\n'), exitCode: 0 };
 }

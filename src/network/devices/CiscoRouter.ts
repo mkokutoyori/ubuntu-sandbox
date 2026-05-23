@@ -52,10 +52,7 @@ export class CiscoRouter extends Router {
       return { output: 'Current privilege level is 15\n', exitCode: 0 };
     }
     if (/^show\s+users?\s*$/i.test(cmd)) {
-      const users = this._listLocalUsers();
-      const lines = ['    Line       User       Host(s)              Idle       Location'];
-      for (const u of users) lines.push(`*  0 vty 0    ${u.name}      idle                 00:00:00 10.0.0.1`);
-      return { output: `${lines.join('\n')}\n`, exitCode: 0 };
+      return { output: `${this.getSshSessionRegistry().formatShowUsers()}\n`, exitCode: 0 };
     }
     // `show interfaces status` — link state per port.
     if (/^show\s+int(?:erfaces)?\s+status\s*$/i.test(cmd)) {
