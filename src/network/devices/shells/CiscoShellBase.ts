@@ -566,6 +566,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');
     this.configTrie.registerGreedy('service', 'Service configuration', () => '');
     this.configTrie.registerGreedy('no service', 'Disable a service', () => '');
+    this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {
+      const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
+      if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
+      return '';
+    });
     this.configTrie.registerGreedy('login', 'Login configuration', () => '');
     this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
 
