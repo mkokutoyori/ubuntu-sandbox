@@ -9,6 +9,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
 import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
 import { SecurityAuditLog } from '@/network/devices/router/aaa/SecurityAuditLog';
+import { LoginBlocker } from '@/network/devices/router/aaa/LoginBlocker';
 import { EventBus } from '@/events/EventBus';
 
 interface Lab {
@@ -320,5 +321,69 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
   test('Cisco show logging is empty when nothing happened', () => {
     const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
     expect(out?.output).toMatch(/Syslog logging:/);
+  });
+});
+
+describe('§H — LoginBlocker reacts to repeated login failures', () => {
+  let bus: EventBus;
+  let store: NetworkOsCredentialStore;
+  let blocker: LoginBlocker;
+  let now: number;
+
+  beforeEach(() => {
+    bus = new EventBus();
+    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    now = 1_700_000_000_000;
+    blocker = new LoginBlocker({
+      deviceId: 'r1',
+      bus,
+      attempts: 3,
+      withinSeconds: 30,
+      blockSeconds: 60,
+      now: () => now,
+    });
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+  });
+
+  test('blocker is permissive by default', () => {
+    expect(blocker.isBlocked('10.0.0.1', now)).toBe(false);
+  });
+
+  test('three failures within window block subsequent attempts from the same IP', () => {
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad password', now);
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad password', now + 100);
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad password', now + 200);
+    expect(blocker.isBlocked('10.0.0.2', now + 300)).toBe(true);
+  });
+
+  test('a successful login from the same IP clears the counter', () => {
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad', now);
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 100);
+    store.recordLoginSuccess('admin', '10.0.0.2', 'password', now + 200);
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 300);
+    expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(false);
+  });
+
+  test('failures older than the window are not counted', () => {
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad', now);
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 1_000);
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 40_000);
+    expect(blocker.isBlocked('10.0.0.2', now + 41_000)).toBe(false);
+  });
+
+  test('block expires after blockSeconds', () => {
+    for (let i = 0; i < 3; i++) {
+      store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + i * 100);
+    }
+    expect(blocker.isBlocked('10.0.0.2', now + 300)).toBe(true);
+    expect(blocker.isBlocked('10.0.0.2', now + 61_000)).toBe(false);
+  });
+
+  test('failures from a different IP are tracked independently', () => {
+    for (let i = 0; i < 3; i++) {
+      store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + i * 100);
+    }
+    expect(blocker.isBlocked('10.0.0.3', now + 400)).toBe(false);
+    expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(true);
   });
 });
