@@ -23,6 +23,7 @@ import type { SshForwardingTable } from './SshForwardingTable';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
+import { SshConfig } from '../../../protocols/ssh/SshConfig';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -456,8 +457,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
-  const remoteUser = parsed[1] ?? opts.sourceUser ?? 'root';
-  const host = parsed[2];
+  const cfgRaw = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`);
+  const cfgEntry = cfgRaw ? SshConfig.parse(cfgRaw).resolve(parsed[2]) : null;
+  const remoteUser = parsed[1] ?? cfgEntry?.user ?? opts.sourceUser ?? 'root';
+  const host = cfgEntry?.hostName ?? parsed[2];
+  if (cfgEntry?.port && !flags.includes('-p')) {
+    flags.push('-p', String(cfgEntry.port));
+  }
 
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
   // look it up via the local source IP, which the registry knows.
