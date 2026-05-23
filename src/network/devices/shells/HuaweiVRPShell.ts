@@ -23,6 +23,7 @@ import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
@@ -644,24 +645,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     t.registerGreedy('local-user', 'Configure a local user', (args) => {
-      const router = getRouter() as unknown as {
-        _addLocalUser?: (n: string, p: number, s: string) => void;
-        _getLocalUser?: (n: string) => { name: string; privilege: number; secret: string } | undefined;
-      };
-      if (!router._addLocalUser || !router._getLocalUser) return '';
+      const router = getRouter();
       const name = args[0];
       if (!name || args.length < 2) return 'Error: Incomplete command.';
-      const existing = router._getLocalUser(name) ?? { name, privilege: 1, secret: '' };
+      const store = router.getCredentialStore();
+      const existing = store.get(name) ?? NetworkOsAccount.create({ name });
       const kw = args[1].toLowerCase();
+      let next = existing;
       if (kw === 'password') {
         const idx = args.indexOf('cipher') >= 0 ? args.indexOf('cipher') : args.indexOf('irreversible-cipher');
-        existing.secret = args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret;
+        const algo: PasswordHashAlgorithm = idx >= 0
+          ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
+          : 'plain';
+        next = existing.withSecret(args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret, algo);
       } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
-        existing.privilege = Number(args[3]) || existing.privilege;
+        next = existing.withPrivilege(Number(args[3]) || existing.privilege);
       } else if (kw === 'service-type') {
-        // service-type ssh / telnet / ... — stored for later, no-op for now.
+        const types = args.slice(2).filter(t => t.length > 0) as AccountServiceType[];
+        next = existing.withServiceTypes(types);
+      } else if (kw === 'state') {
+        next = args[2] === 'active' ? existing.enable() : args[2] === 'block' ? existing.disable() : existing;
+      } else if (kw === 'ftp-directory' && args[2]) {
+        next = existing.withFtpDirectory(args[2]);
+      } else if (kw === 'idle-timeout' && args[2]) {
+        next = existing.withIdleTimeout(Number(args[2]) * 60);
+      } else if (kw === 'access-limit' && args[2]) {
+        next = existing.withMaxSessions(Number(args[2]));
       }
-      router._addLocalUser(existing.name, existing.privilege, existing.secret);
+      store.upsert(next);
       return '';
     });
     this.registerScreenSizeCommands(t);

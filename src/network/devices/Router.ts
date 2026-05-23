@@ -1450,14 +1450,13 @@ export abstract class Router extends Equipment {
   isSshActive(): boolean { return this.sshServerEnabled; }
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     if (!user) return { ok: false, reason: 'empty user' };
-    // When a local-user database has been configured, only those names
-    // are accepted (login local / AAA local-user model). Empty database
-    // accepts any name — matches the default IOS / VRP behaviour where
-    // an unauthenticated VTY accepts the enable password directly.
     const store = this.getCredentialStore();
-    if (store.size() > 0 && !store.has(user)) {
-      return { ok: false, reason: 'no such user' };
-    }
+    if (store.size() === 0) return { ok: true };
+    const account = store.get(user);
+    if (!account) return { ok: false, reason: 'no such user' };
+    const lifecycle = account.isLoginPermitted();
+    if (!lifecycle.ok) return lifecycle;
+    if (!account.allowsService('ssh')) return { ok: false, reason: 'service-type ssh not permitted' };
     return { ok: true };
   }
   recordSshLogin(

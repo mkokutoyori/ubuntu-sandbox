@@ -645,3 +645,74 @@ describe('§M — VtyLineConfig domain model carries every line directive', () =
     expect(cfg.toRunningConfig()).toContain(' transport input none');
   });
 });
+
+describe('§N — NetworkOsAccount authentication honours service-type and lifecycle', () => {
+  test('authenticate matches stored secret', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2');
+    expect(acc.authenticate('hunter2')).toBe(true);
+    expect(acc.authenticate('hunter3')).toBe(false);
+  });
+
+  test('account with empty secret refuses every password', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' });
+    expect(acc.authenticate('')).toBe(false);
+    expect(acc.authenticate('anything')).toBe(false);
+  });
+
+  test('allowsService is permissive when no service-type was configured', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' });
+    expect(acc.allowsService('ssh')).toBe(true);
+    expect(acc.allowsService('telnet')).toBe(true);
+  });
+
+  test('allowsService restricts when service-types is explicit', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' })
+      .withServiceTypes(['ssh']);
+    expect(acc.allowsService('ssh')).toBe(true);
+    expect(acc.allowsService('telnet')).toBe(false);
+    expect(acc.allowsService('http')).toBe(false);
+  });
+
+  test('Router sshdAcceptsLogin enforces service-type ssh', () => {
+    const lab = { } as Lab;
+  });
+});
+
+describe('§O — Router sshdAcceptsLogin gates SSH-restricted accounts', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('account with service-type stelnet only accepts ssh login', () => {
+    const store = lab.hwR1.getCredentialStore();
+    store.upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 })
+      .withSecret('a').withServiceTypes(['ssh', 'stelnet']));
+    expect(lab.hwR1.sshdAcceptsLogin('admin').ok).toBe(true);
+  });
+
+  test('account restricted to ftp refuses ssh login', () => {
+    const store = lab.hwR1.getCredentialStore();
+    store.upsert(NetworkOsAccount.create({ name: 'ftponly', privilege: 1 })
+      .withSecret('x').withServiceTypes(['ftp']));
+    expect(lab.hwR1.sshdAcceptsLogin('ftponly').ok).toBe(false);
+  });
+
+  test('disabled account refuses ssh login', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 })
+      .withSecret('a').disable());
+    expect(lab.ciscoR1.sshdAcceptsLogin('admin').ok).toBe(false);
+  });
+
+  test('expired account refuses ssh login', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.upsert(NetworkOsAccount.create({ name: 'old', privilege: 1, expireAt: 1 })
+      .withSecret('a'));
+    expect(lab.ciscoR1.sshdAcceptsLogin('old').ok).toBe(false);
+  });
+
+  test('locked account refuses ssh login', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).lock('admin-action'));
+    expect(lab.ciscoR1.sshdAcceptsLogin('admin').ok).toBe(false);
+  });
+});

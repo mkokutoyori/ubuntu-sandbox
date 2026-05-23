@@ -254,6 +254,18 @@ export class NetworkOsAccount {
     if (this.isPasswordExpired(now)) return { ok: false, reason: 'account expired' };
     return { ok: true };
   }
+
+  authenticate(password: string): boolean {
+    if (!this.secret) return false;
+    return this.secret === password;
+  }
+
+  allowsService(service: AccountServiceType): boolean {
+    if (this.serviceTypes.length === 0) return true;
+    if (service === 'ssh' && this.serviceTypes.includes('stelnet')) return true;
+    if (service === 'stelnet' && this.serviceTypes.includes('ssh')) return true;
+    return this.serviceTypes.includes(service);
+  }
 }
 
 export interface NetworkOsAccountEventEnvelope {
