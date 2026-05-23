@@ -107,3 +107,28 @@ describe('§B — Huawei local-user database is queryable and persistent', () =>
     expect(lab.hwR1._getLocalUser('admin')).toBeUndefined();
   });
 });
+
+describe('§C — local users appear in running-config / current-configuration', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('Cisco show running-config includes username admin with privilege', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
+    await lab.ciscoR1.executeCommand('end');
+    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    expect(out?.output).toMatch(/username admin privilege 15 secret/);
+  });
+
+  test('Huawei display current-configuration includes local-user admin', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('local-user admin password cipher Admin@123');
+    await lab.hwR1.executeCommand('local-user admin privilege level 15');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    const out = lab.hwR1.runSshCommandSync('', 'display current-configuration');
+    expect(out?.output).toMatch(/local-user admin password/);
+    expect(out?.output).toMatch(/local-user admin privilege level 15/);
+  });
+});

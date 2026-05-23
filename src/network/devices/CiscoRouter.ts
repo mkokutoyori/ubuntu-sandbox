@@ -62,7 +62,11 @@ export class CiscoRouter extends Router {
     // `show running-config [ | include … ]` — pipe filter supported.
     const runMatch = /^show\s+run(?:ning-config)?(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
     if (runMatch) {
-      const full = showRunningConfig(this);
+      const base = showRunningConfig(this);
+      const userLines = this._listLocalUsers().map(u =>
+        `username ${u.name} privilege ${u.privilege} secret 5 ${u.secret}`,
+      );
+      const full = userLines.length > 0 ? `${base}\n${userLines.join('\n')}` : base;
       if (!runMatch[1]) return { output: `${full}\n`, exitCode: 0 };
       const needle = runMatch[2].trim();
       const lines = full.split('\n');
