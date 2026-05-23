@@ -214,6 +214,7 @@ export class LinuxCommandExecutor {
   private jobTable = new LinuxJobTable();
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
+  readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
@@ -1055,6 +1056,7 @@ export class LinuxCommandExecutor {
       io,
       { pid: this.shellPid, ppid: this.shellPpid },
       this.aliases,
+      this.functions,
     );
 
     // Sync interpreter state back to executor
@@ -1675,12 +1677,12 @@ export class LinuxCommandExecutor {
         if (cmdString !== null) {
           const result = runScriptContent(
             cmdString, arg0, args.slice(i), execCmd,
-            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases,
+            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases, this.functions,
           );
           return { output: result.output, exitCode: result.exitCode };
         }
         if (i < args.length) {
-          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases);
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases, this.functions);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -2025,7 +2027,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.exists(absPath)) {
             const result = runScript(
               c, cmd, args,
-              (argv) => this.dispatchFromInterpreter(argv), this.aliases,
+              (argv) => this.dispatchFromInterpreter(argv), this.aliases, this.functions,
             );
             return { output: result.output, exitCode: result.exitCode };
           }

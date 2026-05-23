@@ -649,10 +649,9 @@ describe('§9 — Command flow respects aliases on every shell', () => {
 
   const rows: Row[] = [
     {
-      name: 'bash: alias sudo=please then please whoami runs as root',
+      name: 'bash: alias please=sudo then please whoami runs as root',
       setup: async (l) => {
         await l.linux1.executeCommand('su - alice');
-        await l.linux1.executeCommand("alias sudo='please'");
         await l.linux1.executeCommand("alias please='sudo'");
       },
       on: l => l.linux1, cmd: 'please whoami',

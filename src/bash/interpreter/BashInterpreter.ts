@@ -75,6 +75,7 @@ export interface InterpreterOptions {
    * place so `alias` / `unalias` definitions persist across commands.
    */
   aliases?: AliasTable;
+  functions?: Map<string, Command>;
 }
 
 export class BashInterpreter {
@@ -82,7 +83,7 @@ export class BashInterpreter {
   private executeCommand: ExternalCommandFn;
   private io: IOContext | null;
   private output: string[] = [];
-  private functions: Map<string, Command> = new Map();
+  private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
 
@@ -90,6 +91,7 @@ export class BashInterpreter {
     this.executeCommand = options.executeCommand;
     this.io = options.io ?? null;
     this.aliases = options.aliases ?? new AliasTable();
+    this.functions = options.functions ?? new Map();
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',

@@ -33,6 +33,7 @@ export function runScript(
   scriptArgs: string[],
   executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
   aliases?: AliasTable,
+  functions?: Map<string, import('@/bash/ast/types').Command>,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -61,7 +62,7 @@ export function runScript(
   const io = buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, undefined, aliases,
+    buildEnvVars(ctx), io, undefined, aliases, functions,
   );
 }
 
@@ -78,6 +79,7 @@ export function runScriptContent(
   io?: IOContext,
   identity?: { pid?: number; ppid?: number },
   aliases?: AliasTable,
+  functions?: Map<string, import('@/bash/ast/types').Command>,
 ): ScriptResult {
   // Strip shebang, then preprocess heredocs
   const source = preprocessHeredocs(stripShebang(content));
@@ -98,6 +100,7 @@ export function runScriptContent(
       pid: identity?.pid,
       ppid: identity?.ppid,
       aliases,
+      functions,
     });
 
     const result = interp.execute(ast);
