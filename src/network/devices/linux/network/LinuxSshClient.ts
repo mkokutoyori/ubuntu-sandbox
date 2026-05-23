@@ -514,6 +514,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (cfgEntry?.port && !flags.includes('-p')) {
     flags.push('-p', String(cfgEntry.port));
   }
+  if (cfgEntry?.identityFile && !flags.includes('-i')) {
+    flags.push('-i', cfgEntry.identityFile);
+  }
 
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
   // look it up via the local source IP, which the registry knows.
