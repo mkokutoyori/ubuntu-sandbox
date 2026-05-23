@@ -20,7 +20,7 @@ import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
-import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
@@ -245,11 +245,16 @@ export class WindowsPC extends EndHost {
   }
 
   private _sshHost: CrossVendorSshHost | null = null;
-  private _sshCredentialStore: NetworkOsCredentialStore | null = null;
+  private _sshAuthority: WindowsUserManagerAuthority | null = null;
 
   getSshHost(): CrossVendorSshHost {
-    if (!this._sshCredentialStore) {
-      this._sshCredentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    if (!this._sshAuthority) {
+      this._sshAuthority = new WindowsUserManagerAuthority({
+        userMgr: this.userMgr,
+        deviceId: this.id,
+        hostname: this.hostname,
+        recordSshLogin: (user, fromIp, fromHost, accepted) => this.recordSshLogin(user, fromIp, fromHost, accepted),
+      });
     }
     if (!this._sshHost) {
       this._sshHost = new CrossVendorSshHost({
@@ -257,7 +262,7 @@ export class WindowsPC extends EndHost {
         hostname: this.hostname,
         vendor: 'windows',
         bus: this.getBus(),
-        authority: this._sshCredentialStore,
+        authority: this._sshAuthority,
         banner: this.getSshBanner(),
         motd: this.getSshMotd(),
         active: this.isSshActive(),
