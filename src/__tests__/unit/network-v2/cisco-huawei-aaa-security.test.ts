@@ -7,6 +7,8 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
+import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
+import { EventBus } from '@/events/EventBus';
 
 interface Lab {
   linux1: LinuxPC;
@@ -181,5 +183,53 @@ describe('§D — NetworkOsAccount domain model carries real-equipment attribute
     const acc = NetworkOsAccount.create({ name: 'admin', expireAt: t });
     expect(acc.isPasswordExpired(t + 1)).toBe(true);
     expect(acc.isPasswordExpired(t - 1)).toBe(false);
+  });
+});
+
+describe('§E — NetworkOsCredentialStore publishes lifecycle events', () => {
+  let bus: EventBus;
+  let store: NetworkOsCredentialStore;
+  let events: Array<{ topic: string; payload: unknown }>;
+
+  beforeEach(() => {
+    bus = new EventBus();
+    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    events = [];
+    bus.subscribe('router.aaa.account.created', e => events.push({ topic: e.topic, payload: e.payload }));
+    bus.subscribe('router.aaa.account.updated', e => events.push({ topic: e.topic, payload: e.payload }));
+    bus.subscribe('router.aaa.account.deleted', e => events.push({ topic: e.topic, payload: e.payload }));
+  });
+
+  test('upsert of a new name emits a created event', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
+    expect(events.length).toBe(1);
+    expect(events[0].topic).toBe('router.aaa.account.created');
+    expect((events[0].payload as { account: { name: string } }).account.name).toBe('admin');
+  });
+
+  test('upsert of an existing name emits an updated event', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+    store.upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
+    expect(events.map(e => e.topic)).toEqual([
+      'router.aaa.account.created',
+      'router.aaa.account.updated',
+    ]);
+  });
+
+  test('remove returns the deleted account and emits deleted', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+    const removed = store.remove('admin');
+    expect(removed?.name).toBe('admin');
+    expect(events[events.length - 1].topic).toBe('router.aaa.account.deleted');
+  });
+
+  test('list reflects ordered names alphabetically', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'zoe' }));
+    store.upsert(NetworkOsAccount.create({ name: 'alice' }));
+    expect(store.list().map(a => a.name)).toEqual(['alice', 'zoe']);
+  });
+
+  test('get on absent name returns undefined', () => {
+    expect(store.get('ghost')).toBeUndefined();
   });
 });
