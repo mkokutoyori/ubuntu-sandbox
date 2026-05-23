@@ -10,6 +10,7 @@ import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount'
 import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
 import { SecurityAuditLog } from '@/network/devices/router/aaa/SecurityAuditLog';
 import { LoginBlocker } from '@/network/devices/router/aaa/LoginBlocker';
+import { SshSessionRegistry } from '@/network/devices/router/aaa/SshSessionRegistry';
 import { EventBus } from '@/events/EventBus';
 
 interface Lab {
@@ -469,5 +470,76 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
     await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"');
     const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
     expect(blocked).toMatch(/Connection (closed|refused)|denied|Quiet-Mode/i);
+  });
+});
+
+describe('§K — SshSessionRegistry tracks active VTY sessions reactively', () => {
+  let bus: EventBus;
+  let store: NetworkOsCredentialStore;
+  let registry: SshSessionRegistry;
+  let now: number;
+
+  beforeEach(() => {
+    bus = new EventBus();
+    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    now = 1_700_000_000_000;
+    registry = new SshSessionRegistry({ deviceId: 'r1', bus, maxLines: 16, now: () => now });
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+  });
+
+  test('starts with zero active sessions', () => {
+    expect(registry.list()).toEqual([]);
+  });
+
+  test('a successful login opens a session and assigns line vty 0', () => {
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
+    const sessions = registry.list();
+    expect(sessions.length).toBe(1);
+    expect(sessions[0].user).toBe('admin');
+    expect(sessions[0].fromIp).toBe('10.0.0.1');
+    expect(sessions[0].line).toBe('vty 0');
+    expect(sessions[0].loginAt).toBe(now);
+    expect(sessions[0].state).toBe('active');
+  });
+
+  test('two concurrent logins consume vty 0 and vty 1', () => {
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
+    store.recordLoginSuccess('admin', '10.0.0.2', 'password', now + 10);
+    expect(registry.list().map(s => s.line)).toEqual(['vty 0', 'vty 1']);
+  });
+
+  test('explicit close releases the line', () => {
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
+    const id = registry.list()[0].id;
+    registry.close(id, 'logout', now + 1000);
+    expect(registry.list()).toEqual([]);
+    const closed = registry.history().slice(-1)[0];
+    expect(closed.closedAt).toBe(now + 1000);
+    expect(closed.closeReason).toBe('logout');
+  });
+
+  test('formatShowUsers returns Cisco-style VTY listing', () => {
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
+    const text = registry.formatShowUsers();
+    expect(text).toMatch(/Line\s+User\s+Host/);
+    expect(text).toMatch(/vty 0\s+admin/);
+    expect(text).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('formatDisplayUsers returns VRP-style listing', () => {
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
+    const text = registry.formatDisplayUsers();
+    expect(text).toMatch(/UI\s+Delay/);
+    expect(text).toMatch(/SSH/);
+    expect(text).toMatch(/admin/);
+    expect(text).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('idle seconds increase over time and reset on activity', () => {
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
+    now += 45_000;
+    expect(registry.list()[0].idleSeconds).toBe(45);
+    registry.touch(registry.list()[0].id, now);
+    expect(registry.list()[0].idleSeconds).toBe(0);
   });
 });
