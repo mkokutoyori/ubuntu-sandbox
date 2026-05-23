@@ -1326,9 +1326,14 @@ export class LinuxCommandExecutor {
     // absent: like `iptables` (which the device router runs un-gated), the
     // simulator's interactive operator manages the firewall directly.
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp',
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
       'ausearch', 'aureport', 'auditctl',
       'iptables', 'iptables-save', 'iptables-restore'];
+    const sudoRequired = ['chown', 'chgrp'];
+    if (sudoRequired.includes(cmd) && this.userMgr.currentUid !== 0
+        && !this.userMgr.getUserGroups(this.userMgr.currentUser).some(g => g.name === 'sudo' || g.name === 'wheel')) {
+      return { output: `${cmd}: Operation not permitted`, exitCode: 1 };
+    }
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
     }

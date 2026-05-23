@@ -59,7 +59,7 @@ export interface SshClientOpts {
   localVfs?: {
     readFile: (p: string) => string | null;
     writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
-    resolveInode?: (p: string) => unknown;
+    resolveInode?: (p: string, followSymlinks?: boolean) => { uid: number; gid: number; permissions: number } | null;
     mkdirp?: (p: string, perm: number, uid: number, gid: number) => boolean;
   };
   /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
@@ -178,7 +178,10 @@ function sshdConfiguredPorts(machine: LinuxMachine): readonly number[] {
 
 /** Narrow view of a remote machine's executor needed for auth negotiation. */
 interface RemoteExecLike {
-  vfs: { readFile: (p: string) => string | null };
+  vfs: {
+    readFile: (p: string) => string | null;
+    resolveInode?: (p: string, followSymlinks?: boolean) => { uid: number; gid: number; permissions: number } | null;
+  };
   userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
 }
 
@@ -238,13 +241,32 @@ function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | 
 /** Whether the remote user's authorized_keys lists the offered identity. */
 function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: string): boolean {
   const entry = exec.userMgr.getUser(remoteUser);
-  const home = entry?.home ?? `/home/${remoteUser}`;
+  if (!entry) return false;
+  const home = entry.home ?? `/home/${remoteUser}`;
+  if (!passesStrictModes(exec, entry.uid, home)) return false;
   const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
   const id = identity.split(/\s+/);
   return ak.split('\n').some((line) => {
     const t = line.trim().split(/\s+/);
     return t.length >= 2 && t[0] === id[0] && t[1] === id[1];
   });
+}
+
+/**
+ * OpenSSH StrictModes check: ~/.ssh and authorized_keys must be owned by
+ * the user (or root) and not be group/world writable. Defaults to enabled
+ * (the simulator does not read StrictModes back since OpenSSH ships it
+ * as `yes`).
+ */
+function passesStrictModes(exec: RemoteExecLike, userUid: number, home: string): boolean {
+  if (!exec.vfs.resolveInode) return true;
+  for (const path of [`${home}/.ssh`, `${home}/.ssh/authorized_keys`]) {
+    const inode = exec.vfs.resolveInode(path, true);
+    if (!inode) continue;
+    if (inode.uid !== userUid && inode.uid !== 0) return false;
+    if ((inode.permissions & 0o022) !== 0) return false;
+  }
+  return true;
 }
 
 /**
@@ -442,6 +464,30 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
   const port = clientPort(flags);
+
+  // OpenSSH UNPROTECTED PRIVATE KEY check: when `-i path` is given, refuse
+  // to load the key if its mode is group/world-readable. Real ssh prints
+  // the warning and ignores the key; with no other auth available, this
+  // bubbles up as Permission denied.
+  const iIdx = flags.indexOf('-i');
+  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+  if (iVal && opts.localVfs?.resolveInode) {
+    const inode = opts.localVfs.resolveInode(iVal, true);
+    if (inode && (inode.permissions & 0o077) !== 0) {
+      return {
+        output:
+          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
+          `@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @\n` +
+          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
+          `Permissions 0${inode.permissions.toString(8)} for '${iVal}' are too open.\n` +
+          `It is required that your private key files are NOT accessible by others.\n` +
+          `This private key will be ignored.\n` +
+          `Load key "${iVal}": bad permissions\n` +
+          `${opts.sourceUser}@${target ?? ''}: Permission denied (publickey,password).`,
+        exitCode: 255,
+      };
+    }
+  }
 
   // Local network plumbing must be up to even attempt a TCP handshake.
   if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
