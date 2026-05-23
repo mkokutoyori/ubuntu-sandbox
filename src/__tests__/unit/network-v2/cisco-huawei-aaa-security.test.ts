@@ -8,6 +8,7 @@ import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
 import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
+import { SecurityAuditLog } from '@/network/devices/router/aaa/SecurityAuditLog';
 import { EventBus } from '@/events/EventBus';
 
 interface Lab {
@@ -231,5 +232,57 @@ describe('§E — NetworkOsCredentialStore publishes lifecycle events', () => {
 
   test('get on absent name returns undefined', () => {
     expect(store.get('ghost')).toBeUndefined();
+  });
+});
+
+describe('§F — SecurityAuditLog reacts to AAA events on the bus', () => {
+  let bus: EventBus;
+  let store: NetworkOsCredentialStore;
+  let audit: SecurityAuditLog;
+
+  beforeEach(() => {
+    bus = new EventBus();
+    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    audit = new SecurityAuditLog({ deviceId: 'r1', bus, now: () => 1_700_000_000_000 });
+  });
+
+  test('account creation produces a SEC_LOGIN-6-CONFIG_CHANGE entry', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
+    const entries = audit.entries();
+    expect(entries.some(e => e.facility === 'SEC_LOGIN' && /admin/.test(e.message))).toBe(true);
+  });
+
+  test('successful login produces a SEC_LOGIN-5-LOGIN_SUCCESS entry', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', 1_700_000_000_001);
+    const last = audit.entries().slice(-1)[0];
+    expect(last.mnemonic).toBe('LOGIN_SUCCESS');
+    expect(last.message).toMatch(/admin/);
+    expect(last.message).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('failed login produces a SEC_LOGIN-4-LOGIN_FAILED entry', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+    store.recordLoginFailure('admin', '10.0.0.2', 'bad password', 1_700_000_000_002);
+    const last = audit.entries().slice(-1)[0];
+    expect(last.mnemonic).toBe('LOGIN_FAILED');
+    expect(last.severity).toBe(4);
+    expect(last.message).toMatch(/10\.0\.0\.2/);
+  });
+
+  test('audit log preserves chronological order across event types', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+    store.recordLoginFailure('admin', '10.0.0.2', 'x', 1);
+    store.recordLoginSuccess('admin', '10.0.0.1', 'password', 2);
+    store.lock('admin', 'too many failures', 3);
+    expect(audit.entries().map(e => e.mnemonic)).toEqual([
+      'CONFIG_CHANGE', 'LOGIN_FAILED', 'LOGIN_SUCCESS', 'ACCOUNT_LOCKED',
+    ]);
+  });
+
+  test('format() returns IOS-style "show logging" formatted lines', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }));
+    const rendered = audit.format();
+    expect(rendered).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE:/);
   });
 });

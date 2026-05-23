@@ -51,15 +51,23 @@ export class NetworkOsCredentialStore {
     return this.upsert(next);
   }
 
+  private mutateSilent(name: string, fn: (a: NetworkOsAccount) => NetworkOsAccount): NetworkOsAccount | undefined {
+    const current = this.accounts.get(name);
+    if (!current) return undefined;
+    const next = fn(current);
+    this.accounts.set(name, next);
+    return next;
+  }
+
   recordLoginSuccess(name: string, from: string, method: 'password' | 'publickey' | 'keyboard-interactive', at: number = Date.now()): void {
-    const updated = this.mutate(name, a => a.withSuccessfulLogin(at, from, method));
+    const updated = this.mutateSilent(name, a => a.withSuccessfulLogin(at, from, method));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.login.success', this.deviceId, updated, { from, method, at });
     }
   }
 
   recordLoginFailure(name: string, from: string, reason: string, at: number = Date.now()): void {
-    const updated = this.mutate(name, a => a.withFailedLogin(at, from));
+    const updated = this.mutateSilent(name, a => a.withFailedLogin(at, from));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.login.failure', this.deviceId, updated, { from, reason, at });
     } else {
@@ -68,7 +76,7 @@ export class NetworkOsCredentialStore {
   }
 
   lock(name: string, reason: string, at: number = Date.now()): NetworkOsAccount | undefined {
-    const updated = this.mutate(name, a => a.lock(reason, at));
+    const updated = this.mutateSilent(name, a => a.lock(reason, at));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.locked', this.deviceId, updated, { reason, at });
     }
@@ -76,7 +84,7 @@ export class NetworkOsCredentialStore {
   }
 
   unlock(name: string, at: number = Date.now()): NetworkOsAccount | undefined {
-    const updated = this.mutate(name, a => a.unlock(at));
+    const updated = this.mutateSilent(name, a => a.unlock(at));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.unlocked', this.deviceId, updated, { at });
     }
