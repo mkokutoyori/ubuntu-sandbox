@@ -595,6 +595,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     auth.method,
   );
 
+  // StrictHostKeyChecking=yes — refuse if no known_hosts entry exists
+  // for the remote IP. The default behaviour (ask/accept-new) keeps the
+  // OpenSSH-style TOFU and is handled by updateKnownHosts() below.
+  if (clientOption(flags, 'StrictHostKeyChecking') === 'yes' && opts.localVfs) {
+    const home = opts.sourceHome ?? '/root';
+    const existing = opts.localVfs.readFile(`${home}/.ssh/known_hosts`) ?? '';
+    if (!SshKnownHostsFile.parse(existing).find(found.ip)) {
+      return {
+        output:
+          `No matching host key fingerprint found in DNS.\n` +
+          `No ED25519 host key is known for ${found.ip} and you have requested strict checking.\n` +
+          `Host key verification failed.`,
+        exitCode: 255,
+      };
+    }
+  }
+
   // Update the local ~/.ssh/known_hosts with the remote's host key (or
   // emit the OpenSSH-style identification-changed warning when the key
   // already present differs from the remote's).
