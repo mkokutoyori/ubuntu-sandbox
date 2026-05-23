@@ -77,12 +77,6 @@ export interface SshClientOpts {
    * its identities are exposed to the remote command for its duration.
    */
   localAgent?: SshAgent;
-  /**
-   * Pre-shared password offered for the password authentication step.
-   * Carried out-of-band of argv so that simulated test fixtures can
-   * negotiate password auth against a real account secret.
-   */
-  sourcePassword?: string;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;

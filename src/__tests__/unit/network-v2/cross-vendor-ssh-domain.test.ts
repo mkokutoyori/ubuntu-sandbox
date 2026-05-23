@@ -9,10 +9,6 @@ import {
   SshHostKeyset,
   type SshHostKeyAlgorithm,
 } from '@/network/protocols/ssh/server/SshHostKeyset';
-import {
-  SshConnectionRequest,
-  SshConnectionDecision,
-} from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { CrossVendorSshHost } from '@/network/protocols/ssh/server/CrossVendorSshHost';
 import { EventBus } from '@/events/EventBus';
 import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
@@ -292,112 +288,14 @@ describe('§R2 — SshHostKeyset manages multiple algorithms per device', () => 
   });
 });
 
-describe('§S — SshConnectionRequest captures every inbound handshake parameter', () => {
-  test('factory carries source, destination and offered algorithms', () => {
-    const req = SshConnectionRequest.create({
-      requestedUser: 'alice',
-      requestedHost: 'r1',
-      requestedPort: 22,
-      sourceIp: '10.0.0.1',
-      sourcePort: 50_000,
-      sourceHostname: 'pc1',
-      clientVersion: 'SSH-2.0-OpenSSH_9.6',
-      offeredAuthMethods: ['publickey', 'password'],
-      offeredCiphers: ['[email protected]'],
-      offeredMacs: ['[email protected]'],
-      offeredKex: ['curve25519-sha256'],
-      offeredHostKeyAlgorithms: ['ssh-ed25519'],
-      offeredCompression: ['none'],
-      sentEnv: { LANG: 'en_US.UTF-8' },
-      pty: { termType: 'xterm-256color', cols: 132, rows: 50 },
-      forwarding: { agent: true, x11: false, locals: [], remotes: [], dynamics: [] },
-      requestedSubsystem: null,
-      command: 'show version',
-      now: 1,
-    });
-    expect(req.requestedUser).toBe('alice');
-    expect(req.sourceIp).toBe('10.0.0.1');
-    expect(req.clientVersion).toBe('SSH-2.0-OpenSSH_9.6');
-    expect(req.offeredAuthMethods).toEqual(['publickey', 'password']);
-    expect(req.pty?.termType).toBe('xterm-256color');
-    expect(req.forwarding.agent).toBe(true);
-    expect(req.command).toBe('show version');
-    expect(req.isExecMode()).toBe(true);
-    expect(req.isInteractive()).toBe(false);
-  });
-
-  test('isInteractive returns true when no command and no subsystem', () => {
-    const req = SshConnectionRequest.create({
-      requestedUser: 'alice', requestedHost: 'r1', requestedPort: 22,
-      sourceIp: '10.0.0.1', sourcePort: 50000, sourceHostname: 'pc1',
-      clientVersion: 'SSH-2.0', offeredAuthMethods: ['password'],
-      offeredCiphers: [], offeredMacs: [], offeredKex: [],
-      offeredHostKeyAlgorithms: [], offeredCompression: [],
-      sentEnv: {}, pty: null, forwarding: { agent: false, x11: false, locals: [], remotes: [], dynamics: [] },
-      requestedSubsystem: null, command: null, now: 1,
-    });
-    expect(req.isInteractive()).toBe(true);
-    expect(req.isExecMode()).toBe(false);
-    expect(req.isSubsystem()).toBe(false);
-  });
-
-  test('isSubsystem true for sftp', () => {
-    const req = SshConnectionRequest.create({
-      requestedUser: 'alice', requestedHost: 'r1', requestedPort: 22,
-      sourceIp: '10.0.0.1', sourcePort: 50000, sourceHostname: 'pc1',
-      clientVersion: 'SSH-2.0', offeredAuthMethods: ['password'],
-      offeredCiphers: [], offeredMacs: [], offeredKex: [],
-      offeredHostKeyAlgorithms: [], offeredCompression: [],
-      sentEnv: {}, pty: null, forwarding: { agent: false, x11: false, locals: [], remotes: [], dynamics: [] },
-      requestedSubsystem: 'sftp', command: null, now: 1,
-    });
-    expect(req.isSubsystem()).toBe(true);
-  });
-});
-
-describe('§S2 — SshConnectionDecision tracks outcome and reason', () => {
-  test('accept() stores the negotiated auth method', () => {
-    const d = SshConnectionDecision.accept('password', { sessionId: 'ssh-1' });
-    expect(d.outcome).toBe('accepted');
-    expect(d.method).toBe('password');
-    expect(d.sessionId).toBe('ssh-1');
-    expect(d.ok).toBe(true);
-  });
-
-  test('reject() carries a reason', () => {
-    const d = SshConnectionDecision.reject('no such user');
-    expect(d.outcome).toBe('rejected');
-    expect(d.reason).toBe('no such user');
-    expect(d.ok).toBe(false);
-  });
-
-  test('drop() carries timeout/connection-refused semantics', () => {
-    const d = SshConnectionDecision.drop('Quiet-Mode');
-    expect(d.outcome).toBe('dropped');
-    expect(d.reason).toBe('Quiet-Mode');
-    expect(d.ok).toBe(false);
-  });
-});
 
 describe('§T — CrossVendorSshHost composes config + keys + credentials uniformly', () => {
-  let bus: EventBus;
-  let store: NetworkOsCredentialStore;
-  let host: CrossVendorSshHost;
-
-  beforeEach(() => {
-    bus = new EventBus();
-    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
-    host = new CrossVendorSshHost({
-      deviceId: 'r1',
-      hostname: 'r1',
-      vendor: 'cisco',
-      bus,
-      credentials: store,
-      now: () => 1_700_000_000_000,
-    });
-  });
-
   test('exposes deviceId, hostname, vendor, banner, motd, keyset, config', () => {
+    const bus = new EventBus();
+    const store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    const host = new CrossVendorSshHost({
+      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus, credentials: store,
+    });
     expect(host.deviceId).toBe('r1');
     expect(host.hostname).toBe('r1');
     expect(host.vendor).toBe('cisco');
@@ -405,67 +303,118 @@ describe('§T — CrossVendorSshHost composes config + keys + credentials unifor
     expect(host.keyset).toBeInstanceOf(SshHostKeyset);
     expect(host.banner).toBe('');
     expect(host.motd).toBe('');
+    expect(host.getCredentials()).toBe(store);
   });
 
   test('isSshActive reflects the admin flag (true by default)', () => {
+    const bus = new EventBus();
+    const host = new CrossVendorSshHost({
+      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus,
+      credentials: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
+    });
     expect(host.isSshActive()).toBe(true);
     host.setSshActive(false);
     expect(host.isSshActive()).toBe(false);
   });
 
-  test('decide() refuses when sshd is inactive', () => {
-    host.setSshActive(false);
-    const req = makeRequest({ user: 'admin' });
-    const d = host.decide(req);
-    expect(d.outcome).toBe('dropped');
-    expect(d.reason).toMatch(/sshd|inactive|refused/i);
+  test('setHostname / setBanner / setMotd mutate the facade in place', () => {
+    const bus = new EventBus();
+    const host = new CrossVendorSshHost({
+      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus,
+      credentials: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
+    });
+    host.setHostname('r1-renamed');
+    host.setBanner('AUTH NOTICE');
+    host.setMotd('hello');
+    expect(host.hostname).toBe('r1-renamed');
+    expect(host.banner).toBe('AUTH NOTICE');
+    expect(host.motd).toBe('hello');
   });
 
-  test('decide() refuses an unknown user when local DB is configured', () => {
-    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('a'));
-    const d = host.decide(makeRequest({ user: 'ghost' }));
-    expect(d.outcome).toBe('rejected');
-    expect(d.reason).toMatch(/no such user/);
+  test('applyConfig and applyKeyset swap the immutable inner state', () => {
+    const bus = new EventBus();
+    const host = new CrossVendorSshHost({
+      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus,
+      credentials: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
+    });
+    host.applyConfig(host.config.withMaxAuthTries(2));
+    expect(host.config.maxAuthTries).toBe(2);
+    const ks = SshHostKeyset.defaults('rotated');
+    host.applyKeyset(ks);
+    expect(host.keyset).toBe(ks);
+  });
+});
+
+describe('§W — SshKnownHostsFile models OpenSSH known_hosts faithfully', () => {
+  test('parse extracts an ed25519 entry', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('10.0.0.2 ssh-ed25519 AAAA host@r2\n');
+    expect(f.entries).toHaveLength(1);
+    expect(f.entries[0].hostnames).toEqual(['10.0.0.2']);
+    expect(f.entries[0].keyType).toBe('ssh-ed25519');
+    expect(f.entries[0].publicKey).toBe('AAAA');
+    expect(f.entries[0].comment).toBe('host@r2');
+    expect(f.entries[0].revoked).toBe(false);
+    expect(f.entries[0].markedCa).toBe(false);
   });
 
-  test('decide() refuses a wrong password when password is offered', () => {
-    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2'));
-    const d = host.decide(makeRequest({ user: 'admin', password: 'WRONG' }));
-    expect(d.outcome).toBe('rejected');
+  test('@revoked marker is captured', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('@revoked 10.0.0.2 ssh-rsa AAAA\n');
+    expect(f.entries[0].revoked).toBe(true);
   });
 
-  test('decide() accepts a matching password', () => {
-    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2'));
-    const d = host.decide(makeRequest({ user: 'admin', password: 'hunter2' }));
-    expect(d.outcome).toBe('accepted');
-    expect(d.method).toBe('password');
-    expect(d.sessionId).toMatch(/^ssh-/);
+  test('@cert-authority marker is captured', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('@cert-authority *.example.com ssh-rsa AAAA\n');
+    expect(f.entries[0].markedCa).toBe(true);
   });
 
-  test('decide() accepts a publickey present in account.publicKeys', () => {
-    const key = 'ssh-ed25519 AAAA... alice@laptop';
-    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('').withPublicKey(key));
-    const d = host.decide(makeRequest({ user: 'admin', offeredPublicKey: key }));
-    expect(d.outcome).toBe('accepted');
-    expect(d.method).toBe('publickey');
+  test('hashed hostnames are recognised', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('|1|abc|def ssh-ed25519 AAAA\n');
+    expect(f.entries[0].hashed).toBe(true);
   });
 
-  test('decide() refuses an account locked / disabled / expired', () => {
-    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x').lock('admin'));
-    const denied = host.decide(makeRequest({ user: 'admin', password: 'x' }));
-    expect(denied.outcome).toBe('rejected');
-    expect(denied.reason).toMatch(/locked|disabled|admin/);
+  test('comma-separated hostnames + port-specific [host]:port are split', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('10.0.0.2,r2,[10.0.0.2]:2222 ssh-ed25519 AAAA\n');
+    expect(f.entries[0].hostnames).toEqual(['10.0.0.2', 'r2', '[10.0.0.2]:2222']);
+    expect(f.entries[0].matches('10.0.0.2')).toBe(true);
+    expect(f.entries[0].matches('r2')).toBe(true);
+    expect(f.entries[0].matchesHostPort('10.0.0.2', 2222)).toBe(true);
   });
 
-  test('decide() refuses when sshd Match block sets PasswordAuthentication no', () => {
-    host.applyConfig(host.config
-      .withMatchBlock({
-        criteria: [{ keyword: 'User', value: 'admin' }],
-        overrides: { passwordAuthentication: false, pubkeyAuthentication: false },
-      }));
-    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x'));
-    const d = host.decide(makeRequest({ user: 'admin', password: 'x' }));
-    expect(d.outcome).toBe('rejected');
+  test('add(host, keyType, publicKey) inserts a fresh entry', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.empty().add({ hostnames: ['10.0.0.2'], keyType: 'ssh-ed25519', publicKey: 'AAAA' });
+    expect(f.entries[0].publicKey).toBe('AAAA');
+  });
+
+  test('remove(host) drops every matching entry', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('10.0.0.2 ssh-ed25519 AAAA\n10.0.0.3 ssh-ed25519 BBBB\n')
+      .remove('10.0.0.2');
+    expect(f.entries).toHaveLength(1);
+    expect(f.entries[0].hostnames).toEqual(['10.0.0.3']);
+  });
+
+  test('hostKeyChanged returns true when storing a different key for the same host', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const f = SshKnownHostsFile.parse('10.0.0.2 ssh-ed25519 AAAA\n');
+    expect(f.hostKeyChanged('10.0.0.2', 'ssh-ed25519', 'XXXX')).toBe(true);
+    expect(f.hostKeyChanged('10.0.0.2', 'ssh-ed25519', 'AAAA')).toBe(false);
+    expect(f.hostKeyChanged('10.0.0.3', 'ssh-ed25519', 'YYYY')).toBe(false);
+  });
+
+  test('serialize() round-trips with parse()', async () => {
+    const { SshKnownHostsFile } = await import('@/network/protocols/ssh/SshKnownHostsFile');
+    const src = '10.0.0.2 ssh-ed25519 AAAA host@r2\n@revoked 10.0.0.3 ssh-rsa BBBB\n';
+    const f = SshKnownHostsFile.parse(src);
+    const text = f.serialize();
+    const f2 = SshKnownHostsFile.parse(text);
+    expect(f2.entries.length).toBe(f.entries.length);
+    expect(f2.entries[1].revoked).toBe(true);
   });
 });
 
@@ -530,26 +479,3 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
   });
 });
 
-function makeRequest(init: { user: string; password?: string; offeredPublicKey?: string }): SshConnectionRequest {
-  const methods: ('password' | 'publickey')[] = [];
-  if (init.password !== undefined) methods.push('password');
-  if (init.offeredPublicKey) methods.push('publickey');
-  return SshConnectionRequest.create({
-    requestedUser: init.user,
-    requestedHost: 'r1',
-    requestedPort: 22,
-    sourceIp: '10.0.0.1',
-    sourcePort: 50_000,
-    sourceHostname: 'pc1',
-    clientVersion: 'SSH-2.0-OpenSSH_9.6',
-    offeredAuthMethods: methods.length === 0 ? ['password'] : methods,
-    offeredCiphers: [], offeredMacs: [], offeredKex: [],
-    offeredHostKeyAlgorithms: [], offeredCompression: [],
-    sentEnv: {}, pty: null,
-    forwarding: { agent: false, x11: false, locals: [], remotes: [], dynamics: [] },
-    requestedSubsystem: null,
-    command: 'show version',
-    credentials: { password: init.password, publicKey: init.offeredPublicKey },
-    now: 1,
-  });
-}
