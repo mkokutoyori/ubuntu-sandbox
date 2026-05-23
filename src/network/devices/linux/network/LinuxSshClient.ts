@@ -26,6 +26,7 @@ import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/serv
 import { SshConfig } from '../../../protocols/ssh/SshConfig';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
+import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -823,28 +824,46 @@ function runCrossPlatformExec(
     };
   }
 
-  const credentials = sshHost?.getCredentials();
-  if (!target.isSshActive()) {
-    credentials?.recordLoginFailure(remoteUser, opts.sourceIp, 'sshd inactive');
-    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
-  }
-  const policy = target.getSshPolicy();
-  if (!policy.ports.includes(port)) {
-    credentials?.recordLoginFailure(remoteUser, opts.sourceIp, 'port not listening');
-    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
-  }
-  const login = target.sshdAcceptsLogin(remoteUser);
-  if (!login.ok) {
-    credentials?.recordLoginFailure(remoteUser, opts.sourceIp, login.reason ?? 'denied');
-    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
-  }
-  credentials?.recordLoginSuccess(remoteUser, opts.sourceIp, 'password');
-  target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
-
   const remoteCmd = joinRemoteCommand(positional.slice(1));
+
+  if (sshHost) {
+    const request = SshConnectionRequest.create({
+      requestedUser: remoteUser,
+      requestedHost: host,
+      requestedPort: port,
+      sourceIp: opts.sourceIp,
+      sourceHostname: opts.sourceHostname,
+      command: remoteCmd || null,
+      offeredAuthMethods: ['publickey', 'password'],
+    });
+    const decision = sshHost.evaluate(request);
+    if (decision.outcome === 'dropped') {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+    }
+    if (decision.outcome === 'rejected') {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
+    }
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, decision.method ?? 'password');
+  } else {
+    if (!target.isSshActive()) {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+    }
+    const policy = target.getSshPolicy();
+    if (!policy.ports.includes(port)) {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+    }
+    const login = target.sshdAcceptsLogin(remoteUser);
+    if (!login.ok) {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
+    }
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
+  }
+
   const sessionRegistry = router.getSshSessionRegistry?.();
   const closeSession = () => {
     if (!sessionRegistry) return;
