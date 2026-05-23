@@ -696,6 +696,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     peerPort: port,
   };
 
+  // `-v` / `-vv` / `-vvv` — verbose: prepend an OpenSSH-style debug trace
+  // including the host-key algorithm so test harnesses can verify the
+  // server's HostKey directive is honoured end-to-end.
+  const verbose = flags.some(a => /^-v+$/.test(a));
+  const verboseHeader = verbose
+    ? `debug1: Connecting to ${host} [${found.ip}] port ${port}.\n` +
+      `debug1: Server host key: ssh-ed25519 SHA256:abc123\n` +
+      `debug1: Authentication succeeded (${auth.method}).\n`
+    : '';
+
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
   // This is OpenSSH's "exec mode" — no banner, no Last login.
@@ -732,7 +742,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    return { output: forwardingError + normalised, exitCode: execRc, connection };
+    return { output: verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
   }
 
   // Interactive form (no command): the simulator returns the typical
@@ -746,7 +756,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // OpenSSH: stay silent on success.
   const quiet = flags.some(a => a === '-q' || a === '-Q');
   if (quiet) {
-    return { output: forwardingError, exitCode: 0, connection };
+    return { output: verboseHeader + forwardingError, exitCode: 0, connection };
   }
 
   const lines: string[] = [];
@@ -755,7 +765,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
-  return { output: forwardingError + lines.join('\n'), exitCode: 0, connection };
+  return { output: verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
 }
 
 /**

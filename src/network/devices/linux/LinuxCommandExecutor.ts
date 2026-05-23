@@ -558,7 +558,41 @@ export class LinuxCommandExecutor {
     // and returned "command not found". Provide a minimal compatible
     // implementation that creates a file pair under -f and -N.
     const fIdx = args.indexOf('-f');
-    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/id_ed25519`;
+    const tIdx = args.indexOf('-t');
+    const keyType = tIdx >= 0 ? args[tIdx + 1].toLowerCase() : 'ed25519';
+    const algoPrefix = keyType === 'rsa' ? 'ssh-rsa'
+      : keyType === 'ecdsa' ? 'ecdsa-sha2-nistp256'
+      : 'ssh-ed25519';
+    const defaultFile = keyType === 'rsa' ? 'id_rsa' : keyType === 'ecdsa' ? 'id_ecdsa' : 'id_ed25519';
+    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/${defaultFile}`;
+
+    // `ssh-keygen -l -f <pubfile>` — print the fingerprint of a public key.
+    if (args.includes('-l')) {
+      const target = fIdx >= 0 ? args[fIdx + 1] : file;
+      const candidate = target.endsWith('.pub') ? target : `${target}.pub`;
+      const data = (this.vfs.readFile(candidate) ?? this.vfs.readFile(target) ?? '').trim();
+      if (!data) {
+        return { output: `${target}: No such file or directory`, exitCode: 1 };
+      }
+      const tokens = data.split(/\s+/);
+      const algoToken = tokens[0] ?? '';
+      const keyBlob = tokens[1] ?? '';
+      const comment = tokens.slice(2).join(' ') || `${this.userMgr.currentUser}@localhost`;
+      const algoLabel = algoToken.startsWith('ssh-ed25519') ? 'ED25519'
+        : algoToken.startsWith('ssh-rsa') ? 'RSA'
+        : algoToken.startsWith('ecdsa-') ? 'ECDSA'
+        : algoToken.toUpperCase();
+      const bits = algoLabel === 'RSA' ? 2048 : algoLabel === 'ECDSA' ? 256 : 256;
+      const seed = `fp:${algoToken}:${keyBlob}`;
+      let hash = 5381;
+      for (let i = 0; i < seed.length; i++) hash = ((hash * 33) ^ seed.charCodeAt(i)) >>> 0;
+      const bytes: number[] = [];
+      let h = hash;
+      for (let i = 0; i < 32; i++) { h = (h * 1664525 + 1013904223) >>> 0; bytes.push(h & 0xff); }
+      const fp = 'SHA256:' + btoa(String.fromCharCode(...bytes)).replace(/=+$/, '');
+      return { output: `${bits} ${fp} ${comment} (${algoLabel})`, exitCode: 0 };
+    }
+
     if (args.includes('-y')) {
       // Read the private key, output its public form (stub).
       return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
@@ -568,7 +602,7 @@ export class LinuxCommandExecutor {
     if (!this.vfs.resolveInode(sshDir)) {
       this.vfs.mkdirp(sshDir, 0o700, 0, 0);
     }
-    const pubKey = `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
+    const pubKey = `${algoPrefix} AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
     this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', 0, 0, 0o077);
     this.vfs.writeFile(`${file}.pub`, pubKey + '\n', 0, 0, 0o022);
     return { output: '', exitCode: 0 };

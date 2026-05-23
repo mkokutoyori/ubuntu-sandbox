@@ -416,9 +416,17 @@ export class BashInterpreter {
 
       try {
         if (redir.op === '>&') {
-          this.io.writeFile(path, capturedOutput, false);
-          stdoutHandled = true;
-          stderrHandled = true;
+          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge
+          // (e.g. `2>&1` keeps everything on stdout); only treat as a
+          // file-write if the target is not a digit.
+          if (/^\d+$/.test(target)) {
+            // Merge — output stays captured and flows to stdout below.
+            stderrHandled = true;
+          } else {
+            this.io.writeFile(path, capturedOutput, false);
+            stdoutHandled = true;
+            stderrHandled = true;
+          }
         } else if (redir.op === '>' || redir.op === '>>') {
           const fd = redir.fd ?? 1;
           if (fd === 1) {
