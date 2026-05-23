@@ -716,3 +716,53 @@ describe('§O — Router sshdAcceptsLogin gates SSH-restricted accounts', () => 
     expect(lab.ciscoR1.sshdAcceptsLogin('admin').ok).toBe(false);
   });
 });
+
+describe('§P — Cisco username captures hash algorithm + secret form', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('username admin secret 5 $1$xxx records sha256 algorithm', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username admin privilege 15 secret 5 $1$abcd$xyz');
+    await lab.ciscoR1.executeCommand('end');
+    const acc = lab.ciscoR1.getCredentialStore().get('admin');
+    expect(acc?.privilege).toBe(15);
+    expect(acc?.secret).toBe('$1$abcd$xyz');
+    expect(acc?.passwordHashAlgorithm).toBe('md5');
+  });
+
+  test('username admin secret plain stores plain algorithm', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username admin secret 0 Admin@123');
+    await lab.ciscoR1.executeCommand('end');
+    const acc = lab.ciscoR1.getCredentialStore().get('admin');
+    expect(acc?.secret).toBe('Admin@123');
+    expect(acc?.passwordHashAlgorithm).toBe('plain');
+  });
+
+  test('username admin password 7 stores type-7', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username admin password 7 070C285F4D06');
+    await lab.ciscoR1.executeCommand('end');
+    const acc = lab.ciscoR1.getCredentialStore().get('admin');
+    expect(acc?.secret).toBe('070C285F4D06');
+    expect(acc?.passwordHashAlgorithm).toBe('type-7');
+  });
+
+  test('username with no password leaves secret empty', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username readonly privilege 1 nopassword');
+    await lab.ciscoR1.executeCommand('end');
+    const acc = lab.ciscoR1.getCredentialStore().get('readonly');
+    expect(acc?.secret).toBe('');
+    expect(acc?.privilege).toBe(1);
+  });
+
+  test('username admin secret 9 records scrypt', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username admin secret 9 $9$xyz');
+    await lab.ciscoR1.executeCommand('end');
+    const acc = lab.ciscoR1.getCredentialStore().get('admin');
+    expect(acc?.passwordHashAlgorithm).toBe('sha256');
+  });
+});

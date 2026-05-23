@@ -546,21 +546,40 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // logins. Anything we don't parse is still accepted silently.
     this.configTrie.registerGreedy('username', 'Configure a local user', (args) => {
       const dev = this.d() as unknown as {
-        _addLocalUser?: (name: string, privilege: number, secret: string) => void;
+        _upsertCiscoUsername?: (name: string, kv: {
+          privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+          autocommand?: string; nopassword?: boolean; description?: string;
+        }) => void;
       };
       const name = args[0];
-      if (name && typeof dev._addLocalUser === 'function') {
-        let privilege = 1;
-        let secret = '';
-        for (let i = 1; i < args.length; i++) {
-          if (args[i] === 'privilege' && /^\d+$/.test(args[i + 1] ?? '')) {
-            privilege = Number(args[i + 1]); i++;
-          } else if ((args[i] === 'secret' || args[i] === 'password') && args[i + 1]) {
-            secret = args.slice(i + 1).join(' '); i = args.length;
-          }
+      if (!name || typeof dev._upsertCiscoUsername !== 'function') return '';
+      const kv: {
+        privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+        autocommand?: string; nopassword?: boolean; description?: string;
+      } = {};
+      for (let i = 1; i < args.length; i++) {
+        const tok = args[i];
+        if (tok === 'privilege' && /^\d+$/.test(args[i + 1] ?? '')) { kv.privilege = Number(args[++i]); continue; }
+        if (tok === 'nopassword') { kv.nopassword = true; continue; }
+        if (tok === 'autocommand') { kv.autocommand = args.slice(i + 1).join(' '); i = args.length; continue; }
+        if (tok === 'description') { kv.description = args.slice(i + 1).join(' '); i = args.length; continue; }
+        if (tok === 'secret' || tok === 'password') {
+          const isSecret = tok === 'secret';
+          const next = args[i + 1];
+          let algo: 'plain' | 'md5' | 'sha256' | 'type-7' = isSecret ? 'md5' : 'plain';
+          let value: string;
+          if (next === '0') { algo = 'plain'; value = args[i + 2] ?? ''; i += 2; }
+          else if (next === '5') { algo = 'md5'; value = args[i + 2] ?? ''; i += 2; }
+          else if (next === '7') { algo = 'type-7'; value = args[i + 2] ?? ''; i += 2; }
+          else if (next === '8') { algo = 'sha256'; value = args[i + 2] ?? ''; i += 2; }
+          else if (next === '9') { algo = 'sha256'; value = args[i + 2] ?? ''; i += 2; }
+          else { value = next ?? ''; i++; }
+          kv.secret = value;
+          kv.secretAlgo = algo;
+          continue;
         }
-        dev._addLocalUser(name, privilege, secret);
       }
+      dev._upsertCiscoUsername(name, kv);
       return '';
     });
     this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');

@@ -1425,6 +1425,21 @@ export abstract class Router extends Equipment {
       .withSecret(secret);
     this.getCredentialStore().upsert(acc);
   }
+
+  _upsertCiscoUsername(name: string, kv: {
+    privilege?: number; secret?: string;
+    secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+    autocommand?: string; nopassword?: boolean; description?: string;
+  }): void {
+    this.getSecurityAuditLog();
+    const store = this.getCredentialStore();
+    let account = store.get(name) ?? NetworkOsAccount.create({ name });
+    if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
+    if (kv.nopassword) account = account.withSecret('', 'plain');
+    else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
+    if (kv.description) account = account.withDescription(kv.description);
+    store.upsert(account);
+  }
   _removeLocalUser(name: string): void {
     this.getSecurityAuditLog();
     this.getCredentialStore().remove(name);
