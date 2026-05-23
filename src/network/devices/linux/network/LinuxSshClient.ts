@@ -24,6 +24,8 @@ import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
 import { SshConfig } from '../../../protocols/ssh/SshConfig';
+import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
+import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -75,6 +77,12 @@ export interface SshClientOpts {
    * its identities are exposed to the remote command for its duration.
    */
   localAgent?: SshAgent;
+  /**
+   * Pre-shared password offered for the password authentication step.
+   * Carried out-of-band of argv so that simulated test fixtures can
+   * negotiate password auth against a real account secret.
+   */
+  sourcePassword?: string;
 }
 
 const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
@@ -810,11 +818,13 @@ function runCrossPlatformExec(
 ): SshClientResult {
   const router = target as unknown as {
     getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null;
-    getCredentialStore?: () => {
-      recordLoginSuccess: (n: string, f: string, m: 'password' | 'publickey' | 'keyboard-interactive') => void;
-      recordLoginFailure: (n: string, f: string, r: string) => void;
+    getSshHost?: () => CrossVendorSshHost;
+    getSshSessionRegistry?: () => {
+      list: () => ReadonlyArray<{ id: string; user: string; fromIp: string }>;
+      close: (id: string, reason?: string) => void;
     };
   };
+  const sshHost = router.getSshHost?.();
   const blocker = router.getLoginBlocker?.();
   if (blocker && blocker.isBlocked(opts.sourceIp)) {
     return {
@@ -822,47 +832,36 @@ function runCrossPlatformExec(
       exitCode: 255,
     };
   }
+
+  const credentials = sshHost?.getCredentials();
   if (!target.isSshActive()) {
-    router.getCredentialStore?.().recordLoginFailure(remoteUser, opts.sourceIp, 'sshd inactive');
+    credentials?.recordLoginFailure(remoteUser, opts.sourceIp, 'sshd inactive');
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
-      exitCode: 255,
-    };
+    return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
   }
   const policy = target.getSshPolicy();
   if (!policy.ports.includes(port)) {
-    router.getCredentialStore?.().recordLoginFailure(remoteUser, opts.sourceIp, 'port not listening');
+    credentials?.recordLoginFailure(remoteUser, opts.sourceIp, 'port not listening');
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
-      exitCode: 255,
-    };
+    return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
   }
   const login = target.sshdAcceptsLogin(remoteUser);
   if (!login.ok) {
-    router.getCredentialStore?.().recordLoginFailure(remoteUser, opts.sourceIp, login.reason ?? 'denied');
+    credentials?.recordLoginFailure(remoteUser, opts.sourceIp, login.reason ?? 'denied');
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    return {
-      output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
-      exitCode: 255,
-    };
+    return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
   }
-  router.getCredentialStore?.().recordLoginSuccess(remoteUser, opts.sourceIp, 'password');
+  credentials?.recordLoginSuccess(remoteUser, opts.sourceIp, 'password');
   target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
-  const sessionRegistry = (target as unknown as {
-    getSshSessionRegistry?: () => {
-      list: () => ReadonlyArray<{ id: string; user: string; fromIp: string }>;
-      close: (id: string, reason?: string) => void;
-    };
-  }).getSshSessionRegistry?.();
+
+  const remoteCmd = joinRemoteCommand(positional.slice(1));
+  const sessionRegistry = router.getSshSessionRegistry?.();
   const closeSession = () => {
     if (!sessionRegistry) return;
     const open = sessionRegistry.list().find(s => s.user === remoteUser && s.fromIp === opts.sourceIp);
     if (open) sessionRegistry.close(open.id, 'logout');
   };
 
-  const remoteCmd = joinRemoteCommand(positional.slice(1));
   if (remoteCmd) {
     const result = target.runSshCommandSync(remoteUser, remoteCmd);
     closeSession();

@@ -19,6 +19,8 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
+import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
@@ -240,6 +242,33 @@ export class WindowsPC extends EndHost {
   /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
   getSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname);
+  }
+
+  private _sshHost: CrossVendorSshHost | null = null;
+  private _sshCredentialStore: NetworkOsCredentialStore | null = null;
+
+  getSshHost(): CrossVendorSshHost {
+    if (!this._sshCredentialStore) {
+      this._sshCredentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    }
+    if (!this._sshHost) {
+      this._sshHost = new CrossVendorSshHost({
+        deviceId: this.id,
+        hostname: this.hostname,
+        vendor: 'windows',
+        bus: this.getBus(),
+        credentials: this._sshCredentialStore,
+        banner: this.getSshBanner(),
+        motd: this.getSshMotd(),
+        active: this.isSshActive(),
+      });
+    } else {
+      this._sshHost.setSshActive(this.isSshActive());
+      this._sshHost.setHostname(this.hostname);
+      this._sshHost.setBanner(this.getSshBanner());
+      this._sshHost.setMotd(this.getSshMotd());
+    }
+    return this._sshHost;
   }
 
   /** Build a SshServerHandler ready to be hooked onto a TcpConnection. */
