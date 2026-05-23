@@ -27,6 +27,7 @@ import { SshConfig } from '../../../protocols/ssh/SshConfig';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
+import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -164,15 +165,15 @@ function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: n
   return verdict;
 }
 
-/** Ports configured by sshd_config on the remote machine — defaults to [22]. */
-function sshdConfiguredPorts(machine: LinuxMachine): number[] {
+function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
   const raw = (machine as LinuxMachine & {
     executor: { vfs: { readFile: (p: string) => string | null } };
   }).executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
-    .map(m => Number(m[1]))
-    .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
-  return ports.length ? ports : [22];
+  return SshdServerConfig.parse(raw);
+}
+
+function sshdConfiguredPorts(machine: LinuxMachine): readonly number[] {
+  return remoteSshdConfig(machine).ports;
 }
 
 /** Narrow view of a remote machine's executor needed for auth negotiation. */
@@ -340,10 +341,10 @@ function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
   return patterns;
 }
 
-/** Patterns the server accepts: defaults + sshd_config AcceptEnv lines. */
 function serverAcceptEnvPatterns(exec: RemoteExecLike): string[] {
   const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  return [...DEFAULT_ENV_PATTERNS, ...collectDirective(raw, 'AcceptEnv')];
+  const cfg = SshdServerConfig.parse(raw);
+  return [...DEFAULT_ENV_PATTERNS, ...cfg.acceptEnv];
 }
 
 /**

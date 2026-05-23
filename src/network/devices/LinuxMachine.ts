@@ -48,7 +48,7 @@ import type {
 import { DnsService, findDnsServerByIP } from './linux/LinuxDnsService';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
-import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
@@ -321,26 +321,37 @@ export abstract class LinuxMachine extends EndHost {
   isSshActive(): boolean { return this.isServiceActive('ssh'); }
 
   private _sshHost: CrossVendorSshHost | null = null;
-  private _sshCredentialStore: NetworkOsCredentialStore | null = null;
+  private _sshAuthority: LinuxUserManagerAuthority | null = null;
 
   getSshHost(): CrossVendorSshHost {
-    if (!this._sshCredentialStore) {
-      this._sshCredentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    if (!this._sshAuthority) {
+      this._sshAuthority = new LinuxUserManagerAuthority({
+        executor: this.executor,
+        deviceId: this.id,
+        hostname: this.hostname,
+        recordSshLogin: (u, fromIp, fromHost, accepted, method) =>
+          this.recordSshLogin(u, fromIp, fromHost, accepted, method as 'password' | 'publickey'),
+      });
     }
+    const config = SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '');
     if (!this._sshHost) {
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
         hostname: this.hostname,
         vendor: 'linux',
         bus: this.getBus(),
-        authority: this._sshCredentialStore,
-        config: SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? ''),
+        authority: this._sshAuthority,
+        config,
         active: this.isSshActive(),
+        motd: this.executor.vfs.readFile('/etc/motd') ?? '',
+        banner: this.executor.vfs.readFile('/etc/issue.net') ?? '',
       });
     } else {
-      this._sshHost.applyConfig(SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? ''));
+      this._sshHost.applyConfig(config);
       this._sshHost.setSshActive(this.isSshActive());
       this._sshHost.setHostname(this.hostname);
+      this._sshHost.setMotd(this.executor.vfs.readFile('/etc/motd') ?? '');
+      this._sshHost.setBanner(this.executor.vfs.readFile('/etc/issue.net') ?? '');
     }
     return this._sshHost;
   }

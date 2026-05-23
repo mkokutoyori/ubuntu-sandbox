@@ -580,5 +580,22 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
     expect(host.config.permitRootLogin).toBe('no');
     expect(host.config.maxAuthTries).toBe(2);
   });
+
+  test('LinuxMachine host authority resolves the seeded user account', () => {
+    const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    const host = pc.getSshHost();
+    const account = host.getAuthority().lookup('user');
+    expect(account).toBeDefined();
+    expect(account?.name).toBe('user');
+  });
+
+  test('LinuxMachine host picks up /etc/motd and /etc/issue.net edits', async () => {
+    const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    await pc.executeCommand('echo "AUTH NOTICE" > /etc/issue.net');
+    await pc.executeCommand('echo "welcome" > /etc/motd');
+    const host = pc.getSshHost();
+    expect(host.banner).toMatch(/AUTH NOTICE/);
+    expect(host.motd).toMatch(/welcome/);
+  });
 });
 
