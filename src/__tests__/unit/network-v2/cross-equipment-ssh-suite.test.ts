@@ -1706,7 +1706,7 @@ describe('§25 — Root/Administrator login policy', () => {
     {
       name: 'Linux PermitRootLogin yes accepts root',
       setup: async (l) => {
-        await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
@@ -1715,7 +1715,7 @@ describe('§25 — Root/Administrator login policy', () => {
     {
       name: 'Linux PermitRootLogin prohibit-password still blocks password root',
       setup: async (l) => {
-        await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitRootLogin.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1, cmd: 'ssh root@10.0.0.2',

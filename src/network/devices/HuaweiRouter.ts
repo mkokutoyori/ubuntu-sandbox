@@ -41,6 +41,16 @@ export class HuaweiRouter extends Router {
     if (/^display\s+version\s*$/i.test(cmd)) {
       return { output: `${displayVersion(this)}\n`, exitCode: 0 };
     }
+    if (/^display\s+users\s*$/i.test(cmd)) {
+      const users = this._listLocalUsers();
+      const lines = ['  UI    Delay    Type     Network Address     AuthenStatus    AuthorcmdFlag'];
+      for (const u of users) lines.push(`+ 129    00:00:00 SSH      10.0.0.1            pass            ${u.name}`);
+      return { output: `${lines.join('\n')}\n`, exitCode: 0 };
+    }
+    if (/^display\s+local-user\s*$/i.test(cmd)) {
+      const users = this._listLocalUsers();
+      return { output: `User-name              State   Type   Privilege\n${users.map(u => `${u.name.padEnd(22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
+    }
     if (/^display\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
       return { output: `${displayInterfaceBrief(this)}\n`, exitCode: 0 };
     }
