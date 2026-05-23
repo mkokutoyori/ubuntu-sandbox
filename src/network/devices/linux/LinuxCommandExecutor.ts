@@ -566,6 +566,23 @@ export class LinuxCommandExecutor {
     const defaultFile = keyType === 'rsa' ? 'id_rsa' : keyType === 'ecdsa' ? 'id_ecdsa' : 'id_ed25519';
     const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/${defaultFile}`;
 
+    // `ssh-keygen -A` — regenerate all missing host-key types in the
+    // target directory (defaults to /etc/ssh). The simulator rewrites the
+    // ed25519/rsa/ecdsa pairs unconditionally so a subsequent client sees
+    // a different fingerprint, mirroring real-life key rotation.
+    if (args.includes('-A')) {
+      const fAfterA = fIdx >= 0 ? args[fIdx + 1] : '/etc/ssh';
+      const dir = fAfterA.replace(/\/$/, '');
+      for (const a of ['ed25519', 'rsa', 'ecdsa']) {
+        const algoTok = a === 'ed25519' ? 'ssh-ed25519' : a === 'rsa' ? 'ssh-rsa' : 'ecdsa-sha2-nistp256';
+        const rand = Math.random().toString(36).slice(2, 16) + Date.now().toString(36);
+        const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        this.vfs.writeFile(`${dir}/ssh_host_${a}_key`, `-----BEGIN OPENSSH PRIVATE KEY-----\n(stub-${rand})\n-----END OPENSSH PRIVATE KEY-----\n`, 0, 0, 0o077);
+        this.vfs.writeFile(`${dir}/ssh_host_${a}_key.pub`, `${algoTok} AAAA${rand} root@${host}\n`, 0, 0, 0o022);
+      }
+      return { output: '', exitCode: 0 };
+    }
+
     // `ssh-keygen -l -f <pubfile>` — print the fingerprint of a public key.
     if (args.includes('-l')) {
       const target = fIdx >= 0 ? args[fIdx + 1] : file;
