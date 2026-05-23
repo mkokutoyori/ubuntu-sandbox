@@ -1487,15 +1487,7 @@ export abstract class Router extends Equipment {
   getSshHostname(): string { return this.hostname; }
   isSshActive(): boolean { return this.sshServerEnabled; }
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
-    if (!user) return { ok: false, reason: 'empty user' };
-    const store = this.getCredentialStore();
-    if (store.size() === 0) return { ok: true };
-    const account = store.get(user);
-    if (!account) return { ok: false, reason: 'no such user' };
-    const lifecycle = account.isLoginPermitted();
-    if (!lifecycle.ok) return lifecycle;
-    if (!account.allowsService('ssh')) return { ok: false, reason: 'service-type ssh not permitted' };
-    return { ok: true };
+    return this.getSshHost().acceptsLogin(user);
   }
   recordSshLogin(
     _user: string, _fromIp: string, _fromHost: string,
