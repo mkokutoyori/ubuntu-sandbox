@@ -11,6 +11,7 @@ import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOs
 import { SecurityAuditLog } from '@/network/devices/router/aaa/SecurityAuditLog';
 import { LoginBlocker } from '@/network/devices/router/aaa/LoginBlocker';
 import { SshSessionRegistry } from '@/network/devices/router/aaa/SshSessionRegistry';
+import { VtyLineConfig, VtyLineRange } from '@/network/devices/router/aaa/VtyLineConfig';
 import { EventBus } from '@/events/EventBus';
 
 interface Lab {
@@ -572,5 +573,75 @@ describe('§L — Router wires SshSessionRegistry into show users / display user
     await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
     expect(lab.ciscoR1.getSshSessionRegistry().list().length).toBe(0);
     expect(lab.ciscoR1.getSshSessionRegistry().history().length).toBe(1);
+  });
+});
+
+describe('§M — VtyLineConfig domain model carries every line directive', () => {
+  test('defaults are sane for a fresh vty range', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4));
+    expect(cfg.range.first).toBe(0);
+    expect(cfg.range.last).toBe(4);
+    expect(cfg.transportInput).toEqual(['ssh']);
+    expect(cfg.transportOutput).toEqual(['ssh']);
+    expect(cfg.loginMode).toBe('none');
+    expect(cfg.execTimeoutMinutes).toBe(10);
+    expect(cfg.execTimeoutSeconds).toBe(0);
+    expect(cfg.sessionTimeoutMinutes).toBe(0);
+    expect(cfg.privilegeLevel).toBe(1);
+    expect(cfg.history).toBe(20);
+    expect(cfg.terminalLength).toBe(24);
+    expect(cfg.terminalWidth).toBe(80);
+    expect(cfg.accessClassIn).toBeNull();
+    expect(cfg.accessClassOut).toBeNull();
+    expect(cfg.password).toBeNull();
+    expect(cfg.autocommand).toBeNull();
+    expect(cfg.motdBannerEnabled).toBe(true);
+    expect(cfg.escapeChar).toBe(30);
+    expect(cfg.location).toBeNull();
+  });
+
+  test('mutators return new instances with patched fields', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
+      .withTransportInput(['ssh'])
+      .withLoginMode('local')
+      .withExecTimeout(5, 30)
+      .withAccessClass('in', 20)
+      .withPrivilege(15)
+      .withAutocommand('show ip interface brief')
+      .withLocation('rack-12-row-A');
+    expect(cfg.loginMode).toBe('local');
+    expect(cfg.execTimeoutMinutes).toBe(5);
+    expect(cfg.execTimeoutSeconds).toBe(30);
+    expect(cfg.accessClassIn).toBe(20);
+    expect(cfg.privilegeLevel).toBe(15);
+    expect(cfg.autocommand).toBe('show ip interface brief');
+    expect(cfg.location).toBe('rack-12-row-A');
+  });
+
+  test('toRunningConfig emits IOS-style line block', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
+      .withLoginMode('local')
+      .withTransportInput(['ssh'])
+      .withExecTimeout(5, 0);
+    const text = cfg.toRunningConfig();
+    expect(text).toContain('line vty 0 4');
+    expect(text).toContain(' login local');
+    expect(text).toContain(' transport input ssh');
+    expect(text).toContain(' exec-timeout 5 0');
+  });
+
+  test('VtyLineRange equality and merging', () => {
+    const a = new VtyLineRange(0, 4);
+    const b = new VtyLineRange(0, 4);
+    expect(a.equals(b)).toBe(true);
+    expect(a.contains(2)).toBe(true);
+    expect(a.size()).toBe(5);
+  });
+
+  test('transport input none disables every protocol', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
+      .withTransportInput([]);
+    expect(cfg.transportInput).toEqual([]);
+    expect(cfg.toRunningConfig()).toContain(' transport input none');
   });
 });
