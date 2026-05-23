@@ -286,3 +286,39 @@ describe('§F — SecurityAuditLog reacts to AAA events on the bus', () => {
     expect(rendered).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE:/);
   });
 });
+
+describe('§G — Router wires CredentialStore + SecurityAuditLog into native CLI', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('Cisco show logging contains a CONFIG_CHANGE entry after username admin', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
+    await lab.ciscoR1.executeCommand('end');
+    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    expect(out?.output).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE.*admin/);
+  });
+
+  test('Cisco show logging records an SSH login success', () => {
+    lab.ciscoR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
+    lab.ciscoR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
+    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    expect(out?.output).toMatch(/%SEC_LOGIN-5-LOGIN_SUCCESS/);
+    expect(out?.output).toMatch(/10\.0\.0\.1/);
+  });
+
+  test('Huawei display logbuffer contains AAA events', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('local-user admin password cipher Admin@123');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    const out = lab.hwR1.runSshCommandSync('', 'display logbuffer');
+    expect(out?.output).toMatch(/SEC_LOGIN|CONFIG_CHANGE|admin/);
+  });
+
+  test('Cisco show logging is empty when nothing happened', () => {
+    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    expect(out?.output).toMatch(/Syslog logging:/);
+  });
+});

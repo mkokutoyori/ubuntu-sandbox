@@ -62,6 +62,9 @@ import { IPv6DataPlane } from './router/IPv6DataPlane';
 export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from './router/IPv6DataPlane';
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { RouterDynamicRouting } from './router/RouterDynamicRouting';
+import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
+import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
@@ -1361,21 +1364,40 @@ export abstract class Router extends Equipment {
    * shell when `username … secret …` (Cisco) or `local-user … password
    * …` (Huawei) is executed.
    */
-  protected localUsers: Map<string, { name: string; privilege: number; secret: string }> = new Map();
+  private _credentialStore: NetworkOsCredentialStore | null = null;
+  private _securityAuditLog: SecurityAuditLog | null = null;
 
-  /** @internal — vendor shell records a configured local user. */
+  getCredentialStore(): NetworkOsCredentialStore {
+    if (!this._credentialStore) {
+      this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    }
+    return this._credentialStore;
+  }
+
+  getSecurityAuditLog(): SecurityAuditLog {
+    if (!this._securityAuditLog) this.getCredentialStore();
+    return this._securityAuditLog!;
+  }
+
   _addLocalUser(name: string, privilege: number, secret: string): void {
-    this.localUsers.set(name, { name, privilege, secret });
+    this.getSecurityAuditLog();
+    const existing = this.getCredentialStore().get(name);
+    const acc = (existing ?? NetworkOsAccount.create({ name }))
+      .withPrivilege(privilege)
+      .withSecret(secret);
+    this.getCredentialStore().upsert(acc);
   }
-  /** @internal — vendor shell removes a configured local user. */
-  _removeLocalUser(name: string): void { this.localUsers.delete(name); }
-  /** @internal — vendor shell inspects local-user table. */
+  _removeLocalUser(name: string): void {
+    this.getSecurityAuditLog();
+    this.getCredentialStore().remove(name);
+  }
   _getLocalUser(name: string): { name: string; privilege: number; secret: string } | undefined {
-    return this.localUsers.get(name);
+    const a = this.getCredentialStore().get(name);
+    return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  /** @internal — vendor shell lists all configured local users. */
   _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string }> {
-    return Array.from(this.localUsers.values());
+    return this.getCredentialStore().list().map(a => ({ name: a.name, privilege: a.privilege, secret: a.secret }));
   }
 
   /** @internal — flipped by per-vendor shell when transport input changes. */
@@ -1395,7 +1417,8 @@ export abstract class Router extends Equipment {
     // are accepted (login local / AAA local-user model). Empty database
     // accepts any name — matches the default IOS / VRP behaviour where
     // an unauthenticated VTY accepts the enable password directly.
-    if (this.localUsers.size > 0 && !this.localUsers.has(user)) {
+    const store = this.getCredentialStore();
+    if (store.size() > 0 && !store.has(user)) {
       return { ok: false, reason: 'no such user' };
     }
     return { ok: true };

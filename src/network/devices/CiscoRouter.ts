@@ -42,6 +42,12 @@ export class CiscoRouter extends Router {
     if (/^show\s+version\s*$/i.test(cmd)) {
       return { output: `${showVersion(this)}\n`, exitCode: 0 };
     }
+    if (/^show\s+logging\s*$/i.test(cmd)) {
+      const audit = this.getSecurityAuditLog();
+      const formatted = audit.format();
+      const header = 'Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns, xml disabled, filtering disabled)\nConsole logging: level debugging, 0 messages logged, xml disabled\nMonitor logging: level debugging, 0 messages logged, xml disabled\nBuffer logging: level debugging, 0 messages logged, xml disabled\n\nLog Buffer (4096 bytes):\n';
+      return { output: `${header}${formatted}\n`, exitCode: 0 };
+    }
     if (/^show\s+privilege\s*$/i.test(cmd)) {
       return { output: 'Current privilege level is 15\n', exitCode: 0 };
     }

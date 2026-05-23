@@ -41,6 +41,11 @@ export class HuaweiRouter extends Router {
     if (/^display\s+version\s*$/i.test(cmd)) {
       return { output: `${displayVersion(this)}\n`, exitCode: 0 };
     }
+    if (/^display\s+logbuffer\s*$/i.test(cmd)) {
+      const audit = this.getSecurityAuditLog();
+      const header = 'Logging buffer configuration and contents: enabled\nAllowed max buffer size : 1024\nActual buffer size : 1024\nChannel number : 4, Channel name : logbuffer\nDropped messages : 0\nOverwritten messages : 0\nCurrent messages : ' + audit.entries().length + '\n';
+      return { output: `${header}${audit.format()}\n`, exitCode: 0 };
+    }
     if (/^display\s+users\s*$/i.test(cmd)) {
       const users = this._listLocalUsers();
       const lines = ['  UI    Delay    Type     Network Address     AuthenStatus    AuthorcmdFlag'];
