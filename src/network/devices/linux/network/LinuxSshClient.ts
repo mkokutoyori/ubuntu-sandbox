@@ -17,14 +17,14 @@
  */
 
 import { findHostByAddress } from './HostLookup';
-import { SshKnownHostEntry, type SshHostKeyType } from './SshKnownHostEntry';
+import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
 import { SshConfig } from '../../../protocols/ssh/SshConfig';
-import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
+import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
@@ -747,20 +747,16 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
   const home = opts.sourceHome ?? '/root';
   const knownHostsPath = `${home}/.ssh/known_hosts`;
   const existing = opts.localVfs.readFile(knownHostsPath) ?? '';
-  const entries = SshKnownHostEntry.parseFile(existing);
-  const found = entries.find(e => e.matches(ip));
+  const file = SshKnownHostsFile.parse(existing);
 
-  if (found && found.keyType === keyType && found.publicKey !== publicKey) {
-    return true; // host key changed → caller emits the big warning
-  }
-  if (!found) {
-    entries.push(new SshKnownHostEntry({ hostnames: [ip], keyType, publicKey }));
-    // mkdirp ~/.ssh if missing so the writeFile doesn't fail silently.
+  if (file.hostKeyChanged(ip, keyType, publicKey)) return true;
+  if (!file.find(ip, keyType)) {
+    const updated = file.add({ hostnames: [ip], keyType, publicKey });
     const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
     if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
       opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);
     }
-    opts.localVfs.writeFile(knownHostsPath, SshKnownHostEntry.serializeFile(entries), 0, 0, 0o022);
+    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
   }
   return false;
 }
