@@ -227,29 +227,17 @@ export abstract class LinuxMachine extends EndHost {
    */
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-    const cfg = parseSshdConfig(raw);
+    const config = SshdServerConfig.parse(raw);
 
-    // PermitRootLogin — anything other than `yes` blocks the root login
-    // path in our password-only simulator.
-    const rootDirective = /^\s*PermitRootLogin\s+(\S+)/im.exec(raw);
-    const policy = rootDirective?.[1]?.toLowerCase() ?? (cfg.permitRootLogin ? 'yes' : 'no');
+    const policy = config.permitRootLogin;
     if (user === 'root' && policy !== 'yes') {
       return { ok: false, reason: `PermitRootLogin ${policy}` };
     }
-
-    const matchesAny = (patterns: readonly string[]) =>
-      patterns.some(p => globMatch(p, user));
-
-    if (cfg.denyUsers.length > 0 && matchesAny(cfg.denyUsers)) {
-      return { ok: false, reason: 'DenyUsers match' };
-    }
-    if (cfg.allowUsers.length > 0 && !matchesAny(cfg.allowUsers)) {
-      return { ok: false, reason: 'not in AllowUsers' };
+    if (!config.isUserAllowed(user, [])) {
+      const denied = config.denyUsers.some(p => globMatch(p, user));
+      return { ok: false, reason: denied ? 'DenyUsers match' : 'not in AllowUsers' };
     }
 
-    // User must exist in /etc/passwd. Test fixtures are responsible for
-    // calling useradd before relying on a login — sshd does not create
-    // accounts on the fly.
     const userEntry = this.executor.userMgr.getUser(user) as
       | { locked?: boolean; expireDate?: number; password?: string }
       | undefined;
