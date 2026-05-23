@@ -634,6 +634,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
+    t.registerGreedy('ssh', 'SSH server configuration', (args) => {
+      const router = getRouter() as unknown as {
+        _configureSshAuthRetries?: (n: number) => void;
+      };
+      if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
+        router._configureSshAuthRetries?.(Number(args[2]));
+      }
+      return '';
+    });
     t.registerGreedy('local-user', 'Configure a local user', (args) => {
       const router = getRouter() as unknown as {
         _addLocalUser?: (n: string, p: number, s: string) => void;
@@ -658,6 +667,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurity(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
+    t.registerGreedy('ssh', 'SSH server configuration', (args) => {
+      const router = getRouter() as unknown as {
+        _configureSshAuthRetries?: (n: number) => void;
+      };
+      if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
+        router._configureSshAuthRetries?.(Number(args[2]));
+      }
+      return '';
+    });
 
     // System-mode config commands
     buildSystemCommands(t, this);

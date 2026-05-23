@@ -571,7 +571,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
       return '';
     });
-    this.configTrie.registerGreedy('login', 'Login configuration', () => '');
+    this.configTrie.registerGreedy('login', 'Login configuration', (args) => {
+      const dev = this.d() as unknown as {
+        _configureLoginBlock?: (s: number, a: number, w: number) => void;
+        _setLoginBlockConfigLine?: (line: string) => void;
+      };
+      if (args[0] === 'block-for' && /^\d+$/.test(args[1] ?? '')) {
+        const seconds = Number(args[1]);
+        let attempts = 0;
+        let within = 0;
+        for (let i = 2; i < args.length; i++) {
+          if (args[i] === 'attempts' && /^\d+$/.test(args[i + 1] ?? '')) attempts = Number(args[++i]);
+          else if (args[i] === 'within' && /^\d+$/.test(args[i + 1] ?? '')) within = Number(args[++i]);
+        }
+        if (typeof dev._configureLoginBlock === 'function') {
+          dev._configureLoginBlock(seconds, attempts, within);
+        }
+      }
+      return '';
+    });
     this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
 
     // `line {console|vty|aux} …` → shared config-line sub-mode.

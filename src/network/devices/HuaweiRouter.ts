@@ -73,6 +73,8 @@ export class HuaweiRouter extends Router {
         lines.push(`local-user ${u.name} password cipher ${u.secret}`);
         lines.push(`local-user ${u.name} privilege level ${u.privilege}`);
       }
+      const retries = this.getSshAuthenticationRetries();
+      if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
       // Append SSH-state directives so SSH-aware tests see them. Real
       // VRP emits "protocol inbound ssh" specifically when ssh is among
       // the permitted protocols (not just when 'all' is set), so the

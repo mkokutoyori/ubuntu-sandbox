@@ -69,10 +69,12 @@ export class CiscoRouter extends Router {
     const runMatch = /^show\s+run(?:ning-config)?(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
     if (runMatch) {
       const base = showRunningConfig(this);
-      const userLines = this._listLocalUsers().map(u =>
+      const extra: string[] = this._listLocalUsers().map(u =>
         `username ${u.name} privilege ${u.privilege} secret 5 ${u.secret}`,
       );
-      const full = userLines.length > 0 ? `${base}\n${userLines.join('\n')}` : base;
+      const blockCfg = this.getLoginBlockConfig();
+      if (blockCfg) extra.push(`login block-for ${blockCfg.blockSeconds} attempts ${blockCfg.attempts} within ${blockCfg.withinSeconds}`);
+      const full = extra.length > 0 ? `${base}\n${extra.join('\n')}` : base;
       if (!runMatch[1]) return { output: `${full}\n`, exitCode: 0 };
       const needle = runMatch[2].trim();
       const lines = full.split('\n');

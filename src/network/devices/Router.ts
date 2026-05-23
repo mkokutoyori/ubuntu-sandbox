@@ -65,6 +65,7 @@ import { RouterDynamicRouting } from './router/RouterDynamicRouting';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
+import { LoginBlocker } from './router/aaa/LoginBlocker';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
@@ -1366,6 +1367,33 @@ export abstract class Router extends Equipment {
    */
   private _credentialStore: NetworkOsCredentialStore | null = null;
   private _securityAuditLog: SecurityAuditLog | null = null;
+  private _loginBlocker: LoginBlocker | null = null;
+  private _loginBlockConfig: { attempts: number; withinSeconds: number; blockSeconds: number } | null = null;
+  private _sshAuthRetries: number | null = null;
+
+  getLoginBlocker(): LoginBlocker | null { return this._loginBlocker; }
+  getLoginBlockConfig(): { attempts: number; withinSeconds: number; blockSeconds: number } | null {
+    return this._loginBlockConfig;
+  }
+  getSshAuthenticationRetries(): number | null { return this._sshAuthRetries; }
+
+  _configureLoginBlock(blockSeconds: number, attempts: number, withinSeconds: number): void {
+    this._loginBlockConfig = { attempts, withinSeconds, blockSeconds };
+    if (this._loginBlocker) this._loginBlocker.detach();
+    this._loginBlocker = new LoginBlocker({
+      deviceId: this.id, bus: this.getBus(),
+      attempts, withinSeconds, blockSeconds,
+    });
+  }
+
+  _configureSshAuthRetries(retries: number): void {
+    this._sshAuthRetries = retries;
+    if (this._loginBlocker) this._loginBlocker.detach();
+    this._loginBlocker = new LoginBlocker({
+      deviceId: this.id, bus: this.getBus(),
+      attempts: retries, withinSeconds: 60, blockSeconds: 60,
+    });
+  }
 
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {

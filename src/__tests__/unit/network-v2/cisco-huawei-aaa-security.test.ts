@@ -387,3 +387,40 @@ describe('§H — LoginBlocker reacts to repeated login failures', () => {
     expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(true);
   });
 });
+
+describe('§I — login block-for / authentication-retries wired into Router', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('Cisco login block-for installs a LoginBlocker', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+    await lab.ciscoR1.executeCommand('end');
+    const b = lab.ciscoR1.getLoginBlocker();
+    expect(b).not.toBeNull();
+    expect(b?.remainingFailuresBeforeBlock('10.0.0.9')).toBe(2);
+  });
+
+  test('Cisco show running-config retains login block-for line', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+    await lab.ciscoR1.executeCommand('end');
+    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    expect(out?.output).toMatch(/login block-for 60 attempts 2 within 30/);
+  });
+
+  test('Huawei ssh server authentication-retries installs the blocker', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('ssh server authentication-retries 3');
+    await lab.hwR1.executeCommand('quit');
+    expect(lab.hwR1.getLoginBlocker()).not.toBeNull();
+  });
+
+  test('Huawei display current-configuration retains the retries setting', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('ssh server authentication-retries 3');
+    await lab.hwR1.executeCommand('quit');
+    const out = lab.hwR1.runSshCommandSync('', 'display current-configuration');
+    expect(out?.output).toMatch(/ssh server authentication-retries 3/);
+  });
+});
