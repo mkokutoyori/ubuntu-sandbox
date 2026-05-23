@@ -6,6 +6,7 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
 
 interface Lab {
   linux1: LinuxPC;
@@ -130,5 +131,55 @@ describe('§C — local users appear in running-config / current-configuration',
     const out = lab.hwR1.runSshCommandSync('', 'display current-configuration');
     expect(out?.output).toMatch(/local-user admin password/);
     expect(out?.output).toMatch(/local-user admin privilege level 15/);
+  });
+});
+
+describe('§D — NetworkOsAccount domain model carries real-equipment attributes', () => {
+  test('factory builds an account with sensible defaults', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' });
+    expect(acc.name).toBe('admin');
+    expect(acc.privilege).toBe(1);
+    expect(acc.locked).toBe(false);
+    expect(acc.serviceTypes).toEqual([]);
+    expect(acc.failedLoginCount).toBe(0);
+    expect(acc.lastLoginAt).toBeNull();
+    expect(acc.lastFailedLoginAt).toBeNull();
+    expect(acc.passwordHashAlgorithm).toBe('plain');
+    expect(acc.maxConcurrentSessions).toBe(0);
+    expect(acc.idleTimeoutSeconds).toBe(0);
+    expect(acc.publicKeys).toEqual([]);
+  });
+
+  test('withSecret stores password + hash algorithm', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' })
+      .withSecret('Admin@123', 'sha256');
+    expect(acc.secret).toBe('Admin@123');
+    expect(acc.passwordHashAlgorithm).toBe('sha256');
+  });
+
+  test('recordLoginSuccess clears failure count and stamps lastLoginAt', () => {
+    const t0 = 1_700_000_000_000;
+    const acc = NetworkOsAccount.create({ name: 'admin' })
+      .withFailedLogin(t0 - 1000)
+      .withFailedLogin(t0 - 500)
+      .withSuccessfulLogin(t0, '10.0.0.1', 'password');
+    expect(acc.failedLoginCount).toBe(0);
+    expect(acc.lastLoginAt).toBe(t0);
+    expect(acc.lastLoginFrom).toBe('10.0.0.1');
+    expect(acc.lastLoginMethod).toBe('password');
+  });
+
+  test('lock and unlock flip the locked flag', () => {
+    const acc = NetworkOsAccount.create({ name: 'admin' });
+    expect(acc.lock('admin-action').locked).toBe(true);
+    expect(acc.lock('admin-action').lockReason).toBe('admin-action');
+    expect(acc.unlock().locked).toBe(false);
+  });
+
+  test('passwordExpired honours expiryDate', () => {
+    const t = 1_700_000_000_000;
+    const acc = NetworkOsAccount.create({ name: 'admin', expireAt: t });
+    expect(acc.isPasswordExpired(t + 1)).toBe(true);
+    expect(acc.isPasswordExpired(t - 1)).toBe(false);
   });
 });
