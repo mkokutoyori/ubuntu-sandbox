@@ -257,7 +257,7 @@ export class WindowsPC extends EndHost {
         hostname: this.hostname,
         vendor: 'windows',
         bus: this.getBus(),
-        credentials: this._sshCredentialStore,
+        authority: this._sshCredentialStore,
         banner: this.getSshBanner(),
         motd: this.getSshMotd(),
         active: this.isSshActive(),

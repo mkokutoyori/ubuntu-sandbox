@@ -1,12 +1,14 @@
 import type { IEventBus } from '@/events/EventBus';
 import { NetworkOsAccount, publishAccountEvent } from './NetworkOsAccount';
+import type { IAccountAuthority, AccountSnapshot } from '../../../protocols/ssh/server/IAccountAuthority';
+import { fromNetworkOsAccount } from '../../../protocols/ssh/server/IAccountAuthority';
 
 export interface NetworkOsCredentialStoreOptions {
   deviceId: string;
   bus: IEventBus;
 }
 
-export class NetworkOsCredentialStore {
+export class NetworkOsCredentialStore implements IAccountAuthority {
   private readonly deviceId: string;
   private readonly bus: IEventBus;
   private readonly accounts: Map<string, NetworkOsAccount> = new Map();
@@ -19,6 +21,16 @@ export class NetworkOsCredentialStore {
   size(): number { return this.accounts.size; }
   has(name: string): boolean { return this.accounts.has(name); }
   get(name: string): NetworkOsAccount | undefined { return this.accounts.get(name); }
+
+  count(): number { return this.accounts.size; }
+  lookup(name: string): AccountSnapshot | undefined {
+    const account = this.accounts.get(name);
+    return account ? fromNetworkOsAccount(account) : undefined;
+  }
+  authenticate(name: string, password: string): boolean {
+    const account = this.accounts.get(name);
+    return account ? account.authenticate(password) : false;
+  }
 
   list(): readonly NetworkOsAccount[] {
     return Array.from(this.accounts.values()).sort((a, b) => a.name.localeCompare(b.name));

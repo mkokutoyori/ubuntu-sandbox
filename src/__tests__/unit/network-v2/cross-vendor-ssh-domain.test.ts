@@ -10,6 +10,7 @@ import {
   type SshHostKeyAlgorithm,
 } from '@/network/protocols/ssh/server/SshHostKeyset';
 import { CrossVendorSshHost } from '@/network/protocols/ssh/server/CrossVendorSshHost';
+import { SshConnectionRequest, SshConnectionDecision } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { EventBus } from '@/events/EventBus';
 import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
 import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
@@ -294,7 +295,7 @@ describe('§T — CrossVendorSshHost composes config + keys + credentials unifor
     const bus = new EventBus();
     const store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
     const host = new CrossVendorSshHost({
-      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus, credentials: store,
+      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus, authority: store,
     });
     expect(host.deviceId).toBe('r1');
     expect(host.hostname).toBe('r1');
@@ -303,14 +304,14 @@ describe('§T — CrossVendorSshHost composes config + keys + credentials unifor
     expect(host.keyset).toBeInstanceOf(SshHostKeyset);
     expect(host.banner).toBe('');
     expect(host.motd).toBe('');
-    expect(host.getCredentials()).toBe(store);
+    expect(host.getAuthority()).toBe(store);
   });
 
   test('isSshActive reflects the admin flag (true by default)', () => {
     const bus = new EventBus();
     const host = new CrossVendorSshHost({
       deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus,
-      credentials: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
+      authority: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
     });
     expect(host.isSshActive()).toBe(true);
     host.setSshActive(false);
@@ -321,7 +322,7 @@ describe('§T — CrossVendorSshHost composes config + keys + credentials unifor
     const bus = new EventBus();
     const host = new CrossVendorSshHost({
       deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus,
-      credentials: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
+      authority: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
     });
     host.setHostname('r1-renamed');
     host.setBanner('AUTH NOTICE');
@@ -335,13 +336,115 @@ describe('§T — CrossVendorSshHost composes config + keys + credentials unifor
     const bus = new EventBus();
     const host = new CrossVendorSshHost({
       deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus,
-      credentials: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
+      authority: new NetworkOsCredentialStore({ deviceId: 'r1', bus }),
     });
     host.applyConfig(host.config.withMaxAuthTries(2));
     expect(host.config.maxAuthTries).toBe(2);
     const ks = SshHostKeyset.defaults('rotated');
     host.applyKeyset(ks);
     expect(host.keyset).toBe(ks);
+  });
+});
+
+describe('§X — CrossVendorSshHost.evaluate runs the full faithful gate chain', () => {
+  let bus: EventBus;
+  let store: NetworkOsCredentialStore;
+  let host: CrossVendorSshHost;
+
+  beforeEach(() => {
+    bus = new EventBus();
+    store = new NetworkOsCredentialStore({ deviceId: 'r1', bus });
+    host = new CrossVendorSshHost({
+      deviceId: 'r1', hostname: 'r1', vendor: 'cisco', bus, authority: store,
+      now: () => 1_700_000_000_000,
+    });
+  });
+
+  const req = (init: { user: string; password?: string; publicKey?: string; root?: boolean; port?: number }): SshConnectionRequest =>
+    SshConnectionRequest.create({
+      requestedUser: init.user,
+      requestedHost: 'r1',
+      requestedPort: init.port ?? 22,
+      sourceIp: '10.0.0.1',
+      sourceHostname: 'pc1',
+      offeredAuthMethods: ['publickey', 'password'],
+      command: 'show version',
+      credentials: { password: init.password, publicKey: init.publicKey },
+      now: 1,
+    });
+
+  test('drops when sshd is inactive', () => {
+    host.setSshActive(false);
+    const d = host.evaluate(req({ user: 'admin', password: 'x' }));
+    expect(d.outcome).toBe('dropped');
+  });
+
+  test('drops when the requested port is not listening', () => {
+    const d = host.evaluate(req({ user: 'admin', password: 'x', port: 2222 }));
+    expect(d.outcome).toBe('dropped');
+  });
+
+  test('rejects an unknown user when authority is non-empty', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x'));
+    const d = host.evaluate(req({ user: 'ghost', password: 'x' }));
+    expect(d.outcome).toBe('rejected');
+    expect(d.reason).toMatch(/no such user/);
+  });
+
+  test('rejects a wrong password', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2'));
+    const d = host.evaluate(req({ user: 'admin', password: 'WRONG' }));
+    expect(d.outcome).toBe('rejected');
+  });
+
+  test('accepts the matching password and emits a session id', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('hunter2'));
+    const d = host.evaluate(req({ user: 'admin', password: 'hunter2' }));
+    expect(d.outcome).toBe('accepted');
+    expect(d.method).toBe('password');
+    expect(d.sessionId).toMatch(/^ssh-r1-/);
+  });
+
+  test('accepts a publickey that the account owns', () => {
+    const key = 'ssh-ed25519 AAAA alice@laptop';
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('').withPublicKey(key));
+    const d = host.evaluate(req({ user: 'admin', publicKey: key }));
+    expect(d.outcome).toBe('accepted');
+    expect(d.method).toBe('publickey');
+  });
+
+  test('refuses a locked / disabled / expired account', () => {
+    store.upsert(NetworkOsAccount.create({ name: 'a' }).withSecret('x').lock('admin'));
+    expect(host.evaluate(req({ user: 'a', password: 'x' })).outcome).toBe('rejected');
+    store.upsert(NetworkOsAccount.create({ name: 'b' }).withSecret('x').disable());
+    expect(host.evaluate(req({ user: 'b', password: 'x' })).outcome).toBe('rejected');
+    store.upsert(NetworkOsAccount.create({ name: 'c', expireAt: 1 }).withSecret('x'));
+    expect(host.evaluate(req({ user: 'c', password: 'x' })).outcome).toBe('rejected');
+  });
+
+  test('refuses when sshd Match block disables passwordAuthentication', () => {
+    host.applyConfig(host.config.withMatchBlock({
+      criteria: [{ keyword: 'User', value: 'admin' }],
+      overrides: { passwordAuthentication: false, pubkeyAuthentication: false },
+    }));
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x'));
+    expect(host.evaluate(req({ user: 'admin', password: 'x' })).outcome).toBe('rejected');
+  });
+
+  test('refuses root when PermitRootLogin no', () => {
+    host.applyConfig(host.config.withPermitRootLogin('no'));
+    store.upsert(NetworkOsAccount.create({ name: 'root' }).withSecret('x'));
+    expect(host.evaluate(req({ user: 'root', password: 'x' })).outcome).toBe('rejected');
+  });
+
+  test('huawei host honours service-type stelnet alias', () => {
+    const hwHost = new CrossVendorSshHost({
+      deviceId: 'hw', hostname: 'hw', vendor: 'huawei', bus, authority: store, now: () => 1,
+    });
+    store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x').withServiceTypes(['stelnet']));
+    expect(hwHost.evaluate(req({ user: 'admin', password: 'x' })).outcome).toBe('accepted');
+    store.upsert(NetworkOsAccount.create({ name: 'ftponly' }).withSecret('x').withServiceTypes(['ftp']));
+    expect(hwHost.evaluate(req({ user: 'ftponly', password: 'x' })).outcome).toBe('rejected');
   });
 });
 

@@ -1415,7 +1415,7 @@ export abstract class Router extends Equipment {
         hostname: this.hostname,
         vendor: this.sshVendorTag(),
         bus: this.getBus(),
-        credentials: this._credentialStore,
+        authority: this._credentialStore,
         active: this.sshServerEnabled,
         banner: this.sshBannerText,
       });

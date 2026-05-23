@@ -345,7 +345,7 @@ export abstract class LinuxMachine extends EndHost {
         hostname: this.hostname,
         vendor: 'linux',
         bus: this.getBus(),
-        credentials: this._sshCredentialStore,
+        authority: this._sshCredentialStore,
         config: SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? ''),
         active: this.isSshActive(),
       });
