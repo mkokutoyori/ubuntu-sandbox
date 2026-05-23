@@ -68,3 +68,42 @@ describe('§A — Cisco local-user database is queryable and persistent', () => 
     expect(lab.ciscoR1._getLocalUser('admin')).toBeUndefined();
   });
 });
+
+describe('§B — Huawei local-user database is queryable and persistent', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('local-user admin password creates the account', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('local-user admin password cipher Admin@123');
+    await lab.hwR1.executeCommand('local-user admin privilege level 15');
+    await lab.hwR1.executeCommand('local-user admin service-type ssh');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    const u = lab.hwR1._getLocalUser('admin');
+    expect(u?.privilege).toBe(15);
+    expect(u?.secret).toBe('Admin@123');
+  });
+
+  test('multiple local-users are stored', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('local-user admin password cipher a');
+    await lab.hwR1.executeCommand('local-user readonly password cipher b');
+    await lab.hwR1.executeCommand('local-user readonly privilege level 1');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    expect(lab.hwR1._listLocalUsers().map(u => u.name).sort()).toEqual(['admin', 'readonly']);
+  });
+
+  test('undo local-user admin removes the account', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('local-user admin password cipher a');
+    await lab.hwR1.executeCommand('undo local-user admin');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    expect(lab.hwR1._getLocalUser('admin')).toBeUndefined();
+  });
+});

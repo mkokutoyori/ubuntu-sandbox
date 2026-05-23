@@ -634,6 +634,27 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
+    t.registerGreedy('local-user', 'Configure a local user', (args) => {
+      const router = getRouter() as unknown as {
+        _addLocalUser?: (n: string, p: number, s: string) => void;
+        _getLocalUser?: (n: string) => { name: string; privilege: number; secret: string } | undefined;
+      };
+      if (!router._addLocalUser || !router._getLocalUser) return '';
+      const name = args[0];
+      if (!name || args.length < 2) return 'Error: Incomplete command.';
+      const existing = router._getLocalUser(name) ?? { name, privilege: 1, secret: '' };
+      const kw = args[1].toLowerCase();
+      if (kw === 'password') {
+        const idx = args.indexOf('cipher') >= 0 ? args.indexOf('cipher') : args.indexOf('irreversible-cipher');
+        existing.secret = args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret;
+      } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
+        existing.privilege = Number(args[3]) || existing.privilege;
+      } else if (kw === 'service-type') {
+        // service-type ssh / telnet / ... — stored for later, no-op for now.
+      }
+      router._addLocalUser(existing.name, existing.privilege, existing.secret);
+      return '';
+    });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurity(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());

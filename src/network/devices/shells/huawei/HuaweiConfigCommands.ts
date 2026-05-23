@@ -121,6 +121,11 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
+  if (args[0] === 'local-user' && args[1]) {
+    router._removeLocalUser(args[1]);
+    return '';
+  }
+
   if (args[0] === 'dhcp' && args[1] === 'enable') {
     router._getDHCPServerInternal().disable();
     return '';
