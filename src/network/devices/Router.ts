@@ -1352,6 +1352,8 @@ export abstract class Router extends Equipment {
 
   /** Whether ssh/stelnet is currently advertised on the VTY. */
   protected sshServerEnabled: boolean = true;
+  protected sshBannerText: string = '';
+  _setSshBanner(text: string): void { this.sshBannerText = text; }
   /** Inbound transport list (telnet/ssh/all/none) — mirrors VTY config. */
   protected vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
   /**
@@ -1405,7 +1407,7 @@ export abstract class Router extends Equipment {
     // Routers log via syslog / info-center elsewhere — the audit hook
     // is implemented per vendor when those subscribers wire in.
   }
-  getSshBanner(): string { return ''; }
+  getSshBanner(): string { return this.sshBannerText; }
   getSshMotd(): string { return ''; }
   getSshPolicy(): {
     readonly active: boolean;

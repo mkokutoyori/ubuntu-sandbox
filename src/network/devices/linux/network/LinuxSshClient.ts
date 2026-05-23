@@ -679,7 +679,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const lines: string[] = [];
   if (issueNet.trim()) lines.push(issueNet.replace(/\n*$/, ''));
   lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
-  lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceHostname}`);
+  lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
   return { output: forwardingError + lines.join('\n'), exitCode: 0, connection };

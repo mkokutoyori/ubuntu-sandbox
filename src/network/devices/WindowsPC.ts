@@ -302,7 +302,16 @@ export class WindowsPC extends EndHost {
   getSshHostname(): string { return this.hostname; }
 
   /** Pre-auth banner. Windows ships an empty Banner by default. */
-  getSshBanner(): string { return ''; }
+  getSshBanner(): string {
+    const psKey = 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';
+    try {
+      const values = this.registry.getItemPropertyValues(psKey);
+      const banner = values?.['LegalNoticeText'];
+      return typeof banner === 'string' ? banner : '';
+    } catch {
+      return '';
+    }
+  }
 
   /** Post-auth MOTD; Windows shows the cmd.exe version line. */
   getSshMotd(): string { return this.sshBanner(); }

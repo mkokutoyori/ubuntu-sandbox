@@ -535,6 +535,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
+      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
+      if (typeof router._setSshBanner === 'function') {
+        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
+        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
+      }
+      return '';
+    });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
 
@@ -618,6 +626,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
+      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
+      if (typeof router._setSshBanner === 'function') {
+        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
+        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
+      }
+      return '';
+    });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurity(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());

@@ -517,7 +517,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
-    this.configTrie.registerGreedy('banner', 'Set a banner', () => '');
+    this.configTrie.registerGreedy('banner', 'Set a banner', (args) => {
+      const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
+      if (typeof dev._setSshBanner === 'function' && args[0]?.toLowerCase() === 'motd') {
+        const rest = args.slice(1).join(' ').replace(/^[#^]\s*/, '').replace(/\s*[#^]\s*$/, '');
+        dev._setSshBanner(rest);
+      }
+      return '';
+    });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
       this.logging.apply(args, false);
       return '';
