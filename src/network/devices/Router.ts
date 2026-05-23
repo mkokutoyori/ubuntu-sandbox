@@ -67,6 +67,7 @@ import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
+import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/server/CrossVendorSshHost';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
@@ -1358,7 +1359,10 @@ export abstract class Router extends Equipment {
   /** Whether ssh/stelnet is currently advertised on the VTY. */
   protected sshServerEnabled: boolean = true;
   protected sshBannerText: string = '';
-  _setSshBanner(text: string): void { this.sshBannerText = text; }
+  _setSshBanner(text: string): void {
+    this.sshBannerText = text;
+    if (this._sshHost) this._sshHost.setBanner(text);
+  }
   /** Inbound transport list (telnet/ssh/all/none) — mirrors VTY config. */
   protected vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
   /**
@@ -1397,12 +1401,24 @@ export abstract class Router extends Equipment {
   }
 
   private _sshSessionRegistry: SshSessionRegistry | null = null;
+  private _sshHost: CrossVendorSshHost | null = null;
+
+  protected sshVendorTag(): CrossVendorSshVendor { return 'generic'; }
 
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
       this._sshSessionRegistry = new SshSessionRegistry({ deviceId: this.id, bus: this.getBus() });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._sshHost = new CrossVendorSshHost({
+        deviceId: this.id,
+        hostname: this.hostname,
+        vendor: this.sshVendorTag(),
+        bus: this.getBus(),
+        credentials: this._credentialStore,
+        active: this.sshServerEnabled,
+        banner: this.sshBannerText,
+      });
     }
     return this._credentialStore;
   }
@@ -1415,6 +1431,11 @@ export abstract class Router extends Equipment {
   getSshSessionRegistry(): SshSessionRegistry {
     if (!this._sshSessionRegistry) this.getCredentialStore();
     return this._sshSessionRegistry!;
+  }
+
+  getSshHost(): CrossVendorSshHost {
+    if (!this._sshHost) this.getCredentialStore();
+    return this._sshHost!;
   }
 
   _addLocalUser(name: string, privilege: number, secret: string): void {
@@ -1452,12 +1473,14 @@ export abstract class Router extends Equipment {
     return this.getCredentialStore().list().map(a => ({ name: a.name, privilege: a.privilege, secret: a.secret }));
   }
 
-  /** @internal — flipped by per-vendor shell when transport input changes. */
-  _setSshServerEnabled(enabled: boolean): void { this.sshServerEnabled = enabled; }
-  /** @internal — flipped by per-vendor shell on transport input. */
+  _setSshServerEnabled(enabled: boolean): void {
+    this.sshServerEnabled = enabled;
+    if (this._sshHost) this._sshHost.setSshActive(enabled);
+  }
   _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
     this.vtyTransportInput = t;
     this.sshServerEnabled = (t === 'all' || t === 'ssh');
+    if (this._sshHost) this._sshHost.setSshActive(this.sshServerEnabled);
   }
 
   /** SshExecTarget. */

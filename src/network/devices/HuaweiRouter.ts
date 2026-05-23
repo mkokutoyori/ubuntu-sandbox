@@ -26,6 +26,8 @@ export class HuaweiRouter extends Router {
     return `GE0/0/${index}`;
   }
 
+  protected sshVendorTag(): 'huawei' { return 'huawei'; }
+
   protected createShell(): IRouterShell {
     return new HuaweiVRPShell();
   }

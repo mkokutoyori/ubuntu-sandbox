@@ -46,6 +46,9 @@ import type {
   IpXfrmContext,
 } from './linux/LinuxIpCommand';
 import { DnsService, findDnsServerByIP } from './linux/LinuxDnsService';
+import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
+import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
+import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
@@ -328,6 +331,31 @@ export abstract class LinuxMachine extends EndHost {
   }
 
   isSshActive(): boolean { return this.isServiceActive('ssh'); }
+
+  private _sshHost: CrossVendorSshHost | null = null;
+  private _sshCredentialStore: NetworkOsCredentialStore | null = null;
+
+  getSshHost(): CrossVendorSshHost {
+    if (!this._sshCredentialStore) {
+      this._sshCredentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+    }
+    if (!this._sshHost) {
+      this._sshHost = new CrossVendorSshHost({
+        deviceId: this.id,
+        hostname: this.hostname,
+        vendor: 'linux',
+        bus: this.getBus(),
+        credentials: this._sshCredentialStore,
+        config: SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? ''),
+        active: this.isSshActive(),
+      });
+    } else {
+      this._sshHost.applyConfig(SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? ''));
+      this._sshHost.setSshActive(this.isSshActive());
+      this._sshHost.setHostname(this.hostname);
+    }
+    return this._sshHost;
+  }
 
   sshBanner(): string {
     const issue = this.executor.vfs.readFile('/etc/issue.net') ?? '';

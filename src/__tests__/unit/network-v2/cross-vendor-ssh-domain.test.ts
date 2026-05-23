@@ -17,6 +17,10 @@ import { CrossVendorSshHost } from '@/network/protocols/ssh/server/CrossVendorSs
 import { EventBus } from '@/events/EventBus';
 import { NetworkOsAccount } from '@/network/devices/router/aaa/NetworkOsAccount';
 import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOsCredentialStore';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 describe('§Q — SshdServerConfig immutable directive value object', () => {
   test('defaults match OpenSSH 9.x out-of-the-box', () => {
@@ -462,6 +466,67 @@ describe('§T — CrossVendorSshHost composes config + keys + credentials unifor
     store.upsert(NetworkOsAccount.create({ name: 'admin' }).withSecret('x'));
     const d = host.decide(makeRequest({ user: 'admin', password: 'x' }));
     expect(d.outcome).toBe('rejected');
+  });
+});
+
+describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () => {
+  beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
+
+  test('CiscoRouter.getSshHost is a CrossVendorSshHost tagged cisco', () => {
+    const r = new CiscoRouter('r1', 0, 0);
+    const host = r.getSshHost();
+    expect(host).toBeInstanceOf(CrossVendorSshHost);
+    expect(host.vendor).toBe('cisco');
+    expect(host.deviceId).toBe(r.getId());
+    expect(host.hostname).toBe('r1');
+  });
+
+  test('HuaweiRouter.getSshHost is a CrossVendorSshHost tagged huawei', () => {
+    const r = new HuaweiRouter('hwR1', 0, 0);
+    const host = r.getSshHost();
+    expect(host.vendor).toBe('huawei');
+  });
+
+  test('LinuxPC.getSshHost is a CrossVendorSshHost tagged linux', () => {
+    const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    const host = pc.getSshHost();
+    expect(host.vendor).toBe('linux');
+    expect(host.deviceId).toBe(pc.getId());
+  });
+
+  test('Cisco transport input none flips host.isSshActive false', async () => {
+    const r = new CiscoRouter('r1', 0, 0);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('line vty 0 4');
+    await r.executeCommand('transport input none');
+    await r.executeCommand('end');
+    expect(r.getSshHost().isSshActive()).toBe(false);
+  });
+
+  test('Cisco banner motd reaches host.banner', async () => {
+    const r = new CiscoRouter('r1', 0, 0);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('banner motd # AUTH NOTICE #');
+    await r.executeCommand('end');
+    expect(r.getSshHost().banner).toBe('AUTH NOTICE');
+  });
+
+  test('Huawei header login information reaches host.banner', async () => {
+    const r = new HuaweiRouter('hwR1', 0, 0);
+    await r.executeCommand('system-view');
+    await r.executeCommand('header login information "VRP NOTICE"');
+    await r.executeCommand('quit');
+    expect(r.getSshHost().banner).toBe('VRP NOTICE');
+  });
+
+  test('LinuxMachine host config follows /etc/ssh/sshd_config edits', async () => {
+    const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
+    await pc.executeCommand('echo "PermitRootLogin no\\nMaxAuthTries 2\\n" > /etc/ssh/sshd_config');
+    const host = pc.getSshHost();
+    expect(host.config.permitRootLogin).toBe('no');
+    expect(host.config.maxAuthTries).toBe(2);
   });
 });
 

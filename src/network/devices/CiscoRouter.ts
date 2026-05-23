@@ -26,6 +26,8 @@ export class CiscoRouter extends Router {
     return `GigabitEthernet0/${index}`;
   }
 
+  protected sshVendorTag(): 'cisco' { return 'cisco'; }
+
   protected createShell(): IRouterShell {
     return new CiscoIOSShell();
   }
