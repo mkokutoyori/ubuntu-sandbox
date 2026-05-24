@@ -127,6 +127,7 @@ async function buildMixedLan(): Promise<{ linux1: LinuxPC; ciscoR1: CiscoRouter;
   await ciscoR1.executeCommand('interface GigabitEthernet0/0');
   await ciscoR1.executeCommand('ip address 10.0.0.6 255.255.255.0');
   await ciscoR1.executeCommand('no shutdown');
+  await ciscoR1.executeCommand('exit');
   await ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
   await ciscoR1.executeCommand('enable secret Admin@123');
   await ciscoR1.executeCommand('ip domain-name lab.local');
@@ -162,7 +163,7 @@ async function buildMixedLan(): Promise<{ linux1: LinuxPC; ciscoR1: CiscoRouter;
   return { linux1, ciscoR1, hwR1 };
 }
 
-describe.todo('Cross-equipment interactive SSH (bug #3 — needs router/Windows SSH TCP server)', () => {
+describe('Cross-equipment interactive SSH (bug #3)', () => {
   it('opens a Cisco IOS prompt when SSH-ing without a command from a Linux PC', async () => {
     const { linux1 } = await buildMixedLan();
     const session = new LinuxTerminalSession('term-cisco-ssh', linux1);
@@ -175,15 +176,8 @@ describe.todo('Cross-equipment interactive SSH (bug #3 — needs router/Windows 
       await flush(20);
     }
 
-    if (!session.isInsideSshSession) {
-      const text = (session as unknown as { lines: { text?: string; segments?: { text: string }[] }[] }).lines
-        .map(l => l.text ?? (l.segments ?? []).map(s => s.text).join(''))
-        .join('\n');
-      throw new Error('Not in SSH session. Output:\n' + text);
-    }
     expect(session.isInsideSshSession).toBe(true);
-    const prompt = session.getPromptParts();
-    expect(prompt.user + prompt.path + prompt.promptChar).toMatch(/ciscoR1/);
+    expect(session.getPrompt()).toBe('ciscoR1#');
   });
 
   it('opens a Huawei VRP prompt when SSH-ing without a command from a Linux PC', async () => {
@@ -198,8 +192,6 @@ describe.todo('Cross-equipment interactive SSH (bug #3 — needs router/Windows 
     }
 
     expect(session.isInsideSshSession).toBe(true);
-    const prompt = session.getPromptParts();
-    const joined = prompt.user + prompt.path + prompt.promptChar;
-    expect(joined).toMatch(/hwR1|<hwR1>/);
+    expect(session.getPrompt()).toBe('<hwR1>');
   });
 });

@@ -23,6 +23,12 @@ import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
+import {
+  RemoteDeviceSubShell,
+  CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
+  type RemotePromptStrategy,
+} from '@/terminal/subshells/RemoteDeviceSubShell';
+import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
@@ -185,6 +191,7 @@ export class LinuxTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return LINUX_THEME; }
 
   getPrompt(): string {
+    if (this.activeSubShell) return this.activeSubShell.getPrompt();
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
     const homeDir = user === 'root' ? '/root' : `/home/${user}`;
@@ -864,7 +871,15 @@ export class LinuxTerminalSession extends TerminalSession {
 
   /** Post-flow hook: sync device state and handle special actions (e.g. enter sqlplus). */
   protected override onFlowComplete(ctx: FlowContext): void {
-    // Check for special post-flow actions
+    const xvendor = ctx.metadata.get('xvendor_push') as string | undefined;
+    if (xvendor && this.crossVendorPushTarget) {
+      const { host, user } = JSON.parse(xvendor) as { host: string; user: string };
+      const target = this.crossVendorPushTarget;
+      this.crossVendorPushTarget = null;
+      this.pushRemoteDeviceWithStrategy(target.device, user, host, target.strategy);
+      return;
+    }
+    this.crossVendorPushTarget = null;
     const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;
     if (rmanArgs) {
       this.enterRman(JSON.parse(rmanArgs));
@@ -1151,7 +1166,87 @@ export class LinuxTerminalSession extends TerminalSession {
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
     // silently without ever asking for a password). `merged` carries
     // `hashKnownHosts` from CLI `-o` / ~/.ssh/config (analysis doc §1.6).
+    if (!merged.command) {
+      const handled = await this.tryEnterCrossVendorSsh(merged);
+      if (handled) return;
+    }
     await this.connectAndEnterSsh(merged);
+  }
+
+  /**
+   * Cross-vendor SSH push (BRD SSH-04 extended): when the target IP belongs
+   * to a non-Linux device that exposes a {@link CrossVendorSshHost}, bypass
+   * the TCP/SshSession machinery (no TCP listener on routers / Windows in
+   * the simulator) and validate the password directly against the host's
+   * auth gate. On accept, push a {@link RemoteDeviceSubShell} configured
+   * with the vendor's prompt strategy so the user genuinely lands in
+   * `Router#`, `<HW>` or `C:\Users\…>`.
+   */
+  private async tryEnterCrossVendorSsh(
+    meta: { userAtHost: string; port: number },
+  ): Promise<boolean> {
+    const user = meta.userAtHost.includes('@')
+      ? meta.userAtHost.split('@')[0]
+      : this.currentUser;
+    const host = meta.userAtHost.includes('@')
+      ? meta.userAtHost.split('@')[1]
+      : meta.userAtHost;
+    const target = findEquipmentByIp(host);
+    if (!target || target instanceof LinuxMachine) return false;
+    const sshHost = (target as unknown as { getSshHost?: () => unknown }).getSshHost?.() as
+      | { evaluate: (req: SshConnectionRequest) => { outcome: string } }
+      | undefined;
+    if (!sshHost) return false;
+
+    const strategy = pickVendorPromptStrategy(target);
+    if (!strategy) return false;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: `${user}@${host}'s password:`,
+        storeAs: 'ssh_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          const password = ctx.values.get('ssh_password') ?? '';
+          const request = SshConnectionRequest.create({
+            requestedUser: user,
+            requestedHost: host,
+            requestedPort: meta.port,
+            sourceIp: this.lookupSourceIp(),
+            sourceHostname: this.device.getHostname() || '',
+            command: null,
+            offeredAuthMethods: ['password'],
+            credentials: { password },
+          });
+          const decision = sshHost.evaluate(request);
+          if (decision.outcome !== 'accepted') {
+            this.addLine(`${user}@${host}: Permission denied (password).`, 'error');
+            return;
+          }
+          ctx.metadata.set('xvendor_push', JSON.stringify({ host, user }));
+        },
+      },
+    ];
+
+    this.crossVendorPushTarget = { device: target, strategy };
+    this.startFlowFromSteps(steps, `ssh ${user}@${host}`);
+    return true;
+  }
+
+  private crossVendorPushTarget: { device: Equipment; strategy: RemotePromptStrategy } | null = null;
+
+  private lookupSourceIp(): string {
+    const portsObj = (this.device as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
+    if (portsObj) {
+      for (const p of portsObj.values()) {
+        const ip = p.getIPAddress?.();
+        if (ip) return ip.toString();
+      }
+    }
+    return '0.0.0.0';
   }
 
   private async connectAndEnterSsh(
@@ -2027,6 +2122,30 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  pushRemoteDeviceWithStrategy(
+    remote: Equipment,
+    user: string,
+    label: string,
+    strategy: RemotePromptStrategy,
+    onPop: () => void = () => undefined,
+  ): void {
+    const pausedShell = this.shell;
+    this.sshStack.push({
+      device: this.device,
+      user: this.currentUser,
+      path: this.currentPath,
+      pausedShell,
+      onPop: () => { try { onPop(); } catch { /* swallow */ } },
+      label,
+    });
+    this.device = remote;
+    this.shell = null;
+    this.currentUser = user;
+    this.currentPath = `~`;
+    this.activeSubShell = new RemoteDeviceSubShell(remote, user, label, strategy);
+    this.notify();
+  }
+
   /**
    * Restore the previous device. Prints "logout / Connection to <host>
    * closed." and runs the saved `onPop` (e.g. SshSession.disconnect).
@@ -2245,6 +2364,14 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
+function pickVendorPromptStrategy(eq: Equipment): RemotePromptStrategy | null {
+  const name = (eq.constructor as { name: string }).name;
+  if (name === 'CiscoRouter' || name === 'CiscoSwitch') return CiscoPromptStrategy;
+  if (name === 'HuaweiRouter' || name === 'HuaweiSwitch') return HuaweiPromptStrategy;
+  if (name === 'WindowsPC') return WindowsPromptStrategy;
+  return null;
+}
+
 function findEquipmentByIp(targetIp: string): Equipment | null {
   const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
     .getAllEquipment();

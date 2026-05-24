@@ -9,6 +9,7 @@
 import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServiceManager';
+import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { runPs } from './ps/PsCommand';
 import { memPercent, kbToMiB } from './system/ProcFormat';
 import { LinuxService } from './service/LinuxService';
@@ -22,6 +23,8 @@ export interface ProcessCmdContext {
   tty: string;
   /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
   shellPid?: number;
+  /** Optional per-shell job table — needed for `kill %N` jobspec resolution. */
+  jobs?: LinuxJobTable;
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────
@@ -165,21 +168,32 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
   if (TERMINATING_SIGS.has(signal)) {
     for (const pidStr of pidArgs) {
       const n = Number.parseInt(pidStr, 10);
-      // Heuristic: pids in this simulator are < 100; the bash interpreter
-      // exposes $$ as 1 or the shell's own pid. Treat any "small" pid as
-      // a self-kill so the test pattern surfaces 128+signum.
-      if (Number.isFinite(n) && n > 0 && n < 100000) {
-        return { output: '', exitCode: 128 + sigNum };
-      }
+      if (!Number.isFinite(n) || n <= 0 || n >= 100000) continue;
+      const tracked = ctx.pm.get(n);
+      if (tracked && tracked.pid === 1) continue;
+      if (tracked && tracked.pid !== (ctx.shellPid ?? -1)) continue;
+      return { output: '', exitCode: 128 + sigNum };
     }
   }
 
   const errors: string[] = [];
   let exitCode = 0;
-  for (const pidStr of pidArgs) {
-    const pid = parseInt(pidStr, 10);
+  for (const pidArg of pidArgs) {
+    if (pidArg.startsWith('%')) {
+      const job = ctx.jobs?.resolve(pidArg);
+      if (!job) {
+        errors.push(`bash: kill: ${pidArg}: no such job`);
+        exitCode = 1;
+        continue;
+      }
+      ctx.pm.kill(job.pid, signal);
+      const TERMINATES = new Set<Signal>(['SIGTERM','SIGINT','SIGQUIT','SIGKILL','SIGHUP']);
+      if (TERMINATES.has(signal)) ctx.jobs?.remove(job.id);
+      continue;
+    }
+    const pid = parseInt(pidArg, 10);
     if (isNaN(pid)) {
-      errors.push(`kill: ${pidStr}: arguments must be process or job IDs`);
+      errors.push(`kill: ${pidArg}: arguments must be process or job IDs`);
       exitCode = 1;
       continue;
     }

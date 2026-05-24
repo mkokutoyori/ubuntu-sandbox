@@ -902,6 +902,7 @@ export class LinuxCommandExecutor {
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',
       shellPid: this.shellPid,
+      jobs: this.jobTable,
     };
   }
 

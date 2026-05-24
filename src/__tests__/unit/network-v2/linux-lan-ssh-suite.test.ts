@@ -403,7 +403,7 @@ describe('§5 — SSH refused when remote sshd service is stopped', () => {
       on: l => l.pc2,
       cmd: 'systemctl is-active ssh',
       contains: ['inactive'],
-      excludes: ['active'],
+      excludes: [/(^|\W)active($|\W)/],
     },
   ];
 
@@ -1208,6 +1208,7 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
     {
       name: 'scp with -P 2222 uses the alternate port',
       setup: async (l) => {
+        await l.pc1.executeCommand('printf hello > /tmp/x');
         await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
         await l.pc2.executeCommand('systemctl reload ssh');
       },
