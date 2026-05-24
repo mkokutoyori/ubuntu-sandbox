@@ -439,7 +439,7 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
-  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[]): { output: string; exitCode: number } {
+  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string): { output: string; exitCode: number } {
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
@@ -465,6 +465,88 @@ export class LinuxCommandExecutor {
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
       return { output: prefix + probe.output, exitCode: probe.exitCode };
     }
+    // Actual transfer for scp: pick the remote spec and the local path,
+    // detect direction by which side is `user@host:path`, then copy via
+    // the local VFS ↔ remote machine's VFS.
+    if (cmd === 'scp' && positional.length >= 2) {
+      const preserve = args.includes('-p');
+      const src = positional[0];
+      const dst = positional[positional.length - 1];
+      const remoteSpec = /[@:]/.test(src) ? src : /[@:]/.test(dst) ? dst : null;
+      if (remoteSpec) {
+        const m = /^(?:([\w.-]+)@)?([\w.-]+):(.+)$/.exec(remoteSpec);
+        if (m) {
+          const remoteHost = m[2];
+          const remotePath = m[3].replace(/^\/(?=[A-Za-z]:)/, '');
+          const found = findHostByAddress(remoteHost, { readFile: (p) => this.vfs.readFile(p) });
+          if (found) {
+            const remoteVfsAny = (found.device as unknown as {
+              executor?: { vfs: { readFile: (p: string) => string | null; writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void; resolveInode?: (p: string) => { permissions: number } | null; chmod?: (p: string, m: number) => boolean } };
+              fs?: { readFile: (p: string) => { ok: boolean; content?: string }; createFile: (p: string, c: string) => void };
+            }).executor?.vfs ?? (found.device as unknown as { fs?: { readFile: (p: string) => { ok: boolean; content?: string }; createFile: (p: string, c: string) => void } }).fs;
+            if (remoteVfsAny) {
+              const pushing = remoteSpec === dst;
+              if (pushing) {
+                const content = this.vfs.readFile(src) ?? '';
+                if ('writeFile' in remoteVfsAny) {
+                  remoteVfsAny.writeFile(remotePath, content, 0, 0, 0o022);
+                  if (preserve && 'resolveInode' in remoteVfsAny) {
+                    const localInode = this.vfs.resolveInode(src);
+                    if (localInode && remoteVfsAny.chmod) {
+                      remoteVfsAny.chmod(remotePath, localInode.permissions);
+                    }
+                  }
+                } else if ('createFile' in remoteVfsAny) {
+                  remoteVfsAny.createFile(remotePath, content);
+                }
+              } else {
+                let content = '';
+                if ('readFile' in remoteVfsAny) {
+                  const r = remoteVfsAny.readFile(remotePath);
+                  content = typeof r === 'string' ? (r ?? '')
+                    : (r && typeof r === 'object' && 'content' in r) ? (r.content ?? '') : '';
+                }
+                this.vfs.writeFile(dst, content, this.userMgr.currentUid, this.userMgr.currentGid, 0o022);
+              }
+            }
+          }
+        }
+      }
+      return {
+        output: `${positional[0]}                                     100% 1024     1.0KB/s   00:00`,
+        exitCode: 0,
+      };
+    }
+
+    // sftp with stdin heredoc: parse `put` / `get` lines.
+    if (cmd === 'sftp') {
+      const stdin = stdinArg ?? '';
+      const m = /^(?:([\w.-]+)@)?([\w.-]+)(?::(.+))?$/.exec(dest);
+      const remoteHost = m?.[2] ?? hostPart;
+      const found = findHostByAddress(remoteHost, { readFile: (p) => this.vfs.readFile(p) });
+      const remoteVfs = (found?.device as unknown as { executor?: { vfs: VirtualFileSystem } }).executor?.vfs;
+      if (remoteVfs) {
+        for (const rawLine of stdin.split('\n')) {
+          const line = rawLine.trim();
+          if (!line || /^(bye|quit|exit)$/i.test(line)) continue;
+          const putMatch = /^put\s+(\S+)\s*(\S+)?/i.exec(line);
+          const getMatch = /^get\s+(\S+)\s*(\S+)?/i.exec(line);
+          if (putMatch) {
+            const local = putMatch[1];
+            const remote = putMatch[2] ?? local;
+            const content = this.vfs.readFile(local) ?? '';
+            remoteVfs.writeFile(remote, content, 0, 0, 0o022);
+          } else if (getMatch) {
+            const remote = getMatch[1];
+            const local = getMatch[2] ?? remote;
+            const content = remoteVfs.readFile(remote) ?? '';
+            this.vfs.writeFile(local, content, this.userMgr.currentUid, this.userMgr.currentGid, 0o022);
+          }
+        }
+      }
+      return { output: `Connected to ${hostPart}.\nsftp> `, exitCode: 0 };
+    }
+
     // Success: simulate a typical line of output per tool.
     const summary = cmd === 'sftp'
       ? `Connected to ${hostPart}.\nsftp> `
@@ -1944,7 +2026,7 @@ export class LinuxCommandExecutor {
       case 'scp':
       case 'sftp':
       case 'rsync': {
-        return this.runSshTransport(cmd, args);
+        return this.runSshTransport(cmd, args, stdin);
       }
       case 'ssh': {
         const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
