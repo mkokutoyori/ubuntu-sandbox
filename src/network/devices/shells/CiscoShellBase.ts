@@ -14,6 +14,7 @@
 
 import { CommandTrie } from './CommandTrie';
 import { runSshClient } from '../linux/network/LinuxSshClient';
+import { findHostByAddress } from '../linux/network/HostLookup';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -314,6 +315,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show line', 'Display TTY lines', () =>
       showLine(this.cs()));
     trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
+    trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
+      const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
+      return dev._getSshKnownHosts?.().renderCisco() ?? '';
+    });
     trie.registerGreedy('show ssh', 'Display SSH sessions', () =>
       showSshSessions());
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts());
@@ -484,16 +489,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       rest.push(a);
     }
     if (rest.length === 0) return '% Incomplete command.';
-    const host = rest[0];
+    let host = rest[0];
     const cmd = rest.slice(1).join(' ');
-    const router = this.d();
-    const sourceIp = router._getPortsInternal && (() => {
-      for (const [, p] of router._getPortsInternal()) {
-        const ip = p.getIPAddress();
-        if (ip && p.getIsUp()) return ip.toString();
-      }
-      return null;
-    })();
+    const router = this.d() as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostnameInternal: () => string;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    };
+    // Resolve through the static `ip host` table before any DNS fallback.
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
     if (!sourceIp) return '% No usable interface IP for outbound SSH';
     const clientArgs: string[] = [];
     if (port) clientArgs.push('-p', port);
@@ -510,7 +520,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         writeFile: () => undefined,
       },
     });
+    // TOFU: record the remote host key in this router's local
+    // known-hosts table so `show ip ssh known-hosts` reflects it.
+    if (result.exitCode === 0) {
+      const dev = this.d() as unknown as {
+        _getSshKnownHosts?: () => { add: (e: { host: string; keyType: string; publicKey: string }) => void };
+      };
+      const remoteHk = this.lookupRemoteSshHostKey(host);
+      if (remoteHk) {
+        dev._getSshKnownHosts?.().add({ host, ...remoteHk });
+      }
+    }
     return result.output;
+  }
+
+  /** Read the remote machine's host key via the topology registry. */
+  private lookupRemoteSshHostKey(host: string): { keyType: string; publicKey: string } | null {
+    const found = findHostByAddress(host) as { device?: { getSshHostKey?: () => { type: string; publicKey: string } } } | null;
+    const hk = found?.device?.getSshHostKey?.();
+    return hk ? { keyType: hk.type, publicKey: hk.publicKey } : null;
   }
 
   private registerCommonConfigCommands(): void {
@@ -574,6 +602,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
+    // `ip host <name> <ip>` — static hostname → IP mapping consulted by
+    // outbound ssh / stelnet / ping / traceroute before any DNS fallback.
+    this.configTrie.registerGreedy('ip host', 'Configure a static host entry', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      const dev = this.d() as unknown as { _getHostsTable?: () => { upsert: (n: string, ip: string) => void } };
+      dev._getHostsTable?.().upsert(args[0], args[1]);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip host', 'Remove a static host entry', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const dev = this.d() as unknown as { _getHostsTable?: () => { remove: (n: string) => boolean } };
+      dev._getHostsTable?.().remove(args[0]);
+      return '';
+    });
     this.configTrie.registerGreedy('banner', 'Set a banner', (args) => {
       const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof dev._setSshBanner === 'function' && args[0]?.toLowerCase() === 'motd') {

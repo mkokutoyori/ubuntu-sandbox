@@ -37,6 +37,8 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { RouterHostsTable } from './router/dns/RouterHostsTable';
+import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -1374,6 +1376,12 @@ export abstract class Router extends Equipment {
    */
   readonly vtyLineConfig = new VtyLineConfigStore();
   _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
+  /** Static hostname → IP table (Cisco/Huawei `ip host` directives). */
+  readonly hostsTable = new RouterHostsTable();
+  _getHostsTable(): RouterHostsTable { return this.hostsTable; }
+  /** Outbound-SSH known-hosts store (Cisco `show ip ssh known-hosts`). */
+  readonly sshKnownHosts = new RouterSshKnownHosts();
+  _getSshKnownHosts(): RouterSshKnownHosts { return this.sshKnownHosts; }
   /**
    * Local-user database (vendor-agnostic). Populated by the per-vendor
    * shell when `username … secret …` (Cisco) or `local-user … password

@@ -713,8 +713,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
-  // This is OpenSSH's "exec mode" — no banner, no Last login.
-  const remoteCmd = joinRemoteCommand(positional.slice(1));
+  // This is OpenSSH's "exec mode" — no banner, no Last login. A bare
+  // `exit` / `logout` is treated as if no command was given (the user
+  // wants a banner-only interactive session that closes immediately).
+  let remoteCmd = joinRemoteCommand(positional.slice(1));
+  if (/^(exit|logout)\s*$/i.test(remoteCmd)) remoteCmd = '';
   if (remoteCmd) {
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     // `-A` agent forwarding: expose the local agent's identities to the

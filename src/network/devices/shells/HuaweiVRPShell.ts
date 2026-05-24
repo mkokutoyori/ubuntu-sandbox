@@ -384,8 +384,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const router = this.routerRef as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
       _getHostnameInternal: () => string;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
     };
     if (!router) return 'Error: device not bound';
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
     let sourceIp: string | null = null;
     for (const [, p] of router._getPortsInternal()) {
       const ip = p.getIPAddress();
@@ -769,6 +772,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
         router._configureSshAuthRetries?.(Number(args[2]));
       }
+      return '';
+    });
+    // `ip host <name> <ip>` — VRP static hostname → IP table consulted
+    // before any DNS fallback by stelnet / ping / traceroute.
+    t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
+      if (args.length < 2) return 'Error: Incomplete command.';
+      getRouter()._getHostsTable?.().upsert(args[0], args[1]);
+      return '';
+    });
+    t.registerGreedy('undo ip host', 'Remove a static host entry', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      getRouter()._getHostsTable?.().remove(args[0]);
       return '';
     });
     t.registerGreedy('local-user', 'Configure a local user', (args) => {

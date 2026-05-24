@@ -448,11 +448,21 @@ export class WindowsPC extends EndHost {
 
   /** `ssh user@host [command]` — outbound SSH client. */
   private cmdSsh(args: string[]): Promise<string> {
+    const user = this.userMgr.currentUser;
     return runWindowsSshClient({
       args,
       sourceHostname: this.hostname,
       sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
-      sourceUser: this.userMgr.currentUser,
+      sourceUser: user,
+      sourceHome: `C:\\Users\\${user}`,
+      localFs: {
+        readFile: (p: string) => this.fs.readFile(p),
+        createFile: (p: string, c: string) => {
+          const dir = p.substring(0, p.lastIndexOf('\\'));
+          if (dir && !this.fs.exists(dir)) this.fs.mkdirp(dir);
+          return this.fs.createFile(p, c);
+        },
+      },
     }).then(r => r.output);
   }
 
