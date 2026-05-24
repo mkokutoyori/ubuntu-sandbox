@@ -121,6 +121,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ipsecPolicyTrie = new CommandTrie();
   // OSPFv3 sub-mode trie
   private ospfv3Trie = new CommandTrie();
+  // user-interface vty sub-mode trie ([host-ui-vty<n>])
+  private uiTrie = new CommandTrie();
+  private uiLabel: string = '0';
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
@@ -144,6 +147,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildIPSecSubViewCommands();
     this.buildIKEv2SubViewCommands();
     this.buildACLSubViewCommands();
+    this.buildUserInterfaceCommands();
     this.buildRIPViewCommands();
   }
 
@@ -258,6 +262,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
       case 'rip':        return `[${host}-rip-1]`;
+      case 'ui':         return `[${host}-ui-vty${this.uiLabel}]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
@@ -375,6 +380,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'rip':
         this.mode = 'system';
         return '';
+      case 'ui':
+        this.mode = 'system';
+        return '';
       case 'ike-proposal':
         this.mode = 'system';
         this.selectedIKEProposal = null;
@@ -457,6 +465,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ike-peer': return this.ikePeerTrie;
       case 'ipsec-proposal': return this.ipsecProposalTrie;
       case 'ipsec-policy': return this.ipsecPolicyTrie;
+      case 'ui': return this.uiTrie;
       case 'acl-basic': return this.aclBasicTrie;
       case 'acl-advanced': return this.aclAdvancedTrie;
       case 'ikev2-proposal': return this.ikev2ProposalTrie;
@@ -520,6 +529,39 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   getScreenWidth(): number { return this.screenWidth; }
 
   // ─── User View (<hostname>) ──────────────────────────────────────
+
+  private buildUserInterfaceCommands(): void {
+    const t = this.uiTrie;
+    // No-op keywords accepted at the user-interface view.
+    for (const kw of ['authentication-mode', 'user', 'idle-timeout',
+      'screen-length', 'history-command', 'shell', 'acl', 'set',
+      'authorization-mode']) {
+      t.registerGreedy(kw, `user-interface ${kw}`, () => '');
+    }
+    // `protocol inbound {ssh|telnet|all|none}` routes through the device
+    // so CrossVendorSshHost sees the change (matches Cisco transport input).
+    t.registerGreedy('protocol', 'user-interface protocol inbound', (args) => {
+      if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
+      const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
+      if (['ssh', 'telnet', 'all', 'none'].includes(proto)) {
+        const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+        dev?._setVtyTransportInput?.(proto);
+      }
+      return '';
+    });
+    // `undo protocol inbound [ssh|telnet]` — removing one transport leaves
+    // the other (matches VRP convention); with no arg, both are removed.
+    t.registerGreedy('undo', 'user-interface undo', (args) => {
+      if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
+      const removed = (args[2] ?? '').toLowerCase();
+      const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      if (!dev?._setVtyTransportInput) return '';
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
+      else dev._setVtyTransportInput('none');
+      return '';
+    });
+  }
 
   private buildUserCommands(): void {
     const t = this.userTrie;
@@ -684,6 +726,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       };
       if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
         router._configureSshAuthRetries?.(Number(args[2]));
+      }
+      return '';
+    });
+
+    // `user-interface vty <first> [last]` — enter VTY user-interface view
+    // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
+    // device's accepted VTY transports.
+    t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
+      if (args[0]?.toLowerCase() === 'vty') {
+        this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
+        this.mode = 'ui';
       }
       return '';
     });
