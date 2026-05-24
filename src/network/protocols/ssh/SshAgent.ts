@@ -30,6 +30,8 @@ export interface AgentKey {
   readonly comment: string;
   /** Key size in bits (256 for ED25519, 2048+ for RSA in real life). */
   readonly bits: number;
+  /** Public-key line as it would appear in authorized_keys (or null). */
+  readonly publicKey: string | null;
 }
 
 const DEFAULT_IDENTITY_FILES = [
@@ -59,6 +61,8 @@ export class SshAgent {
     const material = vfs.readFile(path);
     if (material === null) return false;
     const algo = detectAlgorithm(path);
+    // Companion .pub file is what authorized_keys checks compare against.
+    const publicKey = vfs.readFile(`${path}.pub`)?.trim() ?? null;
     const key: AgentKey = {
       path,
       material,
@@ -66,6 +70,7 @@ export class SshAgent {
       algorithm: algo,
       comment: comment ?? defaultComment(path),
       bits: bitsFor(algo),
+      publicKey,
     };
     this.keys.set(path, key);
     return true;

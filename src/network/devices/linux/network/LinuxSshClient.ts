@@ -220,21 +220,32 @@ function clientOption(args: string[], name: string): string | null {
  * since key material is conventionally generated as root.
  */
 function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | null {
-  if (!opts.localVfs) return null;
-  const home = opts.sourceHome ?? '/root';
-  const iIdx = flags.indexOf('-i');
-  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
-  const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
-  const candidates = iVal
-    ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
-    : keyHomes.flatMap((h) => [
-        `${h}/.ssh/id_ed25519.pub`,
-        `${h}/.ssh/id_rsa.pub`,
-        `${h}/.ssh/id_ecdsa.pub`,
-      ]);
-  for (const c of candidates) {
-    const data = opts.localVfs.readFile(c);
-    if (data && data.trim()) return data.trim();
+  // Files on disk (or the explicit -i) take precedence over the agent —
+  // matching OpenSSH's identity resolution order.
+  if (opts.localVfs) {
+    const home = opts.sourceHome ?? '/root';
+    const iIdx = flags.indexOf('-i');
+    const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+    const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
+    const candidates = iVal
+      ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
+      : keyHomes.flatMap((h) => [
+          `${h}/.ssh/id_ed25519.pub`,
+          `${h}/.ssh/id_rsa.pub`,
+          `${h}/.ssh/id_ecdsa.pub`,
+        ]);
+    for (const c of candidates) {
+      const data = opts.localVfs.readFile(c);
+      if (data && data.trim()) return data.trim();
+    }
+  }
+  // Agent fallback — when no on-disk identity matches but the SSH agent
+  // holds keys (e.g. linux2's adopted agent after -A from linux1), offer
+  // the first agent key's public-key line. Real OpenSSH iterates them;
+  // one is enough for the simulator's match against authorized_keys.
+  const agentKeys = opts.localAgent?.list();
+  for (const k of agentKeys ?? []) {
+    if (k.publicKey) return k.publicKey;
   }
   return null;
 }
@@ -511,7 +522,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const cfgRaw = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`);
   const cfgEntry = cfgRaw ? SshConfig.parse(cfgRaw).resolve(parsed[2]) : null;
   const remoteUser = parsed[1] ?? cfgEntry?.user ?? opts.sourceUser ?? 'root';
-  const host = cfgEntry?.hostName ?? parsed[2];
+  let host = cfgEntry?.hostName ?? parsed[2];
   if (cfgEntry?.port && !flags.includes('-p')) {
     flags.push('-p', String(cfgEntry.port));
     port = cfgEntry.port;
@@ -523,7 +534,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
   // look it up via the local source IP, which the registry knows.
   const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  const lookupHost = isLoopback ? opts.sourceIp : host;
+  // If the loopback target hits an active `-L` / `-D` forward, retarget
+  // through the tunnel's far end (destHost/destPort). Matches what the
+  // local OpenSSH forwarder would do on a real machine.
+  if (isLoopback && opts.localForwarding) {
+    const fwd = opts.localForwarding.list().find(f => f.listenPort === port);
+    if (fwd?.destHost && fwd?.destPort) {
+      host = fwd.destHost;
+      port = fwd.destPort;
+    }
+  }
+  const stillLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  const lookupHost = stillLoopback ? opts.sourceIp : host;
   const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
     // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
@@ -743,6 +765,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // decide whether to wire a controlling terminal.
       const hasTty = flags.includes('-t') || flags.includes('-tt');
       if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
+      // -A: expose the local agent through SSH_AUTH_SOCK on the remote
+      // shell so any `ssh` invocation inside the remote command finds
+      // the forwarded identities — matches OpenSSH agent forwarding.
+      if (flags.includes('-A')) {
+        forwarded['SSH_AUTH_SOCK'] = `/tmp/ssh-${remoteUser}/agent.${SSH_CLIENT_FORWARD_PID}`;
+      }
       // PermitUserEnvironment yes — overlay ~/.ssh/environment lines
       // (KEY=VAL) into the exec-mode env, matching OpenSSH behaviour.
       if (remoteExec && readRemoteSshdDirective(remoteExec, 'PermitUserEnvironment') === 'yes') {

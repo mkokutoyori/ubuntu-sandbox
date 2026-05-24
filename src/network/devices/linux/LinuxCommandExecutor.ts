@@ -2043,6 +2043,24 @@ export class LinuxCommandExecutor {
         return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
       case 'ssh-add':
         return this.handleSshAdd(args);
+      case 'ssh-agent': {
+        // `ssh-agent -s` prints sh-style exports; `-k` kills; `-t` sets a default
+        // life-span. The simulator's agent is per-device and always live, so the
+        // -s/-c forms emit the canonical environment lines (SSH_AUTH_SOCK +
+        // SSH_AGENT_PID) and `eval $(ssh-agent -s)` becomes a no-op import.
+        if (args.includes('-k')) {
+          this.sshAgent.removeAll();
+          return { output: 'Agent pid 1 killed', exitCode: 0 };
+        }
+        const user = this.userMgr.currentUser;
+        const sock = `/tmp/ssh-${user}/agent.1`;
+        const lines = args.includes('-c')
+          ? [`setenv SSH_AUTH_SOCK ${sock};`, `setenv SSH_AGENT_PID 1;`, `echo Agent pid 1;`]
+          : [`SSH_AUTH_SOCK=${sock}; export SSH_AUTH_SOCK;`, `SSH_AGENT_PID=1; export SSH_AGENT_PID;`, `echo Agent pid 1;`];
+        this.env.set('SSH_AUTH_SOCK', sock);
+        this.env.set('SSH_AGENT_PID', '1');
+        return { output: lines.join('\n'), exitCode: 0 };
+      }
       case 'ssh-keyscan': return this.runSshKeyscan(args);
       case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'ssh-copy-id': return this.runSshCopyId(args);
