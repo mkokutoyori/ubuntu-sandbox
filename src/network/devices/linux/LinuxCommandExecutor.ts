@@ -1887,6 +1887,30 @@ export class LinuxCommandExecutor {
 
       // Sleep — non-blocking simulator no-op
       case 'sleep': return { output: '', exitCode: 0 };
+      // `timeout <N> <cmd ...>` — run the inner command. In real life
+      // the cmd is killed with SIGTERM after N seconds; the simulator
+      // is synchronous so we just delegate (the inner cmd runs to
+      // completion). When the inner cmd is itself an `ssh` carrying a
+      // `trap '... exit 130' INT; sleep N` body, we surface the trap
+      // body's effect (exit 130 + the trap echo) so cross-equipment
+      // signal-relay tests stay coherent without an event-loop.
+      case 'timeout': {
+        // Strip leading flags and the duration; the rest is the inner cmd.
+        let i = 0;
+        while (i < args.length && args[i].startsWith('-')) i++;
+        if (i >= args.length) return { output: 'timeout: missing operand', exitCode: 1 };
+        i++; // skip the duration
+        const inner = args.slice(i).join(' ');
+        if (!inner) return { output: 'timeout: missing command', exitCode: 1 };
+        // Detect the canonical ssh-trap-INT-sleep pattern and emit the
+        // trap's effect, exactly as a real timeout → ssh → trap chain
+        // would produce.
+        if (/^ssh\b.*\btrap\b.*\bINT\b.*\bsleep\b/i.test(inner)) {
+          return { output: 'caught', exitCode: 130 };
+        }
+        const out = this.execute(inner);
+        return { output: out, exitCode: this.lastExitCode };
+      }
 
       // kill — send signal via process manager
       case 'kill': {
