@@ -52,6 +52,11 @@ export interface RouteEntry {
  * Abstracts access to EndHost/WindowsPC internals.
  */
 export interface WinCommandContext {
+  /** Optional event-log provider — `wevtutil qe Security|System|...` reads here. */
+  eventLog?: {
+    getEntriesStructured: (logName: string, opts?: { newest?: number; entryType?: string; source?: string }) =>
+      Array<{ source: string; eventId: number; message: string }> | null;
+  };
   /** Device hostname */
   hostname: string;
   /** All ports (Map of name → Port) */

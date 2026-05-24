@@ -1108,6 +1108,8 @@ export class WindowsPC extends EndHost {
 
       // Port-proxy rules (netsh interface portproxy)
       portProxy: this.portProxyTable,
+      // Event log provider — wevtutil queries against Security/System.
+      eventLog: this.eventLog,
     };
   }
 

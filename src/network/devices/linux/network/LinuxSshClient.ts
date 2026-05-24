@@ -738,6 +738,17 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // decide whether to wire a controlling terminal.
       const hasTty = flags.includes('-t') || flags.includes('-tt');
       if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
+      // PermitUserEnvironment yes — overlay ~/.ssh/environment lines
+      // (KEY=VAL) into the exec-mode env, matching OpenSSH behaviour.
+      if (remoteExec && readRemoteSshdDirective(remoteExec, 'PermitUserEnvironment') === 'yes') {
+        const entry = remoteExec.userMgr.getUser(remoteUser);
+        const home = entry?.home ?? `/home/${remoteUser}`;
+        const envFile = remoteExec.vfs.readFile(`${home}/.ssh/environment`) ?? '';
+        for (const rawLine of envFile.split('\n')) {
+          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*?)\s*$/.exec(rawLine);
+          if (m) forwarded[m[1]] = m[2];
+        }
+      }
       // SSH exec mode runs in a one-shot sub-shell whose env never leaks
       // back to the long-lived shell — snapshot/restore around the call.
       const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;

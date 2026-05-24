@@ -2520,3 +2520,301 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── §39 — SFTP file movement (rename, cross-dir, mkdir-then-rename)
+//
+// The interactive sftp REPL must move files exactly like the local
+// `mv`: across directories, into a fresh tree, in chains, and idempotently
+// overwriting an existing target. Setup uses the standard here-doc form.
+
+describe('§39 — SFTP file movement', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rename within same directory',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo r1 > /tmp/r1');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/r2',
+      contains: [/^r1$/m],
+    },
+    {
+      name: 'rename across directories',
+      setup: async (l) => {
+        await l.linux2.executeCommand('mkdir -p /var/tmp/dst && echo cross > /tmp/cross');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /var/tmp/dst/cross',
+      contains: [/^cross$/m],
+    },
+    {
+      name: 'mkdir + put + rename chain ends with file at final path',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo chained > /tmp/c.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /var/chain\nput /tmp/c.txt /var/chain/raw\nrename /var/chain/raw /var/chain/final\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /var/chain/final',
+      contains: [/^chained$/m],
+    },
+    {
+      name: 'rename source vanishes from the original path',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo gone > /tmp/gone');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'ls /tmp/gone',
+      contains: [/No such file/i],
+    },
+    {
+      name: 'mv alias works exactly like rename',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo alias > /tmp/with-mv');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/moved',
+      contains: [/^alias$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §40 — Logs coherence for SSH activity ──────────────────────────
+//
+// Every successful or refused SSH transaction must leave a coherent
+// trail in the platform-specific log: /var/log/auth.log on Linux, the
+// Security event log on Windows. The audit hook is owned by the SSH
+// model classes — these tests just confirm the trail surfaces.
+
+describe('§40 — Logs coherence for SSH activity', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: successful ssh login appears in /var/log/auth.log',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'grep -E "Accepted|sshd" /var/log/auth.log',
+      contains: [/alice/i],
+    },
+    {
+      name: 'Linux: failed unknown-user attempt is logged',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh ghost@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'grep -E "Failed|Invalid user|sshd" /var/log/auth.log',
+      contains: [/ghost/i],
+    },
+    {
+      name: 'Windows: successful ssh login surfaces in the Security log',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh User@10.0.0.4 hostname');
+      },
+      on: l => l.win1, cmd: 'wevtutil qe Security',
+      contains: [/User|Logon|4624/i],
+    },
+    {
+      name: 'Linux: log line carries the client IP for auditability',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'grep -E "10\\.0\\.0\\.1" /var/log/auth.log',
+      contains: [/10\.0\.0\.1/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §41 — Service lifecycle coherence (sshd up / down / status) ────
+//
+// Stopping the sshd unit must close the listening socket AND make
+// subsequent ssh connects fail with "Connection refused" — the
+// service projection keeps the socket table coherent with the
+// systemd state. Restarting brings the port back.
+
+describe('§41 — sshd service lifecycle coherence', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'sshd stopped: subsequent ssh sees Connection refused',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo systemctl stop ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.2 hostname',
+      contains: [/Connection refused/i],
+    },
+    {
+      name: 'sshd restarted: ssh works again',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo systemctl stop ssh');
+        await l.linux2.executeCommand('sudo systemctl start ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'systemctl status ssh reports active/running when up',
+      on: l => l.linux2, cmd: 'systemctl status ssh',
+      contains: [/active.*running/i],
+    },
+    {
+      name: 'systemctl status ssh reports inactive after stop',
+      setup: async (l) => { await l.linux2.executeCommand('sudo systemctl stop ssh'); },
+      on: l => l.linux2, cmd: 'systemctl status ssh',
+      contains: [/inactive|stopped|dead/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §42 — Port coherence (sshd Port directive ↔ socket table) ──────
+//
+// Changing the `Port` directive in sshd_config must:
+//   1. Open the new port on the listening socket table
+//   2. Make a client targeting that port succeed
+//   3. Make the default port 22 stop accepting (when only one Port is set)
+
+describe('§42 — Port coherence for sshd', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Port 2222 is reachable after sed + restart',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh -p 2222 alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Default Port 22 stops accepting when sshd_config moves to 2222',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 -p 22 alice@10.0.0.2 hostname',
+      contains: [/Connection refused|Connection timed out/i],
+    },
+    {
+      name: 'grep Port in sshd_config returns the new value after sed',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+      },
+      on: l => l.linux2, cmd: 'grep ^Port /etc/ssh/sshd_config',
+      contains: [/Port 2222/],
+    },
+    {
+      name: 'ss / netstat reflects the new listening port',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux2, cmd: 'ss -tln',
+      contains: [/:2222/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §43 — Access coherence (AllowUsers/DenyUsers + lockout) ────────
+//
+// Account-level access controls (AllowUsers, DenyUsers, disabled user)
+// must surface uniformly through the CrossVendorSshHost gate — the
+// outcome is the same whether the policy comes from sshd_config or
+// from the user manager flipping a flag.
+
+describe('§43 — Access coherence', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'AllowUsers alice lets alice through but rejects bob',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo AllowUsers alice >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh bob@10.0.0.2 hostname',
+      contains: [/Permission denied/i], excludes: [/^linux2$/m],
+    },
+    {
+      name: 'DenyUsers bob blocks bob but spares alice',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo DenyUsers bob >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'usermod --lock blocks subsequent password logins',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo usermod --lock alice');
+      },
+      on: l => l.linux1, cmd: 'ssh -o PasswordAuthentication=yes -o PubkeyAuthentication=no alice@10.0.0.2 hostname',
+      contains: [/Permission denied|account.*locked/i],
+    },
+    {
+      name: 'usermod --unlock restores login',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo usermod --lock alice');
+        await l.linux2.executeCommand('sudo usermod --unlock alice');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Windows: disabling a local user blocks SSH login',
+      setup: async (l) => {
+        // `net user /active:no` requires Administrator. The test bypasses
+        // the elevation requirement by reaching into the user manager
+        // directly — what matters here is that the disabled flag does
+        // flow through the WindowsUserManagerAuthority + CrossVendorSshHost
+        // gate, not the exact CLI that flipped it.
+        const um = (l.win1 as unknown as { userMgr: {
+          disableUser: (n: string) => string;
+          currentUser: string;
+        } }).userMgr;
+        const saved = um.currentUser;
+        um.currentUser = 'Administrator';
+        try { um.disableUser('User'); } finally { um.currentUser = saved; }
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 User@10.0.0.4 hostname',
+      contains: [/Permission denied|account disabled|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});

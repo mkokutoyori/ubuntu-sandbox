@@ -487,6 +487,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     lines.push(`ClientAliveInterval ${this.clientAliveIntervalSeconds}`);
     lines.push(`ClientAliveCountMax ${this.clientAliveCountMax}`);
     lines.push(`PrintMotd ${this.printMotd ? 'yes' : 'no'}`);
+    lines.push(`PermitUserEnvironment ${this.permitUserEnvironment ? 'yes' : 'no'}`);
     lines.push(`UseDNS ${this.useDns ? 'yes' : 'no'}`);
     lines.push(`StrictModes ${this.strictModes ? 'yes' : 'no'}`);
     lines.push(`Compression ${this.compression}`);
