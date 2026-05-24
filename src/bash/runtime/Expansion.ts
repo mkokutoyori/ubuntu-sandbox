@@ -249,7 +249,17 @@ function expandInlineVars(
         continue;
       }
       if (/[?#@*$!\d]/.test(next)) {
-        result += env.get(next) ?? '';
+        const val = env.get(next);
+        // Positional parameter that's undefined at this scope: leave
+        // literal so a double-quoted heredoc carrying a function body
+        // (e.g. "fn() { echo \$1; }") survives the write to the
+        // destination file. Once a function is called the child scope
+        // will have $1 set and the substitution happens normally.
+        if (/\d/.test(next) && val === undefined) {
+          result += `$${next}`;
+        } else {
+          result += val ?? '';
+        }
         i += 2;
         continue;
       }
