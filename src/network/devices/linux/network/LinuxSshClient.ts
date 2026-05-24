@@ -614,6 +614,19 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  // MaxStartups gate — drop connections from a source that has crossed
+  // the configured 'full' threshold of recent failed attempts. Mirrors
+  // OpenSSH's accept-loop throttle exactly.
+  const throttler = (machine as unknown as { sshThrottler?: {
+    shouldDrop: (ip: string, cfg: { start: number; rate: number; full: number }, now: number) => boolean;
+  } }).sshThrottler;
+  const cfg = remoteSshdConfig(machine);
+  if (throttler && throttler.shouldDrop(opts.sourceIp, cfg.maxStartups, Date.now())) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused (MaxStartups drop)\n`,
+      exitCode: 255,
+    };
+  }
   const cfgPorts = sshdConfiguredPorts(machine);
   if (!cfgPorts.includes(port)) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
@@ -639,6 +652,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const login = machine.sshdAcceptsLogin?.(remoteUser) ?? { ok: true };
   if (!login.ok) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    throttler?.recordFailure(opts.sourceIp, Date.now());
     return {
       output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
       exitCode: 255,
@@ -652,6 +666,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser);
   if (!auth.method) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    throttler?.recordFailure(opts.sourceIp, Date.now());
     return {
       output: `${remoteUser}@${host}: Permission denied (${
         auth.clientMethods.join(',') || 'publickey,password'
@@ -659,6 +674,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  // Successful authentication clears the failure history for this IP.
+  if (throttler) (throttler as unknown as { reset: (ip: string) => void }).reset(opts.sourceIp);
 
   machine.recordSshLogin?.(
     remoteUser,
@@ -765,6 +782,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // decide whether to wire a controlling terminal.
       const hasTty = flags.includes('-t') || flags.includes('-tt');
       if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
+      // -t / -tt: propagate the client TTY's geometry (COLUMNS / LINES)
+      // and TERM to the remote shell — matches SIGWINCH + ENV-passing
+      // for an OpenSSH session with a PTY.
+      if (hasTty) {
+        forwarded['COLUMNS'] = opts.callerEnv?.['COLUMNS'] ?? '80';
+        forwarded['LINES']   = opts.callerEnv?.['LINES']   ?? '24';
+        if (opts.callerEnv?.['TERM']) forwarded['TERM'] = opts.callerEnv['TERM'];
+      }
       // -A: expose the local agent through SSH_AUTH_SOCK on the remote
       // shell so any `ssh` invocation inside the remote command finds
       // the forwarded identities — matches OpenSSH agent forwarding.

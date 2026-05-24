@@ -508,6 +508,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const clientArgs: string[] = [];
     if (port) clientArgs.push('-p', port);
     clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
+    // Cisco IOS' built-in ssh client always allocates a line-mode PTY on
+    // the VTY — opposite of OpenSSH's exec-mode default.
+    clientArgs.push('-t');
     clientArgs.push(`${user}@${host}`);
     if (cmd) clientArgs.push(cmd);
     const result = runSshClient({

@@ -571,13 +571,20 @@ export class LinuxCommandExecutor {
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
     const home = this.sshHomeDir();
+    // Overlay TTY-geometry env (COLUMNS/LINES/TERM) the operator set via
+    // stty — when -t/-tt is given, runSshClient propagates these onto
+    // the remote shell. The caller's per-command env always wins.
+    const env: Record<string, string> = { ...(callerEnv ?? {}) };
+    for (const key of ['COLUMNS', 'LINES', 'TERM']) {
+      if (env[key] === undefined && this.env.has(key)) env[key] = this.env.get(key)!;
+    }
     return {
       args,
       sourceHostname: hostname,
       sourceIp,
       sourceUser: user,
       sourceHome: home,
-      callerEnv,
+      callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
       localVfs: {
@@ -2073,7 +2080,6 @@ export class LinuxCommandExecutor {
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
       case 'tput':
-      case 'stty':
       case 'type':
       case 'set':
       case 'unset':
@@ -2081,6 +2087,25 @@ export class LinuxCommandExecutor {
       case 'local':
       case 'readonly':
         return { output: '', exitCode: 0 };
+      case 'stty': {
+        // `stty cols 132 rows 50` updates the per-terminal size which is
+        // exported as COLUMNS/LINES; a real TTY drives SIGWINCH.
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === 'cols' || args[i] === 'columns') {
+            const n = Number.parseInt(args[++i] ?? '', 10);
+            if (Number.isFinite(n)) this.env.set('COLUMNS', String(n));
+          } else if (args[i] === 'rows') {
+            const n = Number.parseInt(args[++i] ?? '', 10);
+            if (Number.isFinite(n)) this.env.set('LINES', String(n));
+          }
+        }
+        if (args.length === 0 || args[0] === '-a' || args[0] === 'size') {
+          const cols = this.env.get('COLUMNS') ?? '80';
+          const rows = this.env.get('LINES') ?? '24';
+          return { output: `${rows} ${cols}`, exitCode: 0 };
+        }
+        return { output: '', exitCode: 0 };
+      }
       case 'seq': {
         const nums = args.filter(a => !a.startsWith('-')).map(Number);
         if (nums.length === 1) return { output: Array.from({length: nums[0]}, (_, i) => i + 1).join('\n'), exitCode: 0 };
