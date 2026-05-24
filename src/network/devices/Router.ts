@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -1365,6 +1366,14 @@ export abstract class Router extends Equipment {
   }
   /** Inbound transport list (telnet/ssh/all/none) — mirrors VTY config. */
   protected vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
+  /**
+   * Per-vendor VTY-line configuration registry. CiscoShellBase /
+   * HuaweiVRPShell populate it from `exec-timeout`, `idle-timeout`,
+   * `access-class`, `acl inbound`, `transport input`, `login local`,
+   * etc.; show running-config / display current-configuration walk it.
+   */
+  readonly vtyLineConfig = new VtyLineConfigStore();
+  _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
   /**
    * Local-user database (vendor-agnostic). Populated by the per-vendor
    * shell when `username … secret …` (Cisco) or `local-user … password

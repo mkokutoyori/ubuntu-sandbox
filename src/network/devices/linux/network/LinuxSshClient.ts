@@ -17,6 +17,7 @@
  */
 
 import { findHostByAddress } from './HostLookup';
+import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { SshForwardingTable } from './SshForwardingTable';
@@ -463,7 +464,7 @@ function setupPortForwards(
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
-  const port = clientPort(flags);
+  let port = clientPort(flags);
 
   // OpenSSH UNPROTECTED PRIVATE KEY check: when `-i path` is given, refuse
   // to load the key if its mode is group/world-readable. Real ssh prints
@@ -513,6 +514,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const host = cfgEntry?.hostName ?? parsed[2];
   if (cfgEntry?.port && !flags.includes('-p')) {
     flags.push('-p', String(cfgEntry.port));
+    port = cfgEntry.port;
   }
   if (cfgEntry?.identityFile && !flags.includes('-i')) {
     flags.push('-i', cfgEntry.identityFile);
@@ -931,6 +933,39 @@ function runCrossPlatformExec(
   const remoteCmd = joinRemoteCommand(positional.slice(1));
 
   if (sshHost) {
+    // VTY ACL gate (Cisco access-class / Huawei acl inbound): consult the
+    // router's VtyLineConfigStore for the SSH range, evaluate the named
+    // ACL against the synthetic IP packet, refuse before evaluate() if
+    // the result is deny. Real IOS / VRP behaviour for transport SSH.
+    const vtyStore = (router as unknown as { _getVtyLineConfig?: () => {
+      all: () => readonly { transportInput: string | null; accessClassIn: string | null; aclInbound: string | null }[];
+    } })._getVtyLineConfig?.();
+    const aclResolver = (router as unknown as {
+      evaluateACLByName?: (name: string, pkt: unknown) => string;
+    }).evaluateACLByName;
+    if (vtyStore && aclResolver) {
+      try {
+        const dstIp = (() => { try { return new IPAddress(host); } catch { return new IPAddress('0.0.0.0'); } })();
+        const synthPkt = {
+          sourceIP: new IPAddress(opts.sourceIp),
+          destinationIP: dstIp,
+          protocol: 6, ttl: 64, totalLength: 40, identification: 0,
+          flags: 0, fragmentOffset: 0, headerChecksum: 0,
+          payload: new Uint8Array(),
+        };
+        for (const block of vtyStore.all()) {
+          const aclName = block.accessClassIn ?? block.aclInbound;
+          if (!aclName) continue;
+          const verdict = aclResolver.call(router, String(aclName), synthPkt);
+          if (verdict === 'deny') {
+            return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+          }
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log('[vty-acl]', e);
+      }
+    }
     const request = SshConnectionRequest.create({
       requestedUser: remoteUser,
       requestedHost: host,

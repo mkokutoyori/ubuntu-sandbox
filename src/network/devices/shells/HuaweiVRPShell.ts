@@ -124,6 +124,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // user-interface vty sub-mode trie ([host-ui-vty<n>])
   private uiTrie = new CommandTrie();
   private uiLabel: string = '0';
+  private selectedUiRange: { first: number; last: number } | null = null;
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
@@ -533,11 +534,38 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private buildUserInterfaceCommands(): void {
     const t = this.uiTrie;
     // No-op keywords accepted at the user-interface view.
-    for (const kw of ['authentication-mode', 'user', 'idle-timeout',
-      'screen-length', 'history-command', 'shell', 'acl', 'set',
-      'authorization-mode']) {
+    for (const kw of ['user', 'screen-length', 'history-command', 'shell',
+      'set', 'authorization-mode']) {
       t.registerGreedy(kw, `user-interface ${kw}`, () => '');
     }
+    t.registerGreedy('idle-timeout', 'Set idle-timeout', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last,
+        idleTimeoutMinutes: Number.parseInt(args[0] ?? '0', 10),
+        idleTimeoutSeconds: Number.parseInt(args[1] ?? '0', 10),
+      });
+      return '';
+    });
+    t.registerGreedy('authentication-mode', 'Set authentication mode', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const mode = (args[0] ?? '').toLowerCase();
+      if (mode === 'aaa' || mode === 'password' || mode === 'none') {
+        this.routerRef?._getVtyLineConfig?.().upsert({
+          first: r.first, last: r.last, authenticationMode: mode,
+        });
+      }
+      return '';
+    });
+    t.registerGreedy('acl', 'Apply ACL to VTY', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const dir = (args[1] ?? 'inbound').toLowerCase();
+      const field = dir === 'outbound' ? 'aclOutbound' : 'aclInbound';
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last, [field]: args[0],
+      });
+      return '';
+    });
     // `protocol inbound {ssh|telnet|all|none}` routes through the device
     // so CrossVendorSshHost sees the change (matches Cisco transport input).
     t.registerGreedy('protocol', 'user-interface protocol inbound', (args) => {
@@ -546,6 +574,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (['ssh', 'telnet', 'all', 'none'].includes(proto)) {
         const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
         dev?._setVtyTransportInput?.(proto);
+        const r = this.selectedUiRange;
+        if (r) this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, transportInput: proto });
       }
       return '';
     });
@@ -737,6 +767,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0]?.toLowerCase() === 'vty') {
         this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
         this.mode = 'ui';
+        const first = Number.parseInt(args[1] ?? '0', 10);
+        const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
+        this.selectedUiRange = { first, last };
+        this.routerRef?._getVtyLineConfig?.().upsert({ first, last });
       }
       return '';
     });

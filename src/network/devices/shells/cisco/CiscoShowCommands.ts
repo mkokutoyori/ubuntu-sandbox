@@ -234,6 +234,15 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  // VTY line configuration (exec-timeout, access-class, transport input, …)
+  const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllCisco: () => string[] } })._getVtyLineConfig?.();
+  if (vtyStore) {
+    const vtyLines = vtyStore.renderAllCisco();
+    if (vtyLines.length > 0) {
+      lines.push(...vtyLines);
+    }
+  }
+
   lines.push('!');
   lines.push('end');
   return lines.join('\n');

@@ -80,6 +80,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected configIfTrie = new CommandTrie();
   /** Shared `line …` sub-mode trie (switch + router). */
   protected configLineTrie = new CommandTrie();
+  /** Currently-selected VTY range under `line vty <first> [last]`. */
+  protected selectedVtyRange: { first: number; last: number } | null = null;
 
   // ─── Abstract hooks (Template Method) ───────────────────────────
 
@@ -612,16 +614,51 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
 
     // `line {console|vty|aux} …` → shared config-line sub-mode.
-    this.configTrie.registerGreedy('line', 'Enter line configuration', () => {
+    // We remember the selected VTY range so subsequent directives
+    // (exec-timeout, access-class, transport input, …) land in the
+    // right VtyLineConfig block.
+    this.configTrie.registerGreedy('line', 'Enter line configuration', (args) => {
       this.mode = 'config-line';
+      if (args[0]?.toLowerCase() === 'vty') {
+        const first = Number.parseInt(args[1] ?? '0', 10);
+        const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
+        this.selectedVtyRange = { first, last };
+        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+        dev._getVtyLineConfig?.().upsert({ first, last });
+      } else {
+        this.selectedVtyRange = null;
+      }
       return '';
     });
-    for (const kw of ['login', 'password', 'exec-timeout',
-      'logging', 'access-class', 'privilege', 'no', 'speed', 'stopbits',
+    for (const kw of ['login', 'password',
+      'logging', 'privilege', 'no', 'speed', 'stopbits',
       'session-timeout', 'history', 'length', 'width', 'authorization',
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, () => '');
     }
+    // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
+    // so show running-config can echo it back exactly.
+    this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
+      const range = this.selectedVtyRange;
+      if (!range) return '';
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+      dev._getVtyLineConfig?.().upsert({
+        first: range.first, last: range.last,
+        execTimeoutMinutes: Number.parseInt(args[0] ?? '0', 10),
+        execTimeoutSeconds: Number.parseInt(args[1] ?? '0', 10),
+      });
+      return '';
+    });
+    // `access-class <acl> {in|out}` — VTY ACL gate (§21).
+    this.configLineTrie.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
+      const range = this.selectedVtyRange;
+      if (!range) return '';
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+      const dir = (args[1] ?? 'in').toLowerCase();
+      const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
+      dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
+      return '';
+    });
     // `transport input {all|ssh|telnet|none}` — the only line directive
     // we *do* react to today, because the sshd dispatch needs to know
     // whether SSH is administratively allowed on the VTY. Anything we
@@ -629,11 +666,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configLineTrie.registerGreedy('transport', 'transport input/output', (args) => {
       const dev = this.d() as unknown as {
         _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void;
+        _getVtyLineConfig?: () => { upsert: (p: object) => void };
       };
       if (args[0]?.toLowerCase() === 'input' && typeof dev._setVtyTransportInput === 'function') {
         const proto = (args[1] ?? '').toLowerCase();
         if (proto === 'all' || proto === 'ssh' || proto === 'telnet' || proto === 'none') {
           dev._setVtyTransportInput(proto);
+          const range = this.selectedVtyRange;
+          if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });
         }
       }
       return '';

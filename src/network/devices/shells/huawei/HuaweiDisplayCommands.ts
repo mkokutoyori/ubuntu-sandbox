@@ -444,6 +444,13 @@ export function displayCurrentConfig(
     }
   }
 
+  // user-interface vty <range> blocks — idle-timeout, acl, protocol, …
+  const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllHuawei: () => string[] } })._getVtyLineConfig?.();
+  if (vtyStore) {
+    const vty = vtyStore.renderAllHuawei();
+    if (vty.length > 0) lines.push(...vty);
+  }
+
   lines.push('#');
   return lines.join('\n');
 }
