@@ -28,6 +28,7 @@ interface VfsLike {
   mkdir?(path: string, perm: number, uid: number, gid: number): boolean;
   rmdir?(path: string): boolean;
   unlink?(path: string): boolean;
+  deleteFile?(path: string): boolean;
   rename?(src: string, dst: string): boolean;
   chmod?(path: string, mode: number): boolean;
   chown?(path: string, uid: number, gid?: number): boolean;
@@ -111,10 +112,9 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
   }
 
   deleteFile(path: string): Result<void> {
-    if (!this.vfs.unlink) return err({ kind: 'IO_ERROR', message: 'unlink not supported' } as SshError);
-    return this.vfs.unlink(path)
-      ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: not removed` } as SshError);
+    if (this.vfs.unlink     && this.vfs.unlink(path))      return ok(undefined);
+    if (this.vfs.deleteFile && this.vfs.deleteFile(path))  return ok(undefined);
+    return err({ kind: 'IO_ERROR', message: `${path}: not removed` } as SshError);
   }
 
   rmdir(path: string): Result<void> {

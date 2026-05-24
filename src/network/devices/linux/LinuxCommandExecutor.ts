@@ -449,6 +449,10 @@ export class LinuxCommandExecutor {
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
+    // scp needs both source AND target: any other count yields usage.
+    if (cmd === 'scp' && positional.length < 2) {
+      return { output: 'usage: scp [-options] source ... target', exitCode: 1 };
+    }
     if (!dest) {
       const usage = cmd === 'sftp'
         ? 'usage: sftp [-options] [user@]host[:path]'
@@ -458,12 +462,20 @@ export class LinuxCommandExecutor {
       return { output: usage, exitCode: 1 };
     }
     const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
+    // Pick the user from any remote endpoint so the probe authenticates
+    // against that account (matches scp/sftp's real behaviour) rather
+    // than the local shell user, who may not exist on the remote.
+    const userMatch = positional.map(p => /^([\w.-]+)@/.exec(p)).find((m): m is RegExpExecArray => m !== null);
+    const probeTarget = userMatch ? `${userMatch[1]}@${hostPart}` : hostPart;
     // scp / sftp select an alternate port with -P (rsync uses -e); translate
     // it into the ssh client's own -p so the probe targets the right port.
     const pIdx = args.indexOf('-P');
+    // `hostname` is the universally-supported probe verb (every vendor's
+    // sync exec bridge implements it). `true` is Unix-only and would be
+    // rejected by Windows / Cisco / Huawei.
     const probeArgs = pIdx >= 0 && args[pIdx + 1]
-      ? ['-p', args[pIdx + 1], hostPart, 'true']
-      : [hostPart, 'true'];
+      ? ['-p', args[pIdx + 1], probeTarget, 'hostname']
+      : [probeTarget, 'hostname'];
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
@@ -473,7 +485,7 @@ export class LinuxCommandExecutor {
     }
     // scp delegates to the ScpSession model — it handles -r, -p, push/pull,
     // and resolves the remote endpoint to an ISftpFileSystem adapter.
-    if (cmd === 'scp' && positional.length >= 2) {
+    if (cmd === 'scp') {
       const localFs = new VfsSftpFileSystem(this.vfs, {
         uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
       });

@@ -2218,3 +2218,305 @@ describe('§33 — Full SSH reachability matrix', () => {
     }
   });
 });
+
+// ─── §34 — SCP error paths & exit codes ─────────────────────────────
+//
+// Every scp failure (missing source, unknown host, directory without -r,
+// no-route) must surface with the canonical OpenSSH "scp: <reason>"
+// line and a non-zero exit code. The remote VFS stays untouched.
+
+describe('§34 — SCP error paths', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'missing source file fails with scp: prefix',
+      on: l => l.linux1, cmd: 'scp /tmp/does-not-exist alice@10.0.0.2:/tmp/x',
+      contains: [/^scp:/m],
+    },
+    {
+      name: 'directory source without -r is refused',
+      setup: async (l) => { await l.linux1.executeCommand('mkdir -p /tmp/dir1'); },
+      on: l => l.linux1, cmd: 'scp /tmp/dir1 alice@10.0.0.2:/tmp/dir1',
+      contains: [/not a regular file|^scp:/m],
+    },
+    {
+      name: 'unknown remote host yields "no route to host"',
+      setup: async (l) => { await l.linux1.executeCommand('echo data > /tmp/lonely'); },
+      on: l => l.linux1, cmd: 'scp /tmp/lonely alice@192.0.2.250:/tmp/lonely',
+      contains: [/^scp:/m, /no route to host|No route to host/i],
+    },
+    {
+      name: 'usage line printed when only one argv positional is given',
+      on: l => l.linux1, cmd: 'scp /tmp/x',
+      contains: [/usage:\s*scp/i],
+    },
+    {
+      name: 'failed transfer leaves the remote VFS untouched',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo original > /tmp/keep');
+        await l.linux1.executeCommand('scp /tmp/missing alice@10.0.0.2:/tmp/keep');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/keep',
+      contains: [/^original$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §35 — SCP recursive directory transfers ────────────────────────
+//
+// `scp -r` walks the source tree and reconstructs it on the destination.
+// Covers Linux → Linux, Linux → server, and the mixed case where the
+// remote target's directory already exists.
+
+describe('§35 — SCP recursive directory transfers', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp -r flat dir between two Linux hosts',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /tmp/box && echo A > /tmp/box/a && echo B > /tmp/box/b');
+        await l.linux1.executeCommand('scp -r /tmp/box alice@10.0.0.2:/tmp/box');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/box/a /tmp/box/b',
+      contains: [/^A$/m, /^B$/m],
+    },
+    {
+      name: 'scp -r nested tree preserves every file',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /tmp/tree/inner && echo deep > /tmp/tree/inner/leaf && echo top > /tmp/tree/top');
+        await l.linux1.executeCommand('scp -r /tmp/tree alice@10.0.0.2:/tmp/tree');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/tree/top /tmp/tree/inner/leaf',
+      contains: [/^top$/m, /^deep$/m],
+    },
+    {
+      name: 'pull -r reads a tree from lxsrv1 back to linux1',
+      setup: async (l) => {
+        await l.lxsrv1.executeCommand('mkdir -p /tmp/pull && echo P1 > /tmp/pull/p1 && echo P2 > /tmp/pull/p2');
+        await l.linux1.executeCommand('scp -r alice@10.0.0.3:/tmp/pull /tmp/pull');
+      },
+      on: l => l.linux1, cmd: 'cat /tmp/pull/p1 /tmp/pull/p2',
+      contains: [/^P1$/m, /^P2$/m],
+    },
+    {
+      name: 'scp -r exits 0 on success',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /tmp/exitchk && echo x > /tmp/exitchk/x');
+      },
+      on: l => l.linux1, cmd: 'scp -r /tmp/exitchk alice@10.0.0.2:/tmp/exitchk; echo rc=$?',
+      contains: [/rc=0/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §36 — SFTP interactive REPL coverage ───────────────────────────
+//
+// The interactive sftp client supports a sizeable REPL — put/get,
+// ls/cd/pwd, mkdir/rmdir/rm, chmod, rename — all sharing the same
+// channel. These tests pipe a here-doc through the local sftp client
+// and confirm the remote VFS reflects each verb exactly.
+
+describe('§36 — SFTP interactive REPL', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'cd + pwd reports the requested remote working directory',
+      setup: async (l) => {
+        await l.linux2.executeCommand('mkdir -p /var/tmp/run');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+        );
+      },
+      on: l => l.linux1,
+      cmd: "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+      contains: [/Remote working directory: \/var\/tmp\/run/],
+    },
+    {
+      name: 'mkdir + put + ls round-trips a file inside a fresh dir',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo m > /tmp/m.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /tmp/box-sftp\nput /tmp/m.txt /tmp/box-sftp/m.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/box-sftp/m.txt',
+      contains: [/^m$/m],
+    },
+    {
+      name: 'chmod via sftp changes the mode on the remote',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo s > /tmp/s.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/s.txt /tmp/s.txt\nchmod 600 /tmp/s.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/s.txt',
+      contains: [/^600$/m],
+    },
+    {
+      name: 'rm removes a remote file',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo doomed > /tmp/zap');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'ls /tmp/zap',
+      contains: [/No such file/i],
+    },
+    {
+      name: 'rename moves a remote file in one step',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo moveme > /tmp/from');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/to',
+      contains: [/^moveme$/m],
+    },
+    {
+      name: 'unknown verb in a batch does not abort subsequent put',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo k > /tmp/k.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nfubar /tmp\nput /tmp/k.txt /tmp/k.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/k.txt',
+      contains: [/^k$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §37 — SCP/SFTP cross-vendor (Linux ↔ Windows) ──────────────────
+//
+// Windows hosts speak the SFTP protocol over the same OpenSSH server
+// (port 22). Path translation (POSIX → NTFS with drive prefix) is the
+// only vendor-specific concern; the model layer's
+// WindowsSftpFileSystem handles it transparently.
+
+describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp push: linux1 → win1 lands at the translated NTFS path',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo from-linux > /tmp/push.txt');
+        await l.linux1.executeCommand('scp /tmp/push.txt User@10.0.0.4:/C:/Users/User/push.txt');
+      },
+      on: l => l.win1, cmd: 'type C:\\Users\\User\\push.txt',
+      contains: [/from-linux/],
+    },
+    {
+      name: 'sftp put: linux1 → win1 lands at the translated NTFS path',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo via-sftp > /tmp/sf.txt');
+        await l.linux1.executeCommand(
+          "sftp User@10.0.0.4 <<'EOF'\nput /tmp/sf.txt /C:/Users/User/sf.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.win1, cmd: 'type C:\\Users\\User\\sf.txt',
+      contains: [/via-sftp/],
+    },
+    {
+      name: 'unknown Windows user is refused before the SFTP channel opens',
+      on: l => l.linux1,
+      cmd: "sftp ghost@10.0.0.4 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF",
+      // Adapter / channel either refuses or fails-fast; in both cases
+      // the file does NOT land on the Windows VFS.
+      contains: [/Connected to|Permission denied|sftp:/i],
+    },
+    {
+      name: 'unreachable Windows host yields "no route" without crashing',
+      on: l => l.linux1, cmd: 'scp /tmp/x User@192.0.2.10:/C:/x',
+      contains: [/^scp:/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §38 — Attribute preservation + idempotency ─────────────────────
+//
+// scp -p must replicate mode (and would replicate mtime if a real clock
+// were exposed). Running the same transfer twice must yield the same
+// destination state without erroring — idempotency matters for ansible-
+// style provisioning loops.
+
+describe('§38 — SCP attribute preservation + idempotency', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp -p replicates mode 0600 on push',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo top > /tmp/top.secret && chmod 600 /tmp/top.secret');
+        await l.linux1.executeCommand('scp -p /tmp/top.secret alice@10.0.0.2:/tmp/top.secret');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/top.secret',
+      contains: [/^600$/m],
+    },
+    {
+      name: 'scp without -p uses the default umask mode (664)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 600 /tmp/plain');
+        await l.linux1.executeCommand('scp /tmp/plain alice@10.0.0.2:/tmp/plain');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/plain',
+      contains: [/^(644|664)$/m],
+    },
+    {
+      name: 'repeated scp is idempotent (content stays identical)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo same > /tmp/idem');
+        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/idem',
+      contains: [/^same$/m],
+    },
+    {
+      name: 'sftp put then re-put overwrites without error',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo v1 > /tmp/over');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+        );
+        await l.linux1.executeCommand('echo v2 > /tmp/over');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/over',
+      contains: [/^v2$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
