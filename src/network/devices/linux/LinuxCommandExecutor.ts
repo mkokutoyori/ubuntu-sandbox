@@ -1839,7 +1839,14 @@ export class LinuxCommandExecutor {
       case 'date': return { output: cmdDate(args), exitCode: 0 };
       case 'uptime': return { output: cmdUptime(args, this.lifecycle), exitCode: 0 };
       case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(), this.identity.kernel), exitCode: 0 };
-      case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
+      case 'tty': {
+        // `not a tty` (exit 1) when running without a controlling terminal —
+        // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
+        if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
+          return { output: 'not a tty', exitCode: 1 };
+        }
+        return { output: cmdTty('pts/0'), exitCode: 0 };
+      }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
       case 'hostnamectl': {
         const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();

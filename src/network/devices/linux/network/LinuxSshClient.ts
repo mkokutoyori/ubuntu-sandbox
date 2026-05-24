@@ -733,10 +733,26 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       const forwarded = remoteExec
         ? computeForwardedEnv(opts, flags, remoteExec)
         : {};
-      execOut =
-        Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
-          ? execMod.executeWithEnv(remoteCmd, forwarded)
-          : execMod?.execute?.(remoteCmd) ?? '';
+      // exec-mode without -t carries no PTY; mark it so the remote
+      // `tty` builtin reports "not a tty" and SIGINT-relay logic can
+      // decide whether to wire a controlling terminal.
+      const hasTty = flags.includes('-t') || flags.includes('-tt');
+      if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
+      // SSH exec mode runs in a one-shot sub-shell whose env never leaks
+      // back to the long-lived shell — snapshot/restore around the call.
+      const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;
+      const savedEntries = envSnapshot ? Array.from(envSnapshot.entries()) : null;
+      try {
+        execOut =
+          Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
+            ? execMod.executeWithEnv(remoteCmd, forwarded)
+            : execMod?.execute?.(remoteCmd) ?? '';
+      } finally {
+        if (envSnapshot && savedEntries) {
+          envSnapshot.clear();
+          for (const [k, v] of savedEntries) envSnapshot.set(k, v);
+        }
+      }
       execRc = execMod?.lastExitCode ?? 0;
     } finally {
       restoreAgent?.();
