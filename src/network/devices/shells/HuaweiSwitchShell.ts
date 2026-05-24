@@ -698,11 +698,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** user-interface sub-view ([host-ui-…]) — auth-mode / protocol / etc. */
   private buildUserInterfaceCommands(): void {
     const t = this.userIfTrie;
-    for (const kw of ['authentication-mode', 'protocol', 'user',
+    for (const kw of ['authentication-mode', 'user',
       'idle-timeout', 'screen-length', 'history-command', 'shell',
-      'acl', 'set', 'undo', 'authorization-mode']) {
+      'acl', 'set', 'authorization-mode']) {
       t.registerGreedy(kw, `user-interface ${kw}`, () => '');
     }
+    // `protocol inbound {ssh|telnet|all|none}` toggles VTY transports
+    // exactly like Cisco's `transport input`. Routes through the device
+    // setter so CrossVendorSshHost.evaluate() sees the change.
+    t.registerGreedy('protocol', 'user-interface protocol', (args) => {
+      if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
+      const dev = this.swRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
+      if (dev._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
+        dev._setVtyTransportInput(proto);
+      }
+      return '';
+    });
+    // `undo protocol inbound [ssh|telnet]` — VRP convention: removing the
+    // listed transports leaves the others. With no arg it disables both.
+    t.registerGreedy('undo', 'user-interface undo', (args) => {
+      if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
+      const dev = this.swRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const removed = (args[2] ?? '').toLowerCase();
+      if (!dev._setVtyTransportInput) return '';
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
+      else dev._setVtyTransportInput('none');
+      return '';
+    });
     t.register('display this', 'Display user-interface configuration', () =>
       `user-interface ${this.uiLabel.replace(/(\D)(\d)/, '$1 $2')}`);
   }

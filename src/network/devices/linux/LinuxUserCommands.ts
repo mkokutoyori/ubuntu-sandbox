@@ -43,12 +43,13 @@ export function cmdUsermod(ctx: ShellContext, args: string[]): string {
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
-      case '-s': s = args[++i]; break;
-      case '-d': d = args[++i]; break;
-      case '-m': m = true; break;
+      case '-s': case '--shell':   s = args[++i]; break;
+      case '-d': case '--home':    d = args[++i]; break;
+      case '-m': case '--move-home': m = true; break;
       case '-aG': aG = args[++i]; break;
-      case '-L': L = true; break;
-      case '-U': U = true; break;
+      case '-G': case '--groups':  aG = args[++i]; break;
+      case '-L': case '--lock':    L = true; break;
+      case '-U': case '--unlock':  U = true; break;
       default:
         if (!args[i].startsWith('-')) username = args[i];
         break;

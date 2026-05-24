@@ -21,8 +21,10 @@
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
+import { runSshClient } from '../linux/network/LinuxSshClient';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
@@ -120,6 +122,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private ipsecPolicyTrie = new CommandTrie();
   // OSPFv3 sub-mode trie
   private ospfv3Trie = new CommandTrie();
+  // user-interface vty sub-mode trie ([host-ui-vty<n>])
+  private uiTrie = new CommandTrie();
+  private uiLabel: string = '0';
+  private selectedUiRange: { first: number; last: number } | null = null;
   // ACL sub-mode tries
   private aclBasicTrie = new CommandTrie();
   private aclAdvancedTrie = new CommandTrie();
@@ -143,6 +149,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildIPSecSubViewCommands();
     this.buildIKEv2SubViewCommands();
     this.buildACLSubViewCommands();
+    this.buildUserInterfaceCommands();
     this.buildRIPViewCommands();
   }
 
@@ -257,6 +264,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
       case 'rip':        return `[${host}-rip-1]`;
+      case 'ui':         return `[${host}-ui-vty${this.uiLabel}]`;
       case 'ike-proposal':  return `[${host}-ike-proposal-${this.selectedIKEProposal}]`;
       case 'ike-peer':      return `[${host}-ike-peer-${this.selectedIKEPeer}]`;
       case 'ipsec-proposal': return `[${host}-ipsec-proposal-${this.selectedIPSecProposal}]`;
@@ -351,6 +359,53 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
   }
 
+  /**
+   * Parse `stelnet [user@]host [port]` / `ssh [-l user] [-p port] host
+   * [cmd]` and dispatch through the shared runSshClient. Source IP is
+   * picked from the first up interface that has one.
+   */
+  private runOutboundSshClient(args: string[]): string {
+    let user = 'admin';
+    let port: string | null = null;
+    const rest: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-l' && args[i + 1]) { user = args[++i]; continue; }
+      if (a === '-p' && args[i + 1]) { port = args[++i]; continue; }
+      if (a.startsWith('-')) continue;
+      rest.push(a);
+    }
+    if (rest.length === 0) return 'Error: Incomplete command.';
+    let host = rest[0];
+    const at = host.indexOf('@');
+    if (at !== -1) { user = host.slice(0, at); host = host.slice(at + 1); }
+    if (!port && rest[1] && /^\d+$/.test(rest[1])) port = rest[1];
+    const cmd = rest.slice(port ? 2 : 1).join(' ');
+    const router = this.routerRef as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostnameInternal: () => string;
+    };
+    if (!router) return 'Error: device not bound';
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
+    if (!sourceIp) return 'Error: no usable interface IP for outbound SSH';
+    const clientArgs: string[] = [];
+    if (port) clientArgs.push('-p', port);
+    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
+    clientArgs.push(`${user}@${host}`);
+    if (cmd) clientArgs.push(cmd);
+    const result = runSshClient({
+      args: clientArgs,
+      sourceHostname: router._getHostnameInternal(),
+      sourceIp, sourceUser: user,
+      localVfs: { readFile: () => null, writeFile: () => undefined },
+    });
+    return result.output;
+  }
+
   private cmdQuit(): string {
     switch (this.mode) {
       case 'interface':
@@ -372,6 +427,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'system';
         return '';
       case 'rip':
+        this.mode = 'system';
+        return '';
+      case 'ui':
         this.mode = 'system';
         return '';
       case 'ike-proposal':
@@ -456,6 +514,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ike-peer': return this.ikePeerTrie;
       case 'ipsec-proposal': return this.ipsecProposalTrie;
       case 'ipsec-policy': return this.ipsecPolicyTrie;
+      case 'ui': return this.uiTrie;
       case 'acl-basic': return this.aclBasicTrie;
       case 'acl-advanced': return this.aclAdvancedTrie;
       case 'ikev2-proposal': return this.ikev2ProposalTrie;
@@ -520,6 +579,68 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── User View (<hostname>) ──────────────────────────────────────
 
+  private buildUserInterfaceCommands(): void {
+    const t = this.uiTrie;
+    // No-op keywords accepted at the user-interface view.
+    for (const kw of ['user', 'screen-length', 'history-command', 'shell',
+      'set', 'authorization-mode']) {
+      t.registerGreedy(kw, `user-interface ${kw}`, () => '');
+    }
+    t.registerGreedy('idle-timeout', 'Set idle-timeout', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last,
+        idleTimeoutMinutes: Number.parseInt(args[0] ?? '0', 10),
+        idleTimeoutSeconds: Number.parseInt(args[1] ?? '0', 10),
+      });
+      return '';
+    });
+    t.registerGreedy('authentication-mode', 'Set authentication mode', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const mode = (args[0] ?? '').toLowerCase();
+      if (mode === 'aaa' || mode === 'password' || mode === 'none') {
+        this.routerRef?._getVtyLineConfig?.().upsert({
+          first: r.first, last: r.last, authenticationMode: mode,
+        });
+      }
+      return '';
+    });
+    t.registerGreedy('acl', 'Apply ACL to VTY', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const dir = (args[1] ?? 'inbound').toLowerCase();
+      const field = dir === 'outbound' ? 'aclOutbound' : 'aclInbound';
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last, [field]: args[0],
+      });
+      return '';
+    });
+    // `protocol inbound {ssh|telnet|all|none}` routes through the device
+    // so CrossVendorSshHost sees the change (matches Cisco transport input).
+    t.registerGreedy('protocol', 'user-interface protocol inbound', (args) => {
+      if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
+      const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
+      if (['ssh', 'telnet', 'all', 'none'].includes(proto)) {
+        const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+        dev?._setVtyTransportInput?.(proto);
+        const r = this.selectedUiRange;
+        if (r) this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, transportInput: proto });
+      }
+      return '';
+    });
+    // `undo protocol inbound [ssh|telnet]` — removing one transport leaves
+    // the other (matches VRP convention); with no arg, both are removed.
+    t.registerGreedy('undo', 'user-interface undo', (args) => {
+      if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
+      const removed = (args[2] ?? '').toLowerCase();
+      const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      if (!dev?._setVtyTransportInput) return '';
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
+      else dev._setVtyTransportInput('none');
+      return '';
+    });
+  }
+
   private buildUserCommands(): void {
     const t = this.userTrie;
     const getRouter = () => this.r();
@@ -530,11 +651,26 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'Enter system view, return user view with return command.';
     });
 
+    // `stelnet [user@]host [port]` and `ssh [-l user] host` — outbound
+    // SSH client, dispatched through the shared runSshClient so every
+    // gate (host key TOFU, sshd policy, VTY ACL) applies uniformly.
+    for (const verb of ['stelnet', 'ssh']) {
+      t.registerGreedy(verb, `${verb} client`, (args) => this.runOutboundSshClient(args));
+    }
+
     // Display commands
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
+      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
+      if (typeof router._setSshBanner === 'function') {
+        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
+        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
+      }
+      return '';
+    });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
 
@@ -618,9 +754,81 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
+      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
+      if (typeof router._setSshBanner === 'function') {
+        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
+        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
+      }
+      return '';
+    });
+    t.registerGreedy('ssh', 'SSH server configuration', (args) => {
+      const router = getRouter() as unknown as {
+        _configureSshAuthRetries?: (n: number) => void;
+      };
+      if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
+        router._configureSshAuthRetries?.(Number(args[2]));
+      }
+      return '';
+    });
+    t.registerGreedy('local-user', 'Configure a local user', (args) => {
+      const router = getRouter();
+      const name = args[0];
+      if (!name || args.length < 2) return 'Error: Incomplete command.';
+      const store = router.getCredentialStore();
+      const existing = store.get(name) ?? NetworkOsAccount.create({ name });
+      const kw = args[1].toLowerCase();
+      let next = existing;
+      if (kw === 'password') {
+        const idx = args.indexOf('cipher') >= 0 ? args.indexOf('cipher') : args.indexOf('irreversible-cipher');
+        const algo: PasswordHashAlgorithm = idx >= 0
+          ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
+          : 'plain';
+        next = existing.withSecret(args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret, algo);
+      } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
+        next = existing.withPrivilege(Number(args[3]) || existing.privilege);
+      } else if (kw === 'service-type') {
+        const types = args.slice(2).filter(t => t.length > 0) as AccountServiceType[];
+        next = existing.withServiceTypes(types);
+      } else if (kw === 'state') {
+        next = args[2] === 'active' ? existing.enable() : args[2] === 'block' ? existing.disable() : existing;
+      } else if (kw === 'ftp-directory' && args[2]) {
+        next = existing.withFtpDirectory(args[2]);
+      } else if (kw === 'idle-timeout' && args[2]) {
+        next = existing.withIdleTimeout(Number(args[2]) * 60);
+      } else if (kw === 'access-limit' && args[2]) {
+        next = existing.withMaxSessions(Number(args[2]));
+      }
+      store.upsert(next);
+      return '';
+    });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurity(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
+    t.registerGreedy('ssh', 'SSH server configuration', (args) => {
+      const router = getRouter() as unknown as {
+        _configureSshAuthRetries?: (n: number) => void;
+      };
+      if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
+        router._configureSshAuthRetries?.(Number(args[2]));
+      }
+      return '';
+    });
+
+    // `user-interface vty <first> [last]` — enter VTY user-interface view
+    // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
+    // device's accepted VTY transports.
+    t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
+      if (args[0]?.toLowerCase() === 'vty') {
+        this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
+        this.mode = 'ui';
+        const first = Number.parseInt(args[1] ?? '0', 10);
+        const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
+        this.selectedUiRange = { first, last };
+        this.routerRef?._getVtyLineConfig?.().upsert({ first, last });
+      }
+      return '';
+    });
 
     // System-mode config commands
     buildSystemCommands(t, this);

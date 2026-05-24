@@ -46,6 +46,9 @@ import type {
   IpXfrmContext,
 } from './linux/LinuxIpCommand';
 import { DnsService, findDnsServerByIP } from './linux/LinuxDnsService';
+import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
+import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
+import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
 import type { PacketInfo } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
@@ -224,29 +227,17 @@ export abstract class LinuxMachine extends EndHost {
    */
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-    const cfg = parseSshdConfig(raw);
+    const config = SshdServerConfig.parse(raw);
 
-    // PermitRootLogin — anything other than `yes` blocks the root login
-    // path in our password-only simulator.
-    const rootDirective = /^\s*PermitRootLogin\s+(\S+)/im.exec(raw);
-    const policy = rootDirective?.[1]?.toLowerCase() ?? (cfg.permitRootLogin ? 'yes' : 'no');
+    const policy = config.permitRootLogin;
     if (user === 'root' && policy !== 'yes') {
       return { ok: false, reason: `PermitRootLogin ${policy}` };
     }
-
-    const matchesAny = (patterns: readonly string[]) =>
-      patterns.some(p => globMatch(p, user));
-
-    if (cfg.denyUsers.length > 0 && matchesAny(cfg.denyUsers)) {
-      return { ok: false, reason: 'DenyUsers match' };
-    }
-    if (cfg.allowUsers.length > 0 && !matchesAny(cfg.allowUsers)) {
-      return { ok: false, reason: 'not in AllowUsers' };
+    if (!config.isUserAllowed(user, [])) {
+      const denied = config.denyUsers.some(p => globMatch(p, user));
+      return { ok: false, reason: denied ? 'DenyUsers match' : 'not in AllowUsers' };
     }
 
-    // User must exist in /etc/passwd. Test fixtures are responsible for
-    // calling useradd before relying on a login — sshd does not create
-    // accounts on the fly.
     const userEntry = this.executor.userMgr.getUser(user) as
       | { locked?: boolean; expireDate?: number; password?: string }
       | undefined;
@@ -324,6 +315,136 @@ export abstract class LinuxMachine extends EndHost {
         { ip: fromIp, port: peerPort },
         { ip: myIp, port: 22 },
       );
+    }
+  }
+
+  isSshActive(): boolean { return this.isServiceActive('ssh'); }
+
+  private _sshHost: CrossVendorSshHost | null = null;
+  private _sshAuthority: LinuxUserManagerAuthority | null = null;
+
+  getSshHost(): CrossVendorSshHost {
+    if (!this._sshAuthority) {
+      this._sshAuthority = new LinuxUserManagerAuthority({
+        executor: this.executor,
+        deviceId: this.id,
+        hostname: this.hostname,
+        recordSshLogin: (u, fromIp, fromHost, accepted, method) =>
+          this.recordSshLogin(u, fromIp, fromHost, accepted, method as 'password' | 'publickey'),
+      });
+    }
+    const config = SshdServerConfig.parse(this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '');
+    if (!this._sshHost) {
+      this._sshHost = new CrossVendorSshHost({
+        deviceId: this.id,
+        hostname: this.hostname,
+        vendor: 'linux',
+        bus: this.getBus(),
+        authority: this._sshAuthority,
+        config,
+        active: this.isSshActive(),
+        motd: this.executor.vfs.readFile('/etc/motd') ?? '',
+        banner: this.executor.vfs.readFile('/etc/issue.net') ?? '',
+      });
+    } else {
+      this._sshHost.applyConfig(config);
+      this._sshHost.setSshActive(this.isSshActive());
+      this._sshHost.setHostname(this.hostname);
+      this._sshHost.setMotd(this.executor.vfs.readFile('/etc/motd') ?? '');
+      this._sshHost.setBanner(this.executor.vfs.readFile('/etc/issue.net') ?? '');
+    }
+    return this._sshHost;
+  }
+
+  sshBanner(): string {
+    const issue = this.executor.vfs.readFile('/etc/issue.net') ?? '';
+    return issue.replace(/\n*$/, '') || `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`;
+  }
+
+  async runSshCommand(
+    user: string,
+    command: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const result = this.runSshCommandSync(user, command);
+    return result ?? { output: '', exitCode: 0 };
+  }
+
+
+  getSshHostname(): string { return this.hostname; }
+
+  getSshBanner(): string {
+    return this.executor.vfs.readFile('/etc/issue.net') ?? '';
+  }
+
+  getSshMotd(): string {
+    return this.executor.vfs.readFile('/etc/motd') ?? '';
+  }
+
+  getSshPolicy(): {
+    readonly active: boolean;
+    readonly ports: readonly number[];
+    readonly permitRootLogin: boolean;
+    readonly passwordAuthentication: boolean;
+    readonly pubkeyAuthentication: boolean;
+    readonly maxAuthTries: number;
+    readonly permitEmptyPasswords: boolean;
+  } {
+    const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+    const directive = (n: string): string | null => {
+      const m = new RegExp(`^\\s*${n}\\s+(\\S+)`, 'im').exec(raw);
+      return m ? m[1].toLowerCase() : null;
+    };
+    const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
+      .map(m => Number(m[1]))
+      .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
+    return Object.freeze({
+      active: this.isSshActive(),
+      ports: ports.length ? Object.freeze(ports) : Object.freeze([22]),
+      permitRootLogin: directive('PermitRootLogin') !== 'no',
+      passwordAuthentication: directive('PasswordAuthentication') !== 'no',
+      pubkeyAuthentication: directive('PubkeyAuthentication') !== 'no',
+      maxAuthTries: Number(directive('MaxAuthTries') ?? 6),
+      permitEmptyPasswords: directive('PermitEmptyPasswords') === 'yes',
+    });
+  }
+
+  getSshHostKey(): {
+    readonly type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+    readonly fingerprintSha256: string;
+    readonly publicKey: string;
+  } {
+    return Object.freeze({
+      type: 'ssh-ed25519' as const,
+      fingerprintSha256: `SHA256:linux-${this.id}`,
+      publicKey: `ssh-ed25519 AAAA-linux-${this.id}`,
+    });
+  }
+
+  runSshCommandSync(
+    user: string,
+    command: string,
+  ): { output: string; exitCode: number } | null {
+    const um = this.executor.userMgr;
+    const previousUser = um.currentUser;
+    const previousUid = um.currentUid;
+    const previousGid = um.currentGid;
+    const previousCwd = this.executor.cwd;
+    const userEntry = um.getUser(user);
+    if (userEntry) {
+      um.currentUser = user;
+      um.currentUid = userEntry.uid;
+      um.currentGid = userEntry.gid;
+      this.executor.cwd = userEntry.home ?? `/home/${user}`;
+    }
+    try {
+      const output = this.executor.execute(command);
+      const normalised = output && !output.endsWith('\n') ? `${output}\n` : output;
+      return { output: normalised, exitCode: this.executor.lastExitCode ?? 0 };
+    } finally {
+      um.currentUser = previousUser;
+      um.currentUid = previousUid;
+      um.currentGid = previousGid;
+      this.executor.cwd = previousCwd;
     }
   }
 

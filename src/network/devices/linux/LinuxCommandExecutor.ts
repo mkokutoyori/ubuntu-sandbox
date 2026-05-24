@@ -10,7 +10,7 @@ import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk } from './LinuxTextCommands';
+import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
@@ -44,6 +44,12 @@ import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
+import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
+import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
+import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
+import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
+import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
+import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { SshSessionTable } from './network/SshSessionTable';
@@ -214,6 +220,7 @@ export class LinuxCommandExecutor {
   private jobTable = new LinuxJobTable();
   /** Per-shell command aliases — `alias` / `unalias`, shared with the interpreter. */
   readonly aliases = new AliasTable();
+  readonly functions: Map<string, import('@/bash/ast/types').Command> = new Map();
 
   /** Optional Oracle bootstrap hook — called by sqlplus on first run. */
   _oracleBootstrap: ((args: string[], stdin?: string) => string | null) | null = null;
@@ -438,10 +445,14 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
-  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[]): { output: string; exitCode: number } {
+  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string): { output: string; exitCode: number } {
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
+    // scp needs both source AND target: any other count yields usage.
+    if (cmd === 'scp' && positional.length < 2) {
+      return { output: 'usage: scp [-options] source ... target', exitCode: 1 };
+    }
     if (!dest) {
       const usage = cmd === 'sftp'
         ? 'usage: sftp [-options] [user@]host[:path]'
@@ -451,12 +462,20 @@ export class LinuxCommandExecutor {
       return { output: usage, exitCode: 1 };
     }
     const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
+    // Pick the user from any remote endpoint so the probe authenticates
+    // against that account (matches scp/sftp's real behaviour) rather
+    // than the local shell user, who may not exist on the remote.
+    const userMatch = positional.map(p => /^([\w.-]+)@/.exec(p)).find((m): m is RegExpExecArray => m !== null);
+    const probeTarget = userMatch ? `${userMatch[1]}@${hostPart}` : hostPart;
     // scp / sftp select an alternate port with -P (rsync uses -e); translate
     // it into the ssh client's own -p so the probe targets the right port.
     const pIdx = args.indexOf('-P');
+    // `hostname` is the universally-supported probe verb (every vendor's
+    // sync exec bridge implements it). `true` is Unix-only and would be
+    // rejected by Windows / Cisco / Huawei.
     const probeArgs = pIdx >= 0 && args[pIdx + 1]
-      ? ['-p', args[pIdx + 1], hostPart, 'true']
-      : [hostPart, 'true'];
+      ? ['-p', args[pIdx + 1], probeTarget, 'hostname']
+      : [probeTarget, 'hostname'];
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
@@ -464,6 +483,37 @@ export class LinuxCommandExecutor {
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
       return { output: prefix + probe.output, exitCode: probe.exitCode };
     }
+    // scp delegates to the ScpSession model — it handles -r, -p, push/pull,
+    // and resolves the remote endpoint to an ISftpFileSystem adapter.
+    if (cmd === 'scp') {
+      const localFs = new VfsSftpFileSystem(this.vfs, {
+        uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
+      });
+      const session = new ScpSession({
+        args,
+        local: { fs: localFs, cwd: this.cwd },
+        resolveRemote: (host) => this.resolveRemoteSftpFs(host),
+      });
+      return session.run();
+    }
+
+    // sftp delegates to SftpInteractiveSession, parsing stdin as a batch.
+    if (cmd === 'sftp') {
+      const stdin = stdinArg ?? '';
+      const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
+      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device);
+      if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+      const session = new SftpInteractiveSession({
+        local: new VfsSftpFileSystem(this.vfs, {
+          uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
+        }),
+        remote: remoteFs,
+        initialLocalCwd: this.cwd,
+      });
+      session.run(SftpCommandScript.parse(stdin));
+      return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
+    }
+
     // Success: simulate a typical line of output per tool.
     const summary = cmd === 'sftp'
       ? `Connected to ${hostPart}.\nsftp> `
@@ -480,6 +530,30 @@ export class LinuxCommandExecutor {
    * identities are rooted at /root/.ssh, the same base ssh-keygen defaults
    * to and the location the whole SSH toolchain reads and writes.
    */
+  /**
+   * Map a remote host (IP or name) to an ISftpFileSystem adapter. Returns
+   * null when the host doesn't exist or has no VFS exposed — letting the
+   * ScpSession surface "no route to host" the same way OpenSSH does.
+   */
+  private resolveRemoteSftpFs(host: string): ISftpFileSystem | null {
+    const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
+    return this.resolveRemoteSftpFsFromDevice(found?.device);
+  }
+
+  private resolveRemoteSftpFsFromDevice(device: unknown): ISftpFileSystem | null {
+    if (!device) return null;
+    const linuxVfs = (device as { executor?: { vfs?: VirtualFileSystem } }).executor?.vfs;
+    if (linuxVfs) {
+      return new VfsSftpFileSystem(linuxVfs, { uid: 0, gid: 0, umask: 0o022 });
+    }
+    const windowsFs = (device as { fs?: unknown; getFileSystem?: () => unknown }).fs
+      ?? (device as { getFileSystem?: () => unknown }).getFileSystem?.();
+    if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
+      return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
+    }
+    return null;
+  }
+
   private sshHomeDir(): string {
     return this.userMgr.getUser('root')?.home ?? '/root';
   }
@@ -557,7 +631,58 @@ export class LinuxCommandExecutor {
     // and returned "command not found". Provide a minimal compatible
     // implementation that creates a file pair under -f and -N.
     const fIdx = args.indexOf('-f');
-    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/id_ed25519`;
+    const tIdx = args.indexOf('-t');
+    const keyType = tIdx >= 0 ? args[tIdx + 1].toLowerCase() : 'ed25519';
+    const algoPrefix = keyType === 'rsa' ? 'ssh-rsa'
+      : keyType === 'ecdsa' ? 'ecdsa-sha2-nistp256'
+      : 'ssh-ed25519';
+    const defaultFile = keyType === 'rsa' ? 'id_rsa' : keyType === 'ecdsa' ? 'id_ecdsa' : 'id_ed25519';
+    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/${defaultFile}`;
+
+    // `ssh-keygen -A` — regenerate all missing host-key types in the
+    // target directory (defaults to /etc/ssh). The simulator rewrites the
+    // ed25519/rsa/ecdsa pairs unconditionally so a subsequent client sees
+    // a different fingerprint, mirroring real-life key rotation.
+    if (args.includes('-A')) {
+      const fAfterA = fIdx >= 0 ? args[fIdx + 1] : '/etc/ssh';
+      const dir = fAfterA.replace(/\/$/, '');
+      for (const a of ['ed25519', 'rsa', 'ecdsa']) {
+        const algoTok = a === 'ed25519' ? 'ssh-ed25519' : a === 'rsa' ? 'ssh-rsa' : 'ecdsa-sha2-nistp256';
+        const rand = Math.random().toString(36).slice(2, 16) + Date.now().toString(36);
+        const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        this.vfs.writeFile(`${dir}/ssh_host_${a}_key`, `-----BEGIN OPENSSH PRIVATE KEY-----\n(stub-${rand})\n-----END OPENSSH PRIVATE KEY-----\n`, 0, 0, 0o077);
+        this.vfs.writeFile(`${dir}/ssh_host_${a}_key.pub`, `${algoTok} AAAA${rand} root@${host}\n`, 0, 0, 0o022);
+      }
+      return { output: '', exitCode: 0 };
+    }
+
+    // `ssh-keygen -l -f <pubfile>` — print the fingerprint of a public key.
+    if (args.includes('-l')) {
+      const target = fIdx >= 0 ? args[fIdx + 1] : file;
+      const candidate = target.endsWith('.pub') ? target : `${target}.pub`;
+      const data = (this.vfs.readFile(candidate) ?? this.vfs.readFile(target) ?? '').trim();
+      if (!data) {
+        return { output: `${target}: No such file or directory`, exitCode: 1 };
+      }
+      const tokens = data.split(/\s+/);
+      const algoToken = tokens[0] ?? '';
+      const keyBlob = tokens[1] ?? '';
+      const comment = tokens.slice(2).join(' ') || `${this.userMgr.currentUser}@localhost`;
+      const algoLabel = algoToken.startsWith('ssh-ed25519') ? 'ED25519'
+        : algoToken.startsWith('ssh-rsa') ? 'RSA'
+        : algoToken.startsWith('ecdsa-') ? 'ECDSA'
+        : algoToken.toUpperCase();
+      const bits = algoLabel === 'RSA' ? 2048 : algoLabel === 'ECDSA' ? 256 : 256;
+      const seed = `fp:${algoToken}:${keyBlob}`;
+      let hash = 5381;
+      for (let i = 0; i < seed.length; i++) hash = ((hash * 33) ^ seed.charCodeAt(i)) >>> 0;
+      const bytes: number[] = [];
+      let h = hash;
+      for (let i = 0; i < 32; i++) { h = (h * 1664525 + 1013904223) >>> 0; bytes.push(h & 0xff); }
+      const fp = 'SHA256:' + btoa(String.fromCharCode(...bytes)).replace(/=+$/, '');
+      return { output: `${bits} ${fp} ${comment} (${algoLabel})`, exitCode: 0 };
+    }
+
     if (args.includes('-y')) {
       // Read the private key, output its public form (stub).
       return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
@@ -567,7 +692,7 @@ export class LinuxCommandExecutor {
     if (!this.vfs.resolveInode(sshDir)) {
       this.vfs.mkdirp(sshDir, 0o700, 0, 0);
     }
-    const pubKey = `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
+    const pubKey = `${algoPrefix} AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
     this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', 0, 0, 0o077);
     this.vfs.writeFile(`${file}.pub`, pubKey + '\n', 0, 0, 0o022);
     return { output: '', exitCode: 0 };
@@ -1055,6 +1180,7 @@ export class LinuxCommandExecutor {
       io,
       { pid: this.shellPid, ppid: this.shellPpid },
       this.aliases,
+      this.functions,
     );
 
     // Sync interpreter state back to executor
@@ -1324,9 +1450,14 @@ export class LinuxCommandExecutor {
     // absent: like `iptables` (which the device router runs un-gated), the
     // simulator's interactive operator manages the firewall directly.
     const rootOnlyCmds = ['useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock', 'chown', 'chgrp',
+      'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
       'ausearch', 'aureport', 'auditctl',
       'iptables', 'iptables-save', 'iptables-restore'];
+    const sudoRequired = ['chown', 'chgrp'];
+    if (sudoRequired.includes(cmd) && this.userMgr.currentUid !== 0
+        && !this.userMgr.getUserGroups(this.userMgr.currentUser).some(g => g.name === 'sudo' || g.name === 'wheel')) {
+      return { output: `${cmd}: Operation not permitted`, exitCode: 1 };
+    }
     if (rootOnlyCmds.includes(cmd) && this.userMgr.currentUid !== 0) {
       return { output: `${cmd}: Permission denied`, exitCode: 1 };
     }
@@ -1416,6 +1547,7 @@ export class LinuxCommandExecutor {
       case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
       case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
       case 'awk': return { output: cmdAwk(c, args, stdin), exitCode: 0 };
+      case 'sed': return { output: cmdSed(c, args, stdin), exitCode: 0 };
 
       // Search commands
       case 'find': return { output: cmdFind(c, args), exitCode: 0 };
@@ -1675,12 +1807,12 @@ export class LinuxCommandExecutor {
         if (cmdString !== null) {
           const result = runScriptContent(
             cmdString, arg0, args.slice(i), execCmd,
-            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases,
+            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases, this.functions,
           );
           return { output: result.output, exitCode: result.exitCode };
         }
         if (i < args.length) {
-          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases);
+          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases, this.functions);
           return { output: result.output, exitCode: result.exitCode };
         }
         return { output: '', exitCode: 0 };
@@ -1780,7 +1912,14 @@ export class LinuxCommandExecutor {
       case 'date': return { output: cmdDate(args), exitCode: 0 };
       case 'uptime': return { output: cmdUptime(args, this.lifecycle), exitCode: 0 };
       case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(), this.identity.kernel), exitCode: 0 };
-      case 'tty': return { output: cmdTty('pts/0'), exitCode: 0 };
+      case 'tty': {
+        // `not a tty` (exit 1) when running without a controlling terminal —
+        // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
+        if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
+          return { output: 'not a tty', exitCode: 1 };
+        }
+        return { output: cmdTty('pts/0'), exitCode: 0 };
+      }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
       case 'hostnamectl': {
         const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
@@ -1878,7 +2017,7 @@ export class LinuxCommandExecutor {
       case 'scp':
       case 'sftp':
       case 'rsync': {
-        return this.runSshTransport(cmd, args);
+        return this.runSshTransport(cmd, args, stdin);
       }
       case 'ssh': {
         const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv));
@@ -2025,7 +2164,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.exists(absPath)) {
             const result = runScript(
               c, cmd, args,
-              (argv) => this.dispatchFromInterpreter(argv), this.aliases,
+              (argv) => this.dispatchFromInterpreter(argv), this.aliases, this.functions,
             );
             return { output: result.output, exitCode: result.exitCode };
           }

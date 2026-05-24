@@ -61,7 +61,17 @@ export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
     if (joined.toLowerCase().includes('dhcp-client') || joined.toLowerCase().includes('dhcp')) {
       return queryDHCPEvents(ctx, joined);
     }
-    // Generic query
+    const logName = args[1];
+    if (logName && ctx.eventLog) {
+      const entries = ctx.eventLog.getEntriesStructured(logName, {}) ?? [];
+      if (entries.length === 0) {
+        return 'No events found that match the specified selection criteria.';
+      }
+      return entries.map((e, i) =>
+        `Event[${i}]:\n  Log Name: ${logName}\n  Source: ${e.source}\n` +
+        `  Event ID: ${e.eventId}\n  Description: ${e.message}`,
+      ).join('\n\n');
+    }
     return 'No events found that match the specified selection criteria.';
   }
 

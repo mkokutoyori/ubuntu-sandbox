@@ -48,6 +48,8 @@ export interface SshdConfig extends SshServerConfig {
   readonly kbdInteractiveAuthentication: boolean;
   readonly x11Forwarding: boolean;
   readonly allowTcpForwarding: TcpForwardingValue;
+  /** PermitUserEnvironment yes — let ~/.ssh/environment overlay the shell. */
+  readonly permitUserEnvironment: boolean;
 }
 
 export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
@@ -71,6 +73,7 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   kbdInteractiveAuthentication: false,
   x11Forwarding: false,
   allowTcpForwarding: 'yes' as TcpForwardingValue,
+  permitUserEnvironment: false,
 });
 
 const LOG_LEVELS: readonly SshLogLevel[] = [
@@ -195,6 +198,7 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
     `ClientAliveCountMax ${cfg.clientAliveCountMax}`,
     `X11Forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
     `AllowTcpForwarding ${cfg.allowTcpForwarding}`,
+    `PermitUserEnvironment ${cfg.permitUserEnvironment ? 'yes' : 'no'}`,
   ];
   if (cfg.allowUsers.length > 0) lines.push(`AllowUsers ${cfg.allowUsers.join(' ')}`);
   if (cfg.denyUsers.length > 0) lines.push(`DenyUsers ${cfg.denyUsers.join(' ')}`);

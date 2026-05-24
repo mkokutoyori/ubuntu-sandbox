@@ -75,6 +75,7 @@ export interface InterpreterOptions {
    * place so `alias` / `unalias` definitions persist across commands.
    */
   aliases?: AliasTable;
+  functions?: Map<string, Command>;
 }
 
 export class BashInterpreter {
@@ -82,7 +83,7 @@ export class BashInterpreter {
   private executeCommand: ExternalCommandFn;
   private io: IOContext | null;
   private output: string[] = [];
-  private functions: Map<string, Command> = new Map();
+  private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
 
@@ -90,6 +91,7 @@ export class BashInterpreter {
     this.executeCommand = options.executeCommand;
     this.io = options.io ?? null;
     this.aliases = options.aliases ?? new AliasTable();
+    this.functions = options.functions ?? new Map();
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -414,9 +416,17 @@ export class BashInterpreter {
 
       try {
         if (redir.op === '>&') {
-          this.io.writeFile(path, capturedOutput, false);
-          stdoutHandled = true;
-          stderrHandled = true;
+          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge
+          // (e.g. `2>&1` keeps everything on stdout); only treat as a
+          // file-write if the target is not a digit.
+          if (/^\d+$/.test(target)) {
+            // Merge — output stays captured and flows to stdout below.
+            stderrHandled = true;
+          } else {
+            this.io.writeFile(path, capturedOutput, false);
+            stdoutHandled = true;
+            stderrHandled = true;
+          }
         } else if (redir.op === '>' || redir.op === '>>') {
           const fd = redir.fd ?? 1;
           if (fd === 1) {

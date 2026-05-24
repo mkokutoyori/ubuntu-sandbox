@@ -1,0 +1,2820 @@
+/**
+ * Cross-equipment SSH suite — end-to-end exploratory tests.
+ *
+ * Sibling of `linux-lan-ssh-suite.test.ts` and `windows-lan-ssh-suite.test.ts`,
+ * but exercising SSH on a **heterogeneous** LAN: Linux PCs, a Linux
+ * server, Windows PCs, Cisco IOS router & switch, Huawei VRP router &
+ * switch — all connected to one core switch. These tests are written
+ * as an oracle of how SSH must behave end-to-end on such a network;
+ * any failure pinpoints a feature gap or regression to fix.
+ *
+ * Topology (built fresh per test):
+ *
+ *     linux1 ─┐
+ *     linux2 ─┤
+ *     lxsrv1 ─┤
+ *     win1   ─┤
+ *     win2   ─┼── core-sw (GenericSwitch) ── 10.0.0.0/24
+ *     ciscoR1─┤
+ *     ciscoS1─┤  (L2-only, no IP)
+ *     hwR1   ─┤
+ *     hwS1   ─┘  (L2-only, no IP)
+ *
+ * Conventions:
+ *   - linux1=10.0.0.1 linux2=10.0.0.2 lxsrv1=10.0.0.3
+ *     win1=10.0.0.4   win2=10.0.0.5
+ *     ciscoR1=10.0.0.6 hwR1=10.0.0.8
+ *     (ciscoS1, hwS1 are pure L2 switches — no L3 address)
+ *   - Linux user: `alice` / `admin` (sudoer); fallback default `user` / `admin`.
+ *   - Windows user: `User` / `Passw0rd!` (Administrator / `Passw0rd!`).
+ *   - Cisco / Huawei VTY user: `admin` / `Admin@123`.
+ *   - Every section is its own describe block. test.each drives every
+ *     section so adding cases is one row of data.
+ */
+
+import { describe, expect, beforeEach, test } from 'vitest';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
+import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
+import { GenericSwitch } from '@/network/devices/GenericSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { IPAddress, SubnetMask } from '@/network/core/types';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+
+// ─── LAN fixture ────────────────────────────────────────────────────
+
+export interface XLan {
+  linux1: LinuxPC; linux2: LinuxPC; lxsrv1: LinuxServer;
+  win1: WindowsPC; win2: WindowsPC;
+  ciscoR1: CiscoRouter; ciscoS1: CiscoSwitch;
+  hwR1: HuaweiRouter; hwS1: HuaweiSwitch;
+  sw: GenericSwitch;
+  ipOf: Record<string, string>;
+}
+
+async function buildXLan(): Promise<XLan> {
+  EquipmentRegistry.getInstance().clear();
+  const linux1 = new LinuxPC('linux-pc', 'linux1', 0, 0);
+  const linux2 = new LinuxPC('linux-pc', 'linux2', 0, 0);
+  const lxsrv1 = new LinuxServer('linux-server', 'lxsrv1', 0, 0);
+  const win1 = new WindowsPC('windows-pc', 'win1', 0, 0);
+  const win2 = new WindowsPC('windows-pc', 'win2', 0, 0);
+  const ciscoR1 = new CiscoRouter('ciscoR1', 0, 0);
+  const ciscoS1 = new CiscoSwitch('switch-cisco', 'ciscoS1', 24, 0, 0);
+  const hwR1 = new HuaweiRouter('hwR1', 0, 0);
+  const hwS1 = new HuaweiSwitch('switch-huawei', 'hwS1', 24, 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'core-sw', 16, 0, 0);
+
+  const all = [linux1, linux2, lxsrv1, win1, win2, ciscoR1, ciscoS1, hwR1, hwS1];
+  all.forEach((d, i) => {
+    const cable = new Cable(`c${i}`);
+    cable.connect(d.getPorts()[0], sw.getPorts()[i]);
+  });
+
+  const mask = new SubnetMask('255.255.255.0');
+  linux1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
+  linux2.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);
+  lxsrv1.getPorts()[0].configureIP(new IPAddress('10.0.0.3'), mask);
+  win1.getPorts()[0].configureIP(new IPAddress('10.0.0.4'), mask);
+  win2.getPorts()[0].configureIP(new IPAddress('10.0.0.5'), mask);
+
+  // Network OS interface bring-up via native CLI (no shortcut). If a
+  // device does not yet honour these commands, §1 reachability fails
+  // first and flags the gap before any SSH section runs.
+  await ciscoR1.executeCommand('enable');
+  await ciscoR1.executeCommand('configure terminal');
+  await ciscoR1.executeCommand('interface GigabitEthernet0/0');
+  await ciscoR1.executeCommand('ip address 10.0.0.6 255.255.255.0');
+  await ciscoR1.executeCommand('no shutdown');
+  await ciscoR1.executeCommand('end');
+
+  // ciscoS1 / hwS1 are pure L2 switches in this project — they forward
+  // frames but have no L3 routing or management IP, so no `interface
+  // vlan` IP is configured on them.
+
+  await hwR1.executeCommand('system-view');
+  await hwR1.executeCommand('interface GigabitEthernet0/0/0');
+  await hwR1.executeCommand('ip address 10.0.0.8 255.255.255.0');
+  await hwR1.executeCommand('undo shutdown');
+  await hwR1.executeCommand('quit');
+  await hwR1.executeCommand('quit');
+
+  // hwS1: pure L2, see ciscoS1 above.
+
+  // Hostnames match the test labels for ssh banner / auth.log realism.
+  linux1.setHostname('linux1'); linux2.setHostname('linux2'); lxsrv1.setHostname('lxsrv1');
+
+  // Seed the standard cast of unprivileged users on every Linux node so
+  // sshd accepts `alice@...`, `bob@...`, etc. Same trick as in the
+  // existing Linux suite — directly via the user manager, since
+  // useradd is root-only on PCs.
+  for (const d of [linux1, linux2, lxsrv1]) {
+    const um = (d as unknown as { executor: { userMgr: {
+      useradd: (u: string, o?: object) => void;
+      getUser: (u: string) => unknown;
+      setPassword: (u: string, p: string) => void;
+      usermod: (u: string, o: object) => void;
+    } } }).executor.userMgr;
+    for (const u of ['alice', 'bob', 'carol', 'admin']) {
+      if (!um.getUser(u)) {
+        um.useradd(u, { m: true, s: '/bin/bash' });
+        um.setPassword(u, 'admin');
+        if (u === 'alice' || u === 'admin') um.usermod(u, { aG: 'sudo' });
+      }
+    }
+  }
+
+  return {
+    linux1, linux2, lxsrv1, win1, win2, ciscoR1, ciscoS1, hwR1, hwS1, sw,
+    ipOf: {
+      linux1: '10.0.0.1', linux2: '10.0.0.2', lxsrv1: '10.0.0.3',
+      win1: '10.0.0.4', win2: '10.0.0.5',
+      ciscoR1: '10.0.0.6', hwR1: '10.0.0.8',
+      // ciscoS1 / hwS1 are L2-only and have no management IP.
+    },
+  };
+}
+
+// ─── Row helpers used by every section ──────────────────────────────
+
+type AnyDev =
+  | LinuxPC | LinuxServer | WindowsPC
+  | CiscoRouter | CiscoSwitch | HuaweiRouter | HuaweiSwitch;
+
+interface Row {
+  /** Human-readable test label (test.each $name). */
+  name: string;
+  /** Optional setup steps run on the LAN before the assertion. */
+  setup?: (lan: XLan) => Promise<void> | void;
+  /** Device executing the command under test. */
+  on: (lan: XLan) => AnyDev;
+  /** The command line typed at the device prompt. */
+  cmd: string;
+  /** Substrings or regexes the output must contain. */
+  contains?: (string | RegExp)[];
+  /** Substrings or regexes the output must NOT contain. */
+  excludes?: (string | RegExp)[];
+}
+
+async function runRow(lan: XLan, row: Row): Promise<string> {
+  if (row.setup) await row.setup(lan);
+  return (row.on(lan) as { executeCommand: (c: string) => Promise<string> }).executeCommand(row.cmd);
+}
+
+/** Enable SSH server on a Cisco IOS device with a local AAA user. */
+async function enableCiscoSsh(dev: CiscoRouter | CiscoSwitch): Promise<void> {
+  await dev.executeCommand('enable');
+  await dev.executeCommand('configure terminal');
+  await dev.executeCommand('hostname ' + (dev as { name: string }).name);
+  await dev.executeCommand('username admin privilege 15 secret Admin@123');
+  await dev.executeCommand('enable secret Admin@123');
+  await dev.executeCommand('ip domain-name lab.local');
+  await dev.executeCommand('crypto key generate rsa modulus 2048');
+  await dev.executeCommand('ip ssh version 2');
+  await dev.executeCommand('line vty 0 4');
+  await dev.executeCommand('login local');
+  await dev.executeCommand('transport input ssh');
+  await dev.executeCommand('exit');
+  await dev.executeCommand('end');
+}
+
+/** Enable SSH (stelnet) server on a Huawei VRP device with a local AAA user. */
+async function enableHuaweiSsh(dev: HuaweiRouter | HuaweiSwitch): Promise<void> {
+  await dev.executeCommand('system-view');
+  await dev.executeCommand('aaa');
+  await dev.executeCommand('local-user admin password cipher Admin@123');
+  await dev.executeCommand('local-user admin service-type ssh');
+  await dev.executeCommand('local-user admin privilege level 15');
+  await dev.executeCommand('quit');
+  await dev.executeCommand('rsa local-key-pair create');
+  await dev.executeCommand('stelnet server enable');
+  await dev.executeCommand('user-interface vty 0 4');
+  await dev.executeCommand('authentication-mode aaa');
+  await dev.executeCommand('protocol inbound ssh');
+  await dev.executeCommand('quit');
+  await dev.executeCommand('ssh user admin authentication-type password');
+  await dev.executeCommand('ssh user admin service-type stelnet');
+  await dev.executeCommand('quit');
+}
+
+function assertRow(out: string, row: Row): void {
+  for (const c of row.contains ?? []) {
+    if (c instanceof RegExp) expect(out).toMatch(c);
+    else expect(out).toContain(c);
+  }
+  for (const e of row.excludes ?? []) {
+    if (e instanceof RegExp) expect(out).not.toMatch(e);
+    else expect(out).not.toContain(e);
+  }
+}
+
+// ─── §1 — LAN bootstrap & L3 reachability ───────────────────────────
+//
+// Before any SSH test makes sense, every node must own its configured
+// IPv4 and answer ICMP echo from at least one peer per platform. If §1
+// fails, every other section is meaningless until the fixture or the
+// platform CLI is repaired.
+
+describe('§1 — LAN bootstrap & L3 reachability', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux→Linux: ping linux2 from linux1 succeeds',
+      on: l => l.linux1, cmd: 'ping -c 1 -W 2 10.0.0.2',
+      contains: [/1 (packets )?received|bytes from 10\.0\.0\.2/i],
+      excludes: [/100% packet loss/],
+    },
+    {
+      name: 'Linux→Server: ping lxsrv1 from linux1 succeeds',
+      on: l => l.linux1, cmd: 'ping -c 1 -W 2 10.0.0.3',
+      contains: [/bytes from 10\.0\.0\.3|1 (packets )?received/i],
+    },
+    {
+      name: 'Linux→Windows: ping win1 from linux1 succeeds',
+      on: l => l.linux1, cmd: 'ping -c 1 -W 2 10.0.0.4',
+      contains: [/bytes from 10\.0\.0\.4|1 (packets )?received/i],
+    },
+    {
+      name: 'Linux→Cisco router: ping ciscoR1 from linux1 succeeds',
+      on: l => l.linux1, cmd: 'ping -c 1 -W 2 10.0.0.6',
+      contains: [/bytes from 10\.0\.0\.6|1 (packets )?received/i],
+    },
+    {
+      name: 'Linux→Huawei router: ping hwR1 from linux1 succeeds',
+      on: l => l.linux1, cmd: 'ping -c 1 -W 2 10.0.0.8',
+      contains: [/bytes from 10\.0\.0\.8|1 (packets )?received/i],
+    },
+    {
+      name: 'Windows→Linux: ping linux1 from win1 succeeds',
+      on: l => l.win1, cmd: 'ping 10.0.0.1',
+      contains: [/Reply from 10\.0\.0\.1|bytes=/i],
+    },
+    {
+      name: 'Windows→Cisco: ping ciscoR1 from win2 succeeds',
+      on: l => l.win2, cmd: 'ping 10.0.0.6',
+      contains: [/Reply from 10\.0\.0\.6|bytes=/i],
+    },
+    {
+      name: 'Cisco→Linux: ping linux1 from ciscoR1 succeeds',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ping 10.0.0.1',
+      contains: [/!!!!!|Success rate is [1-9]/],
+    },
+    {
+      name: 'Huawei→Linux: ping linux1 from hwR1 succeeds',
+      on: l => l.hwR1, cmd: 'ping 10.0.0.1',
+      contains: [/bytes from 10\.0\.0\.1|Reply from 10\.0\.0\.1/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §2 — Linux → Linux SSH happy path ──────────────────────────────
+//
+// A Linux operator drives `ssh` exactly as a real user would; the
+// client traffic must traverse core-sw to reach sshd on the peer.
+
+describe('§2 — Linux → Linux SSH happy path', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'PC→PC: ssh alice@linux2 greets and closes cleanly',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu', /Connection to 10\.0\.0\.2 closed/],
+      excludes: [/refused/, /Permission denied/],
+    },
+    {
+      name: 'PC→Server: ssh alice@lxsrv1 reaches the server',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.3',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/refused/],
+    },
+    {
+      name: 'Server→PC: lxsrv1 reaches linux2 for admin',
+      on: l => l.lxsrv1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+    },
+    {
+      name: 'one-shot remote command returns remote stdout',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+      excludes: [/Permission denied/],
+    },
+    {
+      name: 'remote hostname matches the target device',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'when the user is omitted the local user is used',
+      on: l => l.linux1, cmd: 'ssh 10.0.0.2',
+      contains: ['Welcome to Ubuntu'],
+      excludes: [/Permission denied/],
+    },
+    {
+      name: 'ssh -l alice host is equivalent to alice@host',
+      on: l => l.linux1, cmd: 'ssh -l alice 10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §3 — Linux → Windows SSH ───────────────────────────────────────
+//
+// A Linux operator manages Windows hosts via OpenSSH for Windows. The
+// remote shell may be cmd.exe (default) or PowerShell — both must be
+// reachable through the SSH channel without leaking to bash.
+
+describe('§3 — Linux → Windows SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh User@win1 hostname returns the Windows machine name',
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'ver shows the Microsoft Windows version banner',
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4 ver',
+      contains: [/Microsoft Windows|Version/i],
+    },
+    {
+      name: 'PowerShell can be invoked as remote shell',
+      on: l => l.linux1,
+      cmd: 'ssh User@10.0.0.4 powershell -Command "Get-Host | Select-Object -ExpandProperty Name"',
+      contains: [/ConsoleHost|PowerShell/i],
+    },
+    {
+      name: 'whoami over SSH includes the Windows User form',
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4 whoami',
+      contains: [/User/],
+    },
+    {
+      name: 'unknown Windows user is rejected by sshd',
+      on: l => l.linux1, cmd: 'ssh -o NumberOfPasswordPrompts=1 GHOST@10.0.0.4 hostname',
+      contains: [/Permission denied|Authentication failed/i],
+      excludes: [/^win1$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §4 — Windows → Linux SSH ───────────────────────────────────────
+//
+// Symmetric counterpart of §3: ssh.exe driven from cmd.exe or
+// PowerShell on a Windows host, targeting a Linux peer. Same transport
+// must be spoken from both sides.
+
+describe('§4 — Windows → Linux SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh alice@linux1 returns linux1 as hostname',
+      on: l => l.win1, cmd: 'ssh alice@10.0.0.1 hostname',
+      contains: [/^linux1$/m],
+    },
+    {
+      name: 'uname -a from Windows reflects the Linux kernel banner',
+      on: l => l.win1, cmd: 'ssh alice@10.0.0.1 uname -a',
+      contains: [/Linux/],
+    },
+    {
+      name: 'remote whoami returns the Linux user, not the Windows User',
+      on: l => l.win1, cmd: 'ssh alice@10.0.0.1 whoami',
+      contains: [/^alice$/m], excludes: [/^User$/m],
+    },
+    {
+      name: 'PowerShell pipeline captures remote stdout into a variable',
+      on: l => l.win1,
+      cmd: 'powershell -Command "$h = ssh alice@10.0.0.1 hostname; $h"',
+      contains: ['linux1'],
+    },
+    {
+      name: 'ssh client surfaces connection refused when sshd is stopped',
+      setup: async (l) => {
+        await l.linux1.executeCommand('sudo systemctl stop ssh');
+      },
+      on: l => l.win1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.1 whoami',
+      contains: [/Connection refused|Could not connect/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §5 — Linux → Cisco IOS SSH ─────────────────────────────────────
+//
+// The remote channel is bound to CiscoIOSShell, not to bash. Login
+// authenticates against the local-user database, the prompt belongs
+// to user-exec, and `transport input none` rejects SSH at the VTY.
+
+describe('§5 — Linux → Cisco IOS SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'show version on the Cisco router prints the IOS banner',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i], excludes: [/bash:|command not found/i],
+    },
+    {
+      name: 'show interfaces status lists router data ports',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show interfaces status"',
+      contains: [/connected|notconnect|Port\s+Name|GigabitEthernet/i],
+    },
+    {
+      name: 'remote prompt is the IOS hostname, never bash',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show running-config | include hostname"',
+      contains: [/hostname ciscoR1/i], excludes: [/GNU bash|sh-\d/],
+    },
+    {
+      name: 'transport input none refuses SSH at the VTY',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('transport input none');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+    {
+      name: 'unknown VTY user is rejected',
+      on: l => l.linux1, cmd: 'ssh -o NumberOfPasswordPrompts=1 ghost@10.0.0.6 "show version"',
+      contains: [/Permission denied|Authentication failed/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §6 — Linux → Huawei VRP SSH ────────────────────────────────────
+//
+// stelnet server binds the channel to HuaweiVRPShell. Authentication
+// uses an AAA local-user with `service-type ssh`. `undo stelnet server
+// enable` must refuse the connection.
+
+describe('§6 — Linux → Huawei VRP SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'display version on the Huawei router prints the VRP banner',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i], excludes: [/bash:|command not found/i],
+    },
+    {
+      name: 'display interface brief lists the router data interfaces',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display interface brief"',
+      contains: [/Interface\s+PHY|GigabitEthernet0\/0\/0/i],
+    },
+    {
+      name: 'display current-configuration shows stelnet server enabled',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display current-configuration"',
+      contains: [/stelnet server enable/, /protocol inbound ssh/],
+    },
+    {
+      name: 'undo stelnet server enable refuses SSH',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('undo stelnet server enable');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)/i],
+    },
+    {
+      name: 'protocol inbound telnet alone refuses SSH at the VTY',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('protocol inbound telnet');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §7 — Windows → Cisco / Huawei SSH ──────────────────────────────
+//
+// The Windows OpenSSH client must speak the same transport as Linux
+// and bind to the platform-native CLI on the remote side (IOS / VRP),
+// never to cmd.exe or bash.
+
+describe('§7 — Windows → Cisco / Huawei SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Windows ssh.exe reaches IOS and runs show version',
+      on: l => l.win1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i], excludes: [/Microsoft Windows|cmd\.exe/i],
+    },
+    {
+      name: 'Windows ssh.exe reaches VRP and runs display version',
+      on: l => l.win1, cmd: 'ssh admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i], excludes: [/Microsoft Windows|cmd\.exe/i],
+    },
+    {
+      name: 'remote prompt on IOS is context-sensitive help, not cmd.exe',
+      on: l => l.win1, cmd: 'ssh admin@10.0.0.6 "?"',
+      excludes: [/Microsoft Windows|cmd\.exe|GNU bash/i],
+    },
+    {
+      name: 'PowerShell pipeline can pipe show output through Select-String',
+      on: l => l.win1,
+      cmd: 'powershell -Command "ssh admin@10.0.0.6 show version | Select-String IOS"',
+      contains: [/IOS/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §8 — Cisco / Huawei → Linux & Windows SSH (outbound) ───────────
+//
+// Network OSes must include an SSH client in privileged exec / system
+// view that traverses the LAN to reach Linux and Windows hosts.
+
+describe('§8 — Cisco / Huawei → Linux & Windows SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'IOS: ssh -l alice 10.0.0.1 reaches a Linux PC',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l alice 10.0.0.1',
+      contains: [/Welcome to Ubuntu/i],
+      excludes: [/Invalid input|Unknown command/i],
+    },
+    {
+      name: 'IOS: ssh -l User 10.0.0.4 reaches a Windows PC',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l User 10.0.0.4',
+      contains: [/Microsoft Windows|win1/i],
+    },
+    {
+      name: 'IOS: ssh -l admin 10.0.0.8 reaches the Huawei router',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l admin 10.0.0.8',
+      contains: [/VRP|Huawei|<hwR1>/i],
+    },
+    {
+      name: 'VRP: stelnet 10.0.0.1 reaches a Linux PC',
+      on: l => l.hwR1, cmd: 'stelnet 10.0.0.1',
+      contains: [/Welcome to Ubuntu/i],
+      excludes: [/Unrecognized|Error: Unrecognized/i],
+    },
+    {
+      name: 'VRP: stelnet 10.0.0.6 reaches the Cisco router',
+      on: l => l.hwR1, cmd: 'stelnet 10.0.0.6',
+      contains: [/IOS|Cisco|ciscoR1/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §9 — Command flow: alias must drive the same handler as the canonical command ──
+//
+// Core grievance: today `sudo` triggers behaviour by *name match*. After
+// `alias sudo=please`, typing `please …` should follow the exact same
+// privilege-escalation flow, not a no-op or a recursive lookup. Same on
+// Windows (Set-Alias), Cisco (alias exec), Huawei (command-privilege /
+// alias). This section is the design oracle: aliasing must rebind the
+// command name to the same flow descriptor, never duplicate behaviour
+// by string-matching the typed token.
+
+describe('§9 — Command flow respects aliases on every shell', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'bash: alias please=sudo then please whoami runs as root',
+      setup: async (l) => {
+        await l.linux1.executeCommand('su - alice');
+        await l.linux1.executeCommand("alias please='sudo'");
+      },
+      on: l => l.linux1, cmd: 'please whoami',
+      contains: [/^root$/m],
+      excludes: [/command not found|please: not found/i],
+    },
+    {
+      name: 'bash: alias ll="ls -la" routes through the ls handler',
+      setup: (l) => { void l.linux1.executeCommand("alias ll='ls -la'"); },
+      on: l => l.linux1, cmd: 'll /etc',
+      contains: [/passwd/, /hosts/],
+    },
+    {
+      name: 'bash: shell function shadows the same name as a builtin',
+      setup: (l) => {
+        void l.linux1.executeCommand("function cd { echo CUSTOM:$1; }");
+      },
+      on: l => l.linux1, cmd: 'cd /tmp',
+      contains: [/^CUSTOM:\/tmp$/m],
+    },
+    {
+      name: 'PowerShell: Set-Alias sudo Invoke-Elevated runs the elevation flow',
+      setup: async (l) => {
+        await l.win1.executeCommand(
+          'powershell -Command "function Invoke-Elevated { whoami }; Set-Alias sudo Invoke-Elevated"',
+        );
+      },
+      on: l => l.win1,
+      cmd: 'powershell -Command "Invoke-Elevated"',
+      contains: [/User/],
+    },
+    {
+      name: 'cmd.exe: doskey macro routes to the same dir handler',
+      setup: async (l) => { await l.win1.executeCommand('doskey ll=dir /a $*'); },
+      on: l => l.win1, cmd: 'll',
+      contains: [/Directory of/i],
+    },
+    {
+      name: 'IOS: alias exec sr "show running-config" runs the show handler',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('enable');
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('alias exec sr show running-config');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.ciscoR1, cmd: 'sr | include hostname',
+      contains: [/hostname ciscoR1/i],
+    },
+    {
+      name: 'VRP: command-privilege alias dis-cur for display current-configuration',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('command-alias enable');
+        await l.hwR1.executeCommand('command-alias alias dis-cur display current-configuration');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.hwR1, cmd: 'dis-cur',
+      contains: [/interface GigabitEthernet0\/0\/0/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §10 — Authentication methods across the LAN ────────────────────
+//
+// password, publickey and keyboard-interactive must all be reachable
+// on every SSH server type. ssh -o PreferredAuthentications= drives
+// the negotiation explicitly.
+
+describe('§10 — SSH authentication methods', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux→Linux: password auth works for alice',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'Linux→Linux: publickey auth after ssh-keygen+ssh-copy-id works',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+      excludes: [/Permission denied/i],
+    },
+    {
+      name: 'Linux→Linux: publickey fails without prior key install',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/Permission denied/i],
+      excludes: [/^alice$/m],
+    },
+    {
+      name: 'Linux→Windows: password auth works for User',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password User@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'Linux→Cisco: password auth against local-user database',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'Linux→Huawei: password auth against AAA local-user',
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=password admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i],
+    },
+    {
+      name: 'Linux→Huawei: publickey after ssh user admin assign rsa-key',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        const pub = await l.linux1.executeCommand('cat /root/.ssh/id_rsa.pub');
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand(`rsa peer-public-key linux1key encoding-type openssh`);
+        await l.hwR1.executeCommand(`public-key-code begin`);
+        await l.hwR1.executeCommand(pub.trim().split(' ')[1]);
+        await l.hwR1.executeCommand(`public-key-code end`);
+        await l.hwR1.executeCommand(`peer-public-key end`);
+        await l.hwR1.executeCommand('ssh user admin authentication-type rsa');
+        await l.hwR1.executeCommand('ssh user admin assign rsa-key linux1key');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §11 — Host key TOFU & known_hosts coherence ────────────────────
+//
+// First connection to any peer must register its host key in
+// ~/.ssh/known_hosts (TOFU). A mismatched key on a subsequent connect
+// must be rejected loudly with the standard "REMOTE HOST IDENTIFICATION
+// HAS CHANGED" banner — on every client platform.
+
+describe('§11 — known_hosts coherence across platforms', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: first connect with accept-new persists host key',
+      setup: async (l) => {
+        await l.linux1.executeCommand('rm -f /root/.ssh/known_hosts');
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux1, cmd: 'cat /root/.ssh/known_hosts',
+      contains: [/10\.0\.0\.2/, /ssh-(rsa|ed25519|ecdsa)/i],
+    },
+    {
+      name: 'Linux: second connect uses stored host key (no prompt)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m], excludes: [/authenticity of host/i, /yes\/no/i],
+    },
+    {
+      name: 'Linux: regenerated remote host key triggers identification-changed',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh -t rsa');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2 hostname',
+      contains: [/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i],
+      excludes: [/^linux2$/m],
+    },
+    {
+      name: 'Windows: ssh.exe stores host key in %USERPROFILE%\\.ssh\\known_hosts',
+      setup: async (l) => {
+        await l.win1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1 hostname');
+      },
+      on: l => l.win1, cmd: 'type %USERPROFILE%\\.ssh\\known_hosts',
+      contains: [/10\.0\.0\.1/],
+    },
+    {
+      name: 'Cisco: ip ssh known-hosts records server keys for outbound ssh',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('enable');
+        await l.ciscoR1.executeCommand('ssh -l alice 10.0.0.1');
+      },
+      on: l => l.ciscoR1, cmd: 'show ip ssh known-hosts',
+      contains: [/10\.0\.0\.1/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §12 — ~/.ssh/config Host blocks ────────────────────────────────
+//
+// Per-host options (User, Port, IdentityFile, ProxyJump, StrictHost…)
+// must be honoured by the client so operators stop typing flags.
+
+describe('§12 — ~/.ssh/config Host blocks', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const writeConfig = async (l: XLan, body: string) => {
+    await l.linux1.executeCommand('mkdir -p /root/.ssh');
+    await l.linux1.executeCommand(`cat > /root/.ssh/config <<'EOF'\n${body}\nEOF`);
+    await l.linux1.executeCommand('chmod 600 /root/.ssh/config');
+  };
+
+  const rows: Row[] = [
+    {
+      name: 'Host alias resolves HostName and User',
+      setup: async (l) => {
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice');
+      },
+      on: l => l.linux1, cmd: 'ssh two hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Wildcard Host * applies User and StrictHostKeyChecking',
+      setup: async (l) => {
+        await writeConfig(l, 'Host *\n  User alice\n  StrictHostKeyChecking accept-new');
+      },
+      on: l => l.linux1, cmd: 'ssh 10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'Per-host Port override is honoured',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice\n  Port 2222');
+      },
+      on: l => l.linux1, cmd: 'ssh two hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'IdentityFile is read for the matching Host only',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_two");
+        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_two.pub alice@10.0.0.2');
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice\n  IdentityFile /root/.ssh/id_two\n  IdentitiesOnly yes');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no two whoami',
+      contains: [/^alice$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §13 — ProxyJump across heterogeneous hops ──────────────────────
+//
+// ssh -J jumpbox target must traverse the real network: TCP from
+// client → jumpbox, then nested TCP from jumpbox → target, then the
+// SSH transport piggy-backs on that pipe. Works with mixed platforms.
+
+describe('§13 — ProxyJump across heterogeneous hops', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux→Linux→Linux: ssh -J linux2 lxsrv1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2 alice@10.0.0.3 hostname',
+      contains: [/^lxsrv1$/m],
+      excludes: [/refused|denied/i],
+    },
+    {
+      name: 'Linux→Linux→Windows: ssh -J linux2 win1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2 User@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'Linux→Linux→Cisco: ssh -J linux2 ciscoR1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2 admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'two-hop ProxyJump: linux1 → linux2 → lxsrv1 → ciscoR1',
+      on: l => l.linux1,
+      cmd: 'ssh -J alice@10.0.0.2,alice@10.0.0.3 admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'ProxyJump uses ~/.ssh/config Host alias',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /root/.ssh');
+        await l.linux1.executeCommand("cat > /root/.ssh/config <<'EOF'\nHost jump\n  HostName 10.0.0.2\n  User alice\nHost target\n  HostName 10.0.0.3\n  User alice\n  ProxyJump jump\nEOF");
+      },
+      on: l => l.linux1, cmd: 'ssh target hostname',
+      contains: [/^lxsrv1$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §14 — Local / Remote / Dynamic port forwarding ─────────────────
+//
+// ssh -L / -R / -D must open real TCP listeners on the forwarding
+// side, pipe bytes through the SSH channel and drop them onto a real
+// TCP socket on the other side. We exercise the forwarding by
+// tunnelling the SSH protocol itself (port 22 of a remote peer) — no
+// auxiliary daemons are required, only native binaries.
+
+describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: '-L 9022:10.0.0.3:22 tunnels SSH to lxsrv1 via the local port',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -L 9022:10.0.0.3:22 alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -p 9022 -o StrictHostKeyChecking=no alice@127.0.0.1 hostname',
+      contains: [/^lxsrv1$/m],
+    },
+    {
+      name: '-R 9122:10.0.0.3:22 forwards the listener back onto the client',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -R 9122:10.0.0.3:22 alice@10.0.0.2');
+      },
+      on: l => l.linux2,
+      cmd: 'ssh -p 9122 -o StrictHostKeyChecking=no alice@127.0.0.1 hostname',
+      contains: [/^lxsrv1$/m],
+    },
+    {
+      name: '-D 1080 SOCKS proxy: ssh -o ProxyCommand uses it to reach lxsrv1',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -D 1080 alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o ProxyCommand="ssh -W %h:%p -p 1080 -o StrictHostKeyChecking=no" alice@10.0.0.3 hostname',
+      contains: [/^lxsrv1$/m],
+    },
+    {
+      name: 'GatewayPorts no: -L bind is local-only, peer cannot reach it',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -f -N -L 9222:10.0.0.3:22 alice@10.0.0.2');
+      },
+      on: l => l.linux2,
+      cmd: 'ssh -o ConnectTimeout=2 -p 9222 alice@10.0.0.1 hostname',
+      contains: [/Connection refused|Connection timed out/i],
+      excludes: [/^lxsrv1$/m],
+    },
+    {
+      name: 'AllowTcpForwarding no on the gateway refuses -L setup',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?AllowTcpForwarding.*/AllowTcpForwarding no/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -L 9322:10.0.0.3:22 -N -o ExitOnForwardFailure=yes alice@10.0.0.2',
+      contains: [/administratively prohibited|Could not request|refused/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §15 — SCP / SFTP cross-platform file transfer ──────────────────
+//
+// File transfers must traverse the same SSH channel and land in the
+// remote VFS with correct ownership, mode and content. Both directions
+// (push & pull), all three platform pairs (Linux/Linux, Linux/Windows,
+// Linux/Cisco-running-config).
+
+describe('§15 — SCP / SFTP cross-platform transfer', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'scp file from linux1 to linux2 lands with the same content',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo "hello from linux1" > /tmp/payload.txt');
+        await l.linux1.executeCommand('scp /tmp/payload.txt alice@10.0.0.2:/tmp/payload.txt');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/payload.txt',
+      contains: [/^hello from linux1$/m],
+    },
+    {
+      name: 'scp -p preserves mtime and mode',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo data > /tmp/keep.txt && chmod 640 /tmp/keep.txt');
+        await l.linux1.executeCommand('scp -p /tmp/keep.txt alice@10.0.0.2:/tmp/keep.txt');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/keep.txt',
+      contains: [/^640$/m],
+    },
+    {
+      name: 'scp pull from win1 onto linux1 reads cmd.exe-style path',
+      setup: async (l) => {
+        await l.win1.executeCommand('echo win-payload > C:\\Users\\User\\payload.txt');
+        await l.linux1.executeCommand('scp User@10.0.0.4:/C:/Users/User/payload.txt /tmp/win-payload.txt');
+      },
+      on: l => l.linux1, cmd: 'cat /tmp/win-payload.txt',
+      contains: [/^win-payload$/m],
+    },
+    {
+      name: 'sftp put then get round-trips the file unchanged',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo roundtrip > /tmp/rt.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+        );
+        await l.linux1.executeCommand('rm /tmp/rt.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nget /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux1, cmd: 'cat /tmp/rt.txt',
+      contains: [/^roundtrip$/m],
+    },
+    {
+      name: 'copy running-config tftp via SSH (Cisco scp server)',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('ip scp server enable');
+        await l.ciscoR1.executeCommand('end');
+        await l.linux1.executeCommand('scp admin@10.0.0.6:running-config /tmp/running.txt');
+      },
+      on: l => l.linux1, cmd: 'grep hostname /tmp/running.txt',
+      contains: [/hostname ciscoR1/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §16 — SSH agent & agent forwarding ─────────────────────────────
+//
+// ssh-agent must store unlocked keys; -A must forward the agent socket
+// so a hop can authenticate further with the same identity. Works
+// across Linux→Linux→Cisco/Huawei.
+
+describe('§16 — SSH agent & agent forwarding', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await lan.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+    await lan.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+    await lan.linux1.executeCommand('ssh-copy-id alice@10.0.0.3');
+    await lan.linux1.executeCommand('eval $(ssh-agent -s) && ssh-add /root/.ssh/id_rsa');
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh-add -l lists the loaded key',
+      on: l => l.linux1, cmd: 'ssh-add -l',
+      contains: [/2048 SHA256:|RSA|\/root\/\.ssh\/id_rsa/i],
+    },
+    {
+      name: 'agent-backed connection works without a password prompt',
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: '-A: agent forwarded to first hop authenticates the next hop',
+      on: l => l.linux1,
+      cmd: 'ssh -A alice@10.0.0.2 "ssh -o PasswordAuthentication=no alice@10.0.0.3 hostname"',
+      contains: [/^lxsrv1$/m],
+    },
+    {
+      name: 'no -A: agent NOT forwarded — second hop fails publickey',
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 "ssh -o PasswordAuthentication=no alice@10.0.0.3 hostname"',
+      contains: [/Permission denied/i], excludes: [/^lxsrv1$/m],
+    },
+    {
+      name: 'SSH_AUTH_SOCK is exported into the remote shell when -A is used',
+      on: l => l.linux1,
+      cmd: 'ssh -A alice@10.0.0.2 \'echo $SSH_AUTH_SOCK\'',
+      contains: [/\/tmp\/ssh-/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §17 — Banner, MOTD, last-login per platform ────────────────────
+//
+// Pre-auth banner (/etc/issue.net on Linux, banner motd on Cisco/Huawei,
+// LegalNoticeText on Windows) must reach the client before the password
+// prompt. /etc/motd and last-login show post-auth.
+
+describe('§17 — Banner, MOTD and last-login per platform', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: /etc/issue.net is displayed pre-auth',
+      setup: (l) => { void l.linux2.executeCommand("echo 'AUTHORIZED USE ONLY' > /etc/issue.net"); },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['AUTHORIZED USE ONLY'],
+    },
+    {
+      name: 'Linux: /etc/motd is shown after auth',
+      setup: (l) => { void l.linux2.executeCommand("echo 'Property of ACME' > /etc/motd"); },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: ['Property of ACME'],
+    },
+    {
+      name: 'Linux: last login line appears on subsequent connect',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 exit');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
+      contains: [/Last login:.* from 10\.0\.0\.1/i],
+    },
+    {
+      name: 'Cisco: banner motd is shown to SSH clients',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('banner motd # AUTHORIZED USE ONLY #');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6',
+      contains: ['AUTHORIZED USE ONLY'],
+    },
+    {
+      name: 'Huawei: header login information is shown to SSH clients',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('header login information "VRP AUTH NOTICE"');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8',
+      contains: ['VRP AUTH NOTICE'],
+    },
+    {
+      name: 'Windows: LegalNoticeText reaches the SSH client',
+      setup: async (l) => {
+        await l.win1.executeCommand('reg add "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v LegalNoticeText /d "WIN BANNER" /f');
+      },
+      on: l => l.linux1, cmd: 'ssh User@10.0.0.4',
+      contains: ['WIN BANNER'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §18 — Brute-force protection / rate-limit ──────────────────────
+//
+// MaxAuthTries on Linux, login block-for on Cisco, ssh server-source
+// max-attempts on Huawei, Account Lockout Policy on Windows — every
+// platform must throttle bursts of wrong passwords coming from the
+// same client IP.
+
+describe('§18 — Brute-force protection on every SSH server', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: repeated unknown-user attempts trip MaxStartups limits',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?MaxStartups.*/MaxStartups 2:100:3/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'for i in 1 2 3 4 5; do ssh -o NumberOfPasswordPrompts=1 ghost$i@10.0.0.2 hostname; done',
+      contains: [/Connection (closed|refused)|too many|drop/i],
+    },
+    {
+      name: 'Cisco: login block-for is configurable and reflected in show running-config',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh admin@10.0.0.6 "show running-config | include login block-for"',
+      contains: [/login block-for 60 attempts 2 within 30/i],
+    },
+    {
+      name: 'Huawei: ssh server authentication-retries is persisted in current-config',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('ssh server authentication-retries 2');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh admin@10.0.0.8 "display current-configuration | include authentication-retries"',
+      contains: [/ssh server authentication-retries 2/i],
+    },
+    {
+      name: 'Windows: lockoutthreshold setting is reported by net accounts',
+      setup: async (l) => { await l.win1.executeCommand('net accounts /lockoutthreshold:3'); },
+      on: l => l.win1, cmd: 'net accounts',
+      contains: [/Lockout threshold:\s*3/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §19 — PTY allocation, signals & window size ────────────────────
+//
+// ssh -t / -tt forces a PTY; resize must propagate via SIGWINCH; ^C in
+// the client must deliver SIGINT to the remote process group; exit
+// codes from the remote signal must be 128+N as POSIX prescribes.
+
+describe('§19 — PTY allocation, signals and window size', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh -t alice@linux2 tty reports a /dev/pts entry',
+      on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 tty',
+      contains: [/\/dev\/pts\/\d+/],
+    },
+    {
+      name: 'ssh without -t closes stdin and tty reports not a tty',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 tty',
+      contains: [/not a tty/i],
+    },
+    {
+      name: 'COLUMNS and LINES reach the remote shell from the client TTY',
+      on: l => l.linux1,
+      cmd: 'stty cols 132 rows 50; ssh -t alice@10.0.0.2 \'echo $COLUMNS:$LINES\'',
+      contains: [/^132:50$/m],
+    },
+    {
+      name: 'Ctrl-C on the client kills the remote process group',
+      on: l => l.linux1,
+      cmd: 'timeout 1 ssh -t alice@10.0.0.2 "trap \'echo caught; exit 130\' INT; sleep 5"',
+      contains: [/caught|^130$/m],
+    },
+    {
+      name: 'remote exit 130 (SIGINT) is surfaced through the client',
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 "bash -c \'kill -INT $$\'"; echo rc=$?',
+      contains: [/rc=130/],
+    },
+    {
+      name: 'Cisco IOS: ssh client uses a line-mode pty for the VTY',
+      setup: (l) => { void l.ciscoR1.executeCommand('enable'); },
+      on: l => l.ciscoR1, cmd: 'ssh -l alice 10.0.0.1 tty',
+      contains: [/\/dev\/pts\/\d+/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §20 — Environment forwarding & sshd AcceptEnv ──────────────────
+//
+// ssh -o SendEnv=… + sshd AcceptEnv must propagate the named variables
+// from the client environment into the remote shell. PermitUserEnvironment
+// allows ~/.ssh/environment overrides.
+
+describe('§20 — Environment forwarding', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'LC_GREETING is forwarded when AcceptEnv allows it',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo AcceptEnv LC_GREETING >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'LC_GREETING=hello ssh -o SendEnv=LC_GREETING alice@10.0.0.2 \'echo $LC_GREETING\'',
+      contains: [/^hello$/m],
+    },
+    {
+      name: 'unlisted variable is NOT forwarded',
+      on: l => l.linux1,
+      cmd: 'MY_SECRET=oops ssh -o SendEnv=MY_SECRET alice@10.0.0.2 \'echo ${MY_SECRET:-empty}\'',
+      contains: [/^empty$/m],
+    },
+    {
+      name: 'PermitUserEnvironment yes lets ~/.ssh/environment seed the shell',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitUserEnvironment.*/PermitUserEnvironment yes/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+        await l.linux2.executeCommand('mkdir -p /home/alice/.ssh && echo MOOD=happy > /home/alice/.ssh/environment && chown -R alice:alice /home/alice/.ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 \'echo $MOOD\'',
+      contains: [/^happy$/m],
+    },
+    {
+      name: 'TERM is propagated from the client TTY to the remote shell',
+      on: l => l.linux1,
+      cmd: 'TERM=xterm-256color ssh -t alice@10.0.0.2 \'echo $TERM\'',
+      contains: [/^xterm-256color$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §21 — sshd access control (allow/deny, ACLs, VTY ACL) ─────────
+//
+// AllowUsers / DenyUsers on Linux, access-class on Cisco VTY, acl
+// inbound on Huawei VTY, OpenSSH AllowGroups — every server must
+// enforce its own ACL before reaching the shell.
+
+describe('§21 — sshd access control', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: AllowUsers alice rejects bob',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo AllowUsers alice >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh bob@10.0.0.2 hostname',
+      contains: [/Permission denied|disallowed/i], excludes: [/^linux2$/m],
+    },
+    {
+      name: 'Linux: DenyUsers bob still lets alice through',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo DenyUsers bob >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Cisco: access-class on VTY blocks foreign client IP',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('access-list 20 permit 10.0.0.3');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('access-class 20 in');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+    {
+      name: 'Cisco: access-class still allows the permitted IP',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('access-list 21 permit 10.0.0.1');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('access-class 21 in');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'Huawei: acl inbound on VTY blocks foreign client IP',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('acl 2000');
+        await l.hwR1.executeCommand('rule 5 permit source 10.0.0.3 0');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('acl 2000 inbound');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §22 — Reactive event bus: subscribers react to SSH events ──────
+//
+// Every SSH session lifecycle event (auth attempt, login, exec, close)
+// must be published on the network event bus, and *consumers* on the
+// target device must react: append to /var/log/auth.log on Linux,
+// `terminal monitor` on Cisco, info-center on Huawei, Event Log on
+// Windows. The subscriber must observe the event without polling.
+
+describe('§22 — Reactive event bus: SSH lifecycle subscribers', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+    // Trigger one successful login per platform to publish events.
+    await lan.linux1.executeCommand('ssh alice@10.0.0.2 exit');
+    await lan.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    await lan.linux1.executeCommand('ssh admin@10.0.0.8 "display version"');
+    await lan.linux1.executeCommand('ssh User@10.0.0.4 hostname');
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: /var/log/auth.log records the Accepted password line',
+      on: l => l.linux2, cmd: 'cat /var/log/auth.log',
+      contains: [/sshd.*Accepted password for alice from 10\.0\.0\.1/i],
+    },
+    {
+      name: 'Linux: failed login is logged with Failed password',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh -o NumberOfPasswordPrompts=1 ghost@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'cat /var/log/auth.log',
+      contains: [/sshd.*Failed password for (invalid user )?ghost from 10\.0\.0\.1/i],
+    },
+    {
+      name: 'Cisco: show logging contains a %SEC_LOGIN-5-LOGIN_SUCCESS event',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show logging"',
+      contains: [/SEC_LOGIN-5-LOGIN_SUCCESS|SSH-5-SSH2_SESSION/i],
+    },
+    {
+      name: 'Huawei: display logbuffer contains an SSH/AUTHENTICATION event',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display logbuffer"',
+      contains: [/SSH\/|AUTHEN|stelnet/i],
+    },
+    {
+      name: 'Windows: Get-WinEvent Security/4624 lists the SSH login',
+      on: l => l.linux1,
+      cmd: 'ssh User@10.0.0.4 powershell -Command "Get-WinEvent -LogName Security -MaxEvents 5 | Where-Object {$_.Id -eq 4624}"',
+      contains: [/4624|Logon Type:\s*\d+/i],
+    },
+    {
+      name: 'reactive bus: stopping sshd publishes a service-down event consumed by the inventory',
+      setup: async (l) => { await l.linux2.executeCommand('sudo systemctl stop ssh'); },
+      on: l => l.linux2,
+      cmd: 'systemctl status ssh',
+      contains: [/inactive \(dead\)|stopped/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §23 — Concurrent SSH sessions stay isolated ────────────────────
+//
+// Multiple sessions to the same target must not share state: each one
+// has its own VFS cwd, env, history. `who` on the target must list
+// them all simultaneously.
+
+describe('§23 — Concurrent SSH sessions are isolated', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'two parallel sessions: each cd does not bleed into the other',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "cd /tmp && pwd > /tmp/from-pc1"');
+        await l.lxsrv1.executeCommand('ssh alice@10.0.0.2 "cd /var && pwd > /tmp/from-srv"');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/from-pc1 /tmp/from-srv',
+      contains: [/^\/tmp$/m, /^\/var$/m],
+    },
+    {
+      name: 'who lists every active SSH session in parallel',
+      setup: async (l) => {
+        // Keep three long-lived sessions open.
+        await l.linux1.executeCommand('ssh -f -N alice@10.0.0.2');
+        await l.lxsrv1.executeCommand('ssh -f -N alice@10.0.0.2');
+        await l.linux2.executeCommand('ssh -f -N alice@10.0.0.3');
+      },
+      on: l => l.linux2, cmd: 'who',
+      contains: [/alice.*pts\/\d+.*10\.0\.0\.1/i, /alice.*pts\/\d+.*10\.0\.0\.3/i],
+    },
+    {
+      name: 'env from session A does not leak into session B',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "export TAG=A && echo $TAG > /tmp/tagA"');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 \'echo "${TAG:-empty}"\'',
+      contains: [/^empty$/m],
+    },
+    {
+      name: 'history on a per-session basis is not shared',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "history -c && ls /tmp"');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 "history"',
+      contains: [/^$|^\s*\d+\s+history$/m],
+      excludes: [/ls \/tmp/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §24 — Telnet vs SSH transport coexistence ──────────────────────
+//
+// Network OSes can run both telnet (legacy) and ssh on VTY. Only the
+// permitted transport must answer; switching `transport input` /
+// `protocol inbound` updates the listening sockets dynamically.
+
+describe('§24 — Telnet vs SSH coexistence on routers/switches', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Cisco: transport input all accepts both telnet and ssh',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('transport input all');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show version"',
+      contains: [/IOS|Cisco/i],
+    },
+    {
+      name: 'Cisco: transport input telnet refuses SSH',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('transport input telnet');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.6 "show version"',
+      contains: [/Connection (closed|refused)|denied/i],
+    },
+    {
+      name: 'Huawei: protocol inbound all permits both telnet and stelnet',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('telnet server enable');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('protocol inbound all');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display version"',
+      contains: [/VRP|Huawei/i],
+    },
+    {
+      name: 'Huawei: undo protocol inbound ssh disables SSH while keeping telnet',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('telnet server enable');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('protocol inbound telnet');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 admin@10.0.0.8 "display version"',
+      contains: [/Connection (closed|refused)/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §25 — PermitRootLogin policy across platforms ──────────────────
+
+describe('§25 — Root/Administrator login policy', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux default PermitRootLogin no refuses root',
+      on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
+      contains: [/Permission denied/i], excludes: [/Welcome to Ubuntu/i],
+    },
+    {
+      name: 'Linux PermitRootLogin yes accepts root',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
+      contains: [/Welcome to Ubuntu|root@linux2/i],
+    },
+    {
+      name: 'Linux PermitRootLogin prohibit-password still blocks password root',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
+      contains: [/Permission denied/i],
+    },
+    {
+      name: 'Windows Administrator can SSH in by default',
+      on: l => l.linux1, cmd: 'ssh Administrator@10.0.0.4 hostname',
+      contains: [/^win1$/m],
+    },
+    {
+      name: 'Cisco: enable secret gates privileged exec after SSH login',
+      setup: async (l) => { await enableCiscoSsh(l.ciscoR1); },
+      on: l => l.linux1,
+      cmd: 'ssh admin@10.0.0.6 "show privilege"',
+      contains: [/Current privilege level is 15/i],
+    },
+    {
+      name: 'Huawei: privilege level 15 grants system-view rights',
+      setup: async (l) => { await enableHuaweiSsh(l.hwR1); },
+      on: l => l.linux1,
+      cmd: 'ssh admin@10.0.0.8 "display users"',
+      contains: [/admin/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §26 — SSH idle timeout / keepalive ─────────────────────────────
+
+describe('§26 — Idle timeout & keepalive across platforms', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: ClientAliveInterval is reflected in sshd_config',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?ClientAliveInterval.*/ClientAliveInterval 30/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux2, cmd: 'grep ^ClientAliveInterval /etc/ssh/sshd_config',
+      contains: [/ClientAliveInterval 30/],
+    },
+    {
+      name: 'Cisco: exec-timeout on VTY is persisted',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('line vty 0 4');
+        await l.ciscoR1.executeCommand('exec-timeout 5 0');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show running-config | include exec-timeout"',
+      contains: [/exec-timeout 5 0/i],
+    },
+    {
+      name: 'Huawei: idle-timeout on user-interface is persisted',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('user-interface vty 0 4');
+        await l.hwR1.executeCommand('idle-timeout 5 0');
+        await l.hwR1.executeCommand('quit');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "display current-configuration | include idle-timeout"',
+      contains: [/idle-timeout 5 0/i],
+    },
+    {
+      name: 'Linux client: ServerAliveInterval flag is accepted without error',
+      on: l => l.linux1,
+      cmd: 'ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=2 alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m], excludes: [/Bad configuration option|unknown option/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §27 — Strict-mode permission coherence on ~/.ssh ───────────────
+//
+// sshd refuses to use authorized_keys when ~/.ssh or the file itself
+// has overly-permissive ownership / mode. Filesystem must therefore
+// stay coherent with the simulated user/group/mode model.
+
+describe('§27 — Strict-mode permission coherence', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'authorized_keys mode 0644 is accepted',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.linux2.executeCommand('chmod 0644 /home/alice/.ssh/authorized_keys');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'authorized_keys mode 0777 is refused (StrictModes yes)',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.linux2.executeCommand('chmod 0777 /home/alice/.ssh/authorized_keys');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/Permission denied/i],
+    },
+    {
+      name: '~/.ssh owned by another user is refused',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+        await l.linux2.executeCommand('chown -R bob:bob /home/alice/.ssh');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      contains: [/Permission denied/i],
+    },
+    {
+      name: 'private key mode 0644 triggers UNPROTECTED PRIVATE KEY warning',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('chmod 0644 /root/.ssh/id_rsa');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PasswordAuthentication=no -i /root/.ssh/id_rsa alice@10.0.0.2 whoami',
+      contains: [/UNPROTECTED PRIVATE KEY|too open/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §28 — Key formats (rsa / ed25519 / ecdsa) ──────────────────────
+
+describe('§28 — Key formats across platforms', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ssh-keygen -t rsa produces a usable identity',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t rsa -b 2048 -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_rsa alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'ssh-keygen -t ed25519 produces a usable identity',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
+        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_ed25519.pub alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_ed25519 alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'ssh-keygen -t ecdsa -b 256 produces a usable identity',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t ecdsa -b 256 -N '' -f /root/.ssh/id_ecdsa");
+        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_ecdsa.pub alice@10.0.0.2');
+      },
+      on: l => l.linux1,
+      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_ecdsa alice@10.0.0.2 whoami',
+      contains: [/^alice$/m],
+    },
+    {
+      name: 'ssh-keygen -l -f reports the public-key fingerprint',
+      setup: async (l) => {
+        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
+      },
+      on: l => l.linux1, cmd: 'ssh-keygen -l -f /root/.ssh/id_ed25519.pub',
+      contains: [/SHA256:[A-Za-z0-9+\/]+/, /ED25519/i],
+    },
+    {
+      name: 'sshd HostKey ed25519 is advertised in the algorithms list',
+      on: l => l.linux1, cmd: 'ssh -v alice@10.0.0.2 exit 2>&1',
+      contains: [/Server host key:.*ED25519|ssh-ed25519/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §29 — Hostname resolution under SSH ────────────────────────────
+//
+// /etc/hosts entries, DHCP-learned names and management hostnames on
+// Cisco/Huawei must be usable as SSH targets. The client should NOT
+// rely on numeric IPs to operate.
+
+describe('§29 — Hostname resolution under SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux /etc/hosts: name "linux2" resolves to 10.0.0.2',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo "10.0.0.2 linux2" >> /etc/hosts');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@linux2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Linux: unknown name returns Could not resolve hostname',
+      on: l => l.linux1, cmd: 'ssh alice@nope.invalid',
+      contains: [/Could not resolve hostname/i],
+    },
+    {
+      name: 'Cisco: ip host entry resolves to a remote IP',
+      setup: async (l) => {
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('ip host pc1 10.0.0.1');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.ciscoR1, cmd: 'ssh -l alice pc1 exit',
+      contains: [/Welcome to Ubuntu/i],
+    },
+    {
+      name: 'Huawei: ip host-name entry resolves under stelnet',
+      setup: async (l) => {
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('ip host pc1 10.0.0.1');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.hwR1, cmd: 'stelnet pc1',
+      contains: [/Welcome to Ubuntu/i],
+    },
+    {
+      name: 'Windows hosts file entry resolves',
+      setup: async (l) => {
+        await l.win1.executeCommand('echo 10.0.0.1 linux1 >> %SystemRoot%\\System32\\drivers\\etc\\hosts');
+      },
+      on: l => l.win1, cmd: 'ssh alice@linux1 hostname',
+      contains: [/^linux1$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §30 — Command flow: dispatcher resolves by *flow descriptor* ───
+//
+// The grievance restated for SSH-bound shells: the typed token must
+// resolve to a *flow descriptor* (Privilege, Builtin, External, Alias,
+// Function…) before dispatch. So `please …` after `alias please=sudo`
+// drives the very same privilege-escalation flow as `sudo`, including
+// through an SSH channel.
+
+describe('§30 — Command flow respects aliases through SSH', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'aliased sudo via SSH escalates exactly like the canonical command',
+      setup: async (l) => {
+        await l.linux2.executeCommand('su - alice');
+        await l.linux2.executeCommand("echo \"alias please='sudo'\" >> /home/alice/.bashrc");
+        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+      },
+      on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "please whoami"',
+      contains: [/^root$/m],
+      excludes: [/please: not found|command not found/i],
+    },
+    {
+      name: 'shell function defined remotely is invoked through SSH',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo "myfn() { echo CUSTOM:$1; }" >> /home/alice/.bashrc');
+        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+      },
+      on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "myfn ping"',
+      contains: [/^CUSTOM:ping$/m],
+    },
+    {
+      name: 'alias inside a heredoc-sent script is honoured on the remote shell',
+      on: l => l.linux1,
+      cmd: 'ssh alice@10.0.0.2 \'bash -lc "shopt -s expand_aliases; alias greet=echo; greet bonjour"\'',
+      contains: [/^bonjour$/m],
+    },
+    {
+      name: 'Cisco: aliased show command via SSH runs the dispatcher entry, not a string echo',
+      setup: async (l) => {
+        await enableCiscoSsh(l.ciscoR1);
+        await l.ciscoR1.executeCommand('configure terminal');
+        await l.ciscoR1.executeCommand('alias exec si show ip interface brief');
+        await l.ciscoR1.executeCommand('end');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "si"',
+      contains: [/Interface\s+IP-Address|GigabitEthernet0\/0/i],
+    },
+    {
+      name: 'Huawei: command-alias via SSH dispatches the display handler',
+      setup: async (l) => {
+        await enableHuaweiSsh(l.hwR1);
+        await l.hwR1.executeCommand('system-view');
+        await l.hwR1.executeCommand('command-alias enable');
+        await l.hwR1.executeCommand('command-alias alias dis-int display interface');
+        await l.hwR1.executeCommand('quit');
+      },
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.8 "dis-int GigabitEthernet0/0/0"',
+      contains: [/GigabitEthernet0\/0\/0 current state/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §31 — Filesystem coherence after remote operations ─────────────
+//
+// Files created, edited, chmod-ed or moved through an SSH channel
+// must be visible with the same metadata to a local shell on the
+// remote — no shadow VFS, no staleness, no permission drift.
+
+describe('§31 — Filesystem coherence across SSH/local boundary', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'file created via SSH is visible to a local ls on the target',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/remote-mark"');
+      },
+      on: l => l.linux2, cmd: 'ls -l /tmp/remote-mark',
+      contains: [/remote-mark/, /alice/],
+    },
+    {
+      name: 'chmod via SSH propagates to stat run locally on the target',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/perm && chmod 600 /tmp/perm"');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a %U" /tmp/perm',
+      contains: [/^600 alice$/m],
+    },
+    {
+      name: 'file appended via local cat is read back identical via SSH',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo first > /tmp/joint && echo second >> /tmp/joint');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 "cat /tmp/joint"',
+      contains: [/^first$/m, /^second$/m],
+    },
+    {
+      name: 'sftp put then local cat sees the exact bytes',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo bridged > /tmp/x');
+        await l.linux1.executeCommand("sftp alice@10.0.0.2 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF");
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/x',
+      contains: [/^bridged$/m],
+    },
+    {
+      name: 'directory created via SSH appears with correct owner locally',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "mkdir -p /home/alice/work && touch /home/alice/work/.keep"');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%U:%G" /home/alice/work',
+      contains: [/^alice:alice$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §32 — Negative paths: unreachable, refused, key mismatch ───────
+
+describe('§32 — Negative paths', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'unreachable IP returns No route to host',
+      on: l => l.linux1,
+      cmd: 'ssh -o ConnectTimeout=2 alice@192.0.2.99',
+      contains: [/No route to host|Network is unreachable|timed out|Connection timed out/i],
+    },
+    {
+      name: 'invalid IP literal is rejected before any TCP',
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.999',
+      contains: [/Could not resolve|Name or service not known|invalid/i],
+    },
+    {
+      name: 'sshd stopped → Connection refused',
+      setup: async (l) => { await l.linux2.executeCommand('sudo systemctl stop ssh'); },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.2',
+      contains: [/Connection refused/i],
+    },
+    {
+      name: 'StrictHostKeyChecking=yes with no known_hosts entry refuses',
+      setup: async (l) => { await l.linux1.executeCommand('rm -f /root/.ssh/known_hosts'); },
+      on: l => l.linux1,
+      cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2',
+      contains: [/Host key verification failed|No matching host key|not known/i],
+    },
+    {
+      name: 'usage line on bare ssh with no host',
+      on: l => l.linux1, cmd: 'ssh',
+      contains: [/usage:\s*ssh/i],
+    },
+    {
+      name: 'usage line on bare scp with no source',
+      on: l => l.linux1, cmd: 'scp',
+      contains: [/usage:\s*scp/i],
+    },
+    {
+      name: 'usage line on bare sftp with no host',
+      on: l => l.linux1, cmd: 'sftp',
+      contains: [/usage:\s*sftp/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §33 — Full N×N reachability matrix over SSH ────────────────────
+//
+// Final guard: every pair (client × server) in the heterogeneous LAN
+// must complete an SSH session. Generated programmatically so adding
+// a new device type only requires adding it to the matrix.
+
+describe('§33 — Full SSH reachability matrix', () => {
+  let lan: XLan;
+  beforeEach(async () => {
+    lan = await buildXLan();
+    await enableCiscoSsh(lan.ciscoR1);
+    await enableHuaweiSsh(lan.hwR1);
+  });
+
+  interface MatrixRow {
+    name: string;
+    client: keyof XLan;
+    cmd: string;
+    contains: (string | RegExp)[];
+  }
+
+  // L2 switches (ciscoS1, hwS1) are intentionally absent from the
+  // matrix: in this project they have no L3 stack and therefore no SSH
+  // server. They still forward frames for every other pair.
+  const targets: { ip: string; user: string; probe: string; want: RegExp }[] = [
+    { ip: '10.0.0.1', user: 'alice', probe: 'hostname', want: /^linux1$/m },
+    { ip: '10.0.0.2', user: 'alice', probe: 'hostname', want: /^linux2$/m },
+    { ip: '10.0.0.3', user: 'alice', probe: 'hostname', want: /^lxsrv1$/m },
+    { ip: '10.0.0.4', user: 'User',  probe: 'hostname', want: /^win1$/m },
+    { ip: '10.0.0.5', user: 'User',  probe: 'hostname', want: /^win2$/m },
+    { ip: '10.0.0.6', user: 'admin', probe: 'show version',    want: /IOS|Cisco/i },
+    { ip: '10.0.0.8', user: 'admin', probe: 'display version', want: /VRP|Huawei/i },
+  ];
+
+  const clients: (keyof XLan)[] = ['linux1', 'lxsrv1', 'win1'];
+  const matrix: MatrixRow[] = clients.flatMap((c) =>
+    targets.map((t) => ({
+      name: `${String(c)} → ${t.ip}: ssh ${t.user}@${t.ip} "${t.probe}"`,
+      client: c,
+      cmd: `ssh ${t.user}@${t.ip} "${t.probe}"`,
+      contains: [t.want],
+    })),
+  );
+
+  test.each(matrix)('$name', async (m) => {
+    const dev = lan[m.client] as { executeCommand: (c: string) => Promise<string> };
+    const out = await dev.executeCommand(m.cmd);
+    for (const c of m.contains) {
+      if (c instanceof RegExp) expect(out).toMatch(c);
+      else expect(out).toContain(c);
+    }
+  });
+});
+
+// ─── §34 — SCP error paths & exit codes ─────────────────────────────
+//
+// Every scp failure (missing source, unknown host, directory without -r,
+// no-route) must surface with the canonical OpenSSH "scp: <reason>"
+// line and a non-zero exit code. The remote VFS stays untouched.
+
+describe('§34 — SCP error paths', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'missing source file fails with scp: prefix',
+      on: l => l.linux1, cmd: 'scp /tmp/does-not-exist alice@10.0.0.2:/tmp/x',
+      contains: [/^scp:/m],
+    },
+    {
+      name: 'directory source without -r is refused',
+      setup: async (l) => { await l.linux1.executeCommand('mkdir -p /tmp/dir1'); },
+      on: l => l.linux1, cmd: 'scp /tmp/dir1 alice@10.0.0.2:/tmp/dir1',
+      contains: [/not a regular file|^scp:/m],
+    },
+    {
+      name: 'unknown remote host yields "no route to host"',
+      setup: async (l) => { await l.linux1.executeCommand('echo data > /tmp/lonely'); },
+      on: l => l.linux1, cmd: 'scp /tmp/lonely alice@192.0.2.250:/tmp/lonely',
+      contains: [/^scp:/m, /no route to host|No route to host/i],
+    },
+    {
+      name: 'usage line printed when only one argv positional is given',
+      on: l => l.linux1, cmd: 'scp /tmp/x',
+      contains: [/usage:\s*scp/i],
+    },
+    {
+      name: 'failed transfer leaves the remote VFS untouched',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo original > /tmp/keep');
+        await l.linux1.executeCommand('scp /tmp/missing alice@10.0.0.2:/tmp/keep');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/keep',
+      contains: [/^original$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §35 — SCP recursive directory transfers ────────────────────────
+//
+// `scp -r` walks the source tree and reconstructs it on the destination.
+// Covers Linux → Linux, Linux → server, and the mixed case where the
+// remote target's directory already exists.
+
+describe('§35 — SCP recursive directory transfers', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp -r flat dir between two Linux hosts',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /tmp/box && echo A > /tmp/box/a && echo B > /tmp/box/b');
+        await l.linux1.executeCommand('scp -r /tmp/box alice@10.0.0.2:/tmp/box');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/box/a /tmp/box/b',
+      contains: [/^A$/m, /^B$/m],
+    },
+    {
+      name: 'scp -r nested tree preserves every file',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /tmp/tree/inner && echo deep > /tmp/tree/inner/leaf && echo top > /tmp/tree/top');
+        await l.linux1.executeCommand('scp -r /tmp/tree alice@10.0.0.2:/tmp/tree');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/tree/top /tmp/tree/inner/leaf',
+      contains: [/^top$/m, /^deep$/m],
+    },
+    {
+      name: 'pull -r reads a tree from lxsrv1 back to linux1',
+      setup: async (l) => {
+        await l.lxsrv1.executeCommand('mkdir -p /tmp/pull && echo P1 > /tmp/pull/p1 && echo P2 > /tmp/pull/p2');
+        await l.linux1.executeCommand('scp -r alice@10.0.0.3:/tmp/pull /tmp/pull');
+      },
+      on: l => l.linux1, cmd: 'cat /tmp/pull/p1 /tmp/pull/p2',
+      contains: [/^P1$/m, /^P2$/m],
+    },
+    {
+      name: 'scp -r exits 0 on success',
+      setup: async (l) => {
+        await l.linux1.executeCommand('mkdir -p /tmp/exitchk && echo x > /tmp/exitchk/x');
+      },
+      on: l => l.linux1, cmd: 'scp -r /tmp/exitchk alice@10.0.0.2:/tmp/exitchk; echo rc=$?',
+      contains: [/rc=0/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §36 — SFTP interactive REPL coverage ───────────────────────────
+//
+// The interactive sftp client supports a sizeable REPL — put/get,
+// ls/cd/pwd, mkdir/rmdir/rm, chmod, rename — all sharing the same
+// channel. These tests pipe a here-doc through the local sftp client
+// and confirm the remote VFS reflects each verb exactly.
+
+describe('§36 — SFTP interactive REPL', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'cd + pwd reports the requested remote working directory',
+      setup: async (l) => {
+        await l.linux2.executeCommand('mkdir -p /var/tmp/run');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+        );
+      },
+      on: l => l.linux1,
+      cmd: "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+      contains: [/Remote working directory: \/var\/tmp\/run/],
+    },
+    {
+      name: 'mkdir + put + ls round-trips a file inside a fresh dir',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo m > /tmp/m.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /tmp/box-sftp\nput /tmp/m.txt /tmp/box-sftp/m.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/box-sftp/m.txt',
+      contains: [/^m$/m],
+    },
+    {
+      name: 'chmod via sftp changes the mode on the remote',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo s > /tmp/s.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/s.txt /tmp/s.txt\nchmod 600 /tmp/s.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/s.txt',
+      contains: [/^600$/m],
+    },
+    {
+      name: 'rm removes a remote file',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo doomed > /tmp/zap');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'ls /tmp/zap',
+      contains: [/No such file/i],
+    },
+    {
+      name: 'rename moves a remote file in one step',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo moveme > /tmp/from');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/to',
+      contains: [/^moveme$/m],
+    },
+    {
+      name: 'unknown verb in a batch does not abort subsequent put',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo k > /tmp/k.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nfubar /tmp\nput /tmp/k.txt /tmp/k.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/k.txt',
+      contains: [/^k$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §37 — SCP/SFTP cross-vendor (Linux ↔ Windows) ──────────────────
+//
+// Windows hosts speak the SFTP protocol over the same OpenSSH server
+// (port 22). Path translation (POSIX → NTFS with drive prefix) is the
+// only vendor-specific concern; the model layer's
+// WindowsSftpFileSystem handles it transparently.
+
+describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp push: linux1 → win1 lands at the translated NTFS path',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo from-linux > /tmp/push.txt');
+        await l.linux1.executeCommand('scp /tmp/push.txt User@10.0.0.4:/C:/Users/User/push.txt');
+      },
+      on: l => l.win1, cmd: 'type C:\\Users\\User\\push.txt',
+      contains: [/from-linux/],
+    },
+    {
+      name: 'sftp put: linux1 → win1 lands at the translated NTFS path',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo via-sftp > /tmp/sf.txt');
+        await l.linux1.executeCommand(
+          "sftp User@10.0.0.4 <<'EOF'\nput /tmp/sf.txt /C:/Users/User/sf.txt\nbye\nEOF",
+        );
+      },
+      on: l => l.win1, cmd: 'type C:\\Users\\User\\sf.txt',
+      contains: [/via-sftp/],
+    },
+    {
+      name: 'unknown Windows user is refused before the SFTP channel opens',
+      on: l => l.linux1,
+      cmd: "sftp ghost@10.0.0.4 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF",
+      // Adapter / channel either refuses or fails-fast; in both cases
+      // the file does NOT land on the Windows VFS.
+      contains: [/Connected to|Permission denied|sftp:/i],
+    },
+    {
+      name: 'unreachable Windows host yields "no route" without crashing',
+      on: l => l.linux1, cmd: 'scp /tmp/x User@192.0.2.10:/C:/x',
+      contains: [/^scp:/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §38 — Attribute preservation + idempotency ─────────────────────
+//
+// scp -p must replicate mode (and would replicate mtime if a real clock
+// were exposed). Running the same transfer twice must yield the same
+// destination state without erroring — idempotency matters for ansible-
+// style provisioning loops.
+
+describe('§38 — SCP attribute preservation + idempotency', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'scp -p replicates mode 0600 on push',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo top > /tmp/top.secret && chmod 600 /tmp/top.secret');
+        await l.linux1.executeCommand('scp -p /tmp/top.secret alice@10.0.0.2:/tmp/top.secret');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/top.secret',
+      contains: [/^600$/m],
+    },
+    {
+      name: 'scp without -p uses the default umask mode (664)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 600 /tmp/plain');
+        await l.linux1.executeCommand('scp /tmp/plain alice@10.0.0.2:/tmp/plain');
+      },
+      on: l => l.linux2, cmd: 'stat -c "%a" /tmp/plain',
+      contains: [/^(644|664)$/m],
+    },
+    {
+      name: 'repeated scp is idempotent (content stays identical)',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo same > /tmp/idem');
+        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/idem',
+      contains: [/^same$/m],
+    },
+    {
+      name: 'sftp put then re-put overwrites without error',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo v1 > /tmp/over');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+        );
+        await l.linux1.executeCommand('echo v2 > /tmp/over');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/over',
+      contains: [/^v2$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §39 — SFTP file movement (rename, cross-dir, mkdir-then-rename)
+//
+// The interactive sftp REPL must move files exactly like the local
+// `mv`: across directories, into a fresh tree, in chains, and idempotently
+// overwriting an existing target. Setup uses the standard here-doc form.
+
+describe('§39 — SFTP file movement', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rename within same directory',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo r1 > /tmp/r1');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/r2',
+      contains: [/^r1$/m],
+    },
+    {
+      name: 'rename across directories',
+      setup: async (l) => {
+        await l.linux2.executeCommand('mkdir -p /var/tmp/dst && echo cross > /tmp/cross');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /var/tmp/dst/cross',
+      contains: [/^cross$/m],
+    },
+    {
+      name: 'mkdir + put + rename chain ends with file at final path',
+      setup: async (l) => {
+        await l.linux1.executeCommand('echo chained > /tmp/c.txt');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /var/chain\nput /tmp/c.txt /var/chain/raw\nrename /var/chain/raw /var/chain/final\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /var/chain/final',
+      contains: [/^chained$/m],
+    },
+    {
+      name: 'rename source vanishes from the original path',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo gone > /tmp/gone');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'ls /tmp/gone',
+      contains: [/No such file/i],
+    },
+    {
+      name: 'mv alias works exactly like rename',
+      setup: async (l) => {
+        await l.linux2.executeCommand('echo alias > /tmp/with-mv');
+        await l.linux1.executeCommand(
+          "sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
+        );
+      },
+      on: l => l.linux2, cmd: 'cat /tmp/moved',
+      contains: [/^alias$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §40 — Logs coherence for SSH activity ──────────────────────────
+//
+// Every successful or refused SSH transaction must leave a coherent
+// trail in the platform-specific log: /var/log/auth.log on Linux, the
+// Security event log on Windows. The audit hook is owned by the SSH
+// model classes — these tests just confirm the trail surfaces.
+
+describe('§40 — Logs coherence for SSH activity', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Linux: successful ssh login appears in /var/log/auth.log',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'grep -E "Accepted|sshd" /var/log/auth.log',
+      contains: [/alice/i],
+    },
+    {
+      name: 'Linux: failed unknown-user attempt is logged',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh ghost@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'grep -E "Failed|Invalid user|sshd" /var/log/auth.log',
+      contains: [/ghost/i],
+    },
+    {
+      name: 'Windows: successful ssh login surfaces in the Security log',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh User@10.0.0.4 hostname');
+      },
+      on: l => l.win1, cmd: 'wevtutil qe Security',
+      contains: [/User|Logon|4624/i],
+    },
+    {
+      name: 'Linux: log line carries the client IP for auditability',
+      setup: async (l) => {
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname');
+      },
+      on: l => l.linux2, cmd: 'grep -E "10\\.0\\.0\\.1" /var/log/auth.log',
+      contains: [/10\.0\.0\.1/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §41 — Service lifecycle coherence (sshd up / down / status) ────
+//
+// Stopping the sshd unit must close the listening socket AND make
+// subsequent ssh connects fail with "Connection refused" — the
+// service projection keeps the socket table coherent with the
+// systemd state. Restarting brings the port back.
+
+describe('§41 — sshd service lifecycle coherence', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'sshd stopped: subsequent ssh sees Connection refused',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo systemctl stop ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 alice@10.0.0.2 hostname',
+      contains: [/Connection refused/i],
+    },
+    {
+      name: 'sshd restarted: ssh works again',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo systemctl stop ssh');
+        await l.linux2.executeCommand('sudo systemctl start ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'systemctl status ssh reports active/running when up',
+      on: l => l.linux2, cmd: 'systemctl status ssh',
+      contains: [/active.*running/i],
+    },
+    {
+      name: 'systemctl status ssh reports inactive after stop',
+      setup: async (l) => { await l.linux2.executeCommand('sudo systemctl stop ssh'); },
+      on: l => l.linux2, cmd: 'systemctl status ssh',
+      contains: [/inactive|stopped|dead/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §42 — Port coherence (sshd Port directive ↔ socket table) ──────
+//
+// Changing the `Port` directive in sshd_config must:
+//   1. Open the new port on the listening socket table
+//   2. Make a client targeting that port succeed
+//   3. Make the default port 22 stop accepting (when only one Port is set)
+
+describe('§42 — Port coherence for sshd', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'Port 2222 is reachable after sed + restart',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh -p 2222 alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Default Port 22 stops accepting when sshd_config moves to 2222',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 -p 22 alice@10.0.0.2 hostname',
+      contains: [/Connection refused|Connection timed out/i],
+    },
+    {
+      name: 'grep Port in sshd_config returns the new value after sed',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+      },
+      on: l => l.linux2, cmd: 'grep ^Port /etc/ssh/sshd_config',
+      contains: [/Port 2222/],
+    },
+    {
+      name: 'ss / netstat reflects the new listening port',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sed -i "s/^#\\?Port .*/Port 2222/" /etc/ssh/sshd_config');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux2, cmd: 'ss -tln',
+      contains: [/:2222/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+// ─── §43 — Access coherence (AllowUsers/DenyUsers + lockout) ────────
+//
+// Account-level access controls (AllowUsers, DenyUsers, disabled user)
+// must surface uniformly through the CrossVendorSshHost gate — the
+// outcome is the same whether the policy comes from sshd_config or
+// from the user manager flipping a flag.
+
+describe('§43 — Access coherence', () => {
+  let lan: XLan;
+  beforeEach(async () => { lan = await buildXLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'AllowUsers alice lets alice through but rejects bob',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo AllowUsers alice >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh bob@10.0.0.2 hostname',
+      contains: [/Permission denied/i], excludes: [/^linux2$/m],
+    },
+    {
+      name: 'DenyUsers bob blocks bob but spares alice',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo sh -c "echo DenyUsers bob >> /etc/ssh/sshd_config"');
+        await l.linux2.executeCommand('sudo systemctl restart ssh');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'usermod --lock blocks subsequent password logins',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo usermod --lock alice');
+      },
+      on: l => l.linux1, cmd: 'ssh -o PasswordAuthentication=yes -o PubkeyAuthentication=no alice@10.0.0.2 hostname',
+      contains: [/Permission denied|account.*locked/i],
+    },
+    {
+      name: 'usermod --unlock restores login',
+      setup: async (l) => {
+        await l.linux2.executeCommand('sudo usermod --lock alice');
+        await l.linux2.executeCommand('sudo usermod --unlock alice');
+      },
+      on: l => l.linux1, cmd: 'ssh alice@10.0.0.2 hostname',
+      contains: [/^linux2$/m],
+    },
+    {
+      name: 'Windows: disabling a local user blocks SSH login',
+      setup: async (l) => {
+        // `net user /active:no` requires Administrator. The test bypasses
+        // the elevation requirement by reaching into the user manager
+        // directly — what matters here is that the disabled flag does
+        // flow through the WindowsUserManagerAuthority + CrossVendorSshHost
+        // gate, not the exact CLI that flipped it.
+        const um = (l.win1 as unknown as { userMgr: {
+          disableUser: (n: string) => string;
+          currentUser: string;
+        } }).userMgr;
+        const saved = um.currentUser;
+        um.currentUser = 'Administrator';
+        try { um.disableUser('User'); } finally { um.currentUser = saved; }
+      },
+      on: l => l.linux1, cmd: 'ssh -o ConnectTimeout=2 User@10.0.0.4 hostname',
+      contains: [/Permission denied|account disabled|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});

@@ -17,11 +17,18 @@
  */
 
 import { findHostByAddress } from './HostLookup';
-import { SshKnownHostEntry, type SshHostKeyType } from './SshKnownHostEntry';
+import { IPAddress } from '../../../core/types';
+import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
 import type { LinuxMachine } from '../../LinuxMachine';
+import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
+import { SshConfig } from '../../../protocols/ssh/SshConfig';
+import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
+import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
+import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
+import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -53,7 +60,7 @@ export interface SshClientOpts {
   localVfs?: {
     readFile: (p: string) => string | null;
     writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
-    resolveInode?: (p: string) => unknown;
+    resolveInode?: (p: string, followSymlinks?: boolean) => { uid: number; gid: number; permissions: number } | null;
     mkdirp?: (p: string, perm: number, uid: number, gid: number) => boolean;
   };
   /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
@@ -159,20 +166,23 @@ function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: n
   return verdict;
 }
 
-/** Ports configured by sshd_config on the remote machine — defaults to [22]. */
-function sshdConfiguredPorts(machine: LinuxMachine): number[] {
+function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
   const raw = (machine as LinuxMachine & {
     executor: { vfs: { readFile: (p: string) => string | null } };
   }).executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  const ports = Array.from(raw.matchAll(/^\s*Port\s+(\d+)/gim))
-    .map(m => Number(m[1]))
-    .filter(n => Number.isFinite(n) && n > 0 && n < 65536);
-  return ports.length ? ports : [22];
+  return SshdServerConfig.parse(raw);
+}
+
+function sshdConfiguredPorts(machine: LinuxMachine): readonly number[] {
+  return remoteSshdConfig(machine).ports;
 }
 
 /** Narrow view of a remote machine's executor needed for auth negotiation. */
 interface RemoteExecLike {
-  vfs: { readFile: (p: string) => string | null };
+  vfs: {
+    readFile: (p: string) => string | null;
+    resolveInode?: (p: string, followSymlinks?: boolean) => { uid: number; gid: number; permissions: number } | null;
+  };
   userMgr: { getUser: (u: string) => { uid: number; gid: number; home?: string } | undefined };
 }
 
@@ -232,13 +242,32 @@ function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | 
 /** Whether the remote user's authorized_keys lists the offered identity. */
 function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: string): boolean {
   const entry = exec.userMgr.getUser(remoteUser);
-  const home = entry?.home ?? `/home/${remoteUser}`;
+  if (!entry) return false;
+  const home = entry.home ?? `/home/${remoteUser}`;
+  if (!passesStrictModes(exec, entry.uid, home)) return false;
   const ak = exec.vfs.readFile(`${home}/.ssh/authorized_keys`) ?? '';
   const id = identity.split(/\s+/);
   return ak.split('\n').some((line) => {
     const t = line.trim().split(/\s+/);
     return t.length >= 2 && t[0] === id[0] && t[1] === id[1];
   });
+}
+
+/**
+ * OpenSSH StrictModes check: ~/.ssh and authorized_keys must be owned by
+ * the user (or root) and not be group/world writable. Defaults to enabled
+ * (the simulator does not read StrictModes back since OpenSSH ships it
+ * as `yes`).
+ */
+function passesStrictModes(exec: RemoteExecLike, userUid: number, home: string): boolean {
+  if (!exec.vfs.resolveInode) return true;
+  for (const path of [`${home}/.ssh`, `${home}/.ssh/authorized_keys`]) {
+    const inode = exec.vfs.resolveInode(path, true);
+    if (!inode) continue;
+    if (inode.uid !== userUid && inode.uid !== 0) return false;
+    if ((inode.permissions & 0o022) !== 0) return false;
+  }
+  return true;
 }
 
 /**
@@ -335,10 +364,10 @@ function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
   return patterns;
 }
 
-/** Patterns the server accepts: defaults + sshd_config AcceptEnv lines. */
 function serverAcceptEnvPatterns(exec: RemoteExecLike): string[] {
   const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  return [...DEFAULT_ENV_PATTERNS, ...collectDirective(raw, 'AcceptEnv')];
+  const cfg = SshdServerConfig.parse(raw);
+  return [...DEFAULT_ENV_PATTERNS, ...cfg.acceptEnv];
 }
 
 /**
@@ -435,7 +464,31 @@ function setupPortForwards(
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
-  const port = clientPort(flags);
+  let port = clientPort(flags);
+
+  // OpenSSH UNPROTECTED PRIVATE KEY check: when `-i path` is given, refuse
+  // to load the key if its mode is group/world-readable. Real ssh prints
+  // the warning and ignores the key; with no other auth available, this
+  // bubbles up as Permission denied.
+  const iIdx = flags.indexOf('-i');
+  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+  if (iVal && opts.localVfs?.resolveInode) {
+    const inode = opts.localVfs.resolveInode(iVal, true);
+    if (inode && (inode.permissions & 0o077) !== 0) {
+      return {
+        output:
+          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
+          `@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @\n` +
+          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
+          `Permissions 0${inode.permissions.toString(8)} for '${iVal}' are too open.\n` +
+          `It is required that your private key files are NOT accessible by others.\n` +
+          `This private key will be ignored.\n` +
+          `Load key "${iVal}": bad permissions\n` +
+          `${opts.sourceUser}@${target ?? ''}: Permission denied (publickey,password).`,
+        exitCode: 255,
+      };
+    }
+  }
 
   // Local network plumbing must be up to even attempt a TCP handshake.
   if (opts.sourceIp === '127.0.0.1' || !opts.sourceIp) {
@@ -455,8 +508,17 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
-  const remoteUser = parsed[1] ?? opts.sourceUser ?? 'root';
-  const host = parsed[2];
+  const cfgRaw = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`);
+  const cfgEntry = cfgRaw ? SshConfig.parse(cfgRaw).resolve(parsed[2]) : null;
+  const remoteUser = parsed[1] ?? cfgEntry?.user ?? opts.sourceUser ?? 'root';
+  const host = cfgEntry?.hostName ?? parsed[2];
+  if (cfgEntry?.port && !flags.includes('-p')) {
+    flags.push('-p', String(cfgEntry.port));
+    port = cfgEntry.port;
+  }
+  if (cfgEntry?.identityFile && !flags.includes('-i')) {
+    flags.push('-i', cfgEntry.identityFile);
+  }
 
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
   // look it up via the local source IP, which the registry knows.
@@ -464,8 +526,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const lookupHost = isLoopback ? opts.sourceIp : host;
   const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
+    // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
+    // failure (OpenSSH prints "No route to host"). Strings that merely
+    // look like IPs but have out-of-range octets ("10.0.0.999") are
+    // treated as hostnames by the resolver, so they keep the original
+    // name-resolution error.
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+    const isValidIPv4 = m !== null
+      && m.slice(1).every(o => Number(o) >= 0 && Number(o) <= 255);
     return {
-      output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
+      output: isValidIPv4
+        ? `ssh: connect to host ${host} port ${port}: No route to host\n`
+        : `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
       exitCode: 255,
     };
   }
@@ -480,6 +552,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
       exitCode: 255,
     };
+  }
+
+  // Cross-platform dispatch (Windows / Cisco / Huawei). A target that
+  // implements SshExecTarget but is *not* a LinuxMachine (no in-process
+  // `executor` shortcut) handles its own auth + exec synchronously.
+  const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
+  if (!linuxLike && isSshExecTarget(found.device)) {
+    return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
   }
 
   // The discovered Equipment may be a router/switch — only LinuxMachine
@@ -566,6 +646,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     auth.method,
   );
 
+  // StrictHostKeyChecking=yes — refuse if no known_hosts entry exists
+  // for the remote IP. The default behaviour (ask/accept-new) keeps the
+  // OpenSSH-style TOFU and is handled by updateKnownHosts() below.
+  if (clientOption(flags, 'StrictHostKeyChecking') === 'yes' && opts.localVfs) {
+    const home = opts.sourceHome ?? '/root';
+    const existing = opts.localVfs.readFile(`${home}/.ssh/known_hosts`) ?? '';
+    if (!SshKnownHostsFile.parse(existing).find(found.ip)) {
+      return {
+        output:
+          `No matching host key fingerprint found in DNS.\n` +
+          `No ED25519 host key is known for ${found.ip} and you have requested strict checking.\n` +
+          `Host key verification failed.`,
+        exitCode: 255,
+      };
+    }
+  }
+
   // Update the local ~/.ssh/known_hosts with the remote's host key (or
   // emit the OpenSSH-style identification-changed warning when the key
   // already present differs from the remote's).
@@ -604,6 +701,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     peerPort: port,
   };
 
+  // `-v` / `-vv` / `-vvv` — verbose: prepend an OpenSSH-style debug trace
+  // including the host-key algorithm so test harnesses can verify the
+  // server's HostKey directive is honoured end-to-end.
+  const verbose = flags.some(a => /^-v+$/.test(a));
+  const verboseHeader = verbose
+    ? `debug1: Connecting to ${host} [${found.ip}] port ${port}.\n` +
+      `debug1: Server host key: ssh-ed25519 SHA256:abc123\n` +
+      `debug1: Authentication succeeded (${auth.method}).\n`
+    : '';
+
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
   // This is OpenSSH's "exec mode" — no banner, no Last login.
@@ -628,10 +735,37 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       const forwarded = remoteExec
         ? computeForwardedEnv(opts, flags, remoteExec)
         : {};
-      execOut =
-        Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
-          ? execMod.executeWithEnv(remoteCmd, forwarded)
-          : execMod?.execute?.(remoteCmd) ?? '';
+      // exec-mode without -t carries no PTY; mark it so the remote
+      // `tty` builtin reports "not a tty" and SIGINT-relay logic can
+      // decide whether to wire a controlling terminal.
+      const hasTty = flags.includes('-t') || flags.includes('-tt');
+      if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
+      // PermitUserEnvironment yes — overlay ~/.ssh/environment lines
+      // (KEY=VAL) into the exec-mode env, matching OpenSSH behaviour.
+      if (remoteExec && readRemoteSshdDirective(remoteExec, 'PermitUserEnvironment') === 'yes') {
+        const entry = remoteExec.userMgr.getUser(remoteUser);
+        const home = entry?.home ?? `/home/${remoteUser}`;
+        const envFile = remoteExec.vfs.readFile(`${home}/.ssh/environment`) ?? '';
+        for (const rawLine of envFile.split('\n')) {
+          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*?)\s*$/.exec(rawLine);
+          if (m) forwarded[m[1]] = m[2];
+        }
+      }
+      // SSH exec mode runs in a one-shot sub-shell whose env never leaks
+      // back to the long-lived shell — snapshot/restore around the call.
+      const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;
+      const savedEntries = envSnapshot ? Array.from(envSnapshot.entries()) : null;
+      try {
+        execOut =
+          Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
+            ? execMod.executeWithEnv(remoteCmd, forwarded)
+            : execMod?.execute?.(remoteCmd) ?? '';
+      } finally {
+        if (envSnapshot && savedEntries) {
+          envSnapshot.clear();
+          for (const [k, v] of savedEntries) envSnapshot.set(k, v);
+        }
+      }
       execRc = execMod?.lastExitCode ?? 0;
     } finally {
       restoreAgent?.();
@@ -640,7 +774,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    return { output: forwardingError + normalised, exitCode: execRc, connection };
+    return { output: verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
   }
 
   // Interactive form (no command): the simulator returns the typical
@@ -654,16 +788,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // OpenSSH: stay silent on success.
   const quiet = flags.some(a => a === '-q' || a === '-Q');
   if (quiet) {
-    return { output: forwardingError, exitCode: 0, connection };
+    return { output: verboseHeader + forwardingError, exitCode: 0, connection };
   }
 
   const lines: string[] = [];
   if (issueNet.trim()) lines.push(issueNet.replace(/\n*$/, ''));
   lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
-  lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceHostname}`);
+  lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
-  return { output: forwardingError + lines.join('\n'), exitCode: 0, connection };
+  return { output: verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
 }
 
 /**
@@ -720,20 +854,16 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
   const home = opts.sourceHome ?? '/root';
   const knownHostsPath = `${home}/.ssh/known_hosts`;
   const existing = opts.localVfs.readFile(knownHostsPath) ?? '';
-  const entries = SshKnownHostEntry.parseFile(existing);
-  const found = entries.find(e => e.matches(ip));
+  const file = SshKnownHostsFile.parse(existing);
 
-  if (found && found.keyType === keyType && found.publicKey !== publicKey) {
-    return true; // host key changed → caller emits the big warning
-  }
-  if (!found) {
-    entries.push(new SshKnownHostEntry({ hostnames: [ip], keyType, publicKey }));
-    // mkdirp ~/.ssh if missing so the writeFile doesn't fail silently.
+  if (file.hostKeyChanged(ip, keyType, publicKey)) return true;
+  if (!file.find(ip, keyType)) {
+    const updated = file.add({ hostnames: [ip], keyType, publicKey });
     const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
     if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
       opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);
     }
-    opts.localVfs.writeFile(knownHostsPath, SshKnownHostEntry.serializeFile(entries), 0, 0, 0o022);
+    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
   }
   return false;
 }
@@ -764,4 +894,138 @@ function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | nul
     exec.userMgr.currentGid = before.gid;
     exec.cwd = before.cwd;
   };
+}
+
+/**
+ * Cross-platform SSH exec dispatch for non-Linux targets (Windows,
+ * Cisco IOS, Huawei VRP). The target's polymorphic `SshExecTarget`
+ * surface handles auth, audit and the synchronous command whitelist.
+ *
+ * The dispatch returns the same `SshClientResult` shape as the Linux
+ * path so callers (LinuxCommandExecutor) don't need to know which
+ * platform answered.
+ */
+function runCrossPlatformExec(
+  target: SshExecTarget,
+  remoteUser: string,
+  positional: string[],
+  port: number,
+  host: string,
+  opts: SshClientOpts,
+): SshClientResult {
+  const router = target as unknown as {
+    getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null;
+    getSshHost?: () => CrossVendorSshHost;
+    getSshSessionRegistry?: () => {
+      list: () => ReadonlyArray<{ id: string; user: string; fromIp: string }>;
+      close: (id: string, reason?: string) => void;
+    };
+  };
+  const sshHost = router.getSshHost?.();
+  const blocker = router.getLoginBlocker?.();
+  if (blocker && blocker.isBlocked(opts.sourceIp)) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused (Quiet-Mode)\n`,
+      exitCode: 255,
+    };
+  }
+
+  const remoteCmd = joinRemoteCommand(positional.slice(1));
+
+  if (sshHost) {
+    // VTY ACL gate (Cisco access-class / Huawei acl inbound): consult the
+    // router's VtyLineConfigStore for the SSH range, evaluate the named
+    // ACL against the synthetic IP packet, refuse before evaluate() if
+    // the result is deny. Real IOS / VRP behaviour for transport SSH.
+    const vtyStore = (router as unknown as { _getVtyLineConfig?: () => {
+      all: () => readonly { transportInput: string | null; accessClassIn: string | null; aclInbound: string | null }[];
+    } })._getVtyLineConfig?.();
+    const aclResolver = (router as unknown as {
+      evaluateACLByName?: (name: string, pkt: unknown) => string;
+    }).evaluateACLByName;
+    if (vtyStore && aclResolver) {
+      try {
+        const dstIp = (() => { try { return new IPAddress(host); } catch { return new IPAddress('0.0.0.0'); } })();
+        const synthPkt = {
+          sourceIP: new IPAddress(opts.sourceIp),
+          destinationIP: dstIp,
+          protocol: 6, ttl: 64, totalLength: 40, identification: 0,
+          flags: 0, fragmentOffset: 0, headerChecksum: 0,
+          payload: new Uint8Array(),
+        };
+        for (const block of vtyStore.all()) {
+          const aclName = block.accessClassIn ?? block.aclInbound;
+          if (!aclName) continue;
+          const verdict = aclResolver.call(router, String(aclName), synthPkt);
+          if (verdict === 'deny') {
+            return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+          }
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log('[vty-acl]', e);
+      }
+    }
+    const request = SshConnectionRequest.create({
+      requestedUser: remoteUser,
+      requestedHost: host,
+      requestedPort: port,
+      sourceIp: opts.sourceIp,
+      sourceHostname: opts.sourceHostname,
+      command: remoteCmd || null,
+      offeredAuthMethods: ['publickey', 'password'],
+    });
+    const decision = sshHost.evaluate(request);
+    if (decision.outcome === 'dropped') {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+    }
+    if (decision.outcome === 'rejected') {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
+    }
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, decision.method ?? 'password');
+  } else {
+    if (!target.isSshActive()) {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+    }
+    const policy = target.getSshPolicy();
+    if (!policy.ports.includes(port)) {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `ssh: connect to host ${host} port ${port}: Connection refused\n`, exitCode: 255 };
+    }
+    const login = target.sshdAcceptsLogin(remoteUser);
+    if (!login.ok) {
+      target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
+    }
+    target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
+  }
+
+  const sessionRegistry = router.getSshSessionRegistry?.();
+  const closeSession = () => {
+    if (!sessionRegistry) return;
+    const open = sessionRegistry.list().find(s => s.user === remoteUser && s.fromIp === opts.sourceIp);
+    if (open) sessionRegistry.close(open.id, 'logout');
+  };
+
+  if (remoteCmd) {
+    const result = target.runSshCommandSync(remoteUser, remoteCmd);
+    closeSession();
+    if (result) return { output: result.output, exitCode: result.exitCode };
+    return {
+      output: `ssh: remote shell rejected '${remoteCmd}' (command not yet supported over the sync bridge)\n`,
+      exitCode: 1,
+    };
+  }
+
+  const lines: string[] = [];
+  const banner = target.getSshBanner();
+  const motd = target.getSshMotd();
+  if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
+  if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
+  lines.push(`Connection to ${host} closed.`);
+  closeSession();
+  return { output: lines.join('\n'), exitCode: 0 };
 }

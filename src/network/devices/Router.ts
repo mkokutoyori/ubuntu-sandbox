@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -62,6 +63,12 @@ import { IPv6DataPlane } from './router/IPv6DataPlane';
 export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from './router/IPv6DataPlane';
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { RouterDynamicRouting } from './router/RouterDynamicRouting';
+import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
+import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
+import { LoginBlocker } from './router/aaa/LoginBlocker';
+import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
+import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/server/CrossVendorSshHost';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
@@ -1337,6 +1344,217 @@ export abstract class Router extends Equipment {
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
+
+  // ─── SSH server surface (SshExecTarget) ────────────────────────
+  //
+  // Routers and switches that grow an `ip ssh / stelnet server`
+  // configuration expose a synchronous SSH server surface so the
+  // cross-platform client dispatch can talk to them uniformly.
+  // Concrete answers to vendor commands (show / display) come from
+  // the per-vendor subclasses (CiscoRouter, HuaweiRouter).
+  //
+  // Defaults below assume a freshly-provisioned device: SSH is
+  // enabled by default but the per-vendor `transport input none`
+  // path can flip the flag through `_setSshServerEnabled`.
+
+  /** Whether ssh/stelnet is currently advertised on the VTY. */
+  protected sshServerEnabled: boolean = true;
+  protected sshBannerText: string = '';
+  _setSshBanner(text: string): void {
+    this.sshBannerText = text;
+    if (this._sshHost) this._sshHost.setBanner(text);
+  }
+  /** Inbound transport list (telnet/ssh/all/none) — mirrors VTY config. */
+  protected vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
+  /**
+   * Per-vendor VTY-line configuration registry. CiscoShellBase /
+   * HuaweiVRPShell populate it from `exec-timeout`, `idle-timeout`,
+   * `access-class`, `acl inbound`, `transport input`, `login local`,
+   * etc.; show running-config / display current-configuration walk it.
+   */
+  readonly vtyLineConfig = new VtyLineConfigStore();
+  _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
+  /**
+   * Local-user database (vendor-agnostic). Populated by the per-vendor
+   * shell when `username … secret …` (Cisco) or `local-user … password
+   * …` (Huawei) is executed.
+   */
+  private _credentialStore: NetworkOsCredentialStore | null = null;
+  private _securityAuditLog: SecurityAuditLog | null = null;
+  private _loginBlocker: LoginBlocker | null = null;
+  private _loginBlockConfig: { attempts: number; withinSeconds: number; blockSeconds: number } | null = null;
+  private _sshAuthRetries: number | null = null;
+
+  getLoginBlocker(): LoginBlocker | null { return this._loginBlocker; }
+  getLoginBlockConfig(): { attempts: number; withinSeconds: number; blockSeconds: number } | null {
+    return this._loginBlockConfig;
+  }
+  getSshAuthenticationRetries(): number | null { return this._sshAuthRetries; }
+
+  _configureLoginBlock(blockSeconds: number, attempts: number, withinSeconds: number): void {
+    this._loginBlockConfig = { attempts, withinSeconds, blockSeconds };
+    if (this._loginBlocker) this._loginBlocker.detach();
+    this._loginBlocker = new LoginBlocker({
+      deviceId: this.id, bus: this.getBus(),
+      attempts, withinSeconds, blockSeconds,
+    });
+  }
+
+  _configureSshAuthRetries(retries: number): void {
+    this._sshAuthRetries = retries;
+    if (this._loginBlocker) this._loginBlocker.detach();
+    this._loginBlocker = new LoginBlocker({
+      deviceId: this.id, bus: this.getBus(),
+      attempts: retries, withinSeconds: 60, blockSeconds: 60,
+    });
+  }
+
+  private _sshSessionRegistry: SshSessionRegistry | null = null;
+  private _sshHost: CrossVendorSshHost | null = null;
+
+  protected sshVendorTag(): CrossVendorSshVendor { return 'generic'; }
+
+  getCredentialStore(): NetworkOsCredentialStore {
+    if (!this._credentialStore) {
+      this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
+      this._sshSessionRegistry = new SshSessionRegistry({ deviceId: this.id, bus: this.getBus() });
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._sshHost = new CrossVendorSshHost({
+        deviceId: this.id,
+        hostname: this.hostname,
+        vendor: this.sshVendorTag(),
+        bus: this.getBus(),
+        authority: this._credentialStore,
+        active: this.sshServerEnabled,
+        banner: this.sshBannerText,
+      });
+    }
+    return this._credentialStore;
+  }
+
+  getSecurityAuditLog(): SecurityAuditLog {
+    if (!this._securityAuditLog) this.getCredentialStore();
+    return this._securityAuditLog!;
+  }
+
+  getSshSessionRegistry(): SshSessionRegistry {
+    if (!this._sshSessionRegistry) this.getCredentialStore();
+    return this._sshSessionRegistry!;
+  }
+
+  getSshHost(): CrossVendorSshHost {
+    if (!this._sshHost) this.getCredentialStore();
+    return this._sshHost!;
+  }
+
+  _addLocalUser(name: string, privilege: number, secret: string): void {
+    this.getSecurityAuditLog();
+    const existing = this.getCredentialStore().get(name);
+    const acc = (existing ?? NetworkOsAccount.create({ name }))
+      .withPrivilege(privilege)
+      .withSecret(secret);
+    this.getCredentialStore().upsert(acc);
+  }
+
+  _upsertCiscoUsername(name: string, kv: {
+    privilege?: number; secret?: string;
+    secretAlgo?: 'plain' | 'md5' | 'sha256' | 'type-7';
+    autocommand?: string; nopassword?: boolean; description?: string;
+  }): void {
+    this.getSecurityAuditLog();
+    const store = this.getCredentialStore();
+    let account = store.get(name) ?? NetworkOsAccount.create({ name });
+    if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
+    if (kv.nopassword) account = account.withSecret('', 'plain');
+    else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
+    if (kv.description) account = account.withDescription(kv.description);
+    store.upsert(account);
+  }
+  _removeLocalUser(name: string): void {
+    this.getSecurityAuditLog();
+    this.getCredentialStore().remove(name);
+  }
+  _getLocalUser(name: string): { name: string; privilege: number; secret: string } | undefined {
+    const a = this.getCredentialStore().get(name);
+    return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
+  }
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string }> {
+    return this.getCredentialStore().list().map(a => ({ name: a.name, privilege: a.privilege, secret: a.secret }));
+  }
+
+  _setSshServerEnabled(enabled: boolean): void {
+    this.sshServerEnabled = enabled;
+    if (this._sshHost) this._sshHost.setSshActive(enabled);
+  }
+  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
+    this.vtyTransportInput = t;
+    this.sshServerEnabled = (t === 'all' || t === 'ssh');
+    if (this._sshHost) this._sshHost.setSshActive(this.sshServerEnabled);
+  }
+
+  /** SshExecTarget. */
+  getSshHostname(): string { return this.hostname; }
+  isSshActive(): boolean { return this.sshServerEnabled; }
+  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+    return this.getSshHost().acceptsLogin(user);
+  }
+  recordSshLogin(
+    _user: string, _fromIp: string, _fromHost: string,
+    _accepted: boolean, _method?: 'password' | 'publickey' | 'keyboard-interactive',
+  ): void {
+    // Routers log via syslog / info-center elsewhere — the audit hook
+    // is implemented per vendor when those subscribers wire in.
+  }
+  getSshBanner(): string { return this.sshBannerText; }
+  getSshMotd(): string { return ''; }
+  getSshPolicy(): {
+    readonly active: boolean;
+    readonly ports: readonly number[];
+    readonly permitRootLogin: boolean;
+    readonly passwordAuthentication: boolean;
+    readonly pubkeyAuthentication: boolean;
+    readonly maxAuthTries: number;
+    readonly permitEmptyPasswords: boolean;
+  } {
+    return Object.freeze({
+      active: this.sshServerEnabled,
+      ports: Object.freeze([22]),
+      permitRootLogin: true,
+      passwordAuthentication: true,
+      pubkeyAuthentication: true,
+      maxAuthTries: 6,
+      permitEmptyPasswords: false,
+    });
+  }
+  getSshHostKey(): {
+    readonly type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+    readonly fingerprintSha256: string;
+    readonly publicKey: string;
+  } {
+    return Object.freeze({
+      type: 'ssh-rsa' as const,
+      fingerprintSha256: `SHA256:router-${this.id}`,
+      publicKey: `ssh-rsa AAAA-router-${this.id}`,
+    });
+  }
+
+  /**
+   * Per-vendor sync command whitelist. Default returns null so the
+   * caller falls back; CiscoRouter and HuaweiRouter override with
+   * their own pure show/display dispatch.
+   */
+  runSshCommandSync(_user: string, _command: string): { output: string; exitCode: number } | null {
+    return null;
+  }
+
+  async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
+    const sync = this.runSshCommandSync(user, command);
+    if (sync) return sync;
+    const output = await this.executeCommand(command);
+    return { output, exitCode: 0 };
+  }
+
+  sshBanner(): string { return this.getSshBanner(); }
   /** @internal Used by CLI shells */
   setInterfaceDescription(portName: string, desc: string): void { this.interfaceDescriptions.set(portName, desc); }
   /** @internal Used by CLI shells */
