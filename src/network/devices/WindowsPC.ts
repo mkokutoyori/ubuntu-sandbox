@@ -23,6 +23,7 @@ import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
+import { DoskeyTable } from './windows/cli/DoskeyTable';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -136,6 +137,8 @@ export class WindowsPC extends EndHost {
   private userMgr: WindowsUserManager;
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
+  /** cmd.exe doskey macro table. */
+  readonly doskey: DoskeyTable = new DoskeyTable();
   /** Reactive consumer: account/group/logon events → Security event log. */
   private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
   /** Reactive consumer: service lifecycle events → System event log. */
@@ -623,8 +626,18 @@ export class WindowsPC extends EndHost {
       return this.handleRedirect(redirectMatch[1].trim(), redirectMatch[2], redirectMatch[3].trim());
     }
 
-    // Expand environment variables
-    const expanded = this.expandEnvVars(trimmed);
+    // Expand environment variables, then expand doskey macros so
+    // `ll` → `dir /a` before the dispatcher sees an unknown command.
+    const expandedEnv = this.expandEnvVars(trimmed);
+    const doskeyExpanded = this.doskey.expand(expandedEnv);
+    const expanded = doskeyExpanded !== expandedEnv
+      ? doskeyExpanded
+      : expandedEnv;
+    if (doskeyExpanded !== expandedEnv) {
+      // Recurse so the expanded form goes through the full pipeline
+      // (pipes, redirects, chains).
+      return this.executeCmdCommand(doskeyExpanded);
+    }
     const parts = this.parseCommandLine(expanded);
     if (parts.length === 0) return '';
 
@@ -679,6 +692,7 @@ export class WindowsPC extends EndHost {
       case 'sort':    return cmdSort(fileCtx, args);
       case 'echo':    return args.join(' ');
       case 'cls':     return '';
+      case 'doskey':  return this.cmdDoskey(args);
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
@@ -1301,6 +1315,22 @@ export class WindowsPC extends EndHost {
    *   Volume in drive C has no label.
    *   Volume Serial Number is XXXX-XXXX
    */
+  /**
+   * `doskey NAME=BODY` installs a macro consumed by every subsequent
+   * cmd dispatch. Without args, lists current macros (cmd.exe form).
+   */
+  private cmdDoskey(args: string[]): string {
+    if (args.length === 0) {
+      return this.doskey.entries().map(e => `${e.head}=${e.body}`).join('\n');
+    }
+    const joined = args.join(' ');
+    if (!joined.includes('=')) {
+      return this.doskey.entries().map(e => `${e.head}=${e.body}`).join('\n');
+    }
+    this.doskey.define(joined);
+    return '';
+  }
+
   private cmdVol(args: string[]): string {
     const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
     const letter = arg.charAt(0) || 'C';

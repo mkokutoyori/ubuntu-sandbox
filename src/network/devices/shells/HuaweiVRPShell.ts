@@ -318,7 +318,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // Bind router reference
     this.routerRef = router;
 
-    const output = this.executeOnTrie(cmd);
+    // Expand `command-alias` shortcuts before any trie match — same
+    // behaviour as the SSH dispatcher so the local shell honours
+    // installed aliases.
+    const aliasTable = router._getCommandAliases?.();
+    const effective = aliasTable ? aliasTable.expand(cmd) : cmd;
+    const output = this.executeOnTrie(effective);
 
     // Async escape hatch (e.g. tracert sets _pendingAsync)
     if (this._pendingAsync) {

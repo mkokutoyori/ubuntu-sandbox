@@ -314,7 +314,10 @@ export function displayCurrentConfig(
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    lines.push(`interface ${name}`);
+    // Real VRP renders the canonical interface name (GigabitEthernet*)
+    // rather than the abbreviated 'GE*' device label.
+    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
+    lines.push(`interface ${renderedName}`);
     const desc = descs.get(name);
     if (desc) lines.push(` description ${desc}`);
     if (ip && mask) {
