@@ -44,6 +44,9 @@ export class HuaweiRouter extends Router {
     const cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
 
+    if (/^hostname\s*$/i.test(cmd)) {
+      return { output: `${this.hostname}\n`, exitCode: 0 };
+    }
     if (/^display\s+version\s*$/i.test(cmd)) {
       return { output: `${displayVersion(this)}\n`, exitCode: 0 };
     }

@@ -37,6 +37,25 @@ export class CiscoRouter extends Router {
     return `Cisco IOS Software\n${this.hostname}#`;
   }
 
+  /**
+   * Synthetic SFTP-file source — Cisco IOS exposes running-config /
+   * startup-config / flash:/ over scp when `ip scp server enable` is
+   * set. The scp adapter calls read() with a path; we return the
+   * canonical text the user would see via `show running-config`.
+   */
+  getSftpFileSource(): { read: (p: string) => string | null; list: () => readonly string[] } {
+    const knownFiles = ['running-config', 'startup-config'];
+    return {
+      read: (path: string) => {
+        const p = path.replace(/^\/+/, '').toLowerCase();
+        if (p === 'running-config' || p === 'system:running-config') return showRunningConfig(this);
+        if (p === 'startup-config' || p === 'nvram:startup-config') return showRunningConfig(this);
+        return null;
+      },
+      list: () => knownFiles,
+    };
+  }
+
   override runSshCommandSync(
     _user: string,
     command: string,
@@ -44,6 +63,10 @@ export class CiscoRouter extends Router {
     const cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
 
+    // Universal connectivity probe used by every cross-vendor client.
+    if (/^hostname\s*$/i.test(cmd)) {
+      return { output: `${this.hostname}\n`, exitCode: 0 };
+    }
     // `show version` — model + IOS banner.
     if (/^show\s+version\s*$/i.test(cmd)) {
       return { output: `${showVersion(this)}\n`, exitCode: 0 };

@@ -46,6 +46,7 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
+import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
 import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
 import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
@@ -550,6 +551,12 @@ export class LinuxCommandExecutor {
       ?? (device as { getFileSystem?: () => unknown }).getFileSystem?.();
     if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
       return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
+    }
+    // Router-style targets (Cisco / Huawei) expose synthetic system
+    // files via getSftpFileSource() — wrapped in RouterSftpFileSystem.
+    const sftpSource = (device as { getSftpFileSource?: () => unknown }).getSftpFileSource?.();
+    if (sftpSource && typeof (sftpSource as { read?: unknown }).read === 'function') {
+      return new RouterSftpFileSystem(sftpSource as ConstructorParameters<typeof RouterSftpFileSystem>[0]);
     }
     return null;
   }

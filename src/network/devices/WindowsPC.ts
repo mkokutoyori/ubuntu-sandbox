@@ -22,6 +22,7 @@ import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
+import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -133,6 +134,8 @@ export class WindowsPC extends EndHost {
   private dnsSuffix: string = '';
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
+  /** LSA account policy mirrored by `net accounts`. */
+  readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** Reactive consumer: account/group/logon events → Security event log. */
   private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
   /** Reactive consumer: service lifecycle events → System event log. */
@@ -710,6 +713,17 @@ export class WindowsPC extends EndHost {
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
       if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
       if (subCmd === 'share') return cmdNetShare(this.buildNetContext(), subArgs);
+      if (subCmd === 'accounts') {
+        if (subArgs.length === 0) return this.accountsPolicy.render();
+        for (const a of subArgs) {
+          const m = /^\/([a-z]+):(.+)$/i.exec(a);
+          if (m) {
+            const err = this.accountsPolicy.apply(m[1], m[2]);
+            if (err) return err;
+          }
+        }
+        return 'The command completed successfully.';
+      }
       if (subCmd === 'help' || subCmd === '/?' || subCmd === '-?') {
         const topic = (subArgs[0] ?? '').toLowerCase();
         if (!topic) {
