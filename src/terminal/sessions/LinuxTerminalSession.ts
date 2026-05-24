@@ -409,9 +409,9 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private async executeCommand(cmd: string): Promise<void> {
-    const trimmed = cmd.trim();
+    const typed = cmd.trim();
+    const trimmed = this.resolveActionLine(typed);
 
-    // Echo command with prompt
     this.addLine(`${this.getPrompt()}${cmd}`);
 
     // Handle exit/logout
@@ -448,8 +448,7 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // Add to history
-    this.pushHistory(trimmed);
+    this.pushHistory(typed);
 
     // Intercept editor commands — at top level OR embedded in a chain
     // (`mkdir foo && nano foo/x`). The chain is parsed up to the first
@@ -783,6 +782,28 @@ export class LinuxTerminalSession extends TerminalSession {
    * Check if a command needs interactive prompts and start the flow if so.
    * Returns true if a flow was started, false otherwise.
    */
+  private resolveActionLine(command: string): string {
+    const aliases = (this.device as unknown as { executor?: { aliases?: { get: (n: string) => { tokens(): string[] } | undefined } } }).executor?.aliases;
+    if (!aliases) return command;
+    const trimmed = command.replace(/^\s+/, '');
+    const m = /^(\S+)(\s[\s\S]*)?$/.exec(trimmed);
+    if (!m) return command;
+    let head = m[1];
+    let rest = m[2] ?? '';
+    const seen = new Set<string>();
+    while (!seen.has(head)) {
+      seen.add(head);
+      const alias = aliases.get(head);
+      if (!alias) break;
+      const tokens = alias.tokens();
+      if (tokens.length === 0) break;
+      head = tokens[0];
+      const tail = tokens.slice(1).join(' ');
+      rest = (tail ? ' ' + tail : '') + rest;
+    }
+    return head + rest;
+  }
+
   private startInteractiveFlow(command: string): boolean {
     // Use the per-terminal shell session's identity, not the device-wide
     // executor's: `su`/`sudo -s` push a frame onto *this* terminal's shell
@@ -792,7 +813,6 @@ export class LinuxTerminalSession extends TerminalSession {
     const currentUser = this.shell ? this.shell.user : this.device.getCurrentUser();
     const currentUid = this.shell ? this.shell.uid : this.device.getCurrentUid();
 
-    // Check for sudo sqlplus / sudo rman — special case: enter sub-shell after sudo auth
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
     if (cmdParts[0] === 'rman' && command.startsWith('sudo ')) {
@@ -1304,15 +1324,12 @@ export class LinuxTerminalSession extends TerminalSession {
     // OpenSSH `-R`: needs the remote device — registered only when the
     // SSH peer resolves to a local Equipment instance (the common case
     // for the tutorial LAN).
-    const remoteDevice = findLinuxMachineByIp(host);
-    const remoteForwarders = remoteDevice
-      ? this.installRemoteForwards(session, host, remoteDevice, meta)
+    const linuxRemoteDevice = findLinuxMachineByIp(host);
+    const remoteForwarders = linuxRemoteDevice
+      ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta)
       : [];
-    // OpenSSH `-A`: shadow-copy the local SshAgent into the remote one,
-    // so `ssh-add -l` on the remote (and any further `ssh` from there)
-    // sees the client's keys for the duration of the session.
-    const agentForwarding = remoteDevice
-      ? this.installAgentForwarding(remoteDevice, meta)
+    const agentForwarding = linuxRemoteDevice
+      ? this.installAgentForwarding(linuxRemoteDevice, meta)
       : null;
     const onSessionEnd = () => {
       for (const f of forwarders) f.dispose();
@@ -1322,8 +1339,9 @@ export class LinuxTerminalSession extends TerminalSession {
       session.disconnect();
     };
 
-    if (remoteDevice) {
-      this.pushRemoteDevice(remoteDevice, user, host, onSessionEnd);
+    const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
+    if (anyRemoteDevice) {
+      this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
       return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
@@ -2227,10 +2245,7 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
-function findLinuxMachineByIp(targetIp: string): Equipment | null {
-  // Equipment.getAllEquipment is a static singleton registry filled when
-  // device classes get instantiated. We avoid importing LinuxMachine /
-  // EndHost types here to dodge a circular import; duck-typing is fine.
+function findEquipmentByIp(targetIp: string): Equipment | null {
   const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
     .getAllEquipment();
   for (const eq of all) {
@@ -2239,14 +2254,18 @@ function findLinuxMachineByIp(targetIp: string): Equipment | null {
     for (const port of portsObj.values()) {
       const ip = port.getIPAddress?.();
       if (ip && ip.toString() === targetIp) {
-        // Only meaningful for Linux-flavoured devices that expose the
-        // executor pipeline; check duck-typed shape.
         if (typeof (eq as unknown as { executeCommand?: unknown }).executeCommand === 'function') {
           return eq;
         }
       }
     }
   }
+  return null;
+}
+
+function findLinuxMachineByIp(targetIp: string): Equipment | null {
+  const eq = findEquipmentByIp(targetIp);
+  if (eq && eq instanceof LinuxMachine) return eq;
   return null;
 }
 

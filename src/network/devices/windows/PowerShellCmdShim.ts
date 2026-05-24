@@ -37,17 +37,45 @@ export function createShimState(): PsShimState {
 
 type State = PsShimState;
 
+const PS_SWITCH_FLAGS = new Set([
+  '-nologo', '-noprofile', '-noninteractive', '-noexit', '-sta', '-mta',
+]);
+const PS_VALUE_FLAGS = new Set([
+  '-executionpolicy', '-version', '-windowstyle', '-inputformat',
+  '-outputformat', '-encodedcommand', '-configurationname', '-file',
+  '-psconsolefile',
+]);
+
+function extractPsScript(args: string[]): string {
+  const cIdx = args.findIndex(a => /^-c(ommand)?$/i.test(a));
+  if (cIdx !== -1) return args.slice(cIdx + 1).join(' ');
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i].toLowerCase();
+    if (PS_SWITCH_FLAGS.has(a)) { i++; continue; }
+    if (PS_VALUE_FLAGS.has(a)) { i += 2; continue; }
+    if (a === '-' || a === '--') { i++; break; }
+    break;
+  }
+  return args.slice(i).join(' ');
+}
+
 export async function runPowerShellShim(
   ctx: PsCmdShimContext,
   args: string[],
 ): Promise<string> {
-  const cIdx = args.findIndex(a => /^-c(ommand)?$/i.test(a));
-  if (cIdx === -1 || !args[cIdx + 1]) {
-    return 'Usage: powershell -Command "<script>"';
-  }
-  const script = args.slice(cIdx + 1).join(' ').replace(/^"|"$/g, '');
+  const raw = extractPsScript(args).trim();
+  if (!raw) return '';
+  const script = stripBalancedQuotes(raw);
   const state: State = ctx.shimState ?? createShimState();
   return evalScript(state, script, ctx);
+}
+
+function stripBalancedQuotes(s: string): string {
+  if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
 }
 
 async function evalScript(state: State, script: string, ctx: PsCmdShimContext): Promise<string> {
@@ -132,6 +160,9 @@ async function evalExpression(state: State, expr: string, ctx: PsCmdShimContext)
   // Variable
   const ref = /^\$([A-Za-z_]\w*)\s*$/.exec(expr);
   if (ref) return state.vars.get(ref[1]) ?? '';
+
+  // Numeric literal
+  if (/^-?\d+(\.\d+)?$/.test(expr)) return expr;
 
   // String literal
   const str = /^"([^"]*)"$/.exec(expr) ?? /^'([^']*)'$/.exec(expr);
