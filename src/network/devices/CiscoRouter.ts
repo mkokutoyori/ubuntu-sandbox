@@ -37,13 +37,45 @@ export class CiscoRouter extends Router {
     return `Cisco IOS Software\n${this.hostname}#`;
   }
 
+  /**
+   * Synthetic SFTP-file source — Cisco IOS exposes running-config /
+   * startup-config / flash:/ over scp when `ip scp server enable` is
+   * set. The scp adapter calls read() with a path; we return the
+   * canonical text the user would see via `show running-config`.
+   */
+  getSftpFileSource(): { read: (p: string) => string | null; list: () => readonly string[] } {
+    const knownFiles = ['running-config', 'startup-config'];
+    return {
+      read: (path: string) => {
+        const p = path.replace(/^\/+/, '').toLowerCase();
+        if (p === 'running-config' || p === 'system:running-config') return showRunningConfig(this);
+        if (p === 'startup-config' || p === 'nvram:startup-config') return showRunningConfig(this);
+        return null;
+      },
+      list: () => knownFiles,
+    };
+  }
+
   override runSshCommandSync(
     _user: string,
     command: string,
   ): { output: string; exitCode: number } | null {
-    const cmd = command.trim();
-    if (!cmd) return { output: '', exitCode: 0 };
+    const trimmed = command.trim();
+    if (!trimmed) return { output: '', exitCode: 0 };
 
+    // Expand `alias exec <head>` shortcuts before any pattern match so
+    // `ssh ... "si"` invokes `show ip interface brief` via the dispatcher.
+    const aliasHead = trimmed.split(/\s+/)[0];
+    const shellAliases = (this as unknown as { shell?: { aliases?: { resolve: (m: string, n: string) => string | null } } }).shell?.aliases;
+    const aliasExpansion = shellAliases?.resolve('exec', aliasHead) ?? null;
+    const cmd = aliasExpansion
+      ? aliasExpansion + trimmed.slice(aliasHead.length)
+      : trimmed;
+
+    // Universal connectivity probe used by every cross-vendor client.
+    if (/^hostname\s*$/i.test(cmd)) {
+      return { output: `${this.hostname}\n`, exitCode: 0 };
+    }
     // `show version` — model + IOS banner.
     if (/^show\s+version\s*$/i.test(cmd)) {
       return { output: `${showVersion(this)}\n`, exitCode: 0 };

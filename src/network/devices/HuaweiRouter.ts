@@ -16,6 +16,7 @@ import {
   displayCurrentConfig,
   displayIpIntBrief,
 } from './shells/huawei/HuaweiDisplayCommands';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
 
 export class HuaweiRouter extends Router {
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
@@ -44,6 +45,13 @@ export class HuaweiRouter extends Router {
     const cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
 
+    if (/^hostname\s*$/i.test(cmd)) {
+      return { output: `${this.hostname}\n`, exitCode: 0 };
+    }
+    // Expand VRP `command-alias alias <head>` shortcuts before pattern
+    // matching so `ssh ... "dis-int Gi0/0/0"` invokes display interface.
+    const expanded = this._getCommandAliases().expand(cmd);
+    if (expanded !== cmd) return this.runSshCommandSync(_user, expanded);
     if (/^display\s+version\s*$/i.test(cmd)) {
       return { output: `${displayVersion(this)}\n`, exitCode: 0 };
     }
@@ -61,6 +69,27 @@ export class HuaweiRouter extends Router {
     }
     if (/^display\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
       return { output: `${displayInterfaceBrief(this)}\n`, exitCode: 0 };
+    }
+    // `display interface <name>` — per-interface details (matches the
+    // VRP convention used after the command-alias expansion above).
+    const dispInt = /^display\s+int(?:erface)?\s+(\S+)\s*$/i.exec(cmd);
+    if (dispInt) {
+      const portName = resolveHuaweiIfName(Array.from(this._getPortsInternal().keys()), dispInt[1]) || dispInt[1];
+      const port = this.getPort(portName);
+      if (!port) {
+        return { output: `Error: Wrong parameter found at '^' position.\n`, exitCode: 1 };
+      }
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      const lines = [
+        `${dispInt[1]} current state : ${port.getIsUp() ? 'UP' : 'DOWN'}`,
+        `Line protocol current state : ${port.getIsUp() ? 'UP' : 'DOWN'}`,
+        `Description:`,
+        `Switch Port, Link-type : auto negotiation,`,
+        `Hardware address is ${port.getMAC()}`,
+        ip && mask ? `Internet Address is ${ip}/${mask}` : 'Internet protocol processing : disabled',
+      ];
+      return { output: `${lines.join('\n')}\n`, exitCode: 0 };
     }
     if (/^display\s+ip\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
       return { output: `${displayIpIntBrief(this)}\n`, exitCode: 0 };

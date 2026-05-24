@@ -220,21 +220,32 @@ function clientOption(args: string[], name: string): string | null {
  * since key material is conventionally generated as root.
  */
 function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | null {
-  if (!opts.localVfs) return null;
-  const home = opts.sourceHome ?? '/root';
-  const iIdx = flags.indexOf('-i');
-  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
-  const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
-  const candidates = iVal
-    ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
-    : keyHomes.flatMap((h) => [
-        `${h}/.ssh/id_ed25519.pub`,
-        `${h}/.ssh/id_rsa.pub`,
-        `${h}/.ssh/id_ecdsa.pub`,
-      ]);
-  for (const c of candidates) {
-    const data = opts.localVfs.readFile(c);
-    if (data && data.trim()) return data.trim();
+  // Files on disk (or the explicit -i) take precedence over the agent —
+  // matching OpenSSH's identity resolution order.
+  if (opts.localVfs) {
+    const home = opts.sourceHome ?? '/root';
+    const iIdx = flags.indexOf('-i');
+    const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+    const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
+    const candidates = iVal
+      ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
+      : keyHomes.flatMap((h) => [
+          `${h}/.ssh/id_ed25519.pub`,
+          `${h}/.ssh/id_rsa.pub`,
+          `${h}/.ssh/id_ecdsa.pub`,
+        ]);
+    for (const c of candidates) {
+      const data = opts.localVfs.readFile(c);
+      if (data && data.trim()) return data.trim();
+    }
+  }
+  // Agent fallback — when no on-disk identity matches but the SSH agent
+  // holds keys (e.g. linux2's adopted agent after -A from linux1), offer
+  // the first agent key's public-key line. Real OpenSSH iterates them;
+  // one is enough for the simulator's match against authorized_keys.
+  const agentKeys = opts.localAgent?.list();
+  for (const k of agentKeys ?? []) {
+    if (k.publicKey) return k.publicKey;
   }
   return null;
 }
@@ -511,7 +522,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const cfgRaw = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`);
   const cfgEntry = cfgRaw ? SshConfig.parse(cfgRaw).resolve(parsed[2]) : null;
   const remoteUser = parsed[1] ?? cfgEntry?.user ?? opts.sourceUser ?? 'root';
-  const host = cfgEntry?.hostName ?? parsed[2];
+  let host = cfgEntry?.hostName ?? parsed[2];
   if (cfgEntry?.port && !flags.includes('-p')) {
     flags.push('-p', String(cfgEntry.port));
     port = cfgEntry.port;
@@ -523,7 +534,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
   // look it up via the local source IP, which the registry knows.
   const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  const lookupHost = isLoopback ? opts.sourceIp : host;
+  // If the loopback target hits an active `-L` / `-D` forward, retarget
+  // through the tunnel's far end (destHost/destPort). Matches what the
+  // local OpenSSH forwarder would do on a real machine.
+  if (isLoopback && opts.localForwarding) {
+    const fwd = opts.localForwarding.list().find(f => f.listenPort === port);
+    if (fwd?.destHost && fwd?.destPort) {
+      host = fwd.destHost;
+      port = fwd.destPort;
+    }
+  }
+  const stillLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  const lookupHost = stillLoopback ? opts.sourceIp : host;
   const found = findHostByAddress(lookupHost, opts.localVfs);
   if (!found) {
     // A *valid* numeric IPv4 that nothing on the LAN owns is a routing
@@ -592,6 +614,19 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  // MaxStartups gate — drop connections from a source that has crossed
+  // the configured 'full' threshold of recent failed attempts. Mirrors
+  // OpenSSH's accept-loop throttle exactly.
+  const throttler = (machine as unknown as { sshThrottler?: {
+    shouldDrop: (ip: string, cfg: { start: number; rate: number; full: number }, now: number) => boolean;
+  } }).sshThrottler;
+  const cfg = remoteSshdConfig(machine);
+  if (throttler && throttler.shouldDrop(opts.sourceIp, cfg.maxStartups, Date.now())) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused (MaxStartups drop)\n`,
+      exitCode: 255,
+    };
+  }
   const cfgPorts = sshdConfiguredPorts(machine);
   if (!cfgPorts.includes(port)) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
@@ -617,6 +652,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const login = machine.sshdAcceptsLogin?.(remoteUser) ?? { ok: true };
   if (!login.ok) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    throttler?.recordFailure(opts.sourceIp, Date.now());
     return {
       output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
       exitCode: 255,
@@ -630,6 +666,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser);
   if (!auth.method) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    throttler?.recordFailure(opts.sourceIp, Date.now());
     return {
       output: `${remoteUser}@${host}: Permission denied (${
         auth.clientMethods.join(',') || 'publickey,password'
@@ -637,6 +674,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  // Successful authentication clears the failure history for this IP.
+  if (throttler) (throttler as unknown as { reset: (ip: string) => void }).reset(opts.sourceIp);
 
   machine.recordSshLogin?.(
     remoteUser,
@@ -713,8 +752,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
-  // This is OpenSSH's "exec mode" — no banner, no Last login.
-  const remoteCmd = joinRemoteCommand(positional.slice(1));
+  // This is OpenSSH's "exec mode" — no banner, no Last login. A bare
+  // `exit` / `logout` is treated as if no command was given (the user
+  // wants a banner-only interactive session that closes immediately).
+  let remoteCmd = joinRemoteCommand(positional.slice(1));
+  if (/^(exit|logout)\s*$/i.test(remoteCmd)) remoteCmd = '';
   if (remoteCmd) {
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     // `-A` agent forwarding: expose the local agent's identities to the
@@ -740,6 +782,20 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // decide whether to wire a controlling terminal.
       const hasTty = flags.includes('-t') || flags.includes('-tt');
       if (!hasTty) forwarded['SSH_NO_TTY'] = '1';
+      // -t / -tt: propagate the client TTY's geometry (COLUMNS / LINES)
+      // and TERM to the remote shell — matches SIGWINCH + ENV-passing
+      // for an OpenSSH session with a PTY.
+      if (hasTty) {
+        forwarded['COLUMNS'] = opts.callerEnv?.['COLUMNS'] ?? '80';
+        forwarded['LINES']   = opts.callerEnv?.['LINES']   ?? '24';
+        if (opts.callerEnv?.['TERM']) forwarded['TERM'] = opts.callerEnv['TERM'];
+      }
+      // -A: expose the local agent through SSH_AUTH_SOCK on the remote
+      // shell so any `ssh` invocation inside the remote command finds
+      // the forwarded identities — matches OpenSSH agent forwarding.
+      if (flags.includes('-A')) {
+        forwarded['SSH_AUTH_SOCK'] = `/tmp/ssh-${remoteUser}/agent.${SSH_CLIENT_FORWARD_PID}`;
+      }
       // PermitUserEnvironment yes — overlay ~/.ssh/environment lines
       // (KEY=VAL) into the exec-mode env, matching OpenSSH behaviour.
       if (remoteExec && readRemoteSshdDirective(remoteExec, 'PermitUserEnvironment') === 'yes') {
@@ -755,11 +811,22 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // back to the long-lived shell — snapshot/restore around the call.
       const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;
       const savedEntries = envSnapshot ? Array.from(envSnapshot.entries()) : null;
+      // With -t (PTY), bash sources ~/.bashrc before running the
+      // command — that's where aliases and shell functions live.
+      // Prepend the rc body and `shopt -s expand_aliases` so alias
+      // expansion stays on for non-interactive expansion too.
+      let effectiveCmd = remoteCmd;
+      if (hasTty) {
+        const entry = remoteExec?.userMgr.getUser(remoteUser);
+        const home = entry?.home ?? `/home/${remoteUser}`;
+        const rc = remoteExec?.vfs.readFile(`${home}/.bashrc`) ?? '';
+        if (rc.trim()) effectiveCmd = `${rc}\n${remoteCmd}`;
+      }
       try {
         execOut =
           Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
-            ? execMod.executeWithEnv(remoteCmd, forwarded)
-            : execMod?.execute?.(remoteCmd) ?? '';
+            ? execMod.executeWithEnv(effectiveCmd, forwarded)
+            : execMod?.execute?.(effectiveCmd) ?? '';
       } finally {
         if (envSnapshot && savedEntries) {
           envSnapshot.clear();

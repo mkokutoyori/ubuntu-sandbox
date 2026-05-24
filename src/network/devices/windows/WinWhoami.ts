@@ -17,7 +17,7 @@ export function cmdWhoami(ctx: WhoamiContext, args: string[]): string {
   const flag = args.length > 0 ? args[0].toLowerCase() : '';
 
   if (!flag) {
-    return `${ctx.hostname.toLowerCase()}\\${username.toLowerCase()}`;
+    return `${ctx.hostname.toLowerCase()}\\${username}`;
   }
 
   switch (flag) {

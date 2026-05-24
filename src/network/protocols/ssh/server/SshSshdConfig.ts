@@ -199,6 +199,7 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
     `X11Forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
     `AllowTcpForwarding ${cfg.allowTcpForwarding}`,
     `PermitUserEnvironment ${cfg.permitUserEnvironment ? 'yes' : 'no'}`,
+    `MaxStartups 10:30:100`,
   ];
   if (cfg.allowUsers.length > 0) lines.push(`AllowUsers ${cfg.allowUsers.join(' ')}`);
   if (cfg.denyUsers.length > 0) lines.push(`DenyUsers ${cfg.denyUsers.join(' ')}`);

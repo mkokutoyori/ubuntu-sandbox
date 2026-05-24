@@ -318,7 +318,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // Bind router reference
     this.routerRef = router;
 
-    const output = this.executeOnTrie(cmd);
+    // Expand `command-alias` shortcuts before any trie match — same
+    // behaviour as the SSH dispatcher so the local shell honours
+    // installed aliases.
+    const aliasTable = router._getCommandAliases?.();
+    const effective = aliasTable ? aliasTable.expand(cmd) : cmd;
+    const output = this.executeOnTrie(effective);
 
     // Async escape hatch (e.g. tracert sets _pendingAsync)
     if (this._pendingAsync) {
@@ -384,8 +389,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const router = this.routerRef as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
       _getHostnameInternal: () => string;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
     };
     if (!router) return 'Error: device not bound';
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
     let sourceIp: string | null = null;
     for (const [, p] of router._getPortsInternal()) {
       const ip = p.getIPAddress();
@@ -769,6 +777,40 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
         router._configureSshAuthRetries?.(Number(args[2]));
       }
+      return '';
+    });
+    // `command-alias enable|disable` + `command-alias alias <h> <expansion>`
+    // mirror the VRP CLI alias feature consumed by runSshCommandSync.
+    t.registerGreedy('command-alias', 'CLI alias configuration', (args) => {
+      const table = getRouter()._getCommandAliases?.();
+      if (!table) return '';
+      const first = args[0]?.toLowerCase();
+      if (first === 'enable')  { table.enable();  return ''; }
+      if (first === 'disable') { table.disable(); return ''; }
+      if (first === 'alias' && args[1] && args.length >= 3) {
+        table.add(args[1], args.slice(2).join(' '));
+        return '';
+      }
+      return '';
+    });
+    t.registerGreedy('undo command-alias', 'Disable CLI alias', (args) => {
+      const table = getRouter()._getCommandAliases?.();
+      if (!table) return '';
+      if (args[0]?.toLowerCase() === 'alias' && args[1]) { table.remove(args[1]); return ''; }
+      table.disable();
+      return '';
+    });
+
+    // `ip host <name> <ip>` — VRP static hostname → IP table consulted
+    // before any DNS fallback by stelnet / ping / traceroute.
+    t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
+      if (args.length < 2) return 'Error: Incomplete command.';
+      getRouter()._getHostsTable?.().upsert(args[0], args[1]);
+      return '';
+    });
+    t.registerGreedy('undo ip host', 'Remove a static host entry', (args) => {
+      if (args.length < 1) return 'Error: Incomplete command.';
+      getRouter()._getHostsTable?.().remove(args[0]);
       return '';
     });
     t.registerGreedy('local-user', 'Configure a local user', (args) => {

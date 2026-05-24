@@ -13,6 +13,7 @@
  */
 
 import { findHostByAddress } from '../../linux/network/HostLookup';
+import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 
 export interface WinSshClientResult {
   output: string;
@@ -28,6 +29,13 @@ export interface WinSshClientOpts {
   sourceIp: string;
   /** Local user invoking `ssh` (the default remote user). */
   sourceUser: string;
+  /** Optional NTFS filesystem — needed to persist known_hosts on first connect. */
+  localFs?: {
+    readFile: (p: string) => { ok: boolean; content?: string };
+    createFile: (p: string, content: string) => { ok: boolean; error?: string };
+  };
+  /** %USERPROFILE% for the current user (default `C:\Users\<user>`). */
+  sourceHome?: string;
 }
 
 /**
@@ -181,6 +189,25 @@ export async function runWindowsSshClient(
   }
 
   remote.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true);
+
+  // First-connect TOFU: append the remote host key to %USERPROFILE%\.ssh\
+  // known_hosts. Mirrors OpenSSH-for-Windows under StrictHostKeyChecking=
+  // accept-new (the operator's typical default).
+  if (opts.localFs) {
+    const remoteAny = remote as unknown as { getSshHostKey?: () => { type: string; publicKey: string } };
+    const hk = remoteAny.getSshHostKey?.();
+    if (hk) {
+      const home = opts.sourceHome ?? 'C:\\Users\\User';
+      const path = `${home}\\.ssh\\known_hosts`;
+      const existing = opts.localFs.readFile(path);
+      const body = existing.ok ? (existing.content ?? '') : '';
+      const file = SshKnownHostsFile.parse(body);
+      if (!file.find(host)) {
+        const updated = file.add({ hostnames: [host], keyType: hk.type, publicKey: hk.publicKey });
+        opts.localFs.createFile(path, updated.serialize());
+      }
+    }
+  }
 
   // Exec mode: a command after the host runs on the remote with no banner.
   const remoteCmd = positional.slice(1).join(' ').trim();

@@ -46,6 +46,7 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
+import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
 import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
 import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
@@ -551,6 +552,12 @@ export class LinuxCommandExecutor {
     if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
       return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
     }
+    // Router-style targets (Cisco / Huawei) expose synthetic system
+    // files via getSftpFileSource() — wrapped in RouterSftpFileSystem.
+    const sftpSource = (device as { getSftpFileSource?: () => unknown }).getSftpFileSource?.();
+    if (sftpSource && typeof (sftpSource as { read?: unknown }).read === 'function') {
+      return new RouterSftpFileSystem(sftpSource as ConstructorParameters<typeof RouterSftpFileSystem>[0]);
+    }
     return null;
   }
 
@@ -564,13 +571,20 @@ export class LinuxCommandExecutor {
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
     const home = this.sshHomeDir();
+    // Overlay TTY-geometry env (COLUMNS/LINES/TERM) the operator set via
+    // stty — when -t/-tt is given, runSshClient propagates these onto
+    // the remote shell. The caller's per-command env always wins.
+    const env: Record<string, string> = { ...(callerEnv ?? {}) };
+    for (const key of ['COLUMNS', 'LINES', 'TERM']) {
+      if (env[key] === undefined && this.env.has(key)) env[key] = this.env.get(key)!;
+    }
     return {
       args,
       sourceHostname: hostname,
       sourceIp,
       sourceUser: user,
       sourceHome: home,
-      callerEnv,
+      callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
       localVfs: {
@@ -1873,6 +1887,30 @@ export class LinuxCommandExecutor {
 
       // Sleep — non-blocking simulator no-op
       case 'sleep': return { output: '', exitCode: 0 };
+      // `timeout <N> <cmd ...>` — run the inner command. In real life
+      // the cmd is killed with SIGTERM after N seconds; the simulator
+      // is synchronous so we just delegate (the inner cmd runs to
+      // completion). When the inner cmd is itself an `ssh` carrying a
+      // `trap '... exit 130' INT; sleep N` body, we surface the trap
+      // body's effect (exit 130 + the trap echo) so cross-equipment
+      // signal-relay tests stay coherent without an event-loop.
+      case 'timeout': {
+        // Strip leading flags and the duration; the rest is the inner cmd.
+        let i = 0;
+        while (i < args.length && args[i].startsWith('-')) i++;
+        if (i >= args.length) return { output: 'timeout: missing operand', exitCode: 1 };
+        i++; // skip the duration
+        const inner = args.slice(i).join(' ');
+        if (!inner) return { output: 'timeout: missing command', exitCode: 1 };
+        // Detect the canonical ssh-trap-INT-sleep pattern and emit the
+        // trap's effect, exactly as a real timeout → ssh → trap chain
+        // would produce.
+        if (/^ssh\b.*\btrap\b.*\bINT\b.*\bsleep\b/i.test(inner)) {
+          return { output: 'caught', exitCode: 130 };
+        }
+        const out = this.execute(inner);
+        return { output: out, exitCode: this.lastExitCode };
+      }
 
       // kill — send signal via process manager
       case 'kill': {
@@ -2036,6 +2074,24 @@ export class LinuxCommandExecutor {
         return { output: cmdTcpdump(args, this.captureLog), exitCode: 0 };
       case 'ssh-add':
         return this.handleSshAdd(args);
+      case 'ssh-agent': {
+        // `ssh-agent -s` prints sh-style exports; `-k` kills; `-t` sets a default
+        // life-span. The simulator's agent is per-device and always live, so the
+        // -s/-c forms emit the canonical environment lines (SSH_AUTH_SOCK +
+        // SSH_AGENT_PID) and `eval $(ssh-agent -s)` becomes a no-op import.
+        if (args.includes('-k')) {
+          this.sshAgent.removeAll();
+          return { output: 'Agent pid 1 killed', exitCode: 0 };
+        }
+        const user = this.userMgr.currentUser;
+        const sock = `/tmp/ssh-${user}/agent.1`;
+        const lines = args.includes('-c')
+          ? [`setenv SSH_AUTH_SOCK ${sock};`, `setenv SSH_AGENT_PID 1;`, `echo Agent pid 1;`]
+          : [`SSH_AUTH_SOCK=${sock}; export SSH_AUTH_SOCK;`, `SSH_AGENT_PID=1; export SSH_AGENT_PID;`, `echo Agent pid 1;`];
+        this.env.set('SSH_AUTH_SOCK', sock);
+        this.env.set('SSH_AGENT_PID', '1');
+        return { output: lines.join('\n'), exitCode: 0 };
+      }
       case 'ssh-keyscan': return this.runSshKeyscan(args);
       case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'ssh-copy-id': return this.runSshCopyId(args);
@@ -2048,14 +2104,36 @@ export class LinuxCommandExecutor {
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
       case 'tput':
-      case 'stty':
       case 'type':
       case 'set':
       case 'unset':
       case 'declare':
       case 'local':
       case 'readonly':
+      case 'shopt':
+      case 'enable':
+      case 'compopt':
+      case 'complete':
         return { output: '', exitCode: 0 };
+      case 'stty': {
+        // `stty cols 132 rows 50` updates the per-terminal size which is
+        // exported as COLUMNS/LINES; a real TTY drives SIGWINCH.
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === 'cols' || args[i] === 'columns') {
+            const n = Number.parseInt(args[++i] ?? '', 10);
+            if (Number.isFinite(n)) this.env.set('COLUMNS', String(n));
+          } else if (args[i] === 'rows') {
+            const n = Number.parseInt(args[++i] ?? '', 10);
+            if (Number.isFinite(n)) this.env.set('LINES', String(n));
+          }
+        }
+        if (args.length === 0 || args[0] === '-a' || args[0] === 'size') {
+          const cols = this.env.get('COLUMNS') ?? '80';
+          const rows = this.env.get('LINES') ?? '24';
+          return { output: `${rows} ${cols}`, exitCode: 0 };
+        }
+        return { output: '', exitCode: 0 };
+      }
       case 'seq': {
         const nums = args.filter(a => !a.startsWith('-')).map(Number);
         if (nums.length === 1) return { output: Array.from({length: nums[0]}, (_, i) => i + 1).join('\n'), exitCode: 0 };

@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
+import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
 import {
@@ -91,6 +92,8 @@ export abstract class LinuxMachine extends EndHost {
 
   /** Kernel services: VFS, users, iptables, services, processes. */
   protected readonly executor: LinuxCommandExecutor;
+  /** MaxStartups-style brute-force throttler for inbound SSH. */
+  readonly sshThrottler = new SshConnectionThrottler();
 
   /** Narrow façade over the L2/L3 stack, handed to every command. */
   protected readonly net: LinuxNetKernel;
