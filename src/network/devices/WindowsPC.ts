@@ -24,6 +24,7 @@ import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManage
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
+import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -139,6 +140,8 @@ export class WindowsPC extends EndHost {
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
   readonly doskey: DoskeyTable = new DoskeyTable();
+  /** Per-device PowerShell shim state (functions, aliases, vars). */
+  readonly psShimState: PsShimState = createShimState();
   /** Reactive consumer: account/group/logon events → Security event log. */
   private securityAuditProjection: WindowsSecurityAuditProjection | null = null;
   /** Reactive consumer: service lifecycle events → System event log. */
@@ -693,6 +696,12 @@ export class WindowsPC extends EndHost {
       case 'echo':    return args.join(' ');
       case 'cls':     return '';
       case 'doskey':  return this.cmdDoskey(args);
+      case 'powershell':
+      case 'pwsh':
+        return runPowerShellShim({
+          executeCmdCommand: (l) => this.executeCmdCommand(l),
+          shimState: this.psShimState,
+        }, args);
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
