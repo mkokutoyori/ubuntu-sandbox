@@ -21,6 +21,7 @@
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CommandTrie } from './CommandTrie';
+import { runSshClient } from '../linux/network/LinuxSshClient';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
@@ -358,6 +359,53 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
   }
 
+  /**
+   * Parse `stelnet [user@]host [port]` / `ssh [-l user] [-p port] host
+   * [cmd]` and dispatch through the shared runSshClient. Source IP is
+   * picked from the first up interface that has one.
+   */
+  private runOutboundSshClient(args: string[]): string {
+    let user = 'admin';
+    let port: string | null = null;
+    const rest: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-l' && args[i + 1]) { user = args[++i]; continue; }
+      if (a === '-p' && args[i + 1]) { port = args[++i]; continue; }
+      if (a.startsWith('-')) continue;
+      rest.push(a);
+    }
+    if (rest.length === 0) return 'Error: Incomplete command.';
+    let host = rest[0];
+    const at = host.indexOf('@');
+    if (at !== -1) { user = host.slice(0, at); host = host.slice(at + 1); }
+    if (!port && rest[1] && /^\d+$/.test(rest[1])) port = rest[1];
+    const cmd = rest.slice(port ? 2 : 1).join(' ');
+    const router = this.routerRef as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostnameInternal: () => string;
+    };
+    if (!router) return 'Error: device not bound';
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
+    if (!sourceIp) return 'Error: no usable interface IP for outbound SSH';
+    const clientArgs: string[] = [];
+    if (port) clientArgs.push('-p', port);
+    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
+    clientArgs.push(`${user}@${host}`);
+    if (cmd) clientArgs.push(cmd);
+    const result = runSshClient({
+      args: clientArgs,
+      sourceHostname: router._getHostnameInternal(),
+      sourceIp, sourceUser: user,
+      localVfs: { readFile: () => null, writeFile: () => undefined },
+    });
+    return result.output;
+  }
+
   private cmdQuit(): string {
     switch (this.mode) {
       case 'interface':
@@ -602,6 +650,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.mode = 'system';
       return 'Enter system view, return user view with return command.';
     });
+
+    // `stelnet [user@]host [port]` and `ssh [-l user] host` — outbound
+    // SSH client, dispatched through the shared runSshClient so every
+    // gate (host key TOFU, sshd policy, VTY ACL) applies uniformly.
+    for (const verb of ['stelnet', 'ssh']) {
+      t.registerGreedy(verb, `${verb} client`, (args) => this.runOutboundSshClient(args));
+    }
 
     // Display commands
     registerDisplayCommands(t, getRouter, getState);

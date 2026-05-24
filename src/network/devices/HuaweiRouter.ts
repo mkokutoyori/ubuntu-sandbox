@@ -33,6 +33,10 @@ export class HuaweiRouter extends Router {
   }
 
   /** Synchronous VRP exec whitelist consumed by the SSH cross-platform dispatch. */
+  override getSshMotd(): string {
+    return `Huawei Versatile Routing Platform Software\n<${this.hostname}>`;
+  }
+
   override runSshCommandSync(
     _user: string,
     command: string,

@@ -13,6 +13,7 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import { runSshClient } from '../linux/network/LinuxSshClient';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -456,6 +457,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
+    // Outbound SSH client — `ssh -l <user> <host> [cmd]`. Dispatches
+    // through runSshClient so every gate (host key, sshd policy, ACLs)
+    // applies exactly as it would from a Linux origin.
+    this.privilegedTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
+      return this.runOutboundSshClient(args);
+    });
+  }
+
+  /**
+   * Parse `ssh [-l user] [-p port] <host> [command ...]` (the IOS form)
+   * and dispatch through the shared runSshClient. Source IP is the
+   * router's first configured interface — runSshClient probes for it
+   * automatically when sourceIp resolves to a known device.
+   */
+  private runOutboundSshClient(args: string[]): string {
+    let user = 'admin';
+    let port: string | null = null;
+    const rest: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-l' && args[i + 1]) { user = args[++i]; continue; }
+      if (a === '-p' && args[i + 1]) { port = args[++i]; continue; }
+      if (a === '-v') continue;
+      if (a.startsWith('-')) continue;
+      rest.push(a);
+    }
+    if (rest.length === 0) return '% Incomplete command.';
+    const host = rest[0];
+    const cmd = rest.slice(1).join(' ');
+    const router = this.d();
+    const sourceIp = router._getPortsInternal && (() => {
+      for (const [, p] of router._getPortsInternal()) {
+        const ip = p.getIPAddress();
+        if (ip && p.getIsUp()) return ip.toString();
+      }
+      return null;
+    })();
+    if (!sourceIp) return '% No usable interface IP for outbound SSH';
+    const clientArgs: string[] = [];
+    if (port) clientArgs.push('-p', port);
+    clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
+    clientArgs.push(`${user}@${host}`);
+    if (cmd) clientArgs.push(cmd);
+    const result = runSshClient({
+      args: clientArgs,
+      sourceHostname: router._getHostnameInternal(),
+      sourceIp,
+      sourceUser: user,
+      localVfs: {
+        readFile: () => null,
+        writeFile: () => undefined,
+      },
+    });
+    return result.output;
   }
 
   private registerCommonConfigCommands(): void {

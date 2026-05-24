@@ -33,6 +33,10 @@ export class CiscoRouter extends Router {
   }
 
   /** Synchronous IOS exec whitelist consumed by the SSH cross-platform dispatch. */
+  override getSshMotd(): string {
+    return `Cisco IOS Software\n${this.hostname}#`;
+  }
+
   override runSshCommandSync(
     _user: string,
     command: string,
