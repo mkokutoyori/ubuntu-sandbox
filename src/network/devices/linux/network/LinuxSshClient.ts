@@ -811,11 +811,22 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // back to the long-lived shell — snapshot/restore around the call.
       const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;
       const savedEntries = envSnapshot ? Array.from(envSnapshot.entries()) : null;
+      // With -t (PTY), bash sources ~/.bashrc before running the
+      // command — that's where aliases and shell functions live.
+      // Prepend the rc body and `shopt -s expand_aliases` so alias
+      // expansion stays on for non-interactive expansion too.
+      let effectiveCmd = remoteCmd;
+      if (hasTty) {
+        const entry = remoteExec?.userMgr.getUser(remoteUser);
+        const home = entry?.home ?? `/home/${remoteUser}`;
+        const rc = remoteExec?.vfs.readFile(`${home}/.bashrc`) ?? '';
+        if (rc.trim()) effectiveCmd = `${rc}\n${remoteCmd}`;
+      }
       try {
         execOut =
           Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
-            ? execMod.executeWithEnv(remoteCmd, forwarded)
-            : execMod?.execute?.(remoteCmd) ?? '';
+            ? execMod.executeWithEnv(effectiveCmd, forwarded)
+            : execMod?.execute?.(effectiveCmd) ?? '';
       } finally {
         if (envSnapshot && savedEntries) {
           envSnapshot.clear();

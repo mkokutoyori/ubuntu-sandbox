@@ -2086,6 +2086,10 @@ export class LinuxCommandExecutor {
       case 'declare':
       case 'local':
       case 'readonly':
+      case 'shopt':
+      case 'enable':
+      case 'compopt':
+      case 'complete':
         return { output: '', exitCode: 0 };
       case 'stty': {
         // `stty cols 132 rows 50` updates the per-terminal size which is

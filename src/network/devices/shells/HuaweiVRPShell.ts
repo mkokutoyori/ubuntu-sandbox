@@ -774,6 +774,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
+    // `command-alias enable|disable` + `command-alias alias <h> <expansion>`
+    // mirror the VRP CLI alias feature consumed by runSshCommandSync.
+    t.registerGreedy('command-alias', 'CLI alias configuration', (args) => {
+      const table = getRouter()._getCommandAliases?.();
+      if (!table) return '';
+      const first = args[0]?.toLowerCase();
+      if (first === 'enable')  { table.enable();  return ''; }
+      if (first === 'disable') { table.disable(); return ''; }
+      if (first === 'alias' && args[1] && args.length >= 3) {
+        table.add(args[1], args.slice(2).join(' '));
+        return '';
+      }
+      return '';
+    });
+    t.registerGreedy('undo command-alias', 'Disable CLI alias', (args) => {
+      const table = getRouter()._getCommandAliases?.();
+      if (!table) return '';
+      if (args[0]?.toLowerCase() === 'alias' && args[1]) { table.remove(args[1]); return ''; }
+      table.disable();
+      return '';
+    });
+
     // `ip host <name> <ip>` — VRP static hostname → IP table consulted
     // before any DNS fallback by stelnet / ping / traceroute.
     t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
