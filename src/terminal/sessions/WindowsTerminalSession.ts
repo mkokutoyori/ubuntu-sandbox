@@ -23,7 +23,6 @@ import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/Out
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-import { CmdSubShell } from '@/terminal/subshells/CmdSubShell';
 import {
   RemoteDeviceSubShell,
   LinuxPromptStrategy,
@@ -37,6 +36,7 @@ import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
+import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 
 const WINDOWS_THEME: TerminalTheme = {
@@ -134,6 +134,14 @@ export class WindowsTerminalSession extends TerminalSession {
    * Used by UI components (TerminalModal, TerminalView) for display.
    */
   get shellMode(): 'cmd' | 'powershell' {
+    // The active sub-shell is now an IShell-backed adapter; ask the
+    // inner shell's `kind` rather than the legacy class identity.
+    if (this.activeSubShell instanceof ShellSubShellAdapter
+        && this.activeSubShell.inner.kind === 'powershell') {
+      return 'powershell';
+    }
+    // Backwards-compat with any non-adapted PowerShellSubShell still in
+    // flight (early-construction race during Phase 1B migration).
     if (this.activeSubShell instanceof PowerShellSubShell) return 'powershell';
     return 'cmd';
   }
@@ -632,42 +640,67 @@ export class WindowsTerminalSession extends TerminalSession {
   // ── Sub-shell management ───────────────────────────────────────
 
   private enterPowerShell(): void {
-    // Seed the PS sub-shell with THIS terminal's cwd so opening PowerShell
-    // from terminal A doesn't pick up terminal B's `cd D:\foo`
-    // (terminal_gap.md §7.5).
-    const { subShell, banner } = PowerShellSubShell.create(this.device, {
-      initialCwd: this.shell?.cwd,
-      session: this.shell,
+    // Build a real `WindowsPowerShellShell` through the new shell layer
+    // and wrap it in the adapter so it plugs into the existing sub-shell
+    // stack mechanics (history, completion, special keys). The per-
+    // terminal `WindowsShellSession` travels via `extras` so cwd / env
+    // isolation between sibling terminals is preserved.
+    installDefaultShells();
+    const shell = ShellFactory.create('powershell', {
+      device: this.device,
+      user: 'User',
+      cwd: this.shell?.cwd,
+      extras: { windowsSession: this.shell },
     });
-    // If there's already an active subshell, push it onto the stack
-    if (this.activeSubShell) {
-      this.subShellStack.push(this.activeSubShell);
-    }
-    this.activeSubShell = subShell;
+    const adapter = new ShellSubShellAdapter(shell);
+
+    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
+    this.activeSubShell = adapter;
     this.subShellHistory = [];
     this.subShellHistoryIndex = -1;
 
-    for (const line of banner) {
+    for (const line of shell.getActivationBanner()) {
       this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
     }
+    shell.activate();
     this._onShellModeChange?.('powershell');
     this.notify();
   }
 
   private enterNestedCmd(): void {
-    const { subShell, banner } = CmdSubShell.create(this.device);
-    // Push current subshell (PowerShell) onto the stack
-    if (this.activeSubShell) {
-      this.subShellStack.push(this.activeSubShell);
-    }
-    this.activeSubShell = subShell;
+    // Same migration shape as enterPowerShell — the cmd sub-shell comes
+    // through the factory now, so the rest of the system never imports
+    // the concrete `CmdSubShell` class.
+    installDefaultShells();
+    const shell = ShellFactory.create('cmd', {
+      device: this.device,
+      user: 'User',
+      cwd: this.shell?.cwd,
+      extras: { windowsSession: this.shell },
+    });
+    const adapter = new ShellSubShellAdapter(shell);
+
+    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
+    this.activeSubShell = adapter;
     this.subShellHistory = [];
     this.subShellHistoryIndex = -1;
 
-    for (const line of banner) {
-      this.addLine(line);
-    }
+    for (const line of shell.getActivationBanner()) this.addLine(line);
+    shell.activate();
     this._onShellModeChange?.('cmd');
+    this.notify();
+  }
+
+  private pushChildShell(child: IShell): void {
+    const adapter = new ShellSubShellAdapter(child);
+    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
+    this.activeSubShell = adapter;
+    this.subShellHistory = [];
+    this.subShellHistoryIndex = -1;
+    for (const line of child.getActivationBanner()) this.addLine(line);
+    child.activate();
+    if (child.kind === 'powershell') this._onShellModeChange?.('powershell');
+    else if (child.kind === 'cmd') this._onShellModeChange?.('cmd');
     this.notify();
   }
 
@@ -712,7 +745,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
       const maybePromise = this.activeSubShell.processLine(line);
 
-      const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean }) => {
+      const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
         if (result.clearScreen) {
           this.lines = [];
           this.bannerCleared = true;
@@ -725,7 +758,11 @@ export class WindowsTerminalSession extends TerminalSession {
           return;
         }
 
-        // Handle nested shell transitions
+        if (result.childShell) {
+          this.pushChildShell(result.childShell);
+          return;
+        }
+
         if (result._enterPowerShell) {
           this.enterPowerShell();
           return;

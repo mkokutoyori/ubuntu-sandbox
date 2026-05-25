@@ -18,21 +18,32 @@ import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
+import { ShellFactory } from '../ShellFactory';
+
+export interface WindowsPowerShellOptions extends AbstractShellOptions {
+  /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
+  readonly windowsSession?: WindowsShellSession | null;
+}
 
 export class WindowsPowerShellShell extends AbstractShell {
   readonly kind = 'powershell';
 
   private subShell: PowerShellSubShell;
   private banner: readonly string[];
+  private readonly windowsSession: WindowsShellSession | null;
 
-  constructor(opts: AbstractShellOptions) {
+  constructor(opts: WindowsPowerShellOptions) {
     super(opts);
+    this.windowsSession = opts.windowsSession ?? null;
     const { subShell, banner } = PowerShellSubShell.create(opts.device, {
       initialCwd: opts.context.cwd,
-      // The legacy sub-shell wants a WindowsShellSession for cwd
-      // isolation; when SSH'd in from another machine we don't have one
-      // and the device-wide cwd is acceptable for now.
-      session: null,
+      // The per-terminal Windows shell session is what makes `cd D:\foo`
+      // in one window NOT leak into a sibling window (terminal_gap.md
+      // §7.5). When the caller supplies one (local console) we pass it
+      // through; SSH-pushed PS sessions get `null` and fall back to the
+      // device-wide cwd.
+      session: opts.windowsSession ?? null,
     });
     this.subShell = subShell;
     this.banner = banner;
@@ -47,6 +58,17 @@ export class WindowsPowerShellShell extends AbstractShell {
   }
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
+    const lower = line.trim().toLowerCase();
+    if (lower === 'cmd' || lower === 'cmd.exe') {
+      const child = ShellFactory.tryCreateChild('cmd', {
+        device: this.device,
+        user: this.user,
+        parent: this,
+        cwd: this.windowsSession?.cwd ?? this.context.cwd,
+        extras: { windowsSession: this.windowsSession ?? null },
+      });
+      if (child) return { output: [], childShell: child };
+    }
     const r = await this.subShell.processLine(line);
     return {
       output: r.output ?? [],

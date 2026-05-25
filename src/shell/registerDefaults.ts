@@ -16,6 +16,7 @@ import { LinuxBashShell } from './adapters/LinuxBashShell';
 import { WindowsCmdShell } from './adapters/WindowsCmdShell';
 import { WindowsPowerShellShell } from './adapters/WindowsPowerShellShell';
 import { SqlPlusShell } from './adapters/SqlPlusShell';
+import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 
 let installed = false;
 
@@ -23,8 +24,25 @@ export function installDefaultShells(): void {
   if (installed) return;
   installed = true;
   ShellFactory.register('bash', (a) => new LinuxBashShell(a));
-  ShellFactory.register('cmd', (a) => new WindowsCmdShell(a));
-  ShellFactory.register('powershell', (a) => new WindowsPowerShellShell(a));
+  ShellFactory.register('cmd', (a) => {
+    const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
+      .extras?.windowsSession ?? null;
+    return new WindowsCmdShell({
+      device: a.device, user: a.user, context: a.context,
+      parent: a.parent ?? null, windowsSession,
+    });
+  });
+  // PowerShell honours the per-terminal `WindowsShellSession` when the
+  // caller (the cmd terminal session) hands one through `extras`. SSH
+  // push and tests omit it; the shell falls back to the device-wide cwd.
+  ShellFactory.register('powershell', (a) => {
+    const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
+      .extras?.windowsSession ?? null;
+    return new WindowsPowerShellShell({
+      device: a.device, user: a.user, context: a.context,
+      parent: a.parent ?? null, windowsSession,
+    });
+  });
   ShellFactory.register('sqlplus', (a) => new SqlPlusShell(a));
 }
 
