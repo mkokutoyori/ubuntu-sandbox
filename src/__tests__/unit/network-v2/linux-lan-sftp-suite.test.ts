@@ -1436,30 +1436,78 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
 });
 
 
-// ─── Section 26 — sftp client is unavailable on Windows ──────────────
+// ─── Section 26 — Windows ships OpenSSH sftp client by default ───────
+//
+// Recent Windows versions bundle the OpenSSH client, so `sftp` is a
+// first-class executable in cmd / PowerShell. These rows are an oracle
+// of how the simulator should mirror that reality.
 
-describe('§26 — Windows has no native sftp client', () => {
+describe('§26 — Windows ships the OpenSSH sftp client', () => {
   let lan: Lan;
   beforeEach(async () => { lan = await buildLan(); });
 
   const rows: Row[] = [
     {
-      name: 'bare `sftp` on win1 is not recognized',
+      name: 'bare `sftp` on win1 prints the OpenSSH usage line',
       on: l => l.win1,
       cmd: 'sftp',
-      contains: [/not recognized|n'est pas reconnu|command not found/i],
+      contains: [/usage:\s*sftp/i],
+      excludes: [/not recognized|n'est pas reconnu|command not found/i],
     },
     {
-      name: 'sftp alice@host on win1 is not recognized',
+      name: 'win1 → linux pc2: sftp alice@10.0.0.2 connects',
       on: l => l.win1,
-      cmd: 'sftp alice@10.0.0.2',
-      contains: [/not recognized|n'est pas reconnu|command not found/i],
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+      excludes: [/not recognized|command not found/i],
     },
     {
-      name: 'win2 also lacks sftp by default',
-      on: l => l.win2,
-      cmd: 'sftp -P 22 User@10.0.0.20',
-      contains: [/not recognized|n'est pas reconnu|command not found/i],
+      name: 'win1 → linux server: sftp alice@srv1 connects',
+      on: l => l.win1,
+      cmd: sftp('alice@10.0.0.10', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.10/],
+    },
+    {
+      name: 'win1 → win2: cross-Windows sftp connects',
+      on: l => l.win1,
+      cmd: sftp('User@10.0.0.21', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.21/],
+    },
+    {
+      name: 'sftp -P 2222 on Windows targets an alternate port',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.win1,
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'sftp from Windows to an unreachable IP fails gracefully',
+      on: l => l.win1,
+      cmd: sftp('alice@192.0.2.99', ['pwd']),
+      contains: [/no route|Could not resolve|refused|timed out/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'win1 → pc2 with sshd stopped: Connection refused',
+      setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.win1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'win1 → pc2 put a Windows-local file under /tmp on Linux',
+      setup: async (l) => {
+        await l.win1.executeCommand('echo from-win > C:\\Users\\User\\to-linux.txt');
+        await l.win1.executeCommand(
+          sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt']),
+        );
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/from-win.txt',
+      contains: [/from-win/],
     },
   ];
 
