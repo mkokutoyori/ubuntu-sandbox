@@ -2097,3 +2097,161 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+
+// ════════════════════════════════════════════════════════════════════
+// Interactive SFTP sub-shell sections
+// ════════════════════════════════════════════════════════════════════
+//
+// The sections above drive sftp through the executor's batch (here-doc)
+// path. The four sections below take the other route: open a real
+// SftpSession, wrap it in the SftpSubShell that the LinuxTerminalSession
+// hosts, and assert on each REPL turn — the prompt string, the exit
+// flag, the output lines and how the shell composes successive calls.
+
+import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
+import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { SubShellResult } from '@/terminal/subshells/ISubShell';
+
+function tcpConnectorOf(pc: LinuxPC | LinuxServer): TcpConnector {
+  const dev = pc as unknown as { tcpConnect: (h: string, p: number) => Promise<unknown> };
+  return (host, port) => dev.tcpConnect(host, port) as Promise<never>;
+}
+
+/** Resolve the (uid, gid) of a Linux user on the given remote device. */
+function uidOf(remote: LinuxPC | LinuxServer, user: string): { uid: number; gid: number } {
+  const um = (remote as unknown as { executor: { userMgr: { getUser: (u: string) => { uid?: number; gid?: number } | undefined } } }).executor.userMgr;
+  const u = um.getUser(user);
+  return { uid: u?.uid ?? 0, gid: u?.gid ?? 0 };
+}
+
+/** Remote VFS of a Linux device, for direct seeding of remote files. */
+function vfsOf(d: LinuxPC | LinuxServer): VirtualFileSystem {
+  return (d as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
+}
+
+interface ShellFixture { shell: SftpSubShell; session: SftpSession; local: VirtualFileSystem; }
+
+async function openShell(client: LinuxPC | LinuxServer, target: string, opts: { user?: string; password?: string; localCwd?: string } = {}): Promise<ShellFixture> {
+  const user = opts.user ?? 'alice';
+  // Standard cast on LinuxCommandExecutor sets each user's password to
+  // their username (alice/alice, bob/bob, …).
+  const password = opts.password ?? user;
+  const local = new VirtualFileSystem();
+  const session = new SftpSession({
+    tcpConnector: tcpConnectorOf(client),
+    localVfs: local,
+    localUser: 'root',
+    localUid: 0,
+    localGid: 0,
+    localCwd: opts.localCwd ?? '/root',
+    knownHostsPath: '/root/.ssh/known_hosts',
+    interactionHandler: new SilentSshInteractionHandler(password),
+    homeDirectory: '/root',
+  });
+  const banner = await session.connect(`${user}@${target}`, { password });
+  expect(banner).toContain('Connected');
+  const shell = new SftpSubShell(session);
+  return { shell, session, local };
+}
+
+interface ShellRow {
+  name: string;
+  setup?: (lan: Lan, fx: ShellFixture) => Promise<void> | void;
+  /** Lines to feed in order; the assertion runs on the LAST result. */
+  lines: string[];
+  contains?: (string | RegExp)[];
+  excludes?: (string | RegExp)[];
+  expectPrompt?: string;
+  expectExit?: boolean;
+}
+
+async function driveShell(lan: Lan, target: string, row: ShellRow): Promise<{ res: SubShellResult; allOutput: string }> {
+  const fx = await openShell(lan.pc1, target);
+  if (row.setup) await row.setup(lan, fx);
+  let res: SubShellResult = { output: [], exit: false, prompt: fx.shell.getPrompt() };
+  const all: string[] = [];
+  for (const line of row.lines) {
+    res = await fx.shell.processLine(line);
+    all.push(...res.output);
+    if (res.exit) break;
+  }
+  return { res, allOutput: all.join('\n') };
+}
+
+function assertShellRow(out: string, res: SubShellResult, row: ShellRow): void {
+  for (const c of row.contains ?? []) {
+    if (c instanceof RegExp) expect(out).toMatch(c);
+    else expect(out).toContain(c);
+  }
+  for (const e of row.excludes ?? []) {
+    if (e instanceof RegExp) expect(out).not.toMatch(e);
+    else expect(out).not.toContain(e);
+  }
+  if (row.expectPrompt !== undefined) expect(res.prompt).toBe(row.expectPrompt);
+  if (row.expectExit !== undefined) expect(res.exit).toBe(row.expectExit);
+}
+
+// ─── Section 36 — Prompt, help, version, unknown verbs ───────────────
+// ─── Section 36 — Prompt, help, version, unknown verbs ───────────────
+
+describe('§36 — interactive sftp shell: prompt, help, version, unknown verbs', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: ShellRow[] = [
+    {
+      name: 'fresh shell prompt is exactly "sftp> "',
+      lines: [''],
+      expectPrompt: 'sftp> ',
+      expectExit: false,
+    },
+    {
+      name: 'unknown verb produces "Invalid command."',
+      lines: ['fubar'],
+      contains: ['Invalid command.'],
+      expectPrompt: 'sftp> ',
+    },
+    {
+      name: 'help lists every documented verb',
+      lines: ['help'],
+      contains: ['bye', 'cd path', 'get [-afpR] remote', 'put [-afpR] local', 'lmkdir path', 'rename oldpath newpath'],
+      expectPrompt: 'sftp> ',
+    },
+    {
+      name: '? is an alias for help',
+      lines: ['?'],
+      contains: ['Available commands', 'rename oldpath newpath'],
+    },
+    {
+      name: 'version returns an SFTP protocol identifier',
+      lines: ['version'],
+      contains: [/SFTP.*version|protocol/i],
+    },
+    {
+      name: 'clear sets clearScreen true and keeps the same prompt',
+      lines: ['clear'],
+      expectPrompt: 'sftp> ',
+    },
+    {
+      name: 'an empty line yields a blank output line and a fresh prompt',
+      lines: [''],
+      expectPrompt: 'sftp> ',
+      expectExit: false,
+    },
+    {
+      name: 'verbs are case-insensitive: PWD ≡ pwd',
+      lines: ['PWD'],
+      contains: [/Remote working directory:/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    const { res, allOutput } = await driveShell(lan, '10.0.0.2', row);
+    assertShellRow(allOutput, res, row);
+  });
+});
+
