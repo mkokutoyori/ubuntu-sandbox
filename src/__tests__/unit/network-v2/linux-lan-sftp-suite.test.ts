@@ -1469,3 +1469,57 @@ describe('§26 — Windows has no native sftp client', () => {
 });
 
 
+// ─── Section 27 — chained verb batches keep going after errors ───────
+
+describe('§27 — multi-verb batches keep going on errors', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'invalid verb in the middle does not stop subsequent verbs',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd', 'fubar', 'lpwd']),
+      contains: [/Remote working directory:/, /Invalid command: fubar/, /Local working directory:/],
+    },
+    {
+      name: 'failed put still lets the next verb run',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put /tmp/never /tmp/dst', 'pwd']),
+      contains: [/open failed|No such|Failure/i, /Remote working directory:/],
+    },
+    {
+      name: 'a successful sequence sets up files for the next one',
+      setup: async (l) => {
+        await l.pc1.executeCommand('echo a > /tmp/seqA');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', [
+          'put /tmp/seqA /tmp/seqA',
+          'rename /tmp/seqA /tmp/seqB',
+        ]));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/seqB',
+      contains: [/^a$/m],
+    },
+    {
+      name: 'mkdir + put + chmod chain produces a 0600 file at the new dir',
+      setup: async (l) => {
+        await l.pc1.executeCommand('echo locked > /tmp/lk');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', [
+          'mkdir /tmp/locked-dir',
+          'put /tmp/lk /tmp/locked-dir/lk',
+          'chmod 600 /tmp/locked-dir/lk',
+        ]));
+      },
+      on: l => l.pc2,
+      cmd: 'stat -c "%a" /tmp/locked-dir/lk',
+      contains: [/^600$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
