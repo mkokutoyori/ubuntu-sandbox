@@ -469,3 +469,53 @@ describe('§6 — mkdir creates remote directories', () => {
 });
 
 
+// ─── Section 7 — rmdir removes empty remote directories ──────────────
+
+describe('§7 — rmdir removes empty directories', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rmdir on an empty dir removes it; subsequent cd fails',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/togo'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/togo', 'cd /tmp/togo']),
+      contains: [/Not a directory|No such/i],
+    },
+    {
+      name: 'rmdir on a non-empty directory fails',
+      setup: async (l) => {
+        await l.pc2.executeCommand('mkdir -p /tmp/full && echo x > /tmp/full/x');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/full']),
+      contains: [/rmdir failed|not empty|Failure/i],
+    },
+    {
+      name: 'rmdir on a non-existent path fails',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/ghost']),
+      contains: [/rmdir failed|No such|Failure/i],
+    },
+    {
+      name: 'rmdir on a regular file fails (not a directory)',
+      setup: async (l) => { await l.pc2.executeCommand('echo nope > /tmp/notadir'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/notadir']),
+      contains: [/rmdir failed|Not a directory|Failure/i],
+    },
+    {
+      name: 'mkdir then immediately rmdir is consistent',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['mkdir /tmp/blink', 'rmdir /tmp/blink', 'cd /tmp/blink']),
+      contains: [/Not a directory|No such/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
