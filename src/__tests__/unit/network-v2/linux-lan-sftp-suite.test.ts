@@ -519,3 +519,55 @@ describe('§7 — rmdir removes empty directories', () => {
 });
 
 
+// ─── Section 8 — rm / delete remove remote files ─────────────────────
+
+describe('§8 — rm / delete remove remote files', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rm of a regular file removes it',
+      setup: async (l) => { await l.pc2.executeCommand('echo gone > /tmp/doomed.txt'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm /tmp/doomed.txt', 'ls /tmp']),
+      excludes: ['doomed.txt'],
+    },
+    {
+      name: 'delete is an alias for rm',
+      setup: async (l) => { await l.pc2.executeCommand('echo bye > /tmp/aliased'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['delete /tmp/aliased', 'ls /tmp']),
+      excludes: ['aliased'],
+    },
+    {
+      name: 'rm of a missing file surfaces an error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm /tmp/never-existed']),
+      contains: [/unlink failed|No such|Failure/i],
+    },
+    {
+      name: 'rm of a directory is refused (not a regular file)',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/dir-rm'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm /tmp/dir-rm']),
+      contains: [/unlink failed|directory|Failure/i],
+    },
+    {
+      name: 'multiple rms in one batch keep going through errors',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo 1 > /tmp/r1 && echo 2 > /tmp/r2');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm /tmp/r1', 'rm /tmp/ghost', 'rm /tmp/r2', 'ls /tmp']),
+      contains: [/unlink failed|No such|Failure/i],
+      excludes: ['r1', 'r2'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
