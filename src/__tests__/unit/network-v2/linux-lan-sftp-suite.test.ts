@@ -1162,3 +1162,54 @@ describe('§19 — sftp access denied for root / blocked users', () => {
 });
 
 
+// ─── Section 20 — sftp -P uses an alternate port ─────────────────────
+
+describe('§20 — sftp -P uses an alternate port', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'After Port 2222 + reload, default sftp (port 22) is refused',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'sftp -P 2222 reaches the new port',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'sftp -P 2222 against a server still on 22 fails',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
+      contains: [/refused|no route|timed out/i],
+    },
+    {
+      name: 'Two listening Port directives accept both',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
