@@ -365,3 +365,59 @@ describe('§4 — cd navigates the remote tree', () => {
 });
 
 
+// ─── Section 5 — lcd / lls / lpwd: local navigation ──────────────────
+
+describe('§5 — lcd / lls / lpwd inspect the local side', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'lcd /tmp changes the local cwd',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lcd /tmp', 'lpwd']),
+      contains: [/Local working directory: \/tmp/],
+    },
+    {
+      name: 'lls lists files in the local cwd',
+      setup: async (l) => {
+        await l.pc1.executeCommand('mkdir -p /tmp/cli && echo k > /tmp/cli/keep && echo z > /tmp/cli/zap');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lcd /tmp/cli', 'lls']),
+      contains: ['keep', 'zap'],
+    },
+    {
+      name: 'lcd to a non-existent local path errors',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lcd /does/not/exist/locally']),
+      contains: [/Not a directory|No such/i],
+    },
+    {
+      name: 'lcd to a regular file is refused',
+      setup: async (l) => { await l.pc1.executeCommand('echo r > /tmp/regular'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lcd /tmp/regular']),
+      contains: [/Not a directory/i],
+    },
+    {
+      name: 'lpwd before and after lcd shows the transition',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lpwd', 'lcd /tmp', 'lpwd']),
+      contains: [/Local working directory:.*\n.*Local working directory: \/tmp/s],
+    },
+    {
+      name: 'lls of a path explicitly given lists that local dir',
+      setup: async (l) => { await l.pc1.executeCommand('mkdir -p /tmp/explicit && echo a > /tmp/explicit/aaa'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lls /tmp/explicit']),
+      contains: ['aaa'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
