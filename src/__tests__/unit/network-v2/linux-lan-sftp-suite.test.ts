@@ -905,3 +905,54 @@ describe('§14 — invalid verbs surface "Invalid command"', () => {
 });
 
 
+// ─── Section 15 — missing path arguments produce parse errors ────────
+
+describe('§15 — missing path arguments produce parse errors', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'put with no args: "put: missing source"',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put']),
+      contains: [/put: missing source/],
+    },
+    {
+      name: 'get with no args: "get: missing source"',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['get']),
+      contains: [/get: missing source/],
+    },
+    {
+      name: 'rename with no args: "rename: needs two args"',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rename']),
+      contains: [/rename: needs two args/],
+    },
+    {
+      name: 'chmod with no args: "chmod: invalid mode"',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['chmod']),
+      contains: [/chmod: invalid mode/],
+    },
+    {
+      name: 'mkdir with no args is accepted as a no-op (default path "")',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['mkdir', 'pwd']),
+      contains: [/Remote working directory:/],
+    },
+    {
+      name: 'rm with no args attempts an unlink on empty path and errors',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm']),
+      contains: [/unlink failed|No such|Failure|Connected to/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
