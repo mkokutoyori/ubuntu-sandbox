@@ -1645,11 +1645,15 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
-      name: 'iptables DROP on a different port leaves sftp working on 22',
-      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 23 -j DROP'); },
+      name: 'ufw deny 22 blocks sftp the same way iptables DROP does',
+      setup: async (l) => {
+        await l.pc2.executeCommand('ufw enable');
+        await l.pc2.executeCommand('ufw deny 22');
+      },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
-      contains: [/Connected to 10\.0\.0\.2/],
+      contains: [/refused|timed out|unreachable/i],
+      excludes: [/Connected to/],
     },
     {
       name: 'source-based DROP blocks only one client',
