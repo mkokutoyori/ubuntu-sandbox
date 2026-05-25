@@ -22,7 +22,6 @@ import type { WindowsShellSession } from '@/network/devices/windows/shell/Window
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
-import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import {
   RemoteDeviceSubShell,
   LinuxPromptStrategy,
@@ -134,15 +133,10 @@ export class WindowsTerminalSession extends TerminalSession {
    * Used by UI components (TerminalModal, TerminalView) for display.
    */
   get shellMode(): 'cmd' | 'powershell' {
-    // The active sub-shell is now an IShell-backed adapter; ask the
-    // inner shell's `kind` rather than the legacy class identity.
     if (this.activeSubShell instanceof ShellSubShellAdapter
         && this.activeSubShell.inner.kind === 'powershell') {
       return 'powershell';
     }
-    // Backwards-compat with any non-adapted PowerShellSubShell still in
-    // flight (early-construction race during Phase 1B migration).
-    if (this.activeSubShell instanceof PowerShellSubShell) return 'powershell';
     return 'cmd';
   }
 
