@@ -234,6 +234,20 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  // Local AAA users (`username NAME privilege N secret …`).
+  const listUsers = (router as unknown as {
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string }>;
+  })._listLocalUsers;
+  if (listUsers) {
+    const users = listUsers.call(router);
+    if (users.length > 0) {
+      lines.push('!');
+      for (const u of users) {
+        lines.push(`username ${u.name} privilege ${u.privilege} secret 5 ${u.secret}`);
+      }
+    }
+  }
+
   // VTY line configuration (exec-timeout, access-class, transport input, …)
   const vtyStore = (router as unknown as { _getVtyLineConfig?: () => { renderAllCisco: () => string[] } })._getVtyLineConfig?.();
   if (vtyStore) {

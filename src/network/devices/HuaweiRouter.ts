@@ -42,8 +42,11 @@ export class HuaweiRouter extends Router {
     _user: string,
     command: string,
   ): { output: string; exitCode: number } | null {
-    const cmd = command.trim();
+    let cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
+    if ((cmd.startsWith('"') && cmd.endsWith('"')) || (cmd.startsWith("'") && cmd.endsWith("'"))) {
+      cmd = cmd.slice(1, -1).trim();
+    }
 
     if (/^hostname\s*$/i.test(cmd)) {
       return { output: `${this.hostname}\n`, exitCode: 0 };

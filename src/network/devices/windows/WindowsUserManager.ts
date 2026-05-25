@@ -162,6 +162,18 @@ export class WindowsUserManager {
     });
     this.passwords.set('user', 'user');
 
+    // Standard cast — password equals the username — so cross-equipment
+    // SSH tests don't need per-pairing setup.
+    for (const u of ['alice', 'bob', 'carl', 'dave']) {
+      this.addUser({
+        name: u, fullName: '', description: '',
+        sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
+        passwordRequired: true, userMayChangePassword: true,
+        passwordLastSet: new Date(), lastLogon: null, builtIn: false,
+      });
+      this.passwords.set(u.toLowerCase(), u);
+    }
+
     // Built-in groups
     this.addGroup({
       name: 'Administrators', description: 'Administrators have complete and unrestricted access to the computer/domain',

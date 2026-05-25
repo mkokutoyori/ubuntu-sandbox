@@ -288,6 +288,17 @@ export class LinuxCommandExecutor {
       this.cwd = '/home/user';
     }
 
+    // Provision the standard cast (alice/alice, bob/bob, …) so cross-
+    // equipment SSH tests don't have to reseed credentials per pairing.
+    // They land in the sudo group so they can elevate without further setup.
+    for (const u of ['alice', 'bob', 'carl', 'dave']) {
+      if (!this.userMgr.getUser(u)) {
+        this.userMgr.useradd(u, { m: true, s: '/bin/bash' });
+        this.userMgr.setPassword(u, u);
+        this.userMgr.usermod(u, { aG: 'sudo' });
+      }
+    }
+
     // Every interactive shell shows up in the process table as -bash, like a
     // real login shell. Server profiles run as root.
     const shellUser = !isServer ? 'user' : 'root';

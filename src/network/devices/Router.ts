@@ -43,14 +43,21 @@ import { CommandAliasTable } from './router/cli/CommandAliasTable';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
+import { TcpServerStack, type TcpRoute } from './tcp/TcpServerStack';
+import type { TcpConnection } from '@/network/core/TcpConnection';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import { SshHostKey } from '../protocols/ssh/SshHostKey';
+import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
   EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
-  IP_PROTO_ICMP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
   UDP_PORT_RIP, UDP_PORT_IKE_NAT_T,
+  TCPPacket,
   createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
   DeviceType,
   IPv6Address, IPv6Packet,
@@ -247,6 +254,108 @@ export abstract class Router extends Equipment {
     });
     this.createPorts();
     this._setupPortMonitoring();
+    this.tcpStack = this.buildTcpServerStack();
+    // Eagerly materialise the credential store so the standard cast
+    // (alice/alice, bob/bob, …) is visible to `show running-config` /
+    // `display current-configuration` without a prior `username` command.
+    this.getCredentialStore();
+    this.mountSshDaemon();
+  }
+
+  // ── SSH daemon over real TCP ───────────────────────────────────────
+
+  private _sshHandlerMounted = false;
+
+  private mountSshDaemon(): void {
+    if (this._sshHandlerMounted) return;
+    this._sshHandlerMounted = true;
+    this.listenTcp(22, (conn) => {
+      const handler = this.buildRouterSshServerHandler();
+      handler.register(conn, conn.remoteIp);
+    });
+  }
+
+  private _sshHostKeyCache: SshHostKey | null = null;
+  private buildRouterSshServerHandler(): SshServerHandler {
+    const credentials = this.getCredentialStore();
+    if (!this._sshHostKeyCache) this._sshHostKeyCache = SshHostKey.generate(this.hostname);
+    const ctx = new RouterSshServerContext({
+      hostname: () => this.hostname,
+      hostKey: () => this._sshHostKeyCache!,
+      credentials: () => ({
+        authenticate: (n, p) => credentials.authenticate(n, p),
+        has: (n) => credentials.get(n) !== undefined,
+        get: (n) => {
+          const a = credentials.get(n);
+          return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
+        },
+      }),
+      execTarget: () => this as unknown as SshExecTarget,
+      banner: () => this.sshBannerText || null,
+    });
+    return new SshServerHandler(ctx);
+  }
+
+  // ── TCP server plane (so SSH/SFTP can travel through the wire) ─────
+
+  protected readonly tcpStack: TcpServerStack;
+
+  private buildTcpServerStack(): TcpServerStack {
+    return new TcpServerStack({
+      getPortIp: (portName: string) => this.ports.get(portName)?.getIPAddress() ?? null,
+      resolveRoute: (dst: IPAddress): TcpRoute | null => {
+        // Replies travel back the way they came: the inbound port is
+        // implicitly known to the caller of TcpServerStack.handleSegment.
+        // Synthesize a route by scanning every port whose subnet contains
+        // the destination — the LAN case the cross-vendor SSH suite uses.
+        for (const [name, port] of this.ports) {
+          const ip = port.getIPAddress();
+          const mask = port.getSubnetMask();
+          if (!ip || !mask) continue;
+          if ((dst.toUint32() & mask.toUint32()) === (ip.toUint32() & mask.toUint32())) {
+            return { iface: name, nextHopIP: dst, port };
+          }
+        }
+        // Fallback: the first up port with an IP.
+        for (const [name, port] of this.ports) {
+          const ip = port.getIPAddress();
+          if (ip && port.getIsUp()) return { iface: name, nextHopIP: dst, port };
+        }
+        return null;
+      },
+      sendTcpFrame: (srcIp: IPAddress, dstIp: IPAddress, route: TcpRoute, seg: TCPPacket) => {
+        const tcpPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_TCP, this.defaultTTL, seg, 40);
+        const targetMac = this.arpTable.get(dstIp.toString());
+        const port = this.ports.get(route.iface);
+        if (!port) return;
+        if (!targetMac) {
+          // No ARP entry — the cross-vendor SSH suite pings first, so
+          // this only fires when the remote disappeared between SYN and
+          // reply; drop silently rather than throw mid-handshake.
+          return;
+        }
+        this.sendFrame(route.iface, {
+          srcMAC: port.getMAC(),
+          dstMAC: targetMac.mac,
+          etherType: ETHERTYPE_IPV4,
+          payload: tcpPkt,
+        });
+      },
+    });
+  }
+
+  /**
+   * Register a passive TCP listener (cross-vendor SSHd, future Telnet /
+   * REST API / NETCONF, …). The handler is invoked synchronously after
+   * the SYN-ACK is sent so it can register `onData()` before the
+   * client's first segment arrives.
+   */
+  public listenTcp(port: number, handler: (conn: TcpConnection) => void): void {
+    this.tcpStack.listen(port, handler);
+  }
+
+  public unlistenTcp(port: number): boolean {
+    return this.tcpStack.unlisten(port);
   }
 
   private createPorts(): void {
@@ -779,6 +888,11 @@ export abstract class Router extends Equipment {
           return;
         }
       }
+    }
+
+    if (ipPkt.protocol === IP_PROTO_TCP) {
+      this.tcpStack.handleSegment(inPort, ipPkt);
+      return;
     }
 
     if (ipPkt.protocol === IP_PROTO_ICMP) {
@@ -1440,6 +1554,11 @@ export abstract class Router extends Equipment {
         active: this.sshServerEnabled,
         banner: this.sshBannerText,
       });
+      // Provision the standard cast (alice/alice, bob/bob, …) so
+      // cross-equipment SSH tests don't need per-pairing setup.
+      for (const u of ['alice', 'bob', 'carl', 'dave']) {
+        this._addLocalUser(u, 15, u);
+      }
     }
     return this._credentialStore;
   }

@@ -36,6 +36,10 @@ const SSHD_CONFIG_PATH = `${SSH_DIR}\\sshd_config`;
 const HOST_KEY_PATH = `${SSH_DIR}\\ssh_host_ed25519_key`;
 const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
 
+export interface WindowsShellExecutor {
+  executeCmdCommand(line: string): Promise<string>;
+}
+
 export class WindowsSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
@@ -47,6 +51,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     private readonly userManager: WindowsUserManager,
     private readonly hostname: string,
     config: Partial<SshServerConfig> = {},
+    private readonly shellExecutor: WindowsShellExecutor | null = null,
   ) {
     this.ensureSshDir();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -60,7 +65,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   reloadConfig(): WindowsSshServerContext {
-    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname);
+    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor);
   }
 
   getBanner(): string | null {
@@ -74,12 +79,27 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
+    const exec = this.shellExecutor;
+    if (!exec) {
+      return {
+        async execute(line: string) {
+          return {
+            stdout: `${line}: shell execution not yet wired\n`,
+            stderr: '',
+            exitCode: 0,
+          };
+        },
+      };
+    }
     return {
       async execute(line: string) {
+        const stdout = await exec.executeCmdCommand(line);
+        const looksLikeError =
+          /is not recognized|denied|Access is denied|Permission denied/i.test(stdout);
         return {
-          stdout: `${line}: shell execution not yet wired\n`,
+          stdout: stdout.endsWith('\n') ? stdout : stdout + '\n',
           stderr: '',
-          exitCode: 0,
+          exitCode: looksLikeError ? 1 : 0,
         };
       },
     };
