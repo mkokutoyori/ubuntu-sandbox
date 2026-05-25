@@ -1623,6 +1623,19 @@ export abstract class Router extends Equipment {
     if (this._sshHost) this._sshHost.setSshActive(this.sshServerEnabled);
   }
 
+  /**
+   * Validate <user, password> through the local-user AAA database the
+   * router builds from `username … secret …` (Cisco) or `local-user …
+   * password cipher …` (Huawei). Overrides the {@link Equipment} stub
+   * so the SSH client doesn't need to know which vendor it's talking
+   * to — `device.checkPassword` is the single-call entry point that
+   * the LinuxMachine / WindowsPC counterparts already expose.
+   */
+  override checkPassword(username: string, password: string): boolean {
+    const authority = this.getSshHost().getAuthority();
+    return authority.authenticate(username, password);
+  }
+
   /** SshExecTarget. */
   getSshHostname(): string { return this.hostname; }
   isSshActive(): boolean { return this.sshServerEnabled; }

@@ -184,6 +184,24 @@ async function type(session: TerminalSession, line: string): Promise<void> {
   await flush();
 }
 
+/**
+ * Drive a complete `ssh user@host` interactive login from the Windows
+ * cmd terminal: type the ssh line, then satisfy the password challenge
+ * with the supplied secret. After this resolves the active sub-shell
+ * is the remote's primary shell.
+ */
+async function sshLogin(
+  session: TerminalSession, line: string, password: string,
+): Promise<void> {
+  await type(session, line);
+  // Drain the password mode if the simulator's SSH push entered it.
+  if (session.currentInputMode.type === 'password') {
+    session.setPasswordBuf(password);
+    session.handleKey(key('Enter'));
+    await flush();
+  }
+}
+
 function linesOf(session: TerminalSession): string[] {
   return session.lines.map(l => l.text);
 }
@@ -232,22 +250,34 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
     await term.init();
   });
 
-  test('ssh user@linuxA: terminal lands in the remote prompt, not on cmd.exe', async () => {
-    await type(term, 'ssh user@10.0.0.1');
+  test('ssh user@linuxA: terminal lands in the remote prompt after password', async () => {
+    await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
     // After the push, the prompt belongs to the Linux remote — not C:\
     expect(term.getPrompt()).toMatch(/user@linuxA:~\$/);
     // Banner + remote shell visible; no "Connection to … closed" yet.
     expectExcludes(term, /Connection to 10\.0\.0\.1 closed/);
   });
 
-  test('after ssh, remote `hostname` returns the LINUX device name', async () => {
+  test('ssh prompts for the user password before pushing the shell', async () => {
     await type(term, 'ssh user@10.0.0.1');
+    // Validation succeeded → terminal is in password mode now.
+    expect(term.currentInputMode.type).toBe('password');
+    expectContains(term, /user@10\.0\.0\.1's password:/);
+  });
+
+  test('wrong password is rejected with the canonical retry / final message', async () => {
+    await sshLogin(term, 'ssh user@10.0.0.1', 'totally-wrong');
+    expectContains(term, /Permission denied, please try again|Permission denied \(/);
+  });
+
+  test('after ssh, remote `hostname` returns the LINUX device name', async () => {
+    await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
     await type(term, 'hostname');
     expectContains(term, /^linuxA$/);
   });
 
   test('exit in the remote shell pops back to cmd.exe with the closing line', async () => {
-    await type(term, 'ssh user@10.0.0.1');
+    await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
     expect(term.getPrompt()).toMatch(/user@linuxA/);
     await type(term, 'exit');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
@@ -282,18 +312,18 @@ describe('§2 — Windows → Cisco IOS interactive SSH', () => {
   });
 
   test('ssh admin@ciscoR drops into the IOS privileged prompt', async () => {
-    await type(term, 'ssh admin@10.0.0.5');
+    await sshLogin(term, 'ssh admin@10.0.0.5', 'Admin@123');
     expect(term.getPrompt()).toMatch(/ciscoR#/);
   });
 
   test('show version on Cisco prints the IOS banner', async () => {
-    await type(term, 'ssh admin@10.0.0.5');
+    await sshLogin(term, 'ssh admin@10.0.0.5', 'Admin@123');
     await type(term, 'show version');
     expectContains(term, /IOS|Cisco/i);
   });
 
   test('exit pops back to cmd.exe', async () => {
-    await type(term, 'ssh admin@10.0.0.5');
+    await sshLogin(term, 'ssh admin@10.0.0.5', 'Admin@123');
     await type(term, 'exit');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
@@ -312,18 +342,18 @@ describe('§3 — Windows → Huawei VRP interactive SSH', () => {
   });
 
   test('ssh admin@hwR drops into the VRP user-view prompt', async () => {
-    await type(term, 'ssh admin@10.0.0.6');
+    await sshLogin(term, 'ssh admin@10.0.0.6', 'Admin@123');
     expect(term.getPrompt()).toMatch(/<hwR>/);
   });
 
   test('display version prints the Huawei VRP banner', async () => {
-    await type(term, 'ssh admin@10.0.0.6');
+    await sshLogin(term, 'ssh admin@10.0.0.6', 'Admin@123');
     await type(term, 'display version');
     expectContains(term, /VRP|Huawei/i);
   });
 
   test('quit pops back to cmd.exe — VRP uses "quit", not "exit"', async () => {
-    await type(term, 'ssh admin@10.0.0.6');
+    await sshLogin(term, 'ssh admin@10.0.0.6', 'Admin@123');
     await type(term, 'quit');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
@@ -341,12 +371,12 @@ describe('§4 — Windows → Windows interactive SSH', () => {
   });
 
   test('ssh User@winB drops into a Windows-style prompt', async () => {
-    await type(term, 'ssh User@10.0.0.4');
+    await sshLogin(term, 'ssh User@10.0.0.4', 'user');
     expect(term.getPrompt()).toMatch(/C:\\Users\\User>/);
   });
 
   test('ver on the remote returns the Microsoft Windows version banner', async () => {
-    await type(term, 'ssh User@10.0.0.4');
+    await sshLogin(term, 'ssh User@10.0.0.4', 'user');
     await type(term, 'ver');
     expectContains(term, /Microsoft Windows/);
   });
@@ -372,22 +402,22 @@ describe('§5 — User identity travels through the SSH push', () => {
   const matrix = [
     { name: 'alice from Windows → Linux',
       build: () => new WindowsTerminalSession('m1', lan.winA),
-      cmd: 'ssh alice@10.0.0.1',
+      cmd: 'ssh alice@10.0.0.1', pw: 'alice',
       promptRe: /alice@linuxA/ },
     { name: 'bob from Windows → Linux',
       build: () => new WindowsTerminalSession('m2', lan.winA),
-      cmd: 'ssh bob@10.0.0.1',
+      cmd: 'ssh bob@10.0.0.1', pw: 'bob',
       promptRe: /bob@linuxA/ },
     { name: 'Administrator from Windows → Windows',
       build: () => new WindowsTerminalSession('m3', lan.winA),
-      cmd: 'ssh Administrator@10.0.0.4',
+      cmd: 'ssh Administrator@10.0.0.4', pw: 'admin',
       promptRe: /C:\\Users\\Administrator>/ },
   ];
 
   test.each(matrix)('$name', async (row) => {
     const term = row.build();
     await term.init();
-    await type(term, row.cmd);
+    await sshLogin(term, row.cmd, row.pw);
     expect(term.getPrompt()).toMatch(row.promptRe);
   });
 });
