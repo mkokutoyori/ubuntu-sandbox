@@ -1110,3 +1110,55 @@ describe('§18 — sftp refused when remote machine is powered off', () => {
 });
 
 
+// ─── Section 19 — sftp gated by PermitRootLogin / DenyUsers ──────────
+
+describe('§19 — sftp access denied for root / blocked users', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'root over sftp is refused by default PermitRootLogin no',
+      on: l => l.pc1,
+      cmd: sftp('root@10.0.0.2', ['pwd']),
+      contains: [/Permission denied/],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'DenyUsers bob: sftp bob@pc2 is rejected',
+      setup: async (l) => { await l.pc2.executeCommand('printf "DenyUsers bob\\n" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: sftp('bob@10.0.0.2', ['pwd']),
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'AllowUsers alice: bob refused, alice accepted',
+      setup: async (l) => { await l.pc2.executeCommand('printf "AllowUsers alice\\n" > /etc/ssh/sshd_config'); },
+      on: l => l.pc1,
+      cmd: sftp('bob@10.0.0.2', ['pwd']),
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'PermitRootLogin yes lets root through sftp',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('root@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'non-existent user is rejected',
+      on: l => l.pc1,
+      cmd: sftp('ghostuser@10.0.0.2', ['pwd']),
+      contains: [/Permission denied|denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
