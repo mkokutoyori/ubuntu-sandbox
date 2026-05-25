@@ -33,6 +33,11 @@ import {
   type RemotePromptStrategy,
 } from '@/terminal/subshells/RemoteDeviceSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { installDefaultShells } from '@/shell/registerDefaults';
+import { ShellFactory } from '@/shell/ShellFactory';
+import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
+import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
+import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -174,6 +179,31 @@ export class WindowsTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    // SSH password challenge — when an `ssh user@host` push is waiting
+    // for the password, every keystroke routes through the password
+    // mode (the input is masked by the view). Enter submits; Ctrl+C
+    // aborts the challenge.
+    if (this.pendingSshPush && this.inputMode.type === 'password') {
+      if (e.key === 'Enter') {
+        const pw = this.getPasswordBuf();
+        this.setPasswordBuf('');
+        this.submitSshPassword(pw);
+        return true;
+      }
+      if (e.key === 'c' && e.ctrlKey) {
+        this.pendingSshPush = null;
+        this.sshPasswordAttempts = 0;
+        this.setPasswordBuf('');
+        this.inputMode = { type: 'normal' };
+        this.addLine('^C');
+        this.notify();
+        return true;
+      }
+      // Let the view drive the character-by-character input into the
+      // masked password buffer.
+      return false;
+    }
 
     // Sub-shell active (PowerShell or nested cmd) — route input there
     if (this.activeSubShell) {
@@ -435,30 +465,168 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), true);
+    // Stash the validated push so the password handler can finish it
+    // after the user authenticates. OpenSSH-for-Windows always prompts
+    // for a password on first connect (no key cached); the simulator
+    // now models that explicitly instead of pushing silently.
+    this.pendingSshPush = {
+      user, host, port,
+      device: found.device,
+      sourceIp,
+      sourceHostname: dev.getHostname(),
+    };
+    this.inputMode = { type: 'password', promptText: `${user}@${host}'s password: ` };
+    this.addLine(`${user}@${host}'s password:`, 'prompt');
+    this.notify();
+    return true;
+  }
 
-    // Banner: each remote vendor decides what to print on connect.
-    const banner = remote.sshBanner?.() ?? '';
-    for (const bannerLine of banner.replace(/\n+$/, '').split('\n')) {
-      if (bannerLine.length > 0) this.addLine(bannerLine);
+  /**
+   * Pending SSH push waiting for the password challenge to complete.
+   * Set by {@link tryEnterSshInteractive} when validation succeeds.
+   */
+  private pendingSshPush: {
+    user: string; host: string; port: number;
+    device: Equipment; sourceIp: string; sourceHostname: string;
+  } | null = null;
+
+  /**
+   * Drive the SSH password challenge. Up to three attempts are allowed
+   * (OpenSSH default); a wrong password is logged via `recordSshLogin`
+   * and surfaces as "Permission denied (publickey,password).".
+   */
+  private sshPasswordAttempts = 0;
+  private static readonly SSH_MAX_ATTEMPTS = 3;
+
+  private submitSshPassword(password: string): void {
+    const pending = this.pendingSshPush;
+    if (!pending) return;
+
+    const ok = this.verifyRemoteCredentials(pending.device, pending.user, password);
+    const remote = pending.device as unknown as {
+      recordSshLogin?: (
+        u: string, fromIp: string, fromHost: string, accepted: boolean,
+      ) => void;
+      sshBanner?: () => string;
+    };
+
+    if (!ok) {
+      this.sshPasswordAttempts++;
+      remote.recordSshLogin?.(
+        pending.user, pending.sourceIp, pending.sourceHostname, false,
+      );
+      if (this.sshPasswordAttempts < WindowsTerminalSession.SSH_MAX_ATTEMPTS) {
+        this.addLine('Permission denied, please try again.');
+        // Stay in password mode for the next attempt.
+        this.notify();
+        return;
+      }
+      this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
+      this.pendingSshPush = null;
+      this.sshPasswordAttempts = 0;
+      this.inputMode = { type: 'normal' };
+      this.notify();
+      return;
     }
 
-    // Push the interactive sub-shell. The strategy makes the prompt and
-    // the exit-words match the vendor, so `quit` on Huawei and `exit` on
-    // Linux/Cisco/Windows both pop the stack cleanly.
-    const strategy = this.pickRemoteStrategy(found.device);
-    const onExit = (): void => {
-      // The "Connection to <host> closed." line is emitted by the
-      // RemoteDeviceSubShell on exit; nothing else to clean up here for
-      // the simulator's in-process SSH transport.
-    };
-    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
-    this.activeSubShell = new RemoteDeviceSubShell(
-      found.device, user, host, strategy, onExit,
+    // Authenticated — banner, then push the cross-vendor shell.
+    remote.recordSshLogin?.(
+      pending.user, pending.sourceIp, pending.sourceHostname, true,
     );
+    const banner = remote.sshBanner?.() ?? '';
+    for (const line of banner.replace(/\n+$/, '').split('\n')) {
+      if (line.length > 0) this.addLine(line);
+    }
+
+    installDefaultShells();
+    const primaryKind = this.pickPrimaryShellKind(pending.device);
+    let activeShell: ISubShell;
+    if (ShellFactory.has(primaryKind)) {
+      const xshell = new CrossVendorRemoteShell({
+        device: pending.device,
+        user: pending.user,
+        remoteHost: pending.host,
+        primaryKind,
+      });
+      activeShell = new ShellSubShellAdapter(xshell);
+    } else {
+      // Vendor without a new-layer Shell yet — fall back to the legacy
+      // RemoteDeviceSubShell with the vendor prompt strategy.
+      const strategy = this.pickRemoteStrategy(pending.device);
+      activeShell = new RemoteDeviceSubShell(
+        pending.device, pending.user, pending.host, strategy,
+      );
+    }
+
+    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
+    this.activeSubShell = activeShell;
     this.subShellHistory = [];
     this.subShellHistoryIndex = -1;
+    this.pendingSshPush = null;
+    this.sshPasswordAttempts = 0;
+    this.inputMode = { type: 'normal' };
+    this.notify();
+  }
+
+  /**
+   * Validate <user, password> against whatever credential store the
+   * remote vendor exposes. Linux + Windows machines ship a direct
+   * `checkPassword`; routers route through the SSH host's AAA
+   * evaluator. Devices that expose neither (synthetic test doubles)
+   * accept the credentials so legacy tests don't break.
+   */
+  private verifyRemoteCredentials(
+    device: Equipment, user: string, password: string,
+  ): boolean {
+    const dev = device as unknown as {
+      checkPassword?: (u: string, p: string) => boolean;
+      userMgr?: { checkPassword?: (u: string, p: string) => boolean };
+      getSshHost?: () => {
+        evaluate?: (req: unknown) => { outcome: string };
+      };
+      firstConfiguredIp?: () => string | null;
+    };
+    if (typeof dev.checkPassword === 'function') {
+      return dev.checkPassword(user, password);
+    }
+    if (typeof dev.userMgr?.checkPassword === 'function') {
+      return dev.userMgr.checkPassword(user, password);
+    }
+    // Router / Switch path — route through the SSH host's evaluator,
+    // which checks the local-user database AND the VTY's protocol
+    // gates (transport input, stelnet server enable, …).
+    if (typeof dev.getSshHost === 'function') {
+      try {
+        const localDev = this.device as unknown as { getHostname(): string };
+        const req = SshConnectionRequest.create({
+          requestedUser: user,
+          requestedHost: this.pendingSshPush?.host ?? '',
+          requestedPort: this.pendingSshPush?.port ?? 22,
+          sourceIp: this.firstLocalIp() ?? '0.0.0.0',
+          sourceHostname: localDev.getHostname(),
+          command: null,
+          offeredAuthMethods: ['password'],
+          credentials: { password },
+        });
+        const decision = dev.getSshHost()?.evaluate?.(req);
+        return decision?.outcome === 'accepted';
+      } catch {
+        return false;
+      }
+    }
     return true;
+  }
+
+  /**
+   * Pick the kind of primary shell for the remote's vendor — the shell
+   * the user would land in if they were seated at the remote's console.
+   */
+  private pickPrimaryShellKind(eq: Equipment): string {
+    const name = (eq.constructor as { name: string }).name;
+    if (name === 'WindowsPC') return 'cmd';
+    if (name === 'CiscoRouter' || name === 'CiscoSwitch') return 'cisco-ios';
+    if (name === 'HuaweiRouter' || name === 'HuaweiSwitch') return 'huawei-vrp';
+    return 'bash';
   }
 
   // ── Sub-shell management ───────────────────────────────────────

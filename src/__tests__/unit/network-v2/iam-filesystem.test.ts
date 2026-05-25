@@ -145,26 +145,28 @@ describe('mail spool coherence', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('/var/log/auth.log coherence', () => {
+  // The boot sequence auto-provisions alice/bob/carl/dave, so tests
+  // that exercise creation events must pick a fresh name.
   it('records a useradd entry when an account is created', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('adduser bob');
+    await srv.executeCommand('adduser zoe');
     const authLog = await srv.executeCommand('cat /var/log/auth.log');
-    expect(authLog).toContain('new user: name=bob');
+    expect(authLog).toContain('new user: name=zoe');
   });
 
   it('records a userdel entry when an account is removed', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('adduser bob');
-    await srv.executeCommand('deluser bob');
+    await srv.executeCommand('adduser zoe');
+    await srv.executeCommand('deluser zoe');
     const authLog = await srv.executeCommand('cat /var/log/auth.log');
-    expect(authLog).toContain("delete user 'bob'");
+    expect(authLog).toContain("delete user 'zoe'");
   });
 
   it('records a group membership change', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('adduser bob');
-    await srv.executeCommand('adduser bob sudo');
+    await srv.executeCommand('adduser zoe');
+    await srv.executeCommand('adduser zoe sudo');
     const authLog = await srv.executeCommand('cat /var/log/auth.log');
-    expect(authLog).toContain("'bob' to group 'sudo'");
+    expect(authLog).toContain("'zoe' to group 'sudo'");
   });
 });

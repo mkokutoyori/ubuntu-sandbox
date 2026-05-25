@@ -55,9 +55,11 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     });
 
     it('should require root/sudo for ufw commands', async () => {
+      // Real ufw refuses with the literal "You need to be root" line —
+      // not the kernel-style "Permission denied" diagnostic.
       const pc = new LinuxPC('linux-pc', 'PC1');
       const out = await pc.executeCommand('ufw status');
-      expect(out).toContain('Permission denied');
+      expect(out).toMatch(/need to be root/i);
     });
 
     it('should work with sudo on non-root', async () => {

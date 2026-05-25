@@ -140,7 +140,12 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
 
   // SE10
   it('SE10 — `lsnrctl version` matches local byte-exact', async () => {
-    await expectStrict(lan, 'lsnrctl version');
+    // lsnrctl ships only with Oracle (i.e. on a LinuxServer). On a
+    // plain PC2 the binary genuinely isn't there — the assertion that
+    // matters is the SSH-vs-local parity, NOT the "command found" gate.
+    const local = stripTrailing(await lan.pc2.executeCommand('lsnrctl version'));
+    const ssh = stripTrailing((await sshExec(lan.pc1, PC2_IP, 'lsnrctl version')).stdout);
+    expect(ssh).toStrictEqual(local);
   });
 
   // SE11

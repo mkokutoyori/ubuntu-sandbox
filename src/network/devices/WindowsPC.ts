@@ -341,6 +341,31 @@ export class WindowsPC extends EndHost {
     }
   }
 
+  // ─── Equipment-level credential surface ─────────────────────────────
+
+  /**
+   * Validate <user, password> against the local SAM database. Override of
+   * the {@link Equipment} stub so SSH (and any future caller) can authenticate
+   * a Windows account without reaching into the private user manager.
+   */
+  override checkPassword(username: string, password: string): boolean {
+    return this.userMgr.checkPassword(username, password);
+  }
+
+  /**
+   * Set / change a user's password through the SAM database. Mirrors
+   * LinuxMachine.setUserPassword so the two platforms expose a parallel
+   * surface to callers that don't care which OS they're talking to.
+   */
+  override setUserPassword(username: string, password: string): void {
+    this.userMgr.setUserProperty(username, 'password', password);
+  }
+
+  /** True iff the named account exists in the local SAM. */
+  userExists(username: string): boolean {
+    return this.userMgr.getUser(username) !== undefined;
+  }
+
   // ─── SshExecTarget surface (sync path used by cross-platform clients) ───
 
   /** Hostname as it would appear in the remote shell's prompt. */

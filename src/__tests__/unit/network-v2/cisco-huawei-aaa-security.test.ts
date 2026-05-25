@@ -60,11 +60,15 @@ describe('§A — Cisco local-user database is queryable and persistent', () => 
   });
 
   test('a second username adds a separate account', async () => {
+    // The lab fixture pre-seeds the standard cross-vendor cast
+    // (alice/bob/carl/dave) so SSH cross-vendor tests work without
+    // per-pairing setup. Assert containment rather than strict equality.
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret a');
     await lab.ciscoR1.executeCommand('username readonly privilege 1 secret b');
     await lab.ciscoR1.executeCommand('end');
-    expect(lab.ciscoR1._listLocalUsers().map(u => u.name).sort()).toEqual(['admin', 'readonly']);
+    const names = lab.ciscoR1._listLocalUsers().map(u => u.name).sort();
+    expect(names).toEqual(expect.arrayContaining(['admin', 'readonly']));
   });
 
   test('no username admin removes the account', async () => {
@@ -94,6 +98,8 @@ describe('§B — Huawei local-user database is queryable and persistent', () =>
   });
 
   test('multiple local-users are stored', async () => {
+    // See note in §A — the default cast (alice/bob/carl/dave) is
+    // present, so assert containment.
     await lab.hwR1.executeCommand('system-view');
     await lab.hwR1.executeCommand('aaa');
     await lab.hwR1.executeCommand('local-user admin password cipher a');
@@ -101,7 +107,8 @@ describe('§B — Huawei local-user database is queryable and persistent', () =>
     await lab.hwR1.executeCommand('local-user readonly privilege level 1');
     await lab.hwR1.executeCommand('quit');
     await lab.hwR1.executeCommand('quit');
-    expect(lab.hwR1._listLocalUsers().map(u => u.name).sort()).toEqual(['admin', 'readonly']);
+    const names = lab.hwR1._listLocalUsers().map(u => u.name).sort();
+    expect(names).toEqual(expect.arrayContaining(['admin', 'readonly']));
   });
 
   test('undo local-user admin removes the account', async () => {

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-05-20T18:26:49.297Z
+Generated: 2026-05-25T11:09:09.497Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-05-20 18:26:49
-  Wednesday
+  2026-05-25 11:09:09
+  Monday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -53,13 +53,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-20 18:26:49
+  CPU Usage Stat. Time : 2026-05-25 11:09:09
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-05-20 18:26:49
+  Memory utilization statistics at 2026-05-25 11:09:09
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -68,17 +68,31 @@ Total steps: 304
   #
   sysname R1
   #
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
+  #
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
 
@@ -247,7 +261,7 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-20 18:26:49 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-25 11:09:09 %01SRM/4/PORT_STATE: Port state changed.
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -367,6 +381,8 @@ Total steps: 304
 
 [59/304] r1 <R1> ?
     system-view    Enter system view
+    stelnet        stelnet client
+    ssh            ssh client
     display        display
     save           Save current configuration
     reboot         Reboot the device
@@ -374,8 +390,9 @@ Total steps: 304
     commit         Commit candidate configuration
     screen-length  Set terminal screen length
     header         Configure login/shell banner
-    debugging      debugging
+    screen-width   Set terminal screen width
     undo           Undo configuration
+    debugging      debugging
     ip             ip
     rip            Configure RIP routing
     tracert        Trace route to destination
@@ -434,9 +451,7 @@ Total steps: 304
   ^
 
 [64/304] r1 <R1> ssh client 10.0.0.2
-  % Invalid input detected at '^' marker.
-  ssh client 10.0.0.2
-  ^
+  Error: no usable interface IP for outbound SSH
 
 [65/304] r1 <R1> system-view
   Enter system view, return user view with return command.
@@ -667,16 +682,16 @@ Total steps: 304
   #
   sysname R1-CORE
   #
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   interface LoopBack0
@@ -685,6 +700,20 @@ Total steps: 304
   #
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 
@@ -718,16 +747,16 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   interface LoopBack0
@@ -736,6 +765,20 @@ Total steps: 304
   #
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
@@ -764,6 +807,7 @@ Total steps: 304
     <cr>  
 
 [133/304] r1 [R1-EDGE] ip ?
+    host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
@@ -773,14 +817,18 @@ Total steps: 304
     <cr>  
 
 [135/304] r1 [R1-EDGE] undo ?
-    ipv6       Disable IPv6
-    ospf       Remove OSPF protocol configuration
-    ospfv3     Remove OSPFv3 protocol configuration
-    ike        ike
-    ipsec      ipsec
-    debugging  debugging
-    acl        Delete Access Control List
-    <cr>       
+    command-alias  Disable CLI alias
+    ip             ip
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    ipv6           Disable IPv6
+    ospf           Remove OSPF protocol configuration
+    ospfv3         Remove OSPFv3 protocol configuration
+    ike            ike
+    ipsec          ipsec
+    debugging      debugging
+    acl            Delete Access Control List
+    <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
     WORD  Configure Access Control List
@@ -871,7 +919,9 @@ Total steps: 304
   Error: Invalid subnet mask: 24
 
 [161/304] r1 [R1-EDGE] undo ip route-static 1.1.1.0 24 10.0.0.2
-  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+  % Invalid input detected at '^' marker.
+  undo ip route-static 1.1.1.0 24 10.0.0.2
+          ^
 
 [162/304] r1 [R1-EDGE] sysname TEMP
 <empty>
@@ -904,34 +954,51 @@ Total steps: 304
 --- [171] § pipe filters ---
 [171/304] r1 <TEMP> display current-configuration | include ip
   rip 1
+   local-user alice password cipher alice
+   local-user bob password cipher bob
+   local-user carl password cipher carl
+   local-user dave password cipher dave
 
 [172/304] r1 <TEMP> display current-configuration | exclude #
   sysname TEMP
   dhcp enable
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   interface LoopBack0
    shutdown
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
 
 [173/304] r1 <TEMP> display current-configuration | begin interface
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   interface LoopBack0
@@ -940,6 +1007,20 @@ Total steps: 304
   #
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 [174/304] r1 <TEMP> display ip routing-table | include Direct
@@ -968,9 +1049,7 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [180/304] r1 [TEMP] user-interface console 0
-  % Invalid input detected at '^' marker.
-  user-interface console 0
-  ^
+<empty>
 
 [181/304] r1 [TEMP] idle-timeout 0 0
   % Invalid input detected at '^' marker.
@@ -1088,16 +1167,16 @@ Total steps: 304
   #
   dhcp enable
   #
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   interface LoopBack0
@@ -1106,6 +1185,20 @@ Total steps: 304
   #
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 [203/304] r1 <TEMP> display saved-configuration
@@ -1292,8 +1385,8 @@ Total steps: 304
    clock offset: 0.0000 ms
 
 [235/304] r1 <TEMP> display clock
-  2026-05-20 18:26:49
-  Wednesday
+  2026-05-25 11:09:09
+  Monday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <TEMP> display lldp neighbor
@@ -1309,13 +1402,13 @@ Total steps: 304
 [238/304] r1 <TEMP> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-20 18:26:49
+  CPU Usage Stat. Time : 2026-05-25 11:09:09
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <TEMP> display memory-usage
-  Memory utilization statistics at 2026-05-20 18:26:49
+  Memory utilization statistics at 2026-05-25 11:09:09
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1347,7 +1440,7 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-20 18:26:49 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-25 11:09:09 %01SRM/4/PORT_STATE: Port state changed.
 
 [244/304] r1 <TEMP> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1461,16 +1554,16 @@ Total steps: 304
 <empty>
 
 [262/304] r1 <TEMP> display current-configuration | begin interface
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   interface LoopBack0
@@ -1479,23 +1572,50 @@ Total steps: 304
   #
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 [263/304] r1 <TEMP> display current-configuration | exclude #
   sysname TEMP
   dhcp enable
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    shutdown
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    shutdown
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   interface LoopBack0
    shutdown
   rip 1
    version 2
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
 
 [264/304] r1 <TEMP> display ip routing-table | include Direct
 <empty>
@@ -1515,7 +1635,9 @@ Total steps: 304
      ^
 
 [268/304] r1 [TEMP] undo ip routing-table limit 1000
-  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+  % Invalid input detected at '^' marker.
+  undo ip routing-table limit 1000
+          ^
 
 [269/304] r1 [TEMP] dhcp enable
 <empty>
@@ -1604,14 +1726,12 @@ Total steps: 304
 <empty>
 
 [295/304] r1 [TEST] user-interface vty 0 4
-  % Invalid input detected at '^' marker.
-  user-interface vty 0 4
-  ^
-
-[296/304] r1 [TEST] quit
 <empty>
 
-[297/304] r1 <TEST> return
+[296/304] r1 [TEST-ui-vty0 4] quit
+<empty>
+
+[297/304] r1 [TEST] return
 <empty>
 
 
@@ -1624,19 +1744,24 @@ Total steps: 304
     <cr>  
 
 [300/304] r1 [TEST] ip ?
+    host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
 
 [301/304] r1 [TEST] undo ?
-    ipv6       Disable IPv6
-    ospf       Remove OSPF protocol configuration
-    ospfv3     Remove OSPFv3 protocol configuration
-    ike        ike
-    ipsec      ipsec
-    debugging  debugging
-    acl        Delete Access Control List
-    <cr>       
+    command-alias  Disable CLI alias
+    ip             ip
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    ipv6           Disable IPv6
+    ospf           Remove OSPF protocol configuration
+    ospfv3         Remove OSPFv3 protocol configuration
+    ike            ike
+    ipsec          ipsec
+    debugging      debugging
+    acl            Delete Access Control List
+    <cr>           
 
 [302/304] r1 [TEST] acl ?
     WORD  Configure Access Control List

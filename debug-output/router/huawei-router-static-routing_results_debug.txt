@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-05-20T18:26:48.233Z
+Generated: 2026-05-25T11:08:58.455Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -453,7 +453,9 @@ Total steps: 300
      ^
 
 [98/300] r1 [R1] undo ip ip-prefix PL-IN index 10
-  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+  % Invalid input detected at '^' marker.
+  undo ip ip-prefix PL-IN index 10
+          ^
 
 [99/300] r1 [R1] return
 <empty>
@@ -970,16 +972,16 @@ Total steps: 300
   #
   sysname R1
   #
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
@@ -1023,6 +1025,20 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 [199/300] r1 [R1] display saved-configuration
@@ -1239,8 +1255,8 @@ Total steps: 300
    clock offset: 0.0000 ms
 
 [231/300] r1 [R1] display clock
-  2026-05-20 18:26:48
-  Wednesday
+  2026-05-25 11:08:58
+  Monday
   Time Zone(UTC) : UTC
 
 [232/300] r1 [R1] display lldp neighbor
@@ -1256,13 +1272,13 @@ Total steps: 300
 [234/300] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-20 18:26:48
+  CPU Usage Stat. Time : 2026-05-25 11:08:58
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-20 18:26:48
+  Memory utilization statistics at 2026-05-25 11:08:58
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1294,7 +1310,7 @@ Total steps: 300
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-20 18:26:48 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-25 11:08:58 %01SRM/4/PORT_STATE: Port state changed.
 
 [240/300] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1407,16 +1423,16 @@ Total steps: 300
 <empty>
 
 [258/300] r1 [R1] display current-configuration | begin interface
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   #
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
@@ -1460,17 +1476,31 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
+  #
   #
 
 [259/300] r1 [R1] display current-configuration | exclude #
   sysname R1
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
   ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
@@ -1513,6 +1543,19 @@ Total steps: 300
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
   ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
 
 [260/300] r1 [R1] display ip routing-table | include Direct
   192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
@@ -1533,7 +1576,9 @@ Total steps: 300
      ^
 
 [264/300] r1 [R1] undo ip routing-table limit 1000
-  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+  % Invalid input detected at '^' marker.
+  undo ip routing-table limit 1000
+          ^
 
 [265/300] r1 [R1] dhcp enable
 <empty>
@@ -1622,14 +1667,12 @@ Total steps: 300
 <empty>
 
 [291/300] r1 [TEST] user-interface vty 0 4
-  % Invalid input detected at '^' marker.
-  user-interface vty 0 4
-  ^
-
-[292/300] r1 [TEST] quit
 <empty>
 
-[293/300] r1 <TEST> return
+[292/300] r1 [TEST-ui-vty0 4] quit
+<empty>
+
+[293/300] r1 [TEST] return
 <empty>
 
 
@@ -1642,19 +1685,24 @@ Total steps: 300
     <cr>  
 
 [296/300] r1 [TEST] ip ?
+    host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
 
 [297/300] r1 [TEST] undo ?
-    ipv6       Disable IPv6
-    ospf       Remove OSPF protocol configuration
-    ospfv3     Remove OSPFv3 protocol configuration
-    ike        ike
-    ipsec      ipsec
-    debugging  debugging
-    acl        Delete Access Control List
-    <cr>       
+    command-alias  Disable CLI alias
+    ip             ip
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    ipv6           Disable IPv6
+    ospf           Remove OSPF protocol configuration
+    ospfv3         Remove OSPFv3 protocol configuration
+    ike            ike
+    ipsec          ipsec
+    debugging      debugging
+    acl            Delete Access Control List
+    <cr>           
 
 [298/300] r1 [TEST] acl ?
     WORD  Configure Access Control List

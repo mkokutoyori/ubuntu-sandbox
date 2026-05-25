@@ -6,7 +6,7 @@
  *   - PL/SQL anonymous blocks in SQL*Plus
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';

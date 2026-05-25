@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-20T18:26:43.828Z
+Generated: 2026-05-25T11:09:02.529Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -575,7 +575,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *18:26:43.000 UTC Wed May 20 2026
+  *11:09:02.000 UTC Mon May 25 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -583,7 +583,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  18:26:43 UTC Wed May 20 2026
+  11:09:02 UTC Mon May 25 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1026,6 +1026,11 @@ Total steps: 322
    no shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [209/322] r1 R1> show running-config | section snmp
@@ -1055,6 +1060,11 @@ Total steps: 322
    no shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [210/322] r1 R1> show running-config | section ntp
@@ -1083,6 +1093,11 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1144,6 +1159,11 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1330,7 +1350,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *18:26:43.000 UTC Wed May 20 2026
+  *11:09:02.000 UTC Mon May 25 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1503,6 +1523,11 @@ Total steps: 322
    no shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1665,6 +1690,11 @@ Total steps: 322
    no shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [278/322] r1 R1(config)# show running-config | begin line
@@ -1688,6 +1718,10 @@ Total steps: 322
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   end
 
 [280/322] r1 R1(config)# show ip route | include via
@@ -1817,6 +1851,7 @@ Total steps: 322
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
+    host           Configure a static host entry
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
@@ -1849,6 +1884,7 @@ Total steps: 322
     ipv6         ipv6
     logging      Disable logging
     service      Disable a service
+    username     Remove a local user
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
@@ -1885,6 +1921,13 @@ Total steps: 322
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
+  !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  line vty 0 4
   !
   !
   end

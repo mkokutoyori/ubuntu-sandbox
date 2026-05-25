@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-05-20T18:26:46.799Z
+Generated: 2026-05-25T11:08:58.584Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -1358,6 +1358,11 @@ Total steps: 388
    permit ip any any
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [282/388] r1 R1# show startup-config
@@ -1694,7 +1699,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *18:26:46.000 UTC Wed May 20 2026
+  *11:08:58.000 UTC Mon May 25 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1937,6 +1942,11 @@ Total steps: 388
    permit ip any any
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2163,6 +2173,11 @@ Total steps: 388
    permit ip any any
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [344/388] r1 R1(config)# show running-config | begin line
@@ -2259,6 +2274,10 @@ Total steps: 388
    permit udp any any
    deny icmp any any
    permit ip any any
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   end
 
 [346/388] r1 R1(config)# show ip route | include via
@@ -2387,6 +2406,7 @@ Total steps: 388
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
+    host           Configure a static host entry
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
@@ -2419,6 +2439,7 @@ Total steps: 388
     ipv6         ipv6
     logging      Disable logging
     service      Disable a service
+    username     Remove a local user
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
@@ -2528,6 +2549,13 @@ Total steps: 388
    permit udp any any
    deny icmp any any
    permit ip any any
+  !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  line vty 0 4
   !
   !
   end

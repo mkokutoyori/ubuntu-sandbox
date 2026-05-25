@@ -4,7 +4,7 @@
  *
  * Real sudo exempts uid 0 from the password challenge and re-enters the
  * standard exec path. The simulator was *only* triggering adduser /
- * passwd prompts on the bare command — `sudo adduser alice` when already
+ * passwd prompts on the bare command — `sudo adduser zoe` when already
  * root ran silently, dropping the GECOS / password prompts.
  *
  * LinuxFlowBuilder.build() now strips the `sudo` prefix (and its
@@ -34,9 +34,9 @@ describe('sudo <cmd> consistency when already root', () => {
     pc.powerOn();
   });
 
-  it('`sudo adduser alice` as root triggers the same flow as `adduser alice`', () => {
-    const bare = LinuxFlowBuilder.build('adduser alice', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo adduser alice', 'root', 0, pc);
+  it('`sudo adduser zoe` as root triggers the same flow as `adduser zoe`', () => {
+    const bare = LinuxFlowBuilder.build('adduser zoe', 'root', 0, pc);
+    const sudo = LinuxFlowBuilder.build('sudo adduser zoe', 'root', 0, pc);
     expect(bare).not.toBeNull();
     expect(sudo).not.toBeNull();
     // Same number of steps (execute + password + GECOS).
@@ -46,9 +46,9 @@ describe('sudo <cmd> consistency when already root', () => {
     expect(sudo![0].type).toBe(bare![0].type);
   });
 
-  it('`sudo passwd alice` as root triggers the same flow as `passwd alice`', () => {
-    const bare = LinuxFlowBuilder.build('passwd alice', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo passwd alice', 'root', 0, pc);
+  it('`sudo passwd zoe` as root triggers the same flow as `passwd zoe`', () => {
+    const bare = LinuxFlowBuilder.build('passwd zoe', 'root', 0, pc);
+    const sudo = LinuxFlowBuilder.build('sudo passwd zoe', 'root', 0, pc);
     expect(bare).not.toBeNull();
     expect(sudo).not.toBeNull();
     expect(sudo!.length).toBe(bare!.length);
@@ -62,29 +62,29 @@ describe('sudo <cmd> consistency when already root', () => {
     expect(sudo!.length).toBe(bare!.length);
   });
 
-  it('`sudo -n adduser alice` (non-interactive flag) is stripped and the flow still fires', () => {
-    const bare = LinuxFlowBuilder.build('adduser alice', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo -n adduser alice', 'root', 0, pc);
+  it('`sudo -n adduser zoe` (non-interactive flag) is stripped and the flow still fires', () => {
+    const bare = LinuxFlowBuilder.build('adduser zoe', 'root', 0, pc);
+    const sudo = LinuxFlowBuilder.build('sudo -n adduser zoe', 'root', 0, pc);
     expect(sudo).not.toBeNull();
     expect(sudo!.length).toBe(bare!.length);
   });
 
-  it('`sudo -S adduser alice` (read-pass-from-stdin) is stripped too', () => {
-    const sudo = LinuxFlowBuilder.build('sudo -S adduser alice', 'root', 0, pc);
+  it('`sudo -S adduser zoe` (read-pass-from-stdin) is stripped too', () => {
+    const sudo = LinuxFlowBuilder.build('sudo -S adduser zoe', 'root', 0, pc);
     expect(sudo).not.toBeNull();
     // execute + password steps + gecos
     expect(sudo!.length).toBeGreaterThan(1);
   });
 
-  it('`sudo -u alice useradd bob` falls through to silent dispatch (-u special-case)', () => {
+  it('`sudo -u alice useradd zoe` falls through to silent dispatch (-u special-case)', () => {
     // Identity swap is dispatcher-driven; the flow builder hands off.
-    const out = LinuxFlowBuilder.build('sudo -u alice useradd bob', 'root', 0, pc);
+    const out = LinuxFlowBuilder.build('sudo -u alice useradd zoe', 'root', 0, pc);
     expect(out).toBeNull();
   });
 
-  it('`sudo useradd alice` as root remains silent — useradd is non-interactive', () => {
-    const bare = LinuxFlowBuilder.build('useradd alice', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo useradd alice', 'root', 0, pc);
+  it('`sudo useradd zoe` as root remains silent — useradd is non-interactive', () => {
+    const bare = LinuxFlowBuilder.build('useradd zoe', 'root', 0, pc);
+    const sudo = LinuxFlowBuilder.build('sudo useradd zoe', 'root', 0, pc);
     expect(bare).toBeNull();
     expect(sudo).toBeNull();
   });
@@ -99,19 +99,19 @@ describe('sudo <cmd> consistency when already root', () => {
     expect(out).toBeNull();
   });
 
-  it('non-root `sudo adduser alice` still uses the existing sudo-flow path', () => {
+  it('non-root `sudo adduser zoe` still uses the existing sudo-flow path', () => {
     // Sanity check that the new branch did not regress the !isRoot path.
     pc.executor.userMgr.useradd('user', { p: 'pass' });
     pc.executor.userMgr.usermod('user', { aG: 'sudo' });
-    const out = LinuxFlowBuilder.build('sudo adduser alice', 'user', 1000, pc);
+    const out = LinuxFlowBuilder.build('sudo adduser zoe', 'user', 1000, pc);
     expect(out).not.toBeNull();
     // First step is the sudo password prompt.
     expect(out![0].type).toBe('password');
   });
 
-  it('non-root `adduser alice` returns null — needs sudo on Ubuntu/Debian', () => {
+  it('non-root `adduser zoe` returns null — needs sudo on Ubuntu/Debian', () => {
     pc.executor.userMgr.useradd('user', { p: 'pass' });
-    const out = LinuxFlowBuilder.build('adduser alice', 'user', 1000, pc);
+    const out = LinuxFlowBuilder.build('adduser zoe', 'user', 1000, pc);
     expect(out).toBeNull();
   });
 });

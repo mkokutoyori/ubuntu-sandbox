@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-sql-dml-ddl
-Generated: 2026-05-20T18:26:02.160Z
+Generated: 2026-05-25T11:07:50.557Z
 Topology:  LinuxServer ora-sql — Oracle ORCL OPEN
 Total commands: 461
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Wed May 20 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Mon May 25 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -156,8 +156,8 @@ SQL [28/461]> ALTER TABLE customers ADD phone VARCHAR2(30);
   Table altered.
 
 SQL [29/461]> ALTER TABLE customers ADD (address VARCHAR2(200), city VARCHAR2(100));
-  ERROR:
-  ORA-00900: invalid SQL statement: Expected constraint type (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)
+  
+  Table altered.
 
 SQL [30/461]> ALTER TABLE customers MODIFY name VARCHAR2(150) NOT NULL;
   
@@ -172,8 +172,8 @@ SQL [32/461]> ALTER TABLE customers RENAME COLUMN phone TO phone_number;
   Table altered.
 
 SQL [33/461]> ALTER TABLE customers DROP COLUMN address;
-  ERROR:
-  ORA-00900: invalid SQL statement: Column ADDRESS not found in CUSTOMERS
+  
+  Table altered.
 
 SQL [34/461]> ALTER TABLE customers DROP (city);
   ERROR:
@@ -404,27 +404,27 @@ SQL [89/461]> DROP INDEX idx_func_cust_upper;
 --- [90] § INSERT ---
 SQL [90/461]> INSERT INTO customers (id, name, email) VALUES (1, 'Alice Dupont', 'alice@example.com');
   
-  1 row inserted.
+  1 row created.
 
 SQL [91/461]> INSERT INTO customers (id, name, email) VALUES (2, 'Bob Martin', 'bob@example.com');
   
-  1 row inserted.
+  1 row created.
 
 SQL [92/461]> INSERT INTO customers (id, name, email) VALUES (3, 'Carol Leroy', 'carol@example.com');
   
-  1 row inserted.
+  1 row created.
 
 SQL [93/461]> INSERT INTO customers (id, name, email) VALUES (4, 'David Smith', 'david@example.com');
   
-  1 row inserted.
+  1 row created.
 
 SQL [94/461]> INSERT INTO customers (id, name, email) VALUES (5, 'Eve Johnson', NULL);
   
-  1 row inserted.
+  1 row created.
 
 SQL [95/461]> INSERT INTO customers VALUES (6, 'Frank Brown', 'frank@x.com', SYSDATE, NULL);
-  
-  1 row inserted.
+  ERROR:
+  ORA-00947: not enough values
 
 SQL [96/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-001', 'Widget', 9.99, 100);
   ERROR:
@@ -448,43 +448,43 @@ SQL [100/461]> INSERT INTO products (code, name, price, stock) VALUES ('SKU-005'
 
 SQL [101/461]> INSERT INTO orders VALUES (101, 1, SYSDATE, 'PAID', 19.98);
   
-  1 row inserted.
+  1 row created.
 
 SQL [102/461]> INSERT INTO orders VALUES (102, 2, SYSDATE - 1, 'SHIPPED', 39.98);
   
-  1 row inserted.
+  1 row created.
 
 SQL [103/461]> INSERT INTO orders VALUES (103, 1, SYSDATE - 2, 'PENDING', 14.99);
   
-  1 row inserted.
+  1 row created.
 
 SQL [104/461]> INSERT INTO order_lines VALUES (101, 1, 1, 2, 9.99);
   
-  1 row inserted.
+  1 row created.
 
 SQL [105/461]> INSERT INTO order_lines VALUES (102, 1, 2, 2, 19.99);
   
-  1 row inserted.
+  1 row created.
 
 SQL [106/461]> INSERT INTO order_lines VALUES (103, 1, 5, 1, 14.99);
   
-  1 row inserted.
+  1 row created.
 
 SQL [107/461]> INSERT INTO orders SELECT 200 + level, 1, SYSDATE - level, 'PAID', 100 FROM dual CONNECT BY level <= 10;
   
-  10 rows inserted.
+  10 rows created.
 
 SQL [108/461]> INSERT INTO sales VALUES (1, DATE '2024-06-15', 'EU', 1500);
   
-  1 row inserted.
+  1 row created.
 
 SQL [109/461]> INSERT INTO sales VALUES (2, DATE '2025-03-20', 'US', 2500);
   
-  1 row inserted.
+  1 row created.
 
 SQL [110/461]> INSERT INTO sales VALUES (3, DATE '2025-09-10', 'APAC', 1800);
   
-  1 row inserted.
+  1 row created.
 
 SQL [111/461]> INSERT ALL INTO customers (id, name, email) VALUES (id, name, email) INTO staging (id, name, email) VALUES (id, name, email) SELECT 100 + level AS id, 'user_' || level AS name, 'user' || level || '@ex.com' AS email FROM dual CONNECT BY level <= 5;
   ERROR:
@@ -499,8 +499,8 @@ SQL [113/461]> INSERT INTO customers (id, name) VALUES (7, 'Grace H');
   ORA-00001: unique constraint (SYS_C010043) violated
 
 SQL [114/461]> INSERT INTO customers SELECT 200, 'Henry I', 'h@x.com', SYSDATE, NULL FROM dual;
-  
-  1 row inserted.
+  ERROR:
+  ORA-00947: not enough values
 
 SQL [115/461]> COMMIT;
   
@@ -509,8 +509,8 @@ SQL [115/461]> COMMIT;
 
 --- [116] § UPDATE ---
 SQL [116/461]> UPDATE customers SET phone_number = '555-0101' WHERE id = 1;
-  ERROR:
-  ORA-00904: "PHONE_NUMBER": invalid identifier
+  
+  1 row updated.
 
 SQL [117/461]> UPDATE products SET price = price * 1.05 WHERE active = 'Y';
   ERROR:
@@ -521,8 +521,8 @@ SQL [118/461]> UPDATE orders SET status = 'SHIPPED' WHERE order_date < SYSDATE -
   5 rows updated.
 
 SQL [119/461]> UPDATE customers c SET phone_number = (SELECT '555-' || LPAD(id,4,'0') FROM dual);
-  ERROR:
-  ORA-00904: "PHONE_NUMBER": invalid identifier
+  
+  5 rows updated.
 
 SQL [120/461]> UPDATE order_lines SET unit_price = unit_price * 1.10;
   
@@ -604,33 +604,31 @@ SQL [137/461]> COMMIT;
 --- [138] § SELECT joins ---
 SQL [138/461]> SELECT * FROM customers ORDER BY id;
   
-  ID  NAME         EMAIL             CREATED             PHONE
-  --- ------------ ----------------- ------------------- -----
-  1   Alice Dupont alice@example.com                          
-  2   Bob Martin   bob@example.com                            
-  3   Carol Leroy  carol@example.com                          
-  4   David Smith  david@example.com                          
-  5   Eve Johnson                                             
-  6   Frank Brown  frank@x.com       2026-05-20 18:26:02      
-  200 Henry I      h@x.com           2026-05-20 18:26:02      
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
+  3  Carol Leroy  carol@example.com         555-0003         
+  4  David Smith  david@example.com         555-0004         
+  5  Eve Johnson                            555-0005         
   
-  7 rows selected.
+  5 rows selected.
 
 SQL [139/461]> SELECT * FROM customers WHERE id IN (1,2,3);
   
-  ID NAME         EMAIL             CREATED PHONE
-  -- ------------ ----------------- ------- -----
-  1  Alice Dupont alice@example.com              
-  2  Bob Martin   bob@example.com                
-  3  Carol Leroy  carol@example.com              
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
+  3  Carol Leroy  carol@example.com         555-0003         
   
   3 rows selected.
 
 SQL [140/461]> SELECT * FROM customers WHERE name LIKE 'A%';
   
-  ID NAME         EMAIL             CREATED PHONE
-  -- ------------ ----------------- ------- -----
-  1  Alice Dupont alice@example.com              
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
   
   1 row selected.
 
@@ -677,10 +675,8 @@ SQL [142/461]> SELECT c.name, o.id FROM customers c LEFT JOIN orders o ON c.id =
   ------------ ---
   David Smith     
   Eve Johnson     
-  Frank Brown     
-  Henry I         
   
-  18 rows selected.
+  16 rows selected.
 
 SQL [143/461]> SELECT c.name, o.id FROM customers c RIGHT JOIN orders o ON c.id = o.customer_id;
   
@@ -725,10 +721,8 @@ SQL [144/461]> SELECT c.name, o.id FROM customers c FULL OUTER JOIN orders o ON 
   ------------ ---
   David Smith     
   Eve Johnson     
-  Frank Brown     
-  Henry I         
   
-  18 rows selected.
+  16 rows selected.
 
 SQL [145/461]> SELECT c.name, o.id FROM customers c CROSS JOIN orders o WHERE rownum < 10;
   
@@ -775,10 +769,8 @@ SQL [147/461]> SELECT c.name, COUNT(o.id) AS orders_count, NVL(SUM(o.total), 0) 
   Carol Leroy  0            0          
   David Smith  0            0          
   Eve Johnson  0            0          
-  Frank Brown  0            0          
-  Henry I      0            0          
   
-  7 rows selected.
+  5 rows selected.
 
 SQL [148/461]> SELECT customer_id, COUNT(*), SUM(total) FROM orders GROUP BY customer_id HAVING COUNT(*) > 1;
   
@@ -802,17 +794,15 @@ SQL [151/461]> SELECT customer_id, status, COUNT(*) FROM orders GROUP BY GROUPIN
 
 SQL [152/461]> SELECT id, name, ROW_NUMBER() OVER (ORDER BY name) AS rn FROM customers;
   
-  ID  NAME         RN
-  --- ------------ --
-  1   Alice Dupont 1 
-  2   Bob Martin   2 
-  3   Carol Leroy  3 
-  4   David Smith  4 
-  5   Eve Johnson  5 
-  6   Frank Brown  6 
-  200 Henry I      7 
+  ID NAME         RN
+  -- ------------ --
+  1  Alice Dupont 1 
+  2  Bob Martin   2 
+  3  Carol Leroy  3 
+  4  David Smith  4 
+  5  Eve Johnson  5 
   
-  7 rows selected.
+  5 rows selected.
 
 SQL [153/461]> SELECT id, total, RANK() OVER (ORDER BY total DESC) AS rk FROM orders;
   
@@ -980,19 +970,19 @@ SQL [161/461]> SELECT customer_id, LISTAGG(id, ',') WITHIN GROUP (ORDER BY id) A
 
 SQL [162/461]> SELECT * FROM customers WHERE id IN (SELECT customer_id FROM orders WHERE total > 30);
   
-  ID NAME         EMAIL             CREATED PHONE
-  -- ------------ ----------------- ------- -----
-  1  Alice Dupont alice@example.com              
-  2  Bob Martin   bob@example.com                
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
   
   2 rows selected.
 
 SQL [163/461]> SELECT * FROM customers c WHERE EXISTS (SELECT 1 FROM orders WHERE customer_id = c.id);
   
-  ID NAME         EMAIL             CREATED PHONE
-  -- ------------ ----------------- ------- -----
-  1  Alice Dupont alice@example.com              
-  2  Bob Martin   bob@example.com                
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
   
   2 rows selected.
 
@@ -1031,11 +1021,11 @@ SQL [166/461]> WITH top_orders AS (SELECT * FROM orders ORDER BY total DESC FETC
   
   ID  CUSTOMER_ID ORDER_DATE          STATUS TOTAL
   --- ----------- ------------------- ------ -----
-  201 1           2026-05-19 18:26:02 PAID   100  
-  202 1           2026-05-18 18:26:02 PAID   100  
-  203 1           2026-05-17 18:26:02 PAID   100  
-  204 1           2026-05-16 18:26:02 PAID   100  
-  205 1           2026-05-15 18:26:02 PAID   100  
+  201 1           2026-05-24 11:07:50 PAID   100  
+  202 1           2026-05-23 11:07:50 PAID   100  
+  203 1           2026-05-22 11:07:50 PAID   100  
+  204 1           2026-05-21 11:07:50 PAID   100  
+  205 1           2026-05-20 11:07:50 PAID   100  
   
   5 rows selected.
 
@@ -1045,47 +1035,43 @@ SQL [167/461]> WITH numbers (n) AS (SELECT 1 FROM dual UNION ALL SELECT n + 1 FR
 
 SQL [168/461]> SELECT id FROM customers UNION SELECT customer_id FROM orders;
   
-  ID 
-  ---
-  1  
-  2  
-  3  
-  4  
-  5  
-  6  
-  200
+  ID
+  --
+  1 
+  2 
+  3 
+  4 
+  5 
   
-  7 rows selected.
+  5 rows selected.
 
 SQL [169/461]> SELECT id FROM customers UNION ALL SELECT customer_id FROM orders;
   
-  ID 
-  ---
-  1  
-  2  
-  3  
-  4  
-  5  
-  6  
-  200
-  1  
-  2  
-  1  
-  1  
-  1  
-  1  
-  1  
+  ID
+  --
+  1 
+  2 
+  3 
+  4 
+  5 
+  1 
+  2 
+  1 
+  1 
+  1 
+  1 
+  1 
+  1 
+  1 
   
-  ID 
-  ---
-  1  
-  1  
-  1  
-  1  
-  1  
-  1  
+  ID
+  --
+  1 
+  1 
+  1 
+  1 
   
-  20 rows selected.
+  18 rows selected.
 
 SQL [170/461]> SELECT id FROM customers INTERSECT SELECT customer_id FROM orders;
   
@@ -1098,15 +1084,13 @@ SQL [170/461]> SELECT id FROM customers INTERSECT SELECT customer_id FROM orders
 
 SQL [171/461]> SELECT id FROM customers MINUS SELECT customer_id FROM orders;
   
-  ID 
-  ---
-  3  
-  4  
-  5  
-  6  
-  200
+  ID
+  --
+  3 
+  4 
+  5 
   
-  5 rows selected.
+  3 rows selected.
 
 SQL [172/461]> SELECT * FROM (SELECT customer_id, status FROM orders) PIVOT (COUNT(*) FOR status IN ('PAID' AS paid, 'SHIPPED' AS shipped, 'PENDING' AS pending));
   ERROR:
@@ -1125,9 +1109,8 @@ SQL [174/461]> SELECT level, name FROM customers START WITH id = 1 CONNECT BY PR
   3                    Carol Leroy 
   4                    David Smith 
   5                    Eve Johnson 
-  6                    Frank Brown 
   
-  6 rows selected.
+  5 rows selected.
 
 SQL [175/461]> SELECT SYS_CONNECT_BY_PATH(name, '/') FROM customers START WITH id = 1 CONNECT BY PRIOR id = id - 1;
   ERROR:
@@ -1202,32 +1185,30 @@ SQL [188/461]> DROP MATERIALIZED VIEW mv_orders_summary;
 
 SQL [189/461]> SELECT * FROM v_active_customers;
   
-  ID  NAME         EMAIL            
-  --- ------------ -----------------
-  1   Alice Dupont alice@example.com
-  2   Bob Martin   bob@example.com  
-  3   Carol Leroy  carol@example.com
-  4   David Smith  david@example.com
-  6   Frank Brown  frank@x.com      
-  200 Henry I      h@x.com          
+  ID NAME         EMAIL            
+  -- ------------ -----------------
+  1  Alice Dupont alice@example.com
+  2  Bob Martin   bob@example.com  
+  3  Carol Leroy  carol@example.com
+  4  David Smith  david@example.com
   
-  6 rows selected.
+  4 rows selected.
 
 SQL [190/461]> SELECT * FROM v_top_orders;
   
   ID  CUSTOMER_ID ORDER_DATE          STATUS  TOTAL
   --- ----------- ------------------- ------- -----
-  102 2           2026-05-19 18:26:02 SHIPPED 39.98
-  201 1           2026-05-19 18:26:02 PAID    100  
-  202 1           2026-05-18 18:26:02 PAID    100  
-  203 1           2026-05-17 18:26:02 PAID    100  
-  204 1           2026-05-16 18:26:02 PAID    100  
-  205 1           2026-05-15 18:26:02 PAID    100  
-  206 1           2026-05-14 18:26:02 SHIPPED 100  
-  207 1           2026-05-13 18:26:02 SHIPPED 100  
-  208 1           2026-05-12 18:26:02 SHIPPED 100  
-  209 1           2026-05-11 18:26:02 SHIPPED 100  
-  210 1           2026-05-10 18:26:02 SHIPPED 100  
+  102 2           2026-05-24 11:07:50 SHIPPED 39.98
+  201 1           2026-05-24 11:07:50 PAID    100  
+  202 1           2026-05-23 11:07:50 PAID    100  
+  203 1           2026-05-22 11:07:50 PAID    100  
+  204 1           2026-05-21 11:07:50 PAID    100  
+  205 1           2026-05-20 11:07:50 PAID    100  
+  206 1           2026-05-19 11:07:50 SHIPPED 100  
+  207 1           2026-05-18 11:07:50 SHIPPED 100  
+  208 1           2026-05-17 11:07:50 SHIPPED 100  
+  209 1           2026-05-16 11:07:50 SHIPPED 100  
+  210 1           2026-05-15 11:07:50 SHIPPED 100  
   
   11 rows selected.
 
@@ -1335,12 +1316,12 @@ SQL [210/461]> SAVEPOINT before_changes;
   Savepoint created.
 
 SQL [211/461]> INSERT INTO customers VALUES (8888, 'Volatile', 'v@x.com', SYSDATE, NULL);
-  
-  1 row inserted.
+  ERROR:
+  ORA-00947: not enough values
 
 SQL [212/461]> UPDATE customers SET name = 'Volatile2' WHERE id = 8888;
   
-  1 row updated.
+  0 rows updated.
 
 SQL [213/461]> ROLLBACK TO SAVEPOINT before_changes;
   
@@ -1348,12 +1329,12 @@ SQL [213/461]> ROLLBACK TO SAVEPOINT before_changes;
 
 SQL [214/461]> SELECT * FROM customers WHERE id = 8888;
   
-  ID NAME EMAIL CREATED PHONE
-  -- ---- ----- ------- -----
+  ID NAME EMAIL CREATED PHONE_NUMBER CITY
+  -- ---- ----- ------- ------------ ----
 
 SQL [215/461]> INSERT INTO customers VALUES (8889, 'Persistent', 'p@x.com', SYSDATE, NULL);
-  
-  1 row inserted.
+  ERROR:
+  ORA-00947: not enough values
 
 SQL [216/461]> COMMIT;
   
@@ -1369,10 +1350,10 @@ SQL [218/461]> SET TRANSACTION READ ONLY;
 
 SQL [219/461]> SELECT * FROM customers WHERE rownum < 3;
   
-  ID NAME         EMAIL             CREATED PHONE
-  -- ------------ ----------------- ------- -----
-  1  Alice Dupont alice@example.com              
-  2  Bob Martin   bob@example.com                
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
   
   2 rows selected.
 
@@ -1428,18 +1409,15 @@ SQL [231/461]> COMMIT;
 
 SQL [232/461]> SELECT * FROM customers FOR UPDATE;
   
-  ID   NAME         EMAIL             CREATED             PHONE
-  ---- ------------ ----------------- ------------------- -----
-  1    Alice Dupont alice@example.com                          
-  2    Bob Martin   bob@example.com                            
-  3    Carol Leroy  carol@example.com                          
-  4    David Smith  david@example.com                          
-  5    Eve Johnson                                             
-  6    Frank Brown  frank@x.com       2026-05-20 18:26:02      
-  200  Henry I      h@x.com           2026-05-20 18:26:02      
-  8889 Persistent   p@x.com           2026-05-20 18:26:02      
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
+  3  Carol Leroy  carol@example.com         555-0003         
+  4  David Smith  david@example.com         555-0004         
+  5  Eve Johnson                            555-0005         
   
-  8 rows selected.
+  5 rows selected.
 
 SQL [233/461]> COMMIT;
   
@@ -1447,9 +1425,9 @@ SQL [233/461]> COMMIT;
 
 SQL [234/461]> SELECT * FROM customers WHERE id = 1 FOR UPDATE NOWAIT;
   
-  ID NAME         EMAIL             CREATED PHONE
-  -- ------------ ----------------- ------- -----
-  1  Alice Dupont alice@example.com              
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
   
   1 row selected.
 
@@ -1459,18 +1437,15 @@ SQL [235/461]> COMMIT;
 
 SQL [236/461]> SELECT * FROM customers FOR UPDATE WAIT 10;
   
-  ID   NAME         EMAIL             CREATED             PHONE
-  ---- ------------ ----------------- ------------------- -----
-  1    Alice Dupont alice@example.com                          
-  2    Bob Martin   bob@example.com                            
-  3    Carol Leroy  carol@example.com                          
-  4    David Smith  david@example.com                          
-  5    Eve Johnson                                             
-  6    Frank Brown  frank@x.com       2026-05-20 18:26:02      
-  200  Henry I      h@x.com           2026-05-20 18:26:02      
-  8889 Persistent   p@x.com           2026-05-20 18:26:02      
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
+  3  Carol Leroy  carol@example.com         555-0003         
+  4  David Smith  david@example.com         555-0004         
+  5  Eve Johnson                            555-0005         
   
-  8 rows selected.
+  5 rows selected.
 
 SQL [237/461]> COMMIT;
   
@@ -1478,18 +1453,15 @@ SQL [237/461]> COMMIT;
 
 SQL [238/461]> SELECT * FROM customers FOR UPDATE SKIP LOCKED;
   
-  ID   NAME         EMAIL             CREATED             PHONE
-  ---- ------------ ----------------- ------------------- -----
-  1    Alice Dupont alice@example.com                          
-  2    Bob Martin   bob@example.com                            
-  3    Carol Leroy  carol@example.com                          
-  4    David Smith  david@example.com                          
-  5    Eve Johnson                                             
-  6    Frank Brown  frank@x.com       2026-05-20 18:26:02      
-  200  Henry I      h@x.com           2026-05-20 18:26:02      
-  8889 Persistent   p@x.com           2026-05-20 18:26:02      
+  ID NAME         EMAIL             CREATED PHONE_NUMBER CITY
+  -- ------------ ----------------- ------- ------------ ----
+  1  Alice Dupont alice@example.com         555-0001         
+  2  Bob Martin   bob@example.com           555-0002         
+  3  Carol Leroy  carol@example.com         555-0003         
+  4  David Smith  david@example.com         555-0004         
+  5  Eve Johnson                            555-0005         
   
-  8 rows selected.
+  5 rows selected.
 
 SQL [239/461]> COMMIT;
   
@@ -1633,7 +1605,7 @@ SQL [271/461]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-  1               ORCL          localhost 19.0.0.0.0 2026-05-20T18:26:02.032Z OPEN   NO       1       STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
+  1               ORCL          localhost 19.0.0.0.0 2026-05-25T11:07:50.417Z OPEN   NO       1       STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -1641,7 +1613,7 @@ SQL [272/461]> SELECT * FROM v$database WHERE rownum < 5;
   
   DBID       NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON
   ---------- ---- ------------------------ ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------
-  1234567890 ORCL 2026-05-20T18:26:02.214Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
+  1234567890 ORCL 2026-05-25T11:07:50.631Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26           1                     100                 01-JAN-26        NO                        NO                       NO                       NO                       NO                        NO            NO          
   
   1 row selected.
 
@@ -1677,10 +1649,10 @@ SQL [276/461]> SELECT * FROM v$session WHERE rownum < 5;
   
   SID SERIAL# USERNAME STATUS OSUSER MACHINE   PROGRAM                 TYPE       LOGON_TIME               SCHEMANAME COMMAND SQL_ID TERMINAL BLOCKING_SESSION SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID EVENT      WAIT_CLASS SECONDS_IN_WAIT STATE   LAST_CALL_ET SQL_TRACE RESOURCE_CONSUMER_GROUP SERVICE_NAME MODULE ACTION CLIENT_INFO PADDR TADDR LOCKWAIT
   --- ------- -------- ------ ------ --------- ----------------------- ---------- ------------------------ ---------- ------- ------ -------- ---------------- ---------------- -------------- ----------- ---------- ---------- --------------- ------- ------------ --------- ----------------------- ------------ ------ ------ ----------- ----- ----- --------
-  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-20T18:26:02.215Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-20T18:26:02.215Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-20T18:26:02.215Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
-  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-20T18:26:02.215Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  1   1       SYS      ACTIVE oracle localhost oracle@localhost (PMON) BACKGROUND 2026-05-25T11:07:50.632Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  2   1       SYS      ACTIVE oracle localhost oracle@localhost (SMON) BACKGROUND 2026-05-25T11:07:50.632Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  3   1       SYS      ACTIVE oracle localhost oracle@localhost (DBW0) BACKGROUND 2026-05-25T11:07:50.632Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
+  4   1       SYS      ACTIVE oracle localhost oracle@localhost (LGWR) BACKGROUND 2026-05-25T11:07:50.632Z SYS        0              UNKNOWN                                                               pmon timer Idle       0               WAITING 0            DISABLED  SYS_GROUP               orcl                                                       
   
   4 rows selected.
 
@@ -1790,7 +1762,7 @@ SQL [286/461]> SELECT * FROM v$pgastat WHERE rownum < 5;
   aggregate PGA target parameter 134217728 bytes
   aggregate PGA auto target      120795955 bytes
   global memory bound            13421772  bytes
-  total PGA inuse                35127296  bytes
+  total PGA inuse                35192832  bytes
   
   4 rows selected.
 
@@ -1839,7 +1811,7 @@ SQL [291/461]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
   ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
   -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
-  3  DEFAULT 16384     0                0                0              16              932           932             311            
+  3  DEFAULT 16384     0                0                0              16              904           904             309            
   
   1 row selected.
 
@@ -1869,10 +1841,10 @@ SQL [294/461]> SELECT * FROM v$shared_pool_advice WHERE rownum < 5;
   
   SHARED_POOL_SIZE_FOR_ESTIMATE SHARED_POOL_SIZE_FACTOR ESTD_LC_SIZE ESTD_LC_MEMORY_OBJECTS ESTD_LC_TIME_SAVED ESTD_LC_TIME_SAVED_FACTOR
   ----------------------------- ----------------------- ------------ ---------------------- ------------------ -------------------------
-  134217728                     0.5                     33554432     16384                  2780               0.5                      
-  201326592                     0.75                    50331648     24576                  4170               0.75                     
-  268435456                     1                       67108864     32768                  5560               1                        
-  335544320                     1.25                    83886080     40960                  5560               1                        
+  134217728                     0.5                     33554432     16384                  2785               0.5                      
+  201326592                     0.75                    50331648     24576                  4177.5             0.75                     
+  268435456                     1                       67108864     32768                  5570               1                        
+  335544320                     1.25                    83886080     40960                  5570               1                        
   
   4 rows selected.
 
@@ -1880,7 +1852,7 @@ SQL [295/461]> SELECT * FROM v$librarycache WHERE rownum < 5;
   
   NAMESPACE       GETS GETHITS GETHITRATIO PINS PINHITS PINHITRATIO RELOADS INVALIDATIONS
   --------------- ---- ------- ----------- ---- ------- ----------- ------- -------------
-  SQL AREA        557  0       0           518  518     1           0       0            
+  SQL AREA        558  0       0           518  518     1           0       0            
   TABLE/PROCEDURE 25   25      1           25   25      1           0       0            
   BODY            25   25      1           25   25      1           0       0            
   TRIGGER         25   25      1           25   25      1           0       0            
@@ -1910,10 +1882,10 @@ SQL [298/461]> SELECT * FROM v$rowcache WHERE rownum < 5;
   
   CACHE# TYPE   PARAMETER      COUNT USAGE FIXED GETS GETMISSES SCANS SCANMISSES MODIFICATIONS FLUSHES
   ------ ------ -------------- ----- ----- ----- ---- --------- ----- ---------- ------------- -------
-  0      PARENT dc_users       100   80    16    50   50        0     0          0             0      
-  1      PARENT dc_objects     100   80    16    50   50        0     0          0             0      
-  2      PARENT dc_segments    100   80    16    50   50        0     0          0             0      
-  3      PARENT dc_tablespaces 100   80    16    50   50        0     0          0             0      
+  0      PARENT dc_users       100   80    16    51   51        0     0          0             0      
+  1      PARENT dc_objects     100   80    16    51   51        0     0          0             0      
+  2      PARENT dc_segments    100   80    16    51   51        0     0          0             0      
+  3      PARENT dc_tablespaces 100   80    16    51   51        0     0          0             0      
   
   4 rows selected.
 
@@ -1962,12 +1934,12 @@ SQL [301/461]> SELECT * FROM v$sql WHERE rownum < 5;
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_NAME VARCHAR2(25)
-       )                                                                                                                                           1          953          763      1           0          0              SYS                 2026-05-20T18:26:02
+       )                                                                                                                                           1          1233         987      1           0          0              SYS                 2026-05-25T11:07:50
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
-       )                                                                                                             1          143          115      1           0          0              SYS                 2026-05-20T18:26:02
+       )                                                                                                             1          168          134      1           0          0              SYS                 2026-05-25T11:07:50
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STREET_ADDRESS VARCHAR2(40),
@@ -1975,13 +1947,13 @@ SQL [301/461]> SELECT * FROM v$sql WHERE rownum < 5;
          CITY VARCHAR2(30) NOT NULL,
          STATE_PROVINCE VARCHAR2(25),
          COUNTRY_ID CHAR(2)
-       ) 1          134          107      1           0          0              SYS                 2026-05-20T18:26:02
+       ) 1          176          141      1           0          0              SYS                 2026-05-25T11:07:50
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
          DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCATION_ID NUMBER(4)
-       )                                                           1          225          180      1           0          0              SYS                 2026-05-20T18:26:02
+       )                                                           1          373          299      1           0          0              SYS                 2026-05-25T11:07:50
   
   4 rows selected.
 
@@ -1989,10 +1961,10 @@ SQL [302/461]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  0jfss4xa3xqw0 0               1           1          1       953          763      1           0          0              SYS                 2026-05-20T18:26:02.054Z
-  1p340y2a3xqw0 0               1           1          1       143          115      1           0          0              SYS                 2026-05-20T18:26:02.056Z
-  0438608a3xqw0 0               1           1          1       134          107      1           0          0              SYS                 2026-05-20T18:26:02.057Z
-  0jmvs97a3xqw0 0               1           1          1       225          180      1           0          0              SYS                 2026-05-20T18:26:02.057Z
+  0jfss4xa3xqw0 0               1           1          1       1233         987      1           0          0              SYS                 2026-05-25T11:07:50.445Z
+  1p340y2a3xqw0 0               1           1          1       168          134      1           0          0              SYS                 2026-05-25T11:07:50.447Z
+  0438608a3xqw0 0               1           1          1       176          141      1           0          0              SYS                 2026-05-25T11:07:50.448Z
+  0jmvs97a3xqw0 0               1           1          1       373          299      1           0          0              SYS                 2026-05-25T11:07:50.449Z
   
   4 rows selected.
 
@@ -2027,10 +1999,10 @@ SQL [306/461]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-20T18:25:47.231Z 2026-05-20T18:26:02.231Z 1500         2        2000      CPU Usage Per Sec    35    CentiSeconds Per Second
-  2026-05-20T18:25:47.231Z 2026-05-20T18:26:02.231Z 1500         2        2003      User Calls Per Sec   37    Calls Per Second       
-  2026-05-20T18:25:47.231Z 2026-05-20T18:26:02.231Z 1500         2        2007      Executions Per Sec   35    Executes Per Second    
-  2026-05-20T18:25:47.231Z 2026-05-20T18:26:02.231Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-25T11:07:35.652Z 2026-05-25T11:07:50.652Z 1500         2        2000      CPU Usage Per Sec    35    CentiSeconds Per Second
+  2026-05-25T11:07:35.652Z 2026-05-25T11:07:50.652Z 1500         2        2003      User Calls Per Sec   37    Calls Per Second       
+  2026-05-25T11:07:35.652Z 2026-05-25T11:07:50.652Z 1500         2        2007      Executions Per Sec   35    Executes Per Second    
+  2026-05-25T11:07:35.652Z 2026-05-25T11:07:50.652Z 1500         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -2038,10 +2010,10 @@ SQL [307/461]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-05-20T18:25:02.232Z 2026-05-20T18:26:02.232Z 6000         2        2000      CPU Usage Per Sec    35    CentiSeconds Per Second
-  2026-05-20T18:25:02.232Z 2026-05-20T18:26:02.232Z 6000         2        2003      User Calls Per Sec   37    Calls Per Second       
-  2026-05-20T18:25:02.232Z 2026-05-20T18:26:02.232Z 6000         2        2007      Executions Per Sec   35    Executes Per Second    
-  2026-05-20T18:25:02.232Z 2026-05-20T18:26:02.232Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
+  2026-05-25T11:06:50.653Z 2026-05-25T11:07:50.653Z 6000         2        2000      CPU Usage Per Sec    35    CentiSeconds Per Second
+  2026-05-25T11:06:50.653Z 2026-05-25T11:07:50.653Z 6000         2        2003      User Calls Per Sec   38    Calls Per Second       
+  2026-05-25T11:06:50.653Z 2026-05-25T11:07:50.653Z 6000         2        2007      Executions Per Sec   35    Executes Per Second    
+  2026-05-25T11:06:50.653Z 2026-05-25T11:07:50.653Z 6000         2        2017      User Commits Per Sec 0     Commits Per Second     
   
   4 rows selected.
 
@@ -2185,10 +2157,10 @@ SQL [326/461]> SELECT * FROM v$filestat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM AVGIOTIM
   ----- ------ ------- -------- --------- ------- -------- --------
-  1     0      99      199      99        0       990      100     
-  1     0      99      199      99        0       990      100     
-  1     0      99      199      99        0       990      100     
-  1     0      99      199      99        0       990      100     
+  1     0      99      193      99        0       990      100     
+  1     0      99      193      99        0       990      100     
+  1     0      99      193      99        0       990      100     
+  1     0      99      193      99        0       990      100     
   
   4 rows selected.
 
@@ -2347,9 +2319,9 @@ SQL [346/461]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-  1          ORCL           ORCL           2026-05-20T18:26:02.051Z 1185101507        
-  2          SYS$USERS      SYS$USERS      2026-05-20T18:26:02.051Z 1185101507        
-  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-20T18:26:02.051Z 1185101507        
+  1          ORCL           ORCL           2026-05-25T11:07:50.440Z 1590809896        
+  2          SYS$USERS      SYS$USERS      2026-05-25T11:07:50.440Z 1590809896        
+  3          SYS$BACKGROUND SYS$BACKGROUND 2026-05-25T11:07:50.440Z 1590809896        
   
   3 rows selected.
 
@@ -2357,9 +2329,9 @@ SQL [347/461]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-  1          ORCL           ORCL           ORCL 2026-05-20T18:26:02.051Z
-  2          SYS$USERS      SYS$USERS      ORCL 2026-05-20T18:26:02.051Z
-  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-20T18:26:02.051Z
+  1          ORCL           ORCL           ORCL 2026-05-25T11:07:50.440Z
+  2          SYS$USERS      SYS$USERS      ORCL 2026-05-25T11:07:50.440Z
+  3          SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-05-25T11:07:50.440Z
   
   3 rows selected.
 
@@ -2374,8 +2346,8 @@ SQL [349/461]> SELECT * FROM v$mystat WHERE rownum < 5;
   --- ---------- -----
   100 0          1    
   100 1          1    
-  100 2          611  
-  100 3          545  
+  100 2          612  
+  100 3          546  
   
   4 rows selected.
 
@@ -2394,7 +2366,7 @@ SQL [351/461]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  100 1071       1071            0              311           4                  0                       
+  100 1043       1043            0              309           4                  0                       
   
   1 row selected.
 
@@ -2402,10 +2374,10 @@ SQL [352/461]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID STAT_ID    STAT_NAME               VALUE
   --- ---------- ----------------------- -----
-  100 3649082374 DB time                 66701
-  100 3712030189 DB CPU                  53371
-  100 1561673735 background elapsed time 16675
-  100 4157170894 background cpu time     13342
+  100 3649082374 DB time                 83875
+  100 3712030189 DB CPU                  67096
+  100 1561673735 background elapsed time 20968
+  100 4157170894 background cpu time     16774
   
   4 rows selected.
 
@@ -2432,12 +2404,12 @@ SQL [355/461]> SELECT * FROM v$enqueue_stat WHERE rownum < 5;
 
 SQL [356/461]> SELECT * FROM dba_users WHERE rownum < 5;
   
-  USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE
-  -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- -------------------
-  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-20T18:26:02.030Z DEFAULT PASSWORD           
-  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-20T18:26:02.030Z DEFAULT PASSWORD           
-  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-20T18:26:02.030Z DEFAULT PASSWORD           
-  HR       3       OPEN                                 USERS              TEMP                 2026-05-20T18:26:02.030Z DEFAULT PASSWORD           
+  USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN LCOUNT
+  -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ---------- ------
+  SYS      0       OPEN                                 SYSTEM             TEMP                 2026-05-25T11:07:50.413Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                           0     
+  SYSTEM   1       OPEN                                 SYSTEM             TEMP                 2026-05-25T11:07:50.413Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                           0     
+  DBSNMP   2       OPEN                                 SYSAUX             TEMP                 2026-05-25T11:07:50.413Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                           0     
+  HR       3       OPEN                                 USERS              TEMP                 2026-05-25T11:07:50.413Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                           0     
   
   4 rows selected.
 
@@ -2487,12 +2459,12 @@ SQL [360/461]> SELECT * FROM dba_sys_privs WHERE rownum < 5;
 
 SQL [361/461]> SELECT * FROM dba_tab_privs WHERE rownum < 5;
   
-  GRANTEE             OWNER TABLE_NAME       PRIVILEGE GRANTABLE GRANTOR TYPE  
-  ------------------- ----- ---------------- --------- --------- ------- ------
-  SELECT_CATALOG_ROLE SYS   DBA_TAB_COMMENTS SELECT    NO        SYS     OBJECT
-  SELECT_CATALOG_ROLE SYS   DBA_COL_COMMENTS SELECT    NO        SYS     OBJECT
-  SELECT_CATALOG_ROLE SYS   DBA_COL_PRIVS    SELECT    NO        SYS     OBJECT
-  SELECT_CATALOG_ROLE SYS   DBA_DEPENDENCIES SELECT    NO        SYS     OBJECT
+  GRANTEE             OWNER TABLE_NAME       PRIVILEGE GRANTABLE GRANTOR TYPE 
+  ------------------- ----- ---------------- --------- --------- ------- -----
+  SELECT_CATALOG_ROLE SYS   DBA_TAB_COMMENTS SELECT    NO        SYS     TABLE
+  SELECT_CATALOG_ROLE SYS   DBA_COL_COMMENTS SELECT    NO        SYS     TABLE
+  SELECT_CATALOG_ROLE SYS   DBA_COL_PRIVS    SELECT    NO        SYS     TABLE
+  SELECT_CATALOG_ROLE SYS   DBA_DEPENDENCIES SELECT    NO        SYS     TABLE
   
   4 rows selected.
 
@@ -2500,10 +2472,10 @@ SQL [362/461]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                  100                      VIEW        2026-05-20T18:26:02.032Z 2026-05-20T18:26:02.032Z 2026-05-20:18:26:02 VALID  N         N         N         1         Y                
-  SYS   V$INSTANCE                 101                      VIEW        2026-05-20T18:26:02.032Z 2026-05-20T18:26:02.032Z 2026-05-20:18:26:02 VALID  N         N         N         1         Y                
-  SYS   V$DATABASE                 102                      VIEW        2026-05-20T18:26:02.032Z 2026-05-20T18:26:02.032Z 2026-05-20:18:26:02 VALID  N         N         N         1         Y                
-  SYS   V$SESSION                  103                      VIEW        2026-05-20T18:26:02.032Z 2026-05-20T18:26:02.032Z 2026-05-20:18:26:02 VALID  N         N         N         1         Y                
+  SYS   V$VERSION                  100                      VIEW        2026-05-25T11:07:50.417Z 2026-05-25T11:07:50.417Z 2026-05-25:11:07:50 VALID  N         N         N         1         Y                
+  SYS   V$INSTANCE                 101                      VIEW        2026-05-25T11:07:50.417Z 2026-05-25T11:07:50.417Z 2026-05-25:11:07:50 VALID  N         N         N         1         Y                
+  SYS   V$DATABASE                 102                      VIEW        2026-05-25T11:07:50.417Z 2026-05-25T11:07:50.417Z 2026-05-25:11:07:50 VALID  N         N         N         1         Y                
+  SYS   V$SESSION                  103                      VIEW        2026-05-25T11:07:50.417Z 2026-05-25T11:07:50.417Z 2026-05-25:11:07:50 VALID  N         N         N         1         Y                
   
   4 rows selected.
 
@@ -2591,18 +2563,28 @@ SQL [370/461]> SELECT * FROM dba_synonyms WHERE rownum < 5;
 
 SQL [371/461]> SELECT * FROM dba_triggers WHERE rownum < 5;
   
-  OWNER TRIGGER_NAME TRIGGER_TYPE TRIGGERING_EVENT TABLE_OWNER TABLE_NAME STATUS
-  ----- ------------ ------------ ---------------- ----------- ---------- ------
+  OWNER TRIGGER_NAME TRIGGER_TYPE TRIGGERING_EVENT TABLE_OWNER BASE_OBJECT_TYPE TABLE_NAME COLUMN_NAME REFERENCING_NAMES WHEN_CLAUSE STATUS DESCRIPTION ACTION_TYPE TRIGGER_BODY
+  ----- ------------ ------------ ---------------- ----------- ---------------- ---------- ----------- ----------------- ----------- ------ ----------- ----------- ------------
 
 SQL [372/461]> SELECT * FROM dba_procedures WHERE rownum < 5;
   
-  OWNER OBJECT_NAME OBJECT_TYPE AGGREGATE PIPELINED DETERMINISTIC
-  ----- ----------- ----------- --------- --------- -------------
+  OWNER OBJECT_NAME       PROCEDURE_NAME OBJECT_ID OBJECT_TYPE AGGREGATE PIPELINED IMPLTYPEOWNER IMPLTYPENAME PARALLEL INTERFACE DETERMINISTIC AUTHID  RESULT_CACHE
+  ----- ----------------- -------------- --------- ----------- --------- --------- ------------- ------------ -------- --------- ------------- ------- ------------
+  HR    ADD_EMPLOYEE                     1000      PROCEDURE   NO        NO                                   NO       NO        NO            DEFINER NO          
+  HR    GET_EMPLOYEE_NAME                1001      FUNCTION    NO        NO                                   NO       NO        NO            DEFINER NO          
+  
+  2 rows selected.
 
 SQL [373/461]> SELECT * FROM dba_source WHERE rownum < 5;
   
-  OWNER NAME TYPE LINE TEXT
-  ----- ---- ---- ---- ----
+  OWNER NAME         TYPE      LINE TEXT                                        
+  ----- ------------ --------- ---- --------------------------------------------
+  HR    ADD_EMPLOYEE PROCEDURE 1    CREATE OR REPLACE PROCEDURE HR.ADD_EMPLOYEE(
+  HR    ADD_EMPLOYEE PROCEDURE 2        p_first_name IN VARCHAR2,               
+  HR    ADD_EMPLOYEE PROCEDURE 3        p_last_name  IN VARCHAR2,               
+  HR    ADD_EMPLOYEE PROCEDURE 4        p_email      IN VARCHAR2,               
+  
+  4 rows selected.
 
 SQL [374/461]> SELECT * FROM dba_dependencies WHERE rownum < 5;
   
@@ -2734,17 +2716,17 @@ SQL [392/461]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                                                                                                                                                                                           STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-05-20T18:26:02.052Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                       LOGON         
-  oracle      SYS      localhost 2026-05-20T18:26:02.055Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-05-25T11:07:50.441Z LOGON                  0                    5         SYSDBA                                                                                                                                                                                                                                                       LOGON         
+  oracle      SYS      localhost 2026-05-25T11:07:50.446Z CREATE TABLE REGIONS   0          HR        0                   CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           CREATE TABLE  
-  oracle      SYS      localhost 2026-05-20T18:26:02.056Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-05-25T11:07:50.447Z CREATE TABLE COUNTRIES 0          HR        0                   CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             CREATE TABLE  
-  oracle      SYS      localhost 2026-05-20T18:26:02.057Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-05-25T11:07:50.448Z CREATE TABLE LOCATIONS 0          HR        0                   CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -2759,10 +2741,10 @@ SQL [393/461]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME RETURNCODE
   ----------- -------- --------- -------- ------------------------ ----------- --------- ----------- ----------
-  oracle      SYS      localhost pts/0    2026-05-20T18:26:02.052Z LOGON       5                     0         
-  oracle      SYS      localhost pts/0    2026-05-20T18:26:02.078Z LOGON       6                     0         
-  oracle      SYS      localhost pts/0    2026-05-20T18:26:02.080Z LOGON       7                     0         
-  oracle      SYS      localhost pts/0    2026-05-20T18:26:02.159Z LOGON       8                     0         
+  oracle      SYS      localhost pts/0    2026-05-25T11:07:50.441Z LOGON       5                     0         
+  oracle      SYS      localhost pts/0    2026-05-25T11:07:50.471Z LOGON       6                     0         
+  oracle      SYS      localhost pts/0    2026-05-25T11:07:50.474Z LOGON       7                     0         
+  oracle      SYS      localhost pts/0    2026-05-25T11:07:50.556Z LOGON       8                     0         
   
   4 rows selected.
 
@@ -2770,17 +2752,17 @@ SQL [394/461]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                                                                                                                                                                                           OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-05-20T18:26:02.052Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                        LOGON          SYSDBA                1       
-  2026-05-20T18:26:02.055Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
+  2026-05-25T11:07:50.441Z Standard   5         SYS        localhost pts/0    oracle  LOGON        0                                                                                                                                                                                                                                                                                        LOGON          SYSDBA                1       
+  2026-05-25T11:07:50.446Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_NAME VARCHAR2(25)
        )                                                                                                                                           HR            REGIONS     CREATE TABLE                         2       
-  2026-05-20T18:26:02.056Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
+  2026-05-25T11:07:50.447Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTRY_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                             HR            COUNTRIES   CREATE TABLE                         3       
-  2026-05-20T18:26:02.057Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
+  2026-05-25T11:07:50.448Z Standard   0         SYS        localhost pts/0    oracle  CREATE TABLE 0           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STREET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
@@ -2800,10 +2782,10 @@ SQL [396/461]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                               
   ----------- --------- -------- ------------------------ ------------------------ ------------------------------------------------------
-  1           Info      NORMAL   2026-05-20T18:26:02.032Z 2026-05-20T18:26:03.032Z 2026-05-20 18:26:02: Starting ORACLE instance (normal)
-  2           Info      NORMAL   2026-05-20T18:26:02.050Z 2026-05-20T18:26:03.050Z 2026-05-20 18:26:02: Database mounted                 
-  3           Info      NORMAL   2026-05-20T18:26:02.051Z 2026-05-20T18:26:03.051Z 2026-05-20 18:26:02: Database opened                  
-  4           Info      NORMAL   2026-05-20T18:26:02.052Z 2026-05-20T18:26:03.052Z 2026-05-20 18:26:02: Logon: user=SYS sid=5 as SYSDBA  
+  1           Info      NORMAL   2026-05-25T11:07:50.418Z 2026-05-25T11:07:51.418Z 2026-05-25 11:07:50: Starting ORACLE instance (normal)
+  2           Info      NORMAL   2026-05-25T11:07:50.439Z 2026-05-25T11:07:51.439Z 2026-05-25 11:07:50: Database mounted                 
+  3           Info      NORMAL   2026-05-25T11:07:50.440Z 2026-05-25T11:07:51.440Z 2026-05-25 11:07:50: Database opened                  
+  4           Info      NORMAL   2026-05-25T11:07:50.441Z 2026-05-25T11:07:51.441Z 2026-05-25 11:07:50: Logon: user=SYS sid=5 as SYSDBA  
   
   4 rows selected.
 
@@ -2833,7 +2815,7 @@ SQL [399/461]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME FLUSH_LEVEL
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------ -----------
-  1       1    1               1          2026-05-20T17:26:02.259Z 2026-05-20T18:26:02.259Z COMPLETED YES          TYPICAL    
+  1       1    1               1          2026-05-25T10:07:50.687Z 2026-05-25T11:07:50.687Z COMPLETED YES          TYPICAL    
   
   1 row selected.
 
@@ -2843,8 +2825,8 @@ SQL [400/461]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   ------- ---------- --------------- ------- ------------------------- -----
   1       1234567890 1               0       logons cumulative         1    
   1       1234567890 1               1       logons current            1    
-  1       1234567890 1               2       opened cursors cumulative 662  
-  1       1234567890 1               3       opened cursors current    596  
+  1       1234567890 1               2       opened cursors cumulative 663  
+  1       1234567890 1               3       opened cursors current    597  
   
   4 rows selected.
 
@@ -2852,10 +2834,10 @@ SQL [401/461]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-  1       1y1fzoya3xqw0 0               1                18                 15             1                 0                1                   
-  1       027ije0a3xqw0 0               1                18                 15             1                 0                1                   
-  1       0gh3c7pa3xqw0 0               1                20                 16             1                 0                1                   
-  1       035dtwba3xqw0 0               1                25                 20             1                 0                1                   
+  1       1y1fzoya3xqw0 0               1                25                 20             1                 0                1                   
+  1       027ije0a3xqw0 0               1                24                 19             1                 0                1                   
+  1       0gh3c7pa3xqw0 0               1                31                 25             1                 0                1                   
+  1       035dtwba3xqw0 0               1                29                 23             1                 0                1                   
   
   4 rows selected.
 
@@ -2913,7 +2895,7 @@ SQL [409/461]> SELECT count(*) AS views FROM dba_views;
   
   VIEWS
   -----
-  376  
+  380  
   
   1 row selected.
 
@@ -2929,7 +2911,7 @@ SQL [411/461]> SELECT count(*) AS procedures FROM dba_procedures;
   
   PROCEDURES
   ----------
-  0         
+  2         
   
   1 row selected.
 
@@ -3245,7 +3227,7 @@ SQL [457/461]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-05-20 18:26:02
+  2026-05-25 11:07:50
   
   1 row selected.
 
@@ -3253,7 +3235,7 @@ SQL [458/461]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-05-20T18:26:02.267Z
+  2026-05-25T11:07:50.694Z
   
   1 row selected.
 
