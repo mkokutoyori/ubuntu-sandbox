@@ -250,3 +250,59 @@ describe('§2 — pwd / lpwd report the right working directories', () => {
   });
 });
 
+// ─── Section 3 — ls: listing remote files and directories ───────────
+
+describe('§3 — ls lists remote directory contents', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ls of an explicit /tmp path lists seeded files',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo a > /tmp/alpha.txt');
+        await l.pc2.executeCommand('echo b > /tmp/beta.txt');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['ls /tmp']),
+      contains: ['alpha.txt', 'beta.txt'],
+    },
+    {
+      name: 'ls without an arg lists the remote cwd',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /home/alice && echo x > /home/alice/note'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /home/alice', 'ls']),
+      contains: [/note/],
+    },
+    {
+      name: 'ls of a directory that does not exist surfaces an error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['ls /nope/does/not/exist']),
+      contains: [/list failed|No such/i],
+    },
+    {
+      name: 'ls of an empty directory yields no file lines (but does not error)',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/empty'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['ls /tmp/empty']),
+      excludes: [/list failed/],
+    },
+    {
+      name: 'Server→Server: ls /etc shows core system files',
+      on: l => l.srv1,
+      cmd: sftp('alice@10.0.0.11', ['ls /etc']),
+      contains: [/passwd|hosts|ssh/],
+    },
+    {
+      name: 'ls of a regular file (not a directory) yields a list failure',
+      setup: async (l) => { await l.pc2.executeCommand('echo solo > /tmp/just-a-file'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['ls /tmp/just-a-file/nope']),
+      contains: [/list failed|No such|Not a directory/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
