@@ -935,16 +935,16 @@ describe('§15 — missing path arguments produce parse errors', () => {
       contains: [/chmod: invalid mode/],
     },
     {
-      name: 'mkdir with no args is accepted as a no-op (default path "")',
+      name: 'mkdir with no args surfaces a usage / failure error',
       on: l => l.pc1,
-      cmd: sftp('alice@10.0.0.2', ['mkdir', 'pwd']),
-      contains: [/Remote working directory:/],
+      cmd: sftp('alice@10.0.0.2', ['mkdir']),
+      contains: [/mkdir failed|Failure|usage|missing|invalid/i],
     },
     {
-      name: 'rm with no args attempts an unlink on empty path and errors',
+      name: 'rm with no args surfaces a usage / failure error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm']),
-      contains: [/unlink failed|No such|Failure|Connected to/i],
+      contains: [/unlink failed|Failure|usage|missing/i],
     },
   ];
 
