@@ -250,7 +250,9 @@ export class WindowsPC extends EndHost {
 
   /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
   getSshServerContext(): WindowsSshServerContext {
-    return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname);
+    return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
+      executeCmdCommand: (line: string) => this.executeCmdCommand(line),
+    });
   }
 
   private _sshHost: CrossVendorSshHost | null = null;
