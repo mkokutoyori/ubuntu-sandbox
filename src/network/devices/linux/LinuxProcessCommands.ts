@@ -170,8 +170,13 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
       const n = Number.parseInt(pidStr, 10);
       if (!Number.isFinite(n) || n <= 0 || n >= 100000) continue;
       const tracked = ctx.pm.get(n);
-      if (tracked && tracked.pid === 1) continue;
-      if (tracked && tracked.pid !== (ctx.shellPid ?? -1)) continue;
+      // Unknown PID? Fall through to the normal loop so the kernel-style
+      // "No such process" diagnostic is emitted with the correct exit code.
+      if (!tracked) continue;
+      if (tracked.pid === 1) continue;
+      if (tracked.pid !== (ctx.shellPid ?? -1)) continue;
+      // Self-kill of the current shell with a terminating signal: bash
+      // exits with 128 + signum (e.g. SIGINT → 130).
       return { output: '', exitCode: 128 + sigNum };
     }
   }

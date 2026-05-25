@@ -180,13 +180,13 @@ describe('NSS — reactive cache invalidation', () => {
   it('IAM user.created → cache invalidation listener fires for "passwd"', () => {
     const invalidated: string[] = [];
     pc.executor.nss.onCacheInvalidated(db => invalidated.push(db));
-    pc.executor.userMgr.useradd('alice', {});
+    pc.executor.userMgr.useradd('zoe', {});
     expect(invalidated).toContain('passwd');
   });
 
   it('IAM user.password-changed → invalidates "shadow"', () => {
     const invalidated: string[] = [];
-    pc.executor.userMgr.useradd('alice', {});
+    pc.executor.userMgr.useradd('zoe', {});
     pc.executor.nss.onCacheInvalidated(db => invalidated.push(db));
     pc.executor.userMgr.setPassword('alice', 'newpass');
     expect(invalidated).toContain('shadow');
@@ -194,7 +194,7 @@ describe('NSS — reactive cache invalidation', () => {
 
   it('IAM group.membership-changed → invalidates "group"', () => {
     const invalidated: string[] = [];
-    pc.executor.userMgr.useradd('alice', {});
+    pc.executor.userMgr.useradd('zoe', {});
     pc.executor.userMgr.groupadd('devs');
     // Join alice to devs via gpasswd -M (member list reset). usermod -aG
     // would also fire `linux.iam.user.modified` but `group` isn't the
@@ -222,7 +222,7 @@ describe('NSS — reactive cache invalidation', () => {
     const invalidated: string[] = [];
     pc.executor.nss.onCacheInvalidated(db => invalidated.push(db));
     pc.executor.nss.dispose();
-    pc.executor.userMgr.useradd('alice', {});
+    pc.executor.userMgr.useradd('zoe', {});
     // No more invalidations after dispose.
     expect(invalidated).toHaveLength(0);
   });

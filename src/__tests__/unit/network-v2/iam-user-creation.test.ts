@@ -472,13 +472,15 @@ describe('LinuxUserManager.useradd', () => {
 
 describe('adduser — faithful Debian behaviour', () => {
   it('prints the realistic creation banner', async () => {
+    // bob is auto-provisioned at boot; pick a fresh name to exercise
+    // the first-creation banner.
     const srv = new LinuxServer('linux-server', 'SRV1');
-    const out = await srv.executeCommand('adduser bob');
-    expect(out).toContain("Adding user `bob' ...");
-    expect(out).toContain("Adding new group `bob'");
-    expect(out).toContain("Adding new user `bob' (");
-    expect(out).toContain("with group `bob'");
-    expect(out).toContain("Creating home directory `/home/bob' ...");
+    const out = await srv.executeCommand('adduser zoe');
+    expect(out).toContain("Adding user `zoe' ...");
+    expect(out).toContain("Adding new group `zoe'");
+    expect(out).toContain("Adding new user `zoe' (");
+    expect(out).toContain("with group `zoe'");
+    expect(out).toContain("Creating home directory `/home/zoe' ...");
     expect(out).toContain("Copying files from `/etc/skel' ...");
   });
 

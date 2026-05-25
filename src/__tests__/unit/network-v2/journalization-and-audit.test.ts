@@ -180,19 +180,21 @@ describe('ausearch / aureport / auditctl', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Linux audit trail — end to end', () => {
+  // bob is in the auto-provisioned cast (alice/bob/carl/dave); use a
+  // fresh name so useradd actually fires the ADD_USER audit record.
   it('writes an ADD_USER record to /var/log/audit/audit.log on useradd', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('useradd -m bob');
+    await srv.executeCommand('useradd -m zoe');
     const auditLog = await srv.executeCommand('cat /var/log/audit/audit.log');
     expect(auditLog).toContain('type=ADD_USER');
-    expect(auditLog).toContain('acct=bob');
+    expect(auditLog).toContain('acct=zoe');
   });
 
   it('answers ausearch queries over real account activity', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
-    await srv.executeCommand('useradd -m bob');
+    await srv.executeCommand('useradd -m zoe');
     const out = await srv.executeCommand('ausearch -m ADD_USER');
-    expect(out).toContain('acct=bob');
+    expect(out).toContain('acct=zoe');
   });
 });
 
@@ -261,8 +263,11 @@ describe('Windows service journalisation (reactive)', () => {
 
 describe('Windows Security audit trail (reactive)', () => {
   it('journals event 4720 when a user account is created', () => {
+    // bob is in the WindowsUserManager built-in cast — pick a fresh name
+    // so createUser actually creates (and emits 4720) rather than
+    // bouncing with "The account already exists.".
     const { events, userMgr } = wiredWindows();
-    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
+    userMgr.createUser('zoe', 'P@ssw0rd!2024', {});
     expect(events.some((e) => e.id === 4720 && e.log === 'Security')).toBe(true);
   });
 
@@ -300,9 +305,9 @@ describe('Windows Security audit trail (reactive)', () => {
 
   it('journals a 4624 success / 4625 failure logon audit', () => {
     const { events, userMgr } = wiredWindows();
-    userMgr.createUser('bob', 'P@ssw0rd!2024', {});
-    userMgr.checkPassword('bob', 'P@ssw0rd!2024');
-    userMgr.checkPassword('bob', 'wrong');
+    userMgr.createUser('zoe', 'P@ssw0rd!2024', {});
+    userMgr.checkPassword('zoe', 'P@ssw0rd!2024');
+    userMgr.checkPassword('zoe', 'wrong');
     expect(events.some((e) => e.id === 4624 && e.type === 'SuccessAudit')).toBe(true);
     expect(events.some((e) => e.id === 4625 && e.type === 'FailureAudit')).toBe(true);
   });

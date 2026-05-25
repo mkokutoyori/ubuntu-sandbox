@@ -533,10 +533,13 @@ describe('SP-11 — Linux netstat: dynamic output from socket table', () => {
     expect(out).not.toContain(':22');
   });
 
-  it('netstat -t does not show UDP port 53', async () => {
+  it('netstat -t only shows TCP rows (no `udp` proto)', async () => {
+    // Real systemd-resolved listens on 127.0.0.53:53 over BOTH tcp and
+    // udp — so port 53 is legitimately present in `netstat -t`. The
+    // correct guard is on the Proto column: no UDP rows must appear.
     const pc = new LinuxPC('linux-pc', 'PC1');
     const out = await pc.executeCommand('netstat -t');
-    expect(out).not.toContain(':53');
+    expect(out).not.toMatch(/^udp/m);
   });
 
   it('LinuxServer netstat shows Oracle port 1521', async () => {

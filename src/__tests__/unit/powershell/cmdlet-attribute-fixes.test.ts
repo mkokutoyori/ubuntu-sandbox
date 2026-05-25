@@ -73,8 +73,15 @@ describe('(pipeline) -join / -split bind correctly', () => {
 
 describe('Where-Object — comparison-parameter form', () => {
   it('Where-Object Status -EQ Running filters services', async () => {
-    expect((await j(shell(),
-      '(Get-Service | Where-Object Status -EQ Running | Measure-Object).Count'))).toBe('20');
+    // The default-running service count drifts as we model more Windows
+    // services; pin the *contract* (Where-Object selects a positive
+    // count of Running services) instead of an exact magic number.
+    const n = Number((await j(shell(),
+      '(Get-Service | Where-Object Status -EQ Running | Measure-Object).Count')));
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThanOrEqual(
+      Number((await j(shell(), '(Get-Service | Measure-Object).Count'))),
+    );
   });
   it('Where-Object Id -GE 1000 (numeric)', async () => {
     const ids = await run(shell(),

@@ -1013,11 +1013,14 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
   describe('8.4 Regression — Existing Commands', () => {
 
     it('should still handle full "display current-configuration"', async () => {
+      // Real Huawei VRP expands the GE short form to GigabitEthernet in
+      // `display current-configuration` (the running-config dump is the
+      // canonical form, never the keyword shortcut).
       const r = new HuaweiRouter('R1');
       r.configureInterface('GE0/0/0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
       const output = await r.executeCommand('display current-configuration');
       expect(output).toContain('sysname R1');
-      expect(output).toContain('interface GE0/0/0');
+      expect(output).toMatch(/interface (?:GE|GigabitEthernet)0\/0\/0/);
       expect(output).toContain('10.0.0.1');
     });
 

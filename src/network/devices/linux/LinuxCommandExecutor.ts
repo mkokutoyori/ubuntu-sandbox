@@ -1289,10 +1289,14 @@ export class LinuxCommandExecutor {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
       // `-S` reads the sudo password from stdin — detect it before the
-      // flag group is stripped below.
-      const readsStdinPassword = cmdArgs.some(
-        (a) => a.startsWith('-') && !a.startsWith('--') && a.includes('S'),
-      );
+      // flag group is stripped below. Only sudo's own leading option
+      // flags are inspected; once we hit the command-to-run, its own
+      // flags (e.g. `passwd -S user`) belong to it, not to sudo.
+      let readsStdinPassword = false;
+      for (const a of cmdArgs) {
+        if (!/^-[nSEkbiHvP]+$/.test(a)) break;
+        if (a.includes('S')) { readsStdinPassword = true; break; }
+      }
       // Strip flags that don't consume a value (-n non-interactive, -S
       // read password from stdin, -E preserve env, -k reset timestamp).
       while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
@@ -1844,8 +1848,16 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // UFW (Uncomplicated Firewall)
+      // UFW (Uncomplicated Firewall) — root-only on real Ubuntu. A
+      // non-root invocation prints the canonical refusal and exits 1,
+      // matching what real `ufw` does (the script's first guard).
       case 'ufw': {
+        if (this.userMgr.currentUid !== 0) {
+          return {
+            output: 'ERROR: You need to be root to run this script',
+            exitCode: 1,
+          };
+        }
         const out = this.firewall.execute(args);
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
       }

@@ -571,7 +571,8 @@ describe('T-ROUT-VENDOR: Huawei VRP CLI', () => {
 
     const output = await r.executeCommand('display current-configuration');
     expect(output).toContain('sysname');
-    expect(output).toContain('interface GE0/0/0');
+    // Real VRP expands GE → GigabitEthernet in the running-config dump.
+    expect(output).toMatch(/interface (?:GE|GigabitEthernet)0\/0\/0/);
     expect(output).toContain('ip address 10.0.1.1');
   });
 

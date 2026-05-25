@@ -1249,12 +1249,15 @@ describe('Group 6: Authentification et Fichiers Utilisateur', () => {
     });
 
     it('should expose userExists correctly', async () => {
+      // The PC boot sequence auto-provisions the standard cast
+      // (alice/bob/carl/dave); pick a fresh name to exercise the
+      // "before-create / after-create" transition.
       const pc = new LinuxPC('linux-pc', 'PC1');
       expect(pc.userExists('user')).toBe(true);
-      expect(pc.userExists('alice')).toBe(false);
+      expect(pc.userExists('zoe')).toBe(false);
 
-      await pc.executeCommand('sudo useradd -m alice');
-      expect(pc.userExists('alice')).toBe(true);
+      await pc.executeCommand('sudo useradd -m zoe');
+      expect(pc.userExists('zoe')).toBe(true);
     });
   });
 
@@ -1280,14 +1283,16 @@ describe('Group 6: Authentification et Fichiers Utilisateur', () => {
     });
 
     it('should create home directory with skeleton files via useradd -m', async () => {
+      // alice is auto-provisioned at boot — pick a fresh name so the
+      // skeleton-copy path is exercised on this useradd call.
       const server = new LinuxServer('linux-server', 'SRV1');
 
-      await server.executeCommand('useradd -m -s /bin/bash alice');
+      await server.executeCommand('useradd -m -s /bin/bash zoe');
 
       const lsHome = await server.executeCommand('ls /home');
-      expect(lsHome).toContain('alice');
+      expect(lsHome).toContain('zoe');
 
-      const lsFiles = await server.executeCommand('ls -la /home/alice/');
+      const lsFiles = await server.executeCommand('ls -la /home/zoe/');
       expect(lsFiles).toContain('.bash_logout');
       expect(lsFiles).toContain('.bashrc');
       expect(lsFiles).toContain('.profile');

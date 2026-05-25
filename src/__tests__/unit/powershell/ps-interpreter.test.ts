@@ -1091,7 +1091,8 @@ describe('27. Simulated File System Cmdlets', () => {
     interp.execute('Set-Content -Path "log.txt" -Value "line1"');
     interp.execute('Add-Content -Path "log.txt" -Value "line2"');
     interp.execute('$r = Get-Content -Path "log.txt"');
-    expect(interp.getVariable('r')).toBe('line1\nline2'); // ou selon l'implémentation interne
+    // Real Get-Content returns an array of lines, not a joined string.
+    expect(interp.getVariable('r')).toEqual(['line1', 'line2']);
   });
 
   it('Test-Path returns true for existing simulated path', () => {

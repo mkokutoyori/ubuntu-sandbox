@@ -170,12 +170,10 @@ describe('SSH LAN — remote-shell experience (BRD SSH-04)', () => {
     term.pushRemoteDevice(lan.pc2, 'alice', PC2_IP, () => undefined);
     await pressEnterWith(term, 'whoami');
     const out = term.lines.map((l) => l.text);
-    // The current LinuxCommandExecutor exposes the device's logged-in
-    // user (still "user" in this simulator) — what matters is that the
-    // command runs successfully on the remote and produces the same
-    // output as `pc2.executeCommand('whoami')`.
-    const direct = (await lan.pc2.executeCommand('whoami')).trim();
-    expect(out.join('\n')).toContain(direct);
+    // The SSH push propagates the connecting user into the remote
+    // shell, so `whoami` echoes the SSH-pushed user — exactly how a real
+    // sshd session reports the user via $USER / id.
+    expect(out.join('\n')).toContain('alice');
   });
 
   // RS13 — su+SSH exit ordering (review feedback fix)
@@ -185,13 +183,13 @@ describe('SSH LAN — remote-shell experience (BRD SSH-04)', () => {
 
     // Enter a remote `su` shell. The default test user is root in this
     // simulator (uid=0), so `su <user>` is the realistic equivalent of
-    // the BRD's "sudo su" trace. We push a su frame manually through
-    // the executor to keep the test free from password prompts.
-    const remoteExec = (lan.pc2 as unknown as { executor: { suStack: unknown[] } })
-      .executor;
-    (remoteExec.suStack as Array<{
+    // the BRD's "sudo su" trace. The push must land on the *session's*
+    // su-stack (the per-terminal one) — the device-wide executor stack
+    // is bypassed by the session-swap path in handleExitInSession.
+    const remoteSession = (term as unknown as { shell: { suStack: Array<{
       user: string; uid: number; gid: number; cwd: string; umask: number;
-    }>).push({
+    }> } }).shell;
+    remoteSession.suStack.push({
       user: 'user',
       uid: 1000,
       gid: 1000,
