@@ -2021,3 +2021,79 @@ describe('§34 — mid-session faults: link flap, switch down, MTU', () => {
   });
 });
 
+// ─── Section 35 — fail2ban / auth throttling on repeated sftp failures ─
+
+describe('§35 — auth throttling under repeated sftp failures', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'three failed sftp logins produce three Failed password entries',
+      setup: async (l) => {
+        await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd']));
+        await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd']));
+        await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc2,
+      cmd: 'grep -c "Failed password" /var/log/auth.log',
+      contains: [/^[3-9]\b/],
+    },
+    {
+      name: 'MaxAuthTries 1: a second failed attempt drops the connection',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "MaxAuthTries 1\\n" >> /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-o PasswordAuthentication=no' }),
+      contains: [/Permission denied|Too many authentication failures/i],
+    },
+    {
+      name: 'fail2ban bans the source IP after the threshold',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl start fail2ban');
+        for (let i = 0; i < 6; i++) await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/refused|timed out|unreachable|banned/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'fail2ban-client status sshd lists the banned IP',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl start fail2ban');
+        for (let i = 0; i < 6; i++) await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc2,
+      cmd: 'fail2ban-client status sshd',
+      contains: [/Banned IP list:.*10\.0\.0\.1/s],
+    },
+    {
+      name: 'LoginGraceTime expiry closes the channel without authentication',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "LoginGraceTime 1\\n" >> /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-o PasswordAuthentication=no -o PreferredAuthentications=publickey' }),
+      contains: [/Timeout, server.*not responding|Connection closed|Permission denied/i],
+    },
+    {
+      name: 'auth.log records "Disconnecting" lines for throttled sessions',
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "MaxAuthTries 1\\n" >> /etc/ssh/sshd_config');
+        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd'], { flags: '-o PasswordAuthentication=no' }));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Disconnecting|Too many authentication failures|Connection closed by/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
