@@ -632,3 +632,54 @@ describe('§9 — put uploads files from the client to the server', () => {
 });
 
 
+// ─── Section 10 — get downloads remote→local ─────────────────────────
+
+describe('§10 — get downloads files from the server to the client', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'get /tmp/report /tmp/report: client-side cat matches',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo "secret stuff" > /tmp/report');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['get /tmp/report /tmp/report']));
+      },
+      on: l => l.pc1,
+      cmd: 'cat /tmp/report',
+      contains: [/secret stuff/],
+    },
+    {
+      name: 'get surfaces a "Fetching" line in the transcript',
+      setup: async (l) => { await l.pc2.executeCommand('echo z > /tmp/zz'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['get /tmp/zz /tmp/zz']),
+      contains: [/Fetching \/tmp\/zz to \/tmp\/zz/],
+    },
+    {
+      name: 'get of a non-existent remote file errors',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['get /tmp/never-there /tmp/local']),
+      contains: [/not found|No such|Failure/i],
+    },
+    {
+      name: 'get with only one arg uses the remote basename locally',
+      setup: async (l) => { await l.pc2.executeCommand('echo q > /tmp/one-arg'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['get /tmp/one-arg']),
+      contains: [/Fetching \/tmp\/one-arg/],
+    },
+    {
+      name: 'get with no args at all is a parse error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['get']),
+      contains: [/get: missing source/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
