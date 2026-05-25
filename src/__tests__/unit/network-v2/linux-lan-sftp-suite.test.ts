@@ -1006,3 +1006,63 @@ describe('§16 — sftp against an unreachable target', () => {
 });
 
 
+// ─── Section 17 — sftp refused when sshd is stopped ─────────────────
+
+describe('§17 — sftp refused when sshd is stopped', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'sshd stopped → Connection refused',
+      setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connection refused/],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'sshd restart restores sftp',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop ssh');
+        await l.pc2.executeCommand('systemctl start ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+      excludes: [/refused/],
+    },
+    {
+      name: 'one stopped node does not affect another',
+      setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.3', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.3/],
+    },
+    {
+      name: 'sshd stopped on a server refuses every client',
+      setup: async (l) => { await l.srv1.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.10', ['pwd']),
+      contains: [/Connection refused/],
+    },
+    {
+      name: 'failed sftp due to refusal leaves the remote unchanged',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo orig > /tmp/keepme');
+        await l.pc2.executeCommand('systemctl stop ssh');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rm /tmp/keepme']));
+        await l.pc2.executeCommand('systemctl start ssh');
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/keepme',
+      contains: [/^orig$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
