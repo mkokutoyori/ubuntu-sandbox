@@ -1399,3 +1399,40 @@ describe('§24 — Linux → Windows get downloads from C:\\', () => {
 });
 
 
+// ─── Section 25 — sftp -b: batchfile mode ────────────────────────────
+
+describe('§25 — sftp -b runs a batch file non-interactively', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'sftp -b /tmp/batch.txt runs the file as a script',
+      setup: async (l) => {
+        await l.pc1.executeCommand('printf "pwd\\nbye\\n" > /tmp/batch.txt');
+      },
+      on: l => l.pc1,
+      cmd: 'sftp -b /tmp/batch.txt alice@10.0.0.2',
+      contains: [/Connected to 10\.0\.0\.2/, /sftp>/],
+    },
+    {
+      name: 'sftp -b still produces a Connected banner against a live host',
+      on: l => l.pc1,
+      cmd: 'sftp -b /tmp/anything.txt alice@10.0.0.2',
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'sftp -b against a stopped host still reports the refusal',
+      setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
+      on: l => l.pc1,
+      cmd: 'sftp -b /tmp/b.txt alice@10.0.0.2',
+      contains: [/Connection refused/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
