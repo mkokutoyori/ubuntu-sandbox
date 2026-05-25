@@ -956,3 +956,53 @@ describe('§15 — missing path arguments produce parse errors', () => {
 });
 
 
+// ─── Section 16 — sftp to an unreachable / unknown host ──────────────
+
+describe('§16 — sftp against an unreachable target', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'IP off-topology yields no route to host',
+      on: l => l.pc1,
+      cmd: sftp('alice@192.0.2.99', ['pwd']),
+      contains: [/no route to host|Could not resolve/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'invalid IPv4 octets are rejected',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.999', ['pwd']),
+      contains: [/Could not resolve|no route/i],
+    },
+    {
+      name: 'unknown name yields Could not resolve hostname',
+      on: l => l.pc1,
+      cmd: sftp('alice@nope.invalid', ['pwd']),
+      contains: [/Could not resolve|no route/i],
+    },
+    {
+      name: 'bare sftp (no host) prints usage',
+      on: l => l.pc1,
+      cmd: 'sftp',
+      contains: [/usage:\s*sftp/i],
+    },
+    {
+      name: 'failed sftp to an unknown host does NOT touch the remote VFS',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo keep > /tmp/keep');
+        await l.pc1.executeCommand(sftp('alice@10.0.99.99', ['rm /tmp/keep']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/keep',
+      contains: [/^keep$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
