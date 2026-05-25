@@ -1523,3 +1523,51 @@ describe('§27 — multi-verb batches keep going on errors', () => {
 });
 
 
+// ─── Section 28 — idempotency: put twice overwrites cleanly ──────────
+
+describe('§28 — repeated sftp operations are idempotent', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'put twice overwrites: final content is the latest version',
+      setup: async (l) => {
+        await l.pc1.executeCommand('echo v1 > /tmp/over');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['put /tmp/over /tmp/over']));
+        await l.pc1.executeCommand('echo v2 > /tmp/over');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['put /tmp/over /tmp/over']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/over',
+      contains: [/^v2$/m],
+    },
+    {
+      name: 'get twice with identical source yields the same content twice',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo only > /tmp/only');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['get /tmp/only /tmp/only']));
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['get /tmp/only /tmp/only']));
+      },
+      on: l => l.pc1,
+      cmd: 'cat /tmp/only',
+      contains: [/^only$/m],
+    },
+    {
+      name: 'mkdir twice — the second is silently idempotent (state unchanged)',
+      setup: async (l) => {
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mkdir /tmp/twice']));
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mkdir /tmp/twice']));
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp/twice', 'pwd']),
+      contains: [/Remote working directory: \/tmp\/twice/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
