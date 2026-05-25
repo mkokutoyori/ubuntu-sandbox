@@ -852,3 +852,56 @@ describe('§13 — bye / quit / exit terminate the session', () => {
 });
 
 
+// ─── Section 14 — invalid verbs surface "Invalid command" ───────────
+
+describe('§14 — invalid verbs surface "Invalid command"', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'unknown verb produces Invalid command',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['fubar /tmp']),
+      contains: [/Invalid command: fubar/],
+    },
+    {
+      name: 'gibberish at start of line is rejected',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['??']),
+      contains: [/Invalid command/i],
+    },
+    {
+      name: 'a valid command after an invalid one still runs',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['nopecmd', 'pwd']),
+      contains: [/Invalid command/, /Remote working directory:/],
+    },
+    {
+      name: 'comments (starting with #) are silently ignored',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['# just a comment', 'pwd']),
+      contains: [/Remote working directory:/],
+      excludes: [/Invalid command/],
+    },
+    {
+      name: 'blank lines do not produce errors',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['', '', 'pwd']),
+      contains: [/Remote working directory:/],
+      excludes: [/Invalid command/],
+    },
+    {
+      name: 'verbs are case-insensitive (PWD ≡ pwd)',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['PWD']),
+      contains: [/Remote working directory:/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
