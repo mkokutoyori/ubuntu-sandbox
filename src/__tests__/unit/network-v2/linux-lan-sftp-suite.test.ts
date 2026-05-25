@@ -2324,3 +2324,81 @@ describe('§37 — interactive navigation through the sftp shell', () => {
   });
 });
 
+// ─── Section 38 — Interactive file ops (mkdir, put, get, rm, chmod) ──
+
+describe('§38 — interactive sftp shell: file ops round-trip', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: ShellRow[] = [
+    {
+      name: 'mkdir creates the directory and ls confirms it',
+      lines: ['mkdir /tmp/sh-dir', 'ls /tmp'],
+      contains: ['sh-dir'],
+    },
+    {
+      name: 'put uploads a local file then ls shows it on the remote',
+      setup: async (_lan, fx) => { fx.local.writeFile('/tmp/up.txt', 'hello-shell', 0, 0, 0o022); },
+      lines: ['lcd /tmp', 'put up.txt /tmp/up.txt', 'ls /tmp'],
+      contains: ['up.txt', /Uploading/],
+    },
+    {
+      name: 'get downloads a remote file into the local VFS',
+      setup: async (lan, _fx) => {
+        const v = (lan.pc2 as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
+        v.writeFile('/tmp/dl.txt', 'fetched', 0, 0, 0o022);
+      },
+      lines: ['get /tmp/dl.txt /tmp/dl.txt'],
+      contains: [/Fetching|fetched/],
+    },
+    {
+      name: 'rm of a missing file surfaces an error string',
+      lines: ['rm /tmp/never-here'],
+      contains: [/No such|unlink failed|Failure/i],
+    },
+    {
+      name: 'rename moves a file and the source disappears from ls',
+      setup: async (lan, _fx) => {
+        const { uid, gid } = uidOf(lan.pc2, 'alice');
+        vfsOf(lan.pc2).writeFile('/tmp/rn-src', 'X', uid, gid, 0o022);
+      },
+      lines: ['rename /tmp/rn-src /tmp/rn-dst', 'ls /tmp'],
+      contains: ['rn-dst'],
+      excludes: [/^rn-src$/m],
+    },
+    {
+      name: 'chmod 600 updates the mode (stat confirms it)',
+      setup: async (lan, _fx) => {
+        const { uid, gid } = uidOf(lan.pc2, 'alice');
+        vfsOf(lan.pc2).writeFile('/tmp/cm.txt', 'm', uid, gid, 0o022);
+      },
+      lines: ['chmod 600 /tmp/cm.txt', 'stat /tmp/cm.txt'],
+      contains: [/0?600|rw-------/],
+    },
+    {
+      name: 'rmdir on an empty directory removes it',
+      setup: async (lan, _fx) => {
+        const { uid, gid } = uidOf(lan.pc2, 'alice');
+        vfsOf(lan.pc2).mkdir('/tmp/togo', 0o755, uid, gid);
+      },
+      lines: ['rmdir /tmp/togo', 'ls /tmp'],
+      excludes: [/^togo$/m],
+    },
+    {
+      name: 'lmkdir creates a local directory (lpwd reaches it via lcd)',
+      lines: ['lmkdir /tmp/local-d', 'lcd /tmp/local-d', 'lpwd'],
+      contains: [/Local working directory: \/tmp\/local-d/],
+    },
+    {
+      name: 'df prints filesystem statistics for the cwd',
+      lines: ['df'],
+      contains: [/Size|Used|Avail|Mounted/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    const { res, allOutput } = await driveShell(lan, '10.0.0.2', row);
+    assertShellRow(allOutput, res, row);
+  });
+});
+
