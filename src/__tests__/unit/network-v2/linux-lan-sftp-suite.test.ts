@@ -683,3 +683,71 @@ describe('§10 — get downloads files from the server to the client', () => {
 });
 
 
+// ─── Section 11 — rename / mv: move remote files ─────────────────────
+
+describe('§11 — rename / mv move remote files atomically', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rename old new moves the file',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo r > /tmp/from');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from /tmp/to']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/to',
+      contains: [/^r$/m],
+    },
+    {
+      name: 'rename leaves no file at the source',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo r > /tmp/from2');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from2 /tmp/to2']));
+      },
+      on: l => l.pc2,
+      cmd: 'ls /tmp',
+      excludes: ['from2'],
+      contains: ['to2'],
+    },
+    {
+      name: 'mv is an alias for rename',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo r > /tmp/mv-src');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mv /tmp/mv-src /tmp/mv-dst']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/mv-dst',
+      contains: [/^r$/m],
+    },
+    {
+      name: 'rename to an existing destination overwrites (silent on this VFS)',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo a > /tmp/ra && echo b > /tmp/rb');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/rb',
+      contains: [/^a$/m],
+    },
+    {
+      name: 'rename with one arg is a parse error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rename /tmp/only']),
+      contains: [/rename: needs two args/],
+    },
+    {
+      name: 'rename of a non-existent source fails',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rename /tmp/ghost /tmp/whatever']),
+      contains: [/rename failed|No such|Failure/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
