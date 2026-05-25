@@ -16,7 +16,11 @@ import { LinuxBashShell } from './adapters/LinuxBashShell';
 import { WindowsCmdShell } from './adapters/WindowsCmdShell';
 import { WindowsPowerShellShell } from './adapters/WindowsPowerShellShell';
 import { SqlPlusShell } from './adapters/SqlPlusShell';
+import { RmanShell } from './adapters/RmanShell';
+import { CiscoIOSShellAdapter } from './adapters/CiscoIOSShellAdapter';
+import { HuaweiVRPShellAdapter } from './adapters/HuaweiVRPShellAdapter';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
+import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 
 let installed = false;
 
@@ -44,6 +48,21 @@ export function installDefaultShells(): void {
     });
   });
   ShellFactory.register('sqlplus', (a) => new SqlPlusShell(a));
+  ShellFactory.register('rman', (a) => new RmanShell(a));
+  ShellFactory.register('cisco-ios', (a) => {
+    const vty = (a as { extras?: { vty?: CliShellSession | null } }).extras?.vty ?? null;
+    return new CiscoIOSShellAdapter({
+      device: a.device, user: a.user, context: a.context,
+      parent: a.parent ?? null, vty,
+    });
+  });
+  ShellFactory.register('huawei-vrp', (a) => {
+    const vty = (a as { extras?: { vty?: CliShellSession | null } }).extras?.vty ?? null;
+    return new HuaweiVRPShellAdapter({
+      device: a.device, user: a.user, context: a.context,
+      parent: a.parent ?? null, vty,
+    });
+  });
 }
 
 /** Force re-registration — for tests that need a clean slate. */

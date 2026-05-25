@@ -23,6 +23,11 @@ import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
+import { installDefaultShells } from '@/shell/registerDefaults';
+import { ShellFactory } from '@/shell/ShellFactory';
+import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
+import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
+import { RmanShell } from '@/shell/adapters/RmanShell';
 import {
   RemoteDeviceSubShell,
   CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
@@ -951,13 +956,21 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private enterSqlPlus(args: string[]): void {
     try {
-      const { subShell, banner, loginOutput } = SqlPlusSubShell.create(this.device, args);
-      this.activeSubShell = subShell;
-
-      for (const line of banner) this.addLine(line);
-      for (const line of loginOutput) this.addLine(line);
+      installDefaultShells();
+      const shell = ShellFactory.create('sqlplus', {
+        device: this.device,
+        user: this.currentUser,
+        launchLine: `sqlplus ${args.join(' ')}`.trim(),
+      }) as SqlPlusShell;
+      if (!shell.isReady) {
+        this.addLine('bash: sqlplus: command not found', 'error');
+        this.notify();
+        return;
+      }
+      this.activeSubShell = new ShellSubShellAdapter(shell);
+      for (const line of shell.getActivationBanner()) this.addLine(line);
       this.addLine('');
-
+      shell.activate();
       this._inputBuf = '';
       this.notify();
     } catch (err) {
@@ -968,11 +981,20 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private enterRman(args: string[]): void {
     try {
-      const { subShell, banner } = ReactiveRmanSubShell.create(this.device, args);
-      this.activeSubShell = subShell;
-
-      for (const line of banner) this.addLine(line);
-
+      installDefaultShells();
+      const shell = ShellFactory.create('rman', {
+        device: this.device,
+        user: this.currentUser,
+        launchLine: `rman ${args.join(' ')}`.trim(),
+      }) as RmanShell;
+      if (!shell.isReady) {
+        this.addLine('bash: rman: command not found', 'error');
+        this.notify();
+        return;
+      }
+      this.activeSubShell = new ShellSubShellAdapter(shell);
+      for (const line of shell.getActivationBanner()) this.addLine(line);
+      shell.activate();
       this._inputBuf = '';
       this.notify();
     } catch (err) {
