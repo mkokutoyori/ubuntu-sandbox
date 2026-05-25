@@ -1317,3 +1317,47 @@ describe('§22 — rsyslog stopped: no new auth.log lines for sftp', () => {
 });
 
 
+// ─── Section 23 — Linux → Windows: put with NTFS path translation ────
+
+describe('§23 — Linux → Windows put with NTFS path translation', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'put a Linux file under /C:/Users/User/ lands on win1',
+      setup: async (l) => {
+        await l.pc1.executeCommand('echo from-linux > /tmp/win.txt');
+        await l.pc1.executeCommand(sftp('User@10.0.0.20', ['put /tmp/win.txt /C:/Users/User/win.txt']));
+      },
+      on: l => l.win1,
+      cmd: 'type C:\\Users\\User\\win.txt',
+      contains: [/from-linux/],
+    },
+    {
+      name: 'put-to-Windows transcript shows the Uploading line',
+      setup: async (l) => { await l.pc1.executeCommand('echo tr > /tmp/tr.txt'); },
+      on: l => l.pc1,
+      cmd: sftp('User@10.0.0.20', ['put /tmp/tr.txt /C:/Users/User/tr.txt']),
+      contains: [/Uploading \/tmp\/tr\.txt/],
+    },
+    {
+      name: 'put to an unknown Windows user is refused',
+      on: l => l.pc1,
+      cmd: sftp('ghost@10.0.0.20', ['put /tmp/x /C:/Users/ghost/x']),
+      contains: [/Permission denied|Connected to|sftp:/i],
+    },
+    {
+      name: 'put-to-Windows of a non-existent local file errors',
+      on: l => l.pc1,
+      cmd: sftp('User@10.0.0.20', ['put /tmp/never-here /C:/Users/User/x']),
+      contains: [/open failed|No such/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
