@@ -1361,3 +1361,41 @@ describe('§23 — Linux → Windows put with NTFS path translation', () => {
 });
 
 
+// ─── Section 24 — Linux → Windows: get from a Windows host ───────────
+
+describe('§24 — Linux → Windows get downloads from C:\\', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'get a Windows file into /tmp on the Linux client',
+      setup: async (l) => {
+        await l.win1.executeCommand('echo from-windows > C:\\Users\\User\\src.txt');
+        await l.pc1.executeCommand(sftp('User@10.0.0.20', ['get /C:/Users/User/src.txt /tmp/src.txt']));
+      },
+      on: l => l.pc1,
+      cmd: 'cat /tmp/src.txt',
+      contains: [/from-windows/],
+    },
+    {
+      name: 'get from a non-existent Windows path errors',
+      on: l => l.pc1,
+      cmd: sftp('User@10.0.0.20', ['get /C:/Users/User/ghost.txt /tmp/g']),
+      contains: [/not found|No such|Failure/i],
+    },
+    {
+      name: 'get transcript shows the Fetching line',
+      setup: async (l) => { await l.win1.executeCommand('echo z > C:\\Users\\User\\zz.txt'); },
+      on: l => l.pc1,
+      cmd: sftp('User@10.0.0.20', ['get /C:/Users/User/zz.txt /tmp/zz.txt']),
+      contains: [/Fetching.*zz\.txt/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
