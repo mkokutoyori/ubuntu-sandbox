@@ -1066,3 +1066,47 @@ describe('§17 — sftp refused when sshd is stopped', () => {
 });
 
 
+// ─── Section 18 — sftp refused when remote is powered off ────────────
+
+describe('§18 — sftp refused when remote machine is powered off', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'powering off pc2 → sftp from pc1 fails',
+      setup: (l) => { l.pc2.powerOff(); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/no route|refused|timed out|Could not resolve/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'powering off a server fails for every client',
+      setup: (l) => { l.srv1.powerOff(); },
+      on: l => l.pc3,
+      cmd: sftp('alice@10.0.0.10', ['pwd']),
+      contains: [/no route|refused|timed out/i],
+    },
+    {
+      name: 'powering off then back on restores sftp',
+      setup: (l) => { l.pc2.powerOff(); l.pc2.powerOn(); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'powering off a Windows host blocks Linux→Windows sftp',
+      setup: (l) => { l.win1.powerOff(); },
+      on: l => l.pc1,
+      cmd: sftp('User@10.0.0.20', ['pwd']),
+      contains: [/no route|refused|timed out/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
