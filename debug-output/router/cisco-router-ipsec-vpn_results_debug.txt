@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-05-20T18:26:47.052Z
+Generated: 2026-05-25T11:08:55.660Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1152,6 +1152,11 @@ Total steps: 370
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [264/370] r1 R1(config)# show startup-config
@@ -1389,7 +1394,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *18:26:47.000 UTC Wed May 20 2026
+  *11:08:55.000 UTC Mon May 25 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1586,6 +1591,11 @@ Total steps: 370
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1770,6 +1780,11 @@ Total steps: 370
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [326/370] r1 R1(config)# show running-config | begin line
@@ -1802,6 +1817,10 @@ Total steps: 370
    no shutdown
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   end
 
 [328/370] r1 R1(config)# show ip route | include via
@@ -1936,6 +1955,7 @@ Total steps: 370
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
+    host           Configure a static host entry
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
@@ -1968,6 +1988,7 @@ Total steps: 370
     ipv6         ipv6
     logging      Disable logging
     service      Disable a service
+    username     Remove a local user
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
@@ -2016,6 +2037,13 @@ Total steps: 370
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  line vty 0 4
   !
   !
   end

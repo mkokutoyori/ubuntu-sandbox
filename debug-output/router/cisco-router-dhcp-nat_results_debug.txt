@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-05-20T18:26:48.853Z
+Generated: 2026-05-25T11:08:31.904Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -609,6 +609,11 @@ Total steps: 369
   interface GigabitEthernet0/3
    shutdown
   !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1359,6 +1364,11 @@ Total steps: 369
    shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [263/369] r1 R1# show startup-config
@@ -1657,7 +1667,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *18:26:48.000 UTC Wed May 20 2026
+  *11:08:31.000 UTC Mon May 25 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1886,6 +1896,11 @@ Total steps: 369
    shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2105,6 +2120,11 @@ Total steps: 369
    shutdown
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [325/369] r1 R1(config)# show running-config | begin line
@@ -2178,6 +2198,10 @@ Total steps: 369
    shutdown
   interface GigabitEthernet0/3
    shutdown
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   end
 
 [327/369] r1 R1(config)# show ip route | include via
@@ -2306,6 +2330,7 @@ Total steps: 369
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
+    host           Configure a static host entry
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
@@ -2338,6 +2363,7 @@ Total steps: 369
     ipv6         ipv6
     logging      Disable logging
     service      Disable a service
+    username     Remove a local user
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
@@ -2433,6 +2459,13 @@ Total steps: 369
   !
   interface GigabitEthernet0/3
    shutdown
+  !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  line vty 0 4
   !
   !
   end

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-05-20T18:26:58.594Z
+Generated: 2026-05-25T11:09:16.495Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -716,17 +716,31 @@ Total steps: 257
   #
   sysname R1
   #
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
+  #
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
 
@@ -902,8 +916,8 @@ Total steps: 257
    clock offset: 0.0000 ms
 
 [188/257] r1 [R1] display clock
-  2026-05-20 18:26:58
-  Wednesday
+  2026-05-25 11:09:16
+  Monday
   Time Zone(UTC) : UTC
 
 [189/257] r1 [R1] display lldp neighbor
@@ -919,13 +933,13 @@ Total steps: 257
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-20 18:26:58
+  CPU Usage Stat. Time : 2026-05-25 11:09:16
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-20 18:26:58
+  Memory utilization statistics at 2026-05-25 11:09:16
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -957,7 +971,7 @@ Total steps: 257
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 1
-  2026-05-20 18:26:58 %01SRM/4/PORT_STATE: Port state changed.
+  2026-05-25 11:09:16 %01SRM/4/PORT_STATE: Port state changed.
 
 [197/257] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1070,30 +1084,57 @@ Total steps: 257
 <empty>
 
 [215/257] r1 [R1] display current-configuration | begin interface
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
   #
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
   #
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
   #
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
+  #
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
   #
   #
 
 [216/257] r1 [R1] display current-configuration | exclude #
   sysname R1
-  interface GE0/0/0
+  interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
-  interface GE0/0/1
+  interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
-  interface GE0/0/2
+  interface GigabitEthernet0/0/2
    shutdown
-  interface GE0/0/3
+  interface GigabitEthernet0/0/3
    shutdown
+  aaa
+   local-user alice password cipher alice
+   local-user alice privilege level 15
+   local-user alice service-type ssh
+   local-user bob password cipher bob
+   local-user bob privilege level 15
+   local-user bob service-type ssh
+   local-user carl password cipher carl
+   local-user carl privilege level 15
+   local-user carl service-type ssh
+   local-user dave password cipher dave
+   local-user dave privilege level 15
+   local-user dave service-type ssh
 
 [217/257] r1 [R1] display ip routing-table | include Direct
   192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
@@ -1114,7 +1155,9 @@ Total steps: 257
      ^
 
 [221/257] r1 [R1] undo ip routing-table limit 1000
-  % Ambiguous command: "ip" (matches: ipv6, ipsec)
+  % Invalid input detected at '^' marker.
+  undo ip routing-table limit 1000
+          ^
 
 [222/257] r1 [R1] dhcp enable
 <empty>
@@ -1203,14 +1246,12 @@ Total steps: 257
 <empty>
 
 [248/257] r1 [TEST] user-interface vty 0 4
-  % Invalid input detected at '^' marker.
-  user-interface vty 0 4
-  ^
-
-[249/257] r1 [TEST] quit
 <empty>
 
-[250/257] r1 <TEST> return
+[249/257] r1 [TEST-ui-vty0 4] quit
+<empty>
+
+[250/257] r1 [TEST] return
 <empty>
 
 
@@ -1223,19 +1264,24 @@ Total steps: 257
     <cr>  
 
 [253/257] r1 [TEST] ip ?
+    host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
 
 [254/257] r1 [TEST] undo ?
-    ipv6       Disable IPv6
-    ospf       Remove OSPF protocol configuration
-    ospfv3     Remove OSPFv3 protocol configuration
-    ike        ike
-    ipsec      ipsec
-    debugging  debugging
-    acl        Delete Access Control List
-    <cr>       
+    command-alias  Disable CLI alias
+    ip             ip
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    ipv6           Disable IPv6
+    ospf           Remove OSPF protocol configuration
+    ospfv3         Remove OSPFv3 protocol configuration
+    ike            ike
+    ipsec          ipsec
+    debugging      debugging
+    acl            Delete Access Control List
+    <cr>           
 
 [255/257] r1 [TEST] acl ?
     WORD  Configure Access Control List

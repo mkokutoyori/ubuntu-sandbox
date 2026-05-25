@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-05-20T18:26:34.137Z
+Generated: 2026-05-25T11:08:26.985Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1065,6 +1065,11 @@ Total steps: 311
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [205/311] r1 R1# show startup-config
@@ -1313,7 +1318,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *18:26:34.000 UTC Wed May 20 2026
+  *11:08:27.000 UTC Mon May 25 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1518,6 +1523,11 @@ Total steps: 311
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1706,6 +1716,11 @@ Total steps: 311
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  !
   end
 
 [267/311] r1 R1# show running-config | begin line
@@ -1740,6 +1755,10 @@ Total steps: 311
    ip address 10.10.4.1 255.255.255.0
    no shutdown
   access-list 10 permit 172.16.0.0 0.0.255.255
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
   end
 
 [269/311] r1 R1# show ip route | include via
@@ -1876,6 +1895,7 @@ Total steps: 311
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
+    host           Configure a static host entry
     ssh            SSH server configuration
     dhcp           dhcp
     route          Establish static routes
@@ -1908,6 +1928,7 @@ Total steps: 311
     ipv6         ipv6
     logging      Disable logging
     service      Disable a service
+    username     Remove a local user
     arp          Remove ARP entry
     router       router
     shutdown     Enable (no-op in global config)
@@ -1959,6 +1980,13 @@ Total steps: 311
    no shutdown
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
+  !
+  !
+  username alice privilege 15 secret 5 alice
+  username bob privilege 15 secret 5 bob
+  username carl privilege 15 secret 5 carl
+  username dave privilege 15 secret 5 dave
+  line vty 0 4
   !
   !
   end
