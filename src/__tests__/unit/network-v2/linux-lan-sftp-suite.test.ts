@@ -1270,3 +1270,50 @@ describe('§21 — auth.log records sftp sessions', () => {
 });
 
 
+// ─── Section 22 — rsyslog stopped: no sftp lines emitted ─────────────
+
+describe('§22 — rsyslog stopped: no new auth.log lines for sftp', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'rsyslog stopped → auth.log does not grow on sftp',
+      setup: async (l) => {
+        await l.pc2.executeCommand(': > /var/log/auth.log');
+        await l.pc2.executeCommand('systemctl stop rsyslog');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc2,
+      cmd: 'wc -l /var/log/auth.log',
+      contains: [/^\s*0\s/],
+      excludes: [/Accepted/],
+    },
+    {
+      name: 'rsyslog restarted → next sftp lands in auth.log',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop rsyslog');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
+        await l.pc2.executeCommand('systemctl start rsyslog');
+        await l.pc1.executeCommand(sftp('bob@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Accepted password for bob/],
+      excludes: [/Accepted password for alice/],
+    },
+    {
+      name: 'systemctl is-active rsyslog reflects the stop',
+      setup: async (l) => { await l.pc2.executeCommand('systemctl stop rsyslog'); },
+      on: l => l.pc2,
+      cmd: 'systemctl is-active rsyslog',
+      contains: ['inactive'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
