@@ -721,14 +721,13 @@ describe('§11 — rename / mv move remote files atomically', () => {
       contains: [/^r$/m],
     },
     {
-      name: 'rename to an existing destination overwrites (silent on this VFS)',
+      name: 'rename when destination already exists fails',
       setup: async (l) => {
         await l.pc2.executeCommand('echo a > /tmp/ra && echo b > /tmp/rb');
-        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']));
       },
-      on: l => l.pc2,
-      cmd: 'cat /tmp/rb',
-      contains: [/^a$/m],
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']),
+      contains: [/rename failed|exist|Failure/i],
     },
     {
       name: 'rename with one arg is a parse error',
