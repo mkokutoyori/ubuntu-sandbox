@@ -199,3 +199,54 @@ describe('§1 — SFTP happy path across the LAN', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+
+// ─── Section 2 — pwd / lpwd: remote and local working directory ──────
+
+describe('§2 — pwd / lpwd report the right working directories', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'pwd on a fresh session reports the initial remote cwd',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Remote working directory: \//],
+    },
+    {
+      name: 'lpwd reports the client local cwd',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['lpwd']),
+      contains: [/Local working directory: \//],
+    },
+    {
+      name: 'pwd works through a server target',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.10', ['pwd']),
+      contains: [/Remote working directory: \//],
+    },
+    {
+      name: 'after cd /tmp pwd shows /tmp',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp', 'pwd']),
+      contains: [/Remote working directory: \/tmp/],
+    },
+    {
+      name: 'pwd then lpwd produces both directories in order',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd', 'lpwd']),
+      contains: [/Remote working directory:.*\n.*Local working directory:/s],
+    },
+    {
+      name: 'server→server: pwd surfaces a remote home',
+      on: l => l.srv1,
+      cmd: sftp('alice@10.0.0.11', ['pwd']),
+      contains: [/Remote working directory: \//],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
