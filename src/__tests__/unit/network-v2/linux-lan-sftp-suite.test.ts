@@ -1946,3 +1946,78 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
   });
 });
 
+// ─── Section 34 — mid-session faults: link flap, switch down, MTU ────
+
+describe('§34 — mid-session faults: link flap, switch down, MTU', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'client eth0 down before the session: sftp fails locally',
+      setup: async (l) => { await l.pc1.executeCommand('ip link set eth0 down'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Network is unreachable|No route to host|refused/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'remote eth0 down: sftp times out',
+      setup: async (l) => { await l.pc2.executeCommand('ip link set eth0 down'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/No route to host|Connection timed out|refused|unreachable/i],
+    },
+    {
+      name: 'restoring eth0 with ip link set up restores sftp',
+      setup: async (l) => {
+        await l.pc2.executeCommand('ip link set eth0 down');
+        await l.pc2.executeCommand('ip link set eth0 up');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'core switch powered off severs sftp for every pair',
+      setup: (l) => { l.sw.powerOff(); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/No route to host|refused|timed out|unreachable/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'switch powered back on: sftp restored',
+      setup: (l) => { l.sw.powerOff(); l.sw.powerOn(); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'flushing the client IP makes sftp fail with "Cannot assign requested address"',
+      setup: async (l) => { await l.pc1.executeCommand('ip addr flush dev eth0'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Cannot assign requested address|Network is unreachable/i],
+    },
+    {
+      name: 'default route deleted: off-subnet sftp fails (no gateway)',
+      setup: async (l) => { await l.pc1.executeCommand('ip route del default'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@198.51.100.7', ['pwd']),
+      contains: [/Network is unreachable|No route to host|Could not resolve/i],
+    },
+    {
+      name: 'MTU 296 on eth0 still allows sftp (small but legal MTU)',
+      setup: async (l) => { await l.pc2.executeCommand('ip link set eth0 mtu 296'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
