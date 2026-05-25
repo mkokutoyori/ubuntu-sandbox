@@ -1571,3 +1571,50 @@ describe('§28 — repeated sftp operations are idempotent', () => {
 });
 
 
+// ─── Section 29 — firewall blocking port 22 also blocks sftp ─────────
+
+describe('§29 — firewall rules blocking port 22 also block sftp', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'iptables DROP on dport 22 → sftp fails',
+      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/refused|timed out|no route|unreachable/i],
+      excludes: [/Connected to/],
+    },
+    {
+      name: 'iptables -F restores sftp',
+      setup: async (l) => {
+        await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
+        await l.pc2.executeCommand('iptables -F');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'iptables DROP on a different port leaves sftp working on 22',
+      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 23 -j DROP'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'source-based DROP blocks only one client',
+      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP'); },
+      on: l => l.pc3,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
