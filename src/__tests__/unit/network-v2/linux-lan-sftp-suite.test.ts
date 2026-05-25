@@ -1769,3 +1769,97 @@ describe('§31 — journalctl mirrors auth.log for sftp sessions', () => {
   });
 });
 
+// ─── Section 32 — Match / ChrootDirectory restrict sftp scope ────────
+
+describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'ForceCommand internal-sftp restricts the channel to sftp only',
+      setup: async (l) => {
+        await l.pc2.executeCommand(
+          'printf "Match User bob\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+        );
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh bob@10.0.0.2 "ls /"',
+      contains: [/This service allows sftp connections only|Permission denied/i],
+      excludes: [/^bin$|^etc$/m],
+    },
+    {
+      name: 'ChrootDirectory /var/sftp confines the sftp user to that subtree',
+      setup: async (l) => {
+        await l.pc2.executeCommand('mkdir -p /var/sftp/upload');
+        await l.pc2.executeCommand('chown root:root /var/sftp && chmod 755 /var/sftp');
+        await l.pc2.executeCommand('chown bob:bob /var/sftp/upload');
+        await l.pc2.executeCommand(
+          'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+        );
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('bob@10.0.0.2', ['pwd']),
+      contains: [/Remote working directory: \//],
+      excludes: [/\/var\/sftp/],
+    },
+    {
+      name: 'chrooted user cannot cd ../.. past the chroot root',
+      setup: async (l) => {
+        await l.pc2.executeCommand('mkdir -p /var/sftp/upload');
+        await l.pc2.executeCommand(
+          'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+        );
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('bob@10.0.0.2', ['cd /etc', 'pwd']),
+      contains: [/Not a directory|No such|Permission denied/i],
+    },
+    {
+      name: 'Match Address restricts sftp to a specific source subnet',
+      setup: async (l) => {
+        await l.pc2.executeCommand(
+          'printf "Match Address 10.0.0.1\\n  DenyUsers alice\\n" >> /etc/ssh/sshd_config',
+        );
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Permission denied/],
+    },
+    {
+      name: 'Match Address rule does NOT affect a different source',
+      setup: async (l) => {
+        await l.pc2.executeCommand(
+          'printf "Match Address 10.0.0.1\\n  DenyUsers alice\\n" >> /etc/ssh/sshd_config',
+        );
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc3,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'Match Group sftpusers gates sftp by group membership',
+      setup: async (l) => {
+        await l.pc2.executeCommand('groupadd sftpusers');
+        await l.pc2.executeCommand('usermod -aG sftpusers alice');
+        await l.pc2.executeCommand(
+          'printf "Match Group sftpusers\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+        );
+        await l.pc2.executeCommand('systemctl reload ssh');
+      },
+      on: l => l.pc1,
+      cmd: 'ssh alice@10.0.0.2 "ls /"',
+      contains: [/This service allows sftp connections only|Permission denied/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
