@@ -2196,7 +2196,6 @@ function assertShellRow(out: string, res: SubShellResult, row: ShellRow): void {
 }
 
 // ─── Section 36 — Prompt, help, version, unknown verbs ───────────────
-// ─── Section 36 — Prompt, help, version, unknown verbs ───────────────
 
 describe('§36 — interactive sftp shell: prompt, help, version, unknown verbs', () => {
   let lan: Lan;
@@ -2402,3 +2401,104 @@ describe('§38 — interactive sftp shell: file ops round-trip', () => {
   });
 });
 
+// ─── Section 39 — Exit semantics, usage messages, prompt invariants ──
+
+describe('§39 — exit semantics, usage messages and prompt invariants', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: ShellRow[] = [
+    {
+      name: 'bye exits the shell and clears the prompt',
+      lines: ['bye'],
+      expectExit: true,
+      expectPrompt: '',
+    },
+    {
+      name: 'quit is an alias for bye',
+      lines: ['quit'],
+      expectExit: true,
+      expectPrompt: '',
+    },
+    {
+      name: 'exit is an alias for bye',
+      lines: ['exit'],
+      expectExit: true,
+      expectPrompt: '',
+    },
+    {
+      name: 'Ctrl+D consumed by handleKey (host then injects exit)',
+      lines: [],
+      setup: async (_lan, fx) => {
+        const consumed = fx.shell.handleKey({ key: 'd', ctrlKey: true } as never);
+        expect(consumed).toBe(true);
+      },
+      contains: [],
+    },
+    {
+      name: 'mkdir without an arg prints "usage: mkdir path"',
+      lines: ['mkdir'],
+      contains: ['usage: mkdir path'],
+      expectPrompt: 'sftp> ',
+    },
+    {
+      name: 'rm without an arg prints "usage: rm path"',
+      lines: ['rm'],
+      contains: ['usage: rm path'],
+    },
+    {
+      name: 'rmdir without an arg prints "usage: rmdir path"',
+      lines: ['rmdir'],
+      contains: ['usage: rmdir path'],
+    },
+    {
+      name: 'rename with one arg prints "usage: rename oldpath newpath"',
+      lines: ['rename /tmp/only'],
+      contains: ['usage: rename oldpath newpath'],
+    },
+    {
+      name: 'chmod with only mode (no path) prints "usage: chmod mode path"',
+      lines: ['chmod 600'],
+      contains: ['usage: chmod mode path'],
+    },
+    {
+      name: 'get without args prints "usage: get remote [local]"',
+      lines: ['get'],
+      contains: ['usage: get remote [local]'],
+    },
+    {
+      name: 'put without args prints "usage: put local [remote]"',
+      lines: ['put'],
+      contains: ['usage: put local [remote]'],
+    },
+    {
+      name: 'lmkdir without an arg prints "usage: lmkdir path"',
+      lines: ['lmkdir'],
+      contains: ['usage: lmkdir path'],
+    },
+    {
+      name: 'stat without an arg prints "usage: stat path"',
+      lines: ['stat'],
+      contains: ['usage: stat path'],
+    },
+    {
+      name: 'prompt remains "sftp> " after a non-exit error',
+      lines: ['bogus-cmd'],
+      contains: ['Invalid command.'],
+      expectPrompt: 'sftp> ',
+      expectExit: false,
+    },
+    {
+      name: 'after exit, getPrompt() reports an empty prompt',
+      lines: ['exit'],
+      setup: async (_lan, fx) => { void fx; },
+      expectExit: true,
+      expectPrompt: '',
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    const { res, allOutput } = await driveShell(lan, '10.0.0.2', row);
+    assertShellRow(allOutput, res, row);
+  });
+});
