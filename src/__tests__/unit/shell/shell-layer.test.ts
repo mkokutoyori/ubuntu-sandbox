@@ -101,8 +101,9 @@ class FakeShell extends AbstractShell {
 }
 
 function fakeShell(): FakeShell {
+  const device = { getHostname: () => 'fake', getId: () => 'f' } as unknown as import('@/network').Equipment;
   return new FakeShell({
-    device: { getHostname: () => 'fake', getId: () => 'f' } as unknown as Parameters<typeof AbstractShell>[0]['device'] extends infer D ? D : never,
+    device,
     user: 'alice',
     context: new ShellContext('fake', ShellContext.userCredentials('alice'), '/home/alice'),
   });

@@ -16,15 +16,17 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import type { IShell } from './IShell';
 
+export interface ShellSubShellResult extends SubShellResult {
+  readonly childShell?: IShell;
+}
+
 export class ShellSubShellAdapter implements ISubShell {
   constructor(private readonly shell: IShell) {}
 
-  /** Underlying IShell — exposed for tests and migration callers. */
   get inner(): IShell { return this.shell; }
 
   getPrompt(): string { return this.shell.getPrompt(); }
 
-  /** A Ctrl+D pops the shell; matches the legacy contract for sub-shells. */
   handleKey(e: KeyEvent): boolean {
     const action = this.shell.classifyKey({
       key: e.key,
@@ -36,13 +38,14 @@ export class ShellSubShellAdapter implements ISubShell {
     return action.kind === 'eof';
   }
 
-  async processLine(line: string): Promise<SubShellResult> {
+  async processLine(line: string): Promise<ShellSubShellResult> {
     const r = await this.shell.processLine(line);
     return {
       output: [...r.output],
       exit: !!r.exit,
       prompt: this.shell.getPrompt(),
       clearScreen: r.clearScreen,
+      childShell: r.childShell,
     };
   }
 

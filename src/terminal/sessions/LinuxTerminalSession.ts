@@ -23,6 +23,18 @@ import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
+import { installDefaultShells } from '@/shell/registerDefaults';
+import { ShellFactory } from '@/shell/ShellFactory';
+import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
+import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
+import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
+import { RmanShell } from '@/shell/adapters/RmanShell';
+import {
+  LinuxPromptStrategy as LinuxStrategyRef,
+  CiscoPromptStrategy as CiscoStrategyRef,
+  HuaweiPromptStrategy as HuaweiStrategyRef,
+  WindowsPromptStrategy as WindowsStrategyRef,
+} from '@/terminal/subshells/RemoteDeviceSubShell';
 import {
   RemoteDeviceSubShell,
   CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
@@ -951,13 +963,21 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private enterSqlPlus(args: string[]): void {
     try {
-      const { subShell, banner, loginOutput } = SqlPlusSubShell.create(this.device, args);
-      this.activeSubShell = subShell;
-
-      for (const line of banner) this.addLine(line);
-      for (const line of loginOutput) this.addLine(line);
+      installDefaultShells();
+      const shell = ShellFactory.create('sqlplus', {
+        device: this.device,
+        user: this.currentUser,
+        launchLine: `sqlplus ${args.join(' ')}`.trim(),
+      }) as SqlPlusShell;
+      if (!shell.isReady) {
+        this.addLine('bash: sqlplus: command not found', 'error');
+        this.notify();
+        return;
+      }
+      this.activeSubShell = new ShellSubShellAdapter(shell);
+      for (const line of shell.getActivationBanner()) this.addLine(line);
       this.addLine('');
-
+      shell.activate();
       this._inputBuf = '';
       this.notify();
     } catch (err) {
@@ -968,11 +988,20 @@ export class LinuxTerminalSession extends TerminalSession {
 
   private enterRman(args: string[]): void {
     try {
-      const { subShell, banner } = ReactiveRmanSubShell.create(this.device, args);
-      this.activeSubShell = subShell;
-
-      for (const line of banner) this.addLine(line);
-
+      installDefaultShells();
+      const shell = ShellFactory.create('rman', {
+        device: this.device,
+        user: this.currentUser,
+        launchLine: `rman ${args.join(' ')}`.trim(),
+      }) as RmanShell;
+      if (!shell.isReady) {
+        this.addLine('bash: rman: command not found', 'error');
+        this.notify();
+        return;
+      }
+      this.activeSubShell = new ShellSubShellAdapter(shell);
+      for (const line of shell.getActivationBanner()) this.addLine(line);
+      shell.activate();
       this._inputBuf = '';
       this.notify();
     } catch (err) {
@@ -1091,7 +1120,14 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    this.activeSubShell = new SftpSubShell(session);
+    installDefaultShells();
+    const shell = ShellFactory.create('sftp', {
+      device: this.device,
+      user: this.currentUser,
+      extras: { sftpSession: session },
+    });
+    this.activeSubShell = new ShellSubShellAdapter(shell);
+    shell.activate();
     this._inputBuf = '';
     this.notify();
   }
@@ -2142,7 +2178,17 @@ export class LinuxTerminalSession extends TerminalSession {
     this.shell = null;
     this.currentUser = user;
     this.currentPath = `~`;
-    this.activeSubShell = new RemoteDeviceSubShell(remote, user, label, strategy);
+
+    installDefaultShells();
+    const primaryKind = pickPrimaryKindFromStrategy(strategy);
+    if (primaryKind && ShellFactory.has(primaryKind)) {
+      const xshell = new CrossVendorRemoteShell({
+        device: remote, user, remoteHost: label, primaryKind,
+      });
+      this.activeSubShell = new ShellSubShellAdapter(xshell);
+    } else {
+      this.activeSubShell = new RemoteDeviceSubShell(remote, user, label, strategy);
+    }
     this.notify();
   }
 
@@ -2364,6 +2410,14 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
+function pickPrimaryKindFromStrategy(s: RemotePromptStrategy): string | null {
+  if (s === CiscoStrategyRef) return 'cisco-ios';
+  if (s === HuaweiStrategyRef) return 'huawei-vrp';
+  if (s === WindowsStrategyRef) return 'cmd';
+  if (s === LinuxStrategyRef) return 'bash';
+  return null;
+}
+
 function pickVendorPromptStrategy(eq: Equipment): RemotePromptStrategy | null {
   const name = (eq.constructor as { name: string }).name;
   if (name === 'CiscoRouter' || name === 'CiscoSwitch') return CiscoPromptStrategy;

@@ -11,27 +11,49 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
+import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+
+export interface WindowsCmdShellOptions extends AbstractShellOptions {
+  /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
+  readonly windowsSession?: WindowsShellSession | null;
+}
 
 interface WindowsDevice {
   executeCommand(cmd: string): Promise<string>;
-  getCwd?(): string;
+  executeCommandInSession?(cmd: string, s: WindowsShellSession): Promise<string>;
 }
+
+/** Canonical cmd.exe activation banner — matches the real CLI banner. */
+const CMD_BANNER: readonly string[] = [
+  'Microsoft Windows [Version 10.0.22631.6649]',
+  '(c) Microsoft Corporation. All rights reserved.',
+];
 
 export class WindowsCmdShell extends AbstractShell {
   readonly kind = 'cmd';
 
-  constructor(opts: AbstractShellOptions) {
+  private readonly windowsSession: WindowsShellSession | null;
+
+  constructor(opts: WindowsCmdShellOptions) {
     super(opts);
+    this.windowsSession = opts.windowsSession ?? null;
   }
 
   getPrompt(): string {
-    // Prefer the per-shell context cwd; the device-wide cwd belongs to
-    // the local console operator, not to an SSH-pushed remote user.
-    // Default to `C:\Users\<sshUser>` so each user sees their own home.
-    const cwd = this.context.cwd && this.context.cwd.length > 0
-      ? this.context.cwd
-      : `C:\\Users\\${this.user}`;
+    // Prefer the per-terminal Windows session's cwd when one is bound —
+    // that's what makes `cd D:\foo` in this terminal NOT leak into a
+    // sibling terminal. Falls back to the IShell context cwd (set at
+    // factory time from the SSH user's home), and finally to the
+    // `C:\Users\<user>` default.
+    const cwd = this.windowsSession?.cwd
+      ?? (this.context.cwd && this.context.cwd.length > 0 ? this.context.cwd : null)
+      ?? `C:\\Users\\${this.user}`;
     return `${cwd}>`;
+  }
+
+  override getActivationBanner(): readonly string[] {
+    return CMD_BANNER;
   }
 
   override getDeactivationBanner(): readonly string[] {
@@ -41,19 +63,27 @@ export class WindowsCmdShell extends AbstractShell {
   protected async dispatch(line: string): Promise<ShellLineResult> {
     const lower = line.trim().toLowerCase();
     // cmd.exe's `powershell` / `pwsh` launchers — hand off to the PS
-    // child shell pointed at THIS device (local OR remote).
+    // child shell pointed at THIS device (local OR remote). The current
+    // `windowsSession` travels with the child so cwd stays in sync.
     if (lower === 'powershell' || lower === 'powershell.exe'
         || lower === 'pwsh' || lower === 'pwsh.exe') {
       const child = ShellFactory.tryCreateChild('powershell', {
         device: this.device,
         user: this.user,
         parent: this,
+        cwd: this.windowsSession?.cwd,
+        extras: { windowsSession: this.windowsSession },
       });
       if (child) return { output: [], childShell: child };
     }
 
     const dev = this.device as unknown as WindowsDevice;
-    const raw = await dev.executeCommand(line);
+    // Use the per-session dispatch when a session is bound so `cd` /
+    // `set` mutate THIS terminal's state, not the device-wide globals.
+    const raw = (this.windowsSession && this.device instanceof WindowsPC
+      && dev.executeCommandInSession)
+      ? await dev.executeCommandInSession(line, this.windowsSession)
+      : await dev.executeCommand(line);
     return { output: this.splitOutput(raw) };
   }
 

@@ -27,6 +27,13 @@ export interface ShellSpawnArgs {
   readonly env?: Record<string, string>;
   /** Raw command line that triggered the spawn (e.g. `sqlplus / as sysdba`). */
   readonly launchLine?: string;
+  /**
+   * Vendor-specific escape hatch — opaque payload propagated to the
+   * concrete Shell constructor. Used to pass `WindowsShellSession`,
+   * `LinuxShellSession`, router VTY index, etc., without polluting the
+   * factory contract with platform fields.
+   */
+  readonly extras?: Readonly<Record<string, unknown>>;
 }
 
 export type ShellConstructor = (args: ShellSpawnArgs & { context: ShellContext }) => IShell;
