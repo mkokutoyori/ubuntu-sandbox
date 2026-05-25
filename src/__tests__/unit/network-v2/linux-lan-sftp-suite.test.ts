@@ -751,3 +751,56 @@ describe('§11 — rename / mv move remote files atomically', () => {
 });
 
 
+// ─── Section 12 — chmod changes remote file permissions ──────────────
+
+describe('§12 — chmod changes remote file permissions', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'chmod 600 /tmp/secret sets mode 0600',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo s > /tmp/secret');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 600 /tmp/secret']));
+      },
+      on: l => l.pc2,
+      cmd: 'stat -c "%a" /tmp/secret',
+      contains: [/^600$/m],
+    },
+    {
+      name: 'chmod 755 on a directory updates its mode',
+      setup: async (l) => {
+        await l.pc2.executeCommand('mkdir -p /tmp/dir-perm');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 755 /tmp/dir-perm']));
+      },
+      on: l => l.pc2,
+      cmd: 'stat -c "%a" /tmp/dir-perm',
+      contains: [/^755$/m],
+    },
+    {
+      name: 'chmod with no mode is a parse error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['chmod']),
+      contains: [/chmod: invalid mode/],
+    },
+    {
+      name: 'chmod with non-octal mode is a parse error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['chmod foo /tmp/x']),
+      contains: [/chmod: invalid mode/],
+    },
+    {
+      name: 'chmod on a non-existent path surfaces an error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['chmod 644 /tmp/ghost-file']),
+      contains: [/chmod failed|No such|Failure/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
