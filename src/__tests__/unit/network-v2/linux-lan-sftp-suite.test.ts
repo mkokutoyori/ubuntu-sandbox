@@ -1414,17 +1414,20 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
       contains: [/Connected to 10\.0\.0\.2/, /sftp>/],
     },
     {
-      name: 'sftp -b still produces a Connected banner against a live host',
+      name: 'sftp -b with a missing batchfile fails',
       on: l => l.pc1,
-      cmd: 'sftp -b /tmp/anything.txt alice@10.0.0.2',
-      contains: [/Connected to 10\.0\.0\.2/],
+      cmd: 'sftp -b /tmp/no-such-batch alice@10.0.0.2',
+      contains: [/Couldn't|No such|cannot open|failed/i],
     },
     {
-      name: 'sftp -b against a stopped host still reports the refusal',
-      setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
-      on: l => l.pc1,
-      cmd: 'sftp -b /tmp/b.txt alice@10.0.0.2',
-      contains: [/Connection refused/],
+      name: 'sftp -b runs the verbs from the file (mkdir lands on remote)',
+      setup: async (l) => {
+        await l.pc1.executeCommand('printf "mkdir /tmp/from-batch\\nbye\\n" > /tmp/b2.txt');
+        await l.pc1.executeCommand('sftp -b /tmp/b2.txt alice@10.0.0.2');
+      },
+      on: l => l.pc2,
+      cmd: 'ls -d /tmp/from-batch',
+      contains: ['from-batch'],
     },
   ];
 
