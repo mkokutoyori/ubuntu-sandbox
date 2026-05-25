@@ -1213,3 +1213,60 @@ describe('§20 — sftp -P uses an alternate port', () => {
 });
 
 
+// ─── Section 21 — sftp logs an Accepted line in /var/log/auth.log ────
+
+describe('§21 — auth.log records sftp sessions', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'successful sftp appends Accepted password on the remote',
+      setup: async (l) => { await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Accepted password for alice from 10\.0\.0\.1/],
+    },
+    {
+      name: 'refused sftp (sshd stopped) records Failed password',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop ssh');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
+        await l.pc2.executeCommand('systemctl start ssh');
+      },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Failed password for alice/],
+    },
+    {
+      name: 'auth.log carries the source IP',
+      setup: async (l) => { await l.pc3.executeCommand(sftp('alice@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/from 10\.0\.0\.3/],
+    },
+    {
+      name: 'multiple sftp sessions yield multiple Accepted lines',
+      setup: async (l) => {
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
+        await l.pc1.executeCommand(sftp('bob@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc2,
+      cmd: 'grep -c Accepted /var/log/auth.log',
+      contains: [/^[2-9]\b/],
+    },
+    {
+      name: 'a refused root sftp is logged as "Failed password for root"',
+      setup: async (l) => { await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'cat /var/log/auth.log',
+      contains: [/Failed password for root/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
