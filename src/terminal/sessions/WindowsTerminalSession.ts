@@ -24,6 +24,15 @@ import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelpe
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { CmdSubShell } from '@/terminal/subshells/CmdSubShell';
+import {
+  RemoteDeviceSubShell,
+  LinuxPromptStrategy,
+  CiscoPromptStrategy,
+  HuaweiPromptStrategy,
+  WindowsPromptStrategy,
+  type RemotePromptStrategy,
+} from '@/terminal/subshells/RemoteDeviceSubShell';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -260,6 +269,18 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    // SSH interactive push: when the user types `ssh [user@]host` (no
+    // remote command after the host), spawn an interactive remote
+    // sub-shell against the resolved peer instead of falling through to
+    // the device-level `cmdSsh` (which only prints the banner and the
+    // closed line). Exec mode (`ssh user@host whoami`) falls through.
+    if (lower === 'ssh' || lower.startsWith('ssh ')) {
+      if (await this.tryEnterSshInteractive(trimmed)) {
+        this.notify();
+        return;
+      }
+    }
+
     // Execute on device (root cmd)
     try {
       const result = await this.executeOnDevice(trimmed);
@@ -281,6 +302,163 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     this.notify();
+  }
+
+  // ── SSH interactive intercept ──────────────────────────────────
+
+  /**
+   * Parse `ssh [-flags] [user@]host [command...]`. Returns the parsed
+   * shape when this is an *interactive* invocation (no command after the
+   * host); returns `null` for malformed input or exec mode, letting the
+   * caller fall through to the device-level `cmdSsh` (banner-only) path.
+   *
+   * The flag set mirrors the value-consuming short flags of OpenSSH so
+   * `-p 2222 user@host` and `-l alice host` are routed correctly.
+   */
+  private parseInteractiveSsh(
+    line: string,
+  ): { user: string | null; host: string; port: number } | null {
+    const parts = line.split(/\s+/).filter(p => p.length > 0);
+    if (parts[0] !== 'ssh' || parts.length < 2) return null;
+    const valueFlags = new Set([
+      '-p', '-i', '-l', '-o', '-L', '-R', '-D', '-F', '-J',
+      '-c', '-m', '-b', '-E', '-S', '-W', '-w',
+    ]);
+    let i = 1;
+    let port = 22;
+    let loginUser: string | null = null;
+    while (i < parts.length && parts[i].startsWith('-')) {
+      const flag = parts[i];
+      if (flag === '-p' && parts[i + 1]) {
+        const n = Number.parseInt(parts[i + 1], 10);
+        if (Number.isFinite(n) && n > 0 && n < 65536) port = n;
+        i += 2; continue;
+      }
+      if (flag === '-l' && parts[i + 1]) { loginUser = parts[i + 1]; i += 2; continue; }
+      if (valueFlags.has(flag)) { i += 2; continue; }
+      i++;
+    }
+    const target = parts[i];
+    if (!target) return null;
+    const remoteCmd = parts.slice(i + 1).join(' ').trim();
+    if (remoteCmd) return null; // exec mode — let device cmdSsh handle it.
+
+    const m = /^(?:([\w.\-\\]+)@)?([\w.-]+)$/.exec(target);
+    if (!m) return null;
+    return { user: m[1] ?? loginUser, host: m[2], port };
+  }
+
+  /**
+   * Pick the interactive prompt strategy from the remote device's class
+   * name — the same dispatch the Linux session uses, kept in sync so a
+   * Cisco IOS peer always gets `Router#` regardless of the client side.
+   */
+  private pickRemoteStrategy(eq: { constructor: { name: string } }): RemotePromptStrategy {
+    const n = eq.constructor.name;
+    if (n === 'CiscoRouter' || n === 'CiscoSwitch') return CiscoPromptStrategy;
+    if (n === 'HuaweiRouter' || n === 'HuaweiSwitch') return HuaweiPromptStrategy;
+    if (n === 'WindowsPC') return WindowsPromptStrategy;
+    return LinuxPromptStrategy;
+  }
+
+  /** First configured IPv4 on the local Windows machine, or null. */
+  private firstLocalIp(): string | null {
+    for (const port of this.device.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && port.getIsUp()) return ip.toString();
+    }
+    return null;
+  }
+
+  /**
+   * Validate the target and, on success, push a {@link RemoteDeviceSubShell}
+   * onto the Windows sub-shell stack so the user lands in an interactive
+   * remote prompt (bash, IOS, VRP, cmd) — `exit` / `logout` / `quit` pops
+   * back to the local cmd.exe. Returns `true` when the SSH path was
+   * handled (success *or* a printed failure); `false` only when the
+   * input is not interactive SSH (exec mode falls back to cmdSsh).
+   */
+  private async tryEnterSshInteractive(line: string): Promise<boolean> {
+    const parsed = this.parseInteractiveSsh(line);
+    if (!parsed) return false;
+
+    const { host, port } = parsed;
+    const sourceIp = this.firstLocalIp();
+    if (!sourceIp) {
+      this.addLine(`ssh: connect to host ${host} port ${port}: Network is unreachable`);
+      return true;
+    }
+
+    const dev = this.device as unknown as {
+      getHostname(): string;
+      userMgr?: { currentUser: string };
+    };
+    const localUser = dev.userMgr?.currentUser ?? 'User';
+    const user = parsed.user ?? localUser;
+
+    const found = findHostByAddress(host);
+    if (!found) {
+      this.addLine(`ssh: Could not resolve hostname ${host}: Name or service not known`);
+      return true;
+    }
+    if (found.poweredOff || found.interfaceDown) {
+      this.addLine(`ssh: connect to host ${host} port ${port}: No route to host`);
+      return true;
+    }
+
+    type RemoteSurface = {
+      isSshActive?: () => boolean;
+      sshdAcceptsLogin?: (u: string) => { ok: boolean; reason?: string };
+      recordSshLogin?: (
+        u: string, fromIp: string, fromHost: string, accepted: boolean,
+      ) => void;
+      sshBanner?: () => string;
+      getSshHost?: () => { acceptsLogin?: (u: string) => { ok: boolean; reason?: string } };
+    };
+    const remote = found.device as unknown as RemoteSurface;
+    const sshActive = typeof remote.isSshActive === 'function'
+      ? remote.isSshActive()
+      // Cross-vendor hosts expose service state through getSshHost().
+      : (remote.getSshHost?.() as unknown as { isSshActive?: () => boolean })?.isSshActive?.() ?? false;
+    if (!sshActive) {
+      remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), false);
+      this.addLine(`ssh: connect to host ${host} port ${port}: Connection refused`);
+      return true;
+    }
+
+    const gate = remote.sshdAcceptsLogin?.(user)
+      ?? remote.getSshHost?.().acceptsLogin?.(user)
+      ?? { ok: true };
+    if (!gate.ok) {
+      remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), false);
+      this.addLine(`${user}@${host}: Permission denied (publickey,password).`);
+      return true;
+    }
+
+    remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), true);
+
+    // Banner: each remote vendor decides what to print on connect.
+    const banner = remote.sshBanner?.() ?? '';
+    for (const bannerLine of banner.replace(/\n+$/, '').split('\n')) {
+      if (bannerLine.length > 0) this.addLine(bannerLine);
+    }
+
+    // Push the interactive sub-shell. The strategy makes the prompt and
+    // the exit-words match the vendor, so `quit` on Huawei and `exit` on
+    // Linux/Cisco/Windows both pop the stack cleanly.
+    const strategy = this.pickRemoteStrategy(found.device);
+    const onExit = (): void => {
+      // The "Connection to <host> closed." line is emitted by the
+      // RemoteDeviceSubShell on exit; nothing else to clean up here for
+      // the simulator's in-process SSH transport.
+    };
+    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
+    this.activeSubShell = new RemoteDeviceSubShell(
+      found.device, user, host, strategy, onExit,
+    );
+    this.subShellHistory = [];
+    this.subShellHistoryIndex = -1;
+    return true;
   }
 
   // ── Sub-shell management ───────────────────────────────────────
