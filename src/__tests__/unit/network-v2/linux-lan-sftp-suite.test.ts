@@ -571,3 +571,64 @@ describe('§8 — rm / delete remove remote files', () => {
 });
 
 
+// ─── Section 9 — put uploads local→remote ────────────────────────────
+
+describe('§9 — put uploads files from the client to the server', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'put /tmp/x /tmp/x: server-side cat reads the same bytes',
+      setup: async (l) => {
+        await l.pc1.executeCommand('echo uploaded > /tmp/x');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['put /tmp/x /tmp/x']));
+      },
+      on: l => l.pc2,
+      cmd: 'cat /tmp/x',
+      contains: [/^uploaded$/m],
+    },
+    {
+      name: 'put surfaces "Uploading" line in the transcript',
+      setup: async (l) => { await l.pc1.executeCommand('echo y > /tmp/y'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put /tmp/y /tmp/y']),
+      contains: [/Uploading \/tmp\/y to \/tmp\/y/],
+    },
+    {
+      name: 'put with missing source reports an error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put /tmp/never /tmp/never']),
+      contains: [/open failed|No such|Failure/i],
+    },
+    {
+      name: 'put with only one arg uses the local name as remote name',
+      setup: async (l) => { await l.pc1.executeCommand('echo same > /tmp/same'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put /tmp/same']),
+      contains: [/Uploading \/tmp\/same to \/tmp\/same/],
+    },
+    {
+      name: 'put with no args at all is a parse error',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put']),
+      contains: [/put: missing source/],
+    },
+    {
+      name: 'Server→Server put replicates a config file',
+      setup: async (l) => {
+        await l.srv1.executeCommand('echo k=v > /tmp/cfg');
+        await l.srv1.executeCommand(sftp('alice@10.0.0.11', ['put /tmp/cfg /tmp/cfg']));
+      },
+      on: l => l.srv2,
+      cmd: 'cat /tmp/cfg',
+      contains: [/^k=v$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
