@@ -1436,3 +1436,36 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
 });
 
 
+// ─── Section 26 — sftp client is unavailable on Windows ──────────────
+
+describe('§26 — Windows has no native sftp client', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'bare `sftp` on win1 is not recognized',
+      on: l => l.win1,
+      cmd: 'sftp',
+      contains: [/not recognized|n'est pas reconnu|command not found/i],
+    },
+    {
+      name: 'sftp alice@host on win1 is not recognized',
+      on: l => l.win1,
+      cmd: 'sftp alice@10.0.0.2',
+      contains: [/not recognized|n'est pas reconnu|command not found/i],
+    },
+    {
+      name: 'win2 also lacks sftp by default',
+      on: l => l.win2,
+      cmd: 'sftp -P 22 User@10.0.0.20',
+      contains: [/not recognized|n'est pas reconnu|command not found/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
