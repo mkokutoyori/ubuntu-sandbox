@@ -306,3 +306,62 @@ describe('§3 — ls lists remote directory contents', () => {
     assertRow(await runRow(lan, row), row);
   });
 });
+// ─── Section 4 — cd: absolute, relative, parent ──────────────────────
+
+describe('§4 — cd navigates the remote tree', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'cd /tmp (absolute) moves the remote cwd',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp', 'pwd']),
+      contains: [/Remote working directory: \/tmp/],
+    },
+    {
+      name: 'cd <relative> resolves against the current cwd',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/inner'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp', 'cd inner', 'pwd']),
+      contains: [/Remote working directory: \/tmp\/inner/],
+    },
+    {
+      name: 'cd .. ascends to the parent',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp', 'cd ..', 'pwd']),
+      contains: [/Remote working directory: \//],
+    },
+    {
+      name: 'cd / returns to the root',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /var/log', 'cd /', 'pwd']),
+      contains: [/Remote working directory: \/$/m],
+    },
+    {
+      name: 'cd <missing> surfaces "Not a directory"',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /does/not/exist']),
+      contains: [/Not a directory|No such/i],
+    },
+    {
+      name: 'cd onto a regular file reports "Not a directory"',
+      setup: async (l) => { await l.pc2.executeCommand('echo z > /tmp/file.txt'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp/file.txt']),
+      contains: [/Not a directory/i],
+    },
+    {
+      name: 'cd without argument goes to the remote root (default "/")',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp', 'cd', 'pwd']),
+      contains: [/Remote working directory: \/$/m],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
