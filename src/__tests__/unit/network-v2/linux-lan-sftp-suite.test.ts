@@ -421,3 +421,51 @@ describe('§5 — lcd / lls / lpwd inspect the local side', () => {
 });
 
 
+// ─── Section 6 — mkdir creates remote directories ────────────────────
+
+describe('§6 — mkdir creates remote directories', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'mkdir /tmp/newdir is visible on the server filesystem',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['mkdir /tmp/newdir', 'cd /tmp/newdir', 'pwd']),
+      contains: [/Remote working directory: \/tmp\/newdir/],
+    },
+    {
+      name: 'mkdir creates intermediate parents (mkdirp semantics)',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['mkdir /tmp/deep/nest/leaf', 'cd /tmp/deep/nest/leaf', 'pwd']),
+      contains: [/Remote working directory: \/tmp\/deep\/nest\/leaf/],
+    },
+    {
+      name: 'mkdir of an existing directory is idempotent (no error surfaced)',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/exists'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['mkdir /tmp/exists', 'cd /tmp/exists', 'pwd']),
+      contains: [/Remote working directory: \/tmp\/exists/],
+      excludes: [/mkdir failed/],
+    },
+    {
+      name: 'mkdir relative to cwd creates underneath it',
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/base'); },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['cd /tmp/base', 'mkdir leaf', 'cd leaf', 'pwd']),
+      contains: [/Remote working directory: \/tmp\/base\/leaf/],
+    },
+    {
+      name: 'mkdir into a server filesystem persists across the connection',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.10', ['mkdir /var/tmp/shared', 'cd /var/tmp/shared', 'pwd']),
+      contains: [/Remote working directory: \/var\/tmp\/shared/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
