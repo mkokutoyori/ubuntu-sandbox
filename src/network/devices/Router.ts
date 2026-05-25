@@ -247,6 +247,10 @@ export abstract class Router extends Equipment {
     });
     this.createPorts();
     this._setupPortMonitoring();
+    // Eagerly materialise the credential store so the standard cast
+    // (alice/alice, bob/bob, …) is visible to `show running-config` /
+    // `display current-configuration` without a prior `username` command.
+    this.getCredentialStore();
   }
 
   private createPorts(): void {
@@ -1440,6 +1444,11 @@ export abstract class Router extends Equipment {
         active: this.sshServerEnabled,
         banner: this.sshBannerText,
       });
+      // Provision the standard cast (alice/alice, bob/bob, …) so
+      // cross-equipment SSH tests don't need per-pairing setup.
+      for (const u of ['alice', 'bob', 'carl', 'dave']) {
+        this._addLocalUser(u, 15, u);
+      }
     }
     return this._credentialStore;
   }

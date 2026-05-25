@@ -63,7 +63,7 @@ describe('adduser interactive flow — root terminal', () => {
     await typePassword(session, 'admin');
 
     // The terminal is now root. `adduser` must drive the interactive flow.
-    await typeCommand(session, 'adduser bob');
+    await typeCommand(session, 'adduser eve');
     expect(session.currentInputMode.type).toBe('password');
   });
 
@@ -73,7 +73,7 @@ describe('adduser interactive flow — root terminal', () => {
 
     await typeCommand(session, 'su');
     await typePassword(session, 'admin');
-    await typeCommand(session, 'adduser bob');
+    await typeCommand(session, 'adduser eve');
 
     // New password → retype → then the GECOS finger prompts.
     expect(session.currentInputMode.type).toBe('password');
@@ -96,7 +96,7 @@ describe('adduser interactive flow — root terminal', () => {
 
     // Default user is the unprivileged `user` — no flow, `adduser` is
     // rejected by the executor (root-only command).
-    await typeCommand(session, 'adduser bob');
+    await typeCommand(session, 'adduser eve');
     expect(session.currentInputMode.type).toBe('normal');
   });
 });

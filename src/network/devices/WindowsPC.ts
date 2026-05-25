@@ -422,8 +422,13 @@ export class WindowsPC extends EndHost {
    * `dir`, `reg add`, …) goes through async cmd.exe.
    */
   runSshCommandSync(user: string, command: string): { output: string; exitCode: number } | null {
-    const cmd = command.trim();
+    let cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
+    // Outbound clients (Cisco / Huawei) preserve the surrounding quotes
+    // when they hand the command string to the cross-platform bridge.
+    if ((cmd.startsWith('"') && cmd.endsWith('"')) || (cmd.startsWith("'") && cmd.endsWith("'"))) {
+      cmd = cmd.slice(1, -1).trim();
+    }
 
     // `hostname` → the configured machine name.
     if (/^hostname\s*$/i.test(cmd)) {

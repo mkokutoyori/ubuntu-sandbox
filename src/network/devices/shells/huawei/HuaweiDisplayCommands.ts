@@ -454,6 +454,22 @@ export function displayCurrentConfig(
     if (vty.length > 0) lines.push(...vty);
   }
 
+  const listUsers = (router as unknown as {
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string }>;
+  })._listLocalUsers;
+  if (listUsers) {
+    const users = listUsers.call(router);
+    if (users.length > 0) {
+      lines.push('aaa');
+      for (const u of users) {
+        lines.push(` local-user ${u.name} password cipher ${u.secret}`);
+        lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
+        lines.push(` local-user ${u.name} service-type ssh`);
+      }
+      lines.push('#');
+    }
+  }
+
   lines.push('#');
   return lines.join('\n');
 }

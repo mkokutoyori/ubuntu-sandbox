@@ -60,8 +60,11 @@ export class CiscoRouter extends Router {
     _user: string,
     command: string,
   ): { output: string; exitCode: number } | null {
-    const trimmed = command.trim();
+    let trimmed = command.trim();
     if (!trimmed) return { output: '', exitCode: 0 };
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      trimmed = trimmed.slice(1, -1).trim();
+    }
 
     // Expand `alias exec <head>` shortcuts before any pattern match so
     // `ssh ... "si"` invokes `show ip interface brief` via the dispatcher.
