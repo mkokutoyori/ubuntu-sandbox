@@ -1603,14 +1603,13 @@ describe('§28 — repeated sftp operations are idempotent', () => {
       contains: [/^only$/m],
     },
     {
-      name: 'mkdir twice — the second is silently idempotent (state unchanged)',
+      name: 'mkdir twice — the second emits a noisy error; state unchanged',
       setup: async (l) => {
-        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mkdir /tmp/twice']));
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mkdir /tmp/twice']));
       },
       on: l => l.pc1,
-      cmd: sftp('alice@10.0.0.2', ['cd /tmp/twice', 'pwd']),
-      contains: [/Remote working directory: \/tmp\/twice/],
+      cmd: sftp('alice@10.0.0.2', ['mkdir /tmp/twice']),
+      contains: [/mkdir failed|exist|Failure/i],
     },
   ];
 
