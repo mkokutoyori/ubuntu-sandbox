@@ -804,3 +804,51 @@ describe('§12 — chmod changes remote file permissions', () => {
 });
 
 
+// ─── Section 13 — bye / quit / exit terminate the session ────────────
+
+describe('§13 — bye / quit / exit terminate the session', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'bye is the canonical exit verb',
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      contains: [/Connected to 10\.0\.0\.2/, /sftp>/],
+    },
+    {
+      name: 'quit is an alias for bye',
+      on: l => l.pc1,
+      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nquit\nEOF`,
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'exit is an alias for bye',
+      on: l => l.pc1,
+      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nexit\nEOF`,
+      contains: [/Connected to 10\.0\.0\.2/],
+    },
+    {
+      name: 'commands after bye are not executed',
+      on: l => l.pc1,
+      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/should-not-be-created\nEOF`,
+      excludes: [/mkdir failed/, /should-not-be-created/],
+    },
+    {
+      name: 'after a bye script the remote dir was NOT touched',
+      setup: async (l) => {
+        await l.pc1.executeCommand(`sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/ghost-after-bye\nEOF`);
+      },
+      on: l => l.pc2,
+      cmd: 'ls /tmp',
+      excludes: ['ghost-after-bye'],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
+
