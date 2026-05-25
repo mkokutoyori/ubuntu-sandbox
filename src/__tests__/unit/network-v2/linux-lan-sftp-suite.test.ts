@@ -1863,3 +1863,86 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
   });
 });
 
+// ─── Section 33 — POSIX permissions and ACLs gate sftp put/get ───────
+
+describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'put into a directory the user cannot write fails',
+      setup: async (l) => {
+        await l.pc2.executeCommand('mkdir -p /var/locked && chown root:root /var/locked && chmod 700 /var/locked');
+        await l.pc1.executeCommand('echo hi > /tmp/h');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put /tmp/h /var/locked/h']),
+      contains: [/Permission denied|write failed|Failure/i],
+    },
+    {
+      name: 'get of a file the user cannot read fails',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo secret > /tmp/hidden && chown root:root /tmp/hidden && chmod 600 /tmp/hidden');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['get /tmp/hidden /tmp/hidden']),
+      contains: [/Permission denied|not found|Failure/i],
+    },
+    {
+      name: 'rm of a file owned by another user without write perm fails',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo nope > /tmp/keepme && chown root:root /tmp/keepme && chmod 644 /tmp/keepme');
+        await l.pc2.executeCommand('chmod 755 /tmp');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm /tmp/keepme']),
+      contains: [/Permission denied|unlink failed|Failure/i],
+    },
+    {
+      name: 'chmod by a non-owner fails',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo o > /tmp/owned && chown root:root /tmp/owned && chmod 600 /tmp/owned');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['chmod 777 /tmp/owned']),
+      contains: [/Operation not permitted|chmod failed|Failure/i],
+    },
+    {
+      name: 'setfacl deny on a directory blocks put even when world-writable',
+      setup: async (l) => {
+        await l.pc2.executeCommand('mkdir -p /var/acl && chmod 777 /var/acl');
+        await l.pc2.executeCommand('setfacl -m u:alice:--- /var/acl');
+        await l.pc1.executeCommand('echo a > /tmp/a');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['put /tmp/a /var/acl/a']),
+      contains: [/Permission denied|write failed|Failure/i],
+    },
+    {
+      name: 'umask applied by sftp-server matches OpenSSH default 0022',
+      setup: async (l) => {
+        await l.pc1.executeCommand('echo u > /tmp/u');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['put /tmp/u /tmp/u']));
+      },
+      on: l => l.pc2,
+      cmd: 'stat -c "%a" /tmp/u',
+      contains: [/^(644|664)$/m],
+    },
+    {
+      name: 'sticky bit on /tmp prevents alice from deleting bob\'s file',
+      setup: async (l) => {
+        await l.pc2.executeCommand('echo b > /tmp/bobs && chown bob:bob /tmp/bobs && chmod 644 /tmp/bobs');
+        await l.pc2.executeCommand('chmod 1777 /tmp');
+      },
+      on: l => l.pc1,
+      cmd: sftp('alice@10.0.0.2', ['rm /tmp/bobs']),
+      contains: [/Operation not permitted|Permission denied|unlink failed|Failure/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
