@@ -1618,3 +1618,41 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
 });
 
 
+// ─── Section 30 — full cross-pair reachability matrix over sftp ──────
+
+describe('§30 — full SFTP reachability matrix', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  interface MatrixRow { name: string; client: keyof Lan; cmd: string; contains: (string | RegExp)[]; }
+
+  const targets: { ip: string; user: string }[] = [
+    { ip: '10.0.0.1', user: 'alice' },
+    { ip: '10.0.0.2', user: 'alice' },
+    { ip: '10.0.0.3', user: 'alice' },
+    { ip: '10.0.0.10', user: 'alice' },
+    { ip: '10.0.0.11', user: 'alice' },
+    { ip: '10.0.0.20', user: 'User' },
+    { ip: '10.0.0.21', user: 'User' },
+  ];
+  const clients: (keyof Lan)[] = ['pc1', 'pc2', 'pc3', 'srv1', 'srv2'];
+
+  const matrix: MatrixRow[] = clients.flatMap((c) =>
+    targets.map((t) => ({
+      name: `${String(c)} → ${t.ip}: sftp ${t.user}@${t.ip} pwd`,
+      client: c,
+      cmd: sftp(`${t.user}@${t.ip}`, ['pwd']),
+      contains: [new RegExp(`Connected to ${t.ip.replace(/\./g, '\\.')}`)],
+    })),
+  );
+
+  test.each(matrix)('$name', async (m) => {
+    const dev = lan[m.client] as { executeCommand: (c: string) => Promise<string> };
+    const out = await dev.executeCommand(m.cmd);
+    for (const c of m.contains) {
+      if (c instanceof RegExp) expect(out).toMatch(c);
+      else expect(out).toContain(c);
+    }
+  });
+});
+
