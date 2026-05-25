@@ -37,6 +37,7 @@ import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
+import { SshKnownHostsFile } from '@/network/protocols/ssh/SshKnownHostsFile';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -349,7 +350,7 @@ export class WindowsTerminalSession extends TerminalSession {
    */
   private parseInteractiveSsh(
     line: string,
-  ): { user: string | null; host: string; port: number } | null {
+  ): { user: string | null; host: string; port: number; quiet: boolean } | null {
     const parts = line.split(/\s+/).filter(p => p.length > 0);
     if (parts[0] !== 'ssh' || parts.length < 2) return null;
     const valueFlags = new Set([
@@ -359,8 +360,10 @@ export class WindowsTerminalSession extends TerminalSession {
     let i = 1;
     let port = 22;
     let loginUser: string | null = null;
+    let quiet = false;
     while (i < parts.length && parts[i].startsWith('-')) {
       const flag = parts[i];
+      if (flag === '-q') { quiet = true; i++; continue; }
       if (flag === '-p' && parts[i + 1]) {
         const n = Number.parseInt(parts[i + 1], 10);
         if (Number.isFinite(n) && n > 0 && n < 65536) port = n;
@@ -373,11 +376,11 @@ export class WindowsTerminalSession extends TerminalSession {
     const target = parts[i];
     if (!target) return null;
     const remoteCmd = parts.slice(i + 1).join(' ').trim();
-    if (remoteCmd) return null; // exec mode — let device cmdSsh handle it.
+    if (remoteCmd) return null;
 
     const m = /^(?:([\w.\-\\]+)@)?([\w.-]+)$/.exec(target);
     if (!m) return null;
-    return { user: m[1] ?? loginUser, host: m[2], port };
+    return { user: m[1] ?? loginUser, host: m[2], port, quiet };
   }
 
   /**
@@ -476,6 +479,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: found.device,
       sourceIp,
       sourceHostname: dev.getHostname(),
+      quiet: parsed.quiet,
     };
     this.inputMode = { type: 'password', promptText: `${user}@${host}'s password: ` };
     this.addLine(`${user}@${host}'s password:`, 'prompt');
@@ -490,6 +494,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private pendingSshPush: {
     user: string; host: string; port: number;
     device: Equipment; sourceIp: string; sourceHostname: string;
+    quiet: boolean;
   } | null = null;
 
   /**
@@ -531,14 +536,21 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    // Authenticated — banner, then push the cross-vendor shell.
     remote.recordSshLogin?.(
       pending.user, pending.sourceIp, pending.sourceHostname, true,
     );
-    const banner = remote.sshBanner?.() ?? '';
-    for (const line of banner.replace(/\n+$/, '').split('\n')) {
-      if (line.length > 0) this.addLine(line);
+    if (!pending.quiet) {
+      const banner = remote.sshBanner?.() ?? '';
+      for (const line of banner.replace(/\n+$/, '').split('\n')) {
+        if (line.length > 0) this.addLine(line);
+      }
+      const remoteMotd = (pending.device as unknown as { getSshMotd?: () => string });
+      const motd = remoteMotd.getSshMotd?.() ?? '';
+      for (const line of motd.replace(/\n+$/, '').split('\n')) {
+        if (line.length > 0) this.addLine(line);
+      }
     }
+    this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
 
     installDefaultShells();
     const primaryKind = this.pickPrimaryShellKind(pending.device);
@@ -623,6 +635,33 @@ export class WindowsTerminalSession extends TerminalSession {
    * Pick the kind of primary shell for the remote's vendor — the shell
    * the user would land in if they were seated at the remote's console.
    */
+  private writeKnownHostsEntry(remote: Equipment, host: string, user: string): void {
+    const localDev = this.device as unknown as {
+      fs?: {
+        readFile: (p: string) => { ok: boolean; content?: string };
+        createFile: (p: string, c: string) => { ok: boolean; error?: string };
+        exists: (p: string) => boolean;
+        mkdirp: (p: string) => void;
+      };
+    };
+    if (!localDev.fs) return;
+    const remoteAny = remote as unknown as {
+      getSshHostKey?: () => { type: string; publicKey: string };
+    };
+    const hk = remoteAny.getSshHostKey?.();
+    if (!hk) return;
+    const path = `C:\\Users\\${user}\\.ssh\\known_hosts`;
+    const dir = path.substring(0, path.lastIndexOf('\\'));
+    if (!localDev.fs.exists(dir)) localDev.fs.mkdirp(dir);
+    const existing = localDev.fs.readFile(path);
+    const body = existing.ok ? (existing.content ?? '') : '';
+    const file = SshKnownHostsFile.parse(body);
+    if (!file.find(host)) {
+      const updated = file.add({ hostnames: [host], keyType: hk.type, publicKey: hk.publicKey });
+      localDev.fs.createFile(path, updated.serialize());
+    }
+  }
+
   private pickPrimaryShellKind(eq: Equipment): string {
     const name = (eq.constructor as { name: string }).name;
     if (name === 'WindowsPC') return 'cmd';
