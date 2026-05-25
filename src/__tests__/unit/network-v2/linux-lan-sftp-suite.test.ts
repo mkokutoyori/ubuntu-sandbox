@@ -2255,3 +2255,72 @@ describe('§36 — interactive sftp shell: prompt, help, version, unknown verbs'
   });
 });
 
+// ─── Section 37 — Interactive navigation (cd, lcd, pwd, lpwd, ls) ────
+
+describe('§37 — interactive navigation through the sftp shell', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: ShellRow[] = [
+    {
+      name: 'pwd after connect reports the remote home',
+      lines: ['pwd'],
+      contains: [/Remote working directory:/],
+    },
+    {
+      name: 'lpwd reports the local cwd /root injected on construction',
+      lines: ['lpwd'],
+      contains: [/Local working directory: \/root/],
+    },
+    {
+      name: 'cd /tmp then pwd shows /tmp',
+      lines: ['cd /tmp', 'pwd'],
+      contains: [/Remote working directory: \/tmp/],
+    },
+    {
+      name: 'cd to a missing dir reports "No such" / "Not a directory"',
+      lines: ['cd /no/such/dir'],
+      contains: [/No such file|Not a directory/i],
+    },
+    {
+      name: 'lcd /tmp updates the local side without affecting remote',
+      lines: ['lcd /tmp', 'lpwd', 'pwd'],
+      contains: [/Local working directory: \/tmp/, /Remote working directory:/],
+    },
+    {
+      name: 'ls of the remote root contains classic linux dirs',
+      lines: ['ls /'],
+      contains: [/etc|home|tmp|var/],
+    },
+    {
+      name: 'ls -l includes a permission-string column',
+      setup: async (lan, _fx) => {
+        const { uid, gid } = uidOf(lan.pc2, 'alice');
+        vfsOf(lan.pc2).writeFile('/tmp/ll-sample', 'data', uid, gid, 0o022);
+      },
+      lines: ['ls -l /tmp'],
+      contains: [/-rw|drwx/],
+    },
+    {
+      name: 'ls -a includes dot entries',
+      setup: async (lan, fx) => {
+        const remoteVfs = (lan.pc2 as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
+        remoteVfs.writeFile('/tmp/.hidden', 'h', 0, 0, 0o022);
+        void fx;
+      },
+      lines: ['ls -a /tmp'],
+      contains: ['.hidden'],
+    },
+    {
+      name: 'multiple cd in a row compose like a real shell',
+      lines: ['cd /var', 'cd log', 'pwd'],
+      contains: [/Remote working directory: \/var\/log/],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    const { res, allOutput } = await driveShell(lan, '10.0.0.2', row);
+    assertShellRow(allOutput, res, row);
+  });
+});
+
