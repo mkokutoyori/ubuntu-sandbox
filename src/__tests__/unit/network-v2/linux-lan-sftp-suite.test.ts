@@ -1708,3 +1708,64 @@ describe('§30 — full SFTP reachability matrix', () => {
   });
 });
 
+
+
+// ─── Section 31 — journalctl mirrors auth.log for sftp sessions ──────
+
+describe('§31 — journalctl mirrors auth.log for sftp sessions', () => {
+  let lan: Lan;
+  beforeEach(async () => { lan = await buildLan(); });
+
+  const rows: Row[] = [
+    {
+      name: 'journalctl -u ssh shows Accepted password after a successful sftp',
+      setup: async (l) => { await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh',
+      contains: [/Accepted password for alice/],
+    },
+    {
+      name: 'journalctl -u ssh shows Failed password after a refused sftp',
+      setup: async (l) => { await l.pc1.executeCommand(sftp('root@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh',
+      contains: [/Failed password for root/],
+    },
+    {
+      name: 'journalctl -u ssh records the source IP per OpenSSH format',
+      setup: async (l) => { await l.pc3.executeCommand(sftp('alice@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh',
+      contains: [/from 10\.0\.0\.3/],
+    },
+    {
+      name: 'journalctl -u ssh logs the sftp subsystem invocation',
+      setup: async (l) => { await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh',
+      contains: [/subsystem request for sftp|sftp-server/i],
+    },
+    {
+      name: 'journalctl --since "1 hour ago" still surfaces the sftp event',
+      setup: async (l) => { await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd'])); },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh --since "1 hour ago"',
+      contains: [/Accepted password for alice/],
+    },
+    {
+      name: 'journald stopped → journalctl reports no entries',
+      setup: async (l) => {
+        await l.pc2.executeCommand('systemctl stop systemd-journald');
+        await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
+      },
+      on: l => l.pc2,
+      cmd: 'journalctl -u ssh',
+      contains: [/No journal files were found|service is not active|No entries/i],
+    },
+  ];
+
+  test.each(rows)('$name', async (row) => {
+    assertRow(await runRow(lan, row), row);
+  });
+});
+
