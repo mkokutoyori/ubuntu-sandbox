@@ -2100,6 +2100,8 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private exitSubShell(): void {
+    const wasSshAdapter = this.activeSubShell instanceof ShellSubShellAdapter
+      && this.activeSubShell.inner.kind === 'ssh-remote';
     if (this.activeSubShell) {
       this.activeSubShell.dispose();
       this.activeSubShell = null;
@@ -2109,6 +2111,10 @@ export class LinuxTerminalSession extends TerminalSession {
     this.subShellHistoryIndex = -1;
     this.subShellSavedInput = '';
     this.inputMode = { type: 'normal' };
+    if (wasSshAdapter && this.sshStack.length > 0) {
+      this.popRemoteDevice();
+      return;
+    }
     this.notify();
   }
 

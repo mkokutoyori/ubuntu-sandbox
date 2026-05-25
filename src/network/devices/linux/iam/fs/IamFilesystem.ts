@@ -174,6 +174,11 @@ export class IamFilesystem {
       this.vfs.writeFile(live, rendered[live], 0, 0, 0o022);
     }
 
+    this.vfs.chmod(IAM_PATHS.shadow, 0o640);
+    this.vfs.chmod(IAM_PATHS.gshadow, 0o640);
+    this.vfs.chmod(IAM_PATHS.shadowBackup, 0o600);
+    this.vfs.chmod(IAM_PATHS.gshadowBackup, 0o600);
+
     this.writeSubordinateIds(users);
   }
 

@@ -45,6 +45,10 @@ function normalizeResult(result: ExternalCommandResult | string): ExternalComman
   return result;
 }
 
+function ensureTrailingNewline(s: string): string {
+  return s.length === 0 || s.endsWith('\n') ? s : s + '\n';
+}
+
 /** IO context for file redirections. */
 export interface IOContext {
   writeFile(path: string, content: string, append: boolean): void;
@@ -278,12 +282,11 @@ export class BashInterpreter {
       if (result.output) this.output.push(result.output);
       this.env.lastExitCode = result.exitCode;
     } else {
-      // External command
       try {
         const fullArgs = pipeInput ? [...args, pipeInput] : args;
         const envSnapshot = Object.fromEntries(this.env.getAll());
         const result = normalizeResult(this.executeCommand(fullArgs, envSnapshot));
-        if (result.output) this.output.push(result.output);
+        if (result.output) this.output.push(ensureTrailingNewline(result.output));
         this.env.lastExitCode = result.exitCode;
       } catch {
         this.env.lastExitCode = 127;
