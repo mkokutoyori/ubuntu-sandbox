@@ -341,6 +341,15 @@ export class SQLPlusSession {
       return this.handleOradebug(trimmed);
     }
 
+    // SECDEMO — simulator-specific entry point that drives the
+    // FraudScenarioSimulator. `SECDEMO RUN` runs every canonical
+    // scenario; `SECDEMO SCAN SOD` and `SECDEMO SCAN DORMANT` run only
+    // the corresponding analyzer. Output is plain text so it
+    // composes with SPOOL etc.
+    if (upper === 'SECDEMO' || upper === 'SECDEMO;' || upper.startsWith('SECDEMO ')) {
+      return this.handleSecDemo(trimmed);
+    }
+
     // ARCHIVE LOG LIST — SQL*Plus status report on log mode + sequence.
     if (upper === 'ARCHIVE LOG LIST' || upper === 'ARCHIVE LOG LIST;' || upper.startsWith('ARCHIVE LOG LIST ')) {
       return this.handleArchiveLogList();
@@ -1040,6 +1049,59 @@ export class SQLPlusSession {
       return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
     return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── SECDEMO ──────────────────────────────────────────────────────
+
+  /**
+   * Drive the security-audit demonstration. Accepted forms:
+   *   SECDEMO RUN              run every canonical fraud scenario
+   *   SECDEMO SCAN SOD         re-run the SoD evaluator on every user
+   *   SECDEMO SCAN DORMANT     re-run the dormant-account analyzer
+   *   SECDEMO STATUS           summarise journal sizes
+   *   SECDEMO (default)        run every scenario then print status
+   */
+  private handleSecDemo(line: string): SQLPlusResult {
+    const args = line.replace(/;\s*$/, '').replace(/^SECDEMO\s*/i, '').trim().toUpperCase();
+    const out: string[] = [];
+    const journal = this.db.instance.getAuditJournal();
+
+    if (args === 'STATUS' || args === '') {
+      // fall-through: STATUS handled below
+    }
+
+    if (args === '' || args === 'RUN' || args === 'RUN ALL') {
+      out.push('Running security-audit fraud scenarios...');
+      const results = this.db.fraudSimulator.runAll();
+      for (const r of results) {
+        out.push(`  [${r.scenario}] steps=${r.steps.length}`);
+      }
+      out.push('');
+    } else if (args === 'SCAN SOD') {
+      const n = this.db.sodEvaluator.scanAll();
+      out.push(`SoD scan complete — ${n} new violation(s) journaled.`);
+      return { output: out, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    } else if (args === 'SCAN DORMANT') {
+      const n = this.db.dormantAnalyzer.sweep();
+      out.push(`Dormant-account sweep complete — ${n} account(s) flagged.`);
+      return { output: out, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    } else if (args !== 'STATUS') {
+      out.push(`SP2-0734: unknown SECDEMO subcommand "${args}"`);
+      out.push('Available: RUN | SCAN SOD | SCAN DORMANT | STATUS');
+      return { output: out, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
+    out.push('Security audit journal status:');
+    out.push(`  Connection traces:    ${journal.getConnectionTraces().length}`);
+    out.push(`  DDL history:          ${journal.getDdlHistory().length}`);
+    out.push(`  DML history:          ${journal.getDmlHistory().length}`);
+    out.push(`  Sensitive accesses:   ${journal.getSensitiveAccessRecords().length}`);
+    out.push(`  Privilege usage rows: ${journal.getPrivilegeUsage().length}`);
+    out.push(`  SoD policies:         ${journal.getSodPolicies().length}`);
+    out.push(`  SoD violations:       ${journal.getSodViolations().length}`);
+    out.push(`  Dormant accounts:     ${journal.getDormantAccounts().length}`);
+    out.push(`  Anomalies:            ${journal.getAnomalies().length}`);
+    return { output: out, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   // ── ARCHIVE LOG LIST ─────────────────────────────────────────────

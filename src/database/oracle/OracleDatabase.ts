@@ -25,6 +25,11 @@ import { ORACLE_ERRORS } from '../../terminal/commands/OracleConfig';
 import { emptyResult } from '../engine/executor/ResultSet';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import type { CellValue } from '../engine/storage/BaseStorage';
+import { SodEvaluator } from './security/audit/SodEvaluator';
+import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
+import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
+import { isOffHours } from './security/audit/SecurityPolicyConfig';
+import type { OracleConnectionTracedPayload } from './events';
 
 /** Runtime state for an explicit PL/SQL cursor */
 export interface CursorState {
@@ -130,6 +135,10 @@ export class OracleDatabase {
     return this.sessions.get(sid);
   }
 
+  readonly sodEvaluator: SodEvaluator;
+  readonly dormantAnalyzer: DormantAccountAnalyzer;
+  readonly fraudSimulator: FraudScenarioSimulator;
+
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
     this.storage = new OracleStorage();
@@ -141,6 +150,28 @@ export class OracleDatabase {
     // ORA_STIG_PROFILE) so a fresh instance matches a real 19c install.
     provisionPredefinedProfiles(this.securityEngine.profiles);
     this.lexer = new OracleLexer();
+
+    // Wire the security-audit cooperators. The actor lives on the
+    // instance (subscribed to the bus); these helpers read the catalog
+    // and write through the actor so violations / dormant detections
+    // are journaled and published on the same bus.
+    const journal = this.instance.getAuditJournal();
+    const actor = this.instance.getSecurityAuditActor()!;
+    this.sodEvaluator = new SodEvaluator(this.catalog, this.securityEngine, journal, actor);
+    this.dormantAnalyzer = new DormantAccountAnalyzer(this.catalog, journal, actor, this.securityEngine);
+    this.fraudSimulator = new FraudScenarioSimulator(this, actor, this.sodEvaluator, this.dormantAnalyzer);
+
+    // Reactive: re-scan SoD whenever a GRANT/REVOKE/CREATE USER crosses
+    // the audit bus. The executor publishes `oracle.audit.recorded` for
+    // every audited DCL statement (GRANT/REVOKE never fire `oracle.ddl
+    // .executed` because they're DCL, not DDL).
+    this.instance.getBus().subscribe('oracle.audit.recorded', (e) => {
+      if (e.payload.deviceId !== this.instance.getDeviceId()) return;
+      const a = e.payload.actionName.toUpperCase();
+      if (a === 'GRANT' || a === 'REVOKE' || a === 'CREATE USER' || a === 'ALTER USER') {
+        this.sodEvaluator.scanAll();
+      }
+    });
   }
 
   /**
@@ -167,6 +198,11 @@ export class OracleDatabase {
     const failLogon = (code: number, message: string): never => {
       this.catalog.recordLogon(upperUser, 0, code, osCtx.osUser, osCtx.hostname, osCtx.terminal);
       this.instance.logAlertEvent(`Failed logon: user=${upperUser} ORA-${String(code).padStart(5, '0')}`);
+      this.publishConnectionTrace({
+        username: upperUser, sessionId: 0, serial: 0, osCtx,
+        authMethod: 'PASSWORD', role: 'NORMAL',
+        outcome: 'FAILURE', returncode: code,
+      });
       throw new Error(message);
     };
 
@@ -218,6 +254,12 @@ export class OracleDatabase {
     }
     this.catalog.recordLogon(upperUser, sid, 0, osCtx.osUser, osCtx.hostname, osCtx.terminal);
     this.instance.logAlertEvent(`Logon: user=${upperUser} sid=${sid}`);
+    this.publishConnectionTrace({
+      username: upperUser, sessionId: sid, serial, osCtx,
+      authMethod: user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
+        : user?.authenticationType === 'GLOBAL' ? 'GLOBAL' : 'PASSWORD',
+      role: 'NORMAL', outcome: 'SUCCESS', returncode: 0,
+    });
 
     const authMethod: AuthenticationMethod =
       user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
@@ -271,6 +313,10 @@ export class OracleDatabase {
       privUsed: 'SYSDBA', statementType: 'LOGON',
     });
     this.instance.logAlertEvent(`Logon: user=SYS sid=${sid} as SYSDBA`);
+    this.publishConnectionTrace({
+      username: 'SYS', sessionId: sid, serial, osCtx,
+      authMethod: 'SYSDBA', role: 'SYSDBA', outcome: 'SUCCESS', returncode: 0,
+    });
 
     const sysSession = this.openSession({
       sid, serial, username: 'SYS', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
@@ -320,6 +366,10 @@ export class OracleDatabase {
       sid, serial, username: 'PUBLIC', osCtx: { ...osCtx, program: osCtx.program ?? 'sqlplus@localhost' },
       authenticationMethod: 'SYSOPER',
     });
+    this.publishConnectionTrace({
+      username: 'PUBLIC', sessionId: sid, serial, osCtx,
+      authMethod: 'SYSOPER', role: 'SYSOPER', outcome: 'SUCCESS', returncode: 0,
+    });
 
     const context: ExecutionContext = {
       currentUser: 'PUBLIC',
@@ -343,9 +393,50 @@ export class OracleDatabase {
     if (conn) {
       this.catalog.recordLogoff(conn.username, sid);
       this.instance.logAlertEvent(`Logoff: user=${conn.username} sid=${sid}`);
+      this.publishConnectionTrace({
+        username: conn.username, sessionId: sid, serial: conn.serial,
+        osCtx: DEFAULT_OS_CONTEXT, authMethod: 'PASSWORD', role: 'NORMAL',
+        outcome: 'LOGOFF', returncode: 0,
+      });
     }
     this.connections.delete(sid);
     this.securityEngine.closeSession(String(sid));
+  }
+
+  /** Build and publish the rich oracle.security.connection-traced event. */
+  private publishConnectionTrace(args: {
+    username: string; sessionId: number; serial: number; osCtx: OsSecurityContext;
+    authMethod: string; role: 'NORMAL' | 'SYSDBA' | 'SYSOPER';
+    outcome: 'SUCCESS' | 'FAILURE' | 'LOGOFF'; returncode: number;
+  }): void {
+    const ip = args.osCtx.hostname === 'localhost' || args.osCtx.hostname === '127.0.0.1'
+      ? '127.0.0.1' : '';
+    const proto = /@localhost$/i.test(args.osCtx.program) ? 'beq' : 'tcp';
+    const authType = args.role === 'SYSDBA' || args.role === 'SYSOPER' ? 'DATABASE'
+      : args.authMethod === 'EXTERNAL' ? 'OS'
+      : args.authMethod === 'GLOBAL' ? 'NETWORK' : 'DATABASE';
+    const now = new Date();
+    const payload: OracleConnectionTracedPayload = {
+      deviceId: this.instance.getDeviceId(),
+      sid: this.instance.config.sid,
+      sessionId: args.sessionId,
+      serial: args.serial,
+      username: args.username,
+      osUser: args.osCtx.osUser,
+      userhost: args.osCtx.hostname,
+      terminal: args.osCtx.terminal,
+      program: args.osCtx.program,
+      ipAddress: ip,
+      networkProtocol: proto,
+      authenticationMethod: args.authMethod,
+      authenticationType: authType,
+      returncode: args.returncode,
+      outcome: args.outcome,
+      role: args.role,
+      timestamp: now,
+      offHours: isOffHours(now),
+    };
+    this.instance.getBus().publish({ topic: 'oracle.security.connection-traced', payload });
   }
 
   /**

@@ -204,6 +204,55 @@ export class OracleFilesystemSync {
         );
       }),
 
+      // Security-audit FS sync — writes only to native Oracle paths:
+      //   • adump/ — one .aud file per audited action (Oracle XML audit)
+      //   • alert log — anomalies / DV violations are alert-worthy
+      // This mirrors what `audit_trail=os` + DV + TSDP do on a real
+      // Oracle 19c install. No simulator-specific files are written.
+      this.bus.subscribe('oracle.security.connection-traced', (e) => {
+        // Each connection trace becomes a real adump/.aud file just
+        // like a logon/logoff audited by Oracle's OS auditor.
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        const seq = (this.auditCounters.get(e.payload.deviceId) ?? 0) + 1;
+        this.auditCounters.set(e.payload.deviceId, seq);
+        const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
+        dev.writeFileFromEditor(
+          `${ORACLE_CONFIG.BASE}/admin/${e.payload.sid}/adump/${fname}`,
+          renderConnectionAud(e.payload),
+        );
+      }),
+
+      this.bus.subscribe('oracle.security.sod-violation', (e) => {
+        // DV violations land in the database alert log on a real 19c.
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        if (db) {
+          db.instance.logAlertEvent(
+            `Database Vault audit: policy ${e.payload.policyName} violated by `
+            + `${e.payload.username} — privileges ${e.payload.conflictingPrivileges.join('+')}`);
+        }
+      }),
+
+      this.bus.subscribe('oracle.security.anomaly-detected', (e) => {
+        // Anomalies surface as alert-log entries (DBA_ALERT_HISTORY
+        // already projects them as native rows from this same source).
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        if (db) {
+          db.instance.logAlertEvent(
+            `[${e.payload.severity}] ${e.payload.kind}: ${e.payload.description}`);
+        }
+      }),
+
+      this.bus.subscribe('oracle.security.dormant-detected', (e) => {
+        const db = this.ctx.resolveDatabase(e.payload.deviceId);
+        if (db) {
+          db.instance.logAlertEvent(
+            `Dormant account detected: ${e.payload.username} `
+            + `last_login=${e.payload.lastLoginAt ? e.payload.lastLoginAt.toISOString() : 'never'} `
+            + `days=${e.payload.daysSinceLastLogin}`);
+        }
+      }),
+
       this.bus.subscribe('oracle.storage.datafile-renamed', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
@@ -297,6 +346,38 @@ function renderParameterFile(target: 'PFILE' | 'SPFILE', params: Record<string, 
  * under audit_file_dest. Kept as a free function to stay small and
  * trivially testable without instantiating the adapter.
  */
+/**
+ * Render the connection-trace `.aud` file the way `audit_trail=os` does
+ * it for a logon. Same header banner as audit entries so an `ls` of
+ * `adump/` shows a coherent set of files.
+ */
+function renderConnectionAud(p: import('@/database/oracle/events').OracleConnectionTracedPayload): string {
+  const lines: string[] = [];
+  lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);
+  lines.push(`Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production`);
+  lines.push(`ORACLE_HOME = ${ORACLE_CONFIG.HOME}`);
+  lines.push(`System name:    Linux`);
+  lines.push(`Node name:      ${p.userhost}`);
+  lines.push(`Instance name:  ${p.sid}`);
+  lines.push(`Redo thread mounted by this instance: 1`);
+  lines.push(`Oracle process number: ${p.sessionId}`);
+  lines.push(`Unix process pid: ${p.sessionId}, image: oracle@${p.userhost}`);
+  lines.push('');
+  lines.push(p.timestamp.toISOString());
+  lines.push(`ACTION : ${p.outcome === 'LOGOFF' ? 'LOGOFF' : 'LOGON'}`);
+  lines.push(`DATABASE USER: ${p.username}`);
+  lines.push(`PRIVILEGE: ${p.role === 'SYSDBA' ? 'SYSDBA' : p.role === 'SYSOPER' ? 'SYSOPER' : '--'}`);
+  lines.push(`CLIENT USER: ${p.osUser}`);
+  lines.push(`CLIENT TERMINAL: ${p.terminal}`);
+  lines.push(`STATUS: ${p.returncode}`);
+  lines.push(`DBID: 0`);
+  lines.push(`SESSIONID: ${p.sessionId}`);
+  lines.push(`USERHOST: ${p.userhost}`);
+  lines.push(`CLIENT ADDRESS: (ADDRESS=(PROTOCOL=${p.networkProtocol})(HOST=${p.ipAddress || p.userhost}))`);
+  lines.push(`AUTHENTICATION_TYPE: ${p.authenticationType}`);
+  return lines.join('\n') + '\n';
+}
+
 function renderAuditEntry(p: import('@/database/oracle/events').OracleAuditRecordedPayload): string {
   const lines: string[] = [];
   lines.push(`Audit file ${ORACLE_CONFIG.AUDIT_DIR}/${p.sid.toLowerCase()}_ora_${p.sessionId}.aud`);

@@ -30,6 +30,10 @@ export const ALL_PROFILE_PARAMETERS = [
   'PASSWORD_LOCK_TIME',
   'PASSWORD_GRACE_TIME',
   'PASSWORD_VERIFY_FUNCTION',
+  // 12c+ profile parameters
+  'INACTIVE_ACCOUNT_TIME',
+  // 19c+ profile parameters
+  'PASSWORD_ROLLOVER_TIME',
 ] as const;
 
 export type ProfileParameter = typeof ALL_PROFILE_PARAMETERS[number];
@@ -52,6 +56,8 @@ export const DEFAULT_PROFILE_LIMITS: Record<string, string> = {
   PASSWORD_LOCK_TIME: '1',        // 1 day
   PASSWORD_GRACE_TIME: '7',
   PASSWORD_VERIFY_FUNCTION: 'NULL',
+  INACTIVE_ACCOUNT_TIME: 'UNLIMITED',
+  PASSWORD_ROLLOVER_TIME: '0',
 };
 
 // ── Quota ────────────────────────────────────────────────────────────
