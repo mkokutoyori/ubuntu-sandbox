@@ -10,6 +10,7 @@
  */
 
 import type { OracleCatalog } from '../../OracleCatalog';
+import type { SecurityEngine } from '../SecurityEngine';
 import type { AuditJournal } from './AuditJournal';
 import type { SecurityAuditActor } from './SecurityAuditActor';
 import { DormantAccountRecord } from './DormantAccountRecord';
@@ -22,6 +23,7 @@ export class DormantAccountAnalyzer {
     private readonly catalog: OracleCatalog,
     private readonly journal: AuditJournal,
     private readonly actor: SecurityAuditActor,
+    private readonly engine: SecurityEngine | null = null,
     private readonly policy: SecurityPolicyConfig = DEFAULT_SECURITY_POLICY,
   ) {}
 
@@ -48,6 +50,18 @@ export class DormantAccountAnalyzer {
         thresholdDays: this.policy.dormantThresholdDays,
         accountStatus: user.accountStatus,
       });
+
+      // INACTIVE_ACCOUNT_TIME (12c+) — when the user's profile defines a
+      // hard inactivity ceiling, lock the account exactly the way the
+      // real DB would (status → EXPIRED & LOCKED).
+      if (this.engine) {
+        const inactiveLimit = this.engine.profiles.resolveInactiveAccountTimeDays(user.profile);
+        if (days >= inactiveLimit && user.accountStatus !== 'LOCKED'
+            && user.accountStatus !== 'EXPIRED & LOCKED') {
+          this.catalog.lockUser(upper);
+          this.engine.loginTracker.lockAccount(upper);
+        }
+      }
       found++;
     }
     return found;

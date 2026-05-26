@@ -406,5 +406,21 @@ import './dba_tsdp_policy_feature';
 import './dba_dv_rule';
 import './dba_dv_rule_set';
 import './dba_dv_rule_set_rule';
+// Network ACLs (DBMS_NETWORK_ACL_ADMIN — 12c+)
+import './dba_network_acls';
+import './dba_network_acl_privileges';
+import './dba_host_aces';
+// Data Redaction (DBMS_REDACT — 12c+)
+import './redaction_policies';
+import './redaction_columns';
+import './redaction_values_for_type_full';
+// Password / account administration native views
+import './dba_users_with_defpwd';
+import './sys_user_history';
+// Component registry + feature usage + DDL log
+import './dba_registry';
+import './dba_registry_history';
+import './dba_feature_usage_statistics';
+import './dba_ddl_log';
 
 export { };

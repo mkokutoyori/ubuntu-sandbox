@@ -158,7 +158,7 @@ export class OracleDatabase {
     const journal = this.instance.getAuditJournal();
     const actor = this.instance.getSecurityAuditActor()!;
     this.sodEvaluator = new SodEvaluator(this.catalog, this.securityEngine, journal, actor);
-    this.dormantAnalyzer = new DormantAccountAnalyzer(this.catalog, journal, actor);
+    this.dormantAnalyzer = new DormantAccountAnalyzer(this.catalog, journal, actor, this.securityEngine);
     this.fraudSimulator = new FraudScenarioSimulator(this, actor, this.sodEvaluator, this.dormantAnalyzer);
 
     // Reactive: re-scan SoD whenever a GRANT/REVOKE/CREATE USER crosses

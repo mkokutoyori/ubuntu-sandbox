@@ -20,6 +20,8 @@ import { OracleRuntimeStateActor } from './actors/OracleRuntimeStateActor';
 import { AsmManager } from './asm/AsmManager';
 import { AuditJournal } from './security/audit/AuditJournal';
 import { SecurityAuditActor } from './security/audit/SecurityAuditActor';
+import { NetworkAclManager } from './security/NetworkAclManager';
+import { DataRedactionManager } from './security/DataRedactionManager';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -81,6 +83,10 @@ export class OracleInstance {
    *  Surfaces forensic data through the DBA_* security views. */
   private readonly _auditJournal = new AuditJournal();
   private _securityAuditActor: SecurityAuditActor | null = null;
+  /** Network ACL administration (DBMS_NETWORK_ACL_ADMIN). */
+  readonly networkAcls = new NetworkAclManager();
+  /** Data Redaction policies (DBMS_REDACT). */
+  readonly redaction = new DataRedactionManager();
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };

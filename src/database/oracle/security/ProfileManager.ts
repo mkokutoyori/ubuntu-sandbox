@@ -8,6 +8,7 @@
  */
 
 import { DEFAULT_PROFILE_LIMITS, ALL_PROFILE_PARAMETERS } from './types';
+import { getPasswordVerifier } from './PasswordVerifier';
 
 export class ProfileManager {
   /** name (upper) → limits (parameter upper → value) */
@@ -144,10 +145,26 @@ export class ProfileManager {
    * Validate a password against the profile's verify function. Returns
    * `null` on success, or the precise ORA-message Oracle would emit.
    */
-  verifyPassword(profileName: string, username: string, password: string): string | null {
+  verifyPassword(profileName: string, username: string, password: string, oldPassword?: string): string | null {
     const fn = this.resolvePasswordVerifyFunction(profileName);
     if (fn === 'NULL' || fn === 'DEFAULT' || fn === '') return null;
+    // Prefer the strategy registry (Open/Closed): new verifiers slot in
+    // by registering with `getPasswordVerifier` — no edits here.
+    const strategy = getPasswordVerifier(fn);
+    if (strategy) return strategy.verify(username, password, oldPassword);
     return ProfileManager.runBuiltinVerifier(fn, username, password);
+  }
+
+  /** New (12c+): auto-lock an account after N days without login. */
+  resolveInactiveAccountTimeDays(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'INACTIVE_ACCOUNT_TIME');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
+  }
+
+  /** New (19c+): how many days the old password remains valid after a change. */
+  resolvePasswordRolloverTimeDays(profileName: string): number {
+    const v = this.resolveLimit(profileName, 'PASSWORD_ROLLOVER_TIME');
+    return v === 'UNLIMITED' ? Infinity : parseFloat(v);
   }
 
   private static runBuiltinVerifier(fn: string, username: string, password: string): string | null {
@@ -233,6 +250,8 @@ export class ProfileManager {
       'FAILED_LOGIN_ATTEMPTS', 'PASSWORD_LIFE_TIME', 'PASSWORD_REUSE_TIME',
       'PASSWORD_REUSE_MAX', 'PASSWORD_LOCK_TIME', 'PASSWORD_GRACE_TIME',
       'PASSWORD_VERIFY_FUNCTION',
+      'INACTIVE_ACCOUNT_TIME',
+      'PASSWORD_ROLLOVER_TIME',
     ];
     return passwordParams.includes(param) ? 'PASSWORD' : 'KERNEL';
   }
