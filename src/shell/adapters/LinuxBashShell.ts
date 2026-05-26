@@ -63,6 +63,10 @@ export interface LinuxBashShellOptions extends AbstractShellOptions {
    * call sites that omit this flag keep the old close-on-dispose behaviour.
    */
   readonly ownsSession?: boolean;
+  /** OpenSSH-style SSH_CONNECTION string — set on the session env. */
+  readonly sshConnection?: string;
+  /** OpenSSH-style SSH_CLIENT string — set on the session env. */
+  readonly sshClient?: string;
 }
 
 interface LinuxDevice {
@@ -94,6 +98,13 @@ export class LinuxBashShell extends AbstractShell {
         cwd: opts.context.cwd,
       });
       this.ownsSession = true;
+      // Inject OpenSSH-style env vars when this shell is the remote side
+      // of an SSH connection. `echo $SSH_CONNECTION` on the remote then
+      // returns the same shape as real ssh: "client_ip client_port
+      // server_ip server_port".
+      if (opts.sshConnection) this.session.env.set('SSH_CONNECTION', opts.sshConnection);
+      if (opts.sshClient) this.session.env.set('SSH_CLIENT', opts.sshClient);
+      if (opts.connection === 'ssh') this.session.env.set('SSH_TTY', `/dev/${this.session.tty}`);
     } else {
       this.ownsSession = false;
     }

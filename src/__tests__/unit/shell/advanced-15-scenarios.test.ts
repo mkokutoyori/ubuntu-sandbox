@@ -731,6 +731,82 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expectAnyLine(t, /OpenSSH_/);
   });
 
+  test('§F7 — ssh -p <wrong_port> reports the wrong port in the error line', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    linuxSrv.powerOff();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh -p 2222 alice@10.0.0.3');
+    expectAnyLine(t, /port 2222: (No route to host|Network is unreachable|Connection refused)/);
+  });
+
+  test('§F8 — auth.log records the accepted login (rsyslog active)', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // The simulator's auth.log should mention alice's accepted login.
+    const log = await linuxSrv.executeCommand('cat /var/log/auth.log');
+    expect(log).toMatch(/Accepted password for alice/);
+  });
+
+  test('§F10 — who shows the SSH user after a successful login', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'who');
+    expectAnyLine(t, /^alice\s/);
+  });
+
+  test('§F11 — SSH_CONNECTION / SSH_CLIENT env vars are set on the remote', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'echo "$SSH_CONNECTION"');
+    // OpenSSH format: "<client_ip> <client_port> <server_ip> <server_port>"
+    // (port numbers are arbitrary in the simulator).
+    expectAnyLine(t, /\b10\.0\.0\.4\b.+\b10\.0\.0\.3\b/);
+  });
+
+  test('§F12 — multiple concurrent SSH sessions to the same host work independently', async () => {
+    const { winA, winB } = await buildLan();
+    const t1 = new WindowsTerminalSession('t1', winA);
+    const t2 = new WindowsTerminalSession('t2', winB);
+    await t1.init();
+    await t2.init();
+    await winSshLogin(t1, 'ssh alice@10.0.0.3', 'alice');
+    await winSshLogin(t2, 'ssh bob@10.0.0.3', 'bob');
+    expect(t1.getPrompt()).toMatch(/alice/);
+    expect(t2.getPrompt()).toMatch(/bob/);
+    // The two sessions live in independent LinuxShellSession states —
+    // a `cd` in t1 must not leak into t2.
+    await typeSub(t1, 'cd /tmp');
+    expect(t1.getPrompt()).toMatch(/alice@linuxSrv:\/tmp\$/);
+    expect(t2.getPrompt()).toMatch(/bob@linuxSrv:~\$/);
+  });
+
+  test('§F9 — Ctrl+D in an SSH-pushed cmd does NOT log out (cmd ignores it)', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    t.setInput('ssh carl@10.0.0.4');
+    t.handleKey(key('Enter'));
+    await flush();
+    // The legacy enterSsh path does the heavy lifting here; harness's
+    // helper just satisfies the password challenge.
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('carl'); t.handleKey(key('Enter')); await flush();
+    }
+    // We should now be at cmd's prompt.
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    // Ctrl+D: real cmd ignores it. We must NOT pop the SSH frame.
+    t.handleKey(key('d', { ctrlKey: true }));
+    await flush();
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+  });
+
   test('§F6 — three bad passwords give the canonical OpenSSH lockout message', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);

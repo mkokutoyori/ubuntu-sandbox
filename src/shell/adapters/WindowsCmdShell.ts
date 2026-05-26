@@ -66,6 +66,16 @@ export class WindowsCmdShell extends AbstractShell {
    *  recognized as an internal or external command" error. */
   protected override clearWords: ReadonlySet<string> = new Set(['cls']);
 
+  /**
+   * cmd.exe does NOT recognise Ctrl+D as logout — only `exit` works.
+   * Override so a Linux user habituated to Ctrl+D does not accidentally
+   * drop out of a remote cmd session.
+   */
+  override classifyKey(e: import('../IShell').ShellKeyEvent): import('../IShell').ShellSpecialAction {
+    if (e.ctrlKey && e.key === 'd') return { kind: 'none' };
+    return super.classifyKey(e);
+  }
+
   constructor(opts: WindowsCmdShellOptions) {
     super(opts);
     this.windowsSession = opts.windowsSession ?? null;

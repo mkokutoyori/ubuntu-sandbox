@@ -260,13 +260,33 @@ export function finalisePendingAuth(
   // must reflect the PREVIOUS login, not this one.
   const banner = buildLoginBanner(auth);
   tryRecordSshLogin(auth, true);
+  const serverIp = firstConfiguredIp(auth.target) ?? auth.host;
+  const clientIp = auth.sourceIp ?? '0.0.0.0';
+  // OpenSSH exposes synthetic ephemeral client port and the canonical
+  // server port. The simulator picks a stable-looking pair so values are
+  // reproducible across runs but still look real.
+  const clientPort = 50_000 + (auth.user.length * 7 % 10_000);
+  const sshConnection = `${clientIp} ${clientPort} ${serverIp} ${auth.port}`;
+  const sshClient = `${clientIp} ${clientPort} ${auth.port}`;
   const shell = new CrossVendorRemoteShell({
     device: auth.target,
     user: auth.user,
     remoteHost: auth.host,
     primaryKind: auth.primaryKind,
+    sshConnection,
+    sshClient,
   });
   return { shell, banner };
+}
+
+function firstConfiguredIp(dev: Equipment): string | undefined {
+  const ports = (dev as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
+  if (!ports) return undefined;
+  for (const port of ports.values()) {
+    const ip = port.getIPAddress?.();
+    if (ip) return ip.toString();
+  }
+  return undefined;
 }
 
 /** Record success/failure on the target device so /var/log/auth.log and

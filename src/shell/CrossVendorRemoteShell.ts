@@ -29,6 +29,14 @@ export interface CrossVendorRemoteShellOptions {
   readonly remoteHost: string;
   /** Kind of the remote's primary shell — `bash`, `cmd`, `cisco-ios`, … */
   readonly primaryKind: string;
+  /**
+   * OpenSSH-style SSH_CONNECTION string: "client_ip client_port server_ip
+   * server_port". Propagated to the remote shell's env so `echo
+   * $SSH_CONNECTION` mirrors what real ssh exposes.
+   */
+  readonly sshConnection?: string;
+  /** OpenSSH-style SSH_CLIENT: "client_ip client_port server_port". */
+  readonly sshClient?: string;
   /** Optional teardown hook (close SSH transport, log entry, …). */
   readonly onClose?: () => void;
 }
@@ -60,6 +68,10 @@ export class CrossVendorRemoteShell implements IShell {
       device: opts.device,
       user: opts.user,
       connection: 'ssh',
+      extras: {
+        sshConnection: opts.sshConnection,
+        sshClient: opts.sshClient,
+      },
     });
     this.context = primary.context;
     primary.activate();

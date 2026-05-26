@@ -481,6 +481,14 @@ export class WindowsTerminalSession extends TerminalSession {
     return null;
   }
 
+  private firstDeviceIp(dev: Equipment): string | null {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip) return ip.toString();
+    }
+    return null;
+  }
+
   /**
    * Validate the target and, on success, push a {@link RemoteDeviceSubShell}
    * onto the Windows sub-shell stack so the user lands in an interactive
@@ -632,11 +640,19 @@ export class WindowsTerminalSession extends TerminalSession {
     const primaryKind = this.pickPrimaryShellKind(pending.device);
     let activeShell: ISubShell;
     if (ShellFactory.has(primaryKind)) {
+      // Compute the OpenSSH env strings so a remote `echo $SSH_CONNECTION`
+      // returns "<client_ip> <client_port> <server_ip> <server_port>"
+      // just like a real ssh login.
+      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+      const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
+      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
       const xshell = new CrossVendorRemoteShell({
         device: pending.device,
         user: pending.user,
         remoteHost: pending.host,
         primaryKind,
+        sshConnection: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
+        sshClient: `${clientIp} ${clientPort} ${pending.port}`,
       });
       activeShell = new ShellSubShellAdapter(xshell);
     } else {

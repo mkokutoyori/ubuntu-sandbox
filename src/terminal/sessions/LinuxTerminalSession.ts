@@ -2406,7 +2406,13 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     if (e.key === 'd' && e.ctrlKey) {
-      this.exitSubShell();
+      // Consult the inner shell — only POSIX-style shells (bash, sftp,
+      // sqlplus, …) honour Ctrl+D as EOF. cmd.exe and PowerShell do not.
+      // The ShellSubShellAdapter forwards to its IShell's classifyKey and
+      // returns true iff the action is `eof`. We pop only then.
+      const isEof = !!(this.activeSubShell as { handleKey?: (e: KeyEvent) => boolean })
+        .handleKey?.(e);
+      if (isEof) this.exitSubShell();
       return true;
     }
 

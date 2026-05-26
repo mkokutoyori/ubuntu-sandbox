@@ -31,13 +31,20 @@ export function installDefaultShells(): void {
   if (installed) return;
   installed = true;
   ShellFactory.register('bash', (a) => {
-    const extras = (a as { extras?: { preexistingSession?: LinuxShellSession | null; ownsSession?: boolean } }).extras;
+    const extras = (a as { extras?: {
+      preexistingSession?: LinuxShellSession | null;
+      ownsSession?: boolean;
+      sshConnection?: string;
+      sshClient?: string;
+    } }).extras;
     return new LinuxBashShell({
       device: a.device, user: a.user, context: a.context,
       parent: a.parent ?? null,
       connection: a.connection,
       preexistingSession: extras?.preexistingSession ?? null,
       ownsSession: extras?.ownsSession ?? false,
+      sshConnection: extras?.sshConnection,
+      sshClient: extras?.sshClient,
     });
   });
   ShellFactory.register('cmd', (a) => {
