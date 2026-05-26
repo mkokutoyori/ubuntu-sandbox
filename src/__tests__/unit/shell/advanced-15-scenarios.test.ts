@@ -865,6 +865,221 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
+  test('§F23 — ssh -l <user> <host> uses -l as the login name (OpenSSH alt syntax)', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh -l alice 10.0.0.3');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+  });
+
+  test('§F24 — bare host without user defaults to the calling shell user', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    // Mirror the calling Windows session's default user 'User' on
+    // linuxSrv so the SSH connection actually authenticates.
+    const um = (linuxSrv as unknown as { executor: { userMgr: { useradd: (u: string, opts: Record<string, unknown>) => void; setPassword: (u: string, p: string) => void } } }).executor.userMgr;
+    um.useradd('User', { m: true, s: '/bin/bash' });
+    um.setPassword('User', 'User');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh 10.0.0.3');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('User'); t.handleKey(key('Enter')); await flush();
+    }
+    expect(t.getPrompt()).toMatch(/User@linuxSrv/);
+  });
+
+  test('§F25 — ssh user@invalid.host emits the OpenSSH "Could not resolve" error', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh alice@nonexistent.example');
+    expect(t.currentInputMode.type).not.toBe('password');
+    expectAnyLine(t, /ssh: Could not resolve hostname nonexistent\.example/);
+  });
+
+  test('§F38 — ping from inside SSH session probes from the REMOTE host', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // alice on linuxSrv pings linuxA (10.0.0.1) — same subnet.
+    await typeSub(t, 'ping -c 1 10.0.0.1');
+    expectAnyLine(t, /(1 packets transmitted|bytes from 10\.0\.0\.1)/);
+  });
+
+  test('§F39 — env shows the SSH_CONNECTION env var', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'env');
+    const tail = t.lines.map((l) => l.text).join('\n');
+    expect(/SSH_CONNECTION=/.test(tail)).toBe(true);
+  });
+
+  test('§F40 — 6-deep SSH chain: Win→ssh→Linux→ssh→Win→ssh→Linux→ssh→Win→ssh→Linux', async () => {
+    const { winA, winB, linuxA, linuxSrv } = await buildLan();
+    void linuxA; void linuxSrv; void winB;
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');             // L2 linuxSrv
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');                // L3 winB cmd
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');               // L4 linuxA
+    await typeSshSub(t, 'ssh user@10.0.0.4', 'user');                 // L5 back to winA cmd
+    await typeSshSub(t, 'ssh alice@10.0.0.3', 'alice');               // L6 linuxSrv again
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    // Unwind back to base.
+    for (let i = 0; i < 5; i++) { await typeSub(t, 'exit'); }
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  test('§F35 — sudo over SSH works (alice in the sudo group)', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'sudo whoami');
+    // sudo may challenge for the password; satisfy it.
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    expectAnyLine(t, /^root$/);
+  });
+
+  test('§F36 — su - switches identity inside the SSH session', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'su - bob');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('bob'); t.handleKey(key('Enter')); await flush();
+    }
+    await typeSub(t, 'whoami');
+    expectAnyLine(t, /^bob$/);
+  });
+
+  test('§F37 — interrupting a running command with Ctrl+C does not break the session', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // Type something then hit Ctrl+C without Enter.
+    t.setInputBuf('long-typo');
+    t.handleKey(key('c', { ctrlKey: true }));
+    await flush();
+    // Input cleared, session still usable.
+    const buf = (t as unknown as { getInputBuf(): string }).getInputBuf();
+    expect(buf).toBe('');
+    await typeSub(t, 'echo recovered');
+    expectAnyLine(t, /^recovered$/);
+  });
+
+  test('§F31 — id inside SSH session reports the SSH user (uid + groups)', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'id');
+    expectAnyLine(t, /uid=\d+\(alice\)/);
+  });
+
+  test('§F32 — pipeline ls | grep returns filtered results', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'ls / | grep etc');
+    expectAnyLine(t, /etc/);
+  });
+
+  test('§F33 — output redirection > /tmp/file writes to the remote filesystem', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'echo hello-world > /tmp/echo.txt');
+    const out = await linuxSrv.executeCommand('cat /tmp/echo.txt');
+    expect(out).toMatch(/hello-world/);
+  });
+
+  test('§F34 — `which` resolves a binary on the SSH server', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'which ls');
+    expectAnyLine(t, /\/bin\/ls|\/usr\/bin\/ls/);
+  });
+
+  test('§F27 — tab completion against the SSH cwd completes a directory in /', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'cd /');
+    t.setInputBuf('ls et');
+    t.handleKey(key('Tab'));
+    await flush();
+    const buf = (t as unknown as { getInputBuf(): string }).getInputBuf();
+    // Should complete `et` → `etc/`.
+    expect(buf).toMatch(/etc/);
+  });
+
+  test('§F28 — \"history\" inside the SSH session lists commands previously typed', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'echo one');
+    await typeSub(t, 'echo two');
+    await typeSub(t, 'history');
+    const tail = t.lines.slice(-15).map((l) => l.text).join('\n');
+    // history should include the recent echo lines.
+    expect(/echo one/.test(tail) && /echo two/.test(tail)).toBe(true);
+  });
+
+  test('§F29 — `exit` on the SSH side prints \"logout\" + \"Connection to X closed.\"', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'exit');
+    expectAnyLine(t, /^logout$/);
+    expectAnyLine(t, /Connection to 10\.0\.0\.3 closed\./);
+    // Back to cmd.exe.
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  test('§F30 — typing only whitespace re-prompts without dispatching anything', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    const before = t.lines.length;
+    await typeSub(t, '   ');
+    // At most a single prompt-echo line should have been added — no
+    // dispatch, no error, no MOTD reprint.
+    expect(t.lines.length - before).toBeLessThanOrEqual(2);
+  });
+
+  test('§F26 — ssh user@host with empty password retries (does not crash)', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh alice@10.0.0.3');
+    expect(t.currentInputMode.type).toBe('password');
+    // Press Enter with no buffer — empty password.
+    t.handleKey(key('Enter'));
+    await flush();
+    // Empty password is wrong → either a retry prompt or the lockout.
+    expectAnyLine(t, /Permission denied/);
+  });
+
   test('§F22 — ssh into router refused when SSH server is disabled', async () => {
     const { winA, cisco } = await buildLan();
     // Forcibly disable the SSH server.
