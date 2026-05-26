@@ -836,6 +836,45 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expect(/is not recognized as an internal or external command/.test(tail)).toBe(false);
   });
 
+  test('§F20 — powering off the remote device mid-session closes the SSH frame cleanly', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    // Simulate the remote going down.
+    linuxSrv.powerOff();
+    // Issue a command — the device-offline guard should produce a
+    // disconnect notice; the next prompt should be back at cmd.exe.
+    await typeSub(t, 'whoami');
+    // Some signal of disconnection should appear, and we should no
+    // longer be on the alice@linuxSrv prompt.
+    const tail = t.lines.slice(-10).map((l) => l.text).join('\n');
+    const hasDisconnect = /closed|broken pipe|device.*off|powered off|unreachable/i.test(tail);
+    expect(hasDisconnect || !/alice@linuxSrv/.test(t.getPrompt())).toBe(true);
+  });
+
+  test('§F21 — second SSH attempt to a host with a stale known_hosts entry still succeeds', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+  });
+
+  test('§F22 — ssh into router refused when SSH server is disabled', async () => {
+    const { winA, cisco } = await buildLan();
+    // Forcibly disable the SSH server.
+    (cisco as unknown as { sshServerEnabled: boolean }).sshServerEnabled = false;
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh admin@10.0.0.6');
+    expectAnyLine(t, /Connection refused|connect to host.*port 22/);
+  });
+
   test('§F18 — ssh -q (quiet): no banner / MOTD / known_hosts warning on success', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);
