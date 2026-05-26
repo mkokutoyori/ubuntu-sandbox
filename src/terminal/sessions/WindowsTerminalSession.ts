@@ -358,6 +358,26 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    // SSH client info / unsupported forms — handled by the shared
+    // launcher first so the OpenSSH usage / version line is uniform
+    // across the local console and SSH'd-in shells.
+    if (lower === 'ssh -v' || lower === 'ssh --version'
+        || trimmed === 'ssh' /* bare ssh prints usage */) {
+      if (lower === 'ssh -v' || lower === 'ssh --version') {
+        this.addLine('OpenSSH_9.6p1 Ubuntu-3ubuntu13.4, OpenSSL 3.0.13 30 Jan 2024');
+      } else {
+        this.addLine('usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]');
+        this.addLine('           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]');
+        this.addLine('           [-E log_file] [-F configfile] [-I pkcs11] [-i identity_file]');
+        this.addLine('           [-J [user@]host[:port]] [-L address] [-l login_name]');
+        this.addLine('           [-o option] [-p port] [-Q query_option] [-R address]');
+        this.addLine('           [-S ctl_path] [-W host:port] [-w local_tun[:remote_tun]]');
+        this.addLine('           destination [command [argument ...]]');
+      }
+      this.notify();
+      return;
+    }
+
     // SSH interactive push: when the user types `ssh [user@]host` (no
     // remote command after the host), spawn an interactive remote
     // sub-shell against the resolved peer instead of falling through to
@@ -457,6 +477,14 @@ export class WindowsTerminalSession extends TerminalSession {
     for (const port of this.device.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && port.getIsUp()) return ip.toString();
+    }
+    return null;
+  }
+
+  private firstDeviceIp(dev: Equipment): string | null {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip) return ip.toString();
     }
     return null;
   }
@@ -612,11 +640,19 @@ export class WindowsTerminalSession extends TerminalSession {
     const primaryKind = this.pickPrimaryShellKind(pending.device);
     let activeShell: ISubShell;
     if (ShellFactory.has(primaryKind)) {
+      // Compute the OpenSSH env strings so a remote `echo $SSH_CONNECTION`
+      // returns "<client_ip> <client_port> <server_ip> <server_port>"
+      // just like a real ssh login.
+      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+      const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
+      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
       const xshell = new CrossVendorRemoteShell({
         device: pending.device,
         user: pending.user,
         remoteHost: pending.host,
         primaryKind,
+        sshConnection: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
+        sshClient: `${clientIp} ${clientPort} ${pending.port}`,
       });
       activeShell = new ShellSubShellAdapter(xshell);
     } else {

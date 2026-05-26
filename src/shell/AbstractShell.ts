@@ -56,8 +56,13 @@ export abstract class AbstractShell implements IShell {
   /** Words that, when typed alone, unwind this shell — defaults are POSIX. */
   protected exitWords: ReadonlySet<string> = new Set(['exit', 'logout']);
 
-  /** Aliases for "wipe the screen now" — defaults cover Linux + Windows. */
-  protected clearWords: ReadonlySet<string> = new Set(['clear', 'cls']);
+  /**
+   * Aliases for "wipe the screen now" — empty by default. Each vendor
+   * subclass declares the words IT recognises, so cmd does not accept
+   * the bash `clear` and bash does not accept the cmd `cls`. Real shells
+   * are strict about this; the simulator must mirror it.
+   */
+  protected clearWords: ReadonlySet<string> = new Set();
 
   /** Whether this shell has been disposed (idempotency guard). */
   private _disposed = false;

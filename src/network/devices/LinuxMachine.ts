@@ -297,6 +297,11 @@ export abstract class LinuxMachine extends EndHost {
     if (accepted) {
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
+      // Persist this login as the user's "last login" before we open
+      // the new session — the OpenSSH banner is computed BEFORE this
+      // call by sshLauncher so it sees the previous record, never the
+      // one we're recording right now.
+      this.rememberLastSshLogin(user, fromIp);
       this.sessionTable.open({
         user, uid, sshdPid: 985 + this.sessionTable.list().length,
         fromIp, fromHost,
@@ -458,6 +463,23 @@ export abstract class LinuxMachine extends EndHost {
     // currently logged-in user even before any SSH connect happens.
     return t;
   })();
+
+  /**
+   * Per-user record of the most recent SUCCESSFUL SSH login. Read by
+   * the sshLauncher banner to produce the OpenSSH "Last login: <date>
+   * from <ip>" line. The simulator's analogue of `/var/log/lastlog`.
+   */
+  private readonly lastSshLoginByUser = new Map<string, { at: Date; from: string }>();
+
+  /** sshLauncher contract — returns the previous login for `user` (if any). */
+  getLastSshLoginFor(user: string): { at: Date; from: string } | null {
+    return this.lastSshLoginByUser.get(user) ?? null;
+  }
+
+  /** Push a new last-login entry; called from `recordSshLogin` on accept. */
+  private rememberLastSshLogin(user: string, fromIp: string): void {
+    this.lastSshLoginByUser.set(user, { at: new Date(), from: fromIp });
+  }
 
   /** Ensure a tty=tty1 console session exists for the local user. */
   private ensureLocalConsoleSession(): void {
