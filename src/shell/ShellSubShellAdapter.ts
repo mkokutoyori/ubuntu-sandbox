@@ -21,6 +21,10 @@ export interface ShellSubShellResult extends SubShellResult {
 }
 
 export class ShellSubShellAdapter implements ISubShell {
+  /** Forwards the wrapped IShell identity so callers see the inner kind. */
+  get kind(): string { return this.shell.kind; }
+  get connection() { return this.shell.connection; }
+
   constructor(private readonly shell: IShell) {}
 
   get inner(): IShell { return this.shell; }

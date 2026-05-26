@@ -11,6 +11,7 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
+import { tryInterpretSshLaunch } from '../sshLauncher';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 
@@ -61,6 +62,10 @@ export class WindowsCmdShell extends AbstractShell {
   }
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
+    // ssh launch intercept — lets the user chain SSH from a remote cmd.
+    const sshChild = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    if (sshChild) return sshChild;
+
     const lower = line.trim().toLowerCase();
     // cmd.exe's `powershell` / `pwsh` launchers — hand off to the PS
     // child shell pointed at THIS device (local OR remote). The current

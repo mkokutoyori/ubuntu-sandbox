@@ -41,6 +41,8 @@ const DEVICE_ONLY_COMMANDS = new Set([
 ]);
 
 export class PowerShellSubShell implements ISubShell {
+  readonly kind = 'powershell';
+  readonly connection = 'subshell' as const;
   private psExecutor: PowerShellExecutor;
   private interp: PSInterpreter;
   private device: Equipment;

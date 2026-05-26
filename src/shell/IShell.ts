@@ -29,19 +29,10 @@
 import type { Equipment } from '@/network';
 import type { RichOutputLine } from '@/terminal/core/types';
 import type { ShellContext } from './ShellContext';
+import type { IShellBase, ShellConnection } from './IShellBase';
 
-/**
- * How this shell is being driven by the user. The shell can use this to
- * decide whether to render an MOTD, whether to honour `logout` vs `exit`,
- * whether to colourise its output (real ttys: yes; piped: no), etc. The
- * field is immutable for the lifetime of the shell.
- *
- *  - `console`  — local sit-at-the-keyboard session (root shell of a terminal).
- *  - `ssh`      — driven through an SSH server (CrossVendorRemoteShell wraps it).
- *  - `telnet`   — driven through a telnet/VTY line.
- *  - `subshell` — spawned from inside another shell (sqlplus, rman, nested cmd…).
- */
-export type ShellConnection = 'console' | 'ssh' | 'telnet' | 'subshell';
+// Re-export so existing call sites keep working unchanged.
+export type { ShellConnection };
 
 /**
  * Result of processing one input line. `output` is the lines to print,
@@ -88,16 +79,9 @@ export type ShellSpecialAction =
   | { kind: 'history-next' }
   | { kind: 'none' };
 
-export interface IShell {
-  /** Stable identifier — `bash`, `cmd`, `powershell`, `cisco-ios`, … */
-  readonly kind: string;
-
-  /**
-   * How this shell is being driven. Set at construction, never changes.
-   * Lets the shell make connection-aware decisions (MOTD, prompts,
-   * end-of-session footer, password challenges, …).
-   */
-  readonly connection: ShellConnection;
+export interface IShell extends IShellBase {
+  // `kind` and `connection` come from IShellBase — same fields, same
+  // semantics, repeated below as documentation for the IShell layer.
 
   /** The remote/local equipment this shell drives. */
   readonly device: Equipment;

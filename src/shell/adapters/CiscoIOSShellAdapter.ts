@@ -23,7 +23,26 @@ export class CiscoIOSShellAdapter extends AbstractShell {
   constructor(opts: CiscoIOSShellOptions) {
     super(opts);
     this.vty = opts.vty ?? null;
-    this.exitWords = new Set(['exit', 'logout', 'quit']);
+    // Only `logout` unconditionally ends an IOS session. `exit` / `quit`
+    // are mode-aware (at conf-t they pop one config level; at enable
+    // they log out). `processLine` routes mode-pop exits to the device.
+    this.exitWords = new Set(['logout']);
+  }
+
+  override async processLine(line: string): Promise<ShellLineResult> {
+    const lower = line.trim().toLowerCase();
+    if ((lower === 'exit' || lower === 'quit') && this.isAtTopMode()) {
+      return { output: this.getDeactivationBanner().slice(), exit: true };
+    }
+    return super.processLine(line);
+  }
+
+  private isAtTopMode(): boolean {
+    const dev = this.device as unknown as { shell?: { getMode?: () => string } };
+    const mode = dev.shell?.getMode?.();
+    // 'user' (enable not entered) and 'privileged' (enable) are both
+    // "top-of-stack" from IOS's perspective: `exit` at either logs out.
+    return mode === 'user' || mode === 'privileged' || mode === undefined;
   }
 
   getPrompt(): string {

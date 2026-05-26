@@ -32,6 +32,8 @@ const DEFAULT_STRATEGY: RemotePromptStrategy = {
 };
 
 export class RemoteDeviceSubShell implements ISubShell {
+  readonly kind = 'remote-device';
+  readonly connection = 'ssh' as const;
   constructor(
     private readonly device: Equipment,
     private readonly remoteUser: string,

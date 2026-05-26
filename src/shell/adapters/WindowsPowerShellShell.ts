@@ -20,6 +20,7 @@ import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { ShellFactory } from '../ShellFactory';
+import { tryInterpretSshLaunch } from '../sshLauncher';
 
 export interface WindowsPowerShellOptions extends AbstractShellOptions {
   /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
@@ -58,6 +59,9 @@ export class WindowsPowerShellShell extends AbstractShell {
   }
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
+    const sshChild = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    if (sshChild) return sshChild;
+
     const lower = line.trim().toLowerCase();
     if (lower === 'cmd' || lower === 'cmd.exe') {
       const child = ShellFactory.tryCreateChild('cmd', {

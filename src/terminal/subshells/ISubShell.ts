@@ -8,6 +8,7 @@
 
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { RichOutputLine } from '@/terminal/core/types';
+import type { IShellBase } from '@/shell/IShellBase';
 
 export interface SubShellResult {
   /** Lines to display in the terminal. */
@@ -27,7 +28,12 @@ export interface SubShellResult {
   clearScreen?: boolean;
 }
 
-export interface ISubShell {
+/**
+ * The legacy per-terminal sub-shell contract. It extends `IShellBase` so
+ * every sub-shell in the project — old or new — shares the same root
+ * identity (`kind`, `connection`, `getPrompt`, `dispose`).
+ */
+export interface ISubShell extends IShellBase {
   /** Current prompt string (e.g. "SQL> ", "PS C:\> "). */
   getPrompt(): string;
 

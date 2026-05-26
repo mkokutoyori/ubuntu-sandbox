@@ -18,6 +18,8 @@ import type { ISshSession } from '@/network/protocols/ssh/session/ISshSession';
 import { isOk } from '@/network/protocols/ssh/Result';
 
 export class RemoteShellSubShell implements ISubShell {
+  readonly kind = 'remote-shell';
+  readonly connection = 'ssh' as const;
   private cwd: string;
 
   constructor(

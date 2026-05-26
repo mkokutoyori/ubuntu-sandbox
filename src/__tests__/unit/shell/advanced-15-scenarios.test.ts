@@ -392,3 +392,190 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     expect(t.getPrompt()).toMatch(/@linuxSrv/);
   });
 });
+
+// ───────────── deep nesting: 4-5 levels of shells ─────────────────
+
+/**
+ * Read the IShell-or-ISubShell-ish identity at the top of the host
+ * session's sub-shell stack. The test harness routinely needs to assert
+ * which shell is active without coupling to any concrete impl.
+ */
+function topShellKind(t: WindowsTerminalSession | LinuxTerminalSession): string | undefined {
+  const a = (t as unknown as { activeSubShell?: { kind?: string; inner?: { kind?: string } } }).activeSubShell;
+  if (!a) return undefined;
+  return a.inner?.kind ?? a.kind;
+}
+
+describe('Deep shell nesting — 4 to 5 levels', () => {
+  // ── #D1 — 4-level chain: Win cmd → SSH Linux → ssh Linux → sqlplus ───
+  test('§D1 — Win→SSH→Linux→SSH→Linux→sqlplus: four shell frames stack and unwind cleanly', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    // L1 → L2 (cmd → SSH bash on linuxSrv)
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    // L2 → L3 (bash → SSH bash on linuxA)
+    await typeSub(t, 'ssh alice@10.0.0.1');
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
+    // L3 → L4 (bash → sqlplus)
+    await typeSub(t, 'sqlplus / as sysdba');
+    expect(t.getPrompt()).toMatch(/^SQL>/);
+    // Unwind one frame at a time.
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  // ── #D2 — 5-level chain: Win cmd → PS → SSH Win → cmd → PS ──────────
+  test('§D2 — Win cmd→PS→SSH Win→cmd→PS: five frames; each exit reveals the previous prompt', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    // L1 console cmd already running.
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+    // L1 → L2 powershell
+    await typeRoot(t, 'powershell');
+    expect(t.getPrompt()).toMatch(/^PS /);
+    // L2 → L3 ssh to winB → remote cmd
+    await typeSub(t, 'ssh user@10.0.0.5');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('user'); t.handleKey(key('Enter')); await flush();
+    }
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    // L3 → L4 nested powershell on the remote
+    await typeSub(t, 'powershell');
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\user>/);
+    // L4 → L5 nested cmd from remote powershell
+    await typeSub(t, 'cmd');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    // Unwind: cmd → PS → ssh-cmd → PS → cmd
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^PS /);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^PS /);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  // ── #D3 — 5-level cross-vendor: Win cmd → SSH Linux → SSH Win → PS → SSH Linux ──
+  test('§D3 — Win→SSH→Linux→SSH→Win→PS→SSH→Linux: alternating-vendor 5-frame stack', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    // L1 cmd
+    // L1→L2 ssh linuxSrv
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    expect(topShellKind(t)).toBe('ssh-remote');
+    // L2→L3 ssh from remote bash into winB
+    await typeSub(t, 'ssh user@10.0.0.5');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    // L3→L4 powershell on winB
+    await typeSub(t, 'powershell');
+    expect(t.getPrompt()).toMatch(/^PS /);
+    // L4→L5 ssh from remote PS into linuxA
+    await typeSub(t, 'ssh alice@10.0.0.1');
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
+    // Each exit pops one frame.
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^PS /);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  // ── #D4 — 4-level chain with Cisco at the leaf ─────────────────
+  test('§D4 — Win→PS→SSH Linux→SSH Cisco→enable: 4 frames + IOS mode change in the deepest', async () => {
+    const { winA, cisco } = await buildLan();
+    cisco.setHostname('R1');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    // L1 cmd → L2 PS
+    await typeRoot(t, 'powershell');
+    // L2 → L3 ssh linuxSrv
+    await typeSub(t, 'ssh alice@10.0.0.3');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    // L3 → L4 ssh Cisco
+    await typeSub(t, 'ssh admin@10.0.0.6');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('Admin@123'); t.handleKey(key('Enter')); await flush();
+    }
+    // Cisco mode transitions are reflected by the live router prompt.
+    expect(t.getPrompt()).toMatch(/^R1[#>]/);
+    if (/>\s?$/.test(t.getPrompt())) {
+      await typeSub(t, 'enable');
+      if (t.currentInputMode.type === 'password') {
+        t.setPasswordBuf('Admin@123'); t.handleKey(key('Enter')); await flush();
+      }
+    }
+    expect(t.getPrompt()).toMatch(/^R1#/);
+    await typeSub(t, 'configure terminal');
+    expect(t.getPrompt()).toMatch(/^R1\(config\)#/);
+    // Pop back out.
+    await typeSub(t, 'end');
+    expect(t.getPrompt()).toMatch(/^R1#/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^PS /);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  // ── #D5 — 5-level chain with Huawei at the leaf ────────────────
+  test('§D5 — Win→SSH Linux→SSH Win→SSH Huawei→system-view: 4 frames + VRP mode change', async () => {
+    const { winA, huawei } = await buildLan();
+    huawei.setHostname('HW');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    // L1→L2 ssh linuxSrv
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // L2→L3 ssh from remote bash into winB cmd
+    await typeSub(t, 'ssh user@10.0.0.5');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    // L3→L4 ssh from remote cmd into Huawei
+    await typeSub(t, 'ssh admin@10.0.0.7');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('Admin@123'); t.handleKey(key('Enter')); await flush();
+    }
+    expect(t.getPrompt()).toMatch(/^<HW>/);
+    // Mode transition: system-view → [HW]
+    await typeSub(t, 'system-view');
+    expect(t.getPrompt()).toMatch(/^\[HW\]/);
+    await typeSub(t, 'quit');
+    expect(t.getPrompt()).toMatch(/^<HW>/);
+    // Pop the whole stack.
+    await typeSub(t, 'quit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+});
+
+// ───────── unified shell identity — every shell carries kind+connection ─────────
+
+describe('Unified shell identity — every shell exposes kind+connection', () => {
+  test('§U1 — top SSH shell wraps a primary shell with the expected kind', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    expect(topShellKind(t)).toBe('ssh-remote');
+    const inner = (t as unknown as { activeSubShell: { inner?: { connection: string; kind: string } } }).activeSubShell.inner;
+    expect(inner?.connection).toBe('ssh');
+    expect(inner?.kind).toBe('ssh-remote');
+  });
+});
+

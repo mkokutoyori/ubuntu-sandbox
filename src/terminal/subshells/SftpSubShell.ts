@@ -40,6 +40,8 @@ stat path                                Display file attributes
 version                                  Show SFTP version`;
 
 export class SftpSubShell implements ISubShell {
+  readonly kind = 'sftp';
+  readonly connection = 'subshell' as const;
   constructor(private readonly session: SftpSession) {}
 
   getPrompt(): string {
