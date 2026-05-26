@@ -11,6 +11,7 @@ interface CiscoTarget {
   executeCommand(cmd: string): Promise<string>;
   executeCommandInVty?(cmd: string, vty: CliShellSession): Promise<string>;
   getPromptForVty?(vty: CliShellSession): string;
+  getPrompt?(): string;
   getHostname(): string;
 }
 
@@ -29,6 +30,12 @@ export class CiscoIOSShellAdapter extends AbstractShell {
     const dev = this.device as unknown as CiscoTarget;
     if (this.vty && this.device instanceof Router && dev.getPromptForVty) {
       return dev.getPromptForVty(this.vty);
+    }
+    // Without a dedicated VTY, defer to the device's live prompt so that
+    // mode transitions (enable → R1#, conf t → R1(config)#) are tracked
+    // immediately instead of freezing on the hostname# decoration.
+    if (this.device instanceof Router && typeof dev.getPrompt === 'function') {
+      return dev.getPrompt();
     }
     return `${dev.getHostname() || 'Router'}#`;
   }

@@ -11,6 +11,7 @@ interface HuaweiTarget {
   executeCommand(cmd: string): Promise<string>;
   executeCommandInVty?(cmd: string, vty: CliShellSession): Promise<string>;
   getPromptForVty?(vty: CliShellSession): string;
+  getPrompt?(): string;
   getHostname(): string;
 }
 
@@ -29,6 +30,13 @@ export class HuaweiVRPShellAdapter extends AbstractShell {
     const dev = this.device as unknown as HuaweiTarget;
     if (this.vty && this.device instanceof Router && dev.getPromptForVty) {
       return dev.getPromptForVty(this.vty);
+    }
+    // Without a dedicated VTY, defer to the device's live prompt so that
+    // mode changes (system-view → [HW], interface gi0/0/0 → [HW-Gi0/0/0])
+    // are reflected immediately. Falling back to the host-name decoration
+    // would freeze the prompt on the user-mode `<HW>` form.
+    if (this.device instanceof Router && typeof dev.getPrompt === 'function') {
+      return dev.getPrompt();
     }
     return `<${dev.getHostname() || 'Huawei'}>`;
   }

@@ -519,8 +519,8 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
   );
 };
 
-/** Render a single output line */
-const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
+/** Render a single output line — exported for unit tests. */
+export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
   // Pre-styled segments take precedence — the shell that produced the
   // line already decided how it should look (used by SSH push to keep
   // ANSI rendering correct on a Windows host, etc.). Render verbatim.
