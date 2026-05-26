@@ -348,7 +348,10 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   async init(): Promise<void> {
-    // Linux terminal has no boot sequence — ready immediately
+    // Linux terminal has no boot sequence — ready immediately. We
+    // pre-register the default shells so bash's SUBSHELL_TRIGGERS find
+    // the SqlPlus / RMAN / SFTP adapters when the user invokes them.
+    installDefaultShells();
   }
 
   // ── Input mode ──────────────────────────────────────────────────
@@ -573,18 +576,14 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // Intercept Oracle CLI tools (only if no sudo prefix)
+    // Intercept Oracle CLI tools (only if no sudo prefix). sqlplus and
+    // rman now flow through LinuxBashShell's SUBSHELL_TRIGGERS — bash
+    // creates the IShell-backed adapter via ShellFactory, the session
+    // pushes the child via pushIShellAsSubShell. We keep the legacy
+    // helpers below for tools the bash layer does not intercept yet.
     if (!trimmed.startsWith('sudo ')) {
       const noSudo = trimmed;
       const parts = noSudo.split(/\s+/);
-      if (parts[0] === 'sqlplus') {
-        this.enterSqlPlus(parts.slice(1));
-        return;
-      }
-      if (parts[0] === 'rman') {
-        this.enterRman(parts.slice(1));
-        return;
-      }
       if (parts[0] === 'sftp') {
         this.enterSftp(parts.slice(1));
         return;
@@ -657,9 +656,12 @@ export class LinuxTerminalSession extends TerminalSession {
       const shell = this.ensureRootBash();
       if (shell) {
         const result = await shell.processLine(trimmed);
+        // Shell explicitly asked for a clear (clear / cls / reset), OR
         // ANSI clear-screen sequence — wipe scrollback like a real tty.
         const joined = result.output.join('\n');
-        if (joined.includes('\x1b[2J') || joined.includes('\x1b[H')) {
+        if (result.clearScreen
+            || joined.includes('\x1b[2J')
+            || joined.includes('\x1b[H')) {
           this.clear();
         } else if (result.styledOutput && result.styledOutput.length > 0) {
           for (const styled of result.styledOutput) {

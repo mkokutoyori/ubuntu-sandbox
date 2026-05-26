@@ -120,7 +120,17 @@ export class LinuxBashShell extends AbstractShell {
           parent: this,
           launchLine: line,
         });
-        if (child) return { output: [], childShell: child };
+        if (child) {
+          // Some adapters (SqlPlusShell, RmanShell) expose `isReady` and
+          // refuse to be pushed against a device that lacks the backing
+          // service. Mirror real bash by emitting "command not found".
+          const ready = (child as unknown as { isReady?: boolean }).isReady;
+          if (ready === false) {
+            child.dispose();
+            return { output: [`bash: ${kind}: command not found`] };
+          }
+          return { output: [], childShell: child };
+        }
         // Fall through if no adapter is registered — print the legacy
         // device output (banner / error) like the simulator did before.
       }
