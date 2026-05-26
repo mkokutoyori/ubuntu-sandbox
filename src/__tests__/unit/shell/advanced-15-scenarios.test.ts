@@ -352,17 +352,19 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     expect(t.getPrompt()).toMatch(/^PS /);
   });
 
-  // ── #13 — clear on Cisco IOS via SSH wipes screen ──────────────
-  test('§13 — Win→SSH→Cisco: `clear` (or `clear screen`) wipes the terminal', async () => {
+  // ── #13 — Ctrl+L wipes screen on Cisco IOS (real IOS has no `clear`
+  //          word for screen wipe; the universal binding is Ctrl+L). ──
+  test('§13 — Win→SSH→Cisco: Ctrl+L wipes the terminal scrollback', async () => {
     const { winA, cisco } = await buildLan();
     cisco.setHostname('R1');
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh admin@10.0.0.6', 'Admin@123');
     await typeSub(t, 'show version');
-    const before = t.lines.length;
-    await typeSub(t, 'clear');
-    expect(t.lines.length).toBeLessThan(before);
+    expect(t.lines.length).toBeGreaterThan(0);
+    t.handleKey(key('l', { ctrlKey: true }));
+    await flush();
+    expect(t.lines.length).toBeLessThanOrEqual(2);
   });
 
   // ── #14 — Output lines carry segments after SSH ────────────────
@@ -664,7 +666,89 @@ describe('Nested-SSH password challenge — driven by the remote shell', () => {
   });
 });
 
-// ─── Universal styled output — every shell emits segments ────────────
+// ─── Repro of reported bugs (Linux→SSH→Windows) ─────────────────────
+
+describe('Linux→SSH→Windows: prompt format, clear, powershell, completion', () => {
+  test('§R1 — Linux→SSH→Win: prompt is cmd-style "C:\\Users\\carl>", NOT Linux user@host:path$', async () => {
+    const { linuxA, winA } = await buildLan();
+    // Ensure carl/carl exists on winA.
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    // The prompt the renderer will use must look like cmd, not Linux bash.
+    const p = t.getPrompt();
+    expect(p).toMatch(/^C:\\Users\\carl>/);
+    // The structured parts the Linux PromptRenderer reads must report
+    // that the active shell is foreign so it can defer to getPrompt().
+    const parts = t.getPromptParts();
+    expect(parts.foreign).toBe(true);
+  });
+
+  test('§R2 — Linux→SSH→Win: typing "clear" is NOT recognised by cmd', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    await typeSub(t, 'clear');
+    // Real cmd prints the canonical "is not recognized" error. The shell
+    // must NOT silently wipe the screen — that is bash semantics.
+    expectAnyLine(t, /is not recognized as an internal or external command/);
+  });
+
+  test('§R3 — Linux→SSH→Win: typing "cls" wipes the buffer (cmd clearWords)', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    await typeSub(t, 'echo seen-before-cls');
+    const before = t.lines.length;
+    await typeSub(t, 'cls');
+    // Buffer should have shrunk meaningfully — at least the "seen-before"
+    // line is gone.
+    expect(t.lines.length).toBeLessThan(before);
+    expect(t.lines.some((l) => /seen-before-cls/.test(l.text))).toBe(false);
+  });
+
+  test('§R4 — Linux→SSH→Win: typing "powershell" pushes a real PS frame; "gcm" is recognised', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    await typeSub(t, 'powershell');
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\carl>/);
+    // 'gcm' (Get-Command) is a built-in PowerShell alias. Whatever it
+    // outputs, the cmd-style "is not recognized" footer MUST NOT appear.
+    await typeSub(t, 'gcm');
+    const tail = t.lines.slice(-10).map((l) => l.text).join('\n');
+    expect(/is not recognized as an internal or external command/.test(tail)).toBe(false);
+  });
+
+  test('§R5 — Linux→SSH→Win: user identity stays "carl" across multiple commands', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    await typeSub(t, 'echo a');
+    await typeSub(t, 'echo b');
+    await typeSub(t, 'echo c');
+    expect(t.getPrompt()).toMatch(/carl/);
+  });
+
+  test('§R6 — Windows→SSH→Linux: Tab completion runs against the REMOTE bash', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    t.setInputBuf('ls /et');
+    t.handleKey(key('Tab'));
+    await flush();
+    // The remote bash should expand /et → /etc.
+    const buf = (t as unknown as { getInputBuf(): string }).getInputBuf();
+    expect(buf).toMatch(/\/etc/);
+  });
+});
+
+
 
 describe('Universal styled output — every shell emits styled segments', () => {
   test('§S1 — sqlplus output lines carry segments through the SSH boundary', async () => {

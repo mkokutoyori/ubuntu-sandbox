@@ -41,6 +41,9 @@ export class WindowsPowerShellShell extends AbstractShell {
   private readonly windowsSession: WindowsShellSession | null;
   private pendingSshAuth: PendingSshAuth | null = null;
 
+  /** PowerShell exposes BOTH `clear` and `cls` as aliases of Clear-Host. */
+  protected override clearWords: ReadonlySet<string> = new Set(['clear', 'cls', 'clear-host']);
+
   constructor(opts: WindowsPowerShellOptions) {
     super(opts);
     this.windowsSession = opts.windowsSession ?? null;

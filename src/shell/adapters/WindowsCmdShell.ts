@@ -43,6 +43,10 @@ export class WindowsCmdShell extends AbstractShell {
   private readonly windowsSession: WindowsShellSession | null;
   private pendingSshAuth: PendingSshAuth | null = null;
 
+  /** Real cmd.exe only knows `cls`; typing `clear` produces a "not
+   *  recognized as an internal or external command" error. */
+  protected override clearWords: ReadonlySet<string> = new Set(['cls']);
+
   constructor(opts: WindowsCmdShellOptions) {
     super(opts);
     this.windowsSession = opts.windowsSession ?? null;

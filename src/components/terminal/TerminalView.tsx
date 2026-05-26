@@ -501,6 +501,17 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
   if (sessionType === 'linux') {
     const linux = session as LinuxTerminalSession;
     const p = linux.getPromptParts();
+    // Foreign sub-shell (SSH'd into Windows / Cisco / Huawei, sqlplus,
+    // sftp, …): the bash-style `user@host:path$` decomposition does not
+    // apply. Render the sub-shell's raw prompt verbatim so cmd shows
+    // `C:\Users\carl>`, PS shows `PS C:\Users\carl>`, IOS shows `R1#`, etc.
+    if (p.foreign) {
+      return (
+        <span className="whitespace-pre select-none" style={{ color: theme.promptColor, fontFamily: 'inherit' }}>
+          {session.getPrompt()}
+        </span>
+      );
+    }
     return (
       <span className="whitespace-pre select-none" style={{ fontFamily: 'inherit' }}>
         <span style={{ color: p.user === 'root' ? '#ef2929' : '#8ae234', fontWeight: 'bold' }}>{p.user}@{p.hostname}</span>

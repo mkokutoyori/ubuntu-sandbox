@@ -1657,6 +1657,10 @@ export class WindowsPC extends EndHost {
     }
   }
 
+  /** Override Equipment's hard-coded 'user' default so syncDeviceState
+   *  reports the real currently-logged-in account on this Windows host. */
+  override getCurrentUser(): string { return this.userMgr.currentUser; }
+
   /** Get the user manager (for PowerShellExecutor and other integrations) */
   getUserManager(): WindowsUserManager { return this.userMgr; }
 

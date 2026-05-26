@@ -95,6 +95,28 @@ export class LinuxBashShell extends AbstractShell {
     return ['logout'];
   }
 
+  /** Real bash recognises `clear` and `reset`, NOT `cls`. */
+  protected override clearWords: ReadonlySet<string> = new Set(['clear', 'reset']);
+
+  /**
+   * Completion runs in THIS bash's session context (cwd / env / suStack)
+   * so path completion sees the per-shell cwd, not the device-wide
+   * default. Without this override, an SSH'd bash sitting in /etc would
+   * complete relative to the device's local-console cwd — a bleed
+   * regression equivalent to the per-terminal cwd issue
+   * `terminal_gap.md §6` describes for Windows.
+   */
+  override getCompletions(line: string): readonly string[] {
+    const dev = this.device as unknown as {
+      getCompletionsForSession?: (p: string, s: LinuxShellSession) => string[];
+      getCompletions?: (p: string) => string[];
+    };
+    if (this.session && dev.getCompletionsForSession) {
+      return dev.getCompletionsForSession(line, this.session);
+    }
+    return dev.getCompletions ? dev.getCompletions(line) : [];
+  }
+
   /**
    * Sub-shell launchers a real bash recognises by exec'ing the binary.
    * Each entry maps the bare command line (after trimming flags) to the
