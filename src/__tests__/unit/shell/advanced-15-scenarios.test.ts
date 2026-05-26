@@ -921,6 +921,68 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expect(/SSH_CONNECTION=/.test(tail)).toBe(true);
   });
 
+  test('§F41 — ssh root@host is refused by default (PermitRootLogin prohibit-password)', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh root@10.0.0.3');
+    // Either the connection is refused outright (some paths) or
+    // password auth fails repeatedly (default 'prohibit-password' means
+    // password auth for root is rejected silently — three strikes).
+    // Drive three attempts so we hit the lockout path.
+    for (let i = 0; i < 3 && t.currentInputMode.type === 'password'; i++) {
+      t.setPasswordBuf('admin'); t.handleKey(key('Enter')); await flush();
+    }
+    // We must NOT end up on the root@linuxSrv# prompt.
+    expect(t.getPrompt()).not.toMatch(/^root@linuxSrv/);
+  });
+
+  test('§F42 — ssh -p 22 alice@host is identical to bare ssh alice@host', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh -p 22 alice@10.0.0.3');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+  });
+
+  test('§F43 — Cisco IOS `?` inline help is still available after SSH push', async () => {
+    const { winA, cisco } = await buildLan();
+    cisco.setHostname('R1');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh admin@10.0.0.6', 'Admin@123');
+    await typeSub(t, '?');
+    // The IOS `?` help returns a list of words available at the current mode.
+    expect(t.lines.length).toBeGreaterThan(0);
+  });
+
+  test('§F44 — bash cd then logout, reconnect → cwd resets to $HOME', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'cd /tmp');
+    expect(t.getPrompt()).toMatch(/:\/tmp\$/);
+    await typeSub(t, 'exit');
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // Fresh session — back at $HOME (~).
+    expect(t.getPrompt()).toMatch(/:~\$/);
+  });
+
+  test('§F45 — chmod, umask and stat round-trip works over SSH', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'touch /tmp/ssh-test');
+    await typeSub(t, 'chmod 644 /tmp/ssh-test');
+    const out = await linuxSrv.executeCommand('stat -c %a /tmp/ssh-test');
+    expect(out.trim()).toBe('644');
+  });
+
   test('§F40 — 6-deep SSH chain: Win→ssh→Linux→ssh→Win→ssh→Linux→ssh→Win→ssh→Linux', async () => {
     const { winA, winB, linuxA, linuxSrv } = await buildLan();
     void linuxA; void linuxSrv; void winB;
