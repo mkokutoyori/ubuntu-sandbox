@@ -358,6 +358,26 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    // SSH client info / unsupported forms — handled by the shared
+    // launcher first so the OpenSSH usage / version line is uniform
+    // across the local console and SSH'd-in shells.
+    if (lower === 'ssh -v' || lower === 'ssh --version'
+        || trimmed === 'ssh' /* bare ssh prints usage */) {
+      if (lower === 'ssh -v' || lower === 'ssh --version') {
+        this.addLine('OpenSSH_9.6p1 Ubuntu-3ubuntu13.4, OpenSSL 3.0.13 30 Jan 2024');
+      } else {
+        this.addLine('usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]');
+        this.addLine('           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]');
+        this.addLine('           [-E log_file] [-F configfile] [-I pkcs11] [-i identity_file]');
+        this.addLine('           [-J [user@]host[:port]] [-L address] [-l login_name]');
+        this.addLine('           [-o option] [-p port] [-Q query_option] [-R address]');
+        this.addLine('           [-S ctl_path] [-W host:port] [-w local_tun[:remote_tun]]');
+        this.addLine('           destination [command [argument ...]]');
+      }
+      this.notify();
+      return;
+    }
+
     // SSH interactive push: when the user types `ssh [user@]host` (no
     // remote command after the host), spawn an interactive remote
     // sub-shell against the resolved peer instead of falling through to

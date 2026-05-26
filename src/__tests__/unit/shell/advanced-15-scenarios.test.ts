@@ -666,6 +666,89 @@ describe('Nested-SSH password challenge — driven by the remote shell', () => {
   });
 });
 
+// ─── SSH realism — OpenSSH-faithful behaviour expectations ───────────
+
+describe('SSH realism — banners, exec mode, error messages, env', () => {
+  test('§F1 — successful nested ssh prints the "Warning: Permanently added" line on first connection', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // Type a nested ssh from inside bash — should print the OpenSSH
+    // host-key acceptance line the first time.
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
+    expectAnyLine(t, /Warning: Permanently added '10\.0\.0\.1'.*to the list of known hosts/);
+  });
+
+  test('§F2 — successful nested ssh prints "Last login:" the way OpenSSH does', async () => {
+    const { winA, linuxA } = await buildLan();
+    // Pre-seed a prior login for alice on linuxA so the OpenSSH banner
+    // has something to point at. Mirrors the real /var/log/lastlog state
+    // that any live host carries.
+    linuxA.recordSshLogin('alice', '10.0.0.99', 'home', true, 'password');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
+    expectAnyLine(t, /Last login:.*from /);
+  });
+
+  test('§F3 — exec mode: "ssh user@host cmd args" runs the command remotely and stays in local shell', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // alice has only her own session here. Exec mode SHOULD NOT push a
+    // remote shell — it runs the one-shot command and leaves us in the
+    // outer bash. With the password challenge first.
+    await typeSub(t, 'ssh alice@10.0.0.1 hostname');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    expectAnyLine(t, /^linuxA$/);
+    // We must still be inside the OUTER ssh (linuxSrv), not pushed onto
+    // linuxA.
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+  });
+
+  test('§F4 — ssh to a powered-off device fails with a network-unreachable-style message', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    linuxSrv.powerOff();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh alice@10.0.0.3');
+    // No password challenge — connection itself failed.
+    expect(t.currentInputMode.type).not.toBe('password');
+    expectAnyLine(t, /ssh: connect to host 10\.0\.0\.3 port 22: (No route to host|Network is unreachable|Connection refused)/);
+  });
+
+  test('§F5 — ssh -V prints the client version and exits without prompting', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh -V');
+    expect(t.currentInputMode.type).not.toBe('password');
+    expectAnyLine(t, /OpenSSH_/);
+  });
+
+  test('§F6 — three bad passwords give the canonical OpenSSH lockout message', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // Type nested ssh; feed three wrong passwords.
+    await typeSub(t, 'ssh alice@10.0.0.1');
+    for (let i = 0; i < 3; i++) {
+      expect(t.currentInputMode.type).toBe('password');
+      t.setPasswordBuf('NOPE');
+      t.handleKey(key('Enter'));
+      await flush();
+    }
+    expect(t.currentInputMode.type).not.toBe('password');
+    expectAnyLine(t, /alice@10\.0\.0\.1: Permission denied \(publickey,password\)/);
+  });
+});
+
 // ─── Repro of reported bugs (Linux→SSH→Windows) ─────────────────────
 
 describe('Linux→SSH→Windows: prompt format, clear, powershell, completion', () => {
