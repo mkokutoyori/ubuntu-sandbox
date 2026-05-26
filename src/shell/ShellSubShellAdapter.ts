@@ -42,6 +42,7 @@ export class ShellSubShellAdapter implements ISubShell {
     const r = await this.shell.processLine(line);
     return {
       output: [...r.output],
+      styledOutput: r.styledOutput ? [...r.styledOutput] : undefined,
       exit: !!r.exit,
       prompt: this.shell.getPrompt(),
       clearScreen: r.clearScreen,

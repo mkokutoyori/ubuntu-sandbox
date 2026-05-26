@@ -27,7 +27,7 @@
 import { Equipment } from '@/network';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
+import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -50,6 +50,13 @@ export interface OutputLine {
   id: number;
   text: string;
   type: string; // 'normal' | 'error' | 'warning' | 'boot' | 'more' | 'prompt' | 'ps-header'
+  /**
+   * Pre-styled segments produced by the originating shell. When set, the
+   * view MUST render these segments verbatim and ignore any vendor
+   * heuristic on the host session (this is what fixes ANSI-over-SSH
+   * displaying raw `[1;36m` in a Windows host terminal).
+   */
+  segments?: TextSegment[];
 }
 
 /**
@@ -253,6 +260,22 @@ export abstract class TerminalSession {
     this.lines.push({ id: nextLineId(), text, type });
     this.enforceScrollbackLimit();
     // Record output events (skip prompts — those are recorded as 'input')
+    if (type !== 'prompt') {
+      this.recordEvent(type === 'error' ? 'error' : 'output', text);
+    }
+    this.notify();
+  }
+
+  /**
+   * Append a line whose visual styling was decided by the shell that
+   * produced it (typically over SSH, where the host terminal must NOT
+   * apply its own vendor rendering). The plain `text` is computed from
+   * the segments and is kept for transcripts / recording.
+   */
+  addStyledLine(segments: TextSegment[], type: string = 'normal'): void {
+    const text = segments.map((s) => s.text).join('');
+    this.lines.push({ id: nextLineId(), text, type, segments });
+    this.enforceScrollbackLimit();
     if (type !== 'prompt') {
       this.recordEvent(type === 'error' ? 'error' : 'output', text);
     }

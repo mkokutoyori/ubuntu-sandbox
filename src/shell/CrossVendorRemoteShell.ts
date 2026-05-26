@@ -19,7 +19,7 @@
  */
 
 import type { Equipment } from '@/network';
-import type { IShell, ShellLineResult, ShellKeyEvent, ShellSpecialAction } from './IShell';
+import type { IShell, ShellConnection, ShellLineResult, ShellKeyEvent, ShellSpecialAction } from './IShell';
 import { ShellFactory } from './ShellFactory';
 import type { ShellContext } from './ShellContext';
 
@@ -35,6 +35,8 @@ export interface CrossVendorRemoteShellOptions {
 
 export class CrossVendorRemoteShell implements IShell {
   readonly kind = 'ssh-remote';
+  /** SSH push is, by construction, an `ssh`-driven shell. */
+  readonly connection: ShellConnection = 'ssh';
   readonly device: Equipment;
   readonly user: string;
   readonly context: ShellContext;
@@ -53,6 +55,7 @@ export class CrossVendorRemoteShell implements IShell {
     const primary = ShellFactory.create(opts.primaryKind, {
       device: opts.device,
       user: opts.user,
+      connection: 'ssh',
     });
     this.context = primary.context;
     primary.activate();
@@ -92,6 +95,7 @@ export class CrossVendorRemoteShell implements IShell {
           ...result.output,
           ...result.childShell.getActivationBanner(),
         ],
+        styledOutput: result.styledOutput,
         clearScreen: result.clearScreen,
       };
     }
@@ -107,11 +111,16 @@ export class CrossVendorRemoteShell implements IShell {
         this.onClose();
         return {
           output: [...result.output, `Connection to ${this.remoteHost} closed.`],
+          styledOutput: result.styledOutput,
           exit: true,
         };
       }
       this.top.resume();
-      return { output: result.output, clearScreen: result.clearScreen };
+      return {
+        output: result.output,
+        styledOutput: result.styledOutput,
+        clearScreen: result.clearScreen,
+      };
     }
 
     return result;

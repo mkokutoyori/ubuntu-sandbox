@@ -23,7 +23,7 @@
 
 import type { Equipment } from '@/network';
 import type {
-  IShell, ShellKeyEvent, ShellLineResult, ShellSpecialAction,
+  IShell, ShellConnection, ShellKeyEvent, ShellLineResult, ShellSpecialAction,
 } from './IShell';
 import { ShellContext } from './ShellContext';
 
@@ -33,6 +33,11 @@ export interface AbstractShellOptions {
   readonly context: ShellContext;
   /** Optional parent shell — set when this shell is nested under another. */
   readonly parent?: IShell | null;
+  /**
+   * How this shell is being driven. Defaults to `console` when omitted,
+   * which matches the pre-existing behaviour of every legacy spawn site.
+   */
+  readonly connection?: ShellConnection;
 }
 
 export abstract class AbstractShell implements IShell {
@@ -42,6 +47,7 @@ export abstract class AbstractShell implements IShell {
   readonly device: Equipment;
   readonly user: string;
   readonly context: ShellContext;
+  readonly connection: ShellConnection;
   protected parent: IShell | null;
 
   /** Words that, when typed alone, unwind this shell — defaults are POSIX. */
@@ -61,6 +67,7 @@ export abstract class AbstractShell implements IShell {
     this.user = opts.user;
     this.context = opts.context;
     this.parent = opts.parent ?? null;
+    this.connection = opts.connection ?? 'console';
   }
 
   // ─── Required hooks ────────────────────────────────────────────────
@@ -145,6 +152,7 @@ export abstract class AbstractShell implements IShell {
     // Normalise the readonly contract — never mutate the caller's array.
     return {
       output: result.output ?? [],
+      styledOutput: result.styledOutput,
       childShell: result.childShell,
       exit: result.exit,
       clearScreen: result.clearScreen,

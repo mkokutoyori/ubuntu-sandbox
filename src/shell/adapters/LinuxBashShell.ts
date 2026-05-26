@@ -17,6 +17,9 @@ import type { IShell, ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
+import { nextLineId } from '@/terminal/sessions/TerminalSession';
+import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
+import type { RichOutputLine } from '@/terminal/core/types';
 
 interface LinuxDevice {
   executeCommand(cmd: string): Promise<string>;
@@ -98,7 +101,21 @@ export class LinuxBashShell extends AbstractShell {
     if (this.session) {
       this.context.cwd = this.session.cwd;
     }
-    return { output: this.splitOutput(raw) };
+    const output = this.splitOutput(raw);
+    // Bash output may carry ANSI escape codes (ls --color, grep --color,
+    // git, …). The shell — not the host terminal — owns its rendering, so
+    // we parse the codes once here and forward pre-styled segments. The
+    // host terminal renders them verbatim regardless of vendor; this is
+    // what fixes "raw [1;36m on Windows over SSH".
+    const styledOutput: RichOutputLine[] = output.map((line) => ({
+      id: nextLineId(),
+      segments: parseAnsiToSegments(line),
+      lineType: 'output',
+    }));
+    // Plain text (for transcripts, recording) strips the ANSI escapes
+    // so the recorded session reads cleanly without control bytes.
+    const plain = output.map(stripAnsi);
+    return { output: plain, styledOutput };
   }
 
   getPrompt(): string {
@@ -122,3 +139,7 @@ export class LinuxBashShell extends AbstractShell {
     return s.replace(/\n+$/, '').split('\n');
   }
 }
+
+// eslint-disable-next-line no-control-regex
+const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
+function stripAnsi(s: string): string { return s.replace(ANSI_REGEX, ''); }

@@ -27,15 +27,42 @@
  */
 
 import type { Equipment } from '@/network';
+import type { RichOutputLine } from '@/terminal/core/types';
 import type { ShellContext } from './ShellContext';
+
+/**
+ * How this shell is being driven by the user. The shell can use this to
+ * decide whether to render an MOTD, whether to honour `logout` vs `exit`,
+ * whether to colourise its output (real ttys: yes; piped: no), etc. The
+ * field is immutable for the lifetime of the shell.
+ *
+ *  - `console`  — local sit-at-the-keyboard session (root shell of a terminal).
+ *  - `ssh`      — driven through an SSH server (CrossVendorRemoteShell wraps it).
+ *  - `telnet`   — driven through a telnet/VTY line.
+ *  - `subshell` — spawned from inside another shell (sqlplus, rman, nested cmd…).
+ */
+export type ShellConnection = 'console' | 'ssh' | 'telnet' | 'subshell';
 
 /**
  * Result of processing one input line. `output` is the lines to print,
  * `childShell` (if set) is a new shell to push on top, `exit` requests
  * unwinding this shell, `clearScreen` requests the terminal to wipe.
+ *
+ * Shells that own their styling (ANSI colors, prompt highlight, error
+ * red) should populate `styledOutput` — the terminal will render those
+ * segments verbatim, bypassing any vendor-specific rendering on the host
+ * session. This is what fixes the "ANSI codes raw over SSH" class of
+ * bugs: the rendering is decided by the shell that produced the bytes,
+ * not by the host terminal it happens to be displayed in.
  */
 export interface ShellLineResult {
   readonly output: readonly string[];
+  /**
+   * Optional pre-styled output lines. When present, the host terminal
+   * MUST render these segments and ignore `output` for visual purposes
+   * (it is kept for transcript/recording).
+   */
+  readonly styledOutput?: readonly RichOutputLine[];
   readonly childShell?: IShell;
   readonly exit?: boolean;
   readonly clearScreen?: boolean;
@@ -64,6 +91,13 @@ export type ShellSpecialAction =
 export interface IShell {
   /** Stable identifier — `bash`, `cmd`, `powershell`, `cisco-ios`, … */
   readonly kind: string;
+
+  /**
+   * How this shell is being driven. Set at construction, never changes.
+   * Lets the shell make connection-aware decisions (MOTD, prompts,
+   * end-of-session footer, password challenges, …).
+   */
+  readonly connection: ShellConnection;
 
   /** The remote/local equipment this shell drives. */
   readonly device: Equipment;

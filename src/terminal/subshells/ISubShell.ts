@@ -7,10 +7,18 @@
  */
 
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
+import type { RichOutputLine } from '@/terminal/core/types';
 
 export interface SubShellResult {
   /** Lines to display in the terminal. */
   output: string[];
+  /**
+   * Pre-styled output lines. When present, the host session renders these
+   * segments verbatim (bypassing its own vendor renderer). Provided by
+   * sub-shells that own their styling, e.g. an SSH-pushed bash whose
+   * `ls --color` ANSI codes must NOT be interpreted by the Windows host.
+   */
+  styledOutput?: RichOutputLine[];
   /** Whether the sub-shell has exited. */
   exit: boolean;
   /** The prompt to show for the next line of input. */

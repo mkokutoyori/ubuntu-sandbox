@@ -784,7 +784,16 @@ export class WindowsTerminalSession extends TerminalSession {
           this.bannerCleared = true;
         }
 
-        for (const outputLine of result.output) this.addLine(outputLine);
+        // Prefer pre-styled output when the sub-shell provided it — that
+        // way the host's vendor renderer never touches lines whose styling
+        // was decided remotely (e.g. SSH'd bash's ANSI colors).
+        if (result.styledOutput && result.styledOutput.length > 0) {
+          for (const styled of result.styledOutput) {
+            this.addStyledLine(styled.segments, styled.lineType);
+          }
+        } else {
+          for (const outputLine of result.output) this.addLine(outputLine);
+        }
 
         if (result.exit) {
           this.exitSubShell();
