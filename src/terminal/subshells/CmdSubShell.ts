@@ -12,6 +12,8 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 
 export class CmdSubShell implements ISubShell {
+  readonly kind = 'cmd';
+  readonly connection = 'subshell' as const;
   private device: Equipment;
 
   private constructor(device: Equipment) {

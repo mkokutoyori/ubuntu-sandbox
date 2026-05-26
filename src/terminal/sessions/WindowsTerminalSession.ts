@@ -37,6 +37,7 @@ import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
+import { SshKnownHostsFile } from '@/network/protocols/ssh/SshKnownHostsFile';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -84,6 +85,12 @@ export class WindowsTerminalSession extends TerminalSession {
   private subShellHistoryIndex: number = -1;
   /** Saved input before history navigation started. */
   private subShellSavedInput: string = '';
+  /**
+   * The pending input directive most recently requested by the active
+   * sub-shell. When set, Enter on the host routes the collected value
+   * back to the sub-shell via `handleInput` instead of `processLine`.
+   */
+  private subShellPendingInput: { kind: 'password' | 'text'; promptText: string } | null = null;
 
   /**
    * Per-terminal cmd.exe session — allocated on Windows machines so that
@@ -159,7 +166,24 @@ export class WindowsTerminalSession extends TerminalSession {
     return `${cwd}>`;
   }
 
+  /**
+   * Top of the active shell stack. When a sub-shell is pushed it's the
+   * adapter wrapping that shell; otherwise null (root cmd path). The
+   * adapter conforms to IShellBase via its inherited fields.
+   */
+  override get activeShell(): import('@/shell/IShellBase').IShellBase | null {
+    return this.activeSubShell;
+  }
+
   override get currentInputMode(): InputMode {
+    // A sub-shell that asked for a password challenge takes priority over
+    // the normal interactive-text input — the host must mask keystrokes.
+    if (this.activeSubShell && this.subShellPendingInput) {
+      const p = this.subShellPendingInput;
+      return p.kind === 'password'
+        ? { type: 'password', promptText: p.promptText }
+        : { type: 'interactive-text', promptText: p.promptText };
+    }
     if (this.activeSubShell) {
       return { type: 'interactive-text', promptText: this.activeSubShell.getPrompt() };
     }
@@ -205,6 +229,39 @@ export class WindowsTerminalSession extends TerminalSession {
       // Let the view drive the character-by-character input into the
       // masked password buffer.
       return false;
+    }
+
+    // Sub-shell asked for a pending input value (typically a nested ssh
+    // password). Capture it via password/text mode and feed it back to
+    // the sub-shell's handleInput on Enter. Ctrl+C aborts.
+    if (this.activeSubShell && this.subShellPendingInput) {
+      if (e.key === 'Enter') {
+        const value = this.subShellPendingInput.kind === 'password'
+          ? this.getPasswordBuf()
+          : this.getInputBuf();
+        const directive = this.subShellPendingInput;
+        this.subShellPendingInput = null;
+        this.setPasswordBuf('');
+        this.setInputBuf('');
+        this.inputMode = { type: 'normal' };
+        // Echo the prompt into scrollback once the user has submitted,
+        // mirroring the OpenSSH challenge UX.
+        if (directive.kind === 'password' && directive.promptText) {
+          this.addLine(directive.promptText);
+        }
+        this.feedSubShellInput(value);
+        return true;
+      }
+      if (e.key === 'c' && e.ctrlKey) {
+        this.subShellPendingInput = null;
+        this.setPasswordBuf('');
+        this.setInputBuf('');
+        this.inputMode = { type: 'normal' };
+        this.addLine('^C');
+        this.notify();
+        return true;
+      }
+      return false; // Let the view drive char-by-char input.
     }
 
     // Sub-shell active (PowerShell or nested cmd) — route input there
@@ -349,7 +406,7 @@ export class WindowsTerminalSession extends TerminalSession {
    */
   private parseInteractiveSsh(
     line: string,
-  ): { user: string | null; host: string; port: number } | null {
+  ): { user: string | null; host: string; port: number; quiet: boolean } | null {
     const parts = line.split(/\s+/).filter(p => p.length > 0);
     if (parts[0] !== 'ssh' || parts.length < 2) return null;
     const valueFlags = new Set([
@@ -359,8 +416,10 @@ export class WindowsTerminalSession extends TerminalSession {
     let i = 1;
     let port = 22;
     let loginUser: string | null = null;
+    let quiet = false;
     while (i < parts.length && parts[i].startsWith('-')) {
       const flag = parts[i];
+      if (flag === '-q') { quiet = true; i++; continue; }
       if (flag === '-p' && parts[i + 1]) {
         const n = Number.parseInt(parts[i + 1], 10);
         if (Number.isFinite(n) && n > 0 && n < 65536) port = n;
@@ -373,11 +432,11 @@ export class WindowsTerminalSession extends TerminalSession {
     const target = parts[i];
     if (!target) return null;
     const remoteCmd = parts.slice(i + 1).join(' ').trim();
-    if (remoteCmd) return null; // exec mode — let device cmdSsh handle it.
+    if (remoteCmd) return null;
 
     const m = /^(?:([\w.\-\\]+)@)?([\w.-]+)$/.exec(target);
     if (!m) return null;
-    return { user: m[1] ?? loginUser, host: m[2], port };
+    return { user: m[1] ?? loginUser, host: m[2], port, quiet };
   }
 
   /**
@@ -476,6 +535,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: found.device,
       sourceIp,
       sourceHostname: dev.getHostname(),
+      quiet: parsed.quiet,
     };
     this.inputMode = { type: 'password', promptText: `${user}@${host}'s password: ` };
     this.addLine(`${user}@${host}'s password:`, 'prompt');
@@ -490,6 +550,7 @@ export class WindowsTerminalSession extends TerminalSession {
   private pendingSshPush: {
     user: string; host: string; port: number;
     device: Equipment; sourceIp: string; sourceHostname: string;
+    quiet: boolean;
   } | null = null;
 
   /**
@@ -531,14 +592,21 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    // Authenticated — banner, then push the cross-vendor shell.
     remote.recordSshLogin?.(
       pending.user, pending.sourceIp, pending.sourceHostname, true,
     );
-    const banner = remote.sshBanner?.() ?? '';
-    for (const line of banner.replace(/\n+$/, '').split('\n')) {
-      if (line.length > 0) this.addLine(line);
+    if (!pending.quiet) {
+      const banner = remote.sshBanner?.() ?? '';
+      for (const line of banner.replace(/\n+$/, '').split('\n')) {
+        if (line.length > 0) this.addLine(line);
+      }
+      const remoteMotd = (pending.device as unknown as { getSshMotd?: () => string });
+      const motd = remoteMotd.getSshMotd?.() ?? '';
+      for (const line of motd.replace(/\n+$/, '').split('\n')) {
+        if (line.length > 0) this.addLine(line);
+      }
     }
+    this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
 
     installDefaultShells();
     const primaryKind = this.pickPrimaryShellKind(pending.device);
@@ -623,6 +691,33 @@ export class WindowsTerminalSession extends TerminalSession {
    * Pick the kind of primary shell for the remote's vendor — the shell
    * the user would land in if they were seated at the remote's console.
    */
+  private writeKnownHostsEntry(remote: Equipment, host: string, user: string): void {
+    const localDev = this.device as unknown as {
+      fs?: {
+        readFile: (p: string) => { ok: boolean; content?: string };
+        createFile: (p: string, c: string) => { ok: boolean; error?: string };
+        exists: (p: string) => boolean;
+        mkdirp: (p: string) => void;
+      };
+    };
+    if (!localDev.fs) return;
+    const remoteAny = remote as unknown as {
+      getSshHostKey?: () => { type: string; publicKey: string };
+    };
+    const hk = remoteAny.getSshHostKey?.();
+    if (!hk) return;
+    const path = `C:\\Users\\${user}\\.ssh\\known_hosts`;
+    const dir = path.substring(0, path.lastIndexOf('\\'));
+    if (!localDev.fs.exists(dir)) localDev.fs.mkdirp(dir);
+    const existing = localDev.fs.readFile(path);
+    const body = existing.ok ? (existing.content ?? '') : '';
+    const file = SshKnownHostsFile.parse(body);
+    if (!file.find(host)) {
+      const updated = file.add({ hostnames: [host], keyType: hk.type, publicKey: hk.publicKey });
+      localDev.fs.createFile(path, updated.serialize());
+    }
+  }
+
   private pickPrimaryShellKind(eq: Equipment): string {
     const name = (eq.constructor as { name: string }).name;
     if (name === 'WindowsPC') return 'cmd';
@@ -682,6 +777,38 @@ export class WindowsTerminalSession extends TerminalSession {
     for (const line of shell.getActivationBanner()) this.addLine(line);
     shell.activate();
     this._onShellModeChange?.('cmd');
+    this.notify();
+  }
+
+  /**
+   * Forward an out-of-band value (password / text) collected by the host
+   * to the active sub-shell's `handleInput`. Mirrors the apply logic of
+   * `processLine` so a successful auth pushes the child cleanly.
+   */
+  private async feedSubShellInput(value: string): Promise<void> {
+    if (!this.activeSubShell || typeof this.activeSubShell.handleInput !== 'function') {
+      this.notify();
+      return;
+    }
+    const result = await this.activeSubShell.handleInput(value);
+    if (result.clearScreen) { this.lines = []; this.bannerCleared = true; }
+    if (result.styledOutput && result.styledOutput.length > 0) {
+      for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+    } else {
+      for (const line of result.output) this.addLine(line);
+    }
+    if (result.exit) { this.exitSubShell(); return; }
+    if (result.childShell) { this.pushChildShell(result.childShell); return; }
+    if (result.pendingInput) {
+      this.subShellPendingInput = result.pendingInput;
+      if (result.pendingInput.kind === 'password') {
+        this.inputMode = { type: 'password', promptText: result.pendingInput.promptText };
+        this._passwordBuf = '';
+      } else {
+        this.inputMode = { type: 'interactive-text', promptText: result.pendingInput.promptText };
+        this._inputBuf = '';
+      }
+    }
     this.notify();
   }
 
@@ -745,7 +872,16 @@ export class WindowsTerminalSession extends TerminalSession {
           this.bannerCleared = true;
         }
 
-        for (const outputLine of result.output) this.addLine(outputLine);
+        // Prefer pre-styled output when the sub-shell provided it — that
+        // way the host's vendor renderer never touches lines whose styling
+        // was decided remotely (e.g. SSH'd bash's ANSI colors).
+        if (result.styledOutput && result.styledOutput.length > 0) {
+          for (const styled of result.styledOutput) {
+            this.addStyledLine(styled.segments, styled.lineType);
+          }
+        } else {
+          for (const outputLine of result.output) this.addLine(outputLine);
+        }
 
         if (result.exit) {
           this.exitSubShell();
@@ -763,6 +899,23 @@ export class WindowsTerminalSession extends TerminalSession {
         }
         if (result._enterCmd) {
           this.enterNestedCmd();
+          return;
+        }
+
+        // Sub-shell asked for a pending input value (typically a nested
+        // ssh password). Route the host into the matching input mode;
+        // when Enter fires, handleSubShellPendingInput consumes the
+        // collected value via shell.handleInput.
+        if (result.pendingInput) {
+          this.subShellPendingInput = result.pendingInput;
+          if (result.pendingInput.kind === 'password') {
+            this.inputMode = { type: 'password', promptText: result.pendingInput.promptText };
+            this._passwordBuf = '';
+          } else {
+            this.inputMode = { type: 'interactive-text', promptText: result.pendingInput.promptText };
+            this._inputBuf = '';
+          }
+          this.notify();
           return;
         }
 

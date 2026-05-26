@@ -7,19 +7,40 @@
  */
 
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
+import type { RichOutputLine } from '@/terminal/core/types';
+import type { IShellBase } from '@/shell/IShellBase';
+import type { PendingInputDirective } from '@/shell/IShell';
 
 export interface SubShellResult {
   /** Lines to display in the terminal. */
   output: string[];
+  /**
+   * Pre-styled output lines. When present, the host session renders these
+   * segments verbatim (bypassing its own vendor renderer). Provided by
+   * sub-shells that own their styling, e.g. an SSH-pushed bash whose
+   * `ls --color` ANSI codes must NOT be interpreted by the Windows host.
+   */
+  styledOutput?: RichOutputLine[];
   /** Whether the sub-shell has exited. */
   exit: boolean;
   /** The prompt to show for the next line of input. */
   prompt: string;
   /** Whether the terminal screen should be cleared before showing output. */
   clearScreen?: boolean;
+  /**
+   * When set, the host terminal must put the user into the corresponding
+   * input mode (password masking, plain text prompt) and route the value
+   * collected after Enter to `handleInput` on the sub-shell.
+   */
+  pendingInput?: PendingInputDirective;
 }
 
-export interface ISubShell {
+/**
+ * The legacy per-terminal sub-shell contract. It extends `IShellBase` so
+ * every sub-shell in the project — old or new — shares the same root
+ * identity (`kind`, `connection`, `getPrompt`, `dispose`).
+ */
+export interface ISubShell extends IShellBase {
   /** Current prompt string (e.g. "SQL> ", "PS C:\> "). */
   getPrompt(): string;
 
@@ -44,6 +65,14 @@ export interface ISubShell {
    * suffix, so the session's existing completeInput helper can diff.
    */
   getCompletions?(line: string): string[];
+
+  /**
+   * Continuation hook: after the host terminal collects the value
+   * requested by a `pendingInput` directive, it calls this method with
+   * the user's input. Sub-shells that never request pendingInput can
+   * omit it; the host treats absence as "no continuation".
+   */
+  handleInput?(value: string): SubShellResult | Promise<SubShellResult>;
 
   /** Clean up resources when the sub-shell exits. */
   dispose(): void;

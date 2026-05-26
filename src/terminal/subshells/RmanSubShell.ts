@@ -21,6 +21,8 @@ function formatDate(): string {
 }
 
 export class RmanSubShell implements ISubShell {
+  readonly kind = 'rman';
+  readonly connection = 'subshell' as const;
   private prompt = 'RMAN> ';
   private connected = false;
 

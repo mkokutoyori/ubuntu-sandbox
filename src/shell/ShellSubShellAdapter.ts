@@ -21,6 +21,10 @@ export interface ShellSubShellResult extends SubShellResult {
 }
 
 export class ShellSubShellAdapter implements ISubShell {
+  /** Forwards the wrapped IShell identity so callers see the inner kind. */
+  get kind(): string { return this.shell.kind; }
+  get connection() { return this.shell.connection; }
+
   constructor(private readonly shell: IShell) {}
 
   get inner(): IShell { return this.shell; }
@@ -40,12 +44,28 @@ export class ShellSubShellAdapter implements ISubShell {
 
   async processLine(line: string): Promise<ShellSubShellResult> {
     const r = await this.shell.processLine(line);
+    return this.toSubShellResult(r);
+  }
+
+  async handleInput(value: string): Promise<ShellSubShellResult> {
+    if (typeof this.shell.handleInput !== 'function') {
+      return {
+        output: [], exit: false, prompt: this.shell.getPrompt(),
+      };
+    }
+    const r = await this.shell.handleInput(value);
+    return this.toSubShellResult(r);
+  }
+
+  private toSubShellResult(r: import('./IShell').ShellLineResult): ShellSubShellResult {
     return {
       output: [...r.output],
+      styledOutput: r.styledOutput ? [...r.styledOutput] : undefined,
       exit: !!r.exit,
       prompt: this.shell.getPrompt(),
       clearScreen: r.clearScreen,
       childShell: r.childShell,
+      pendingInput: r.pendingInput,
     };
   }
 

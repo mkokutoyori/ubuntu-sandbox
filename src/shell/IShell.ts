@@ -27,20 +27,53 @@
  */
 
 import type { Equipment } from '@/network';
+import type { RichOutputLine } from '@/terminal/core/types';
 import type { ShellContext } from './ShellContext';
+import type { IShellBase, ShellConnection } from './IShellBase';
+
+// Re-export so existing call sites keep working unchanged.
+export type { ShellConnection };
 
 /**
  * Result of processing one input line. `output` is the lines to print,
  * `childShell` (if set) is a new shell to push on top, `exit` requests
  * unwinding this shell, `clearScreen` requests the terminal to wipe.
+ *
+ * Shells that own their styling (ANSI colors, prompt highlight, error
+ * red) should populate `styledOutput` — the terminal will render those
+ * segments verbatim, bypassing any vendor-specific rendering on the host
+ * session. This is what fixes the "ANSI codes raw over SSH" class of
+ * bugs: the rendering is decided by the shell that produced the bytes,
+ * not by the host terminal it happens to be displayed in.
  */
 export interface ShellLineResult {
   readonly output: readonly string[];
+  /**
+   * Optional pre-styled output lines. When present, the host terminal
+   * MUST render these segments and ignore `output` for visual purposes
+   * (it is kept for transcript/recording).
+   */
+  readonly styledOutput?: readonly RichOutputLine[];
   readonly childShell?: IShell;
   readonly exit?: boolean;
   readonly clearScreen?: boolean;
   /** Suppress the next prompt (e.g. an editor takes over). */
   readonly suppressPrompt?: boolean;
+  /**
+   * When set, the host terminal must put the user into the corresponding
+   * input mode (password masking, plain text) and prompt with `promptText`.
+   * Once Enter is pressed, the host calls `shell.handleInput(value)` to
+   * continue. This is how a nested ssh launched from inside bash gets a
+   * real password challenge from the OUTER host terminal without bash
+   * having to know which terminal it lives in.
+   */
+  readonly pendingInput?: PendingInputDirective;
+}
+
+/** A directive that asks the host terminal to collect one input value. */
+export interface PendingInputDirective {
+  readonly kind: 'password' | 'text';
+  readonly promptText: string;
 }
 
 /** Key event a shell may want to consume directly (Ctrl+C, Ctrl+L, …). */
@@ -61,9 +94,9 @@ export type ShellSpecialAction =
   | { kind: 'history-next' }
   | { kind: 'none' };
 
-export interface IShell {
-  /** Stable identifier — `bash`, `cmd`, `powershell`, `cisco-ios`, … */
-  readonly kind: string;
+export interface IShell extends IShellBase {
+  // `kind` and `connection` come from IShellBase — same fields, same
+  // semantics, repeated below as documentation for the IShell layer.
 
   /** The remote/local equipment this shell drives. */
   readonly device: Equipment;
@@ -85,6 +118,17 @@ export interface IShell {
 
   /** Run one user-typed line; the result drives stack & display updates. */
   processLine(line: string): Promise<ShellLineResult> | ShellLineResult;
+
+  /**
+   * Called by the host terminal after a `pendingInput` directive has been
+   * satisfied with the collected value (password, GECOS, confirmation …).
+   * The shell continues its workflow and returns the next result.
+   *
+   * Default implementations may treat this as `processLine(value)`; shells
+   * that own multi-step flows (nested SSH auth, sudo) override to drive
+   * their state machine.
+   */
+  handleInput?(value: string): Promise<ShellLineResult> | ShellLineResult;
 
   /** Map a keystroke to a vendor-neutral action this shell wants to take. */
   classifyKey(e: ShellKeyEvent): ShellSpecialAction;

@@ -14,7 +14,7 @@
  */
 
 import type { Equipment } from '@/network';
-import type { IShell } from './IShell';
+import type { IShell, ShellConnection } from './IShell';
 import { ShellContext } from './ShellContext';
 
 export interface ShellSpawnArgs {
@@ -27,6 +27,12 @@ export interface ShellSpawnArgs {
   readonly env?: Record<string, string>;
   /** Raw command line that triggered the spawn (e.g. `sqlplus / as sysdba`). */
   readonly launchLine?: string;
+  /**
+   * How the shell is being driven. Defaults to `console` for the top-level
+   * spawn; SSH/sub-shell paths set it explicitly so the shell can render
+   * connection-aware behaviour.
+   */
+  readonly connection?: ShellConnection;
   /**
    * Vendor-specific escape hatch — opaque payload propagated to the
    * concrete Shell constructor. Used to pass `WindowsShellSession`,

@@ -23,9 +23,12 @@
 
 import type { Equipment } from '@/network';
 import type {
-  IShell, ShellKeyEvent, ShellLineResult, ShellSpecialAction,
+  IShell, ShellConnection, ShellKeyEvent, ShellLineResult, ShellSpecialAction,
 } from './IShell';
 import { ShellContext } from './ShellContext';
+import { nextLineId } from '@/terminal/sessions/TerminalSession';
+import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
+import type { RichOutputLine, LineType } from '@/terminal/core/types';
 
 export interface AbstractShellOptions {
   readonly device: Equipment;
@@ -33,6 +36,11 @@ export interface AbstractShellOptions {
   readonly context: ShellContext;
   /** Optional parent shell — set when this shell is nested under another. */
   readonly parent?: IShell | null;
+  /**
+   * How this shell is being driven. Defaults to `console` when omitted,
+   * which matches the pre-existing behaviour of every legacy spawn site.
+   */
+  readonly connection?: ShellConnection;
 }
 
 export abstract class AbstractShell implements IShell {
@@ -42,6 +50,7 @@ export abstract class AbstractShell implements IShell {
   readonly device: Equipment;
   readonly user: string;
   readonly context: ShellContext;
+  readonly connection: ShellConnection;
   protected parent: IShell | null;
 
   /** Words that, when typed alone, unwind this shell — defaults are POSIX. */
@@ -61,6 +70,7 @@ export abstract class AbstractShell implements IShell {
     this.user = opts.user;
     this.context = opts.context;
     this.parent = opts.parent ?? null;
+    this.connection = opts.connection ?? 'console';
   }
 
   // ─── Required hooks ────────────────────────────────────────────────
@@ -143,13 +153,42 @@ export abstract class AbstractShell implements IShell {
 
     const result = await this.dispatch(trimmed);
     // Normalise the readonly contract — never mutate the caller's array.
+    const output = result.output ?? [];
+    // Default styling: every shell emits pre-parsed segments so cross-
+    // vendor display works without the host terminal guessing. Subclasses
+    // can override by returning their own `styledOutput`; ANSI-emitting
+    // shells like bash do this for finer control. For plain-text shells
+    // (sqlplus, rman, sftp, cmd, powershell, IOS, VRP) we synthesize a
+    // single-segment line per output row so an SSH push to a foreign
+    // host terminal renders correctly anyway.
+    const styledOutput = result.styledOutput ?? this.synthesizeStyledOutput(output);
     return {
-      output: result.output ?? [],
+      output,
+      styledOutput,
       childShell: result.childShell,
       exit: result.exit,
       clearScreen: result.clearScreen,
       suppressPrompt: result.suppressPrompt,
+      pendingInput: result.pendingInput,
     };
+  }
+
+  /**
+   * Convert a plain-string output buffer into pre-styled RichOutputLines.
+   * ANSI escapes (if any) are parsed; otherwise a single neutral segment
+   * is produced per line. Subclasses that need vendor-specific colouring
+   * (PowerShell ps-header, Cisco error highlighting, …) should override
+   * `dispatch` and populate `styledOutput` themselves.
+   */
+  protected synthesizeStyledOutput(
+    output: readonly string[],
+    lineType: LineType = 'output',
+  ): RichOutputLine[] {
+    return output.map((line) => ({
+      id: nextLineId(),
+      segments: parseAnsiToSegments(line),
+      lineType,
+    }));
   }
 
   /**

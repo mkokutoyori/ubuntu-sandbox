@@ -22,6 +22,8 @@ function asSyncShellHost(device: Equipment): SyncShellHost | null {
 }
 
 export class SqlPlusSubShell implements ISubShell {
+  readonly kind = 'sqlplus';
+  readonly connection = 'subshell' as const;
   private session: SQLPlusSession;
   private prompt: string;
 

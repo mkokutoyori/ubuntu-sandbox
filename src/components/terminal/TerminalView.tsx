@@ -519,8 +519,28 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
   );
 };
 
-/** Render a single output line */
-const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
+/** Render a single output line — exported for unit tests. */
+export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
+  // Pre-styled segments take precedence — the shell that produced the
+  // line already decided how it should look (used by SSH push to keep
+  // ANSI rendering correct on a Windows host, etc.). Render verbatim.
+  if (line.segments && line.segments.length > 0) {
+    return (
+      <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit' }}>
+        {line.segments.map((seg, i) => (
+          <span key={i} style={{
+            color: seg.style?.color ?? theme.textColor,
+            backgroundColor: seg.style?.backgroundColor ?? undefined,
+            fontWeight: seg.style?.bold ? 'bold' : undefined,
+            fontStyle: seg.style?.italic ? 'italic' : undefined,
+            textDecoration: seg.style?.underline ? 'underline' : undefined,
+            opacity: seg.style?.dim ? 0.6 : undefined,
+          }}>{seg.text}</span>
+        ))}
+      </pre>
+    );
+  }
+
   // Linux: ANSI color support
   if (sessionType === 'linux') {
     return <LinuxLineRenderer line={line} theme={theme} />;

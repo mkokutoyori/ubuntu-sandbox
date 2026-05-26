@@ -354,16 +354,34 @@ export function cmdCat(ctx: ShellContext, args: string[]): string {
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
+    const inode = ctx.vfs.resolveInode(path, true);
+    if (inode && ctx.uid !== 0 && !canReadInode(inode, ctx)) {
+      return `cat: ${arg}: Permission denied`;
+    }
     const content = ctx.vfs.readFile(path);
     if (content === null) {
       return `cat: ${arg}: No such file or directory`;
     }
     outputs.push(content);
   }
-  // Remove trailing newline (cat output doesn't add extra newline)
   let result = outputs.join('');
   if (result.endsWith('\n')) result = result.slice(0, -1);
   return result;
+}
+
+function canReadInode(
+  inode: { permissions: number; uid: number; gid: number },
+  ctx: ShellContext,
+): boolean {
+  const mode = inode.permissions;
+  if (ctx.uid === inode.uid) return (mode & 0o400) !== 0;
+  const groups = (ctx.userMgr as unknown as {
+    getUserGroups?: (n: string) => Array<{ gid: number }>;
+  }).getUserGroups?.(ctx.userMgr.currentUser) ?? [];
+  if (inode.gid === ctx.gid || groups.some((g) => g.gid === inode.gid)) {
+    return (mode & 0o040) !== 0;
+  }
+  return (mode & 0o004) !== 0;
 }
 
 export function cmdEcho(ctx: ShellContext, args: string[]): string {

@@ -27,7 +27,7 @@
 import { Equipment } from '@/network';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
+import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -50,6 +50,13 @@ export interface OutputLine {
   id: number;
   text: string;
   type: string; // 'normal' | 'error' | 'warning' | 'boot' | 'more' | 'prompt' | 'ps-header'
+  /**
+   * Pre-styled segments produced by the originating shell. When set, the
+   * view MUST render these segments verbatim and ignore any vendor
+   * heuristic on the host session (this is what fixes ANSI-over-SSH
+   * displaying raw `[1;36m` in a Windows host terminal).
+   */
+  segments?: TextSegment[];
 }
 
 /**
@@ -253,6 +260,22 @@ export abstract class TerminalSession {
     this.lines.push({ id: nextLineId(), text, type });
     this.enforceScrollbackLimit();
     // Record output events (skip prompts — those are recorded as 'input')
+    if (type !== 'prompt') {
+      this.recordEvent(type === 'error' ? 'error' : 'output', text);
+    }
+    this.notify();
+  }
+
+  /**
+   * Append a line whose visual styling was decided by the shell that
+   * produced it (typically over SSH, where the host terminal must NOT
+   * apply its own vendor rendering). The plain `text` is computed from
+   * the segments and is kept for transcripts / recording.
+   */
+  addStyledLine(segments: TextSegment[], type: string = 'normal'): void {
+    const text = segments.map((s) => s.text).join('');
+    this.lines.push({ id: nextLineId(), text, type, segments });
+    this.enforceScrollbackLimit();
     if (type !== 'prompt') {
       this.recordEvent(type === 'error' ? 'error' : 'output', text);
     }
@@ -920,6 +943,20 @@ export abstract class TerminalSession {
 
   /** Return the theme descriptor for rendering. */
   abstract getTheme(): TerminalTheme;
+
+  /**
+   * The shell at the top of the active stack — the shell that the user
+   * is currently typing into. Default returns null; vendor sessions
+   * override to surface their active IShellBase so tools, tests and the
+   * UI can introspect the shell uniformly regardless of session vendor.
+   *
+   * This is the canonical introspection point now that every shell in
+   * the project implements IShellBase: callers ask the session for its
+   * active shell and read `kind`, `connection`, `getPrompt()` from it.
+   */
+  get activeShell(): import('@/shell/IShellBase').IShellBase | null {
+    return null;
+  }
 
   /** Return the session type discriminator. */
   abstract getSessionType(): SessionType;
