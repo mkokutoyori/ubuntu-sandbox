@@ -28,6 +28,8 @@ import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
 export class ReactiveRmanSubShell implements ISubShell {
+  readonly kind = 'rman';
+  readonly connection = 'subshell' as const;
   private readonly _outputBuffer: string[] = [];
   private readonly _unsubs: Array<() => void> = [];
   private readonly _loggerActor:   RmanLoggerActor | null;
