@@ -27,6 +27,22 @@ import type { RichOutputLine } from '@/terminal/core/types';
 
 const SSH_MAX_ATTEMPTS = 3;
 
+export interface LinuxBashShellOptions extends AbstractShellOptions {
+  /**
+   * Pre-existing per-terminal shell session. When supplied (typically by
+   * `LinuxTerminalSession`, which already owns one for state isolation),
+   * the shell DOES NOT open its own — it shares the caller's session so
+   * cwd / env / suStack updates propagate to whoever owns it.
+   */
+  readonly preexistingSession?: LinuxShellSession | null;
+  /**
+   * When `preexistingSession` is supplied, this shell must not close it
+   * on dispose (the owner is responsible). Defaults to false so legacy
+   * call sites that omit this flag keep the old close-on-dispose behaviour.
+   */
+  readonly ownsSession?: boolean;
+}
+
 interface LinuxDevice {
   executeCommand(cmd: string): Promise<string>;
   executeCommandInSession?(cmd: string, s: LinuxShellSession): Promise<string>;
@@ -37,16 +53,25 @@ export class LinuxBashShell extends AbstractShell {
   readonly kind = 'bash';
 
   private session: LinuxShellSession | null = null;
+  private readonly ownsSession: boolean;
   /** Pending nested-ssh auth waiting for the user's password. */
   private pendingSshAuth: PendingSshAuth | null = null;
 
-  constructor(opts: AbstractShellOptions) {
+  constructor(opts: LinuxBashShellOptions) {
     super(opts);
-    if (opts.device instanceof LinuxMachine) {
+    if (opts.preexistingSession) {
+      this.session = opts.preexistingSession;
+      this.ownsSession = opts.ownsSession ?? false;
+    } else if (opts.device instanceof LinuxMachine) {
       this.session = opts.device.openShellSession({
         user: opts.user,
         cwd: opts.context.cwd,
       });
+      this.ownsSession = true;
+    } else {
+      this.ownsSession = false;
+    }
+    if (opts.device instanceof LinuxMachine) {
       const um = (opts.device as unknown as { executor: { userMgr: { getUser: (n: string) => { uid?: number; gid?: number } | undefined } } })
         .executor.userMgr;
       const u = um.getUser(opts.user);
@@ -148,7 +173,7 @@ export class LinuxBashShell extends AbstractShell {
   }
 
   protected override onDispose(): void {
-    if (this.session && this.device instanceof LinuxMachine) {
+    if (this.session && this.device instanceof LinuxMachine && this.ownsSession) {
       this.device.closeShellSession(this.session);
     }
   }

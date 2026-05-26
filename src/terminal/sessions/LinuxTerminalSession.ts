@@ -26,6 +26,8 @@ import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
+import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
+import { ShellContext } from '@/shell/ShellContext';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
@@ -162,6 +164,72 @@ export class LinuxTerminalSession extends TerminalSession {
    * ('&&' = only-on-success, '||' = only-on-failure, ';' = always).
    */
   private _pendingChainAfterEditor: Array<{ connector: ';' | '&&' | '||'; cmd: string }> | null = null;
+
+  /**
+   * Local-bash IShell instance the session delegates plain-command
+   * execution to. Created lazily so the per-terminal LinuxShellSession
+   * (which holds cwd / env / suStack / lastExitCode) is already
+   * allocated; shares the session by passing `preexistingSession` so
+   * cwd updates propagate seamlessly between the legacy path and the
+   * shell-driven path. Null when the underlying device is not a
+   * `LinuxMachine` (synthetic test doubles).
+   */
+  private rootBash: LinuxBashShell | null = null;
+  /** Pending input asked for by the root bash shell (nested ssh password). */
+  private rootBashPendingInput: { kind: 'password' | 'text'; promptText: string } | null = null;
+
+  private ensureRootBash(): LinuxBashShell | null {
+    if (!(this.device instanceof LinuxMachine) || !this.shell) return null;
+    // Re-create when the bound session no longer matches the active one —
+    // this is what happens after `pushRemoteDevice` swaps `this.shell` to
+    // a remote session. The previous instance is disposed (no-op on the
+    // session itself: it doesn't own it) so its internal state is freed.
+    const sessionDrifted = this.rootBash !== null
+      && (this.rootBash as unknown as { session: LinuxShellSession | null }).session !== this.shell;
+    if (this.rootBash && !sessionDrifted) return this.rootBash;
+    if (this.rootBash && sessionDrifted) {
+      this.rootBash.deactivate();
+      this.rootBash.dispose();
+      this.rootBash = null;
+    }
+    const creds = this.shell.user === 'root'
+      ? ShellContext.rootCredentials()
+      : ShellContext.userCredentials(this.shell.user);
+    const ctx = new ShellContext(
+      this.device.getHostname?.() ?? 'localhost',
+      creds,
+      this.shell.cwd,
+    );
+    this.rootBash = new LinuxBashShell({
+      device: this.device,
+      user: this.shell.user,
+      context: ctx,
+      connection: 'console',
+      preexistingSession: this.shell,
+      ownsSession: false,
+    });
+    this.rootBash.activate();
+    return this.rootBash;
+  }
+
+  /**
+   * Push an IShell as the session's active sub-shell, wrapping it in a
+   * ShellSubShellAdapter so the legacy stack mechanics (handleSubShellKey,
+   * sub-shell history) keep working unchanged.
+   */
+  private pushIShellAsSubShell(child: import('@/shell').IShell): void {
+    const adapter = new ShellSubShellAdapter(child);
+    // The active sub-shell, if any, is preserved on the iShellSubStack;
+    // popping the child returns to it before the bash root resumes.
+    if (this.activeSubShell) this.iShellSubStack.push(this.activeSubShell);
+    this.activeSubShell = adapter;
+    for (const line of child.getActivationBanner()) this.addLine(line);
+    child.activate();
+    this.notify();
+  }
+
+  /** Stack of paused sub-shells when nesting through bash-driven launches. */
+  private iShellSubStack: import('@/terminal/subshells/ISubShell').ISubShell[] = [];
 
   constructor(id: string, device: Equipment) {
     super(id, device);
@@ -580,14 +648,54 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    // Execute directly (with timeout + device-online guard)
+    // Delegate plain-command execution to the local LinuxBashShell so
+    // ANSI parsing, history hand-off and styled output go through the
+    // same pipeline as SSH-pushed bash. The shell shares this session's
+    // LinuxShellSession (preexistingSession) so cwd/env/suStack stay in
+    // sync with the legacy paths that still mutate state directly.
     try {
-      const result = await this.executeOnDevice(trimmed);
-      if (result) {
-        if (result.includes('\x1b[2J') || result.includes('\x1b[H')) {
+      const shell = this.ensureRootBash();
+      if (shell) {
+        const result = await shell.processLine(trimmed);
+        // ANSI clear-screen sequence — wipe scrollback like a real tty.
+        const joined = result.output.join('\n');
+        if (joined.includes('\x1b[2J') || joined.includes('\x1b[H')) {
           this.clear();
+        } else if (result.styledOutput && result.styledOutput.length > 0) {
+          for (const styled of result.styledOutput) {
+            this.addStyledLine(styled.segments, styled.lineType);
+          }
         } else {
-          this.addLine(result);
+          for (const line of result.output) this.addLine(line);
+        }
+        if (result.childShell) {
+          // Bash recognised a sub-shell launcher (sqlplus, rman, ssh, …)
+          // and produced a child IShell. The session pushes it through
+          // its sub-shell stack so existing handleSubShellKey / pop
+          // mechanics keep working unchanged.
+          this.pushIShellAsSubShell(result.childShell);
+        }
+        if (result.pendingInput) {
+          // The shell asks the host terminal for a password / text
+          // value. Linux uses its own pendingSshPush flow for top-level
+          // ssh; for shell-emitted pendingInput we mirror the Windows
+          // contract: set inputMode and route the next Enter to
+          // shell.handleInput via feedRootBashInput.
+          this.rootBashPendingInput = result.pendingInput;
+          this.inputMode = result.pendingInput.kind === 'password'
+            ? { type: 'password', promptText: result.pendingInput.promptText }
+            : { type: 'interactive-text', promptText: result.pendingInput.promptText };
+        }
+        if (result.exit) {
+          this._onRequestClose?.();
+        }
+      } else {
+        // Fall back to the legacy direct call for synthetic test doubles
+        // that are not real LinuxMachines.
+        const raw = await this.executeOnDevice(trimmed);
+        if (raw) {
+          if (raw.includes('\x1b[2J') || raw.includes('\x1b[H')) this.clear();
+          else this.addLine(raw);
         }
       }
       this.syncDeviceState();

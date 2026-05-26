@@ -23,13 +23,23 @@ import { SftpShell } from './adapters/SftpShell';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 
 let installed = false;
 
 export function installDefaultShells(): void {
   if (installed) return;
   installed = true;
-  ShellFactory.register('bash', (a) => new LinuxBashShell(a));
+  ShellFactory.register('bash', (a) => {
+    const extras = (a as { extras?: { preexistingSession?: LinuxShellSession | null; ownsSession?: boolean } }).extras;
+    return new LinuxBashShell({
+      device: a.device, user: a.user, context: a.context,
+      parent: a.parent ?? null,
+      connection: a.connection,
+      preexistingSession: extras?.preexistingSession ?? null,
+      ownsSession: extras?.ownsSession ?? false,
+    });
+  });
   ShellFactory.register('cmd', (a) => {
     const windowsSession = (a as { extras?: { windowsSession?: WindowsShellSession | null } })
       .extras?.windowsSession ?? null;
