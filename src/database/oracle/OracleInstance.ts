@@ -18,6 +18,8 @@ import { OracleSignalRefreshActor } from './actors/OracleSignalRefreshActor';
 import { OracleRuntimeState } from './views/OracleRuntimeState';
 import { OracleRuntimeStateActor } from './actors/OracleRuntimeStateActor';
 import { AsmManager } from './asm/AsmManager';
+import { AuditJournal } from './security/audit/AuditJournal';
+import { SecurityAuditActor } from './security/audit/SecurityAuditActor';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -75,6 +77,10 @@ export class OracleInstance {
   private _runtimeStateActor: OracleRuntimeStateActor | null = null;
   /** Real ASM machinery — empty by default; CREATE DISKGROUP populates it. */
   readonly asm: AsmManager = new AsmManager();
+  /** Security audit journal — fed by the SecurityAuditActor on bus events.
+   *  Surfaces forensic data through the DBA_* security views. */
+  private readonly _auditJournal = new AuditJournal();
+  private _securityAuditActor: SecurityAuditActor | null = null;
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };
@@ -107,11 +113,22 @@ export class OracleInstance {
       this._runtimeStateActor.stop();
       this._runtimeStateActor = null;
     }
+    if (this._securityAuditActor) {
+      this._securityAuditActor.stop();
+      this._securityAuditActor = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
     this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
     this._runtimeStateActor.start();
+    this._securityAuditActor = new SecurityAuditActor(this.getBus(), this._deviceId, this._auditJournal);
+    this._securityAuditActor.start();
   }
+
+  /** Read-only handle to the security audit journal. */
+  getAuditJournal(): AuditJournal { return this._auditJournal; }
+  /** The actor wires bus → journal; exposed so external evaluators reuse it. */
+  getSecurityAuditActor(): SecurityAuditActor | null { return this._securityAuditActor; }
 
   /** Snapshot of the event-fed runtime state used by the V$/GV$ views. */
   getRuntimeState(): OracleRuntimeState { return this._runtimeState; }

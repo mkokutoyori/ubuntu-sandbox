@@ -387,4 +387,24 @@ import './audit_unified_policies';
 import './dba_audit_mgmt_config_params';
 import './dba_audit_mgmt_last_arch_ts';
 
+// Native Oracle 19c views populated by the security-audit subsystem.
+//
+// Privilege analysis (DBMS_PRIVILEGE_CAPTURE) — 12c+
+import './dba_used_privs';
+import './dba_used_sysprivs';
+import './dba_used_objprivs';
+import './dba_unused_privs';
+import './dba_unused_sysprivs';
+import './dba_unused_objprivs';
+import './dba_priv_captures';
+// Transparent Sensitive Data Protection (TSDP) — 12c+
+import './dba_sensitive_columns';
+import './dba_sensitive_column_types';
+import './dba_tsdp_policy';
+import './dba_tsdp_policy_feature';
+// Database Vault rules (the SoD policies live here in real Oracle).
+import './dba_dv_rule';
+import './dba_dv_rule_set';
+import './dba_dv_rule_set_rule';
+
 export { };

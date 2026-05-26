@@ -10,9 +10,20 @@ import { registerView } from './registry';
 registerView({
   name: 'DBA_USERS',
   comment: 'Database users',
-  query({ catalog }) {
+  query({ catalog, instance }) {
     const users = catalog.getAllUsers();
     const engine = catalog.getSecurityEngine();
+    // Build a username → most-recent successful connection map so the
+    // native DBA_USERS.LAST_LOGIN column is populated coherently with
+    // DBA_CONNECTION_TRACES / UNIFIED_AUDIT_TRAIL.
+    const lastLogin = new Map<string, string>();
+    for (const t of instance.getAuditJournal().getConnectionTraces()) {
+      if (t.outcome !== 'SUCCESS') continue;
+      const existing = lastLogin.get(t.username);
+      if (!existing || existing < t.timestamp.toISOString()) {
+        lastLogin.set(t.username, t.timestamp.toISOString());
+      }
+    }
     // SYS-supplied / Oracle-maintained schemas — kept in sync with what
     // a fresh 19c install actually carries. Any other user is reported
     // as not Oracle-maintained.
@@ -84,7 +95,7 @@ registerView({
           'NO',                                          // ALL_SHARD
           '11G 12C',                                     // PASSWORD_VERSIONS
           'N',                                           // EDITIONS_ENABLED
-          null,                                          // LAST_LOGIN
+          lastLogin.get(u.username) ?? null,             // LAST_LOGIN
           failedLoginCount,                              // LCOUNT
         ];
       })

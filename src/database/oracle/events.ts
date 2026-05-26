@@ -308,6 +308,138 @@ export interface OracleAuditRecordedPayload extends OracleDeviceRef {
   terminal: string;
 }
 
+// ── Security & forensic events ────────────────────────────────────────
+//
+// These topics are emitted by the SecurityAuditActor and downstream
+// detectors. They drive (a) the DBA_* security views and (b) the
+// `$ORACLE_BASE/admin/<sid>/security/` log files written by
+// OracleFilesystemSync. Producers fire — consumers subscribe.
+
+export interface OracleConnectionTracedPayload extends OracleDeviceRef {
+  sessionId: number;
+  serial: number;
+  username: string;
+  osUser: string;
+  userhost: string;
+  terminal: string;
+  program: string;
+  ipAddress: string;
+  networkProtocol: string;
+  authenticationMethod: string;
+  authenticationType: string;
+  /** 0 on success; an ORA error code (1017, 28000, 1045, 2391, …) on failure. */
+  returncode: number;
+  outcome: 'SUCCESS' | 'FAILURE' | 'LOGOFF';
+  role: 'NORMAL' | 'SYSDBA' | 'SYSOPER';
+  timestamp: Date;
+  /** True when the connection occurs outside normal business hours
+   *  (configurable via SecurityPolicyConfig.businessHours). */
+  offHours: boolean;
+}
+
+export interface OracleSensitiveAccessPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  action: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'TRUNCATE' | 'EXPORT';
+  objectSchema: string;
+  objectName: string;
+  /** Classification recorded against the object in SensitiveObjectRegistry. */
+  classification: 'PII' | 'PCI' | 'PHI' | 'FINANCIAL' | 'CREDENTIALS' | 'CUSTOM';
+  rowsAffected: number;
+  sqlText: string | null;
+  timestamp: Date;
+  offHours: boolean;
+}
+
+export interface OraclePrivilegeExercisedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  privilege: string;
+  /** What the privilege let the user do (CREATE TABLE, GRANT, ALTER SYSTEM, …). */
+  action: string;
+  objectSchema: string | null;
+  objectName: string | null;
+  timestamp: Date;
+}
+
+export interface OracleSodViolationPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  policyName: string;
+  conflictingPrivileges: string[];
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  description: string;
+  timestamp: Date;
+}
+
+export interface OracleDormantDetectedPayload extends OracleDeviceRef {
+  username: string;
+  lastLoginAt: Date | null;
+  daysSinceLastLogin: number;
+  thresholdDays: number;
+  accountStatus: string;
+  timestamp: Date;
+}
+
+export type SecurityAnomalyKind =
+  | 'BRUTE_FORCE_ATTEMPT'
+  | 'PRIVILEGE_ESCALATION'
+  | 'OFF_HOURS_DML'
+  | 'MASS_SELECT'
+  | 'MASS_DELETE'
+  | 'SOD_BREACH'
+  | 'SENSITIVE_OBJECT_EXPORT'
+  | 'DDL_ON_SYS_OBJECT'
+  | 'UNUSUAL_LOGIN_SOURCE'
+  | 'DORMANT_ACCOUNT_ACTIVATED'
+  | 'FRAUD_PATTERN';
+
+export interface OracleSecurityAnomalyPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  kind: SecurityAnomalyKind;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  description: string;
+  evidence: Record<string, string | number | boolean>;
+  timestamp: Date;
+}
+
+export interface OracleFraudInjectedPayload extends OracleDeviceRef {
+  scenario: string;
+  /** Free-form summary of what the simulator just did. */
+  description: string;
+  /** Anomaly kinds the simulator expects the detector to raise. */
+  expectedAnomalies: SecurityAnomalyKind[];
+  timestamp: Date;
+}
+
+export interface OracleDdlHistoryRecordedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  schema: string;
+  /** CREATE TABLE / ALTER USER / DROP INDEX / GRANT / …  */
+  kind: string;
+  objectType: string | null;
+  objectName: string;
+  sqlText: string | null;
+  /** Monotonic SCN-like sequence allocated by the journal. */
+  scn: number;
+  timestamp: Date;
+}
+
+export interface OracleDmlHistoryRecordedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  schema: string;
+  table: string;
+  action: 'INSERT' | 'UPDATE' | 'DELETE' | 'MERGE' | 'SELECT';
+  rowsAffected: number;
+  sqlText: string | null;
+  scn: number;
+  txId: number | null;
+  timestamp: Date;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -350,4 +482,13 @@ export type OracleDomainEvent =
   | { topic: 'oracle.asm.diskgroup-created';             payload: OracleAsmDiskgroupCreatedPayload }
   | { topic: 'oracle.asm.diskgroup-dropped';             payload: OracleAsmDiskgroupDroppedPayload }
   | { topic: 'oracle.asm.disk-added';                    payload: OracleAsmDiskAddedPayload }
-  | { topic: 'oracle.asm.disk-dropped';                  payload: OracleAsmDiskDroppedPayload };
+  | { topic: 'oracle.asm.disk-dropped';                  payload: OracleAsmDiskDroppedPayload }
+  | { topic: 'oracle.security.connection-traced';        payload: OracleConnectionTracedPayload }
+  | { topic: 'oracle.security.sensitive-access';         payload: OracleSensitiveAccessPayload }
+  | { topic: 'oracle.security.sod-violation';            payload: OracleSodViolationPayload }
+  | { topic: 'oracle.security.dormant-detected';         payload: OracleDormantDetectedPayload }
+  | { topic: 'oracle.security.anomaly-detected';         payload: OracleSecurityAnomalyPayload }
+  | { topic: 'oracle.security.fraud-injected';           payload: OracleFraudInjectedPayload }
+  | { topic: 'oracle.privilege.exercised';               payload: OraclePrivilegeExercisedPayload }
+  | { topic: 'oracle.ddl.history-recorded';              payload: OracleDdlHistoryRecordedPayload }
+  | { topic: 'oracle.dml.history-recorded';              payload: OracleDmlHistoryRecordedPayload };
