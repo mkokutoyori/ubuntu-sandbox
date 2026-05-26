@@ -97,6 +97,16 @@ export class LinuxTerminalSession extends TerminalSession {
   tabSuggestions: string[] | null = null;
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
+
+  /**
+   * Top of the active shell stack — for IShellBase introspection. When
+   * a sub-shell (sqlplus, rman, sftp, SSH push) is pushed, surface it;
+   * otherwise null (native bash is driven inline by the session for
+   * historical reasons, predating the IShell layer).
+   */
+  override get activeShell(): import('@/shell/IShellBase').IShellBase | null {
+    return this.activeSubShell;
+  }
   /** Command history for the active sub-shell. */
   private subShellHistory: string[] = [];
   /** History navigation index for the active sub-shell (-1 = not navigating). */

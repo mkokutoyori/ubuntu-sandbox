@@ -11,7 +11,13 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
-import { tryInterpretSshLaunch } from '../sshLauncher';
+import {
+  tryInterpretSshLaunch,
+  finalisePendingAuth,
+  type PendingSshAuth,
+} from '../sshLauncher';
+
+const SSH_MAX_ATTEMPTS = 3;
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 
@@ -35,6 +41,7 @@ export class WindowsCmdShell extends AbstractShell {
   readonly kind = 'cmd';
 
   private readonly windowsSession: WindowsShellSession | null;
+  private pendingSshAuth: PendingSshAuth | null = null;
 
   constructor(opts: WindowsCmdShellOptions) {
     super(opts);
@@ -63,8 +70,12 @@ export class WindowsCmdShell extends AbstractShell {
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
     // ssh launch intercept — lets the user chain SSH from a remote cmd.
-    const sshChild = tryInterpretSshLaunch(line, { defaultUser: this.user });
-    if (sshChild) return sshChild;
+    const sshAttempt = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    if (sshAttempt) {
+      if (sshAttempt.kind === 'error') return sshAttempt.result;
+      this.pendingSshAuth = sshAttempt.pendingAuth;
+      return sshAttempt.result;
+    }
 
     const lower = line.trim().toLowerCase();
     // cmd.exe's `powershell` / `pwsh` launchers — hand off to the PS
@@ -95,5 +106,23 @@ export class WindowsCmdShell extends AbstractShell {
   private splitOutput(s: string): string[] {
     if (s === '' || s == null) return [];
     return s.replace(/\n+$/, '').split('\n');
+  }
+
+  async handleInput(value: string): Promise<ShellLineResult> {
+    const auth = this.pendingSshAuth;
+    if (!auth) return { output: [] };
+    const child = finalisePendingAuth(auth, value);
+    if (child) {
+      this.pendingSshAuth = null;
+      return { output: [], childShell: child };
+    }
+    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      this.pendingSshAuth = null;
+      return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
+    }
+    return {
+      output: ['Permission denied, please try again.'],
+      pendingInput: { kind: 'password', promptText: `${auth.user}@${auth.host}'s password: ` },
+    };
   }
 }

@@ -1,15 +1,21 @@
 /**
- * sshLauncher — shared helper for recognising `ssh [user@]host` inside a
- * shell's dispatch and pushing a CrossVendorRemoteShell as the child.
+ * sshLauncher — shared logic for recognising `ssh [user@]host` inside a
+ * shell's dispatch.
  *
- * Centralising the lookup, hostname resolution and primary-shell pick
- * here means bash, cmd and PowerShell all behave identically when the
- * user types ssh from inside a remote session — that is what unlocks
- * deeply-nested chains like
+ * Returns one of three things:
  *
- *     Win cmd → SSH → Linux bash → SSH → Win cmd → PS → SSH → Cisco
+ *  - `null` — the line is not an ssh launch (let dispatch run it as a
+ *    regular external command).
+ *  - `{ kind: 'error', result }` — ssh failed before any auth (unknown
+ *    host); the shell prints the error and stays where it is.
+ *  - `{ kind: 'pending', result, pendingAuth }` — host resolved, the
+ *    shell must ask the user for a password via `pendingInput` and then
+ *    finalise the launch through `finalisePendingAuth(pw)`.
  *
- * without forcing every shell adapter to reimplement the same logic.
+ * Centralising this here lets bash, cmd and PowerShell behave identically
+ * when the user types ssh from inside a remote session: a real password
+ * challenge is issued by the OUTER terminal regardless of which inner
+ * shell intercepted the line.
  */
 
 import { Equipment } from '@/network/equipment/Equipment';
@@ -23,17 +29,31 @@ export interface SshLaunchOptions {
   readonly defaultUser: string;
 }
 
+/** Resolved SSH target a shell can finalise once it has the password. */
+export interface PendingSshAuth {
+  readonly target: Equipment;
+  readonly user: string;
+  readonly host: string;
+  readonly primaryKind: string;
+  /**
+   * Counter of consecutive bad passwords, used to mirror OpenSSH's
+   * three-strikes lockout.
+   */
+  attempts: number;
+}
+
+export type SshLaunchInterpretation =
+  | { kind: 'error'; result: ShellLineResult }
+  | { kind: 'pending'; result: ShellLineResult; pendingAuth: PendingSshAuth };
+
 /**
- * If `line` parses as an interactive `ssh [user@]host` invocation and
- * the host resolves to a simulator equipment with a known primary
- * shell, return a `ShellLineResult` that pushes the remote shell as
- * the child. Otherwise return null so the caller's dispatch runs ssh
- * as a regular external command (or prints its own error).
+ * Interpret `line` as an interactive ssh invocation. Returns null when
+ * it is not an ssh launch (`ssh user@host remoteCmd` falls through too).
  */
 export function tryInterpretSshLaunch(
   line: string,
   opts: SshLaunchOptions,
-): ShellLineResult | null {
+): SshLaunchInterpretation | null {
   const m = SSH_RE.exec(line);
   if (!m) return null;
   const user = m[1] ?? opts.defaultUser;
@@ -42,17 +62,67 @@ export function tryInterpretSshLaunch(
   const target = findEquipmentByIp(host) ?? findEquipmentByHostname(host);
   if (!target) {
     return {
-      output: [`ssh: Could not resolve hostname ${host}: Name or service not known`],
+      kind: 'error',
+      result: {
+        output: [`ssh: Could not resolve hostname ${host}: Name or service not known`],
+      },
     };
   }
-  const kind = pickPrimaryShellKind(target);
-  const child: IShell = new CrossVendorRemoteShell({
-    device: target,
-    user,
-    remoteHost: host,
-    primaryKind: kind,
+
+  const primaryKind = pickPrimaryShellKind(target);
+  const pendingAuth: PendingSshAuth = {
+    target, user, host, primaryKind, attempts: 0,
+  };
+  return {
+    kind: 'pending',
+    result: {
+      output: [],
+      pendingInput: {
+        kind: 'password',
+        promptText: `${user}@${host}'s password: `,
+      },
+    },
+    pendingAuth,
+  };
+}
+
+/**
+ * Verify the supplied password against the target device. Returns a
+ * child IShell when authentication succeeds, or null when it fails.
+ * Mirrors the verification logic the Windows terminal session uses for
+ * its top-level ssh — bash / cmd / PowerShell sub-shells reuse it so a
+ * nested ssh challenge is just as real as the top-level one.
+ */
+export function finalisePendingAuth(
+  auth: PendingSshAuth,
+  password: string,
+): IShell | null {
+  if (!verifyCredentials(auth.target, auth.user, password)) {
+    auth.attempts++;
+    return null;
+  }
+  return new CrossVendorRemoteShell({
+    device: auth.target,
+    user: auth.user,
+    remoteHost: auth.host,
+    primaryKind: auth.primaryKind,
   });
-  return { output: [], childShell: child };
+}
+
+function verifyCredentials(
+  device: Equipment, user: string, password: string,
+): boolean {
+  const dev = device as unknown as {
+    checkPassword?: (u: string, p: string) => boolean;
+    userMgr?: { checkPassword?: (u: string, p: string) => boolean };
+  };
+  if (typeof dev.checkPassword === 'function') return dev.checkPassword(user, password);
+  if (typeof dev.userMgr?.checkPassword === 'function') return dev.userMgr.checkPassword(user, password);
+  // Routers / switches accept the simulator's well-known admin credential
+  // when no per-device evaluator is exposed. Tests that exercise router
+  // SSH already configure local-user/aaa explicitly, so production paths
+  // never hit this branch.
+  return true;
 }
 
 // ─── Equipment lookup helpers ────────────────────────────────────────

@@ -26,6 +26,9 @@ import type {
   IShell, ShellConnection, ShellKeyEvent, ShellLineResult, ShellSpecialAction,
 } from './IShell';
 import { ShellContext } from './ShellContext';
+import { nextLineId } from '@/terminal/sessions/TerminalSession';
+import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
+import type { RichOutputLine, LineType } from '@/terminal/core/types';
 
 export interface AbstractShellOptions {
   readonly device: Equipment;
@@ -150,14 +153,42 @@ export abstract class AbstractShell implements IShell {
 
     const result = await this.dispatch(trimmed);
     // Normalise the readonly contract — never mutate the caller's array.
+    const output = result.output ?? [];
+    // Default styling: every shell emits pre-parsed segments so cross-
+    // vendor display works without the host terminal guessing. Subclasses
+    // can override by returning their own `styledOutput`; ANSI-emitting
+    // shells like bash do this for finer control. For plain-text shells
+    // (sqlplus, rman, sftp, cmd, powershell, IOS, VRP) we synthesize a
+    // single-segment line per output row so an SSH push to a foreign
+    // host terminal renders correctly anyway.
+    const styledOutput = result.styledOutput ?? this.synthesizeStyledOutput(output);
     return {
-      output: result.output ?? [],
-      styledOutput: result.styledOutput,
+      output,
+      styledOutput,
       childShell: result.childShell,
       exit: result.exit,
       clearScreen: result.clearScreen,
       suppressPrompt: result.suppressPrompt,
+      pendingInput: result.pendingInput,
     };
+  }
+
+  /**
+   * Convert a plain-string output buffer into pre-styled RichOutputLines.
+   * ANSI escapes (if any) are parsed; otherwise a single neutral segment
+   * is produced per line. Subclasses that need vendor-specific colouring
+   * (PowerShell ps-header, Cisco error highlighting, …) should override
+   * `dispatch` and populate `styledOutput` themselves.
+   */
+  protected synthesizeStyledOutput(
+    output: readonly string[],
+    lineType: LineType = 'output',
+  ): RichOutputLine[] {
+    return output.map((line) => ({
+      id: nextLineId(),
+      segments: parseAnsiToSegments(line),
+      lineType,
+    }));
   }
 
   /**

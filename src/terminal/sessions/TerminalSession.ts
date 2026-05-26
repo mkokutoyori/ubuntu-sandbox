@@ -944,6 +944,20 @@ export abstract class TerminalSession {
   /** Return the theme descriptor for rendering. */
   abstract getTheme(): TerminalTheme;
 
+  /**
+   * The shell at the top of the active stack — the shell that the user
+   * is currently typing into. Default returns null; vendor sessions
+   * override to surface their active IShellBase so tools, tests and the
+   * UI can introspect the shell uniformly regardless of session vendor.
+   *
+   * This is the canonical introspection point now that every shell in
+   * the project implements IShellBase: callers ask the session for its
+   * active shell and read `kind`, `connection`, `getPrompt()` from it.
+   */
+  get activeShell(): import('@/shell/IShellBase').IShellBase | null {
+    return null;
+  }
+
   /** Return the session type discriminator. */
   abstract getSessionType(): SessionType;
 

@@ -20,7 +20,13 @@ import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { ShellFactory } from '../ShellFactory';
-import { tryInterpretSshLaunch } from '../sshLauncher';
+import {
+  tryInterpretSshLaunch,
+  finalisePendingAuth,
+  type PendingSshAuth,
+} from '../sshLauncher';
+
+const SSH_MAX_ATTEMPTS = 3;
 
 export interface WindowsPowerShellOptions extends AbstractShellOptions {
   /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
@@ -33,6 +39,7 @@ export class WindowsPowerShellShell extends AbstractShell {
   private subShell: PowerShellSubShell;
   private banner: readonly string[];
   private readonly windowsSession: WindowsShellSession | null;
+  private pendingSshAuth: PendingSshAuth | null = null;
 
   constructor(opts: WindowsPowerShellOptions) {
     super(opts);
@@ -59,8 +66,12 @@ export class WindowsPowerShellShell extends AbstractShell {
   }
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
-    const sshChild = tryInterpretSshLaunch(line, { defaultUser: this.user });
-    if (sshChild) return sshChild;
+    const sshAttempt = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    if (sshAttempt) {
+      if (sshAttempt.kind === 'error') return sshAttempt.result;
+      this.pendingSshAuth = sshAttempt.pendingAuth;
+      return sshAttempt.result;
+    }
 
     const lower = line.trim().toLowerCase();
     if (lower === 'cmd' || lower === 'cmd.exe') {
@@ -87,6 +98,24 @@ export class WindowsPowerShellShell extends AbstractShell {
 
   protected override onDispose(): void {
     this.subShell.dispose();
+  }
+
+  async handleInput(value: string): Promise<ShellLineResult> {
+    const auth = this.pendingSshAuth;
+    if (!auth) return { output: [] };
+    const child = finalisePendingAuth(auth, value);
+    if (child) {
+      this.pendingSshAuth = null;
+      return { output: [], childShell: child };
+    }
+    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      this.pendingSshAuth = null;
+      return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
+    }
+    return {
+      output: ['Permission denied, please try again.'],
+      pendingInput: { kind: 'password', promptText: `${auth.user}@${auth.host}'s password: ` },
+    };
   }
 }
 

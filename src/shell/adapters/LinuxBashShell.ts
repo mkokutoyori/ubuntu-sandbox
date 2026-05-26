@@ -14,12 +14,18 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
-import { tryInterpretSshLaunch } from '../sshLauncher';
+import {
+  tryInterpretSshLaunch,
+  finalisePendingAuth,
+  type PendingSshAuth,
+} from '../sshLauncher';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { nextLineId } from '@/terminal/sessions/TerminalSession';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { RichOutputLine } from '@/terminal/core/types';
+
+const SSH_MAX_ATTEMPTS = 3;
 
 interface LinuxDevice {
   executeCommand(cmd: string): Promise<string>;
@@ -31,6 +37,8 @@ export class LinuxBashShell extends AbstractShell {
   readonly kind = 'bash';
 
   private session: LinuxShellSession | null = null;
+  /** Pending nested-ssh auth waiting for the user's password. */
+  private pendingSshAuth: PendingSshAuth | null = null;
 
   constructor(opts: AbstractShellOptions) {
     super(opts);
@@ -93,10 +101,16 @@ export class LinuxBashShell extends AbstractShell {
       }
     }
 
-    // ssh launch intercept: shared helper resolves the target, picks
-    // its primary shell and returns a CrossVendorRemoteShell as child.
-    const sshChild = tryInterpretSshLaunch(line, { defaultUser: this.user });
-    if (sshChild) return sshChild;
+    // ssh launch intercept: shared helper resolves the target. On
+    // success we ask the OUTER terminal for the password via the
+    // `pendingInput` directive — the OS-style "alice@host's password: "
+    // challenge — and finalise the launch in handleInput().
+    const sshAttempt = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    if (sshAttempt) {
+      if (sshAttempt.kind === 'error') return sshAttempt.result;
+      this.pendingSshAuth = sshAttempt.pendingAuth;
+      return sshAttempt.result;
+    }
 
     const dev = this.device as unknown as LinuxDevice;
     const raw = (this.session && this.device instanceof LinuxMachine
@@ -142,6 +156,36 @@ export class LinuxBashShell extends AbstractShell {
   private splitOutput(s: string): string[] {
     if (!s) return [];
     return s.replace(/\n+$/, '').split('\n');
+  }
+
+  /**
+   * Handle the password the OUTER terminal collected after our last
+   * pendingInput directive. Validates against the target device's
+   * credential store and either pushes the remote shell or asks for
+   * another attempt (up to OpenSSH's three strikes).
+   */
+  async handleInput(value: string): Promise<ShellLineResult> {
+    const auth = this.pendingSshAuth;
+    if (!auth) return { output: [] };
+
+    const child = finalisePendingAuth(auth, value);
+    if (child) {
+      this.pendingSshAuth = null;
+      return { output: [], childShell: child };
+    }
+    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      this.pendingSshAuth = null;
+      return {
+        output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`],
+      };
+    }
+    return {
+      output: ['Permission denied, please try again.'],
+      pendingInput: {
+        kind: 'password',
+        promptText: `${auth.user}@${auth.host}'s password: `,
+      },
+    };
   }
 }
 

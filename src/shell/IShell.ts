@@ -59,6 +59,21 @@ export interface ShellLineResult {
   readonly clearScreen?: boolean;
   /** Suppress the next prompt (e.g. an editor takes over). */
   readonly suppressPrompt?: boolean;
+  /**
+   * When set, the host terminal must put the user into the corresponding
+   * input mode (password masking, plain text) and prompt with `promptText`.
+   * Once Enter is pressed, the host calls `shell.handleInput(value)` to
+   * continue. This is how a nested ssh launched from inside bash gets a
+   * real password challenge from the OUTER host terminal without bash
+   * having to know which terminal it lives in.
+   */
+  readonly pendingInput?: PendingInputDirective;
+}
+
+/** A directive that asks the host terminal to collect one input value. */
+export interface PendingInputDirective {
+  readonly kind: 'password' | 'text';
+  readonly promptText: string;
 }
 
 /** Key event a shell may want to consume directly (Ctrl+C, Ctrl+L, …). */
@@ -103,6 +118,17 @@ export interface IShell extends IShellBase {
 
   /** Run one user-typed line; the result drives stack & display updates. */
   processLine(line: string): Promise<ShellLineResult> | ShellLineResult;
+
+  /**
+   * Called by the host terminal after a `pendingInput` directive has been
+   * satisfied with the collected value (password, GECOS, confirmation …).
+   * The shell continues its workflow and returns the next result.
+   *
+   * Default implementations may treat this as `processLine(value)`; shells
+   * that own multi-step flows (nested SSH auth, sudo) override to drive
+   * their state machine.
+   */
+  handleInput?(value: string): Promise<ShellLineResult> | ShellLineResult;
 
   /** Map a keystroke to a vendor-neutral action this shell wants to take. */
   classifyKey(e: ShellKeyEvent): ShellSpecialAction;

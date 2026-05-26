@@ -56,6 +56,19 @@ async function typeSub(t: TerminalSession, line: string): Promise<void> {
   await flush();
 }
 
+/**
+ * Type a sub-shell line that triggers a nested ssh password challenge,
+ * then satisfy it. Used by deep-nesting tests where every hop is real.
+ */
+async function typeSshSub(t: TerminalSession, line: string, pw: string): Promise<void> {
+  await typeSub(t, line);
+  if (t.currentInputMode.type === 'password') {
+    t.setPasswordBuf(pw);
+    t.handleKey(key('Enter'));
+    await flush();
+  }
+}
+
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
   for (let i = 0; i < 4 && t.currentInputMode.type !== 'normal'; i++) {
@@ -415,8 +428,8 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     // L1 → L2 (cmd → SSH bash on linuxSrv)
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
-    // L2 → L3 (bash → SSH bash on linuxA)
-    await typeSub(t, 'ssh alice@10.0.0.1');
+    // L2 → L3 (bash → SSH bash on linuxA) — real password challenge.
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
     expect(t.getPrompt()).toMatch(/alice@linuxA/);
     // L3 → L4 (bash → sqlplus)
     await typeSub(t, 'sqlplus / as sysdba');
@@ -473,13 +486,13 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     expect(topShellKind(t)).toBe('ssh-remote');
     // L2→L3 ssh from remote bash into winB
-    await typeSub(t, 'ssh user@10.0.0.5');
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
     expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
     // L3→L4 powershell on winB
     await typeSub(t, 'powershell');
     expect(t.getPrompt()).toMatch(/^PS /);
     // L4→L5 ssh from remote PS into linuxA
-    await typeSub(t, 'ssh alice@10.0.0.1');
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
     expect(t.getPrompt()).toMatch(/alice@linuxA/);
     // Each exit pops one frame.
     await typeSub(t, 'exit');
@@ -541,13 +554,10 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     // L1→L2 ssh linuxSrv
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     // L2→L3 ssh from remote bash into winB cmd
-    await typeSub(t, 'ssh user@10.0.0.5');
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
     expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
     // L3→L4 ssh from remote cmd into Huawei
-    await typeSub(t, 'ssh admin@10.0.0.7');
-    if (t.currentInputMode.type === 'password') {
-      t.setPasswordBuf('Admin@123'); t.handleKey(key('Enter')); await flush();
-    }
+    await typeSshSub(t, 'ssh admin@10.0.0.7', 'Admin@123');
     expect(t.getPrompt()).toMatch(/^<HW>/);
     // Mode transition: system-view → [HW]
     await typeSub(t, 'system-view');
@@ -576,6 +586,96 @@ describe('Unified shell identity — every shell exposes kind+connection', () =>
     const inner = (t as unknown as { activeSubShell: { inner?: { connection: string; kind: string } } }).activeSubShell.inner;
     expect(inner?.connection).toBe('ssh');
     expect(inner?.kind).toBe('ssh-remote');
+  });
+
+  test('§U2 — session.activeShell returns the IShellBase the user is typing into', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    // Native cmd at the root: no sub-shell pushed yet → activeShell is null.
+    expect(t.activeShell).toBeNull();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // After SSH push, the active shell exposes IShellBase uniformly.
+    expect(t.activeShell).toBeTruthy();
+    expect(typeof t.activeShell!.kind).toBe('string');
+    expect(typeof t.activeShell!.connection).toBe('string');
+    expect(typeof t.activeShell!.getPrompt).toBe('function');
+    expect(t.activeShell!.connection).toBe('ssh');
+  });
+});
+
+// ─── Password challenge driven by the remote shell ──────────────────
+
+describe('Nested-SSH password challenge — driven by the remote shell', () => {
+  test('§P1 — bash from inside SSH issues a real password prompt; wrong pw retries; correct pw lands', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // Type nested ssh inside the remote bash.
+    await typeSub(t, 'ssh alice@10.0.0.1');
+    // Bash asked the host terminal for a password — view is now in
+    // password input mode (keystrokes will be masked).
+    expect(t.currentInputMode.type).toBe('password');
+    expect((t.currentInputMode as { promptText: string }).promptText)
+      .toMatch(/alice@10\.0\.0\.1's password:/);
+    // Wrong password → retry.
+    t.setPasswordBuf('wrong');
+    t.handleKey(key('Enter'));
+    await flush();
+    expectAnyLine(t, /Permission denied, please try again\./);
+    expect(t.currentInputMode.type).toBe('password');
+    // Right password → lands on linuxA.
+    t.setPasswordBuf('alice');
+    t.handleKey(key('Enter'));
+    await flush();
+    expect(t.currentInputMode.type).not.toBe('password');
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
+  });
+
+  test('§P2 — Ctrl+C during the nested challenge cancels cleanly', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'ssh alice@10.0.0.1');
+    expect(t.currentInputMode.type).toBe('password');
+    t.handleKey(key('c', { ctrlKey: true }));
+    await flush();
+    expect(t.currentInputMode.type).not.toBe('password');
+    // Still in the outer remote bash — no child was pushed.
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+  });
+});
+
+// ─── Universal styled output — every shell emits segments ────────────
+
+describe('Universal styled output — every shell emits styled segments', () => {
+  test('§S1 — sqlplus output lines carry segments through the SSH boundary', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'sqlplus / as sysdba');
+    // SQL*Plus banner / prompt lines should now carry segments
+    // (synthesised by AbstractShell when the dispatcher does not produce
+    // its own styling). At least ONE recently-added line must have
+    // segments populated, proving the universal pipeline.
+    const tail = t.lines.slice(-30);
+    const styled = tail.filter((l) => l.segments && l.segments.length > 0);
+    expect(styled.length).toBeGreaterThan(0);
+  });
+
+  test('§S2 — Cisco IOS output lines also carry styled segments', async () => {
+    const { winA, cisco } = await buildLan();
+    cisco.setHostname('R1');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh admin@10.0.0.6', 'Admin@123');
+    await typeSub(t, 'show version');
+    const tail = t.lines.slice(-30);
+    const styled = tail.filter((l) => l.segments && l.segments.length > 0);
+    expect(styled.length).toBeGreaterThan(0);
   });
 });
 

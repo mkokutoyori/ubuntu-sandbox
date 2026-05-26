@@ -85,7 +85,26 @@ export class CrossVendorRemoteShell implements IShell {
 
   async processLine(line: string): Promise<ShellLineResult> {
     const result = await this.top.processLine(line);
+    return this.applyChildOrPassThrough(result);
+  }
 
+  /**
+   * Forward an out-of-band input value (password collected by the host
+   * terminal in response to a `pendingInput` directive) to whichever
+   * shell is at the top of the stack.
+   */
+  async handleInput(value: string): Promise<ShellLineResult> {
+    if (typeof this.top.handleInput !== 'function') return { output: [] };
+    const result = await this.top.handleInput(value);
+    return this.applyChildOrPassThrough(result);
+  }
+
+  /**
+   * Common post-processing of a result returned by the top shell. Pushes
+   * a child when one is supplied and rewinds the stack when the top
+   * exits, so handleInput and processLine share the same stack mechanics.
+   */
+  private applyChildOrPassThrough(result: ShellLineResult): ShellLineResult {
     if (result.childShell) {
       this.top.pause();
       result.childShell.activate();
@@ -97,6 +116,7 @@ export class CrossVendorRemoteShell implements IShell {
         ],
         styledOutput: result.styledOutput,
         clearScreen: result.clearScreen,
+        pendingInput: result.pendingInput,
       };
     }
 

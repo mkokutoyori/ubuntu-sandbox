@@ -44,6 +44,20 @@ export class ShellSubShellAdapter implements ISubShell {
 
   async processLine(line: string): Promise<ShellSubShellResult> {
     const r = await this.shell.processLine(line);
+    return this.toSubShellResult(r);
+  }
+
+  async handleInput(value: string): Promise<ShellSubShellResult> {
+    if (typeof this.shell.handleInput !== 'function') {
+      return {
+        output: [], exit: false, prompt: this.shell.getPrompt(),
+      };
+    }
+    const r = await this.shell.handleInput(value);
+    return this.toSubShellResult(r);
+  }
+
+  private toSubShellResult(r: import('./IShell').ShellLineResult): ShellSubShellResult {
     return {
       output: [...r.output],
       styledOutput: r.styledOutput ? [...r.styledOutput] : undefined,
@@ -51,6 +65,7 @@ export class ShellSubShellAdapter implements ISubShell {
       prompt: this.shell.getPrompt(),
       clearScreen: r.clearScreen,
       childShell: r.childShell,
+      pendingInput: r.pendingInput,
     };
   }
 

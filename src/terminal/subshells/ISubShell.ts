@@ -9,6 +9,7 @@
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { RichOutputLine } from '@/terminal/core/types';
 import type { IShellBase } from '@/shell/IShellBase';
+import type { PendingInputDirective } from '@/shell/IShell';
 
 export interface SubShellResult {
   /** Lines to display in the terminal. */
@@ -26,6 +27,12 @@ export interface SubShellResult {
   prompt: string;
   /** Whether the terminal screen should be cleared before showing output. */
   clearScreen?: boolean;
+  /**
+   * When set, the host terminal must put the user into the corresponding
+   * input mode (password masking, plain text prompt) and route the value
+   * collected after Enter to `handleInput` on the sub-shell.
+   */
+  pendingInput?: PendingInputDirective;
 }
 
 /**
@@ -58,6 +65,14 @@ export interface ISubShell extends IShellBase {
    * suffix, so the session's existing completeInput helper can diff.
    */
   getCompletions?(line: string): string[];
+
+  /**
+   * Continuation hook: after the host terminal collects the value
+   * requested by a `pendingInput` directive, it calls this method with
+   * the user's input. Sub-shells that never request pendingInput can
+   * omit it; the host treats absence as "no continuation".
+   */
+  handleInput?(value: string): SubShellResult | Promise<SubShellResult>;
 
   /** Clean up resources when the sub-shell exits. */
   dispose(): void;
