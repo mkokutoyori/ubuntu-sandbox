@@ -231,6 +231,62 @@ export class LinuxTerminalSession extends TerminalSession {
   /** Stack of paused sub-shells when nesting through bash-driven launches. */
   private iShellSubStack: import('@/terminal/subshells/ISubShell').ISubShell[] = [];
 
+  /**
+   * The pending input directive most recently requested by the active
+   * sub-shell. Routes the next Enter to subshell.handleInput.
+   */
+  private subShellPendingInput: { kind: 'password' | 'text'; promptText: string } | null = null;
+
+  /**
+   * Forward a value the host collected after a pendingInput directive
+   * to the active sub-shell's handleInput.
+   */
+  private async feedSubShellInput(value: string): Promise<void> {
+    if (!this.activeSubShell || typeof this.activeSubShell.handleInput !== 'function') {
+      this.notify(); return;
+    }
+    const result = await this.activeSubShell.handleInput(value);
+    if (result.styledOutput && result.styledOutput.length > 0) {
+      for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+    } else {
+      for (const line of result.output) this.addLine(line);
+    }
+    if (result.exit) { this.exitSubShell(); return; }
+    if (result.childShell) { this.pushIShellAsSubShell(result.childShell); return; }
+    if (result.pendingInput) {
+      this.subShellPendingInput = result.pendingInput;
+      this.inputMode = result.pendingInput.kind === 'password'
+        ? { type: 'password', promptText: result.pendingInput.promptText }
+        : { type: 'interactive-text', promptText: result.pendingInput.promptText };
+    }
+    this.notify();
+  }
+
+  /**
+   * Forward a value the host collected after a pendingInput directive
+   * to the root bash shell's `handleInput`. Mirrors the apply logic of
+   * executeCommand so the shell can either push a child (auth ok), ask
+   * for another attempt (auth retry) or emit a final error.
+   */
+  private async feedRootBashInput(value: string): Promise<void> {
+    const shell = this.rootBash;
+    if (!shell || typeof shell.handleInput !== 'function') { this.notify(); return; }
+    const result = await shell.handleInput(value);
+    if (result.styledOutput && result.styledOutput.length > 0) {
+      for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+    } else {
+      for (const line of result.output) this.addLine(line);
+    }
+    if (result.childShell) { this.pushIShellAsSubShell(result.childShell); return; }
+    if (result.pendingInput) {
+      this.rootBashPendingInput = result.pendingInput;
+      this.inputMode = result.pendingInput.kind === 'password'
+        ? { type: 'password', promptText: result.pendingInput.promptText }
+        : { type: 'interactive-text', promptText: result.pendingInput.promptText };
+    }
+    this.notify();
+  }
+
   constructor(id: string, device: Equipment) {
     super(id, device);
     // Allocate a dedicated -bash on the device when possible so multiple
@@ -364,6 +420,21 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.pendingSshIO?.isWaitingForInput) {
       return this.inputMode;
     }
+    // Pending password / text driven by a sub-shell or by the root bash:
+    // those take priority over the regular interactive-text mode so the
+    // view masks keystrokes for a password challenge.
+    if (this.activeSubShell && this.subShellPendingInput) {
+      const p = this.subShellPendingInput;
+      return p.kind === 'password'
+        ? { type: 'password', promptText: p.promptText }
+        : { type: 'interactive-text', promptText: p.promptText };
+    }
+    if (this.rootBashPendingInput) {
+      const p = this.rootBashPendingInput;
+      return p.kind === 'password'
+        ? { type: 'password', promptText: p.promptText }
+        : { type: 'interactive-text', promptText: p.promptText };
+    }
     if (this.activeSubShell) {
       return { type: 'interactive-text', promptText: this.activeSubShell.getPrompt() };
     }
@@ -383,6 +454,66 @@ export class LinuxTerminalSession extends TerminalSession {
     // falls through to the view's input element (character typing).
     if (this.pendingSshIO?.isWaitingForInput) {
       return this.handleSshIOKey(e);
+    }
+
+    // Root-bash asked for a password / text value (nested ssh launched
+    // from the local console). Enter feeds the value back through
+    // shell.handleInput, Ctrl+C cancels.
+    if (this.rootBashPendingInput) {
+      if (e.key === 'Enter') {
+        const value = this.rootBashPendingInput.kind === 'password'
+          ? this.getPasswordBuf() : this.getInputBuf();
+        const directive = this.rootBashPendingInput;
+        this.rootBashPendingInput = null;
+        this.setPasswordBuf('');
+        this.setInputBuf('');
+        this.inputMode = { type: 'normal' };
+        if (directive.kind === 'password' && directive.promptText) {
+          this.addLine(directive.promptText);
+        }
+        void this.feedRootBashInput(value);
+        return true;
+      }
+      if (e.key === 'c' && e.ctrlKey) {
+        this.rootBashPendingInput = null;
+        this.setPasswordBuf('');
+        this.setInputBuf('');
+        this.inputMode = { type: 'normal' };
+        this.addLine('^C');
+        this.notify();
+        return true;
+      }
+      return false; // let the view drive char-by-char input
+    }
+
+    // Sub-shell asked for a pending input value (typically a nested ssh
+    // password). Capture it via password/text mode and feed it back to
+    // the sub-shell's handleInput on Enter. Ctrl+C aborts.
+    if (this.activeSubShell && this.subShellPendingInput) {
+      if (e.key === 'Enter') {
+        const value = this.subShellPendingInput.kind === 'password'
+          ? this.getPasswordBuf() : this.getInputBuf();
+        const directive = this.subShellPendingInput;
+        this.subShellPendingInput = null;
+        this.setPasswordBuf('');
+        this.setInputBuf('');
+        this.inputMode = { type: 'normal' };
+        if (directive.kind === 'password' && directive.promptText) {
+          this.addLine(directive.promptText);
+        }
+        void this.feedSubShellInput(value);
+        return true;
+      }
+      if (e.key === 'c' && e.ctrlKey) {
+        this.subShellPendingInput = null;
+        this.setPasswordBuf('');
+        this.setInputBuf('');
+        this.inputMode = { type: 'normal' };
+        this.addLine('^C');
+        this.notify();
+        return true;
+      }
+      return false;
     }
 
     // Sub-shell active (SQL*Plus, etc.) — route input there
@@ -2142,17 +2273,34 @@ export class LinuxTerminalSession extends TerminalSession {
 
       const maybePromise = this.activeSubShell.processLine(line);
 
-      const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult) => {
-        // Handle clear screen signal from sub-shell
-        if (result.clearScreen) {
-          this.clear();
-        }
+      const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
+        if (result.clearScreen) this.clear();
 
-        for (const outputLine of result.output) this.addLine(outputLine);
+        if (result.styledOutput && result.styledOutput.length > 0) {
+          for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+        } else {
+          for (const outputLine of result.output) this.addLine(outputLine);
+        }
 
         if (result.exit) {
           this.exitSubShell();
           return;
+        }
+        // Sub-shell launched a deeper child (sqlplus → spooled, nested
+        // ssh, …). Push it through the same IShell stacking mechanic so
+        // the OuterRemoteShell / OuterCmd / OuterPS sees no difference.
+        if (result.childShell) {
+          this.pushIShellAsSubShell(result.childShell);
+          return;
+        }
+        // Sub-shell asked the host for a password / text value. Mirror
+        // the Windows contract: set inputMode, then route Enter back
+        // through shell.handleInput via feedSubShellInput.
+        if (result.pendingInput) {
+          this.subShellPendingInput = result.pendingInput;
+          this.inputMode = result.pendingInput.kind === 'password'
+            ? { type: 'password', promptText: result.pendingInput.promptText }
+            : { type: 'interactive-text', promptText: result.pendingInput.promptText };
         }
         this.notify();
       };

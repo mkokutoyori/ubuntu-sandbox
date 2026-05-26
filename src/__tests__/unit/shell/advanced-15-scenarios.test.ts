@@ -633,6 +633,22 @@ describe('Nested-SSH password challenge — driven by the remote shell', () => {
     expect(t.getPrompt()).toMatch(/alice@linuxA/);
   });
 
+  test('§P3 — Linux session: nested ssh from local bash issues a real password challenge', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    // Type ssh from the local bash console — bash intercepts, asks for pw.
+    t.setInput('ssh alice@10.0.0.3');
+    t.handleKey(key('Enter'));
+    await flush();
+    expect(t.currentInputMode.type).toBe('password');
+    t.setPasswordBuf('alice');
+    t.handleKey(key('Enter'));
+    await flush();
+    expect(t.currentInputMode.type).not.toBe('password');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+  });
+
   test('§P2 — Ctrl+C during the nested challenge cancels cleanly', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);
