@@ -770,6 +770,116 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     expectAnyLine(t, /\b10\.0\.0\.4\b.+\b10\.0\.0\.3\b/);
   });
 
+  test('§F13 — echo $USER on the remote returns the SSH user', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'echo $USER');
+    expectAnyLine(t, /^alice$/);
+  });
+
+  test('§F14 — tty on a freshly SSH-ed bash returns a /dev/pts/<n> path', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'tty');
+    expectAnyLine(t, /^\/dev\/pts\/\d+$/);
+  });
+
+  test('§F15 — hostname inside the SSH session returns the REMOTE hostname', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'hostname');
+    expectAnyLine(t, /^linuxSrv$/);
+  });
+
+  test('§F16 — `last` lists the most recent ssh login after logout', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    await typeSub(t, 'exit');
+    const out = await linuxSrv.executeCommand('last -n 5');
+    expect(out).toMatch(/alice/);
+  });
+
+  test('§U — exact user-reported scenario: Linux→ssh→Win→clear/cls/powershell/gcm', async () => {
+    const { linuxA, winA } = await buildLan();
+    // Use carl/carl (auto-provisioned via the user manager seed).
+    const t = new LinuxTerminalSession('t', linuxA);
+    await t.init();
+    // Connect: ssh carl@<winA-IP>
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    // First prompt is cmd's, NOT linux-bash.
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    // 'clear' must hit cmd as an unknown command, NOT wipe the screen.
+    await typeSub(t, 'clear');
+    expectAnyLine(t, /is not recognized as an internal or external command/);
+    // User identity stays carl across commands (no drift to 'user').
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    // 'cls' wipes the screen.
+    await typeSub(t, 'echo seen-before-cls');
+    const before = t.lines.length;
+    await typeSub(t, 'cls');
+    expect(t.lines.length).toBeLessThan(before);
+    expect(t.lines.some((l) => /seen-before-cls/.test(l.text))).toBe(false);
+    // 'powershell' pushes a real PS frame; the prompt changes.
+    await typeSub(t, 'powershell');
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\carl>/);
+    // 'gcm' is recognised by PS (no cmd-style "not recognized" error).
+    await typeSub(t, 'gcm');
+    const tail = t.lines.slice(-15).map((l) => l.text).join('\n');
+    expect(/is not recognized as an internal or external command/.test(tail)).toBe(false);
+  });
+
+  test('§F18 — ssh -q (quiet): no banner / MOTD / known_hosts warning on success', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh -q alice@10.0.0.3');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    const tail = t.lines.slice(-20).map((l) => l.text).join('\n');
+    expect(/Permanently added/.test(tail)).toBe(false);
+    expect(/Welcome to Ubuntu/.test(tail)).toBe(false);
+  });
+
+  test('§F19 — second connection to the same host SKIPS the known_hosts warning', async () => {
+    const { winA } = await buildLan();
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // logout, reconnect.
+    await typeSub(t, 'exit');
+    const beforeLines = t.lines.length;
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    const newLines = t.lines.slice(beforeLines).map((l) => l.text).join('\n');
+    expect(/Permanently added/.test(newLines)).toBe(false);
+  });
+
+  test('§F17 — exec mode prints OUTPUT only — no MOTD, no banner, no last login', async () => {
+    const { winA, linuxSrv } = await buildLan();
+    linuxSrv.recordSshLogin('alice', '9.9.9.9', 'previous', true, 'password');
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+    await typeRoot(t, 'ssh alice@10.0.0.3 whoami');
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice'); t.handleKey(key('Enter')); await flush();
+    }
+    expectAnyLine(t, /^alice$/);
+    // Exec mode in OpenSSH suppresses the login banner; ensure neither
+    // the MOTD nor the "Last login" line leaked into the scrollback.
+    const tail = t.lines.slice(-20).map((l) => l.text).join('\n');
+    expect(/Last login:/.test(tail)).toBe(false);
+    expect(/Welcome to Ubuntu/.test(tail)).toBe(false);
+  });
+
   test('§F12 — multiple concurrent SSH sessions to the same host work independently', async () => {
     const { winA, winB } = await buildLan();
     const t1 = new WindowsTerminalSession('t1', winA);
