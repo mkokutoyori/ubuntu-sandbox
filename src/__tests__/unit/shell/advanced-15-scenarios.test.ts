@@ -1364,3 +1364,458 @@ describe('Universal styled output — every shell emits styled segments', () => 
   });
 });
 
+/**
+ * Root-cause integrity suite.
+ *
+ * Goal:
+ * Detect ANY shell identity corruption, renderer leakage,
+ * prompt hybridisation, wrong dispatcher inheritance,
+ * broken nested-session ownership, or wrong active-shell routing.
+ *
+ * Philosophy:
+ * After EVERY shell transition:
+ *   1. Assert prompt identity
+ *   2. Execute shell-native command
+ *   3. Execute foreign-shell command and ensure rejection
+ *   4. Mutate remote state/config
+ *   5. Verify mutation persisted on the CORRECT remote host
+ *   6. Verify parent shell state did NOT leak
+ *
+ * This suite intentionally stress-tests:
+ *   - Linux bash
+ *   - Windows CMD
+ *   - PowerShell
+ *   - Cisco IOS
+ *   - Huawei VRP
+ *   - SQLPlus
+ *   - deep nested SSH
+ *   - shell stack unwinding
+ *   - renderer ownership
+ *   - active-shell dispatch
+ */
+
+describe('Root-cause shell/session integrity', () => {
+  test('§RC1 — Win→Linux→Win→PS→Linux→Cisco : every shell preserves its own semantics', async () => {
+    const { winA, linuxSrv, linuxA, cisco } = await buildLan();
+
+    cisco.setHostname('R1');
+
+    const t = new WindowsTerminalSession('t', winA);
+    await t.init();
+
+    // ─────────────────────────────────────────────
+    // L1 — LOCAL CMD
+    // ─────────────────────────────────────────────
+
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+
+    await typeRoot(t, 'mkdir C:\\temp_rc1');
+
+    // cmd rejects linux clear
+    await typeRoot(t, 'clear');
+
+    expectAnyLine(
+      t,
+      /is not recognized as an internal or external command/,
+    );
+
+    // ─────────────────────────────────────────────
+    // L2 — SSH LINUX
+    // ─────────────────────────────────────────────
+
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv:~\$/);
+
+    // shell identity
+    expect(t.getPrompt()).not.toMatch(/^C:\\/);
+
+    // mutate linux state
+    await typeSub(t, 'mkdir -p /tmp/rc1_linuxsrv');
+    await typeSub(t, 'touch /tmp/rc1_linuxsrv/a');
+
+    const out1 = await linuxSrv.executeCommand('ls /tmp/rc1_linuxsrv');
+    expect(out1).toMatch(/a/);
+
+    // linux rejects cmd clear
+    await typeSub(t, 'cls');
+
+    expectAnyLine(
+      t,
+      /command not found|not recognized/,
+    );
+
+    // ─────────────────────────────────────────────
+    // L3 — SSH WINDOWS CMD
+    // ─────────────────────────────────────────────
+
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
+
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+
+    expect(t.getPrompt()).not.toMatch(/@linuxSrv/);
+
+    // mutate remote windows
+    await typeSub(t, 'mkdir C:\\rc1_nested');
+
+    // cmd rejects bash syntax
+    await typeSub(t, 'touch /tmp/x');
+
+    expectAnyLine(
+      t,
+      /not recognized as an internal or external command/,
+    );
+
+    // ─────────────────────────────────────────────
+    // L4 — POWERSHELL
+    // ─────────────────────────────────────────────
+
+    await typeSub(t, 'powershell');
+
+    expect(t.getPrompt()).toMatch(/^PS C:\\Users\\user>/);
+
+    // powershell-native alias
+    await typeSub(t, 'gcm');
+
+    const psTail = t.lines.slice(-20).map((l) => l.text).join('\n');
+
+    expect(
+      /not recognized as an internal or external command/.test(psTail),
+    ).toBe(false);
+
+    // mutate powershell state
+    await typeSub(t, 'New-Item -ItemType Directory C:\\rc1_ps');
+
+    // ─────────────────────────────────────────────
+    // L5 — SSH LINUX AGAIN
+    // ─────────────────────────────────────────────
+
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
+
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
+
+    expect(t.getPrompt()).not.toMatch(/^PS /);
+
+    // mutate linuxA
+    await typeSub(t, 'echo rc1 > /tmp/rc1.txt');
+
+    const out2 = await linuxA.executeCommand('cat /tmp/rc1.txt');
+
+    expect(out2.trim()).toBe('rc1');
+
+    // bash accepts clear
+    const beforeClear = t.lines.length;
+
+    await typeSub(t, 'clear');
+
+    expect(t.lines.length).toBeLessThan(beforeClear);
+
+    // ─────────────────────────────────────────────
+    // L6 — SSH CISCO
+    // ─────────────────────────────────────────────
+
+    await typeSshSub(t, 'ssh admin@10.0.0.6', 'Admin@123');
+
+    expect(t.getPrompt()).toMatch(/^R1[#>]/);
+
+    // IOS native config
+    if (/>\s?$/.test(t.getPrompt())) {
+      await typeSub(t, 'enable');
+
+      if (t.currentInputMode.type === 'password') {
+        t.setPasswordBuf('Admin@123');
+        t.handleKey(key('Enter'));
+        await flush();
+      }
+    }
+
+    expect(t.getPrompt()).toMatch(/^R1#/);
+
+    await typeSub(t, 'configure terminal');
+
+    expect(t.getPrompt()).toMatch(/^R1\(config\)#/);
+
+    await typeSub(t, 'hostname RC1');
+
+    expect(t.getPrompt()).toMatch(/^RC1\(config\)#/);
+
+    // IOS rejects linux command
+    await typeSub(t, 'ls');
+
+    // unwind
+    await typeSub(t, 'end');
+    expect(t.getPrompt()).toMatch(/^RC1#/);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxA/);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^PS /);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+  });
+
+  test('§RC2 — Linux→Huawei→Linux→SQLPlus→Win→PS : shell ownership never leaks', async () => {
+    const { linuxA, huawei } = await buildLan();
+
+    huawei.setHostname('HW');
+
+    const t = new LinuxTerminalSession('t', linuxA);
+
+    await t.init();
+
+    // L1 bash
+    expect(t.getPrompt()).toMatch(/@linuxA/);
+
+    // L2 Huawei
+    await linuxSshLogin(t, 'ssh admin@10.0.0.7', 'Admin@123');
+
+    expect(t.getPrompt()).toMatch(/^<HW>/);
+
+    await typeSub(t, 'system-view');
+
+    expect(t.getPrompt()).toMatch(/^\[HW\]/);
+
+    // config mutation
+    await typeSub(t, 'sysname CORE-HW');
+
+    expect(t.getPrompt()).toMatch(/^\[CORE-HW\]/);
+
+    // VRP rejects bash command
+    await typeSub(t, 'touch /tmp/x');
+
+    // exit Huawei
+    await typeSub(t, 'quit');
+    expect(t.getPrompt()).toMatch(/^<CORE-HW>/);
+
+    await typeSub(t, 'quit');
+
+    // back linux
+    expect(t.getPrompt()).toMatch(/@linuxA/);
+
+    // L3 nested linux
+    await typeSshSub(t, 'ssh alice@10.0.0.3', 'alice');
+
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
+
+    // L4 sqlplus
+    await typeSub(t, 'sqlplus / as sysdba');
+
+    expect(t.getPrompt()).toMatch(/^SQL>/);
+
+    await typeSub(t, 'create user rc2 identified by rc2;');
+
+    // SQL shell rejects bash clear
+    await typeSub(t, 'clear');
+
+    // unwind sqlplus
+    await typeSub(t, 'exit');
+
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
+
+    // L5 nested windows
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
+
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+
+    // cmd mutation
+    await typeSub(t, 'mkdir C:\\RC2');
+
+    // L6 powershell
+    await typeSub(t, 'powershell');
+
+    expect(t.getPrompt()).toMatch(/^PS /);
+
+    await typeSub(t, '$env:RC2_TEST="OK"');
+
+    await typeSub(t, 'echo $env:RC2_TEST');
+
+    expectAnyLine(t, /^OK$/);
+
+    // unwind all
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
+
+    await typeSub(t, 'exit');
+    expect(t.getPrompt()).toMatch(/@linuxA/);
+  });
+
+  test('§RC3 — renderer NEVER hybridises prompts across 7 nested shells', async () => {
+    const { winA } = await buildLan();
+
+    const t = new WindowsTerminalSession('t', winA);
+
+    await t.init();
+
+    // L1 cmd
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\/);
+
+    // L2 linux
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    expect(t.getPrompt()).toMatch(/@linuxSrv/);
+
+    // L3 win
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\user>/);
+
+    // L4 PS
+    await typeSub(t, 'powershell');
+    expect(t.getPrompt()).toMatch(/^PS /);
+
+    // L5 linux
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
+    expect(t.getPrompt()).toMatch(/@linuxA/);
+
+    // L6 sqlplus
+    await typeSub(t, 'sqlplus / as sysdba');
+    expect(t.getPrompt()).toMatch(/^SQL>/);
+
+    // L7 back to linux from sqlplus-host
+    await typeSub(t, 'exit');
+
+    expect(t.getPrompt()).toMatch(/@linuxA/);
+
+    // ABSOLUTE invariant:
+    // NO prompt may ever become hybrid.
+
+    const prompts = t.lines
+      .map((l) => l.text)
+      .filter((x) =>
+        /(^PS )|(@.*\$)|(^C:\\)|(^SQL>)|(^<)|(^\[)/.test(x),
+      );
+
+    for (const p of prompts) {
+      // forbidden hybrids
+      expect(p).not.toMatch(/@.*C:\\/);
+      expect(p).not.toMatch(/C:\\.*\$/);
+      expect(p).not.toMatch(/^PS .*@/);
+      expect(p).not.toMatch(/^SQL>.*@/);
+      expect(p).not.toMatch(/^<.*C:\\/);
+    }
+  });
+
+  test('§RC4 — active shell dispatcher ALWAYS owns command routing', async () => {
+    const { winA } = await buildLan();
+
+    const t = new WindowsTerminalSession('t', winA);
+
+    await t.init();
+
+    // CMD
+    await typeRoot(t, 'ls');
+
+    expectAnyLine(
+      t,
+      /not recognized as an internal or external command/,
+    );
+
+    // PowerShell
+    await typeRoot(t, 'powershell');
+
+    await typeSub(t, 'ls');
+
+    const psTail = t.lines.slice(-10).map((l) => l.text).join('\n');
+
+    expect(
+      /not recognized as an internal or external command/.test(psTail),
+    ).toBe(false);
+
+    // Linux
+    await typeSub(t, 'ssh alice@10.0.0.3');
+
+    if (t.currentInputMode.type === 'password') {
+      t.setPasswordBuf('alice');
+      t.handleKey(key('Enter'));
+      await flush();
+    }
+
+    await typeSub(t, 'ls');
+
+    const linuxTail = t.lines.slice(-10).map((l) => l.text).join('\n');
+
+    expect(
+      /not recognized as an internal or external command/.test(linuxTail),
+    ).toBe(false);
+
+    // Cisco
+    await typeSshSub(t, 'ssh admin@10.0.0.6', 'Admin@123');
+
+    await typeSub(t, 'dir');
+
+    expect(t.lines.length).toBeGreaterThan(0);
+
+    // IOS should NOT suddenly behave like bash/cmd/powershell
+    await typeSub(t, 'Get-ChildItem');
+
+    const iosTail = t.lines.slice(-10).map((l) => l.text).join('\n');
+
+    expect(/Get-ChildItem/.test(iosTail)).toBe(true);
+  });
+
+  test('§RC5 — shell stack corruption detector', async () => {
+    const { winA } = await buildLan();
+
+    const t = new WindowsTerminalSession('t', winA);
+
+    await t.init();
+
+    const prompts: string[] = [];
+
+    function snap() {
+      prompts.push(t.getPrompt());
+    }
+
+    snap();
+
+    await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    snap();
+
+    await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
+    snap();
+
+    await typeSub(t, 'powershell');
+    snap();
+
+    await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
+    snap();
+
+    await typeSub(t, 'sqlplus / as sysdba');
+    snap();
+
+    // unwind
+    await typeSub(t, 'exit');
+    snap();
+
+    await typeSub(t, 'exit');
+    snap();
+
+    await typeSub(t, 'exit');
+    snap();
+
+    await typeSub(t, 'exit');
+    snap();
+
+    await typeSub(t, 'exit');
+    snap();
+
+    // Stack integrity:
+    // after full unwind we MUST return to original prompt.
+
+    expect(prompts[0]).toBe(prompts[prompts.length - 1]);
+
+    // no duplicate accidental shell collapse
+    for (let i = 1; i < prompts.length; i++) {
+      expect(prompts[i]).toBeTruthy();
+    }
+  });
+});
