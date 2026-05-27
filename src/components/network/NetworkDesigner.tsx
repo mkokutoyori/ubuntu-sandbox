@@ -20,7 +20,6 @@ import { TerminalModal } from './TerminalModal';
 import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
-import type { DeviceType } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
 import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
 import { cn } from '@/lib/utils';
@@ -31,7 +30,6 @@ export type TileLayout = 'stack' | 'split-h' | 'split-v' | 'grid' | 'master-stac
 
 export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
-  const [, setDraggingDevice] = useState<DeviceType | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
@@ -312,7 +310,7 @@ export function NetworkDesigner() {
         {/* Left sidepane */}
         <div className="relative flex">
           <div className={`transition-all duration-300 ease-in-out overflow-hidden ${leftCollapsed ? 'w-0' : 'w-auto'}`}>
-            <DevicePalette onDragStart={setDraggingDevice} />
+            <DevicePalette />
           </div>
           <button
             onClick={() => setLeftCollapsed(prev => !prev)}
