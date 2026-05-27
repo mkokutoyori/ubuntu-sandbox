@@ -160,6 +160,9 @@ export class LinuxSshServerContext implements ISshServerContext {
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostname,
           port: this.sshdConfig.listenPort,
+          // Hand the device's journal in so SSH events surface in
+          // `journalctl -u sshd`, not just in /var/log/auth.log.
+          logMgr: this.executor?.logMgr,
         })
       : null;
 

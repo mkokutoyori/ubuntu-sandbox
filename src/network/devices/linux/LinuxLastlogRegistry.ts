@@ -68,6 +68,15 @@ export class LinuxLastlogRegistry {
     return this.entries.get(user)?.current;
   }
 
+  /** Snapshot every user with a recorded login — drives the `lastlog` command. */
+  listCurrent(): ReadonlyMap<string, LastlogEntry> {
+    const out = new Map<string, LastlogEntry>();
+    for (const [user, slot] of this.entries) {
+      if (slot.current) out.set(user, slot.current);
+    }
+    return out;
+  }
+
   /** Reset the registry (test utility). */
   reset(): void {
     this.entries.clear();

@@ -171,14 +171,21 @@ export class LinuxLogManager {
    * to keep `/var/log/auth.log` (and the journal) coherent with account
    * changes. `tag` is the responsible program (`useradd`, `passwd`, …).
    */
-  logAuth(tag: string, message: string): void {
+  logAuth(tag: string, message: string, pid?: number, unit?: string): void {
     this.addEntry({
       priority: PRIORITY_NAMES.info,
       facility: FACILITY_NAMES.auth,
-      unit: tag,
+      // Ubuntu's systemd unit for sshd is `ssh.service`, even though
+      // the binary identifies itself as `sshd` in syslog lines. Let
+      // callers split the two so `journalctl -u ssh` works and the
+      // file line still reads `sshd[<pid>]:`.
+      unit: unit ?? tag,
       tag,
       message,
-      pid: this.nextPid++,
+      // Daemons like sshd keep a stable PID across forked sessions; the
+      // caller passes its own so `journalctl -u ssh` shows that single
+      // pid instead of one per emitted line.
+      pid: pid ?? this.nextPid++,
       hostname: this.hostname,
     });
   }

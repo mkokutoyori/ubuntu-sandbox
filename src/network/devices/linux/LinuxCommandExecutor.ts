@@ -1674,6 +1674,7 @@ export class LinuxCommandExecutor {
         return { output: cmdLast(c, args), exitCode: 0 };
       }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
+      case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
         // declared sources per database. All output / exit-code logic
@@ -2721,6 +2722,60 @@ export class LinuxCommandExecutor {
     const username = args.find(a => !a.startsWith('-'));
     const out = this.userMgr.finger(username);
     return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
+  }
+
+  /**
+   * `lastlog` — one row per known account showing the most-recent login
+   * the lastlog registry recorded (or "Never logged in" when absent).
+   * Mirrors util-linux output: `Username Port From Latest`.
+   *
+   * Supported flags:
+   *   -u, --user <name>   restrict to a single user
+   *   -b, --before <days> hide rows older than N days
+   *   -t, --time  <days>  hide rows older than N days (alias of -b's inverse)
+   *
+   * Real lastlog is backed by a binary `/var/log/lastlog` indexed by UID;
+   * the simulator stores the same triple `{when, sourceHost, tty}` in
+   * LinuxLastlogRegistry — the rendering is identical.
+   */
+  private renderLastlog(args: string[]): string {
+    let filterUser: string | null = null;
+    let beforeDays: number | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-u' || a === '--user') filterUser = args[++i] ?? null;
+      else if (a === '-b' || a === '--before') beforeDays = Number(args[++i]);
+      else if (a === '-t' || a === '--time')   beforeDays = Number(args[++i]);
+    }
+
+    const header = 'Username         Port     From             Latest';
+    const rows: string[] = [header];
+    const cutoff = beforeDays !== null && Number.isFinite(beforeDays)
+      ? Date.now() - beforeDays * 86400_000
+      : null;
+
+    const all = this.userMgr.getAllUsers();
+    for (const u of all) {
+      if (filterUser && u.username !== filterUser) continue;
+      const entry = this.lastlog.getCurrent(u.username);
+      if (!entry) {
+        rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
+        continue;
+      }
+      if (cutoff !== null && entry.when < cutoff) continue;
+      const d = new Date(entry.when);
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const latest =
+        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
+        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
+      rows.push(
+        `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
+      );
+    }
+    return rows.join('\n');
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {
