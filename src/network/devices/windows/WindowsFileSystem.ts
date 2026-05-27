@@ -154,6 +154,26 @@ export class WindowsFileSystem {
       this.mkdirp(dir);
     }
 
+    // Standard cast home directories. WindowsUserManager seeds the
+    // accounts alice/bob/carl/dave with passwords equal to usernames so
+    // cross-equipment SSH tests authenticate without per-pairing setup;
+    // mirror that here on the filesystem so an SSH'd `dir` / `cd` /
+    // `mkdir` does NOT silently fall back to C:\\Users\\User's tree —
+    // a coherency leak that surfaced as "carl's prompt lies about cwd".
+    for (const u of ['alice', 'bob', 'carl', 'dave']) {
+      const home = `C:\\Users\\${u}`;
+      for (const sub of [
+        '', '\\Desktop', '\\Documents', '\\Downloads', '\\Pictures',
+        '\\Videos', '\\Music', '\\AppData', '\\AppData\\Local',
+        '\\AppData\\Local\\Temp', '\\AppData\\Local\\Microsoft',
+        '\\AppData\\Roaming', '\\AppData\\Roaming\\Microsoft',
+        '\\Favorites', '\\Contacts', '\\Saved Games', '\\Links',
+        '\\Searches', '\\OneDrive', '\\OneDrive\\Documents',
+      ]) {
+        this.mkdirp(home + sub);
+      }
+    }
+
     // The static name table — seeded with this machine's own name so it
     // resolves itself, mirroring the Linux 127.0.1.1 convention.
     const hostsContent = HostsFile.defaultWindows(hostname).serialize();

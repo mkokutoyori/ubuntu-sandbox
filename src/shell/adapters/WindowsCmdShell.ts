@@ -76,9 +76,40 @@ export class WindowsCmdShell extends AbstractShell {
     return super.classifyKey(e);
   }
 
+  /** When true, the shell allocated its own WindowsShellSession and
+   *  must close it on dispose; when false, the session was supplied by
+   *  the caller (local cmd terminal) which owns its lifecycle. */
+  private readonly ownsSession: boolean;
+
   constructor(opts: WindowsCmdShellOptions) {
     super(opts);
-    this.windowsSession = opts.windowsSession ?? null;
+    if (opts.windowsSession) {
+      this.windowsSession = opts.windowsSession;
+      this.ownsSession = false;
+    } else if (opts.device instanceof WindowsPC) {
+      // No session passed (typical of an SSH-pushed cmd) — allocate one
+      // pointing at the SSH user's home so `cd` / `dir` / `mkdir`
+      // operate on the user's actual directory tree, not the device
+      // global cwd that would silently leak \C:\\Users\\User\\… into
+      // every SSH session.
+      this.windowsSession = opts.device.openShellSession({
+        user: opts.user,
+        cwd: opts.context.cwd && opts.context.cwd.length > 0
+          ? opts.context.cwd
+          : `C:\\Users\\${opts.user}`,
+      });
+      this.ownsSession = true;
+    } else {
+      this.windowsSession = null;
+      this.ownsSession = false;
+    }
+  }
+
+  protected override onDispose(): void {
+    if (this.windowsSession && this.ownsSession
+        && this.device instanceof WindowsPC) {
+      this.device.closeShellSession(this.windowsSession);
+    }
   }
 
   getPrompt(): string {

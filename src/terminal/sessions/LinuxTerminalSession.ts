@@ -1779,7 +1779,21 @@ export class LinuxTerminalSession extends TerminalSession {
 
     const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (anyRemoteDevice) {
-      this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      // Non-Linux peers (Windows / Cisco / Huawei) need their vendor
+      // shell on the stack — otherwise the terminal renders the bash
+      // prompt for a Windows cwd and routes commands to the bare
+      // device.executeCommand, so `powershell` / mode-switches never
+      // engage. Linux peers keep the generic push (no foreign shell).
+      const vendorStrategy = anyRemoteDevice instanceof LinuxMachine
+        ? null
+        : pickVendorPromptStrategy(anyRemoteDevice);
+      if (vendorStrategy) {
+        this.pushRemoteDeviceWithStrategy(
+          anyRemoteDevice, user, host, vendorStrategy, onSessionEnd,
+        );
+      } else {
+        this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      }
       return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
