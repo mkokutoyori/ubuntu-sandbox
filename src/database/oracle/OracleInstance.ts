@@ -26,6 +26,9 @@ import { IndexUsageMonitor } from './metadata/IndexUsageMonitor';
 import { TypeRegistry } from './metadata/TypeRegistry';
 import { ExternalTableRegistry } from './metadata/ExternalTableRegistry';
 import { UserActivityTracker } from './security/audit/UserActivityTracker';
+import { SystemTriggerRegistry } from './triggers/SystemTriggerRegistry';
+import { SystemTriggerExecutor } from './triggers/SystemTriggerExecutor';
+import { WaitEventEngine } from './wait/WaitEventEngine';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -89,6 +92,11 @@ export class OracleInstance {
   private readonly _auditJournal = new AuditJournal();
   private _securityAuditActor: SecurityAuditActor | null = null;
   private _userActivity: UserActivityTracker | null = null;
+  /** Database-level event-trigger catalogue + executor. */
+  readonly systemTriggers = new SystemTriggerRegistry();
+  private _systemTriggerExecutor: SystemTriggerExecutor | null = null;
+  /** Wait-event engine — feeds V$SESSION_EVENT / V$SYSTEM_EVENT / V$EVENT_HISTOGRAM. */
+  private _waitEngine: WaitEventEngine | null = null;
   /** Network ACL administration (DBMS_NETWORK_ACL_ADMIN). */
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */
@@ -127,6 +135,24 @@ export class OracleInstance {
     this._bus = bus;
     this.reattachRefreshActor();
   }
+
+  /**
+   * Provider returning every currently-open OracleSession. Set by
+   * OracleDatabase so views (V$SESSION_CONTEXT) can read live
+   * per-session state without OracleInstance importing OracleSession.
+   */
+  private _liveSessionProvider: (() => Array<{
+    sid: number; serial: number; username: string;
+    listContextEntries(): Array<{ namespace: string; attribute: string; value: string }>;
+    module: string | null; action: string | null;
+    clientInfo: string | null; clientIdentifier: string | null;
+  }>) | null = null;
+  setLiveSessionProvider(fn: NonNullable<typeof this._liveSessionProvider>): void {
+    this._liveSessionProvider = fn;
+  }
+  getLiveSessions(): ReturnType<NonNullable<typeof this._liveSessionProvider>> {
+    return this._liveSessionProvider?.() ?? [];
+  }
   /** Set the deviceId scoping all `oracle.*` events from this instance. */
   setDeviceId(deviceId: string): void {
     this._deviceId = deviceId;
@@ -151,6 +177,14 @@ export class OracleInstance {
       this._userActivity.stop();
       this._userActivity = null;
     }
+    if (this._systemTriggerExecutor) {
+      this._systemTriggerExecutor.stop();
+      this._systemTriggerExecutor = null;
+    }
+    if (this._waitEngine) {
+      this._waitEngine.stop();
+      this._waitEngine = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
     this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
@@ -159,6 +193,11 @@ export class OracleInstance {
     this._securityAuditActor.start();
     this._userActivity = new UserActivityTracker(this.getBus(), this._deviceId, this._auditJournal);
     this._userActivity.start();
+    this._systemTriggerExecutor = new SystemTriggerExecutor(
+      this.getBus(), this._deviceId, this.systemTriggers, this);
+    this._systemTriggerExecutor.start();
+    this._waitEngine = new WaitEventEngine(this.getBus(), this._deviceId);
+    this._waitEngine.start();
     // Reattach the index usage monitor with the current bus/deviceId so
     // its subscription tracks the same scoping the other actors use.
     if (this._indexUsageStorage) {
@@ -174,6 +213,10 @@ export class OracleInstance {
   getSecurityAuditActor(): SecurityAuditActor | null { return this._securityAuditActor; }
   /** Per-user activity ledger (reactive). */
   getUserActivityTracker(): UserActivityTracker | null { return this._userActivity; }
+  /** Database-level trigger executor (reactive). */
+  getSystemTriggerExecutor(): SystemTriggerExecutor | null { return this._systemTriggerExecutor; }
+  /** Wait-event engine (reactive). */
+  getWaitEngine(): WaitEventEngine | null { return this._waitEngine; }
 
   /** Snapshot of the event-fed runtime state used by the V$/GV$ views. */
   getRuntimeState(): OracleRuntimeState { return this._runtimeState; }

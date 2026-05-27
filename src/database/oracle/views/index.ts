@@ -143,6 +143,7 @@ import './v_shared_server_monitor';
 import './v_queue';
 import './v_circuit';
 import './v_event_name';
+import './v_event_histogram';
 import './v_eventmetric';
 import './v_waitclassmetric';
 import './v_waitclassmetric_history';

@@ -18,7 +18,7 @@ import { registerView } from './registry';
 registerView({
   name: 'V$SESSION',
   comment: 'Active sessions',
-  query({ catalog, currentUser }) {
+  query({ catalog, instance, currentUser }) {
     const cols = [
       { name: 'SADDR', dataType: oracleVarchar2(16) },
       { name: 'SID', dataType: oracleNumber(10) },
@@ -84,6 +84,9 @@ registerView({
 
     const engine = catalog.getSecurityEngine();
     const activeSessions = engine?.sessions.getAllSessions() ?? [];
+    const liveSessions = instance.getLiveSessions();
+    const liveBySid = new Map<number, typeof liveSessions[number]>();
+    for (const ls of liveSessions) liveBySid.set(ls.sid, ls);
     const now = new Date().toISOString();
     const saddr = (sid: number) => `00000000${sid.toString(16).padStart(8, '0').toUpperCase()}`;
     const paddr = (sid: number) => `0000FFFF${(sid * 17).toString(16).padStart(8, '0').toUpperCase()}`;
@@ -109,7 +112,16 @@ registerView({
     ];
 
     if (activeSessions.length > 0) {
-      const userRows = activeSessions.map(s => [
+      const userRows = activeSessions.map(s => {
+        const live = liveBySid.get(s.sid);
+        // Prefer live OracleSession values — that's what
+        // DBMS_APPLICATION_INFO / DBMS_SESSION mutate. Fall back to
+        // SessionLimitTracker fields when no live row exists.
+        const module = live?.module ?? s.module;
+        const action = live?.action ?? s.action;
+        const clientInfo = live?.clientInfo ?? s.clientInfo;
+        const clientIdentifier = live?.clientIdentifier ?? null;
+        return [
         saddr(s.sid), s.sid, s.serial, s.sid, paddr(s.sid),
         s.sid, s.username, 3, 2147483644, null, null, s.status,
         'DEDICATED', s.sid, s.schema, s.osUser, String(s.sid),
@@ -118,10 +130,7 @@ registerView({
         s.sqlExecStart ? s.sqlExecStart.toISOString() : null,
         s.sqlExecStart ? 1 : null,
         null,
-        s.module, s.action, s.clientInfo,
-        // CLIENT_IDENTIFIER — DBMS_SESSION.SET_IDENTIFIER target. None set
-        // unless the simulator wires it; mirror real Oracle's behaviour.
-        null,
+        module, action, clientInfo, clientIdentifier,
         0, 0, 0, 0, 0,
         s.logonTime.toISOString(), s.lastCallEt,
         'NO', 'NONE', 'NONE', 'NO',
@@ -129,7 +138,8 @@ registerView({
         0, s.event, 6, s.waitClass, 0, s.secondsInWait, s.state,
         s.blockingSession === null ? 'NO HOLDER' : 'VALID',
         s.blockingSession, 'DISABLED', s.service, 1,
-      ]);
+      ];
+      });
       return queryResult(cols, [...bgRows, ...userRows]);
     }
 

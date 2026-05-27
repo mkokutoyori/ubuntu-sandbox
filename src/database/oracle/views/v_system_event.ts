@@ -14,17 +14,18 @@ import { EVENT_CATALOGUE } from './v_event_name';
 registerView({
   name: 'V$SYSTEM_EVENT',
   comment: 'Cumulative system-wide wait statistics per event',
-  query({ runtime }) {
+  query({ runtime, instance }) {
     const agg = new Map<string, { event: string; cls: string; waits: number; totMicros: number }>();
     for (const w of runtime.waitHistory) {
       const key = w.event;
       const cur = agg.get(key);
-      if (cur) {
-        cur.waits++;
-        cur.totMicros += w.waitTimeMicros;
-      } else {
-        agg.set(key, { event: w.event, cls: w.waitClass, waits: 1, totMicros: w.waitTimeMicros });
-      }
+      if (cur) { cur.waits++; cur.totMicros += w.waitTimeMicros; }
+      else agg.set(key, { event: w.event, cls: w.waitClass, waits: 1, totMicros: w.waitTimeMicros });
+    }
+    for (const r of instance.getWaitEngine()?.getSystemEvents() ?? []) {
+      const cur = agg.get(r.event);
+      if (cur) { cur.waits += r.totalWaits; cur.totMicros += r.timeWaitedMicros; }
+      else agg.set(r.event, { event: r.event, cls: r.waitClass, waits: r.totalWaits, totMicros: r.timeWaitedMicros });
     }
     // Always seed idle events with a zero-row so V$SYSTEM_EVENT is never
     // empty — matches real Oracle behaviour where each catalogued event

@@ -28,15 +28,24 @@ const USERENV_ATTRS = [
 registerView({
   name: 'V$SESSION_CONTEXT',
   comment: 'Application contexts (USERENV) per session',
-  query({ catalog }) {
+  query({ catalog, instance }) {
     const engine = catalog.getSecurityEngine();
     const sessions = engine?.sessions.getAllSessions() ?? [];
+    const liveSessions = instance.getLiveSessions();
+    const liveBySid = new Map<number, typeof liveSessions[number]>();
+    for (const ls of liveSessions) liveBySid.set(ls.sid, ls);
     const rows: (string | number | null)[][] = [];
     for (const s of sessions) {
       for (const attr of USERENV_ATTRS) {
-        const value = resolveUserenv(s, attr);
+        const value = resolveUserenv(s, attr, liveBySid.get(s.sid));
         if (value === null || value === undefined) continue;
         rows.push(['USERENV', attr, String(value), s.sid]);
+      }
+    }
+    // User-defined contexts (set via DBMS_SESSION.SET_CONTEXT).
+    for (const live of liveSessions) {
+      for (const entry of live.listContextEntries()) {
+        rows.push([entry.namespace, entry.attribute, entry.value, live.sid]);
       }
     }
     return queryResult(
@@ -52,7 +61,12 @@ registerView({
 });
 
 /** Cheap proxy resolver — view files cannot import OracleSession types. */
-function resolveUserenv(s: import('../security/SessionLimitTracker').ActiveSessionInfo, attr: string): string | number | null {
+function resolveUserenv(
+  s: import('../security/SessionLimitTracker').ActiveSessionInfo,
+  attr: string,
+  live?: { module: string | null; action: string | null;
+           clientInfo: string | null; clientIdentifier: string | null },
+): string | number | null {
   switch (attr) {
     case 'SESSION_USER':
     case 'CURRENT_USER':           return s.username;
@@ -70,10 +84,10 @@ function resolveUserenv(s: import('../security/SessionLimitTracker').ActiveSessi
     case 'ISDBA':                  return s.username === 'SYS' ? 'TRUE' : 'FALSE';
     case 'SERVICE_NAME':           return s.service;
     case 'SESSIONID':              return s.sid;
-    case 'MODULE':                 return s.module;
-    case 'ACTION':                 return s.action;
-    case 'CLIENT_INFO':            return s.clientInfo;
-    case 'CLIENT_IDENTIFIER':      return null;
+    case 'MODULE':                 return live?.module ?? s.module;
+    case 'ACTION':                 return live?.action ?? s.action;
+    case 'CLIENT_INFO':            return live?.clientInfo ?? s.clientInfo;
+    case 'CLIENT_IDENTIFIER':      return live?.clientIdentifier ?? null;
     case 'CON_NAME':               return 'CDB$ROOT';
     case 'CON_ID':                 return 1;
     case 'DB_NAME':                return s.service;

@@ -29,6 +29,8 @@ import { SodEvaluator } from './security/audit/SodEvaluator';
 import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
 import { MetadataExtractor } from './metadata/MetadataExtractor';
+import { builtinPackageRegistry } from './packages';
+import { SystemTrigger } from './triggers/SystemTrigger';
 import type { UserActivityTracker } from './security/audit/UserActivityTracker';
 import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
@@ -174,6 +176,9 @@ export class OracleDatabase {
     this.metadata = new MetadataExtractor(this.storage, this.catalog);
     // Index usage monitor — must attach now that storage exists.
     this.instance.attachIndexUsageMonitor(this.storage);
+    // Live-session provider — feeds V$SESSION_CONTEXT user-defined
+    // contexts and any future view that needs the real OracleSession.
+    this.instance.setLiveSessionProvider(() => [...this.sessions.values()]);
     // User-activity ledger lives on the instance (rebinds on setDeviceId);
     // the getter `userActivity` returns the current tracker on demand.
     // Idle-session PMON sweep (IDLE_TIME enforcement).
@@ -890,9 +895,12 @@ export class OracleDatabase {
       return;
     }
 
-    // DBMS_SESSION.SET_ROLE / SET_NLS
-    if (upper.startsWith('DBMS_SESSION.')) {
-      return; // No-op in simulator
+    // DBMS_SESSION.* / DBMS_APPLICATION_INFO.* — route through the
+    // built-in package registry, which dispatches to the concrete
+    // strategy class for each routine.
+    if (upper.startsWith('DBMS_SESSION.') || upper.startsWith('DBMS_APPLICATION_INFO.')) {
+      this.invokeBuiltinPackage(executor, trimmed, variables, output);
+      return;
     }
 
     // DBMS_RLS.{ADD_POLICY,ADD_GROUPED_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY,DROP_GROUPED_POLICY}
@@ -1723,6 +1731,24 @@ export class OracleDatabase {
 
   /** Parse and execute CREATE [OR REPLACE] TRIGGER using regex (body may contain semicolons) */
   private executeCreateTrigger(executor: OracleExecutor, sql: string): ResultSet {
+    // System-level event triggers come first so the DML-trigger regex
+    // does not steal them.
+    const sys = sql.match(
+      /^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER)\s+(STARTUP|SHUTDOWN|LOGON|LOGOFF|SERVERERROR|CREATE|ALTER|DROP)\s+ON\s+(DATABASE|SCHEMA|(\w+)\.SCHEMA)\s+([\s\S]*)$/i,
+    );
+    if (sys) {
+      const owner = (sys[1] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const name = sys[2].toUpperCase();
+      const timing = sys[3].toUpperCase() as 'BEFORE' | 'AFTER';
+      const event = sys[4].toUpperCase() as import('./triggers/SystemTrigger').TriggerEvent;
+      const scope = sys[5].toUpperCase() === 'DATABASE' ? 'DATABASE' : 'SCHEMA';
+      const scopeSchema = scope === 'SCHEMA' ? (sys[6] ?? owner).toUpperCase() : null;
+      const body = (sys[7] || '').trim();
+      this.instance.systemTriggers.register(new SystemTrigger({
+        owner, name, timing, event, scope, scopeSchema, body, enabled: true,
+      }));
+      return emptyResult('Trigger created.');
+    }
     const match = sql.match(
       /^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:(\w+)\.)?(\w+)(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
     );
@@ -1797,6 +1823,62 @@ export class OracleDatabase {
       return trimmed.slice(1, -1);
     }
     return trimmed;
+  }
+
+  /**
+   * Dispatch a `package.routine(args)` call to the concrete
+   * IPackageRoutine registered for it. The caller has already
+   * verified the prefix; this method extracts the routine name and
+   * positional argument list, then forwards.
+   */
+  private invokeBuiltinPackage(
+    executor: OracleExecutor,
+    call: string,
+    _variables: Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>,
+    output: string[],
+  ): void {
+    const m = call.match(/^([A-Z_][A-Z0-9_]*\.[A-Z_][A-Z0-9_]*)\s*(?:\(([\s\S]*)\))?/i);
+    if (!m) return;
+    const fullName = m[1].toUpperCase();
+    const argString = m[2] ?? '';
+    const routine = builtinPackageRegistry.resolve(fullName);
+    if (!routine) return;                  // unknown routine → swallow
+
+    const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
+    const session = (executor as { context: { session?: import('./security/OracleSession').OracleSession } }).context.session;
+    if (!session) return;
+    const result = routine.invoke(args, { session, rawCall: call });
+    if (result !== null) output.push(result);
+  }
+
+  /** Split "a, 'b,c', d(e,f)" on top-level commas. */
+  private splitTopLevelArgs(s: string): string[] {
+    const out: string[] = [];
+    let depth = 0, quote: string | null = null, buf = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quote) {
+        buf += c;
+        if (c === quote && s[i - 1] !== '\\') quote = null;
+        continue;
+      }
+      if (c === "'" || c === '"') { quote = c; buf += c; continue; }
+      if (c === '(') { depth++; buf += c; continue; }
+      if (c === ')') { depth--; buf += c; continue; }
+      if (c === ',' && depth === 0) { out.push(buf.trim()); buf = ''; continue; }
+      buf += c;
+    }
+    if (buf.trim()) out.push(buf.trim());
+    return out;
+  }
+
+  /** Strip the outer quotes of a literal arg; preserve bare identifiers. */
+  private unquoteLiteral(s: string): string {
+    const t = s.trim();
+    if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) {
+      return t.slice(1, -1).replace(/''/g, "'");
+    }
+    return t;
   }
 
   private executeDbmsRlsCall(_executor: OracleExecutor, call: string): void {
