@@ -1819,3 +1819,45 @@ describe('Root-cause shell/session integrity', () => {
     }
   });
 });
+
+describe('Home-directory coherency — prompts never lie about cwd', () => {
+  test('§HC1 — ssh carl@WinA: dir returns CARL\'s tree, not User\'s', async () => {
+    const { linuxA } = await buildLan();
+    const t = new LinuxTerminalSession('hc1', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    expect(t.getPrompt()).toMatch(/^C:\\Users\\carl>/);
+    await typeSub(t, 'dir');
+    // Listing must contain the user's standard Windows folders — that
+    // proves the cwd ACTUALLY points at C:\\Users\\carl (not User).
+    expectAnyLine(t, /<DIR>\s+Desktop/);
+  });
+
+  test('§HC2 — mkdir in carl session creates carl\'s subdir, NOT in User\'s tree', async () => {
+    const { linuxA, winA } = await buildLan();
+    const t = new LinuxTerminalSession('hc2', linuxA);
+    await t.init();
+    await linuxSshLogin(t, 'ssh carl@10.0.0.4', 'carl');
+    await typeSub(t, 'mkdir HC2DIR');
+    const fs = (winA as unknown as { getFileSystem: () => { exists: (p: string) => boolean } }).getFileSystem();
+    expect(fs.exists('C:\\Users\\carl\\HC2DIR')).toBe(true);
+    expect(fs.exists('C:\\Users\\User\\HC2DIR')).toBe(false);
+  });
+
+  test('§HC3 — two concurrent SSH sessions to the same Windows host are cwd-isolated', async () => {
+    const { linuxA, winA } = await buildLan();
+    void winA;
+    const tA = new LinuxTerminalSession('hcA', linuxA);
+    const tB = new LinuxTerminalSession('hcB', linuxA);
+    await tA.init();
+    await tB.init();
+    await linuxSshLogin(tA, 'ssh alice@10.0.0.4', 'alice');
+    await linuxSshLogin(tB, 'ssh bob@10.0.0.4', 'bob');
+    expect(tA.getPrompt()).toMatch(/^C:\\Users\\alice>/);
+    expect(tB.getPrompt()).toMatch(/^C:\\Users\\bob>/);
+    // alice cd into Desktop — bob's prompt MUST stay at his home.
+    await typeSub(tA, 'cd Desktop');
+    expect(tA.getPrompt()).toMatch(/^C:\\Users\\alice\\Desktop>/);
+    expect(tB.getPrompt()).toMatch(/^C:\\Users\\bob>/);
+  });
+});

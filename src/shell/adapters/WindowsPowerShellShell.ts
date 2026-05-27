@@ -56,6 +56,9 @@ export class WindowsPowerShellShell extends AbstractShell {
   private subShell: PowerShellSubShell;
   private banner: readonly string[];
   private readonly windowsSession: WindowsShellSession | null;
+  /** True when this shell owns the WindowsShellSession (allocated it
+   *  itself, typical of SSH-pushed PS) and must close it on dispose. */
+  private readonly ownsSession: boolean;
   private pendingSshAuth: PendingSshAuth | null = null;
   private pendingExecCommand: string | null = null;
   private readonly knownHostsTracker = new Set<string>();
@@ -65,15 +68,29 @@ export class WindowsPowerShellShell extends AbstractShell {
 
   constructor(opts: WindowsPowerShellOptions) {
     super(opts);
-    this.windowsSession = opts.windowsSession ?? null;
+    if (opts.windowsSession) {
+      this.windowsSession = opts.windowsSession;
+      this.ownsSession = false;
+    } else if (opts.device instanceof WindowsPC) {
+      // No session supplied (typical SSH push): allocate one bound to
+      // the SSH user's home so PS commands operate on the right cwd
+      // instead of leaking C:\\Users\\User across foreign SSH sessions.
+      this.windowsSession = opts.device.openShellSession({
+        user: opts.user,
+        cwd: opts.context.cwd && opts.context.cwd.length > 0
+          ? opts.context.cwd
+          : `C:\\Users\\${opts.user}`,
+      });
+      this.ownsSession = true;
+    } else {
+      this.windowsSession = null;
+      this.ownsSession = false;
+    }
     const { subShell, banner } = PowerShellSubShell.create(opts.device, {
       initialCwd: opts.context.cwd,
-      // The per-terminal Windows shell session is what makes `cd D:\foo`
-      // in one window NOT leak into a sibling window (terminal_gap.md
-      // §7.5). When the caller supplies one (local console) we pass it
-      // through; SSH-pushed PS sessions get `null` and fall back to the
-      // device-wide cwd.
-      session: opts.windowsSession ?? null,
+      // Pass the (possibly freshly-allocated) per-shell session so PS
+      // commands operate on the SSH user's tree, not the global cwd.
+      session: this.windowsSession,
     });
     this.subShell = subShell;
     this.banner = banner;
@@ -129,6 +146,10 @@ export class WindowsPowerShellShell extends AbstractShell {
 
   protected override onDispose(): void {
     this.subShell.dispose();
+    if (this.windowsSession && this.ownsSession
+        && this.device instanceof WindowsPC) {
+      this.device.closeShellSession(this.windowsSession);
+    }
   }
 
   async handleInput(value: string): Promise<ShellLineResult> {
