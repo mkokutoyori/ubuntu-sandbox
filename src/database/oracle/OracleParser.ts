@@ -1045,8 +1045,19 @@ export class OracleParser extends BaseParser {
       const newName = this.expectIdentifier();
       return { type: 'AlterIndexStatement', position: pos, schema, name, action: 'RENAME', newName };
     }
+    if (this.matchKeyword('MONITORING')) {
+      this.matchKeyword('USAGE');  // optional "USAGE" token
+      this.consumeRestOfStatement();
+      return { type: 'AlterIndexStatement', position: pos, schema, name,
+               action: 'MONITORING_USAGE' as unknown as 'REBUILD' };
+    }
+    if (this.matchKeyword('NOMONITORING')) {
+      this.matchKeyword('USAGE');
+      this.consumeRestOfStatement();
+      return { type: 'AlterIndexStatement', position: pos, schema, name,
+               action: 'NOMONITORING_USAGE' as unknown as 'REBUILD' };
+    }
     if (this.matchKeyword('LOGGING') || this.matchKeyword('NOLOGGING')
-        || this.matchKeyword('MONITORING') || this.matchKeyword('NOMONITORING')
         || this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')
         || this.matchKeyword('COALESCE')
         || this.matchKeyword('UNUSABLE') || this.matchKeyword('USABLE')) {

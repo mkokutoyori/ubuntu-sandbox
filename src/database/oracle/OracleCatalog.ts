@@ -1354,6 +1354,17 @@ export class OracleCatalog extends BaseCatalog {
   // ── ALL_ views (user-accessible objects) ─────────────────────────
 
   private queryALL(viewName: string, currentUser: string): ResultSet | null {
+    // Registry overrides — when an ALL_* view has its own dedicated
+    // definition (e.g. ALL_USERS has a smaller column shape than the
+    // generic ALL_→DBA_ derivation would produce), honour it before
+    // falling through to the generic mapping.
+    const fromRegistry = queryView(viewName, {
+      instance: this.instance, storage: this.storage,
+      runtime: this.instance.getRuntimeState(), catalog: this,
+      currentUser,
+    });
+    if (fromRegistry) return fromRegistry;
+
     // ALL_VIEWS — every view accessible to the current user. In our
     // simulator, the catalog dictionary views are world-readable and
     // user-defined views are accessible to their owner. SYS sees all.

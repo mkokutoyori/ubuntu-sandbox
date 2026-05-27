@@ -22,6 +22,10 @@ import { AuditJournal } from './security/audit/AuditJournal';
 import { SecurityAuditActor } from './security/audit/SecurityAuditActor';
 import { NetworkAclManager } from './security/NetworkAclManager';
 import { DataRedactionManager } from './security/DataRedactionManager';
+import { IndexUsageMonitor } from './metadata/IndexUsageMonitor';
+import { TypeRegistry } from './metadata/TypeRegistry';
+import { ExternalTableRegistry } from './metadata/ExternalTableRegistry';
+import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
 
@@ -87,6 +91,24 @@ export class OracleInstance {
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */
   readonly redaction = new DataRedactionManager();
+  /** Oracle object-type catalogue (DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES). */
+  readonly types = new TypeRegistry();
+  /** External-table catalogue (DBA_EXTERNAL_TABLES / DBA_EXTERNAL_LOCATIONS). */
+  readonly externalTables = new ExternalTableRegistry();
+  /** Index usage monitor (ALTER INDEX … MONITORING USAGE) — attached
+   *  to storage by OracleDatabase once it's available. The reference
+   *  to storage is captured so we can rebuild the monitor whenever
+   *  the bus or deviceId changes. */
+  private _indexUsage: IndexUsageMonitor | null = null;
+  private _indexUsageStorage: OracleStorage | null = null;
+  attachIndexUsageMonitor(storage: OracleStorage): IndexUsageMonitor {
+    this._indexUsageStorage = storage;
+    if (this._indexUsage) this._indexUsage.stop();
+    this._indexUsage = new IndexUsageMonitor(this.getBus(), this._deviceId, storage);
+    this._indexUsage.start();
+    return this._indexUsage;
+  }
+  getIndexUsageMonitor(): IndexUsageMonitor | null { return this._indexUsage; }
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.config = { ...defaultOracleConfig(), ...config };
@@ -129,6 +151,13 @@ export class OracleInstance {
     this._runtimeStateActor.start();
     this._securityAuditActor = new SecurityAuditActor(this.getBus(), this._deviceId, this._auditJournal);
     this._securityAuditActor.start();
+    // Reattach the index usage monitor with the current bus/deviceId so
+    // its subscription tracks the same scoping the other actors use.
+    if (this._indexUsageStorage) {
+      if (this._indexUsage) this._indexUsage.stop();
+      this._indexUsage = new IndexUsageMonitor(this.getBus(), this._deviceId, this._indexUsageStorage);
+      this._indexUsage.start();
+    }
   }
 
   /** Read-only handle to the security audit journal. */

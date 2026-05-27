@@ -2775,6 +2775,14 @@ export class OracleExecutor extends BaseExecutor {
       // Rename index — for simplicity, return success
       return emptyResult('Index altered.');
     }
+    if (stmt.action === 'MONITORING_USAGE') {
+      this.instance.getIndexUsageMonitor()?.beginMonitoring(schema, stmt.name);
+      return emptyResult('Index altered.');
+    }
+    if (stmt.action === 'NOMONITORING_USAGE') {
+      this.instance.getIndexUsageMonitor()?.endMonitoringFor(schema, stmt.name);
+      return emptyResult('Index altered.');
+    }
     throw new OracleError(900, `Unsupported ALTER INDEX action: ${stmt.action}`);
   }
 
