@@ -666,10 +666,19 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Command execution ───────────────────────────────────────────
 
   protected onEnter(): void {
-    const cmd = this.input;
+    // Drain BOTH input buffers — `this.input` is the canonical local
+    // console buffer, `_inputBuf` is the sub-shell buffer. When a
+    // sub-shell unwinds back to the root bash, programmatic drivers /
+    // tests that keep using `setInputBuf` should still reach the local
+    // shell instead of being silently dropped. Real interactive use
+    // only fills one buffer at a time; the OR is a no-op there.
+    const cmd = this.input || this._inputBuf;
     this.input = '';
+    this._inputBuf = '';
     this.tabSuggestions = null;
-    this.recordEvent('input', cmd);
+    // The 'input' record event is emitted by addEchoLine inside
+    // executeCommand — recording here too would duplicate every typed
+    // command in the session transcript.
     this.executeCommand(cmd);
     this.notify();
   }
@@ -678,7 +687,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const typed = cmd.trim();
     const trimmed = this.resolveActionLine(typed);
 
-    this.addLine(`${this.getPrompt()}${cmd}`);
+    this.addEchoLine(this.getPrompt(), cmd);
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
@@ -1448,7 +1457,7 @@ export class LinuxTerminalSession extends TerminalSession {
       if (!line || line.startsWith('#')) continue;
       const ignoreErrors = line.startsWith('-');
       const cmd = ignoreErrors ? line.slice(1).trim() : line;
-      this.addLine(`${shell.getPrompt()}${cmd}`);
+      this.addEchoLine(shell.getPrompt(), cmd);
       const result = shell.processLine(cmd);
       for (const out of result.output) {
         if (out) this.addLine(out);
@@ -2311,7 +2320,7 @@ export class LinuxTerminalSession extends TerminalSession {
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.subShellSavedInput = '';
-      this.addLine(`${this.activeSubShell.getPrompt()}${line}`);
+      this.addEchoLine(this.activeSubShell.getPrompt(), line);
 
       // Push non-empty lines to sub-shell history
       if (line.trim()) {

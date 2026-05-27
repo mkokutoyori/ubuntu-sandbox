@@ -219,7 +219,7 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   private async executeCommand(cmd: string): Promise<void> {
     const trimmed = cmd.trim();
-    this.addLine(`${this.prompt}${cmd}`);
+    this.addEchoLine(this.prompt, cmd);
 
     if (trimmed) {
       this.pushHistory(trimmed);
