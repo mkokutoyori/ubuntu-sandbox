@@ -422,5 +422,6 @@ import './dba_registry';
 import './dba_registry_history';
 import './dba_feature_usage_statistics';
 import './dba_ddl_log';
+import './dba_object_usage';
 
 export { };

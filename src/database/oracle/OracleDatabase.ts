@@ -28,6 +28,7 @@ import type { CellValue } from '../engine/storage/BaseStorage';
 import { SodEvaluator } from './security/audit/SodEvaluator';
 import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
+import { MetadataExtractor } from './metadata/MetadataExtractor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
 import type { OracleConnectionTracedPayload } from './events';
 
@@ -138,6 +139,7 @@ export class OracleDatabase {
   readonly sodEvaluator: SodEvaluator;
   readonly dormantAnalyzer: DormantAccountAnalyzer;
   readonly fraudSimulator: FraudScenarioSimulator;
+  readonly metadata: MetadataExtractor;
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
@@ -160,6 +162,9 @@ export class OracleDatabase {
     this.sodEvaluator = new SodEvaluator(this.catalog, this.securityEngine, journal, actor);
     this.dormantAnalyzer = new DormantAccountAnalyzer(this.catalog, journal, actor, this.securityEngine);
     this.fraudSimulator = new FraudScenarioSimulator(this, actor, this.sodEvaluator, this.dormantAnalyzer);
+    this.metadata = new MetadataExtractor(this.storage, this.catalog);
+    // Index usage monitor — must attach now that storage exists.
+    this.instance.attachIndexUsageMonitor(this.storage);
 
     // Reactive: re-scan SoD whenever a GRANT/REVOKE/CREATE USER crosses
     // the audit bus. The executor publishes `oracle.audit.recorded` for

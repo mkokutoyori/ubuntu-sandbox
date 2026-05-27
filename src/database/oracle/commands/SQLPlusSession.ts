@@ -341,6 +341,15 @@ export class SQLPlusSession {
       return this.handleOradebug(trimmed);
     }
 
+    // DDL — surface for DBMS_METADATA.GET_DDL. Accepts
+    //   DDL <objType> <owner>.<name>
+    //   DDL <owner>.<name>            (assumes TABLE)
+    // exactly the way DBAs use the SQL*Plus shortcut on Toad / SQL
+    // Developer.
+    if (upper === 'DDL' || upper.startsWith('DDL ')) {
+      return this.handleDdlCommand(trimmed);
+    }
+
     // SECDEMO — simulator-specific entry point that drives the
     // FraudScenarioSimulator. `SECDEMO RUN` runs every canonical
     // scenario; `SECDEMO SCAN SOD` and `SECDEMO SCAN DORMANT` run only
@@ -1049,6 +1058,41 @@ export class SQLPlusSession {
       return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
     return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── DDL (DBMS_METADATA.GET_DDL shortcut) ─────────────────────────
+
+  private handleDdlCommand(line: string): SQLPlusResult {
+    const rest = line.replace(/;\s*$/, '').replace(/^DDL\s*/i, '').trim();
+    if (!rest) {
+      return { output: [
+        'Usage: DDL [object_type] [schema.]object_name',
+        '  e.g. DDL TABLE HR.EMPLOYEES',
+        '       DDL VIEW DBA_USERS',
+        '       DDL HR.EMPLOYEES        (defaults to TABLE)',
+      ], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    const parts = rest.split(/\s+/);
+    let objType: 'TABLE' | 'VIEW' | 'INDEX' | 'SEQUENCE' | 'SYNONYM'
+      | 'TRIGGER' | 'USER' | 'ROLE' | 'PROCEDURE' | 'FUNCTION' | 'PACKAGE' = 'TABLE';
+    let identifier = parts[0];
+    if (parts.length >= 2 && /^(TABLE|VIEW|INDEX|SEQUENCE|SYNONYM|TRIGGER|USER|ROLE|PROCEDURE|FUNCTION|PACKAGE)$/i.test(parts[0])) {
+      objType = parts[0].toUpperCase() as typeof objType;
+      identifier = parts.slice(1).join(' ');
+    }
+    const m = identifier.replace(/"/g, '').match(/^(?:([\w$#]+)\.)?([\w$#]+)$/);
+    if (!m) {
+      return { output: [`SP2-0734: cannot parse object identifier "${identifier}"`],
+               exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    const owner = (m[1] ?? this.currentUser ?? 'SYS').toUpperCase();
+    const name = m[2].toUpperCase();
+    const ddl = this.db.metadata.getDdl(objType, name, owner);
+    if (ddl === null) {
+      return { output: [`ORA-31603: object "${name}" of type ${objType} not found in schema "${owner}"`],
+               exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    return { output: ddl.split('\n'), exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   // ── SECDEMO ──────────────────────────────────────────────────────
