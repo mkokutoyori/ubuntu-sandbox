@@ -59,6 +59,67 @@ test.describe('Network Logs panel', () => {
     await expect(detail).toHaveCount(0);
   });
 
+  test('live-tail pauses when the user scrolls into history and resumes on toggle', async ({ page }) => {
+    await page.locator('button[title="Logs"]').click();
+    await page.waitForFunction(() => !!(window as Record<string, unknown>).__logger);
+
+    // Seed 80 rows so the list overflows and we can actually scroll.
+    await page.evaluate(() => {
+      const Logger = (window as Record<string, unknown>).__logger as {
+        info(s: string, e: string, m: string): void;
+      };
+      for (let i = 0; i < 80; i++) Logger.info(`PC${i % 4}`, 'frame:sent', `seq=${i}`);
+    });
+
+    // At the top: live mode, no paused badge.
+    await expect(page.locator('[data-testid="logs-paused-badge"]')).toHaveCount(0);
+
+    // Scroll down inside the list → live mode pauses.
+    await page.locator('[data-testid="logs-list"]').evaluate(el => { el.scrollTop = 200; });
+    await expect(page.locator('[data-testid="logs-paused-badge"]')).toBeVisible();
+
+    // While paused, new logs do NOT yank the viewport back to 0.
+    const scrollTopBefore = await page.locator('[data-testid="logs-list"]').evaluate(el => el.scrollTop);
+    await page.evaluate(() => {
+      const Logger = (window as Record<string, unknown>).__logger as {
+        info(s: string, e: string, m: string): void;
+      };
+      for (let i = 0; i < 10; i++) Logger.info('PC0', 'frame:sent', `late-${i}`);
+    });
+    await page.waitForTimeout(200);
+    const scrollTopAfter = await page.locator('[data-testid="logs-list"]').evaluate(el => el.scrollTop);
+    expect(scrollTopAfter).toBe(scrollTopBefore);
+
+    // Clicking the tail toggle resumes and snaps back to 0.
+    await page.locator('[data-testid="logs-toggle-tail"]').click();
+    await expect(page.locator('[data-testid="logs-paused-badge"]')).toHaveCount(0);
+    await expect.poll(
+      () => page.locator('[data-testid="logs-list"]').evaluate(el => el.scrollTop),
+    ).toBe(0);
+  });
+
+  test('export buttons download visible rows as JSON and CSV', async ({ page }) => {
+    await page.locator('button[title="Logs"]').click();
+    await page.waitForFunction(() => !!(window as Record<string, unknown>).__logger);
+    await page.evaluate(() => {
+      const Logger = (window as Record<string, unknown>).__logger as {
+        info(s: string, e: string, m: string, d?: unknown): void;
+      };
+      Logger.info('PC1', 'arp:request', 'who-has 192.168.1.2', { srcMac: 'aa:bb:cc:dd:ee:ff' });
+      Logger.info('PC2', 'arp:reply',   'is-at aa:bb:cc:dd:ee:ff');
+    });
+
+    const dlJsonPromise = page.waitForEvent('download');
+    await page.locator('[data-testid="logs-export-json"]').click();
+    const dlJson = await dlJsonPromise;
+    expect(dlJson.suggestedFilename()).toMatch(/^network-logs-\d+\.json$/);
+
+    const dlCsvPromise = page.waitForEvent('download');
+    await page.locator('[data-testid="logs-export-csv"]').click();
+    const dlCsv = await dlCsvPromise;
+    expect(dlCsv.suggestedFilename()).toMatch(/^network-logs-\d+\.csv$/);
+  });
+
   test('panel reflects Logger entries emitted programmatically', async ({ page }) => {
     await page.locator('button[title="Logs"]').click();
 

@@ -7,8 +7,8 @@
  * the panel matches `journalctl --rotate`'s mental model — what you see
  * is what's currently kept.
  */
-import { useMemo, useState } from 'react';
-import { Trash2, ScrollText, Filter, X, Copy } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Trash2, ScrollText, Filter, X, Copy, Download, Pause, Play } from 'lucide-react';
 import { Logger, type LogLevel, type NetworkLog } from '@/network/core/Logger';
 import { useNetworkLogs } from '@/hooks/useNetworkLogs';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,56 @@ function formatTime(ts: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 }
 
+/** Trigger a browser download for the given text payload. */
+function downloadText(filename: string, mime: string, content: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** Escape a value for CSV: wrap in quotes, double internal quotes. */
+function csvCell(value: unknown): string {
+  if (value == null) return '';
+  const s = typeof value === 'string' ? value : JSON.stringify(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function exportJson(rows: readonly NetworkLog[]): string {
+  return JSON.stringify(
+    rows.map(r => ({
+      timestamp: new Date(r.timestamp).toISOString(),
+      level: r.level,
+      source: r.source,
+      sourceLabel: r.sourceLabel,
+      event: r.event,
+      message: r.message,
+      data: r.data,
+    })),
+    null,
+    2,
+  );
+}
+
+function exportCsv(rows: readonly NetworkLog[]): string {
+  const header = ['timestamp', 'level', 'source', 'sourceLabel', 'event', 'message', 'data'].join(',');
+  const body = rows.map(r => [
+    csvCell(new Date(r.timestamp).toISOString()),
+    csvCell(r.level),
+    csvCell(r.source),
+    csvCell(r.sourceLabel ?? ''),
+    csvCell(r.event),
+    csvCell(r.message),
+    csvCell(r.data ?? ''),
+  ].join(',')).join('\n');
+  return body ? `${header}\n${body}\n` : `${header}\n`;
+}
+
 export function NetworkLogsPanel(): JSX.Element {
   const logs = useNetworkLogs({ limit: 500 });
   const [levelFilter, setLevelFilter] = useState<Set<LogLevel>>(
@@ -40,6 +90,13 @@ export function NetworkLogsPanel(): JSX.Element {
   );
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<NetworkLog | null>(null);
+  // Live-tail mode: when the user has not scrolled away from the top
+  // (newest entry) of the list, snap back to 0 whenever new logs
+  // arrive. Once they scroll into history, freeze the viewport so they
+  // can actually read past entries — the standard "pause on scroll" UX
+  // of every serious log viewer (k9s, lazydocker, devtools console).
+  const [liveTail, setLiveTail] = useState(true);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -64,17 +121,82 @@ export function NetworkLogsPanel(): JSX.Element {
       return next;
     });
 
+  // When a new log arrives while we're in live-tail mode, snap the
+  // viewport to the top (newest entry). Newest-first ordering makes
+  // 0 the live edge — same as `tail -f` semantics but rendered in
+  // reverse-time order so the eye lands on the freshest event.
+  useEffect(() => {
+    if (liveTail && listRef.current) listRef.current.scrollTop = 0;
+  }, [filtered.length, liveTail]);
+
+  const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const top = (e.target as HTMLDivElement).scrollTop;
+    // Tiny epsilon: a momentum-scroll can land at 0.5 even when the
+    // user "is at the top". 4px keeps the live-tail intuitive without
+    // re-engaging it from a mid-scroll wobble.
+    const atTop = top <= 4;
+    if (atTop !== liveTail) setLiveTail(atTop);
+  };
+
+  const handleExportJson = () =>
+    downloadText(`network-logs-${Date.now()}.json`, 'application/json', exportJson(filtered));
+
+  const handleExportCsv = () =>
+    downloadText(`network-logs-${Date.now()}.csv`, 'text/csv', exportCsv(filtered));
+
   return (
     <div className="h-full flex flex-col bg-card/30 backdrop-blur-xl border-l border-white/10 w-[380px]">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
-        <ScrollText className="w-4 h-4 text-foreground/70" />
-        <div className="flex-1">
-          <h2 className="text-sm font-semibold text-foreground/90">Network Logs</h2>
+      <div className="px-4 py-3 border-b border-white/10 flex items-center gap-1.5">
+        <ScrollText className="w-4 h-4 text-foreground/70 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold text-foreground/90 flex items-center gap-2">
+            Network Logs
+            {!liveTail && (
+              <span
+                className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded
+                           bg-amber-600/30 text-amber-200 font-medium"
+                data-testid="logs-paused-badge"
+              >
+                paused
+              </span>
+            )}
+          </h2>
           <p className="text-[10px] text-muted-foreground">
             {filtered.length} / {logs.length} entries
           </p>
         </div>
+        <button
+          onClick={() => {
+            // Manual toggle: if paused, jump back to live; if live, just freeze in place.
+            if (!liveTail && listRef.current) listRef.current.scrollTop = 0;
+            setLiveTail(t => !t);
+          }}
+          className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
+          title={liveTail ? 'Pause live tail' : 'Resume live tail'}
+          data-testid="logs-toggle-tail"
+        >
+          {liveTail
+            ? <Pause className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+            : <Play className="w-3.5 h-3.5 text-amber-300 hover:text-amber-200" />}
+        </button>
+        <button
+          onClick={handleExportJson}
+          className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
+          title="Export visible rows as JSON"
+          data-testid="logs-export-json"
+        >
+          <Download className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+        </button>
+        <button
+          onClick={handleExportCsv}
+          className="px-1.5 py-0.5 rounded-md hover:bg-white/10 transition-colors
+                     text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+          title="Export visible rows as CSV"
+          data-testid="logs-export-csv"
+        >
+          CSV
+        </button>
         <button
           onClick={() => Logger.clear()}
           className="p-1.5 rounded-md hover:bg-white/10 transition-colors"
@@ -116,7 +238,12 @@ export function NetworkLogsPanel(): JSX.Element {
       </div>
 
       {/* Live tail (newest first) */}
-      <div className="flex-1 overflow-y-auto font-mono text-[11px] leading-tight" data-testid="logs-list">
+      <div
+        ref={listRef}
+        onScroll={onListScroll}
+        className="flex-1 overflow-y-auto font-mono text-[11px] leading-tight"
+        data-testid="logs-list"
+      >
         {filtered.length === 0 ? (
           <p className="px-4 py-6 text-center text-muted-foreground text-xs">
             No matching log entries.
