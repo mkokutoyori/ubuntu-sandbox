@@ -40,6 +40,14 @@ export interface WindowsShellExecutor {
   executeCmdCommand(line: string): Promise<string>;
 }
 
+/**
+ * Callback fired after every inbound SSH auth attempt — wired up by
+ * WindowsPC so the Security event log records 4624 (logon success) /
+ * 4625 (logon failure) at logon type 10 (RemoteInteractive), matching
+ * what a real Windows host writes for an OpenSSH-for-Windows login.
+ */
+export type WindowsSshLogonReporter = (user: string, success: boolean) => void;
+
 export class WindowsSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
@@ -52,6 +60,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     private readonly hostname: string,
     config: Partial<SshServerConfig> = {},
     private readonly shellExecutor: WindowsShellExecutor | null = null,
+    private readonly reportLogon: WindowsSshLogonReporter | null = null,
   ) {
     this.ensureSshDir();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -65,7 +74,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   reloadConfig(): WindowsSshServerContext {
-    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor);
+    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon);
   }
 
   getBanner(): string | null {
@@ -175,22 +184,25 @@ export class WindowsSshServerContext implements ISshServerContext {
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
-        if (!this.userAllowed(user)) return false;
-        if (!this.config.passwordAuthentication) return false;
-        return this.userManager.checkPassword(user, password);
+        if (!this.userAllowed(user)) { this.reportLogon?.(user, false); return false; }
+        if (!this.config.passwordAuthentication) { this.reportLogon?.(user, false); return false; }
+        const ok = this.userManager.checkPassword(user, password);
+        this.reportLogon?.(user, ok);
+        return ok;
       },
       // BRD SSH-03-R6: public-key authentication on Windows OpenSSH stores
       // authorized_keys per-user under C:\Users\<user>\.ssh\. Each line is
       // `<algorithm> <material> [<comment>]`. We accept a successful match
       // when both algorithm and material agree.
       checkPublicKey: (user, publicKey) => {
-        if (!this.userAllowed(user)) return false;
-        if (!this.config.pubkeyAuthentication) return false;
-        if (!this.userManager.getUser(user)) return false;
+        const fail = () => { this.reportLogon?.(user, false); return false; };
+        if (!this.userAllowed(user)) return fail();
+        if (!this.config.pubkeyAuthentication) return fail();
+        if (!this.userManager.getUser(user)) return fail();
         const path = `C:\\Users\\${user}\\.ssh\\authorized_keys`;
         const result = this.wfs.readFile(path);
-        if (!result.ok || !result.content) return false;
-        return result.content
+        if (!result.ok || !result.content) return fail();
+        const ok = result.content
           .split('\n')
           .map((line) => line.trim())
           .filter((line) => line && !line.startsWith('#'))
@@ -198,6 +210,8 @@ export class WindowsSshServerContext implements ISshServerContext {
             const parts = line.split(/\s+/);
             return parts.length >= 2 && parts[1] === publicKey;
           });
+        this.reportLogon?.(user, ok);
+        return ok;
       },
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {

@@ -252,6 +252,16 @@ export class WindowsPC extends EndHost {
   getSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
+    },
+    // Publish a `windows.account.logon` per inbound SSH auth attempt
+    // — the SecurityAuditProjection turns each into a 4624 / 4625 in
+    // the Security event log, matching what OpenSSH-for-Windows logs.
+    // Logon type 10 = RemoteInteractive, what sshd uses on real Windows.
+    (user, success) => {
+      this.getBus().publish({
+        topic: 'windows.account.logon',
+        payload: { deviceId: this.id, account: user, success, logonType: 10 },
+      });
     });
   }
 
