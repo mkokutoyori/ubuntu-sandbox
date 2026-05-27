@@ -34,6 +34,7 @@ import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
+import { SchedulerManager } from './scheduler/SchedulerManager';
 import type { UserActivityTracker } from './security/audit/UserActivityTracker';
 import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
@@ -136,6 +137,7 @@ export class OracleDatabase {
     inj._resourceManager = this.instance.resourceManager;
     inj._statisticsManager = this.instance.statistics;
     inj._statisticsManagerStorage = this.storage;
+    (session as unknown as { _schedulerManager: SchedulerManager })._schedulerManager = this.scheduler;
     this.sessions.set(args.sid, session);
     return session;
   }
@@ -162,8 +164,8 @@ export class OracleDatabase {
   readonly idleMonitor: IdleSessionMonitor;
   /** Resource Manager — consumer-group switcher driven by the bus. */
   readonly consumerGroupSwitcher: ConsumerGroupSwitcher;
-  /** Optimizer plan generator — produces a plan per parsed statement. */
   readonly planGenerator: PlanGenerator;
+  readonly scheduler: SchedulerManager;
   /** Reactive user-activity ledger. The instance owns the tracker so
    *  that setDeviceId triggers a rebind; expose it as a getter so the
    *  current tracker is always returned. */
@@ -207,6 +209,8 @@ export class OracleDatabase {
     // Statistics + plan generator — both need storage.
     this.instance.attachStatistics(this.storage);
     this.planGenerator = new PlanGenerator(this.storage, this.instance);
+    this.scheduler = new SchedulerManager(this);
+    this.instance.attachScheduler(this.scheduler);
     // User-activity ledger lives on the instance (rebinds on setDeviceId);
     // the getter `userActivity` returns the current tracker on demand.
     // Idle-session PMON sweep (IDLE_TIME enforcement).
@@ -507,6 +511,29 @@ export class OracleDatabase {
     const upper = trimmed.toUpperCase();
     if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
       return this.executePLSQL(executor, trimmed);
+    }
+
+    const pdbMatch = upper.match(/^(?:ALTER\s+PLUGGABLE\s+DATABASE|CREATE\s+PLUGGABLE\s+DATABASE|DROP\s+PLUGGABLE\s+DATABASE)\s+(\w+)/);
+    if (pdbMatch) {
+      const name = pdbMatch[1];
+      if (upper.startsWith('CREATE')) {
+        this.instance.multitenant.createPdb(name);
+        return emptyResult('Pluggable database created.');
+      }
+      if (upper.startsWith('DROP')) {
+        this.instance.multitenant.dropPdb(name);
+        return emptyResult('Pluggable database dropped.');
+      }
+      if (upper.includes('OPEN')) {
+        const ro = /READ\s+ONLY/.test(upper);
+        this.instance.multitenant.openPdb(name, ro ? 'READ ONLY' : 'READ WRITE');
+        return emptyResult('Pluggable database altered.');
+      }
+      if (upper.includes('CLOSE')) {
+        this.instance.multitenant.closePdb(name);
+        return emptyResult('Pluggable database altered.');
+      }
+      return emptyResult('Pluggable database altered.');
     }
 
     // CREATE [OR REPLACE] TYPE — Oracle object types. Registered into
@@ -972,6 +999,7 @@ export class OracleDatabase {
       || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
       || upper.startsWith('DBMS_RESOURCE_MANAGER.')
       || upper.startsWith('DBMS_STATS.')
+      || upper.startsWith('DBMS_SCHEDULER.')
     ) {
       this.invokeBuiltinPackage(executor, trimmed, variables, output);
       return;

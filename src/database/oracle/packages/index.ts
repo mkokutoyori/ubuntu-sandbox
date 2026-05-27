@@ -10,12 +10,14 @@ import { DbmsSession } from './DbmsSession';
 import { DbmsWorkloadRepository } from './DbmsWorkloadRepository';
 import { DbmsResourceManager } from './DbmsResourceManager';
 import { DbmsStats } from './DbmsStats';
+import { DbmsScheduler } from './DbmsScheduler';
 
 DbmsApplicationInfo.register();
 DbmsSession.register();
 DbmsWorkloadRepository.register();
 DbmsResourceManager.register();
 DbmsStats.register();
+DbmsScheduler.register();
 
 export { builtinPackageRegistry, PackageRegistry } from './PackageRegistry';
 export type { IPackageRoutine, PackageCallContext } from './PackageRegistry';

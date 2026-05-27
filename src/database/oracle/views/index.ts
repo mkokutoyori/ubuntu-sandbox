@@ -442,5 +442,13 @@ import './user_tab_privs_made';
 import './user_tab_privs_recd';
 import './all_tab_privs_made';
 import './all_tab_privs_recd';
+import './v_pdbs';
+import './dba_pdbs';
+import './cdb_pdbs';
+import './v_containers';
+import './v_dataguard_config';
+import './v_dataguard_stats';
+import './v_dataguard_status';
+import './v_standby_log';
 
 export { };

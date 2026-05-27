@@ -33,6 +33,8 @@ import { ResourceManager } from './resource/ResourceManager';
 import { AwrSnapshotManager } from './awr/AwrSnapshotManager';
 import { PlanCache } from './plan/PlanCache';
 import { StatisticsManager } from './statistics/StatisticsManager';
+import { MultitenantManager } from './multitenant/PluggableDatabase';
+import { DataGuardConfiguration } from './dataguard/DataGuardConfiguration';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -109,8 +111,13 @@ export class OracleInstance {
    *  Sized generously so a fresh database with demo schemas does not
    *  evict every plan before user activity starts. */
   readonly planCache = new PlanCache(2000);
-  /** Optimizer statistics — set lazily once storage is available. */
+  readonly multitenant = new MultitenantManager();
+  readonly dataGuard = new DataGuardConfiguration();
   statistics: StatisticsManager | null = null;
+  scheduler: import('./scheduler/SchedulerManager').SchedulerManager | null = null;
+  attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {
+    this.scheduler = s;
+  }
   attachStatistics(storage: OracleStorage): StatisticsManager {
     if (!this.statistics) this.statistics = new StatisticsManager(storage);
     return this.statistics;
