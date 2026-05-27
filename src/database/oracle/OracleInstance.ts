@@ -25,6 +25,7 @@ import { DataRedactionManager } from './security/DataRedactionManager';
 import { IndexUsageMonitor } from './metadata/IndexUsageMonitor';
 import { TypeRegistry } from './metadata/TypeRegistry';
 import { ExternalTableRegistry } from './metadata/ExternalTableRegistry';
+import { UserActivityTracker } from './security/audit/UserActivityTracker';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -87,6 +88,7 @@ export class OracleInstance {
    *  Surfaces forensic data through the DBA_* security views. */
   private readonly _auditJournal = new AuditJournal();
   private _securityAuditActor: SecurityAuditActor | null = null;
+  private _userActivity: UserActivityTracker | null = null;
   /** Network ACL administration (DBMS_NETWORK_ACL_ADMIN). */
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */
@@ -145,12 +147,18 @@ export class OracleInstance {
       this._securityAuditActor.stop();
       this._securityAuditActor = null;
     }
+    if (this._userActivity) {
+      this._userActivity.stop();
+      this._userActivity = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
     this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
     this._runtimeStateActor.start();
     this._securityAuditActor = new SecurityAuditActor(this.getBus(), this._deviceId, this._auditJournal);
     this._securityAuditActor.start();
+    this._userActivity = new UserActivityTracker(this.getBus(), this._deviceId, this._auditJournal);
+    this._userActivity.start();
     // Reattach the index usage monitor with the current bus/deviceId so
     // its subscription tracks the same scoping the other actors use.
     if (this._indexUsageStorage) {
@@ -164,6 +172,8 @@ export class OracleInstance {
   getAuditJournal(): AuditJournal { return this._auditJournal; }
   /** The actor wires bus → journal; exposed so external evaluators reuse it. */
   getSecurityAuditActor(): SecurityAuditActor | null { return this._securityAuditActor; }
+  /** Per-user activity ledger (reactive). */
+  getUserActivityTracker(): UserActivityTracker | null { return this._userActivity; }
 
   /** Snapshot of the event-fed runtime state used by the V$/GV$ views. */
   getRuntimeState(): OracleRuntimeState { return this._runtimeState; }

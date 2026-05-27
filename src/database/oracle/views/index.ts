@@ -432,5 +432,9 @@ import './dba_coll_types';
 import './dba_external_tables';
 import './dba_external_locations';
 import './dba_editions';
+// User activity / session / context
+import './v_session_context';
+import './dba_context';
+import './dba_audit_exists';
 
 export { };

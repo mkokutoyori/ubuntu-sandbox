@@ -29,6 +29,8 @@ import { SodEvaluator } from './security/audit/SodEvaluator';
 import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
 import { MetadataExtractor } from './metadata/MetadataExtractor';
+import type { UserActivityTracker } from './security/audit/UserActivityTracker';
+import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
 import type { OracleConnectionTracedPayload } from './events';
 
@@ -140,6 +142,13 @@ export class OracleDatabase {
   readonly dormantAnalyzer: DormantAccountAnalyzer;
   readonly fraudSimulator: FraudScenarioSimulator;
   readonly metadata: MetadataExtractor;
+  readonly idleMonitor: IdleSessionMonitor;
+  /** Reactive user-activity ledger. The instance owns the tracker so
+   *  that setDeviceId triggers a rebind; expose it as a getter so the
+   *  current tracker is always returned. */
+  get userActivity(): UserActivityTracker {
+    return this.instance.getUserActivityTracker()!;
+  }
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
@@ -165,6 +174,12 @@ export class OracleDatabase {
     this.metadata = new MetadataExtractor(this.storage, this.catalog);
     // Index usage monitor — must attach now that storage exists.
     this.instance.attachIndexUsageMonitor(this.storage);
+    // User-activity ledger lives on the instance (rebinds on setDeviceId);
+    // the getter `userActivity` returns the current tracker on demand.
+    // Idle-session PMON sweep (IDLE_TIME enforcement).
+    this.idleMonitor = new IdleSessionMonitor(
+      this.instance.getBus(), this.instance.getDeviceId(),
+      this.instance.config.sid, this.securityEngine, this.catalog);
 
     // Reactive: re-scan SoD whenever a GRANT/REVOKE/CREATE USER crosses
     // the audit bus. The executor publishes `oracle.audit.recorded` for

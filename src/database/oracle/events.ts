@@ -440,6 +440,36 @@ export interface OracleDmlHistoryRecordedPayload extends OracleDeviceRef {
   timestamp: Date;
 }
 
+// ── User-account activity ─────────────────────────────────────────────
+
+export type UserActivityKind =
+  | 'CREATED' | 'DROPPED'
+  | 'LOCKED' | 'UNLOCKED'
+  | 'PASSWORD_CHANGED' | 'PASSWORD_EXPIRED'
+  | 'PROFILE_CHANGED' | 'QUOTA_GRANTED';
+
+export interface OracleUserActivityPayload extends OracleDeviceRef {
+  username: string;
+  kind: UserActivityKind;
+  /** SID of the session that triggered the change (0 for system-driven). */
+  sessionId: number;
+  /** The user that performed the action (often SYS / DBA). */
+  performedBy: string;
+  /** Free-form contextual data (old / new profile, expiry date, …). */
+  detail: Record<string, string | number | boolean>;
+  timestamp: Date;
+}
+
+export interface OracleSessionIdleSnipedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  /** Seconds the session sat idle before being sniped. */
+  idleSeconds: number;
+  /** IDLE_TIME profile limit that was exceeded (in seconds). */
+  thresholdSeconds: number;
+  timestamp: Date;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -491,4 +521,6 @@ export type OracleDomainEvent =
   | { topic: 'oracle.security.fraud-injected';           payload: OracleFraudInjectedPayload }
   | { topic: 'oracle.privilege.exercised';               payload: OraclePrivilegeExercisedPayload }
   | { topic: 'oracle.ddl.history-recorded';              payload: OracleDdlHistoryRecordedPayload }
-  | { topic: 'oracle.dml.history-recorded';              payload: OracleDmlHistoryRecordedPayload };
+  | { topic: 'oracle.dml.history-recorded';              payload: OracleDmlHistoryRecordedPayload }
+  | { topic: 'oracle.user.activity';                     payload: OracleUserActivityPayload }
+  | { topic: 'oracle.session.idle-sniped';               payload: OracleSessionIdleSnipedPayload };
