@@ -394,6 +394,11 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-failed',
       payload: { ...this.hostRef(), ...payload },
     });
+    Logger.warn(
+      this.id, 'icmp:echo-failed',
+      `${this.name}: ICMP echo to ${payload.toIp} failed (${payload.reason}) id=${payload.id} seq=${payload.seq}`,
+      payload,
+    );
   }
 
   /** Bus emission helper for ARP entry learned. */

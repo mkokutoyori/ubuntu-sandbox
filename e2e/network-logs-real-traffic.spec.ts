@@ -96,4 +96,64 @@ test.describe('Network Logs panel — real simulator traffic', () => {
     await expect(detail).toBeVisible();
     await expect(detail).toContainText('"targetIp": "10.0.0.2"');
   });
+
+  test('routed traffic across a Cisco router logs router:forward decisions', async ({ page }) => {
+    await page.evaluate(async () => {
+      type StoreState = {
+        addDevice(t: string, x: number, y: number): { id: string };
+        deviceInstances: Map<string, Record<string, unknown>>;
+        addConnection(a: string, b: string, c: string, d: string, t?: string): unknown;
+      };
+      const store = (window as Record<string, unknown>).__networkStore as { getState(): StoreState };
+
+      const pc1 = store.getState().addDevice('linux-pc', 150, 300);
+      const r   = store.getState().addDevice('router-cisco', 400, 300);
+      const pc2 = store.getState().addDevice('linux-pc', 650, 300);
+
+      const i1 = store.getState().deviceInstances.get(pc1.id) as Record<string, unknown>;
+      const iR = store.getState().deviceInstances.get(r.id)   as Record<string, unknown>;
+      const i2 = store.getState().deviceInstances.get(pc2.id) as Record<string, unknown>;
+
+      const p1 = ((i1.getPortNames as () => string[])()).find(n => n.startsWith('eth')) ?? 'eth0';
+      const p2 = ((i2.getPortNames as () => string[])()).find(n => n.startsWith('eth')) ?? 'eth0';
+      const rPorts = (iR.getPortNames as () => string[])();
+      const rA = rPorts[0]; const rB = rPorts[1];
+
+      const exec1 = i1.executeCommand as ((c: string) => Promise<string> | string);
+      const execR = iR.executeCommand as ((c: string) => Promise<string> | string);
+      const exec2 = i2.executeCommand as ((c: string) => Promise<string> | string);
+
+      await Promise.resolve(exec1.call(i1, `sudo ip addr add 10.1.1.10/24 dev ${p1}`));
+      await Promise.resolve(exec1.call(i1, `sudo ip route add default via 10.1.1.1`));
+      await Promise.resolve(exec2.call(i2, `sudo ip addr add 10.2.2.10/24 dev ${p2}`));
+      await Promise.resolve(exec2.call(i2, `sudo ip route add default via 10.2.2.1`));
+
+      // Router config via a multi-line Cisco IOS macro.
+      const cfg = [
+        'enable',
+        'configure terminal',
+        `interface ${rA}`,
+        'ip address 10.1.1.1 255.255.255.0',
+        'no shutdown',
+        'exit',
+        `interface ${rB}`,
+        'ip address 10.2.2.1 255.255.255.0',
+        'no shutdown',
+        'end',
+      ];
+      for (const line of cfg) await Promise.resolve(execR.call(iR, line));
+
+      store.getState().addConnection(pc1.id, p1, r.id, rA, 'ethernet');
+      store.getState().addConnection(r.id, rB, pc2.id, p2, 'ethernet');
+
+      // Drive the routed ping.
+      await Promise.resolve(exec1.call(i1, 'ping -c 1 10.2.2.10'));
+    });
+
+    const list = page.locator('[data-testid="logs-list"]');
+    await expect(list).toContainText('router:forward');
+    await expect(list).toContainText('10.1.1.10');
+    await expect(list).toContainText('10.2.2.10');
+    await page.screenshot({ path: 'test-results/logs-router-forward.png', fullPage: true });
+  });
 });

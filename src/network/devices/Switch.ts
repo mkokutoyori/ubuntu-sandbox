@@ -580,10 +580,20 @@ export abstract class Switch extends Equipment {
                         (dstOctets[0] === 0x33 && dstOctets[1] === 0x33);
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
+      Logger.debug(
+        this.id, 'switch:flood',
+        `${this.name}: flood ${dstMAC} VLAN ${ingressVlan} (ingress ${portName})`,
+        { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, reason: isMulticast ? 'multicast' : 'unknown-unicast' },
+      );
       this.floodFrame(portName, frame, ingressVlan);
     } else {
       const dstEntry = this.macTable.get(`${ingressVlan}:${dstMAC}`)!;
       if (dstEntry.port !== portName) {
+        Logger.debug(
+          this.id, 'switch:forward',
+          `${this.name}: forward ${dstMAC} VLAN ${ingressVlan} ${portName} → ${dstEntry.port}`,
+          { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: dstEntry.port },
+        );
         this.forwardToPort(dstEntry.port, frame, ingressVlan);
       }
     }
