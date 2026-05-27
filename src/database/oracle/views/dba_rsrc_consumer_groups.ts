@@ -1,31 +1,30 @@
 /**
  * DBA_RSRC_CONSUMER_GROUPS — Resource Manager consumer groups.
- *
- * Oracle ships a default set of consumer groups.
+ * Backed by ResourceManager — every CREATE_CONSUMER_GROUP call shows
+ * up here exactly as on a real database.
  */
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
 
-const GROUPS = [
-  'SYS_GROUP', 'OTHER_GROUPS', 'DEFAULT_CONSUMER_GROUP',
-  'ORA$AUTOTASK', 'ORA$DIAGNOSTICS', 'BATCH_GROUP', 'INTERACTIVE_GROUP',
-  'LOW_GROUP', 'MEDIUM_GROUP',
-];
-
 registerView({
   name: 'DBA_RSRC_CONSUMER_GROUPS',
   comment: 'Resource Manager consumer groups',
-  query() {
+  query({ instance }) {
     return queryResult(
       [
         col.str('CONSUMER_GROUP', 30),
         col.str('CPU_METHOD', 12),
         col.str('STATUS', 16),
         col.str('COMMENTS', 240),
+        col.str('CATEGORY', 30),
+        col.str('MANDATORY', 3),
       ],
-      GROUPS.map(g => [g, 'ROUND-ROBIN', 'ACTIVE', `${g} consumer group`])
+      instance.resourceManager.getConsumerGroups().map(g => [
+        g.name, g.cpuMethod, g.status, g.comment, g.category,
+        g.mandatory ? 'YES' : 'NO',
+      ]),
     );
   },
 });

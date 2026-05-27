@@ -437,5 +437,10 @@ import './dba_editions';
 import './v_session_context';
 import './dba_context';
 import './dba_audit_exists';
+// Privilege views — MADE / RECD families
+import './user_tab_privs_made';
+import './user_tab_privs_recd';
+import './all_tab_privs_made';
+import './all_tab_privs_recd';
 
 export { };

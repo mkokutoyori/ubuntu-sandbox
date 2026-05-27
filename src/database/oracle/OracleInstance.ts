@@ -29,6 +29,8 @@ import { UserActivityTracker } from './security/audit/UserActivityTracker';
 import { SystemTriggerRegistry } from './triggers/SystemTriggerRegistry';
 import { SystemTriggerExecutor } from './triggers/SystemTriggerExecutor';
 import { WaitEventEngine } from './wait/WaitEventEngine';
+import { ResourceManager } from './resource/ResourceManager';
+import { AwrSnapshotManager } from './awr/AwrSnapshotManager';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -97,6 +99,10 @@ export class OracleInstance {
   private _systemTriggerExecutor: SystemTriggerExecutor | null = null;
   /** Wait-event engine — feeds V$SESSION_EVENT / V$SYSTEM_EVENT / V$EVENT_HISTOGRAM. */
   private _waitEngine: WaitEventEngine | null = null;
+  /** Resource Manager — plans, consumer groups, mappings, directives. */
+  readonly resourceManager = new ResourceManager();
+  /** AWR snapshot manager — DBA_HIST_SNAPSHOT and friends. */
+  readonly awrManager = new AwrSnapshotManager(this);
   /** Network ACL administration (DBMS_NETWORK_ACL_ADMIN). */
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */

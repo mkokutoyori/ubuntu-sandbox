@@ -470,6 +470,25 @@ export interface OracleSessionIdleSnipedPayload extends OracleDeviceRef {
   timestamp: Date;
 }
 
+export interface OracleConsumerGroupSwitchedPayload extends OracleDeviceRef {
+  sessionId: number;
+  username: string;
+  oldGroup: string;
+  newGroup: string;
+  reason: 'INITIAL' | 'TIME_QUANTUM' | 'MANUAL';
+  timestamp: Date;
+}
+
+export interface OracleAwrSnapshotCreatedPayload extends OracleDeviceRef {
+  snapId: number;
+  beginInterval: Date;
+  endInterval: Date;
+  /** Whether this snapshot was triggered by a manual CREATE_SNAPSHOT
+   *  call (versus the automatic MMON cycle). */
+  manual: boolean;
+  flushLevel: 'TYPICAL' | 'ALL' | 'BASIC';
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type OracleDomainEvent =
@@ -523,4 +542,6 @@ export type OracleDomainEvent =
   | { topic: 'oracle.ddl.history-recorded';              payload: OracleDdlHistoryRecordedPayload }
   | { topic: 'oracle.dml.history-recorded';              payload: OracleDmlHistoryRecordedPayload }
   | { topic: 'oracle.user.activity';                     payload: OracleUserActivityPayload }
-  | { topic: 'oracle.session.idle-sniped';               payload: OracleSessionIdleSnipedPayload };
+  | { topic: 'oracle.session.idle-sniped';               payload: OracleSessionIdleSnipedPayload }
+  | { topic: 'oracle.resource.consumer-group-switched';  payload: OracleConsumerGroupSwitchedPayload }
+  | { topic: 'oracle.awr.snapshot-created';              payload: OracleAwrSnapshotCreatedPayload };

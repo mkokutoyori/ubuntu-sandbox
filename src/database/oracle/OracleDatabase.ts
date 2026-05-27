@@ -31,6 +31,7 @@ import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator'
 import { MetadataExtractor } from './metadata/MetadataExtractor';
 import { builtinPackageRegistry } from './packages';
 import { SystemTrigger } from './triggers/SystemTrigger';
+import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import type { UserActivityTracker } from './security/audit/UserActivityTracker';
 import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
@@ -121,6 +122,14 @@ export class OracleDatabase {
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
       instance: this.buildInstanceIdentity(),
     });
+    // Hidden injections so built-in package routines can reach the
+    // shared per-instance managers without importing the world.
+    (session as unknown as {
+      _awrManager: typeof this.instance.awrManager;
+      _resourceManager: typeof this.instance.resourceManager;
+    })._awrManager = this.instance.awrManager;
+    (session as unknown as { _resourceManager: typeof this.instance.resourceManager })
+      ._resourceManager = this.instance.resourceManager;
     this.sessions.set(args.sid, session);
     return session;
   }
@@ -145,6 +154,8 @@ export class OracleDatabase {
   readonly fraudSimulator: FraudScenarioSimulator;
   readonly metadata: MetadataExtractor;
   readonly idleMonitor: IdleSessionMonitor;
+  /** Resource Manager — consumer-group switcher driven by the bus. */
+  readonly consumerGroupSwitcher: ConsumerGroupSwitcher;
   /** Reactive user-activity ledger. The instance owns the tracker so
    *  that setDeviceId triggers a rebind; expose it as a getter so the
    *  current tracker is always returned. */
@@ -179,6 +190,12 @@ export class OracleDatabase {
     // Live-session provider — feeds V$SESSION_CONTEXT user-defined
     // contexts and any future view that needs the real OracleSession.
     this.instance.setLiveSessionProvider(() => [...this.sessions.values()]);
+    // Resource Manager — active consumer-group switcher reacting to
+    // session connect + SQL execution events.
+    this.consumerGroupSwitcher = new ConsumerGroupSwitcher(
+      this.instance.getBus(), this.instance.getDeviceId(),
+      this.securityEngine, this.instance.resourceManager);
+    this.consumerGroupSwitcher.start();
     // User-activity ledger lives on the instance (rebinds on setDeviceId);
     // the getter `userActivity` returns the current tracker on demand.
     // Idle-session PMON sweep (IDLE_TIME enforcement).
@@ -895,10 +912,15 @@ export class OracleDatabase {
       return;
     }
 
-    // DBMS_SESSION.* / DBMS_APPLICATION_INFO.* — route through the
-    // built-in package registry, which dispatches to the concrete
-    // strategy class for each routine.
-    if (upper.startsWith('DBMS_SESSION.') || upper.startsWith('DBMS_APPLICATION_INFO.')) {
+    // Built-in PL/SQL packages → route through the registry. Any
+    // DBMS_* call whose prefix is registered hits the concrete
+    // strategy class for the routine.
+    if (
+      upper.startsWith('DBMS_SESSION.')
+      || upper.startsWith('DBMS_APPLICATION_INFO.')
+      || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
+      || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+    ) {
       this.invokeBuiltinPackage(executor, trimmed, variables, output);
       return;
     }
