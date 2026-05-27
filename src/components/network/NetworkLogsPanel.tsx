@@ -8,8 +8,8 @@
  * is what's currently kept.
  */
 import { useMemo, useState } from 'react';
-import { Trash2, ScrollText, Filter } from 'lucide-react';
-import { Logger, type LogLevel } from '@/network/core/Logger';
+import { Trash2, ScrollText, Filter, X, Copy } from 'lucide-react';
+import { Logger, type LogLevel, type NetworkLog } from '@/network/core/Logger';
 import { useNetworkLogs } from '@/hooks/useNetworkLogs';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +39,7 @@ export function NetworkLogsPanel(): JSX.Element {
     new Set<LogLevel>(['info', 'warn', 'error']),
   );
   const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<NetworkLog | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -121,9 +122,15 @@ export function NetworkLogsPanel(): JSX.Element {
             No matching log entries.
           </p>
         ) : filtered.map((log, i) => (
-          <div
+          <button
             key={`${log.timestamp}-${i}`}
-            className="px-3 py-1 border-b border-white/5 hover:bg-white/[0.02]"
+            onClick={() => setSelected(log)}
+            className={cn(
+              'w-full text-left px-3 py-1 border-b border-white/5 transition-colors',
+              'hover:bg-white/[0.04] focus:bg-white/[0.06] focus:outline-none',
+              selected === log && 'bg-primary/10 hover:bg-primary/15',
+            )}
+            data-testid="logs-row"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-muted-foreground/60 shrink-0">{formatTime(log.timestamp)}</span>
@@ -138,8 +145,86 @@ export function NetworkLogsPanel(): JSX.Element {
               <span className="text-primary/70">{log.event}</span>
               <span className="text-foreground/60"> — {log.message}</span>
             </div>
-          </div>
+          </button>
         ))}
+      </div>
+
+      {/* Detail drawer — slides up from the bottom of the panel column.
+          Shows the full log entry incl. `data` JSON pretty-printed,
+          which is the actually-useful payload (frame contents, ARP
+          tuples, SSH event metadata, …) the row preview can't fit. */}
+      {selected && <LogDetailDrawer log={selected} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}
+
+function LogDetailDrawer({ log, onClose }: { log: NetworkLog; onClose: () => void }): JSX.Element {
+  const dataJson = log.data ? JSON.stringify(log.data, null, 2) : null;
+  const copyAll = () => {
+    const payload = {
+      timestamp: new Date(log.timestamp).toISOString(),
+      level: log.level,
+      source: log.source,
+      sourceLabel: log.sourceLabel,
+      event: log.event,
+      message: log.message,
+      data: log.data,
+    };
+    navigator.clipboard?.writeText(JSON.stringify(payload, null, 2)).catch(() => {});
+  };
+  return (
+    <div
+      className="border-t border-white/10 bg-black/40 backdrop-blur-xl flex flex-col max-h-[55%]"
+      data-testid="logs-detail"
+    >
+      <div className="px-3 py-2 border-b border-white/10 flex items-center gap-2">
+        <span className={cn('text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded', LEVEL_BADGE[log.level])}>
+          {log.level}
+        </span>
+        <span className="text-xs text-foreground/80 truncate flex-1" title={log.event}>
+          {log.event}
+        </span>
+        <button
+          onClick={copyAll}
+          className="p-1 rounded-md hover:bg-white/10 transition-colors"
+          title="Copy as JSON"
+          data-testid="logs-detail-copy"
+        >
+          <Copy className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+        </button>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md hover:bg-white/10 transition-colors"
+          title="Close detail"
+          data-testid="logs-detail-close"
+        >
+          <X className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-2 text-[11px] font-mono space-y-2">
+        <DetailField label="time"   value={new Date(log.timestamp).toISOString()} />
+        <DetailField label="source" value={log.sourceLabel ? `${log.sourceLabel} (${log.source})` : log.source} />
+        <DetailField label="event"  value={log.event} />
+        <DetailField label="message" value={log.message} multiline />
+        {dataJson && (
+          <div>
+            <div className="text-muted-foreground/70 text-[10px] uppercase tracking-wide mb-1">data</div>
+            <pre className="bg-black/40 border border-white/10 rounded p-2 overflow-x-auto whitespace-pre text-foreground/90">
+              {dataJson}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailField({ label, value, multiline = false }: { label: string; value: string; multiline?: boolean }): JSX.Element {
+  return (
+    <div>
+      <div className="text-muted-foreground/70 text-[10px] uppercase tracking-wide">{label}</div>
+      <div className={cn('text-foreground/90', multiline ? 'whitespace-pre-wrap' : 'truncate')} title={value}>
+        {value}
       </div>
     </div>
   );
