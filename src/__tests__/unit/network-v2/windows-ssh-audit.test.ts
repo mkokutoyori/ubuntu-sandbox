@@ -48,4 +48,17 @@ describe('§WA1 — Windows SSH publishes 4624/4625 to the Security event log', 
     expect(entries.length).toBeGreaterThan(0);
     expect(entries[0].message).toContain('Logon Type:\t\t10');
   });
+
+  it('publishes a 4634 (Logoff) event when the SSH session ends', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const ctx = pc.getSshServerContext();
+
+    // Drive the lifecycle: login → channel session → channel close.
+    ctx.auth.checkPassword('user', 'user');
+    ctx.recordLogout?.('user', '10.0.0.5');
+
+    const ids = (pc.eventLog.getEntriesStructured('Security', { newest: 50 }) ?? [])
+      .map(e => e.eventId);
+    expect(ids).toContain(4634);
+  });
 });

@@ -262,6 +262,14 @@ export class WindowsPC extends EndHost {
         topic: 'windows.account.logon',
         payload: { deviceId: this.id, account: user, success, logonType: 10 },
       });
+    },
+    // Paired logoff hook — turns into 4634 (Logoff) in the Security
+    // event log when the SSH session ends.
+    (user) => {
+      this.getBus().publish({
+        topic: 'windows.account.logoff',
+        payload: { deviceId: this.id, account: user, logonType: 10 },
+      });
     });
   }
 

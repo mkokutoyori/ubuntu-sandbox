@@ -249,6 +249,11 @@ export class SshServerHandler {
               channelType: info.type,
               durationMs: Date.now() - info.openedAt,
             });
+            // Pair with the recordLogin fired in `auth` — once the last
+            // channel closes the session is over from the user's point
+            // of view, so record the logout. Linux uses this to append
+            // wtmp; Windows turns it into a 4634 (Logoff) Security event.
+            this.ctx.recordLogout?.(userCtx.username, clientIp);
           }
           channels.delete(channelId);
           conn.write(JSON.stringify({ ok: true, channelId }));

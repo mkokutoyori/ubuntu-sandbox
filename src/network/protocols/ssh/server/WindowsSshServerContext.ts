@@ -48,6 +48,15 @@ export interface WindowsShellExecutor {
  */
 export type WindowsSshLogonReporter = (user: string, success: boolean) => void;
 
+/**
+ * Callback fired when an authenticated SSH session ends — paired with
+ * the success branch of {@link WindowsSshLogonReporter}. Drives the
+ * 4634 (Logoff) Security event so the audit trail mirrors what
+ * `wevtutil qe Security` returns on a real Windows host once an SSH
+ * client disconnects.
+ */
+export type WindowsSshLogoffReporter = (user: string) => void;
+
 export class WindowsSshServerContext implements ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
@@ -61,6 +70,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     config: Partial<SshServerConfig> = {},
     private readonly shellExecutor: WindowsShellExecutor | null = null,
     private readonly reportLogon: WindowsSshLogonReporter | null = null,
+    private readonly reportLogoff: WindowsSshLogoffReporter | null = null,
   ) {
     this.ensureSshDir();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -74,7 +84,11 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   reloadConfig(): WindowsSshServerContext {
-    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon);
+    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon, this.reportLogoff);
+  }
+
+  recordLogout(user: string, _fromIp: string): void {
+    this.reportLogoff?.(user);
   }
 
   getBanner(): string | null {
