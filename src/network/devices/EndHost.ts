@@ -346,6 +346,14 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-sent',
       payload: { ...this.hostRef(), ...payload },
     });
+    // Mirror onto the Logger so the Network Logs panel surfaces every
+    // ping packet — the bus payload is intentionally machine-friendly,
+    // Logger carries the human-readable line.
+    Logger.info(
+      this.id, 'icmp:echo-sent',
+      `${this.name}: ICMP echo #${payload.seq} → ${payload.toIp} (id=${payload.id}, ttl=${payload.ttl}, ${payload.size}B)`,
+      payload,
+    );
   }
 
   /** Bus emission helper for ICMP echo reply received. */
@@ -357,6 +365,11 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-reply',
       payload: { ...this.hostRef(), ...payload },
     });
+    Logger.info(
+      this.id, 'icmp:echo-reply',
+      `${this.name}: ICMP reply from ${payload.fromIp} id=${payload.id} seq=${payload.seq} ttl=${payload.ttl} rtt=${payload.rttMs}ms`,
+      payload,
+    );
   }
 
   /** Bus emission helper for ICMP echo timeout. */
@@ -366,6 +379,11 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-timeout',
       payload: { ...this.hostRef(), ...payload },
     });
+    Logger.warn(
+      this.id, 'icmp:echo-timeout',
+      `${this.name}: ICMP timeout for ${payload.toIp} id=${payload.id} seq=${payload.seq}`,
+      payload,
+    );
   }
 
   /** Bus emission helper for ICMP echo failed (TTL exceeded / unreachable). */
@@ -395,6 +413,11 @@ export abstract class EndHost extends Equipment {
       topic: 'host.arp.request-sent',
       payload: { ...this.hostRef(), iface, targetIp },
     });
+    Logger.info(
+      this.id, 'arp:request',
+      `${this.name}: who-has ${targetIp} (via ${iface})`,
+      { iface, targetIp },
+    );
   }
 
   /** Bus emission helper for NDP entry learned (IPv6 equivalent of ARP learn). */
