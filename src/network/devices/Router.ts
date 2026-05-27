@@ -1030,7 +1030,7 @@ export abstract class Router extends Equipment {
     }
 
     // Phase D.2: Header mutation — create forwarded packet with new TTL + checksum
-    const fwdPkt: IPv4Packet = {
+    let fwdPkt: IPv4Packet = {
       ...ipPkt,
       ttl: newTTL,
       headerChecksum: 0,
