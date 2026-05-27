@@ -23,6 +23,8 @@ import { SecurityAuditActor } from './security/audit/SecurityAuditActor';
 import { NetworkAclManager } from './security/NetworkAclManager';
 import { DataRedactionManager } from './security/DataRedactionManager';
 import { IndexUsageMonitor } from './metadata/IndexUsageMonitor';
+import { TypeRegistry } from './metadata/TypeRegistry';
+import { ExternalTableRegistry } from './metadata/ExternalTableRegistry';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -89,6 +91,10 @@ export class OracleInstance {
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */
   readonly redaction = new DataRedactionManager();
+  /** Oracle object-type catalogue (DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES). */
+  readonly types = new TypeRegistry();
+  /** External-table catalogue (DBA_EXTERNAL_TABLES / DBA_EXTERNAL_LOCATIONS). */
+  readonly externalTables = new ExternalTableRegistry();
   /** Index usage monitor (ALTER INDEX … MONITORING USAGE) — attached
    *  to storage by OracleDatabase once it's available. The reference
    *  to storage is captured so we can rebuild the monitor whenever

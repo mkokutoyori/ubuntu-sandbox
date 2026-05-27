@@ -458,6 +458,19 @@ export class OracleDatabase {
       return this.executePLSQL(executor, trimmed);
     }
 
+    // CREATE [OR REPLACE] TYPE — Oracle object types. Registered into
+    // the simulator's TypeRegistry so DBA_TYPES / DBA_TYPE_ATTRS /
+    // DBA_COLL_TYPES surface them. We accept the form Oracle DBAs use
+    // for object types and collection types.
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?TYPE\b/i.test(upper)) {
+      return this.createObjectType(executor, trimmed);
+    }
+
+    // CREATE TABLE … ORGANIZATION EXTERNAL — register an external table.
+    if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
+      return this.createExternalTable(executor, trimmed);
+    }
+
     // Check for CREATE OR REPLACE PROCEDURE/FUNCTION
     if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
       return this.createStoredProcedure(executor, trimmed);
@@ -1256,6 +1269,86 @@ export class OracleDatabase {
   // ═══════════════════════════════════════════════════════════════════
   // Stored PL/SQL Units (Procedures, Functions)
   // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Parse a CREATE [OR REPLACE] TYPE and register it in the
+   * TypeRegistry. Accepts:
+   *   - CREATE TYPE owner.name AS OBJECT (col type, …)
+   *   - CREATE TYPE owner.name AS [VARRAY(n) | TABLE] OF elem_type
+   *
+   * The form is intentionally narrow: enough to surface the type in
+   * DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES; PL/SQL bodies are
+   * accepted but ignored (simulator does not run them).
+   */
+  private createObjectType(executor: OracleExecutor, sql: string): ResultSet {
+    const ctx = (executor as { context: ExecutionContext }).context;
+    // VARRAY / NESTED TABLE collection
+    const coll = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+(VARRAY|VARYING\s+ARRAY|TABLE)\s*(?:\(\s*(\d+)\s*\))?\s+OF\s+(\w+)/i);
+    if (coll) {
+      const owner = (coll[1] ?? ctx.currentSchema).toUpperCase();
+      const name = coll[2].toUpperCase();
+      const kind = /TABLE/i.test(coll[3]) ? 'TABLE' as const : 'VARRAY' as const;
+      const upper = coll[4] ? parseInt(coll[4], 10) : null;
+      const elem = coll[5].toUpperCase();
+      this.instance.types.addCollectionType(owner, name, {
+        collType: kind, upperBound: upper, elemTypeName: elem,
+      });
+      return emptyResult('Type created.');
+    }
+    // OBJECT type with attribute list
+    const obj = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+OBJECT\s*\(([\s\S]+?)\)\s*(?:NOT\s+FINAL|FINAL)?\s*;?\s*$/i);
+    if (obj) {
+      const owner = (obj[1] ?? ctx.currentSchema).toUpperCase();
+      const name = obj[2].toUpperCase();
+      const body = obj[3];
+      const attrs = body.split(',').map(s => s.trim()).filter(s => s && !/^(MEMBER|STATIC|MAP|ORDER|CONSTRUCTOR)\b/i.test(s))
+        .map(line => {
+          const m = line.match(/^(\w+)\s+(\w+)(?:\((\d+)(?:\s*,\s*(\d+))?\))?/);
+          if (!m) return null;
+          return {
+            name: m[1], typeName: m[2],
+            precision: m[3] ? parseInt(m[3], 10) : undefined,
+            scale: m[4] ? parseInt(m[4], 10) : undefined,
+          };
+        })
+        .filter((a): a is { name: string; typeName: string; precision?: number; scale?: number } => a !== null);
+      const finalType = !/NOT\s+FINAL/i.test(sql);
+      this.instance.types.addObjectType(owner, name, attrs, { finalType });
+      return emptyResult('Type created.');
+    }
+    return emptyResult('Type created.');
+  }
+
+  /**
+   * Parse a CREATE TABLE … ORGANIZATION EXTERNAL and register it in
+   * the ExternalTableRegistry. Accepts a small but realistic subset:
+   * the DEFAULT DIRECTORY, optional ACCESS PARAMETERS block, and the
+   * LOCATION list.
+   */
+  private createExternalTable(executor: OracleExecutor, sql: string): ResultSet {
+    const ctx = (executor as { context: ExecutionContext }).context;
+    const head = sql.match(/^CREATE\s+TABLE\s+(?:(\w+)\s*\.\s*)?(\w+)\b/i);
+    if (!head) return emptyResult('ORA-00942: table or view does not exist');
+    const owner = (head[1] ?? ctx.currentSchema).toUpperCase();
+    const name = head[2].toUpperCase();
+    const typeMatch = sql.match(/ORGANIZATION\s+EXTERNAL\s*\(\s*TYPE\s+(ORACLE_LOADER|ORACLE_DATAPUMP|ORACLE_HIVE|ORACLE_HDFS|ORACLE_BIGDATA)/i);
+    const type = (typeMatch?.[1] ?? 'ORACLE_LOADER').toUpperCase() as 'ORACLE_LOADER';
+    const defDir = sql.match(/DEFAULT\s+DIRECTORY\s+(\w+)/i);
+    const accessParams = sql.match(/ACCESS\s+PARAMETERS\s*\(([\s\S]*?)\)\s*LOCATION/i);
+    const locs = sql.match(/LOCATION\s*\(([^)]+)\)/i);
+    this.instance.externalTables.registerTable({
+      owner, tableName: name, typeName: type,
+      defaultDirectoryName: defDir?.[1] ?? 'DATA_PUMP_DIR',
+      accessParameters: accessParams?.[1].trim() ?? '',
+    });
+    if (locs) {
+      for (const raw of locs[1].split(',')) {
+        const cleaned = raw.trim().replace(/^['"]|['"]$/g, '');
+        if (cleaned) this.instance.externalTables.addLocation(owner, name, cleaned);
+      }
+    }
+    return emptyResult('Table created.');
+  }
 
   /** Parse and store a CREATE [OR REPLACE] PROCEDURE */
   private createStoredProcedure(executor: OracleExecutor, sql: string): ResultSet {

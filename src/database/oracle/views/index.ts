@@ -423,5 +423,14 @@ import './dba_registry_history';
 import './dba_feature_usage_statistics';
 import './dba_ddl_log';
 import './dba_object_usage';
+// Structural catalogue extensions
+import './all_users';
+import './dba_tab_cols';
+import './dba_types';
+import './dba_type_attrs';
+import './dba_coll_types';
+import './dba_external_tables';
+import './dba_external_locations';
+import './dba_editions';
 
 export { };
