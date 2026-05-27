@@ -188,6 +188,17 @@ export class OracleExecutor extends BaseExecutor {
     const sqlId = makeSqlId(text);
     this._lastSqlText = text;
     this._lastSqlId = sqlId;
+    // Generate an ExecutionPlan now so V$SQL_PLAN / DBMS_XPLAN see it
+    // for every parsed statement. Cached by SQL_ID with LRU eviction.
+    const db = (this as { _db?: { planGenerator: import('./plan/PlanGenerator').PlanGenerator } })._db;
+    if (db) {
+      try {
+        const plan = db.planGenerator.generate(statement, sqlId, text, this.context.currentSchema);
+        this.instance.planCache.put(plan);
+      } catch {
+        // PlanGenerator is best-effort. Don't break the actual statement.
+      }
+    }
     this.bus.publish({
       topic: 'oracle.sql.parsed',
       payload: {
@@ -198,6 +209,13 @@ export class OracleExecutor extends BaseExecutor {
         hardParse: true,
       },
     });
+  }
+
+  /** OracleDatabase injects itself so the executor can reach the
+   *  PlanGenerator without a circular import. Optional — when unset
+   *  the plan cache stays empty (matches a fresh database). */
+  setDatabaseRef(db: { planGenerator: import('./plan/PlanGenerator').PlanGenerator }): void {
+    (this as unknown as { _db: typeof db })._db = db;
   }
 
   private emitSqlExecuted(statement: Statement, result: ResultSet, elapsedMs: number): void {

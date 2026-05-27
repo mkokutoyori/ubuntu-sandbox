@@ -32,6 +32,8 @@ import { MetadataExtractor } from './metadata/MetadataExtractor';
 import { builtinPackageRegistry } from './packages';
 import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
+import { PlanGenerator } from './plan/PlanGenerator';
+import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
 import type { UserActivityTracker } from './security/audit/UserActivityTracker';
 import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
@@ -124,12 +126,16 @@ export class OracleDatabase {
     });
     // Hidden injections so built-in package routines can reach the
     // shared per-instance managers without importing the world.
-    (session as unknown as {
+    const inj = session as unknown as {
       _awrManager: typeof this.instance.awrManager;
       _resourceManager: typeof this.instance.resourceManager;
-    })._awrManager = this.instance.awrManager;
-    (session as unknown as { _resourceManager: typeof this.instance.resourceManager })
-      ._resourceManager = this.instance.resourceManager;
+      _statisticsManager: typeof this.instance.statistics;
+      _statisticsManagerStorage: typeof this.storage;
+    };
+    inj._awrManager = this.instance.awrManager;
+    inj._resourceManager = this.instance.resourceManager;
+    inj._statisticsManager = this.instance.statistics;
+    inj._statisticsManagerStorage = this.storage;
     this.sessions.set(args.sid, session);
     return session;
   }
@@ -156,6 +162,8 @@ export class OracleDatabase {
   readonly idleMonitor: IdleSessionMonitor;
   /** Resource Manager — consumer-group switcher driven by the bus. */
   readonly consumerGroupSwitcher: ConsumerGroupSwitcher;
+  /** Optimizer plan generator — produces a plan per parsed statement. */
+  readonly planGenerator: PlanGenerator;
   /** Reactive user-activity ledger. The instance owns the tracker so
    *  that setDeviceId triggers a rebind; expose it as a getter so the
    *  current tracker is always returned. */
@@ -196,6 +204,9 @@ export class OracleDatabase {
       this.instance.getBus(), this.instance.getDeviceId(),
       this.securityEngine, this.instance.resourceManager);
     this.consumerGroupSwitcher.start();
+    // Statistics + plan generator — both need storage.
+    this.instance.attachStatistics(this.storage);
+    this.planGenerator = new PlanGenerator(this.storage, this.instance);
     // User-activity ledger lives on the instance (rebinds on setDeviceId);
     // the getter `userActivity` returns the current tracker on demand.
     // Idle-session PMON sweep (IDLE_TIME enforcement).
@@ -322,6 +333,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -376,6 +388,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -424,6 +437,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -664,9 +678,11 @@ export class OracleDatabase {
       }
 
       if (!handled) {
-        if ((executor as { context: ExecutionContext }).context.serverOutput) {
-          output.push(errMsg);
-        }
+        // Unhandled PL/SQL exception: surface the ORA-xxxx message
+        // exactly the way real Oracle does. RAISE_APPLICATION_ERROR
+        // and predefined exceptions both flow through here.
+        const ora6512 = `ORA-06512: at line 1`;
+        return emptyResult(`${errMsg}\n${ora6512}`);
       }
     }
 
@@ -864,6 +880,47 @@ export class OracleDatabase {
 
     const upper = trimmed.toUpperCase();
 
+    // RAISE_APPLICATION_ERROR(-20xxx, 'message') — DBMS_STANDARD.
+    const raise = trimmed.match(/^RAISE_APPLICATION_ERROR\s*\(\s*(-?\d+)\s*,\s*'([\s\S]*?)'\s*\)/i);
+    if (raise) {
+      const code = parseInt(raise[1], 10);
+      const message = raise[2];
+      throw new PlsqlException('USER_DEFINED', code,
+        `ORA${code < 0 ? code : '-' + code.toString().padStart(5, '0')}: ${message}`, true);
+    }
+
+    // EXECUTE IMMEDIATE 'sql' [USING ...] [INTO var]
+    if (upper.startsWith('EXECUTE IMMEDIATE ')) {
+      const m = trimmed.match(/^EXECUTE\s+IMMEDIATE\s+'([\s\S]*?)'\s*(?:INTO\s+([\w,\s]+))?\s*;?$/i);
+      if (m) {
+        const dynamicSql = m[1];
+        const intoVars = m[2] ? m[2].split(',').map(v => v.trim().toUpperCase()) : [];
+        const result = this.executeSql(executor, dynamicSql);
+        // SELECT INTO bind: copy first-row values into the named variables.
+        if (intoVars.length > 0 && result.isQuery && result.rows.length > 0) {
+          const row = result.rows[0];
+          intoVars.forEach((v, i) => {
+            const slot = variables.get(v);
+            if (slot) slot.value = row[i] ?? null;
+          });
+        }
+      }
+      return;
+    }
+
+    // RAISE <named-exception>
+    const rais = trimmed.match(/^RAISE\s+(\w+)\s*;?$/i);
+    if (rais) {
+      const def = findPredefinedException(rais[1]);
+      if (def) {
+        throw new PlsqlException(def.name, def.errorCode, def.defaultMessage, false);
+      }
+      // Unknown name → user-defined PL/SQL exception (PLS-00201 if undeclared
+      // in real Oracle, but we surface a generic raised marker).
+      throw new PlsqlException(rais[1].toUpperCase(), -20999,
+        `ORA-06510: PL/SQL: unhandled user-defined exception (${rais[1].toUpperCase()})`, true);
+    }
+
     // DBMS_OUTPUT.PUT_LINE
     if (upper.startsWith('DBMS_OUTPUT.PUT_LINE')) {
       const match = trimmed.match(/DBMS_OUTPUT\.PUT_LINE\s*\(\s*(.*)\s*\)/is);
@@ -906,12 +963,6 @@ export class OracleDatabase {
       return;
     }
 
-    // DBMS_STATS.GATHER_TABLE_STATS / GATHER_SCHEMA_STATS
-    if (upper.startsWith('DBMS_STATS.')) {
-      // Simulated — no actual stats gathering
-      return;
-    }
-
     // Built-in PL/SQL packages → route through the registry. Any
     // DBMS_* call whose prefix is registered hits the concrete
     // strategy class for the routine.
@@ -920,6 +971,7 @@ export class OracleDatabase {
       || upper.startsWith('DBMS_APPLICATION_INFO.')
       || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
       || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+      || upper.startsWith('DBMS_STATS.')
     ) {
       this.invokeBuiltinPackage(executor, trimmed, variables, output);
       return;

@@ -31,6 +31,8 @@ import { SystemTriggerExecutor } from './triggers/SystemTriggerExecutor';
 import { WaitEventEngine } from './wait/WaitEventEngine';
 import { ResourceManager } from './resource/ResourceManager';
 import { AwrSnapshotManager } from './awr/AwrSnapshotManager';
+import { PlanCache } from './plan/PlanCache';
+import { StatisticsManager } from './statistics/StatisticsManager';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -103,6 +105,16 @@ export class OracleInstance {
   readonly resourceManager = new ResourceManager();
   /** AWR snapshot manager — DBA_HIST_SNAPSHOT and friends. */
   readonly awrManager = new AwrSnapshotManager(this);
+  /** SQL plan cache — feeds V$SQL_PLAN. Populated by the executor.
+   *  Sized generously so a fresh database with demo schemas does not
+   *  evict every plan before user activity starts. */
+  readonly planCache = new PlanCache(2000);
+  /** Optimizer statistics — set lazily once storage is available. */
+  statistics: StatisticsManager | null = null;
+  attachStatistics(storage: OracleStorage): StatisticsManager {
+    if (!this.statistics) this.statistics = new StatisticsManager(storage);
+    return this.statistics;
+  }
   /** Network ACL administration (DBMS_NETWORK_ACL_ADMIN). */
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */
