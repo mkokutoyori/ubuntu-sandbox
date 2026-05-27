@@ -57,6 +57,15 @@ export interface OutputLine {
    * displaying raw `[1;36m` in a Windows host terminal).
    */
   segments?: TextSegment[];
+  /**
+   * Prompt string the renderer prepends BEFORE `text` when rendering.
+   * Used for command-echo lines so the prompt and the typed command are
+   * stored separately. Keeps `text` clean for transcripts, search and
+   * test introspection — without this separation, a typed command like
+   * `ssh alice@host` would visually look like a prompt-hybrid in the
+   * scrollback (the `@` would appear to belong to a foreign vendor).
+   */
+  promptText?: string;
 }
 
 /**
@@ -263,6 +272,22 @@ export abstract class TerminalSession {
     if (type !== 'prompt') {
       this.recordEvent(type === 'error' ? 'error' : 'output', text);
     }
+    this.notify();
+  }
+
+  /**
+   * Append a command-echo line: `promptText` is the prompt at the time
+   * the user pressed Enter, `command` is what was typed. The two are
+   * stored separately so the renderer can compose them visually while
+   * keeping `text` clean (test / search / clipboard see the typed
+   * command alone, not a prompt-hybridised string). Recorded as 'input'
+   * for the transcript.
+   */
+  addEchoLine(promptText: string, command: string, type: string = 'prompt'): void {
+    this.lines.push({ id: nextLineId(), text: command, type, promptText });
+    this.enforceScrollbackLimit();
+    // Echo lines represent USER input; record as such (not as output).
+    this.recordEvent('input', command);
     this.notify();
   }
 

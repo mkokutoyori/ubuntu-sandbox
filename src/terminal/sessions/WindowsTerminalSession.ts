@@ -319,10 +319,16 @@ export class WindowsTerminalSession extends TerminalSession {
   // ── Command execution (root cmd mode) ──────────────────────────
 
   protected onEnter(): void {
-    const cmd = this.input;
+    // Drain BOTH buffers so tests / drivers that keep using
+    // `setInputBuf` after the sub-shell stack has fully unwound still
+    // reach the local cmd.exe instead of being silently swallowed.
+    const cmd = this.input || this._inputBuf;
     this.input = '';
+    this._inputBuf = '';
     this.tabSuggestions = null;
-    this.recordEvent('input', cmd);
+    // The 'input' record event is emitted by addEchoLine inside
+    // executeCommand — recording here too would duplicate every typed
+    // command in the session transcript.
     this.executeCommand(cmd);
     this.notify();
   }
@@ -331,7 +337,7 @@ export class WindowsTerminalSession extends TerminalSession {
     const trimmed = cmd.trim();
     const prompt = this.getPrompt();
 
-    this.addLine(`${prompt}${cmd}`, 'prompt');
+    this.addEchoLine(prompt, cmd);
 
     if (!trimmed) return;
 
@@ -893,7 +899,7 @@ export class WindowsTerminalSession extends TerminalSession {
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.subShellSavedInput = '';
-      this.addLine(`${this.activeSubShell.getPrompt()}${line}`);
+      this.addEchoLine(this.activeSubShell.getPrompt(), line);
 
       // Push non-empty lines to sub-shell history
       if (line.trim()) {
