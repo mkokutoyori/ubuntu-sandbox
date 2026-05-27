@@ -2,7 +2,7 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, Play, Pause, RotateCcw, HelpCircle, Trash2 } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, Play, Pause, RotateCcw, HelpCircle, Trash2, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ToolbarProps {
@@ -12,9 +12,11 @@ interface ToolbarProps {
   hasDevices?: boolean;
   onExport?: () => void;
   onImport?: () => void;
+  logsOpen?: boolean;
+  onToggleLogs?: () => void;
 }
 
-export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevices, onExport, onImport }: ToolbarProps) {
+export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevices, onExport, onImport, logsOpen, onToggleLogs }: ToolbarProps) {
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
       {/* Left section - Project name */}
@@ -64,6 +66,14 @@ export function Toolbar({ projectName, onProjectNameChange, onClearAll, hasDevic
 
       {/* Right section - Help */}
       <div className="flex items-center gap-2">
+        {onToggleLogs && (
+          <ToolbarButton
+            icon={ScrollText}
+            label="Logs"
+            onClick={onToggleLogs}
+            variant={logsOpen ? 'primary' : 'default'}
+          />
+        )}
         <ToolbarButton icon={HelpCircle} label="Help" />
       </div>
     </div>
