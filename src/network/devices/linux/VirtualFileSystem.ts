@@ -29,6 +29,10 @@ export interface INode {
    * Writes to such a node are ignored.
    */
   generator?: () => string;
+  /** Per-user POSIX ACLs (`setfacl -m u:name:rwx`). Empty / absent = no ACL. */
+  aclUsers?: Map<string, number>;
+  /** Per-group POSIX ACLs (`setfacl -m g:name:rwx`). */
+  aclGroups?: Map<string, number>;
 }
 
 export interface DirEntry {
@@ -630,6 +634,68 @@ export class VirtualFileSystem {
     inode.permissions = mode;
     inode.ctime = Date.now();
     return true;
+  }
+
+  /** Add or replace a per-user ACL entry; perms is the 3-bit rwx mask. */
+  setUserAcl(path: string, user: string, perms: number): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode) return false;
+    if (!inode.aclUsers) inode.aclUsers = new Map();
+    inode.aclUsers.set(user, perms & 0o7);
+    inode.ctime = Date.now();
+    return true;
+  }
+
+  /** Add or replace a per-group ACL entry. */
+  setGroupAcl(path: string, group: string, perms: number): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode) return false;
+    if (!inode.aclGroups) inode.aclGroups = new Map();
+    inode.aclGroups.set(group, perms & 0o7);
+    inode.ctime = Date.now();
+    return true;
+  }
+
+  /** Drop a per-user ACL entry. */
+  removeUserAcl(path: string, user: string): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode?.aclUsers) return false;
+    const had = inode.aclUsers.delete(user);
+    if (had) inode.ctime = Date.now();
+    return had;
+  }
+
+  /** Read all ACL entries on `path` as plain records (or null for missing inode). */
+  getAcls(path: string): { users: Array<[string, number]>; groups: Array<[string, number]> } | null {
+    const inode = this.resolveInode(path);
+    if (!inode) return null;
+    return {
+      users: inode.aclUsers ? [...inode.aclUsers.entries()] : [],
+      groups: inode.aclGroups ? [...inode.aclGroups.entries()] : [],
+    };
+  }
+
+  /** True if `path` carries any extended ACL entry. */
+  hasAcl(path: string): boolean {
+    const inode = this.resolveInode(path);
+    return !!inode && ((inode.aclUsers?.size ?? 0) > 0 || (inode.aclGroups?.size ?? 0) > 0);
+  }
+
+  /** ACL-aware permission check; returns null when no ACL applies (caller falls back to mode bits). */
+  checkAclAccess(path: string, user: string, groups: readonly string[], need: number): boolean | null {
+    const inode = this.resolveInode(path);
+    if (!inode) return null;
+    if (inode.aclUsers?.has(user)) {
+      const perms = inode.aclUsers.get(user)!;
+      return (perms & need) === need;
+    }
+    for (const g of groups) {
+      if (inode.aclGroups?.has(g)) {
+        const perms = inode.aclGroups.get(g)!;
+        return (perms & need) === need;
+      }
+    }
+    return null;
   }
 
   chown(path: string, uid: number, gid?: number): boolean {

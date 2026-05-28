@@ -47,4 +47,9 @@ export interface ISftpWritable {
 export interface ISftpFileSystem
   extends ISftpNavigable,
     ISftpReadable,
-    ISftpWritable {}
+    ISftpWritable {
+  /** Optional ACL-aware access check: returns null when no ACL applies. */
+  checkAclAccess?(path: string, user: string, groups: readonly string[], need: number): boolean | null;
+  /** Optional: true if `path` carries any explicit ACL entry. */
+  hasAcl?(path: string): boolean;
+}

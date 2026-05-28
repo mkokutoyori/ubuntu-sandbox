@@ -134,6 +134,11 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
     const stat = this.base.stat(parent);
     if (!stat.ok) return ok(undefined);
     const a = stat.value;
+    const aclVerdict = this.base.checkAclAccess?.(parent, this.userCtx.username, [], 0o2);
+    if (aclVerdict === false) {
+      return err({ kind: 'PERMISSION_DENIED', path: parent, operation: 'write' });
+    }
+    if (aclVerdict === true) return ok(undefined);
     if (!this.userCtx.canWrite(a.mode, a.uid, a.gid)) {
       return err({ kind: 'PERMISSION_DENIED', path: parent, operation: 'write' });
     }

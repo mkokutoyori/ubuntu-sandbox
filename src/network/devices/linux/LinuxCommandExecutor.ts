@@ -123,6 +123,24 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
+function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
+  const m = /^([ug])(?::([^:]*))?:([rwx-]{0,3})$/.exec(entry);
+  if (!m) return null;
+  const kind = m[1] === 'u' ? 'user' : 'group';
+  const name = m[2] ?? '';
+  let perms = 0;
+  for (const c of m[3]) {
+    if (c === 'r') perms |= 0o4;
+    else if (c === 'w') perms |= 0o2;
+    else if (c === 'x') perms |= 0o1;
+  }
+  return { kind, name, perms };
+}
+
+function permTriad(p: number): string {
+  return ((p & 0o4) ? 'r' : '-') + ((p & 0o2) ? 'w' : '-') + ((p & 0o1) ? 'x' : '-');
+}
+
 const LASTLOG_HELP = [
   '',
   'Usage:',
@@ -1756,6 +1774,8 @@ export class LinuxCommandExecutor {
       }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
+      case 'setfacl': return this.cmdSetfacl(args);
+      case 'getfacl': return this.cmdGetfacl(args);
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
         // declared sources per database. All output / exit-code logic
@@ -2848,6 +2868,75 @@ export class LinuxCommandExecutor {
 
   /** Optional accessor to the SSH server context, wired by LinuxMachine. */
   sshContextForFail2ban: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null = null;
+
+  private cmdSetfacl(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0) return { output: 'Usage: setfacl [-m|-x] acl path', exitCode: 2 };
+    let mode: 'modify' | 'remove' | null = null;
+    const entries: string[] = [];
+    const paths: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-m' || a === '--modify') { mode = 'modify'; entries.push(args[++i] ?? ''); continue; }
+      if (a === '-x' || a === '--remove') { mode = 'remove'; entries.push(args[++i] ?? ''); continue; }
+      if (a === '-b' || a === '--remove-all') { mode = 'remove'; entries.push('*'); continue; }
+      if (a === '-R' || a === '--recursive') continue;
+      if (a === '-h' || a === '--help') return { output: 'setfacl - modify file ACLs', exitCode: 0 };
+      if (!a.startsWith('-')) paths.push(a);
+    }
+    if (!mode || entries.length === 0) return { output: 'setfacl: missing operation', exitCode: 2 };
+    if (paths.length === 0) return { output: 'setfacl: no file specified', exitCode: 2 };
+    for (const path of paths) {
+      const abs = this.vfs.normalizePath(path, this.cwd);
+      if (!this.vfs.resolveInode(abs)) {
+        return { output: `setfacl: ${path}: No such file or directory`, exitCode: 1 };
+      }
+      const inode = this.vfs.resolveInode(abs)!;
+      if (this.userMgr.currentUid !== 0 && inode.uid !== this.userMgr.currentUid) {
+        return { output: `setfacl: ${path}: Operation not permitted`, exitCode: 1 };
+      }
+      for (const entry of entries) {
+        const parsed = parseAclEntry(entry);
+        if (!parsed) return { output: `setfacl: Option -m: Invalid argument near character ${entry}`, exitCode: 2 };
+        if (mode === 'remove') {
+          if (parsed.kind === 'user') this.vfs.removeUserAcl(abs, parsed.name);
+        } else if (parsed.kind === 'user') {
+          this.vfs.setUserAcl(abs, parsed.name, parsed.perms);
+        } else if (parsed.kind === 'group') {
+          this.vfs.setGroupAcl(abs, parsed.name, parsed.perms);
+        }
+      }
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  private cmdGetfacl(args: string[]): { output: string; exitCode: number } {
+    const paths = args.filter(a => !a.startsWith('-'));
+    if (paths.length === 0) return { output: 'Usage: getfacl path', exitCode: 2 };
+    const lines: string[] = [];
+    for (const path of paths) {
+      const abs = this.vfs.normalizePath(path, this.cwd);
+      const inode = this.vfs.resolveInode(abs);
+      if (!inode) { lines.push(`getfacl: ${path}: No such file or directory`); continue; }
+      const ownerName = this.userMgr.getUserByUid(inode.uid)?.username ?? String(inode.uid);
+      const groupName = this.userMgr.getGroupByGid(inode.gid)?.name ?? String(inode.gid);
+      const mode = inode.permissions;
+      lines.push(`# file: ${path.replace(/^\//, '')}`);
+      lines.push(`# owner: ${ownerName}`);
+      lines.push(`# group: ${groupName}`);
+      lines.push(`user::${permTriad((mode >> 6) & 0o7)}`);
+      if (inode.aclUsers) {
+        for (const [name, p] of inode.aclUsers) lines.push(`user:${name}:${permTriad(p)}`);
+      }
+      lines.push(`group::${permTriad((mode >> 3) & 0o7)}`);
+      if (inode.aclGroups) {
+        for (const [name, p] of inode.aclGroups) lines.push(`group:${name}:${permTriad(p)}`);
+      }
+      if (inode.aclUsers || inode.aclGroups) lines.push(`mask::rwx`);
+      lines.push(`other::${permTriad(mode & 0o7)}`);
+      lines.push('');
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
 
   private renderLastlog(args: string[]): string {
     let filterUser: string | null = null;
