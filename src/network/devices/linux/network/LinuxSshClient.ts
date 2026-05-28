@@ -16,7 +16,7 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
-import { findHostByAddress } from './HostLookup';
+import { findHostByAddress, isPathReachable } from './HostLookup';
 import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
@@ -579,6 +579,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (found.poweredOff) {
     return {
       output: `ssh: connect to host ${host} port 22: No route to host\n`,
+      exitCode: 255,
+    };
+  }
+  const destIp = found.ip;
+  if (opts.sourceIp && destIp && !isPathReachable(opts.sourceIp, destIp)) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
       exitCode: 255,
     };
   }

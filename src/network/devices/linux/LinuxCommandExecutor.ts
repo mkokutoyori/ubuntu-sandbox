@@ -653,10 +653,6 @@ export class LinuxCommandExecutor {
     return null;
   }
 
-  private firstConfiguredIp(): string | null {
-    return null;
-  }
-
   private sshHomeDir(): string {
     return this.userMgr.getUser('root')?.home ?? '/root';
   }
