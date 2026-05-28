@@ -228,7 +228,7 @@ export abstract class LinuxMachine extends EndHost {
    *   - AllowUsers patterns (glob *) — when present, user must match one
    *   - DenyUsers takes precedence over AllowUsers
    */
-  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+  sshdAcceptsLogin(user: string, ctx?: { address?: string; host?: string }): { ok: boolean; reason?: string } {
     const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
     const config = SshdServerConfig.parse(raw);
 
@@ -236,7 +236,8 @@ export abstract class LinuxMachine extends EndHost {
     if (user === 'root' && policy !== 'yes') {
       return { ok: false, reason: `PermitRootLogin ${policy}` };
     }
-    if (!config.isUserAllowed(user, [])) {
+    const userGroups = (this.executor.userMgr.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    if (!config.isUserAllowed(user, userGroups, ctx)) {
       const denied = config.denyUsers.some(p => globMatch(p, user));
       return { ok: false, reason: denied ? 'DenyUsers match' : 'not in AllowUsers' };
     }

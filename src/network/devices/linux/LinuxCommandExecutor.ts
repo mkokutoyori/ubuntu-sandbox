@@ -46,7 +46,9 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
+import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
 import { SshUserContext } from '../../protocols/ssh/SshUserContext';
+import { SshdServerConfig } from '../../protocols/ssh/server/SshdServerConfig';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
@@ -490,6 +492,7 @@ export class LinuxCommandExecutor {
       if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
       else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
     }
+    if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
@@ -526,8 +529,12 @@ export class LinuxCommandExecutor {
       }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
       const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
-      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
+      let remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+      const remoteChroot = this.readChrootDirectory(found?.device, remoteUserName, this.firstConfiguredIp());
+      if (remoteChroot) {
+        remoteFs = new ChrootedSftpFileSystem(remoteFs, remoteChroot);
+      }
       const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
         ?.getSshServerContext?.()?.events;
       const t0 = Date.now();
@@ -602,6 +609,32 @@ export class LinuxCommandExecutor {
     }
     const groups = userMgr?.getGroupsForUser?.(name) ?? [];
     return new SshUserContext(name, entry.uid, entry.gid, groups, entry.home);
+  }
+
+  private readChrootDirectory(device: unknown, user: string, sourceIp: string | null): string | null {
+    const remoteVfs = (device as { executor?: { vfs?: { readFile: (p: string) => string | null } } }).executor?.vfs;
+    if (!remoteVfs) return null;
+    const raw = remoteVfs.readFile('/etc/ssh/sshd_config') ?? '';
+    if (!raw) return null;
+    const userMgr = (device as { executor?: { userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } }).executor?.userMgr;
+    const groups = (userMgr?.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    const cfg = SshdServerConfig.parse(raw);
+    for (const block of cfg.matchBlocks) {
+      const applies = block.criteria.every((c: { keyword: string; value: string }) => {
+        if (c.keyword === 'User')    return c.value === user || c.value === '*';
+        if (c.keyword === 'Group')   return groups.includes(c.value);
+        if (c.keyword === 'Address' || c.keyword === 'LocalAddress') return sourceIp ? c.value === sourceIp : false;
+        return true;
+      });
+      if (!applies) continue;
+      const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
+      if (cd) return cd;
+    }
+    return null;
+  }
+
+  private firstConfiguredIp(): string | null {
+    return null;
   }
 
   private sshHomeDir(): string {

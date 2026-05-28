@@ -1845,12 +1845,12 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
     {
       name: 'Match Group sftpusers gates sftp by group membership',
       setup: async (l) => {
-        await l.pc2.executeCommand('groupadd sftpusers');
-        await l.pc2.executeCommand('usermod -aG sftpusers alice');
+        await l.pc2.executeCommand('sudo groupadd sftpusers');
+        await l.pc2.executeCommand('sudo usermod -aG sftpusers alice');
         await l.pc2.executeCommand(
-          'printf "Match Group sftpusers\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+          'sudo sh -c \'printf "Match Group sftpusers\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config\'',
         );
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2 "ls /"',
