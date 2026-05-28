@@ -493,22 +493,16 @@ export class SQLPlusSession {
 
   private updatePLSQLDepth(line: string): void {
     const upper = line.toUpperCase();
-    // Count block openers
-    const openers = /\b(BEGIN|LOOP|CASE)\b/gi;
+    const withoutClosers = upper.replace(/\bEND(\s+\w+)?\s*;/g, ' ; ');
+
     let m;
-    while ((m = openers.exec(upper)) !== null) this.plsqlDepth++;
+    const openers = /\b(BEGIN|LOOP|CASE)\b/gi;
+    while ((m = openers.exec(withoutClosers)) !== null) this.plsqlDepth++;
 
-    // DECLARE doesn't need its own END but starts a block with BEGIN
-    if (/\bIF\b/.test(upper) && /\bTHEN\b/.test(upper)) this.plsqlDepth++;
+    if (/\bIF\b/.test(withoutClosers) && /\bTHEN\b/.test(withoutClosers)) this.plsqlDepth++;
 
-    // Count block closers
     const closers = /\bEND(\s+(IF|LOOP|CASE|\w+))?\s*;/gi;
     while ((m = closers.exec(upper)) !== null) this.plsqlDepth--;
-
-    // Standalone END;
-    if (/^\s*END\s*;\s*$/i.test(line) && !/\bEND\s+(IF|LOOP|CASE)/i.test(upper)) {
-      // Already counted above
-    }
   }
 
   private executePLSQLBuffer(): SQLPlusResult {

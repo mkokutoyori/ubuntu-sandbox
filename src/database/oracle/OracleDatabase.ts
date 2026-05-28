@@ -34,6 +34,8 @@ import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
+import { runAnonymousBlock } from './plsql';
+import type { PlsqlHost, StoredUnitLike, Scalar } from './plsql';
 import { SchedulerManager } from './scheduler/SchedulerManager';
 import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
 import { InMemorySegment } from './resultcache/InMemoryManager';
@@ -765,6 +767,89 @@ export class OracleDatabase {
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
   private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
+    const ctx = (executor as { context: ExecutionContext }).context;
+    const output: string[] = [];
+    let putBuffer = '';
+
+    const host: PlsqlHost = {
+      runSql: (s: string) => {
+        const r = this.executeSql(executor, s);
+        if (!r.isQuery && r.message && /^\s*(ORA-|PLS-|SP2-)\d/.test(r.message)) {
+          throw new Error(r.message);
+        }
+        return {
+          rows: r.rows as Scalar[][],
+          columns: r.columns.map(c => (c.alias ?? c.name)),
+          isQuery: r.isQuery,
+          affectedRows: r.affectedRows,
+          message: r.message,
+        };
+      },
+      putLine: (t: string) => { output.push(putBuffer + t); putBuffer = ''; },
+      put: (t: string) => { putBuffer += t; },
+      isServerOutput: () => !!ctx.serverOutput,
+      currentSchema: () => ctx.currentSchema ?? 'SYS',
+      lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
+      callBuiltin: (name: string, rawArgs: string) =>
+        this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
+    };
+
+    const outcome = runAnonymousBlock(sql, host);
+    if (!outcome.parseError) {
+      if (putBuffer) { output.push(putBuffer); putBuffer = ''; }
+      if (!outcome.ok && outcome.error) {
+        return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+      }
+      if (ctx.serverOutput && output.length > 0) {
+        return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
+      }
+      return emptyResult('PL/SQL procedure successfully completed.');
+    }
+
+    return this.executePLSQLLegacy(executor, sql);
+  }
+
+  private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {
+    const schema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const up = name.toUpperCase();
+    const unit = this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`);
+    if (!unit) return undefined;
+    return unit as StoredUnitLike;
+  }
+
+  private routeBuiltinPackageCall(executor: OracleExecutor, call: string, output: string[]): boolean {
+    const upper = call.toUpperCase();
+    const noVars = new Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>();
+    if (
+      upper.startsWith('DBMS_SESSION.')
+      || upper.startsWith('DBMS_APPLICATION_INFO.')
+      || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
+      || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+      || upper.startsWith('DBMS_STATS.')
+      || upper.startsWith('DBMS_SCHEDULER.')
+    ) {
+      this.invokeBuiltinPackage(executor, call, noVars, output);
+      return true;
+    }
+    if (upper.startsWith('DBMS_RLS.')) { this.executeDbmsRlsCall(executor, call); return true; }
+    if (upper.startsWith('DBMS_FGA.')) { this.executeDbmsFgaCall(executor, call); return true; }
+    if (upper.startsWith('DBMS_MACADM.')) { this.executeDbmsMacadmCall(call); return true; }
+    if (
+      upper.startsWith('DBMS_AUDIT_MGMT.')
+      || upper.startsWith('DBMS_METADATA.')
+      || upper.startsWith('UTL_FILE.')
+      || upper.startsWith('DBMS_LOB.')
+      || upper.startsWith('DBMS_FLASHBACK.')
+      || upper.startsWith('DBMS_SPACE.')
+      || upper.startsWith('DBMS_LOCK.')
+      || upper.startsWith('DBMS_UTILITY.')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private executePLSQLLegacy(executor: OracleExecutor, sql: string): ResultSet {
     const output: string[] = [];
     const variables = new Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>();
 
