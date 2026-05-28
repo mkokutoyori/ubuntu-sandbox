@@ -189,6 +189,16 @@ export class LinuxSshServerContext implements ISshServerContext {
     return this.throttler?.isBlocked(ip) ?? false;
   }
 
+  /** Currently-banned IPs (fail2ban-client status backend). */
+  bannedIps(): string[] {
+    return this.throttler?.bannedIps() ?? [];
+  }
+
+  /** Total recorded auth failures across the throttler's lifetime. */
+  totalAuthFailures(): number {
+    return this.throttler?.totalFailures() ?? 0;
+  }
+
   /** PermitEmptyPasswords gate consulted by SshServerHandler. */
   permitEmptyPasswords(): boolean {
     return this.sshdConfig.permitEmptyPasswords;

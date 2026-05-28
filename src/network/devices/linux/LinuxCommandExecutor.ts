@@ -484,12 +484,13 @@ export class LinuxCommandExecutor {
     // scp / sftp select an alternate port with -P (rsync uses -e); translate
     // it into the ssh client's own -p so the probe targets the right port.
     const pIdx = args.indexOf('-P');
-    // `hostname` is the universally-supported probe verb (every vendor's
-    // sync exec bridge implements it). `true` is Unix-only and would be
-    // rejected by Windows / Cisco / Huawei.
-    const probeArgs = pIdx >= 0 && args[pIdx + 1]
-      ? ['-p', args[pIdx + 1], probeTarget, 'hostname']
-      : [probeTarget, 'hostname'];
+    const probeArgs: string[] = [];
+    if (pIdx >= 0 && args[pIdx + 1]) probeArgs.push('-p', args[pIdx + 1]);
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
+      else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
+    }
+    probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
@@ -2032,6 +2033,7 @@ export class LinuxCommandExecutor {
       // ── System administration commands ──────────────────────────────
       case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
       case 'service': return cmdService(args, this.serviceMgr);
+      case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
@@ -2769,6 +2771,35 @@ export class LinuxCommandExecutor {
    * the simulator stores the same triple `{when, sourceHost, tty}` in
    * LinuxLastlogRegistry — the rendering is identical.
    */
+  private cmdFail2banClient(args: string[]): string {
+    const ctx = this.sshContextForFail2ban?.();
+    if (!ctx) return 'ERROR  NOK: ("sshd",)';
+    if (args[0] === 'status' && args[1] === 'sshd') {
+      const banned = ctx.bannedIps();
+      const totalFailed = ctx.totalAuthFailures();
+      return [
+        'Status for the jail: sshd',
+        '|- Filter',
+        `|  |- Currently failed: ${banned.length === 0 ? totalFailed : 0}`,
+        `|  |- Total failed:     ${totalFailed}`,
+        '|  `- File list:        /var/log/auth.log',
+        '`- Actions',
+        `   |- Currently banned: ${banned.length}`,
+        `   |- Total banned:     ${banned.length}`,
+        `   \`- Banned IP list:   ${banned.join(' ')}`,
+      ].join('\n');
+    }
+    if (args[0] === 'status') {
+      return 'Status\n|- Number of jail:	1\n`- Jail list:	sshd';
+    }
+    if (args[0] === 'version') return '1.0.2';
+    if (args[0] === 'ping') return 'Server replied: pong';
+    return 'Usage: fail2ban-client [OPTIONS] <COMMAND>';
+  }
+
+  /** Optional accessor to the SSH server context, wired by LinuxMachine. */
+  sshContextForFail2ban: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null = null;
+
   private renderLastlog(args: string[]): string {
     let filterUser: string | null = null;
     let beforeDays: number | null = null;

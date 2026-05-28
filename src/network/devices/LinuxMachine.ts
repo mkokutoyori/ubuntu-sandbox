@@ -658,6 +658,8 @@ export abstract class LinuxMachine extends EndHost {
     const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
     const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
     this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
+    (this.executor as unknown as { sshContextForFail2ban?: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null })
+      .sshContextForFail2ban = () => this.getSshServerContext();
     return this._sshContext;
   }
 

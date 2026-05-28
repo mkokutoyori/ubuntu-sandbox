@@ -605,6 +605,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  const sshCtx = (machine as unknown as { getSshServerContext?: () => { isClientBlocked?: (ip: string) => boolean } }).getSshServerContext?.();
+  if (sshCtx?.isClientBlocked?.(opts.sourceIp)) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
+      exitCode: 255,
+    };
+  }
+
   // Reactive gate: only an active sshd accepts the TCP handshake AND
   // the requested port must match a Port directive in sshd_config.
   if (!machine.isServiceActive('ssh')) {
@@ -667,6 +675,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (!auth.method) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     throttler?.recordFailure(opts.sourceIp, Date.now());
+    const events = (machine as unknown as { getSshServerContext?: () => { events?: { emit: (e: { kind: 'client_disconnected'; user: string; ip: string; reason: string }) => void } } }).getSshServerContext?.()?.events;
+    events?.emit({ kind: 'client_disconnected', user: remoteUser, ip: opts.sourceIp, reason: 'too_many_failures' });
     return {
       output: `${remoteUser}@${host}: Permission denied (${
         auth.clientMethods.join(',') || 'publickey,password'
