@@ -512,6 +512,55 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   /**
+   * Single entry point that recognises PL/SQL constructs and routes them
+   * to the PL/SQL subsystem. Returns the result when the statement is a
+   * PL/SQL construct, or null when it is plain SQL (so the caller hands
+   * it to the SQL parser). Centralises what used to be a dozen ad-hoc
+   * regex checks scattered through executeSql.
+   */
+  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string): ResultSet | null {
+    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
+      return this.executePLSQL(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
+      return this.createStoredProcedure(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
+      return this.createStoredFunction(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b/i.test(upper)) {
+      return this.createPackageBody(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b/i.test(upper)) {
+      return this.createPackageSpec(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
+      return this.executeCreateTrigger(executor, trimmed);
+    }
+    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
+      return this.executeProcedureCall(executor, trimmed);
+    }
+    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
+    }
+    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
+    }
+    if (/^DROP\s+PACKAGE\s+BODY\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PACKAGE BODY');
+    }
+    if (/^DROP\s+PACKAGE\b/i.test(upper)) {
+      return this.dropPackage(executor, trimmed);
+    }
+    // Standalone procedure call: proc_name(args) or pkg.proc(args).
+    if (/^[A-Za-z_]\w*(?:\.\w+)?\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
+      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
+      if (callResult) return callResult;
+    }
+    return null;
+  }
+
+  /**
    * Parse and execute a SQL statement string.
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
@@ -519,67 +568,20 @@ export class OracleDatabase implements SqlCommandHost {
     const trimmed = sql.trim().replace(/;\s*$/, '');
     if (!trimmed) return emptyResult();
 
-    // Check for PL/SQL block
     const upper = trimmed.toUpperCase();
-    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
-      return this.executePLSQL(executor, trimmed);
-    }
 
+    // PL/SQL is a distinct language whose unit bodies contain semicolons
+    // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
+    // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
+    // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
+    const plsql = this.routePlsql(executor, trimmed, upper);
+    if (plsql) return plsql;
 
-
-
-    // CREATE TABLE … ORGANIZATION EXTERNAL — register an external table.
+    // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
+    // does not model the external-table clause, so it is registered here.
     if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
       return this.createExternalTable(executor, trimmed);
     }
-
-    // Check for CREATE OR REPLACE PROCEDURE/FUNCTION
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
-      return this.createStoredProcedure(executor, trimmed);
-    }
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
-      return this.createStoredFunction(executor, trimmed);
-    }
-    // PACKAGE BODY must be checked before PACKAGE
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b/i.test(upper)) {
-      return this.createPackageBody(executor, trimmed);
-    }
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b/i.test(upper)) {
-      return this.createPackageSpec(executor, trimmed);
-    }
-
-    // Check for EXEC[UTE] procedure_name
-    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
-      return this.executeProcedureCall(executor, trimmed);
-    }
-
-    // Check for standalone procedure call: proc_name(args) or pkg.proc(args)
-    if (/^[A-Za-z_]\w*(?:\.\w+)?\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
-      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
-      if (callResult) return callResult;
-    }
-
-    // Check for CREATE [OR REPLACE] TRIGGER (body may contain semicolons)
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
-      return this.executeCreateTrigger(executor, trimmed);
-    }
-
-
-    // Check for DROP PROCEDURE/FUNCTION
-    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
-    }
-    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
-    }
-    // DROP PACKAGE BODY must be checked before DROP PACKAGE
-    if (/^DROP\s+PACKAGE\s+BODY\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'PACKAGE BODY');
-    }
-    if (/^DROP\s+PACKAGE\b/i.test(upper)) {
-      return this.dropPackage(executor, trimmed);
-    }
-
 
     const tokens = this.lexer.tokenize(trimmed);
     const parser = new OracleParser();
