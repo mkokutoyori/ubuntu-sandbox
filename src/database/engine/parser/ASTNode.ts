@@ -1050,6 +1050,12 @@ export interface CreateTypeStatement extends ASTNode {
   elemType?: string;
 }
 
+/** `ALTER {PROCEDURE|FUNCTION|PACKAGE} [schema.]name COMPILE [BODY]` — recompile (no-op message). */
+export interface AlterCompileStatement extends ASTNode {
+  type: 'AlterCompileStatement';
+  objectKind: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE';
+}
+
 /** `ALTER SESSION SET param = value` (and other ALTER SESSION forms, captured loosely). */
 export interface AlterSessionStatement extends ASTNode {
   type: 'AlterSessionStatement';
@@ -1098,7 +1104,7 @@ export type Statement =
   | CreateFlashbackArchiveStatement | DropFlashbackArchiveStatement
   | PluggableDatabaseStatement
   | CreateTypeStatement
-  | AlterSessionStatement
+  | AlterSessionStatement | AlterCompileStatement
   | CommentStatement
   // PL/SQL
   | PLSQLBlock;

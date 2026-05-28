@@ -232,6 +232,14 @@ export class OracleParser extends BaseParser {
     }
   }
 
+  private parseAlterCompile(pos: SourcePosition): import('../engine/parser/ASTNode').AlterCompileStatement {
+    const objectKind = this.advance().value.toUpperCase() as 'PROCEDURE' | 'FUNCTION' | 'PACKAGE';
+    this.expectIdentifier();
+    if (this.match(TokenType.DOT)) this.expectIdentifier();
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AlterCompileStatement', position: pos, objectKind };
+  }
+
   private parseAlterSession(pos: SourcePosition): import('../engine/parser/ASTNode').AlterSessionStatement {
     let param: string | undefined;
     let value: string | undefined;
@@ -512,6 +520,9 @@ export class OracleParser extends BaseParser {
   protected override parseDialectAlter(pos: SourcePosition): Statement | null {
     if (this.matchWord('PLUGGABLE')) return this.parsePluggableDatabase(pos, 'ALTER');
     if (this.matchKeyword('SESSION')) return this.parseAlterSession(pos);
+    if (this.checkIdentifierOrKeyword('PROCEDURE') || this.checkIdentifierOrKeyword('FUNCTION') || this.checkIdentifierOrKeyword('PACKAGE')) {
+      return this.parseAlterCompile(pos);
+    }
     if (this.matchKeyword('SYSTEM')) return this.parseAlterSystem(pos);
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);

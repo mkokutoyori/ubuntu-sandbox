@@ -580,14 +580,6 @@ export class OracleDatabase implements SqlCommandHost {
       return this.dropPackage(executor, trimmed);
     }
 
-    // ALTER {PROCEDURE | FUNCTION | PACKAGE} <name> COMPILE [BODY]
-    // is a no-op recompile in the simulator — emits the canonical message.
-    const alterCompile = trimmed.match(/^ALTER\s+(PROCEDURE|FUNCTION|PACKAGE)\s+(?:\w+\s*\.\s*)?\w+\s+COMPILE(\s+BODY)?\b/i);
-    if (alterCompile) {
-      const kind = alterCompile[1].toUpperCase();
-      const label = kind === 'PROCEDURE' ? 'Procedure' : kind === 'FUNCTION' ? 'Function' : 'Package';
-      return emptyResult(`${label} altered.`);
-    }
 
     const tokens = this.lexer.tokenize(trimmed);
     const parser = new OracleParser();

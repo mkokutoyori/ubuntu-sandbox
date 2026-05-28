@@ -562,6 +562,11 @@ export class OracleExecutor extends BaseExecutor {
       case 'PluggableDatabaseStatement': return this.requireCommandHost().execPluggableDatabase(statement, this.context);
       case 'CreateTypeStatement': return this.requireCommandHost().execCreateType(statement, this.context);
       case 'AlterSessionStatement': return this.requireCommandHost().execAlterSession(statement, this.context);
+      case 'AlterCompileStatement': {
+        const label = statement.objectKind === 'PROCEDURE' ? 'Procedure'
+          : statement.objectKind === 'FUNCTION' ? 'Function' : 'Package';
+        return emptyResult(`${label} altered.`);
+      }
       case 'CommentStatement': return this.executeComment(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
