@@ -999,6 +999,53 @@ export interface LockTableStatement extends ASTNode {
   nowait: boolean;
 }
 
+/** `CREATE FLASHBACK ARCHIVE [DEFAULT] name TABLESPACE ts [QUOTA n M] RETENTION n {DAY|MONTH|YEAR}`. */
+export interface CreateFlashbackArchiveStatement extends ASTNode {
+  type: 'CreateFlashbackArchiveStatement';
+  name: string;
+  isDefault: boolean;
+  tablespace: string;
+  quotaMb: number | null;
+  retentionDays: number;
+}
+
+/** `DROP FLASHBACK ARCHIVE name`. */
+export interface DropFlashbackArchiveStatement extends ASTNode {
+  type: 'DropFlashbackArchiveStatement';
+  name: string;
+}
+
+/** `{CREATE|DROP|ALTER} PLUGGABLE DATABASE name [OPEN [READ {ONLY|WRITE}] | CLOSE | …]`. */
+export interface PluggableDatabaseStatement extends ASTNode {
+  type: 'PluggableDatabaseStatement';
+  operation: 'CREATE' | 'DROP' | 'ALTER';
+  name: string;
+  openMode?: 'READ ONLY' | 'READ WRITE';
+  close?: boolean;
+}
+
+export interface TypeAttribute {
+  name: string;
+  typeName: string;
+  precision?: number;
+  scale?: number;
+}
+
+/**
+ * `CREATE [OR REPLACE] TYPE [schema.]name AS {OBJECT (attrs) | VARRAY(n) OF t | TABLE OF t}`.
+ */
+export interface CreateTypeStatement extends ASTNode {
+  type: 'CreateTypeStatement';
+  schema?: string;
+  name: string;
+  form: 'object' | 'collection';
+  attributes?: TypeAttribute[];
+  finalType?: boolean;
+  collKind?: 'VARRAY' | 'TABLE';
+  upperBound?: number | null;
+  elemType?: string;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -1037,6 +1084,9 @@ export type Statement =
   | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement
   | AdministerKeyManagementStatement
   | LockTableStatement
+  | CreateFlashbackArchiveStatement | DropFlashbackArchiveStatement
+  | PluggableDatabaseStatement
+  | CreateTypeStatement
   | CommentStatement
   // PL/SQL
   | PLSQLBlock;

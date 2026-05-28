@@ -15,7 +15,10 @@ import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
 import type { SqlCommandHost } from './SqlCommandHost';
-import type { LockTableStatement } from '../engine/parser/ASTNode';
+import type {
+  LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
+  PluggableDatabaseStatement, CreateTypeStatement,
+} from '../engine/parser/ASTNode';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
@@ -523,24 +526,6 @@ export class OracleDatabase implements SqlCommandHost {
     }
 
 
-    const fba = upper.match(/^CREATE\s+FLASHBACK\s+ARCHIVE\s+(?:DEFAULT\s+)?(\w+)\s+TABLESPACE\s+(\w+)(?:\s+QUOTA\s+(\d+)\s*M)?\s+RETENTION\s+(\d+)\s+(?:DAY|YEAR|MONTH)/i);
-    if (fba) {
-      const isDefault = /CREATE\s+FLASHBACK\s+ARCHIVE\s+DEFAULT/i.test(trimmed);
-      const name = fba[1];
-      const ts = fba[2];
-      const quota = fba[3] ? parseInt(fba[3], 10) : null;
-      const days = parseInt(fba[4], 10);
-      this.instance.flashbackArchive.createArchive(new FlashbackArchive({
-        flashbackArchiveName: name, retentionInDays: days, isDefault,
-        tablespaces: [new FlashbackArchiveTablespace(name, ts, quota)],
-      }));
-      return emptyResult('Flashback archive created.');
-    }
-    const dropFba = upper.match(/^DROP\s+FLASHBACK\s+ARCHIVE\s+(\w+)/i);
-    if (dropFba) {
-      this.instance.flashbackArchive.dropArchive(dropFba[1]);
-      return emptyResult('Flashback archive dropped.');
-    }
     const fbaTab = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+FLASHBACK\s+ARCHIVE(?:\s+(\w+))?/i);
     if (fbaTab) {
       const owner = (fbaTab[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
@@ -576,36 +561,7 @@ export class OracleDatabase implements SqlCommandHost {
       return emptyResult('Table altered.');
     }
 
-    const pdbMatch = upper.match(/^(?:ALTER\s+PLUGGABLE\s+DATABASE|CREATE\s+PLUGGABLE\s+DATABASE|DROP\s+PLUGGABLE\s+DATABASE)\s+(\w+)/);
-    if (pdbMatch) {
-      const name = pdbMatch[1];
-      if (upper.startsWith('CREATE')) {
-        this.instance.multitenant.createPdb(name);
-        return emptyResult('Pluggable database created.');
-      }
-      if (upper.startsWith('DROP')) {
-        this.instance.multitenant.dropPdb(name);
-        return emptyResult('Pluggable database dropped.');
-      }
-      if (upper.includes('OPEN')) {
-        const ro = /READ\s+ONLY/.test(upper);
-        this.instance.multitenant.openPdb(name, ro ? 'READ ONLY' : 'READ WRITE');
-        return emptyResult('Pluggable database altered.');
-      }
-      if (upper.includes('CLOSE')) {
-        this.instance.multitenant.closePdb(name);
-        return emptyResult('Pluggable database altered.');
-      }
-      return emptyResult('Pluggable database altered.');
-    }
 
-    // CREATE [OR REPLACE] TYPE — Oracle object types. Registered into
-    // the simulator's TypeRegistry so DBA_TYPES / DBA_TYPE_ATTRS /
-    // DBA_COLL_TYPES surface them. We accept the form Oracle DBAs use
-    // for object types and collection types.
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?TYPE\b/i.test(upper)) {
-      return this.createObjectType(executor, trimmed);
-    }
 
     // CREATE TABLE … ORGANIZATION EXTERNAL — register an external table.
     if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
@@ -713,6 +669,36 @@ export class OracleDatabase implements SqlCommandHost {
       return emptyResult(e instanceof Error ? e.message : String(e));
     }
     return emptyResult('Table(s) Locked.');
+  }
+
+  execCreateFlashbackArchive(stmt: CreateFlashbackArchiveStatement, _ctx: ExecutionContext): ResultSet {
+    const name = stmt.name.toUpperCase();
+    const ts = stmt.tablespace.toUpperCase();
+    this.instance.flashbackArchive.createArchive(new FlashbackArchive({
+      flashbackArchiveName: name, retentionInDays: stmt.retentionDays, isDefault: stmt.isDefault,
+      tablespaces: [new FlashbackArchiveTablespace(name, ts, stmt.quotaMb)],
+    }));
+    return emptyResult('Flashback archive created.');
+  }
+
+  execDropFlashbackArchive(stmt: DropFlashbackArchiveStatement, _ctx: ExecutionContext): ResultSet {
+    this.instance.flashbackArchive.dropArchive(stmt.name.toUpperCase());
+    return emptyResult('Flashback archive dropped.');
+  }
+
+  execPluggableDatabase(stmt: PluggableDatabaseStatement, _ctx: ExecutionContext): ResultSet {
+    const name = stmt.name.toUpperCase();
+    if (stmt.operation === 'CREATE') {
+      this.instance.multitenant.createPdb(name);
+      return emptyResult('Pluggable database created.');
+    }
+    if (stmt.operation === 'DROP') {
+      this.instance.multitenant.dropPdb(name);
+      return emptyResult('Pluggable database dropped.');
+    }
+    if (stmt.openMode) this.instance.multitenant.openPdb(name, stmt.openMode);
+    else if (stmt.close) this.instance.multitenant.closePdb(name);
+    return emptyResult('Pluggable database altered.');
   }
 
   private maybeLockForUpdate(executor: OracleExecutor, stmt: unknown): ResultSet | void {
@@ -1597,42 +1583,18 @@ export class OracleDatabase implements SqlCommandHost {
    * DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES; PL/SQL bodies are
    * accepted but ignored (simulator does not run them).
    */
-  private createObjectType(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
-    // VARRAY / NESTED TABLE collection
-    const coll = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+(VARRAY|VARYING\s+ARRAY|TABLE)\s*(?:\(\s*(\d+)\s*\))?\s+OF\s+(\w+)/i);
-    if (coll) {
-      const owner = (coll[1] ?? ctx.currentSchema).toUpperCase();
-      const name = coll[2].toUpperCase();
-      const kind = /TABLE/i.test(coll[3]) ? 'TABLE' as const : 'VARRAY' as const;
-      const upper = coll[4] ? parseInt(coll[4], 10) : null;
-      const elem = coll[5].toUpperCase();
+  execCreateType(stmt: CreateTypeStatement, ctx: ExecutionContext): ResultSet {
+    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    if (stmt.form === 'collection') {
       this.instance.types.addCollectionType(owner, name, {
-        collType: kind, upperBound: upper, elemTypeName: elem,
+        collType: stmt.collKind === 'TABLE' ? 'TABLE' : 'VARRAY',
+        upperBound: stmt.upperBound ?? null,
+        elemTypeName: (stmt.elemType ?? '').toUpperCase(),
       });
       return emptyResult('Type created.');
     }
-    // OBJECT type with attribute list
-    const obj = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+OBJECT\s*\(([\s\S]+?)\)\s*(?:NOT\s+FINAL|FINAL)?\s*;?\s*$/i);
-    if (obj) {
-      const owner = (obj[1] ?? ctx.currentSchema).toUpperCase();
-      const name = obj[2].toUpperCase();
-      const body = obj[3];
-      const attrs = body.split(',').map(s => s.trim()).filter(s => s && !/^(MEMBER|STATIC|MAP|ORDER|CONSTRUCTOR)\b/i.test(s))
-        .map(line => {
-          const m = line.match(/^(\w+)\s+(\w+)(?:\((\d+)(?:\s*,\s*(\d+))?\))?/);
-          if (!m) return null;
-          return {
-            name: m[1], typeName: m[2],
-            precision: m[3] ? parseInt(m[3], 10) : undefined,
-            scale: m[4] ? parseInt(m[4], 10) : undefined,
-          };
-        })
-        .filter((a): a is { name: string; typeName: string; precision?: number; scale?: number } => a !== null);
-      const finalType = !/NOT\s+FINAL/i.test(sql);
-      this.instance.types.addObjectType(owner, name, attrs, { finalType });
-      return emptyResult('Type created.');
-    }
+    this.instance.types.addObjectType(owner, name, stmt.attributes ?? [], { finalType: stmt.finalType ?? true });
     return emptyResult('Type created.');
   }
 

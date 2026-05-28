@@ -557,6 +557,10 @@ export class OracleExecutor extends BaseExecutor {
       case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
       case 'AdministerKeyManagementStatement': return this.executeAdministerKeyManagement(statement);
       case 'LockTableStatement': return this.requireCommandHost().execLockTable(statement, this.context);
+      case 'CreateFlashbackArchiveStatement': return this.requireCommandHost().execCreateFlashbackArchive(statement, this.context);
+      case 'DropFlashbackArchiveStatement': return this.requireCommandHost().execDropFlashbackArchive(statement, this.context);
+      case 'PluggableDatabaseStatement': return this.requireCommandHost().execPluggableDatabase(statement, this.context);
+      case 'CreateTypeStatement': return this.requireCommandHost().execCreateType(statement, this.context);
       case 'CommentStatement': return this.executeComment(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
