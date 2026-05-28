@@ -29,6 +29,14 @@ export interface CrossVendorRemoteShellOptions {
   readonly remoteHost: string;
   /** Kind of the remote's primary shell — `bash`, `cmd`, `cisco-ios`, … */
   readonly primaryKind: string;
+  /**
+   * OpenSSH-style SSH_CONNECTION string: "client_ip client_port server_ip
+   * server_port". Propagated to the remote shell's env so `echo
+   * $SSH_CONNECTION` mirrors what real ssh exposes.
+   */
+  readonly sshConnection?: string;
+  /** OpenSSH-style SSH_CLIENT: "client_ip client_port server_port". */
+  readonly sshClient?: string;
   /** Optional teardown hook (close SSH transport, log entry, …). */
   readonly onClose?: () => void;
 }
@@ -41,6 +49,9 @@ export class CrossVendorRemoteShell implements IShell {
   readonly user: string;
   readonly context: ShellContext;
   readonly remoteHost: string;
+  /** The kind of the primary shell — useful for callers that need to
+   *  decide "is the inner host POSIX or Windows or a router?". */
+  readonly primaryKind: string;
   private readonly onClose: () => void;
 
   /** Bottom = primary login shell; top = active child. */
@@ -50,17 +61,26 @@ export class CrossVendorRemoteShell implements IShell {
     this.device = opts.device;
     this.user = opts.user;
     this.remoteHost = opts.remoteHost;
+    this.primaryKind = opts.primaryKind;
     this.onClose = opts.onClose ?? (() => undefined);
 
     const primary = ShellFactory.create(opts.primaryKind, {
       device: opts.device,
       user: opts.user,
       connection: 'ssh',
+      extras: {
+        sshConnection: opts.sshConnection,
+        sshClient: opts.sshClient,
+      },
     });
     this.context = primary.context;
     primary.activate();
     this.stack.push(primary);
   }
+
+  /** The current top-of-stack shell's kind — what the user is actually
+   *  driving right now. After `powershell` from cmd, this is `powershell`. */
+  get topKind(): string { return this.stack[this.stack.length - 1]?.kind ?? this.primaryKind; }
 
   /** The shell at the top of the stack — `processLine` always routes here. */
   private get top(): IShell { return this.stack[this.stack.length - 1]; }

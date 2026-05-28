@@ -27,7 +27,7 @@ interface ProtocolInfo {
 interface OpenChannelInfo {
   readonly type: ChannelType;
   readonly userCtx: SshUserContext;
-  readonly cwd: string;
+  cwd: string;
   readonly openedAt: number;
 }
 
@@ -249,6 +249,11 @@ export class SshServerHandler {
               channelType: info.type,
               durationMs: Date.now() - info.openedAt,
             });
+            // Pair with the recordLogin fired in `auth` — once the last
+            // channel closes the session is over from the user's point
+            // of view, so record the logout. Linux uses this to append
+            // wtmp; Windows turns it into a 4634 (Logoff) Security event.
+            this.ctx.recordLogout?.(userCtx.username, clientIp);
           }
           channels.delete(channelId);
           conn.write(JSON.stringify({ ok: true, channelId }));
@@ -268,7 +273,11 @@ export class SshServerHandler {
             return;
           }
           const channelId = (parsed.channelId as number | undefined) ?? -1;
-          const info = channels.get(channelId);
+          let info = channels.get(channelId);
+          if (!info && channelId >= 0) {
+            info = { type: 'sftp', userCtx, cwd: userCtx.homeDirectory, openedAt: Date.now() };
+            channels.set(channelId, info);
+          }
           const cwd = info?.cwd ?? userCtx.homeDirectory;
           const fs = new PermissionCheckingFSDecorator(
             this.ctx.getFilesystem(userCtx),
@@ -281,6 +290,8 @@ export class SshServerHandler {
           );
           if (isOk(result)) {
             const payload = (result.value as object) ?? {};
+            const newCwd = (payload as { cwd?: unknown }).cwd;
+            if (info && typeof newCwd === 'string') info.cwd = newCwd;
             conn.write(JSON.stringify({ ok: true, ...payload }));
           } else if (isErr(result)) {
             conn.write(

@@ -2370,7 +2370,7 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'rm removes a remote file',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo doomed > /tmp/zap');
+        await l.linux2.executeCommand('echo doomed > /tmp/zap && chown alice:alice /tmp/zap');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
         );
@@ -2381,7 +2381,7 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'rename moves a remote file in one step',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo moveme > /tmp/from');
+        await l.linux2.executeCommand('echo moveme > /tmp/from && chown alice:alice /tmp/from');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
         );
@@ -2535,7 +2535,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename within same directory',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo r1 > /tmp/r1');
+        await l.linux2.executeCommand('echo r1 > /tmp/r1 && chown alice:alice /tmp/r1');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
         );
@@ -2546,7 +2546,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename across directories',
       setup: async (l) => {
-        await l.linux2.executeCommand('mkdir -p /var/tmp/dst && echo cross > /tmp/cross');
+        await l.linux2.executeCommand('mkdir -p /var/tmp/dst && echo cross > /tmp/cross && chown alice:alice /tmp/cross /var/tmp/dst');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
         );
@@ -2568,7 +2568,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename source vanishes from the original path',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo gone > /tmp/gone');
+        await l.linux2.executeCommand('echo gone > /tmp/gone && chown alice:alice /tmp/gone');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
         );
@@ -2579,7 +2579,7 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'mv alias works exactly like rename',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo alias > /tmp/with-mv');
+        await l.linux2.executeCommand('echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv');
         await l.linux1.executeCommand(
           "sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
         );

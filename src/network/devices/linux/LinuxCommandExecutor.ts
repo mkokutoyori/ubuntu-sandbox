@@ -45,6 +45,10 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/Job
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
+import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
+import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
+import { SshUserContext } from '../../protocols/ssh/SshUserContext';
+import { SshdServerConfig } from '../../protocols/ssh/server/SshdServerConfig';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
@@ -118,6 +122,44 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
+
+function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
+  const m = /^([ug])(?::([^:]*))?:([rwx-]{0,3})$/.exec(entry);
+  if (!m) return null;
+  const kind = m[1] === 'u' ? 'user' : 'group';
+  const name = m[2] ?? '';
+  let perms = 0;
+  for (const c of m[3]) {
+    if (c === 'r') perms |= 0o4;
+    else if (c === 'w') perms |= 0o2;
+    else if (c === 'x') perms |= 0o1;
+  }
+  return { kind, name, perms };
+}
+
+function permTriad(p: number): string {
+  return ((p & 0o4) ? 'r' : '-') + ((p & 0o2) ? 'w' : '-') + ((p & 0o1) ? 'x' : '-');
+}
+
+const LASTLOG_HELP = [
+  '',
+  'Usage:',
+  ' lastlog [options]',
+  '',
+  'Reports the most recent login of all users or of a given user.',
+  '',
+  'Options:',
+  ' -b, --before DAYS    print only lastlog records older than DAYS',
+  ' -C, --clear          clear lastlog record of a user (usable only with -u)',
+  ' -R, --root CHROOT_DIR  directory to chroot into',
+  ' -S, --set            set lastlog record to current time (usable only with -u)',
+  ' -t, --time DAYS      print only lastlog records more recent than DAYS',
+  ' -u, --user LOGIN     print lastlog record of the specified LOGIN',
+  ' -h, --help           display this help',
+  ' -V, --version        display version',
+  '',
+  'For more details see lastlog(8).',
+].join('\n');
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -482,12 +524,14 @@ export class LinuxCommandExecutor {
     // scp / sftp select an alternate port with -P (rsync uses -e); translate
     // it into the ssh client's own -p so the probe targets the right port.
     const pIdx = args.indexOf('-P');
-    // `hostname` is the universally-supported probe verb (every vendor's
-    // sync exec bridge implements it). `true` is Unix-only and would be
-    // rejected by Windows / Cisco / Huawei.
-    const probeArgs = pIdx >= 0 && args[pIdx + 1]
-      ? ['-p', args[pIdx + 1], probeTarget, 'hostname']
-      : [probeTarget, 'hostname'];
+    const probeArgs: string[] = [];
+    if (pIdx >= 0 && args[pIdx + 1]) probeArgs.push('-p', args[pIdx + 1]);
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
+      else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
+    }
+    if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
+    probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
@@ -509,12 +553,30 @@ export class LinuxCommandExecutor {
       return session.run();
     }
 
-    // sftp delegates to SftpInteractiveSession, parsing stdin as a batch.
     if (cmd === 'sftp') {
-      const stdin = stdinArg ?? '';
+      const bIdx = args.indexOf('-b');
+      let stdin = stdinArg ?? '';
+      if (bIdx >= 0) {
+        const batchPath = args[bIdx + 1];
+        if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
+        const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
+        if (body === null) {
+          return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
+        }
+        stdin = body;
+      }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
-      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device);
+      const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
+      let remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+      const remoteChroot = this.readChrootDirectory(found?.device, remoteUserName, this.firstConfiguredIp());
+      if (remoteChroot) {
+        remoteFs = new ChrootedSftpFileSystem(remoteFs, remoteChroot);
+      }
+      const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
+        ?.getSshServerContext?.()?.events;
+      const t0 = Date.now();
+      remoteEvents?.emit({ kind: 'channel_opened', user: remoteUserName, channelType: 'sftp' });
       const session = new SftpInteractiveSession({
         local: new VfsSftpFileSystem(this.vfs, {
           uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
@@ -523,6 +585,7 @@ export class LinuxCommandExecutor {
         initialLocalCwd: this.cwd,
       });
       session.run(SftpCommandScript.parse(stdin));
+      remoteEvents?.emit({ kind: 'channel_closed', user: remoteUserName, channelType: 'sftp', durationMs: Date.now() - t0 });
       return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
     }
 
@@ -547,27 +610,63 @@ export class LinuxCommandExecutor {
    * null when the host doesn't exist or has no VFS exposed — letting the
    * ScpSession surface "no route to host" the same way OpenSSH does.
    */
-  private resolveRemoteSftpFs(host: string): ISftpFileSystem | null {
+  private resolveRemoteSftpFs(host: string, asUser?: string): ISftpFileSystem | null {
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
-    return this.resolveRemoteSftpFsFromDevice(found?.device);
+    return this.resolveRemoteSftpFsFromDevice(found?.device, asUser);
   }
 
-  private resolveRemoteSftpFsFromDevice(device: unknown): ISftpFileSystem | null {
+  private resolveRemoteSftpFsFromDevice(device: unknown, asUser?: string): ISftpFileSystem | null {
     if (!device) return null;
     const linuxVfs = (device as { executor?: { vfs?: VirtualFileSystem } }).executor?.vfs;
     if (linuxVfs) {
-      return new VfsSftpFileSystem(linuxVfs, { uid: 0, gid: 0, umask: 0o022 });
+      const userCtx = this.buildRemoteUserCtx(device, asUser);
+      const raw = new VfsSftpFileSystem(linuxVfs, { uid: userCtx.uid, gid: userCtx.gid, umask: 0o022 });
+      return new PermissionCheckingFSDecorator(raw, userCtx);
     }
     const windowsFs = (device as { fs?: unknown; getFileSystem?: () => unknown }).fs
       ?? (device as { getFileSystem?: () => unknown }).getFileSystem?.();
     if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
       return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
     }
-    // Router-style targets (Cisco / Huawei) expose synthetic system
-    // files via getSftpFileSource() — wrapped in RouterSftpFileSystem.
     const sftpSource = (device as { getSftpFileSource?: () => unknown }).getSftpFileSource?.();
     if (sftpSource && typeof (sftpSource as { read?: unknown }).read === 'function') {
       return new RouterSftpFileSystem(sftpSource as ConstructorParameters<typeof RouterSftpFileSystem>[0]);
+    }
+    return null;
+  }
+
+  private buildRemoteUserCtx(device: unknown, asUser?: string): SshUserContext {
+    const userMgr = (device as { executor?: { userMgr?: {
+      getUser(n: string): { uid: number; gid: number; home: string } | undefined;
+      getGroupsForUser?(n: string): readonly number[];
+    } } }).executor?.userMgr;
+    const name = asUser ?? this.userMgr.currentUser;
+    const entry = userMgr?.getUser(name);
+    if (!entry) {
+      return new SshUserContext(name, 65534, 65534, [], '/');
+    }
+    const groups = userMgr?.getGroupsForUser?.(name) ?? [];
+    return new SshUserContext(name, entry.uid, entry.gid, groups, entry.home);
+  }
+
+  private readChrootDirectory(device: unknown, user: string, sourceIp: string | null): string | null {
+    const remoteVfs = (device as { executor?: { vfs?: { readFile: (p: string) => string | null } } }).executor?.vfs;
+    if (!remoteVfs) return null;
+    const raw = remoteVfs.readFile('/etc/ssh/sshd_config') ?? '';
+    if (!raw) return null;
+    const userMgr = (device as { executor?: { userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } }).executor?.userMgr;
+    const groups = (userMgr?.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    const cfg = SshdServerConfig.parse(raw);
+    for (const block of cfg.matchBlocks) {
+      const applies = block.criteria.every((c: { keyword: string; value: string }) => {
+        if (c.keyword === 'User')    return c.value === user || c.value === '*';
+        if (c.keyword === 'Group')   return groups.includes(c.value);
+        if (c.keyword === 'Address' || c.keyword === 'LocalAddress') return sourceIp ? c.value === sourceIp : false;
+        return true;
+      });
+      if (!applies) continue;
+      const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
+      if (cd) return cd;
     }
     return null;
   }
@@ -1676,6 +1775,9 @@ export class LinuxCommandExecutor {
         return { output: cmdLast(c, args), exitCode: 0 };
       }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
+      case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
+      case 'setfacl': return this.cmdSetfacl(args);
+      case 'getfacl': return this.cmdGetfacl(args);
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
         // declared sources per database. All output / exit-code logic
@@ -2002,6 +2104,7 @@ export class LinuxCommandExecutor {
       // ── System administration commands ──────────────────────────────
       case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
       case 'service': return cmdService(args, this.serviceMgr);
+      case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
@@ -2723,6 +2826,180 @@ export class LinuxCommandExecutor {
     const username = args.find(a => !a.startsWith('-'));
     const out = this.userMgr.finger(username);
     return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
+  }
+
+  /**
+   * `lastlog` — one row per known account showing the most-recent login
+   * the lastlog registry recorded (or "Never logged in" when absent).
+   * Mirrors util-linux output: `Username Port From Latest`.
+   *
+   * Supported flags:
+   *   -u, --user <name>   restrict to a single user
+   *   -b, --before <days> hide rows older than N days
+   *   -t, --time  <days>  hide rows older than N days (alias of -b's inverse)
+   *
+   * Real lastlog is backed by a binary `/var/log/lastlog` indexed by UID;
+   * the simulator stores the same triple `{when, sourceHost, tty}` in
+   * LinuxLastlogRegistry — the rendering is identical.
+   */
+  private cmdFail2banClient(args: string[]): string {
+    const ctx = this.sshContextForFail2ban?.();
+    if (!ctx) return 'ERROR  NOK: ("sshd",)';
+    if (args[0] === 'status' && args[1] === 'sshd') {
+      const banned = ctx.bannedIps();
+      const totalFailed = ctx.totalAuthFailures();
+      return [
+        'Status for the jail: sshd',
+        '|- Filter',
+        `|  |- Currently failed: ${banned.length === 0 ? totalFailed : 0}`,
+        `|  |- Total failed:     ${totalFailed}`,
+        '|  `- File list:        /var/log/auth.log',
+        '`- Actions',
+        `   |- Currently banned: ${banned.length}`,
+        `   |- Total banned:     ${banned.length}`,
+        `   \`- Banned IP list:   ${banned.join(' ')}`,
+      ].join('\n');
+    }
+    if (args[0] === 'status') {
+      return 'Status\n|- Number of jail:	1\n`- Jail list:	sshd';
+    }
+    if (args[0] === 'version') return '1.0.2';
+    if (args[0] === 'ping') return 'Server replied: pong';
+    return 'Usage: fail2ban-client [OPTIONS] <COMMAND>';
+  }
+
+  /** Optional accessor to the SSH server context, wired by LinuxMachine. */
+  sshContextForFail2ban: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null = null;
+
+  private cmdSetfacl(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0) return { output: 'Usage: setfacl [-m|-x] acl path', exitCode: 2 };
+    let mode: 'modify' | 'remove' | null = null;
+    const entries: string[] = [];
+    const paths: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-m' || a === '--modify') { mode = 'modify'; entries.push(args[++i] ?? ''); continue; }
+      if (a === '-x' || a === '--remove') { mode = 'remove'; entries.push(args[++i] ?? ''); continue; }
+      if (a === '-b' || a === '--remove-all') { mode = 'remove'; entries.push('*'); continue; }
+      if (a === '-R' || a === '--recursive') continue;
+      if (a === '-h' || a === '--help') return { output: 'setfacl - modify file ACLs', exitCode: 0 };
+      if (!a.startsWith('-')) paths.push(a);
+    }
+    if (!mode || entries.length === 0) return { output: 'setfacl: missing operation', exitCode: 2 };
+    if (paths.length === 0) return { output: 'setfacl: no file specified', exitCode: 2 };
+    for (const path of paths) {
+      const abs = this.vfs.normalizePath(path, this.cwd);
+      if (!this.vfs.resolveInode(abs)) {
+        return { output: `setfacl: ${path}: No such file or directory`, exitCode: 1 };
+      }
+      const inode = this.vfs.resolveInode(abs)!;
+      if (this.userMgr.currentUid !== 0 && inode.uid !== this.userMgr.currentUid) {
+        return { output: `setfacl: ${path}: Operation not permitted`, exitCode: 1 };
+      }
+      for (const entry of entries) {
+        const parsed = parseAclEntry(entry);
+        if (!parsed) return { output: `setfacl: Option -m: Invalid argument near character ${entry}`, exitCode: 2 };
+        if (mode === 'remove') {
+          if (parsed.kind === 'user') this.vfs.removeUserAcl(abs, parsed.name);
+        } else if (parsed.kind === 'user') {
+          this.vfs.setUserAcl(abs, parsed.name, parsed.perms);
+        } else if (parsed.kind === 'group') {
+          this.vfs.setGroupAcl(abs, parsed.name, parsed.perms);
+        }
+      }
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  private cmdGetfacl(args: string[]): { output: string; exitCode: number } {
+    const paths = args.filter(a => !a.startsWith('-'));
+    if (paths.length === 0) return { output: 'Usage: getfacl path', exitCode: 2 };
+    const lines: string[] = [];
+    for (const path of paths) {
+      const abs = this.vfs.normalizePath(path, this.cwd);
+      const inode = this.vfs.resolveInode(abs);
+      if (!inode) { lines.push(`getfacl: ${path}: No such file or directory`); continue; }
+      const ownerName = this.userMgr.getUserByUid(inode.uid)?.username ?? String(inode.uid);
+      const groupName = this.userMgr.getGroupByGid(inode.gid)?.name ?? String(inode.gid);
+      const mode = inode.permissions;
+      lines.push(`# file: ${path.replace(/^\//, '')}`);
+      lines.push(`# owner: ${ownerName}`);
+      lines.push(`# group: ${groupName}`);
+      lines.push(`user::${permTriad((mode >> 6) & 0o7)}`);
+      if (inode.aclUsers) {
+        for (const [name, p] of inode.aclUsers) lines.push(`user:${name}:${permTriad(p)}`);
+      }
+      lines.push(`group::${permTriad((mode >> 3) & 0o7)}`);
+      if (inode.aclGroups) {
+        for (const [name, p] of inode.aclGroups) lines.push(`group:${name}:${permTriad(p)}`);
+      }
+      if (inode.aclUsers || inode.aclGroups) lines.push(`mask::rwx`);
+      lines.push(`other::${permTriad(mode & 0o7)}`);
+      lines.push('');
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private renderLastlog(args: string[]): string {
+    let filterUser: string | null = null;
+    let beforeDays: number | null = null;
+    let timeDays: number | null = null;
+    let clear = false;
+    let setNow = false;
+
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-h' || a === '--help') return LASTLOG_HELP;
+      if (a === '-V' || a === '--version') return 'lastlog from util-linux 2.37.2';
+      if (a === '-u' || a === '--user') { filterUser = args[++i] ?? null; continue; }
+      if (a === '-b' || a === '--before') { beforeDays = Number(args[++i]); continue; }
+      if (a === '-t' || a === '--time')   { timeDays   = Number(args[++i]); continue; }
+      if (a === '-C' || a === '--clear')  { clear = true; continue; }
+      if (a === '-S' || a === '--set')    { setNow = true; continue; }
+      if (a === '-R' || a === '--root') { i++; continue; }
+    }
+
+    if (clear || setNow) {
+      if (!filterUser) return 'lastlog: option requires -u/--user';
+      if (this.userMgr.currentUid !== 0) return 'lastlog: must be root';
+      if (clear) this.lastlog.clearUser(filterUser);
+      if (setNow) this.lastlog.record(filterUser, '0.0.0.0', 'pts/0');
+      return '';
+    }
+
+    const header = 'Username         Port     From             Latest';
+    const rows: string[] = [header];
+    const now = Date.now();
+    const beforeCutoff = beforeDays !== null && Number.isFinite(beforeDays)
+      ? now - beforeDays * 86400_000
+      : null;
+    const timeCutoff = timeDays !== null && Number.isFinite(timeDays)
+      ? now - timeDays * 86400_000
+      : null;
+
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+
+    for (const u of this.userMgr.getAllUsers()) {
+      if (filterUser && u.username !== filterUser) continue;
+      const entry = this.lastlog.getCurrent(u.username);
+      if (!entry) {
+        rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
+        continue;
+      }
+      if (beforeCutoff !== null && entry.when >= beforeCutoff) continue;
+      if (timeCutoff !== null && entry.when < timeCutoff) continue;
+      const d = new Date(entry.when);
+      const latest =
+        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
+        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} +0000 ${d.getUTCFullYear()}`;
+      rows.push(
+        `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
+      );
+    }
+    return rows.join('\n');
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {

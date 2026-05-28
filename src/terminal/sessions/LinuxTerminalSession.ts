@@ -348,8 +348,37 @@ export class LinuxTerminalSession extends TerminalSession {
     return `${user}@${hostname}:${path}${promptChar} `;
   }
 
-  /** Structured prompt parts for the colored prompt renderer. */
-  getPromptParts() {
+  /**
+   * Structured prompt parts for the colored prompt renderer. When the
+   * session is currently driven by a foreign sub-shell (SSH'd into a
+   * Windows / Cisco / Huawei host, or sitting in sqlplus / rman / sftp),
+   * the bash-style `user@host:path$` segmentation does not apply —
+   * `foreign: true` tells the renderer to ignore the parts and call
+   * `getPrompt()` (which delegates to the active sub-shell) instead.
+   */
+  getPromptParts(): {
+    user: string; hostname: string; path: string; promptChar: string;
+    foreign?: boolean;
+  } {
+    if (this.activeSubShell) {
+      const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind
+        ?? (this.activeSubShell as { inner?: { kind?: string } }).inner?.kind
+        ?? '';
+      // bash-emitting sub-shells (the SSH'd bash) keep the linux
+      // user@host:path$ format because they ARE linux.
+      const innerTop = this.subShellInnerTopKind();
+      const effectiveKind = kind === 'ssh-remote' && innerTop ? innerTop : kind;
+      const linuxLike = effectiveKind === '' || effectiveKind.includes('bash');
+      if (!linuxLike) {
+        return {
+          user: this.currentUser,
+          hostname: this.device.getHostname() || 'localhost',
+          path: this.currentPath,
+          promptChar: '$',
+          foreign: true,
+        };
+      }
+    }
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
     const homeDir = user === 'root' ? '/root' : `/home/${user}`;
@@ -358,6 +387,12 @@ export class LinuxTerminalSession extends TerminalSession {
     else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
     const promptChar = user === 'root' ? '#' : '$';
     return { user, hostname, path, promptChar };
+  }
+
+  /** Peek inside an SSH-remote adapter to learn the inner top-of-stack kind. */
+  private subShellInnerTopKind(): string | null {
+    const inner = (this.activeSubShell as { inner?: { topKind?: string; primaryKind?: string } }).inner;
+    return inner?.topKind ?? inner?.primaryKind ?? null;
   }
 
   getInfoBarContent() {
@@ -631,10 +666,19 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Command execution ───────────────────────────────────────────
 
   protected onEnter(): void {
-    const cmd = this.input;
+    // Drain BOTH input buffers — `this.input` is the canonical local
+    // console buffer, `_inputBuf` is the sub-shell buffer. When a
+    // sub-shell unwinds back to the root bash, programmatic drivers /
+    // tests that keep using `setInputBuf` should still reach the local
+    // shell instead of being silently dropped. Real interactive use
+    // only fills one buffer at a time; the OR is a no-op there.
+    const cmd = this.input || this._inputBuf;
     this.input = '';
+    this._inputBuf = '';
     this.tabSuggestions = null;
-    this.recordEvent('input', cmd);
+    // The 'input' record event is emitted by addEchoLine inside
+    // executeCommand — recording here too would duplicate every typed
+    // command in the session transcript.
     this.executeCommand(cmd);
     this.notify();
   }
@@ -643,7 +687,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const typed = cmd.trim();
     const trimmed = this.resolveActionLine(typed);
 
-    this.addLine(`${this.getPrompt()}${cmd}`);
+    this.addEchoLine(this.getPrompt(), cmd);
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
@@ -1033,11 +1077,23 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.shell) {
       this.currentPath = this.shell.cwd;
       this.currentUser = this.shell.user;
-    } else {
+      this.notify();
+      return;
+    }
+    // SSH-pushed onto a non-Linux device (no LinuxShellSession on the
+    // remote). The SSH user we authenticated as is the authoritative
+    // identity for the duration of the push; reading the device's
+    // local-console user would drift back to e.g. 'user' on a Windows
+    // host and break the prompt mid-session.
+    if (this.sshStack.length > 0) {
       const cwd = this.device.getCwd();
       if (cwd) this.currentPath = cwd;
-      this.currentUser = this.device.getCurrentUser();
+      this.notify();
+      return;
     }
+    const cwd = this.device.getCwd();
+    if (cwd) this.currentPath = cwd;
+    this.currentUser = this.device.getCurrentUser();
     this.notify();
   }
 
@@ -1401,7 +1457,7 @@ export class LinuxTerminalSession extends TerminalSession {
       if (!line || line.startsWith('#')) continue;
       const ignoreErrors = line.startsWith('-');
       const cmd = ignoreErrors ? line.slice(1).trim() : line;
-      this.addLine(`${shell.getPrompt()}${cmd}`);
+      this.addEchoLine(shell.getPrompt(), cmd);
       const result = shell.processLine(cmd);
       for (const out of result.output) {
         if (out) this.addLine(out);
@@ -1723,7 +1779,21 @@ export class LinuxTerminalSession extends TerminalSession {
 
     const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (anyRemoteDevice) {
-      this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      // Non-Linux peers (Windows / Cisco / Huawei) need their vendor
+      // shell on the stack — otherwise the terminal renders the bash
+      // prompt for a Windows cwd and routes commands to the bare
+      // device.executeCommand, so `powershell` / mode-switches never
+      // engage. Linux peers keep the generic push (no foreign shell).
+      const vendorStrategy = anyRemoteDevice instanceof LinuxMachine
+        ? null
+        : pickVendorPromptStrategy(anyRemoteDevice);
+      if (vendorStrategy) {
+        this.pushRemoteDeviceWithStrategy(
+          anyRemoteDevice, user, host, vendorStrategy, onSessionEnd,
+        );
+      } else {
+        this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      }
       return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
@@ -2264,7 +2334,7 @@ export class LinuxTerminalSession extends TerminalSession {
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.subShellSavedInput = '';
-      this.addLine(`${this.activeSubShell.getPrompt()}${line}`);
+      this.addEchoLine(this.activeSubShell.getPrompt(), line);
 
       // Push non-empty lines to sub-shell history
       if (line.trim()) {
@@ -2359,7 +2429,13 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     if (e.key === 'd' && e.ctrlKey) {
-      this.exitSubShell();
+      // Consult the inner shell — only POSIX-style shells (bash, sftp,
+      // sqlplus, …) honour Ctrl+D as EOF. cmd.exe and PowerShell do not.
+      // The ShellSubShellAdapter forwards to its IShell's classifyKey and
+      // returns true iff the action is `eof`. We pop only then.
+      const isEof = !!(this.activeSubShell as { handleKey?: (e: KeyEvent) => boolean })
+        .handleKey?.(e);
+      if (isEof) this.exitSubShell();
       return true;
     }
 

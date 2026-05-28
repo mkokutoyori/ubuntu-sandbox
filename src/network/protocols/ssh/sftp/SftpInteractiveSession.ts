@@ -11,6 +11,22 @@
 import type { ISftpFileSystem } from './ISftpFileSystem';
 import type { SftpCommand, SftpCommandParseError } from './SftpCommand';
 import type { SftpCommandScript, SftpScriptEntry } from './SftpCommandScript';
+import type { SshError } from '../Result';
+
+function sshErrorMessage(e: SshError): string {
+  switch (e.kind) {
+    case 'IO_ERROR':           return e.message;
+    case 'PERMISSION_DENIED':  return 'Permission denied';
+    case 'INVALID_ARGUMENT':   return e.message;
+    case 'CONNECTION_REFUSED': return 'Connection refused';
+    case 'NOT_AUTHENTICATED':  return 'Not authenticated';
+    case 'AUTH_FAILED':        return 'Authentication failed';
+    case 'CHANNEL_ERROR':      return e.message;
+    case 'UNKNOWN_OP':         return `unknown op ${e.op}`;
+    case 'HOST_KEY_CHANGED':   return 'host key changed';
+    case 'HOST_KEY_REJECTED':  return 'host key rejected';
+  }
+}
 
 export interface SftpSessionInit {
   readonly local: ISftpFileSystem;
@@ -125,32 +141,32 @@ export class SftpInteractiveSession {
   private doMkdir(path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.mkdir(target);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `mkdir ${path}`, reason: 'mkdir failed' });
+    if (!r.ok) this.recordError({ kind: 'parse', line: `mkdir ${path}`, reason: `Couldn't create directory: ${sshErrorMessage(r.error)}` });
   }
 
   private doRmdir(path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.rmdir(target);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `rmdir ${path}`, reason: 'rmdir failed' });
+    if (!r.ok) this.recordError({ kind: 'parse', line: `rmdir ${path}`, reason: `Couldn't remove directory: ${sshErrorMessage(r.error)}` });
   }
 
   private doRm(path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.deleteFile(target);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `rm ${path}`, reason: 'unlink failed' });
+    if (!r.ok) this.recordError({ kind: 'parse', line: `rm ${path}`, reason: `Couldn't delete file: ${sshErrorMessage(r.error)}` });
   }
 
   private doChmod(mode: number, path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.setPermissions(target, mode);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `chmod ${mode.toString(8)} ${path}`, reason: 'chmod failed' });
+    if (!r.ok) this.recordError({ kind: 'parse', line: `chmod ${mode.toString(8)} ${path}`, reason: `Couldn't setstat on "${target}": ${sshErrorMessage(r.error)}` });
   }
 
   private doRename(src: string, dst: string): void {
     const a = this.remote.normalizePath(src, this.remoteCwd);
     const b = this.remote.normalizePath(dst, this.remoteCwd);
     const r = this.remote.rename(a, b);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `rename ${src} ${dst}`, reason: 'rename failed' });
+    if (!r.ok) this.recordError({ kind: 'parse', line: `rename ${src} ${dst}`, reason: `Couldn't rename file "${a}" to "${b}": ${sshErrorMessage(r.error)}` });
   }
 
   private recordError(e: SftpCommandParseError): void {

@@ -228,7 +228,7 @@ export abstract class LinuxMachine extends EndHost {
    *   - AllowUsers patterns (glob *) — when present, user must match one
    *   - DenyUsers takes precedence over AllowUsers
    */
-  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+  sshdAcceptsLogin(user: string, ctx?: { address?: string; host?: string }): { ok: boolean; reason?: string } {
     const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
     const config = SshdServerConfig.parse(raw);
 
@@ -236,7 +236,8 @@ export abstract class LinuxMachine extends EndHost {
     if (user === 'root' && policy !== 'yes') {
       return { ok: false, reason: `PermitRootLogin ${policy}` };
     }
-    if (!config.isUserAllowed(user, [])) {
+    const userGroups = (this.executor.userMgr.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    if (!config.isUserAllowed(user, userGroups, ctx)) {
       const denied = config.denyUsers.some(p => globMatch(p, user));
       return { ok: false, reason: denied ? 'DenyUsers match' : 'not in AllowUsers' };
     }
@@ -283,20 +284,21 @@ export abstract class LinuxMachine extends EndHost {
     accepted: boolean,
     authMethod: 'password' | 'publickey' = 'password',
   ): void {
-    // Only write to auth.log when the local rsyslog is up — modelling
-    // the realistic dependency the suite exercises.
-    if (this.isServiceActive('rsyslog')) {
-      const vfs = this.executor.vfs;
-      const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-      const verdict = accepted ? `Accepted ${authMethod}` : 'Failed password';
-      const line = `${ts} ${this.profile.hostname} sshd[985]: ${verdict} for ${user} from ${fromIp} (${fromHost}) port 50000 ssh2\n`;
-      const existing = vfs.readFile('/var/log/auth.log') ?? '';
-      vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+    const events = this.getSshServerContext().events;
+    if (accepted) {
+      events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, fromHost, port: 50000 });
+    } else {
+      events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: 'authentication failure' });
     }
     // Track active sessions in the session table for `w`, `who`, `last`.
     if (accepted) {
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
+      // Persist this login as the user's "last login" before we open
+      // the new session — the OpenSSH banner is computed BEFORE this
+      // call by sshLauncher so it sees the previous record, never the
+      // one we're recording right now.
+      this.rememberLastSshLogin(user, fromIp);
       this.sessionTable.open({
         user, uid, sshdPid: 985 + this.sessionTable.list().length,
         fromIp, fromHost,
@@ -458,6 +460,23 @@ export abstract class LinuxMachine extends EndHost {
     // currently logged-in user even before any SSH connect happens.
     return t;
   })();
+
+  /**
+   * Per-user record of the most recent SUCCESSFUL SSH login. Read by
+   * the sshLauncher banner to produce the OpenSSH "Last login: <date>
+   * from <ip>" line. The simulator's analogue of `/var/log/lastlog`.
+   */
+  private readonly lastSshLoginByUser = new Map<string, { at: Date; from: string }>();
+
+  /** sshLauncher contract — returns the previous login for `user` (if any). */
+  getLastSshLoginFor(user: string): { at: Date; from: string } | null {
+    return this.lastSshLoginByUser.get(user) ?? null;
+  }
+
+  /** Push a new last-login entry; called from `recordSshLogin` on accept. */
+  private rememberLastSshLogin(user: string, fromIp: string): void {
+    this.lastSshLoginByUser.set(user, { at: new Date(), from: fromIp });
+  }
 
   /** Ensure a tty=tty1 console session exists for the local user. */
   private ensureLocalConsoleSession(): void {
@@ -640,6 +659,8 @@ export abstract class LinuxMachine extends EndHost {
     const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
     const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
     this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
+    (this.executor as unknown as { sshContextForFail2ban?: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null })
+      .sshContextForFail2ban = () => this.getSshServerContext();
     return this._sshContext;
   }
 

@@ -15,12 +15,12 @@ import { useState, useCallback, useMemo, useEffect, useSyncExternalStore } from 
 import { DevicePalette } from './DevicePalette';
 import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
+import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
 import { TerminalModal } from './TerminalModal';
 import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
-import type { DeviceType } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
 import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
 import { cn } from '@/lib/utils';
@@ -31,9 +31,9 @@ export type TileLayout = 'stack' | 'split-h' | 'split-v' | 'grid' | 'master-stac
 
 export function NetworkDesigner() {
   const [projectName, setProjectName] = useState('My Network');
-  const [, setDraggingDevice] = useState<DeviceType | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   // Tiling state
   const [tileLayout, setTileLayout] = useState<TileLayout>('grid');
@@ -303,6 +303,8 @@ export function NetworkDesigner() {
         hasDevices={devices.length > 0}
         onExport={handleExport}
         onImport={handleImport}
+        logsOpen={logsOpen}
+        onToggleLogs={() => setLogsOpen(o => !o)}
       />
 
       <div className={cn(
@@ -312,7 +314,7 @@ export function NetworkDesigner() {
         {/* Left sidepane */}
         <div className="relative flex">
           <div className={`transition-all duration-300 ease-in-out overflow-hidden ${leftCollapsed ? 'w-0' : 'w-auto'}`}>
-            <DevicePalette onDragStart={setDraggingDevice} />
+            <DevicePalette />
           </div>
           <button
             onClick={() => setLeftCollapsed(prev => !prev)}
@@ -338,6 +340,12 @@ export function NetworkDesigner() {
             <PropertiesPanel />
           </div>
         </div>
+
+        {/* Network logs panel (slide-in from the right edge). Lives in the
+            same column as Properties so opening it doesn't reflow the
+            canvas. The Logger backend already buffers every event; we
+            just surface it. */}
+        {logsOpen && <NetworkLogsPanel />}
       </div>
 
       {/* ── Terminal tile overlay ── */}

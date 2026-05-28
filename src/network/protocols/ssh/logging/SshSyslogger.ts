@@ -16,6 +16,7 @@
  */
 
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { LinuxLogManager } from '@/network/devices/linux/LinuxLogManager';
 import type {
   ISshServerEventBus,
   SshServerEvent,
@@ -37,6 +38,14 @@ export interface SshSysloggerOptions {
   readonly port?: number;
   /** Optional clock override for deterministic tests. */
   readonly clock?: () => Date;
+  /**
+   * Optional bridge to the device's systemd journal. When supplied the same
+   * message that lands in `/var/log/auth.log` is also recorded as a journal
+   * entry under unit `sshd` — so `journalctl -u sshd` and the file stay
+   * coherent, matching the behaviour of a real Ubuntu host where rsyslog
+   * and systemd-journald both see every authpriv message.
+   */
+  readonly logMgr?: LinuxLogManager;
 }
 
 /**
@@ -49,6 +58,7 @@ export class SshSyslogger {
   private readonly sshdPid: number;
   private readonly port: number;
   private readonly clock: () => Date;
+  private readonly logMgr: LinuxLogManager | null;
   private readonly unsubscribe: () => void;
 
   constructor(
@@ -60,6 +70,7 @@ export class SshSyslogger {
     this.sshdPid = opts.sshdPid ?? 1000 + Math.floor(Math.random() * 9000);
     this.port = opts.port ?? 22;
     this.clock = opts.clock ?? (() => new Date());
+    this.logMgr = opts.logMgr ?? null;
     this.unsubscribe = bus.on('*', (e) => this.handle(e));
   }
 
@@ -85,15 +96,18 @@ export class SshSyslogger {
       case 'client_connected':
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${this.hostname} port ${this.port}`;
 
-      case 'auth_success':
+      case 'auth_success': {
+        const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
         if (event.method === 'publickey' && event.keyFingerprint) {
-          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
+          return `Accepted publickey for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
         }
-        return `Accepted ${event.method} for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
+        return `Accepted ${event.method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
+      }
 
       case 'auth_failure': {
         const method = event.method ?? 'unknown';
-        return `Failed ${method} for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
+        const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
+        return `Failed ${method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
       }
 
       case 'auth_invalid_user':
@@ -110,6 +124,9 @@ export class SshSyslogger {
       }
 
       case 'channel_opened':
+        if (event.channelType === 'sftp') {
+          return `subsystem request for sftp by user ${event.user}`;
+        }
         return `pam_unix(sshd:session): session opened for user ${event.user} (channel ${event.channelType})`;
 
       case 'channel_closed':
@@ -121,6 +138,19 @@ export class SshSyslogger {
   }
 
   private append(message: string): void {
+    // When wired to a LinuxLogManager the journal owns BOTH the on-disk
+    // `/var/log/auth.log` (via addEntry → appendToLogFile) and the live
+    // `journalctl` feed — writing the file again here would duplicate
+    // every event. Real Ubuntu has the same single-writer property:
+    // rsyslogd is the only process appending to /var/log/auth.log;
+    // sshd talks to it via syslog(3).
+    if (this.logMgr) {
+      // tag = 'sshd' (syslog identifier) but unit = 'ssh' (systemd
+      // unit name on Ubuntu), so `journalctl -u ssh` returns these
+      // and the file line still reads `… sshd[<pid>]: …`.
+      this.logMgr.logAuth('sshd', message, this.sshdPid, 'ssh');
+      return;
+    }
     if (!this.vfs.exists(LOG_DIR)) this.vfs.mkdirp(LOG_DIR, 0o755, 0, 0);
     const line = `${this.timestamp()} ${this.hostname} sshd[${this.sshdPid}]: ${message}\n`;
     const existing = this.vfs.readFile(AUTH_LOG_PATH) ?? '';

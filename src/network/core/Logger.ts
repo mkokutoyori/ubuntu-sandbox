@@ -142,7 +142,27 @@ class LoggerSingleton {
     return this.logs.filter(l => l.source === source);
   }
 
-  /** Clear all logs and subscriptions */
+  /** Clear the in-memory log buffer. Leaves subscribers attached so the
+   *  UI panel keeps receiving NEW events after the user hits "clear". */
+  clear(): void {
+    this.logs = [];
+    // Notify subscribers with a synthetic event so they redraw the
+    // empty state — equivalent to `journalctl --rotate` followed by an
+    // immediate read.
+    for (const sub of this.subscriptions) {
+      try {
+        sub.subscriber({
+          timestamp: Date.now(),
+          level: 'info',
+          source: 'logger',
+          event: 'log:cleared',
+          message: 'buffer cleared',
+        });
+      } catch { /* swallow */ }
+    }
+  }
+
+  /** Hard reset — buffer AND subscriptions. Used by test fixtures. */
   reset(): void {
     this.logs = [];
     this.subscriptions = [];

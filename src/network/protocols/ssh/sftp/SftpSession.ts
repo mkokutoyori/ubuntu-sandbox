@@ -144,7 +144,8 @@ export class SftpSession {
     const resp = this.channel.sendRequest({ op: 'cd', path: target });
     if (!resp.ok) {
       const msg = String(resp.error ?? '');
-      if (msg.includes('not a directory')) return `${path}: Not a directory`;
+      if (/not a directory/i.test(msg)) return `${path}: Not a directory`;
+      if (/permission denied/i.test(msg)) return `Couldn't canonicalize: Permission denied`;
       return `Couldn't canonicalize: No such file or directory`;
     }
     if (typeof resp.cwd === 'string') this.remoteCwd = resp.cwd;

@@ -5,15 +5,10 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
 import { DEVICE_CATEGORIES } from '@/network';
-import type { DeviceType } from '@/network';
 import { DeviceIcon } from './DeviceIcon';
 import { cn } from '@/lib/utils';
 
-interface DevicePaletteProps {
-  onDragStart: (type: DeviceType) => void;
-}
-
-export function DevicePalette({ onDragStart }: DevicePaletteProps) {
+export function DevicePalette() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(
     DEVICE_CATEGORIES.map(c => c.id)
   );
@@ -60,7 +55,7 @@ export function DevicePalette({ onDragStart }: DevicePaletteProps) {
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('deviceType', device.type);
-                      onDragStart(device.type);
+                      e.dataTransfer.effectAllowed = 'copy';
                     }}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg cursor-grab",

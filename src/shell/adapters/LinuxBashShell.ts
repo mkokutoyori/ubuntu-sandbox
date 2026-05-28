@@ -17,8 +17,30 @@ import { ShellFactory } from '../ShellFactory';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
+  runSshExec,
   type PendingSshAuth,
 } from '../sshLauncher';
+
+/** Extract the trailing command from `ssh user@host cmd args` if any. */
+function parseSshExecCommand(line: string): string | null {
+  // Crude but sufficient: split on whitespace, skip the leading `ssh`
+  // and any flag-value pairs, drop the first non-flag token (the host),
+  // and return the rest. Returns null when there is no remainder.
+  const tokens = line.trim().split(/\s+/);
+  if (tokens[0] !== 'ssh') return null;
+  let i = 1;
+  const valueFlags = new Set(['-p', '-i', '-l', '-o', '-b', '-c', '-D', '-E', '-F', '-I', '-J', '-L', '-R', '-S', '-W']);
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (t === '-V') return null;
+    if (valueFlags.has(t)) { i += 2; continue; }
+    if (t.startsWith('-')) { i++; continue; }
+    break;
+  }
+  // tokens[i] is the user@host. Anything after is the exec command.
+  if (i + 1 >= tokens.length) return null;
+  return tokens.slice(i + 1).join(' ');
+}
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { nextLineId } from '@/terminal/sessions/TerminalSession';
@@ -41,6 +63,10 @@ export interface LinuxBashShellOptions extends AbstractShellOptions {
    * call sites that omit this flag keep the old close-on-dispose behaviour.
    */
   readonly ownsSession?: boolean;
+  /** OpenSSH-style SSH_CONNECTION string — set on the session env. */
+  readonly sshConnection?: string;
+  /** OpenSSH-style SSH_CLIENT string — set on the session env. */
+  readonly sshClient?: string;
 }
 
 interface LinuxDevice {
@@ -56,6 +82,10 @@ export class LinuxBashShell extends AbstractShell {
   private readonly ownsSession: boolean;
   /** Pending nested-ssh auth waiting for the user's password. */
   private pendingSshAuth: PendingSshAuth | null = null;
+  /** Remote command to exec after auth (exec mode); null = push a shell. */
+  private pendingExecCommand: string | null = null;
+  /** Per-shell known_hosts tracker — first connection prints the warning. */
+  private readonly knownHostsTracker = new Set<string>();
 
   constructor(opts: LinuxBashShellOptions) {
     super(opts);
@@ -68,6 +98,13 @@ export class LinuxBashShell extends AbstractShell {
         cwd: opts.context.cwd,
       });
       this.ownsSession = true;
+      // Inject OpenSSH-style env vars when this shell is the remote side
+      // of an SSH connection. `echo $SSH_CONNECTION` on the remote then
+      // returns the same shape as real ssh: "client_ip client_port
+      // server_ip server_port".
+      if (opts.sshConnection) this.session.env.set('SSH_CONNECTION', opts.sshConnection);
+      if (opts.sshClient) this.session.env.set('SSH_CLIENT', opts.sshClient);
+      if (opts.connection === 'ssh') this.session.env.set('SSH_TTY', `/dev/${this.session.tty}`);
     } else {
       this.ownsSession = false;
     }
@@ -93,6 +130,28 @@ export class LinuxBashShell extends AbstractShell {
 
   override getDeactivationBanner(): readonly string[] {
     return ['logout'];
+  }
+
+  /** Real bash recognises `clear` and `reset`, NOT `cls`. */
+  protected override clearWords: ReadonlySet<string> = new Set(['clear', 'reset']);
+
+  /**
+   * Completion runs in THIS bash's session context (cwd / env / suStack)
+   * so path completion sees the per-shell cwd, not the device-wide
+   * default. Without this override, an SSH'd bash sitting in /etc would
+   * complete relative to the device's local-console cwd — a bleed
+   * regression equivalent to the per-terminal cwd issue
+   * `terminal_gap.md §6` describes for Windows.
+   */
+  override getCompletions(line: string): readonly string[] {
+    const dev = this.device as unknown as {
+      getCompletionsForSession?: (p: string, s: LinuxShellSession) => string[];
+      getCompletions?: (p: string) => string[];
+    };
+    if (this.session && dev.getCompletionsForSession) {
+      return dev.getCompletionsForSession(line, this.session);
+    }
+    return dev.getCompletions ? dev.getCompletions(line) : [];
   }
 
   /**
@@ -136,14 +195,22 @@ export class LinuxBashShell extends AbstractShell {
       }
     }
 
-    // ssh launch intercept: shared helper resolves the target. On
-    // success we ask the OUTER terminal for the password via the
-    // `pendingInput` directive — the OS-style "alice@host's password: "
-    // challenge — and finalise the launch in handleInput().
-    const sshAttempt = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    // ssh launch intercept: shared helper resolves the target. Handles
+    // -V, exec mode, network errors, and pending auth — emits the rich
+    // OpenSSH banner (known_hosts, MOTD, Last login) on success.
+    const sshAttempt = await tryInterpretSshLaunch(line, {
+      defaultUser: this.user,
+      knownHostsTracker: this.knownHostsTracker,
+      sourceIp: firstConfiguredIp(this.device),
+      sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
+    });
     if (sshAttempt) {
-      if (sshAttempt.kind === 'error') return sshAttempt.result;
+      if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
+          || sshAttempt.kind === 'exec') {
+        return sshAttempt.result;
+      }
       this.pendingSshAuth = sshAttempt.pendingAuth;
+      this.pendingExecCommand = parseSshExecCommand(line);
       return sshAttempt.result;
     }
 
@@ -203,13 +270,28 @@ export class LinuxBashShell extends AbstractShell {
     const auth = this.pendingSshAuth;
     if (!auth) return { output: [] };
 
-    const child = finalisePendingAuth(auth, value);
-    if (child) {
+    const finalised = finalisePendingAuth(auth, value);
+    if (finalised) {
+      const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
-      return { output: [], childShell: child };
+      this.pendingExecCommand = null;
+      // Exec mode: run the one-shot command then dispose the freshly
+      // built shell — we never push it onto the stack.
+      if (execCmd !== null) {
+        const lines = await runSshExec(auth, execCmd);
+        finalised.shell.dispose();
+        return { output: [...finalised.banner, ...lines] };
+      }
+      // Interactive login: hand the shell back as a child plus the
+      // OpenSSH banner the host terminal will write before activating.
+      return {
+        output: [...finalised.banner],
+        childShell: finalised.shell,
+      };
     }
     if (auth.attempts >= SSH_MAX_ATTEMPTS) {
       this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
       return {
         output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`],
       };
@@ -227,3 +309,14 @@ export class LinuxBashShell extends AbstractShell {
 // eslint-disable-next-line no-control-regex
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
 function stripAnsi(s: string): string { return s.replace(ANSI_REGEX, ''); }
+
+/** First configured IP of a device — used to label SSH source addresses. */
+function firstConfiguredIp(dev: unknown): string | undefined {
+  const ports = (dev as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
+  if (!ports) return undefined;
+  for (const port of ports.values()) {
+    const ip = port.getIPAddress?.();
+    if (ip) return ip.toString();
+  }
+  return undefined;
+}

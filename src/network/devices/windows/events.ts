@@ -49,6 +49,12 @@ export interface WindowsLogonEventPayload extends WindowsDeviceRef {
   logonType: number;
 }
 
+export interface WindowsLogoffEventPayload extends WindowsDeviceRef {
+  account: string;
+  /** Windows logon type of the session that ended (mirrors the 4624 it pairs with). */
+  logonType: number;
+}
+
 // ─── Group lifecycle ────────────────────────────────────────────────────
 
 export interface WindowsGroupEventPayload extends WindowsDeviceRef {
@@ -92,6 +98,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.account.changed'; payload: WindowsAccountChangedPayload }
   | { topic: 'windows.account.logon'; payload: WindowsLogonEventPayload }
+  | { topic: 'windows.account.logoff'; payload: WindowsLogoffEventPayload }
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }

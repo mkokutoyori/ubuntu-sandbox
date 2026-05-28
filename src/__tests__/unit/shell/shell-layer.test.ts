@@ -92,6 +92,11 @@ async function typeInSubShell(session: WindowsTerminalSession, line: string): Pr
 class FakeShell extends AbstractShell {
   readonly kind = 'fake';
   dispatched: string[] = [];
+  // Explicit clearWords — AbstractShell no longer ships defaults so each
+  // vendor declares the words it actually recognises (real cmd has cls,
+  // real bash has clear, real PS has both). The fake exercises both so
+  // the pipeline test covers the two-word case.
+  protected override clearWords = new Set(['clear', 'cls']);
   constructor(opts: AbstractShellOptions) { super(opts); }
   getPrompt(): string { return `${this.user}@fake$ `; }
   protected dispatch(line: string): ShellLineResult {
@@ -218,14 +223,16 @@ describe('§C — CrossVendorRemoteShell composite', () => {
     expect(x.isFinished).toBe(true);
   });
 
-  test('clear / cls inside the remote shell propagates clearScreen=true', async () => {
+  test('vendor-correct clearWords inside the remote shell propagate clearScreen=true', async () => {
     const lan = await buildLan();
-    const x = new CrossVendorRemoteShell({
+    // cmd recognises `cls` only (real cmd treats `clear` as an unknown
+    // external command). The CVRS-cmd composite must mirror that.
+    const xCmd = new CrossVendorRemoteShell({
       device: lan.winB, user: 'User',
       remoteHost: '10.0.0.4', primaryKind: 'cmd',
     });
-    expect((await x.processLine('cls')).clearScreen).toBe(true);
-    expect((await x.processLine('clear')).clearScreen).toBe(true);
+    expect((await xCmd.processLine('cls')).clearScreen).toBe(true);
+    expect((await xCmd.processLine('clear')).clearScreen).toBeFalsy();
   });
 
   test('a child shell pushed from the primary intercepts subsequent lines', async () => {

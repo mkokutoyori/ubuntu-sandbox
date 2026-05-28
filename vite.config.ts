@@ -22,6 +22,19 @@ export default defineConfig(({ mode }) => ({
   define: {
     global: 'globalThis',
   },
+  // Preserve class/function names through minification. The simulator
+  // dispatches on `instance.constructor.name === 'WindowsPC'` (and a
+  // few siblings) to pick the vendor-specific SSH push path — under
+  // default esbuild minification those names become `W4`, `Jd`, … and
+  // the dispatch silently falls back to a generic shell, producing a
+  // Linux-format prompt on Windows hosts in production builds.
+  esbuild: {
+    keepNames: true,
+  },
+  build: {
+    // Same guard for the rollup/esbuild minifier used by `vite build`.
+    minify: 'esbuild',
+  },
   test: {
     globals: true,
     environment: 'node',

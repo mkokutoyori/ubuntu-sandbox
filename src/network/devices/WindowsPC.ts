@@ -22,6 +22,7 @@ import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
+import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
@@ -252,6 +253,24 @@ export class WindowsPC extends EndHost {
   getSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
+    },
+    // Publish a `windows.account.logon` per inbound SSH auth attempt
+    // — the SecurityAuditProjection turns each into a 4624 / 4625 in
+    // the Security event log, matching what OpenSSH-for-Windows logs.
+    // Logon type 10 = RemoteInteractive, what sshd uses on real Windows.
+    (user, success) => {
+      this.getBus().publish({
+        topic: 'windows.account.logon',
+        payload: { deviceId: this.id, account: user, success, logonType: 10 },
+      });
+    },
+    // Paired logoff hook — turns into 4634 (Logoff) in the Security
+    // event log when the SSH session ends.
+    (user) => {
+      this.getBus().publish({
+        topic: 'windows.account.logoff',
+        payload: { deviceId: this.id, account: user, logonType: 10 },
+      });
     });
   }
 
@@ -504,6 +523,23 @@ export class WindowsPC extends EndHost {
           return this.fs.createFile(p, c);
         },
       },
+    }).then(r => r.output);
+  }
+
+  private cmdSftp(args: string[]): Promise<string> {
+    const user = this.userMgr.currentUser;
+    let stdin: string | undefined;
+    if (args.length > 0 && args[args.length - 1].includes('\n')) {
+      stdin = args.pop();
+    }
+    return runWindowsSftpClient({
+      args,
+      stdin,
+      sourceHostname: this.hostname,
+      sourceIp: this.firstConfiguredIp() ?? '127.0.0.1',
+      sourceUser: user,
+      sourceHome: `C:\\Users\\${user}`,
+      localFs: this.fs,
     }).then(r => r.output);
   }
 
@@ -804,6 +840,7 @@ export class WindowsPC extends EndHost {
       case 'wevtutil': return cmdWevtutil(netCtx, args);
       case 'nslookup': return this.cmdNslookup(args);
       case 'ssh':      return this.cmdSsh(args);
+      case 'sftp':     return this.cmdSftp(args);
       default:
         return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     }
@@ -1656,6 +1693,10 @@ export class WindowsPC extends EndHost {
       this.env.set('HOMEPATH', `\\Users\\${this.userMgr.currentUser}`);
     }
   }
+
+  /** Override Equipment's hard-coded 'user' default so syncDeviceState
+   *  reports the real currently-logged-in account on this Windows host. */
+  override getCurrentUser(): string { return this.userMgr.currentUser; }
 
   /** Get the user manager (for PowerShellExecutor and other integrations) */
   getUserManager(): WindowsUserManager { return this.userMgr; }

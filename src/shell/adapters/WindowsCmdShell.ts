@@ -14,8 +14,25 @@ import { ShellFactory } from '../ShellFactory';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
+  runSshExec,
   type PendingSshAuth,
 } from '../sshLauncher';
+
+function parseSshExecCommandCmd(line: string): string | null {
+  const tokens = line.trim().split(/\s+/);
+  if (tokens[0]?.toLowerCase() !== 'ssh') return null;
+  let i = 1;
+  const valueFlags = new Set(['-p', '-i', '-l', '-o', '-b', '-c', '-D', '-E', '-F', '-I', '-J', '-L', '-R', '-S', '-W']);
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (t === '-V') return null;
+    if (valueFlags.has(t)) { i += 2; continue; }
+    if (t.startsWith('-')) { i++; continue; }
+    break;
+  }
+  if (i + 1 >= tokens.length) return null;
+  return tokens.slice(i + 1).join(' ');
+}
 
 const SSH_MAX_ATTEMPTS = 3;
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -42,10 +59,57 @@ export class WindowsCmdShell extends AbstractShell {
 
   private readonly windowsSession: WindowsShellSession | null;
   private pendingSshAuth: PendingSshAuth | null = null;
+  private pendingExecCommand: string | null = null;
+  private readonly knownHostsTracker = new Set<string>();
+
+  /** Real cmd.exe only knows `cls`; typing `clear` produces a "not
+   *  recognized as an internal or external command" error. */
+  protected override clearWords: ReadonlySet<string> = new Set(['cls']);
+
+  /**
+   * cmd.exe does NOT recognise Ctrl+D as logout — only `exit` works.
+   * Override so a Linux user habituated to Ctrl+D does not accidentally
+   * drop out of a remote cmd session.
+   */
+  override classifyKey(e: import('../IShell').ShellKeyEvent): import('../IShell').ShellSpecialAction {
+    if (e.ctrlKey && e.key === 'd') return { kind: 'none' };
+    return super.classifyKey(e);
+  }
+
+  /** When true, the shell allocated its own WindowsShellSession and
+   *  must close it on dispose; when false, the session was supplied by
+   *  the caller (local cmd terminal) which owns its lifecycle. */
+  private readonly ownsSession: boolean;
 
   constructor(opts: WindowsCmdShellOptions) {
     super(opts);
-    this.windowsSession = opts.windowsSession ?? null;
+    if (opts.windowsSession) {
+      this.windowsSession = opts.windowsSession;
+      this.ownsSession = false;
+    } else if (opts.device instanceof WindowsPC) {
+      // No session passed (typical of an SSH-pushed cmd) — allocate one
+      // pointing at the SSH user's home so `cd` / `dir` / `mkdir`
+      // operate on the user's actual directory tree, not the device
+      // global cwd that would silently leak \C:\\Users\\User\\… into
+      // every SSH session.
+      this.windowsSession = opts.device.openShellSession({
+        user: opts.user,
+        cwd: opts.context.cwd && opts.context.cwd.length > 0
+          ? opts.context.cwd
+          : `C:\\Users\\${opts.user}`,
+      });
+      this.ownsSession = true;
+    } else {
+      this.windowsSession = null;
+      this.ownsSession = false;
+    }
+  }
+
+  protected override onDispose(): void {
+    if (this.windowsSession && this.ownsSession
+        && this.device instanceof WindowsPC) {
+      this.device.closeShellSession(this.windowsSession);
+    }
   }
 
   getPrompt(): string {
@@ -70,10 +134,19 @@ export class WindowsCmdShell extends AbstractShell {
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
     // ssh launch intercept — lets the user chain SSH from a remote cmd.
-    const sshAttempt = tryInterpretSshLaunch(line, { defaultUser: this.user });
+    const sshAttempt = await tryInterpretSshLaunch(line, {
+      defaultUser: this.user,
+      knownHostsTracker: this.knownHostsTracker,
+      sourceIp: firstConfiguredIpCmd(this.device),
+      sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
+    });
     if (sshAttempt) {
-      if (sshAttempt.kind === 'error') return sshAttempt.result;
+      if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
+          || sshAttempt.kind === 'exec') {
+        return sshAttempt.result;
+      }
       this.pendingSshAuth = sshAttempt.pendingAuth;
+      this.pendingExecCommand = parseSshExecCommandCmd(line);
       return sshAttempt.result;
     }
 
@@ -111,13 +184,21 @@ export class WindowsCmdShell extends AbstractShell {
   async handleInput(value: string): Promise<ShellLineResult> {
     const auth = this.pendingSshAuth;
     if (!auth) return { output: [] };
-    const child = finalisePendingAuth(auth, value);
-    if (child) {
+    const finalised = finalisePendingAuth(auth, value);
+    if (finalised) {
+      const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
-      return { output: [], childShell: child };
+      this.pendingExecCommand = null;
+      if (execCmd !== null) {
+        const lines = await runSshExec(auth, execCmd);
+        finalised.shell.dispose();
+        return { output: [...finalised.banner, ...lines] };
+      }
+      return { output: [...finalised.banner], childShell: finalised.shell };
     }
     if (auth.attempts >= SSH_MAX_ATTEMPTS) {
       this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
       return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
     }
     return {
@@ -125,4 +206,14 @@ export class WindowsCmdShell extends AbstractShell {
       pendingInput: { kind: 'password', promptText: `${auth.user}@${auth.host}'s password: ` },
     };
   }
+}
+
+function firstConfiguredIpCmd(dev: unknown): string | undefined {
+  const ports = (dev as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
+  if (!ports) return undefined;
+  for (const port of ports.values()) {
+    const ip = port.getIPAddress?.();
+    if (ip) return ip.toString();
+  }
+  return undefined;
 }

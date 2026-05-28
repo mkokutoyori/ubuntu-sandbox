@@ -98,6 +98,7 @@ export class LinuxLogManager {
    * keeps recording, so `journalctl` still works.
    */
   private syslogDaemonActive = true;
+  private journaldActive = true;
   private busUnsub: Unsubscribe[] = [];
 
   constructor(private vfs: VirtualFileSystem) {
@@ -118,12 +119,15 @@ export class LinuxLogManager {
     this.busUnsub = [
       bus.subscribeWhere('linux.service.stopped', isSyslog, (e) => {
         if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = false;
+        if (e.payload.name === 'systemd-journald') this.journaldActive = false;
       }),
       bus.subscribeWhere('linux.service.started', isSyslog, (e) => {
         if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = true;
+        if (e.payload.name === 'systemd-journald') this.journaldActive = true;
       }),
       bus.subscribeWhere('linux.service.restarted', isSyslog, () => {
         this.syslogDaemonActive = true;
+        this.journaldActive = true;
       }),
     ];
   }
@@ -171,14 +175,21 @@ export class LinuxLogManager {
    * to keep `/var/log/auth.log` (and the journal) coherent with account
    * changes. `tag` is the responsible program (`useradd`, `passwd`, …).
    */
-  logAuth(tag: string, message: string): void {
+  logAuth(tag: string, message: string, pid?: number, unit?: string): void {
     this.addEntry({
       priority: PRIORITY_NAMES.info,
       facility: FACILITY_NAMES.auth,
-      unit: tag,
+      // Ubuntu's systemd unit for sshd is `ssh.service`, even though
+      // the binary identifies itself as `sshd` in syslog lines. Let
+      // callers split the two so `journalctl -u ssh` works and the
+      // file line still reads `sshd[<pid>]:`.
+      unit: unit ?? tag,
       tag,
       message,
-      pid: this.nextPid++,
+      // Daemons like sshd keep a stable PID across forked sessions; the
+      // caller passes its own so `journalctl -u ssh` shows that single
+      // pid instead of one per emitted line.
+      pid: pid ?? this.nextPid++,
       hostname: this.hostname,
     });
   }
@@ -219,7 +230,6 @@ export class LinuxLogManager {
 
   // ── journalctl command ─────────────────────────────────────────
   executeJournalctl(args: string[]): string {
-    // Handle management commands first
     for (const arg of args) {
       if (arg === '--version') return 'systemd 249 (249.11-0ubuntu3)';
       if (arg === '--disk-usage') return this.cmdDiskUsage();
@@ -230,8 +240,9 @@ export class LinuxLogManager {
       if (arg.startsWith('--vacuum-size')) return 'Vacuuming done, freed 0B of archived journals.';
     }
 
-    // Parse query options
-    let n = -1;  // -1 = show all
+    if (!this.journaldActive) return 'No journal files were found.';
+
+    let n = -1;
     let reverse = false;
     let quiet = false;
     let outputFormat = 'short';

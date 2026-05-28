@@ -286,7 +286,10 @@ export class BashInterpreter {
         const fullArgs = pipeInput ? [...args, pipeInput] : args;
         const envSnapshot = Object.fromEntries(this.env.getAll());
         const result = normalizeResult(this.executeCommand(fullArgs, envSnapshot));
-        if (result.output) this.output.push(ensureTrailingNewline(result.output));
+        if (result.output) {
+          // Verbatim on redirect (binary-safe); add trailing newline only when going to the terminal.
+          this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+        }
         this.env.lastExitCode = result.exitCode;
       } catch {
         this.env.lastExitCode = 127;

@@ -501,6 +501,17 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
   if (sessionType === 'linux') {
     const linux = session as LinuxTerminalSession;
     const p = linux.getPromptParts();
+    // Foreign sub-shell (SSH'd into Windows / Cisco / Huawei, sqlplus,
+    // sftp, …): the bash-style `user@host:path$` decomposition does not
+    // apply. Render the sub-shell's raw prompt verbatim so cmd shows
+    // `C:\Users\carl>`, PS shows `PS C:\Users\carl>`, IOS shows `R1#`, etc.
+    if (p.foreign) {
+      return (
+        <span className="whitespace-pre select-none" style={{ color: theme.promptColor, fontFamily: 'inherit' }}>
+          {session.getPrompt()}
+        </span>
+      );
+    }
     return (
       <span className="whitespace-pre select-none" style={{ fontFamily: 'inherit' }}>
         <span style={{ color: p.user === 'root' ? '#ef2929' : '#8ae234', fontWeight: 'bold' }}>{p.user}@{p.hostname}</span>
@@ -521,6 +532,35 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
 
 /** Render a single output line — exported for unit tests. */
 export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
+  // Echo line: the prompt is stored separately in `promptText` so it
+  // can be styled (and so test introspection on `text` sees only the
+  // typed command). Linux-style prompts decompose into user@host : path
+  // promptChar — preserve the colored rendering the legacy regex
+  // detector applied to whole-line scrollback strings.
+  if (line.promptText !== undefined) {
+    const linuxPromptMatch = sessionType === 'linux'
+      ? line.promptText.match(/^(\S+)@(\S+):(.+?)([$#])\s*$/)
+      : null;
+    if (linuxPromptMatch) {
+      const [, user, hostname, path, char] = linuxPromptMatch;
+      return (
+        <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit' }}>
+          <span style={{ color: user === 'root' ? '#ef2929' : '#8ae234', fontWeight: 'bold' }}>{user}@{hostname}</span>
+          <span style={{ color: '#ffffff' }}>:</span>
+          <span style={{ color: '#729fcf', fontWeight: 'bold' }}>{path}</span>
+          <span style={{ color: '#ffffff' }}>{char} </span>
+          <span style={{ color: theme.textColor }}>{line.text}</span>
+        </pre>
+      );
+    }
+    return (
+      <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit' }}>
+        <span style={{ color: theme.promptColor }}>{line.promptText}</span>
+        <span style={{ color: theme.textColor }}>{line.text}</span>
+      </pre>
+    );
+  }
+
   // Pre-styled segments take precedence — the shell that produced the
   // line already decided how it should look (used by SSH push to keep
   // ANSI rendering correct on a Windows host, etc.). Render verbatim.

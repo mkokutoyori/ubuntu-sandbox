@@ -76,15 +76,21 @@ export function parseSftpLine(rawLine: string): SftpCommand | SftpCommandParseEr
     case 'lcd':   return { verb: 'lcd',  path: args[0] ?? '/' };
     case 'pwd':   return { verb: 'pwd' };
     case 'lpwd':  return { verb: 'lpwd' };
-    case 'mkdir': return { verb: 'mkdir', path: args[0] ?? '' };
-    case 'rmdir': return { verb: 'rmdir', path: args[0] ?? '' };
+    case 'mkdir':
+      if (!args[0]) return { kind: 'parse', line, reason: 'Usage: mkdir path' };
+      return { verb: 'mkdir', path: args[0] };
+    case 'rmdir':
+      if (!args[0]) return { kind: 'parse', line, reason: 'Usage: rmdir path' };
+      return { verb: 'rmdir', path: args[0] };
     case 'rm':
     case 'delete':
-      return { verb: 'rm', path: args[0] ?? '' };
+      if (!args[0]) return { kind: 'parse', line, reason: 'Usage: rm path' };
+      return { verb: 'rm', path: args[0] };
     case 'chmod': {
       const mode = Number.parseInt(args[0] ?? '', 8);
       if (Number.isNaN(mode)) return { kind: 'parse', line, reason: 'chmod: invalid mode' };
-      return { verb: 'chmod', mode, path: args[1] ?? '' };
+      if (!args[1]) return { kind: 'parse', line, reason: 'Usage: chmod mode path' };
+      return { verb: 'chmod', mode, path: args[1] };
     }
     case 'rename':
     case 'mv':

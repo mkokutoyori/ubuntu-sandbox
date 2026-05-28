@@ -19,6 +19,7 @@ interface NetworkCanvasProps {
 
 export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const dragDepthRef = useRef(0);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const {
@@ -87,6 +88,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    dragDepthRef.current = 0;
     setIsDraggingOver(false);
 
     const deviceType = e.dataTransfer.getData('deviceType') as DeviceType;
@@ -99,13 +101,28 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     addDevice(deviceType, x, y);
   }, [zoom, panX, panY, addDevice]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  // HTML5 DnD spec: a drop is only accepted if BOTH `dragenter` and
+  // `dragover` call preventDefault on the would-be target. The previous
+  // implementation only handled `dragover`, which races with the first
+  // `dragenter` Chromium fires on page load — that race is what made
+  // the very first drag look ignored until the user retried. Handle
+  // both events and ref-count enter/leave so children of the canvas
+  // (the inner zoom/pan div, the SVG layer) don't flicker the visual
+  // indicator off while the cursor is still over the canvas.
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    dragDepthRef.current += 1;
     setIsDraggingOver(true);
   }, []);
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!isDraggingOver) setIsDraggingOver(true);
+  }, [isDraggingOver]);
+
   const handleDragLeave = useCallback(() => {
-    setIsDraggingOver(false);
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingOver(false);
   }, []);
 
   // Get connection source device for drawing line
@@ -164,6 +181,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onDrop={handleDrop}
+        onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
