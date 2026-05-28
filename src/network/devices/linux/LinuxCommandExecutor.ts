@@ -2967,6 +2967,10 @@ export class LinuxCommandExecutor {
       return '';
     }
 
+    if (filterUser && !this.userMgr.getAllUsers().some(u => u.username === filterUser)) {
+      return `lastlog: Unknown user or range: ${filterUser}`;
+    }
+
     const header = 'Username         Port     From             Latest';
     const rows: string[] = [header];
     const now = Date.now();
