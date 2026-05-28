@@ -16,7 +16,7 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
-import { findHostByAddress } from './HostLookup';
+import { findHostByAddress, isPathReachable } from './HostLookup';
 import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
@@ -90,7 +90,7 @@ const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
  * deliberately excluded: the simulator treats them as the quiet switch.
  */
 const SSH_VALUE_FLAGS = new Set(
-  ['b', 'c', 'D', 'E', 'e', 'F', 'I', 'i', 'J', 'L', 'l', 'm', 'O', 'o', 'p', 'R', 'S', 'W', 'w'],
+  ['b', 'c', 'D', 'E', 'e', 'F', 'I', 'i', 'J', 'L', 'l', 'm', 'O', 'o', 'p', 'R', 's', 'S', 'W', 'w'],
 );
 
 /**
@@ -129,6 +129,19 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
     }
   }
   return { positional, flags };
+}
+
+function readForceCommand(
+  machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
+  user: string,
+  sourceIp?: string,
+  sourceHost?: string,
+): string | null {
+  const raw = machine.executor?.vfs?.readFile('/etc/ssh/sshd_config') ?? '';
+  if (!raw) return null;
+  const cfg = SshdServerConfig.parse(raw);
+  const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
+  return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost }).forceCommand;
 }
 
 /**
@@ -569,6 +582,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  const destIp = found.ip;
+  if (opts.sourceIp && destIp && !isPathReachable(opts.sourceIp, destIp)) {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
+      exitCode: 255,
+    };
+  }
   if (found.interfaceDown) {
     return {
       output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
@@ -588,7 +608,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // (PC or Server) ships a sshd; everything else refuses on principle.
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
-    sshdAcceptsLogin?: (u: string) => { ok: boolean; reason?: string };
+    sshdAcceptsLogin?: (u: string, ctx?: { address?: string; host?: string }) => { ok: boolean; reason?: string };
     recordSshLogin?: (
       u: string,
       fromIp: string,
@@ -657,7 +677,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   }
 
   // Login policy gate (root login, allowed users, etc.).
-  const login = machine.sshdAcceptsLogin?.(remoteUser) ?? { ok: true };
+  const login = machine.sshdAcceptsLogin?.(remoteUser, { address: opts.sourceIp, host: opts.sourceHostname }) ?? { ok: true };
   if (!login.ok) {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
     throttler?.recordFailure(opts.sourceIp, Date.now());
@@ -767,7 +787,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // wants a banner-only interactive session that closes immediately).
   let remoteCmd = joinRemoteCommand(positional.slice(1));
   if (/^(exit|logout)\s*$/i.test(remoteCmd)) remoteCmd = '';
-  if (remoteCmd) {
+  const sIdx = flags.indexOf('-s');
+  const isSftpSubsystem = sIdx >= 0 && flags[sIdx + 1] === 'sftp';
+  if (remoteCmd && !isSftpSubsystem) {
+    const forced = readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname);
+    if (forced === 'internal-sftp') {
+      return {
+        output: 'This service allows sftp connections only.\n',
+        exitCode: 1,
+      };
+    }
     const remoteUidBeforeAfter = swapRemoteUser(machine, remoteUser);
     // `-A` agent forwarding: expose the local agent's identities to the
     // remote command, restoring the remote agent afterwards.

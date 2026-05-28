@@ -50,6 +50,62 @@ export interface SshdConfig extends SshServerConfig {
   readonly allowTcpForwarding: TcpForwardingValue;
   /** PermitUserEnvironment yes — let ~/.ssh/environment overlay the shell. */
   readonly permitUserEnvironment: boolean;
+  readonly forceCommand: string | null;
+  readonly chrootDirectory: string | null;
+  readonly matches: readonly SshdMatchBlock[];
+}
+
+export interface SshdMatchBlock {
+  readonly criteria: {
+    readonly user?: readonly string[];
+    readonly group?: readonly string[];
+    readonly host?: readonly string[];
+    readonly address?: readonly string[];
+  };
+  readonly overrides: Partial<SshdConfig>;
+}
+
+export interface SshdMatchContext {
+  user: string;
+  groups?: readonly string[];
+  sourceIp?: string;
+  sourceHost?: string;
+}
+
+export function effectiveSshdConfig(base: SshdConfig, ctx: SshdMatchContext): SshdConfig {
+  let cfg: SshdConfig = base;
+  for (const m of base.matches) {
+    if (matchesCriteria(m.criteria, ctx)) cfg = { ...cfg, ...m.overrides };
+  }
+  return cfg;
+}
+
+function matchesCriteria(c: SshdMatchBlock['criteria'], ctx: SshdMatchContext): boolean {
+  if (c.user && !c.user.includes(ctx.user)) return false;
+  if (c.group && !(ctx.groups ?? []).some(g => c.group!.includes(g))) return false;
+  if (c.host && (!ctx.sourceHost || !c.host.includes(ctx.sourceHost))) return false;
+  if (c.address && (!ctx.sourceIp || !c.address.some(a => addressMatches(a, ctx.sourceIp!)))) return false;
+  return true;
+}
+
+function addressMatches(pattern: string, ip: string): boolean {
+  if (pattern === ip) return true;
+  if (pattern.includes('/')) {
+    const [base, bitsStr] = pattern.split('/');
+    const bits = Number.parseInt(bitsStr, 10);
+    return cidrContains(base, bits, ip);
+  }
+  if (pattern.endsWith('.0') || pattern.endsWith('.*')) {
+    const prefix = pattern.replace(/\.[0*]$/, '.');
+    return ip.startsWith(prefix);
+  }
+  return false;
+}
+
+function cidrContains(base: string, bits: number, ip: string): boolean {
+  const toN = (s: string) => s.split('.').reduce((acc, o) => (acc << 8) | Number.parseInt(o, 10), 0) >>> 0;
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return (toN(base) & mask) === (toN(ip) & mask);
 }
 
 export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
@@ -74,6 +130,9 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   x11Forwarding: false,
   allowTcpForwarding: 'yes' as TcpForwardingValue,
   permitUserEnvironment: false,
+  forceCommand: null,
+  chrootDirectory: null,
+  matches: Object.freeze([]),
 });
 
 const LOG_LEVELS: readonly SshLogLevel[] = [
@@ -108,6 +167,8 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
     return {};
   },
   syslogfacility: (v) => ({ syslogFacility: v.trim().toUpperCase() }),
+  forcecommand: (v) => ({ forceCommand: v.trim() }),
+  chrootdirectory: (v) => ({ chrootDirectory: v.trim() }),
   kbdinteractiveauthentication: (v) => ({ kbdInteractiveAuthentication: parseBool(v) }),
   x11forwarding: (v) => ({ x11Forwarding: parseBool(v) }),
   allowtcpforwarding: (v) => {
@@ -121,7 +182,15 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
 };
 
 export function parseSshdConfig(content: string): SshdConfig {
-  const cfg: Partial<SshdConfig> = {};
+  const baseCfg: Partial<SshdConfig> = {};
+  const matches: SshdMatchBlock[] = [];
+  let currentMatch: { criteria: SshdMatchBlock['criteria']; overrides: Partial<SshdConfig> } | null = null;
+
+  const apply = (key: string, value: string, target: Partial<SshdConfig>) => {
+    const parser = DIRECTIVE_PARSERS[key];
+    if (parser) Object.assign(target, parser(value));
+  };
+
   for (const raw of content.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
@@ -129,10 +198,33 @@ export function parseSshdConfig(content: string): SshdConfig {
     if (idx === -1) continue;
     const key = line.slice(0, idx).toLowerCase();
     const value = line.slice(idx + 1).trim();
-    const parser = DIRECTIVE_PARSERS[key];
-    if (parser) Object.assign(cfg, parser(value));
+
+    if (key === 'match') {
+      if (currentMatch) matches.push(currentMatch);
+      currentMatch = { criteria: parseMatchCriteria(value), overrides: {} };
+      continue;
+    }
+    if (currentMatch) apply(key, value, currentMatch.overrides);
+    else apply(key, value, baseCfg);
   }
-  return Object.freeze({ ...DEFAULT_SSHD_CONFIG, ...cfg });
+  if (currentMatch) matches.push(currentMatch);
+  return Object.freeze({ ...DEFAULT_SSHD_CONFIG, ...baseCfg, matches: Object.freeze(matches) });
+}
+
+function parseMatchCriteria(value: string): SshdMatchBlock['criteria'] {
+  const out: { user?: string[]; group?: string[]; host?: string[]; address?: string[] } = {};
+  const tokens = value.split(/\s+/);
+  for (let i = 0; i < tokens.length; i += 2) {
+    const keyword = tokens[i]?.toLowerCase();
+    const arg = tokens[i + 1];
+    if (!arg) continue;
+    const list = arg.split(',');
+    if (keyword === 'user')        out.user    = list;
+    else if (keyword === 'group')   out.group   = list;
+    else if (keyword === 'host')    out.host    = list;
+    else if (keyword === 'address') out.address = list;
+  }
+  return out;
 }
 
 /** Outcome of an `sshd -t` style configuration test. */

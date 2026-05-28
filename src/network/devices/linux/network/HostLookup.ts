@@ -10,6 +10,54 @@
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { HostsFile } from '../../HostsFile';
+import type { Port } from '@/network/hardware/Port';
+
+/**
+ * BFS reachability across the physical topology: starting from any port
+ * owning `srcIp`, walk cable-to-cable through intermediate devices and
+ * return true only when a port owning `dstIp` is reachable AND every
+ * device + port on the path is powered on and admin-up.
+ */
+export function isPathReachable(srcIp: string, dstIp: string): boolean {
+  if (srcIp === dstIp) return true;
+  if (!srcIp || srcIp === '127.0.0.1' || srcIp.startsWith('169.254.')) return true;
+  const registry = EquipmentRegistry.getInstance();
+  const startPorts: Port[] = [];
+  for (const dev of registry.getAll()) {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && ip.toString() === srcIp) startPorts.push(port);
+    }
+  }
+  if (startPorts.length === 0) return true;
+  // Topologies that wire ports without a Cable (legacy tests) are
+  // treated as reachable — the simulator falls back to the old
+  // registry-only behaviour when no cable plant exists.
+  const anyCable = startPorts.some(p => p.getCable() !== null);
+  if (!anyCable) return true;
+
+  const visited = new Set<string>();
+  const queue: Port[] = [...startPorts];
+  while (queue.length > 0) {
+    const port = queue.shift()!;
+    const key = `${port.getEquipmentId()}:${port.getName()}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (!port.getIsUp()) continue;
+    const cable = port.getCable();
+    if (!cable) continue;
+    const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+    if (!peerPort || !peerPort.getIsUp()) continue;
+    const peerDev = registry.getById(peerPort.getEquipmentId());
+    if (!peerDev || !peerDev.getIsPoweredOn()) continue;
+    const peerIp = peerPort.getIPAddress();
+    if (peerIp && peerIp.toString() === dstIp) return true;
+    for (const sibling of peerDev.getPorts()) {
+      if (sibling !== peerPort) queue.push(sibling);
+    }
+  }
+  return false;
+}
 
 export interface RemoteHost {
   device: Equipment;

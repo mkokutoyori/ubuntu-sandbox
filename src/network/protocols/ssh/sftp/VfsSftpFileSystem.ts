@@ -33,6 +33,8 @@ interface VfsLike {
   chmod?(path: string, mode: number): boolean;
   chown?(path: string, uid: number, gid?: number): boolean;
   listDirectory?(path: string): Array<{ name: string }>;
+  checkAclAccess?(path: string, user: string, groups: readonly string[], need: number): boolean | null;
+  hasAcl?(path: string): boolean;
 }
 
 export class VfsSftpFileSystem implements ISftpFileSystem {
@@ -154,6 +156,16 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
 
   private entryType(path: string): 'file' | 'directory' | 'symlink' | null {
     return this.getEntryType(path);
+  }
+
+  /** Returns the ACL verdict for `user` on `path` or null when no ACL applies. */
+  checkAclAccess(path: string, user: string, groups: readonly string[], need: number): boolean | null {
+    return this.vfs.checkAclAccess?.(path, user, groups, need) ?? null;
+  }
+
+  /** True iff `path` carries any explicit ACL entry. */
+  hasAcl(path: string): boolean {
+    return this.vfs.hasAcl?.(path) ?? false;
   }
 
   private isEmptyDir(path: string): boolean {

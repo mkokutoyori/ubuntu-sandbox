@@ -30,6 +30,7 @@ export interface SshdMatchOverrides {
   permitEmptyPasswords?: boolean;
   banner?: string | null;
   forceCommand?: string;
+  chrootDirectory?: string;
   acceptEnv?: readonly string[];
   allowAgentForwarding?: boolean;
   gatewayPorts?: SshdGatewayPorts;
@@ -373,13 +374,24 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     return this.mutate({ matchBlocks: Object.freeze([...this.matchBlocks, block]) });
   }
 
-  isUserAllowed(user: string, groups: readonly string[]): boolean {
-    if (this.denyUsers.some(p => globMatch(p, user))) return false;
-    if (this.denyGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
-    if (this.allowUsers.length > 0 && !this.allowUsers.some(p => globMatch(p, user))) {
-      if (this.allowGroups.length === 0 || !this.allowGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
-    } else if (this.allowGroups.length > 0 && !this.allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
-      if (this.allowUsers.length === 0) return false;
+  isUserAllowed(user: string, groups: readonly string[], ctx?: { address?: string; host?: string }): boolean {
+    let denyUsers = this.denyUsers;
+    let denyGroups = this.denyGroups;
+    let allowUsers = this.allowUsers;
+    let allowGroups = this.allowGroups;
+    for (const block of this.matchBlocks) {
+      if (!this.matchApplies(block.criteria, { user, groups, host: ctx?.host, address: ctx?.address })) continue;
+      if (block.overrides.denyUsers)   denyUsers   = block.overrides.denyUsers;
+      if (block.overrides.denyGroups)  denyGroups  = block.overrides.denyGroups;
+      if (block.overrides.allowUsers)  allowUsers  = block.overrides.allowUsers;
+      if (block.overrides.allowGroups) allowGroups = block.overrides.allowGroups;
+    }
+    if (denyUsers.some(p => globMatch(p, user))) return false;
+    if (denyGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
+    if (allowUsers.length > 0 && !allowUsers.some(p => globMatch(p, user))) {
+      if (allowGroups.length === 0 || !allowGroups.some(p => groups.some(g => globMatch(p, g)))) return false;
+    } else if (allowGroups.length > 0 && !allowGroups.some(p => groups.some(g => globMatch(p, g)))) {
+      if (allowUsers.length === 0) return false;
     }
     return true;
   }
@@ -584,6 +596,7 @@ function applyMatchDirective(o: SshdMatchOverrides, key: string, value: string):
     case 'permitemptypasswords': o.permitEmptyPasswords = YES_NO(value, false); break;
     case 'banner': o.banner = value === 'none' ? null : value; break;
     case 'forcecommand': o.forceCommand = value; break;
+    case 'chrootdirectory': o.chrootDirectory = value; break;
     case 'acceptenv': o.acceptEnv = Object.freeze(value.split(/\s+/)); break;
     case 'allowagentforwarding': o.allowAgentForwarding = YES_NO(value, true); break;
     case 'gatewayports': o.gatewayPorts = value as SshdGatewayPorts; break;

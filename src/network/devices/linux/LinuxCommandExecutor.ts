@@ -46,7 +46,9 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
+import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
 import { SshUserContext } from '../../protocols/ssh/SshUserContext';
+import { SshdServerConfig } from '../../protocols/ssh/server/SshdServerConfig';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
@@ -120,6 +122,44 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
+
+function parseAclEntry(entry: string): { kind: 'user' | 'group'; name: string; perms: number } | null {
+  const m = /^([ug])(?::([^:]*))?:([rwx-]{0,3})$/.exec(entry);
+  if (!m) return null;
+  const kind = m[1] === 'u' ? 'user' : 'group';
+  const name = m[2] ?? '';
+  let perms = 0;
+  for (const c of m[3]) {
+    if (c === 'r') perms |= 0o4;
+    else if (c === 'w') perms |= 0o2;
+    else if (c === 'x') perms |= 0o1;
+  }
+  return { kind, name, perms };
+}
+
+function permTriad(p: number): string {
+  return ((p & 0o4) ? 'r' : '-') + ((p & 0o2) ? 'w' : '-') + ((p & 0o1) ? 'x' : '-');
+}
+
+const LASTLOG_HELP = [
+  '',
+  'Usage:',
+  ' lastlog [options]',
+  '',
+  'Reports the most recent login of all users or of a given user.',
+  '',
+  'Options:',
+  ' -b, --before DAYS    print only lastlog records older than DAYS',
+  ' -C, --clear          clear lastlog record of a user (usable only with -u)',
+  ' -R, --root CHROOT_DIR  directory to chroot into',
+  ' -S, --set            set lastlog record to current time (usable only with -u)',
+  ' -t, --time DAYS      print only lastlog records more recent than DAYS',
+  ' -u, --user LOGIN     print lastlog record of the specified LOGIN',
+  ' -h, --help           display this help',
+  ' -V, --version        display version',
+  '',
+  'For more details see lastlog(8).',
+].join('\n');
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -490,6 +530,7 @@ export class LinuxCommandExecutor {
       if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
       else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
     }
+    if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
@@ -526,8 +567,12 @@ export class LinuxCommandExecutor {
       }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
       const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
-      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
+      let remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+      const remoteChroot = this.readChrootDirectory(found?.device, remoteUserName, this.firstConfiguredIp());
+      if (remoteChroot) {
+        remoteFs = new ChrootedSftpFileSystem(remoteFs, remoteChroot);
+      }
       const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
         ?.getSshServerContext?.()?.events;
       const t0 = Date.now();
@@ -602,6 +647,28 @@ export class LinuxCommandExecutor {
     }
     const groups = userMgr?.getGroupsForUser?.(name) ?? [];
     return new SshUserContext(name, entry.uid, entry.gid, groups, entry.home);
+  }
+
+  private readChrootDirectory(device: unknown, user: string, sourceIp: string | null): string | null {
+    const remoteVfs = (device as { executor?: { vfs?: { readFile: (p: string) => string | null } } }).executor?.vfs;
+    if (!remoteVfs) return null;
+    const raw = remoteVfs.readFile('/etc/ssh/sshd_config') ?? '';
+    if (!raw) return null;
+    const userMgr = (device as { executor?: { userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } }).executor?.userMgr;
+    const groups = (userMgr?.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    const cfg = SshdServerConfig.parse(raw);
+    for (const block of cfg.matchBlocks) {
+      const applies = block.criteria.every((c: { keyword: string; value: string }) => {
+        if (c.keyword === 'User')    return c.value === user || c.value === '*';
+        if (c.keyword === 'Group')   return groups.includes(c.value);
+        if (c.keyword === 'Address' || c.keyword === 'LocalAddress') return sourceIp ? c.value === sourceIp : false;
+        return true;
+      });
+      if (!applies) continue;
+      const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
+      if (cd) return cd;
+    }
+    return null;
   }
 
   private sshHomeDir(): string {
@@ -1707,6 +1774,8 @@ export class LinuxCommandExecutor {
       }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
       case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
+      case 'setfacl': return this.cmdSetfacl(args);
+      case 'getfacl': return this.cmdGetfacl(args);
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
         // declared sources per database. All output / exit-code logic
@@ -2800,39 +2869,130 @@ export class LinuxCommandExecutor {
   /** Optional accessor to the SSH server context, wired by LinuxMachine. */
   sshContextForFail2ban: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null = null;
 
+  private cmdSetfacl(args: string[]): { output: string; exitCode: number } {
+    if (args.length === 0) return { output: 'Usage: setfacl [-m|-x] acl path', exitCode: 2 };
+    let mode: 'modify' | 'remove' | null = null;
+    const entries: string[] = [];
+    const paths: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-m' || a === '--modify') { mode = 'modify'; entries.push(args[++i] ?? ''); continue; }
+      if (a === '-x' || a === '--remove') { mode = 'remove'; entries.push(args[++i] ?? ''); continue; }
+      if (a === '-b' || a === '--remove-all') { mode = 'remove'; entries.push('*'); continue; }
+      if (a === '-R' || a === '--recursive') continue;
+      if (a === '-h' || a === '--help') return { output: 'setfacl - modify file ACLs', exitCode: 0 };
+      if (!a.startsWith('-')) paths.push(a);
+    }
+    if (!mode || entries.length === 0) return { output: 'setfacl: missing operation', exitCode: 2 };
+    if (paths.length === 0) return { output: 'setfacl: no file specified', exitCode: 2 };
+    for (const path of paths) {
+      const abs = this.vfs.normalizePath(path, this.cwd);
+      if (!this.vfs.resolveInode(abs)) {
+        return { output: `setfacl: ${path}: No such file or directory`, exitCode: 1 };
+      }
+      const inode = this.vfs.resolveInode(abs)!;
+      if (this.userMgr.currentUid !== 0 && inode.uid !== this.userMgr.currentUid) {
+        return { output: `setfacl: ${path}: Operation not permitted`, exitCode: 1 };
+      }
+      for (const entry of entries) {
+        const parsed = parseAclEntry(entry);
+        if (!parsed) return { output: `setfacl: Option -m: Invalid argument near character ${entry}`, exitCode: 2 };
+        if (mode === 'remove') {
+          if (parsed.kind === 'user') this.vfs.removeUserAcl(abs, parsed.name);
+        } else if (parsed.kind === 'user') {
+          this.vfs.setUserAcl(abs, parsed.name, parsed.perms);
+        } else if (parsed.kind === 'group') {
+          this.vfs.setGroupAcl(abs, parsed.name, parsed.perms);
+        }
+      }
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  private cmdGetfacl(args: string[]): { output: string; exitCode: number } {
+    const paths = args.filter(a => !a.startsWith('-'));
+    if (paths.length === 0) return { output: 'Usage: getfacl path', exitCode: 2 };
+    const lines: string[] = [];
+    for (const path of paths) {
+      const abs = this.vfs.normalizePath(path, this.cwd);
+      const inode = this.vfs.resolveInode(abs);
+      if (!inode) { lines.push(`getfacl: ${path}: No such file or directory`); continue; }
+      const ownerName = this.userMgr.getUserByUid(inode.uid)?.username ?? String(inode.uid);
+      const groupName = this.userMgr.getGroupByGid(inode.gid)?.name ?? String(inode.gid);
+      const mode = inode.permissions;
+      lines.push(`# file: ${path.replace(/^\//, '')}`);
+      lines.push(`# owner: ${ownerName}`);
+      lines.push(`# group: ${groupName}`);
+      lines.push(`user::${permTriad((mode >> 6) & 0o7)}`);
+      if (inode.aclUsers) {
+        for (const [name, p] of inode.aclUsers) lines.push(`user:${name}:${permTriad(p)}`);
+      }
+      lines.push(`group::${permTriad((mode >> 3) & 0o7)}`);
+      if (inode.aclGroups) {
+        for (const [name, p] of inode.aclGroups) lines.push(`group:${name}:${permTriad(p)}`);
+      }
+      if (inode.aclUsers || inode.aclGroups) lines.push(`mask::rwx`);
+      lines.push(`other::${permTriad(mode & 0o7)}`);
+      lines.push('');
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
   private renderLastlog(args: string[]): string {
     let filterUser: string | null = null;
     let beforeDays: number | null = null;
+    let timeDays: number | null = null;
+    let clear = false;
+    let setNow = false;
+
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
-      if (a === '-u' || a === '--user') filterUser = args[++i] ?? null;
-      else if (a === '-b' || a === '--before') beforeDays = Number(args[++i]);
-      else if (a === '-t' || a === '--time')   beforeDays = Number(args[++i]);
+      if (a === '-h' || a === '--help') return LASTLOG_HELP;
+      if (a === '-V' || a === '--version') return 'lastlog from util-linux 2.37.2';
+      if (a === '-u' || a === '--user') { filterUser = args[++i] ?? null; continue; }
+      if (a === '-b' || a === '--before') { beforeDays = Number(args[++i]); continue; }
+      if (a === '-t' || a === '--time')   { timeDays   = Number(args[++i]); continue; }
+      if (a === '-C' || a === '--clear')  { clear = true; continue; }
+      if (a === '-S' || a === '--set')    { setNow = true; continue; }
+      if (a === '-R' || a === '--root') { i++; continue; }
+    }
+
+    if (clear || setNow) {
+      if (!filterUser) return 'lastlog: option requires -u/--user';
+      if (this.userMgr.currentUid !== 0) return 'lastlog: must be root';
+      if (clear) this.lastlog.clearUser(filterUser);
+      if (setNow) this.lastlog.record(filterUser, '0.0.0.0', 'pts/0');
+      return '';
     }
 
     const header = 'Username         Port     From             Latest';
     const rows: string[] = [header];
-    const cutoff = beforeDays !== null && Number.isFinite(beforeDays)
-      ? Date.now() - beforeDays * 86400_000
+    const now = Date.now();
+    const beforeCutoff = beforeDays !== null && Number.isFinite(beforeDays)
+      ? now - beforeDays * 86400_000
+      : null;
+    const timeCutoff = timeDays !== null && Number.isFinite(timeDays)
+      ? now - timeDays * 86400_000
       : null;
 
-    const all = this.userMgr.getAllUsers();
-    for (const u of all) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+
+    for (const u of this.userMgr.getAllUsers()) {
       if (filterUser && u.username !== filterUser) continue;
       const entry = this.lastlog.getCurrent(u.username);
       if (!entry) {
         rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
         continue;
       }
-      if (cutoff !== null && entry.when < cutoff) continue;
+      if (beforeCutoff !== null && entry.when >= beforeCutoff) continue;
+      if (timeCutoff !== null && entry.when < timeCutoff) continue;
       const d = new Date(entry.when);
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const pad2 = (n: number) => String(n).padStart(2, '0');
       const latest =
         `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
-        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
+        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} +0000 ${d.getUTCFullYear()}`;
       rows.push(
         `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
       );
