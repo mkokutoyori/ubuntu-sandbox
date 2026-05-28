@@ -45,6 +45,8 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/Job
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
+import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
+import { SshUserContext } from '../../protocols/ssh/SshUserContext';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
@@ -509,11 +511,21 @@ export class LinuxCommandExecutor {
       return session.run();
     }
 
-    // sftp delegates to SftpInteractiveSession, parsing stdin as a batch.
     if (cmd === 'sftp') {
-      const stdin = stdinArg ?? '';
+      const bIdx = args.indexOf('-b');
+      let stdin = stdinArg ?? '';
+      if (bIdx >= 0) {
+        const batchPath = args[bIdx + 1];
+        if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
+        const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
+        if (body === null) {
+          return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
+        }
+        stdin = body;
+      }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
-      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device);
+      const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
+      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
       const session = new SftpInteractiveSession({
         local: new VfsSftpFileSystem(this.vfs, {
@@ -547,29 +559,43 @@ export class LinuxCommandExecutor {
    * null when the host doesn't exist or has no VFS exposed — letting the
    * ScpSession surface "no route to host" the same way OpenSSH does.
    */
-  private resolveRemoteSftpFs(host: string): ISftpFileSystem | null {
+  private resolveRemoteSftpFs(host: string, asUser?: string): ISftpFileSystem | null {
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
-    return this.resolveRemoteSftpFsFromDevice(found?.device);
+    return this.resolveRemoteSftpFsFromDevice(found?.device, asUser);
   }
 
-  private resolveRemoteSftpFsFromDevice(device: unknown): ISftpFileSystem | null {
+  private resolveRemoteSftpFsFromDevice(device: unknown, asUser?: string): ISftpFileSystem | null {
     if (!device) return null;
     const linuxVfs = (device as { executor?: { vfs?: VirtualFileSystem } }).executor?.vfs;
     if (linuxVfs) {
-      return new VfsSftpFileSystem(linuxVfs, { uid: 0, gid: 0, umask: 0o022 });
+      const userCtx = this.buildRemoteUserCtx(device, asUser);
+      const raw = new VfsSftpFileSystem(linuxVfs, { uid: userCtx.uid, gid: userCtx.gid, umask: 0o022 });
+      return new PermissionCheckingFSDecorator(raw, userCtx);
     }
     const windowsFs = (device as { fs?: unknown; getFileSystem?: () => unknown }).fs
       ?? (device as { getFileSystem?: () => unknown }).getFileSystem?.();
     if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
       return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
     }
-    // Router-style targets (Cisco / Huawei) expose synthetic system
-    // files via getSftpFileSource() — wrapped in RouterSftpFileSystem.
     const sftpSource = (device as { getSftpFileSource?: () => unknown }).getSftpFileSource?.();
     if (sftpSource && typeof (sftpSource as { read?: unknown }).read === 'function') {
       return new RouterSftpFileSystem(sftpSource as ConstructorParameters<typeof RouterSftpFileSystem>[0]);
     }
     return null;
+  }
+
+  private buildRemoteUserCtx(device: unknown, asUser?: string): SshUserContext {
+    const userMgr = (device as { executor?: { userMgr?: {
+      getUser(n: string): { uid: number; gid: number; home: string } | undefined;
+      getGroupsForUser?(n: string): readonly number[];
+    } } }).executor?.userMgr;
+    const name = asUser ?? this.userMgr.currentUser;
+    const entry = userMgr?.getUser(name);
+    if (!entry) {
+      return new SshUserContext(name, 65534, 65534, [], '/');
+    }
+    const groups = userMgr?.getGroupsForUser?.(name) ?? [];
+    return new SshUserContext(name, entry.uid, entry.gid, groups, entry.home);
   }
 
   private sshHomeDir(): string {

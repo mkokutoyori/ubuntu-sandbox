@@ -57,33 +57,45 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
   // ── ISftpWritable ──────────────────────────────────────────────────
 
   writeFile(path: string, content: string): Result<void> {
-    const guard = this.checkWrite(path, true);
-    if (!guard.ok) return guard;
+    if (this.userCtx.isRoot()) return this.base.writeFile(path, content);
+    if (this.base.exists(path)) {
+      const s = this.base.stat(path);
+      if (s.ok && !this.userCtx.canWrite(s.value.mode, s.value.uid, s.value.gid)) {
+        return err({ kind: 'PERMISSION_DENIED', path, operation: 'write' });
+      }
+    } else {
+      const g = this.checkParentWrite(path);
+      if (!g.ok) return g;
+    }
     return this.base.writeFile(path, content);
   }
 
   mkdir(path: string): Result<void> {
-    const guard = this.checkWrite(path, true);
-    if (!guard.ok) return guard;
+    if (this.userCtx.isRoot()) return this.base.mkdir(path);
+    const g = this.checkParentWrite(path);
+    if (!g.ok) return g;
     return this.base.mkdir(path);
   }
 
   deleteFile(path: string): Result<void> {
-    const guard = this.checkWrite(path, true);
-    if (!guard.ok) return guard;
+    if (this.userCtx.isRoot()) return this.base.deleteFile(path);
+    const g = this.checkUnlink(path);
+    if (!g.ok) return g;
     return this.base.deleteFile(path);
   }
 
   rmdir(path: string): Result<void> {
-    const guard = this.checkWrite(path, true);
-    if (!guard.ok) return guard;
+    if (this.userCtx.isRoot()) return this.base.rmdir(path);
+    const g = this.checkUnlink(path);
+    if (!g.ok) return g;
     return this.base.rmdir(path);
   }
 
   rename(src: string, dst: string): Result<void> {
-    const a = this.checkWrite(src, true);
+    if (this.userCtx.isRoot()) return this.base.rename(src, dst);
+    const a = this.checkUnlink(src);
     if (!a.ok) return a;
-    const b = this.checkWrite(dst, true);
+    const b = this.checkParentWrite(dst);
     if (!b.ok) return b;
     return this.base.rename(src, dst);
   }
@@ -116,28 +128,32 @@ export class PermissionCheckingFSDecorator implements ISftpFileSystem {
     return err({ kind: 'PERMISSION_DENIED', path, operation: 'read' });
   }
 
-  private checkWrite(path: string, requireParent: boolean): Result<void> {
+  private checkParentWrite(path: string): Result<void> {
     if (this.userCtx.isRoot()) return ok(undefined);
-    if (this.base.exists(path)) {
-      const stat = this.base.stat(path);
-      if (!stat.ok) return propagateErr(stat);
-      const a = stat.value;
-      if (!this.userCtx.canWrite(a.mode, a.uid, a.gid)) {
-        return err({ kind: 'PERMISSION_DENIED', path, operation: 'write' });
-      }
+    const parent = path.replace(/\/[^/]+\/?$/, '') || '/';
+    const stat = this.base.stat(parent);
+    if (!stat.ok) return ok(undefined);
+    const a = stat.value;
+    if (!this.userCtx.canWrite(a.mode, a.uid, a.gid)) {
+      return err({ kind: 'PERMISSION_DENIED', path: parent, operation: 'write' });
     }
-    if (requireParent) {
-      const parent = path.replace(/\/[^/]+\/?$/, '') || '/';
-      const stat = this.base.stat(parent);
-      if (stat.ok) {
-        const a = stat.value;
-        if (!this.userCtx.canWrite(a.mode, a.uid, a.gid)) {
-          return err({
-            kind: 'PERMISSION_DENIED',
-            path: parent,
-            operation: 'write',
-          });
-        }
+    return ok(undefined);
+  }
+
+  private checkUnlink(path: string): Result<void> {
+    if (this.userCtx.isRoot()) return ok(undefined);
+    const parent = path.replace(/\/[^/]+\/?$/, '') || '/';
+    const ps = this.base.stat(parent);
+    if (!ps.ok) return ok(undefined);
+    const pa = ps.value;
+    if (!this.userCtx.canWrite(pa.mode, pa.uid, pa.gid)) {
+      return err({ kind: 'PERMISSION_DENIED', path: parent, operation: 'write' });
+    }
+    const stickyBit = (pa.mode & 0o1000) !== 0;
+    if (stickyBit) {
+      const ts = this.base.stat(path);
+      if (ts.ok && ts.value.uid !== this.userCtx.uid && pa.uid !== this.userCtx.uid) {
+        return err({ kind: 'PERMISSION_DENIED', path, operation: 'unlink' });
       }
     }
     return ok(undefined);

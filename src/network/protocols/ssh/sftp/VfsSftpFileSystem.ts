@@ -107,9 +107,15 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
 
   mkdir(path: string): Result<void> {
     if (!this.vfs.mkdir) return err({ kind: 'IO_ERROR', message: 'mkdir not supported' } as SshError);
-    const success = this.vfs.mkdir(path, 0o755, this.defaults.uid, this.defaults.gid);
-    if (!success) return err({ kind: 'IO_ERROR', message: `mkdir ${path}: No such file or directory` } as SshError);
-    return ok(undefined);
+    if (this.entryType(path) !== null) {
+      return err({ kind: 'IO_ERROR', message: `${path}: File exists` } as SshError);
+    }
+    const parent = path.replace(/\/[^/]+\/?$/, '') || '/';
+    if (parent !== path && this.entryType(parent) === null) {
+      return err({ kind: 'IO_ERROR', message: `${path}: No such file or directory` } as SshError);
+    }
+    if (this.vfs.mkdir(path, 0o755, this.defaults.uid, this.defaults.gid)) return ok(undefined);
+    return err({ kind: 'IO_ERROR', message: `${path}: Permission denied` } as SshError);
   }
 
   deleteFile(path: string): Result<void> {
