@@ -4,6 +4,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { ShellContext, expandGlob } from './LinuxFileCommands';
+import { runAwk, type AwkHost } from './awk';
 
 export function cmdGrep(ctx: ShellContext, args: string[], stdin?: string): string {
   let caseInsensitive = false;
@@ -456,40 +457,90 @@ function expandCharSet(s: string): string {
 }
 
 export function cmdAwk(ctx: ShellContext, args: string[], stdin?: string): string {
-  let fieldSep = ' ';
-  let program = '';
+  let fieldSep: string | undefined;
+  let program: string | null = null;
   const files: string[] = [];
-  const vars: Map<string, string> = new Map();
+  const assignments: Record<string, string> = {};
+  const programFiles: string[] = [];
+
+  const handlePositional = (a: string): void => {
+    if (program === null && programFiles.length === 0) { program = a; return; }
+    files.push(a);
+  };
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a.startsWith('-F')) {
-      fieldSep = a.length > 2 ? a.slice(2) : args[++i] || ' ';
-      // Remove quotes from field separator
-      fieldSep = fieldSep.replace(/^["']|["']$/g, '');
-      continue;
-    }
+    if (a === '-F') { fieldSep = decodeAwkArg(args[++i] ?? ' '); continue; }
+    if (a.startsWith('-F')) { fieldSep = decodeAwkArg(a.slice(2).replace(/^["']|["']$/g, '')); continue; }
     if (a === '-v' && args[i + 1]) {
-      const [key, val] = args[++i].split('=');
-      vars.set(key, val);
+      const eq = args[++i];
+      const idx = eq.indexOf('=');
+      if (idx >= 0) assignments[eq.slice(0, idx)] = decodeAwkArg(eq.slice(idx + 1));
       continue;
     }
-    if (!program) {
-      program = a;
-    } else {
-      files.push(a);
+    if (a.startsWith('-v') && a.length > 2) {
+      const eq = a.slice(2);
+      const idx = eq.indexOf('=');
+      if (idx >= 0) assignments[eq.slice(0, idx)] = decodeAwkArg(eq.slice(idx + 1));
+      continue;
     }
+    if (a === '-f' && args[i + 1]) { programFiles.push(args[++i]); continue; }
+    if (a.startsWith('-f') && a.length > 2) { programFiles.push(a.slice(2)); continue; }
+    if (a === '--') { for (let j = i + 1; j < args.length; j++) handlePositional(args[j]); break; }
+    if (a.startsWith('-') && a.length > 1 && program === null && programFiles.length === 0) continue;
+    handlePositional(a);
   }
 
-  let content: string;
-  if (files.length > 0) {
-    const absPath = ctx.vfs.normalizePath(files[0], ctx.cwd);
-    content = ctx.vfs.readFile(absPath) ?? '';
-  } else {
-    content = stdin ?? '';
+  if (programFiles.length > 0) {
+    program = programFiles
+      .map(f => ctx.vfs.readFile(ctx.vfs.normalizePath(f, ctx.cwd)) ?? '')
+      .join('\n');
   }
+  if (program === null) program = '';
 
-  return executeAwk(content, program, fieldSep, vars);
+  const fileAssign: Array<{ filename: string; content: string }> = [];
+  for (const f of files) {
+    const eq = f.match(/^([A-Za-z_]\w*)=(.*)$/);
+    if (eq) { assignments[eq[1]] = decodeAwkArg(eq[2]); continue; }
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    fileAssign.push({ filename: f, content: ctx.vfs.readFile(absPath) ?? '' });
+  }
+  const sources = fileAssign.length > 0 ? fileAssign : [{ filename: '', content: stdin ?? '' }];
+
+  const host: AwkHost = {
+    readFile: (p: string) => ctx.vfs.readFile(ctx.vfs.normalizePath(p, ctx.cwd)),
+    writeFile: (p: string, content: string, append: boolean) => {
+      const abs = ctx.vfs.normalizePath(p, ctx.cwd);
+      const prior = append ? (ctx.vfs.readFile(abs) ?? '') : '';
+      ctx.vfs.writeFile(abs, prior + content, ctx.uid, ctx.gid, 0o022);
+    },
+  };
+
+  try {
+    const result = runAwk({ program, fieldSep, assignments, sources, host });
+    for (const w of result.fileWrites) {
+      const abs = ctx.vfs.normalizePath(w.path, ctx.cwd);
+      const prior = w.append ? (ctx.vfs.readFile(abs) ?? '') : '';
+      ctx.vfs.writeFile(abs, prior + w.content, ctx.uid, ctx.gid, 0o022);
+    }
+    if (result.error) return result.error;
+    return result.output.endsWith('\n') ? result.output.slice(0, -1) : result.output;
+  } catch {
+    const legacyVars = new Map<string, string>(Object.entries(assignments));
+    return executeAwk(sources.map(s => s.content).join('\n'), program, fieldSep ?? ' ', legacyVars);
+  }
+}
+
+function decodeAwkArg(s: string): string {
+  return s.replace(/\\(.)/g, (_, c: string) => {
+    switch (c) {
+      case 't': return '\t';
+      case 'n': return '\n';
+      case 'r': return '\r';
+      case '\\': return '\\';
+      default: return '\\' + c;
+    }
+  });
 }
 
 function executeAwk(content: string, program: string, fs: string, vars: Map<string, string>): string {

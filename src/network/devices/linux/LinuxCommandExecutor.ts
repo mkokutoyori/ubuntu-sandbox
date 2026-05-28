@@ -1387,8 +1387,10 @@ export class LinuxCommandExecutor {
       if (lastArg?.includes('\n')) {
         stdin = lastArg;
         actualArgs.pop();
-      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ')) {
-        // For text processing commands, multi-word content without newlines is also stdin
+      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ') && actualArgs.length > 1) {
+        // For text processing commands, multi-word content without newlines is also stdin —
+        // but only when a separate program/option arg precedes it, so a single-arg program
+        // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
         stdin = lastArg;
         actualArgs.pop();
       }
