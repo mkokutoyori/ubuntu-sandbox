@@ -29,6 +29,18 @@ import { SodEvaluator } from './security/audit/SodEvaluator';
 import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
 import { MetadataExtractor } from './metadata/MetadataExtractor';
+import { builtinPackageRegistry } from './packages';
+import { SystemTrigger } from './triggers/SystemTrigger';
+import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
+import { PlanGenerator } from './plan/PlanGenerator';
+import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
+import { runAnonymousBlock } from './plsql';
+import type { PlsqlHost, StoredUnitLike, Scalar } from './plsql';
+import { SchedulerManager } from './scheduler/SchedulerManager';
+import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
+import { InMemorySegment } from './resultcache/InMemoryManager';
+import type { UserActivityTracker } from './security/audit/UserActivityTracker';
+import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
 import type { OracleConnectionTracedPayload } from './events';
 
@@ -117,6 +129,19 @@ export class OracleDatabase {
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
       instance: this.buildInstanceIdentity(),
     });
+    // Hidden injections so built-in package routines can reach the
+    // shared per-instance managers without importing the world.
+    const inj = session as unknown as {
+      _awrManager: typeof this.instance.awrManager;
+      _resourceManager: typeof this.instance.resourceManager;
+      _statisticsManager: typeof this.instance.statistics;
+      _statisticsManagerStorage: typeof this.storage;
+    };
+    inj._awrManager = this.instance.awrManager;
+    inj._resourceManager = this.instance.resourceManager;
+    inj._statisticsManager = this.instance.statistics;
+    inj._statisticsManagerStorage = this.storage;
+    (session as unknown as { _schedulerManager: SchedulerManager })._schedulerManager = this.scheduler;
     this.sessions.set(args.sid, session);
     return session;
   }
@@ -140,6 +165,17 @@ export class OracleDatabase {
   readonly dormantAnalyzer: DormantAccountAnalyzer;
   readonly fraudSimulator: FraudScenarioSimulator;
   readonly metadata: MetadataExtractor;
+  readonly idleMonitor: IdleSessionMonitor;
+  /** Resource Manager — consumer-group switcher driven by the bus. */
+  readonly consumerGroupSwitcher: ConsumerGroupSwitcher;
+  readonly planGenerator: PlanGenerator;
+  readonly scheduler: SchedulerManager;
+  /** Reactive user-activity ledger. The instance owns the tracker so
+   *  that setDeviceId triggers a rebind; expose it as a getter so the
+   *  current tracker is always returned. */
+  get userActivity(): UserActivityTracker {
+    return this.instance.getUserActivityTracker()!;
+  }
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
@@ -165,6 +201,26 @@ export class OracleDatabase {
     this.metadata = new MetadataExtractor(this.storage, this.catalog);
     // Index usage monitor — must attach now that storage exists.
     this.instance.attachIndexUsageMonitor(this.storage);
+    // Live-session provider — feeds V$SESSION_CONTEXT user-defined
+    // contexts and any future view that needs the real OracleSession.
+    this.instance.setLiveSessionProvider(() => [...this.sessions.values()]);
+    // Resource Manager — active consumer-group switcher reacting to
+    // session connect + SQL execution events.
+    this.consumerGroupSwitcher = new ConsumerGroupSwitcher(
+      this.instance.getBus(), this.instance.getDeviceId(),
+      this.securityEngine, this.instance.resourceManager);
+    this.consumerGroupSwitcher.start();
+    // Statistics + plan generator — both need storage.
+    this.instance.attachStatistics(this.storage);
+    this.planGenerator = new PlanGenerator(this.storage, this.instance);
+    this.scheduler = new SchedulerManager(this);
+    this.instance.attachScheduler(this.scheduler);
+    // User-activity ledger lives on the instance (rebinds on setDeviceId);
+    // the getter `userActivity` returns the current tracker on demand.
+    // Idle-session PMON sweep (IDLE_TIME enforcement).
+    this.idleMonitor = new IdleSessionMonitor(
+      this.instance.getBus(), this.instance.getDeviceId(),
+      this.instance.config.sid, this.securityEngine, this.catalog);
 
     // Reactive: re-scan SoD whenever a GRANT/REVOKE/CREATE USER crosses
     // the audit bus. The executor publishes `oracle.audit.recorded` for
@@ -285,6 +341,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -339,6 +396,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -387,6 +445,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -456,6 +515,108 @@ export class OracleDatabase {
     const upper = trimmed.toUpperCase();
     if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
       return this.executePLSQL(executor, trimmed);
+    }
+
+    const lockTbl = trimmed.match(/^LOCK\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+IN\s+(ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|SHARE\s+UPDATE)\s+MODE(\s+NOWAIT)?/i);
+    if (lockTbl) {
+      const ctx = (executor as unknown as { context: ExecutionContext }).context;
+      const owner = (lockTbl[1] ?? ctx.currentSchema).toUpperCase();
+      const table = lockTbl[2].toUpperCase();
+      if (!this.storage.getTableMeta(owner, table)) {
+        return emptyResult(`ORA-00942: table or view does not exist`);
+      }
+      const modeWord = lockTbl[3].toUpperCase().replace(/\s+/g, ' ');
+      const modeMap: Record<string, 2 | 3 | 4 | 5 | 6> = {
+        'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
+        'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
+      };
+      const sess = ctx.session;
+      const sid = sess?.sid ?? 0;
+      try {
+        this.instance.lockManager.lockTable({
+          sessionId: String(sid), sid, schema: owner, table,
+          mode: modeMap[modeWord] ?? 3, nowait: !!lockTbl[4],
+        });
+      } catch (e: unknown) {
+        return emptyResult(e instanceof Error ? e.message : String(e));
+      }
+      return emptyResult('Table(s) Locked.');
+    }
+
+    const fba = upper.match(/^CREATE\s+FLASHBACK\s+ARCHIVE\s+(?:DEFAULT\s+)?(\w+)\s+TABLESPACE\s+(\w+)(?:\s+QUOTA\s+(\d+)\s*M)?\s+RETENTION\s+(\d+)\s+(?:DAY|YEAR|MONTH)/i);
+    if (fba) {
+      const isDefault = /CREATE\s+FLASHBACK\s+ARCHIVE\s+DEFAULT/i.test(trimmed);
+      const name = fba[1];
+      const ts = fba[2];
+      const quota = fba[3] ? parseInt(fba[3], 10) : null;
+      const days = parseInt(fba[4], 10);
+      this.instance.flashbackArchive.createArchive(new FlashbackArchive({
+        flashbackArchiveName: name, retentionInDays: days, isDefault,
+        tablespaces: [new FlashbackArchiveTablespace(name, ts, quota)],
+      }));
+      return emptyResult('Flashback archive created.');
+    }
+    const dropFba = upper.match(/^DROP\s+FLASHBACK\s+ARCHIVE\s+(\w+)/i);
+    if (dropFba) {
+      this.instance.flashbackArchive.dropArchive(dropFba[1]);
+      return emptyResult('Flashback archive dropped.');
+    }
+    const fbaTab = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+FLASHBACK\s+ARCHIVE(?:\s+(\w+))?/i);
+    if (fbaTab) {
+      const owner = (fbaTab[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      const table = fbaTab[2].toUpperCase();
+      const arch = fbaTab[3] ?? undefined;
+      this.instance.flashbackArchive.enableTable(owner, table, arch);
+      return emptyResult('Table altered.');
+    }
+    const fbaTabOff = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+FLASHBACK\s+ARCHIVE/i);
+    if (fbaTabOff) {
+      const owner = (fbaTabOff[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      this.instance.flashbackArchive.disableTable(owner, fbaTabOff[2]);
+      return emptyResult('Table altered.');
+    }
+    const im = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+INMEMORY/i);
+    if (im) {
+      const owner = (im[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      const table = im[2].toUpperCase();
+      const meta = this.storage.getTableMeta(owner, table);
+      if (meta) {
+        const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
+        this.instance.inMemory.addSegment(new InMemorySegment({
+          owner, segmentName: table, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
+          inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
+        }));
+      }
+      return emptyResult('Table altered.');
+    }
+    const noIm = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+INMEMORY/i);
+    if (noIm) {
+      const owner = (noIm[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      this.instance.inMemory.removeSegment(owner, noIm[2]);
+      return emptyResult('Table altered.');
+    }
+
+    const pdbMatch = upper.match(/^(?:ALTER\s+PLUGGABLE\s+DATABASE|CREATE\s+PLUGGABLE\s+DATABASE|DROP\s+PLUGGABLE\s+DATABASE)\s+(\w+)/);
+    if (pdbMatch) {
+      const name = pdbMatch[1];
+      if (upper.startsWith('CREATE')) {
+        this.instance.multitenant.createPdb(name);
+        return emptyResult('Pluggable database created.');
+      }
+      if (upper.startsWith('DROP')) {
+        this.instance.multitenant.dropPdb(name);
+        return emptyResult('Pluggable database dropped.');
+      }
+      if (upper.includes('OPEN')) {
+        const ro = /READ\s+ONLY/.test(upper);
+        this.instance.multitenant.openPdb(name, ro ? 'READ ONLY' : 'READ WRITE');
+        return emptyResult('Pluggable database altered.');
+      }
+      if (upper.includes('CLOSE')) {
+        this.instance.multitenant.closePdb(name);
+        return emptyResult('Pluggable database altered.');
+      }
+      return emptyResult('Pluggable database altered.');
     }
 
     // CREATE [OR REPLACE] TYPE — Oracle object types. Registered into
@@ -543,8 +704,32 @@ export class OracleDatabase {
       // user text — the AST type alone is useless to a DBA.
       (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
       result = executor.execute(stmt);
+      try {
+        this.maybeLockForUpdate(executor, stmt);
+      } catch (e: unknown) {
+        return emptyResult(e instanceof Error ? e.message : String(e));
+      }
     }
     return result;
+  }
+
+  private maybeLockForUpdate(executor: OracleExecutor, stmt: unknown): ResultSet | void {
+    const s = stmt as { type?: string; from?: Array<{ type?: string; schema?: string; name?: string }>;
+      forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
+    if (s.type !== 'SelectStatement' || !s.forUpdate || !s.from) return;
+    const ctx = (executor as unknown as { context: ExecutionContext }).context;
+    const sess = ctx.session;
+    const sid = sess?.sid ?? 0;
+    const nowait = s.forUpdate.wait === 'NOWAIT';
+    for (const f of s.from) {
+      if (f.type !== 'TableRef' || !f.name) continue;
+      const owner = (f.schema ?? ctx.currentSchema).toUpperCase();
+      const table = f.name.toUpperCase();
+      if (!this.storage.getTableMeta(owner, table)) continue;
+      this.instance.lockManager.lockRowsForUpdate({
+        sessionId: String(sid), sid, schema: owner, table, txId: sid, nowait,
+      });
+    }
   }
 
   private executeAlterSession(executor: OracleExecutor, sql: string): ResultSet {
@@ -582,6 +767,89 @@ export class OracleDatabase {
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
   private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
+    const ctx = (executor as { context: ExecutionContext }).context;
+    const output: string[] = [];
+    let putBuffer = '';
+
+    const host: PlsqlHost = {
+      runSql: (s: string) => {
+        const r = this.executeSql(executor, s);
+        if (!r.isQuery && r.message && /^\s*(ORA-|PLS-|SP2-)\d/.test(r.message)) {
+          throw new Error(r.message);
+        }
+        return {
+          rows: r.rows as Scalar[][],
+          columns: r.columns.map(c => (c.alias ?? c.name)),
+          isQuery: r.isQuery,
+          affectedRows: r.affectedRows,
+          message: r.message,
+        };
+      },
+      putLine: (t: string) => { output.push(putBuffer + t); putBuffer = ''; },
+      put: (t: string) => { putBuffer += t; },
+      isServerOutput: () => !!ctx.serverOutput,
+      currentSchema: () => ctx.currentSchema ?? 'SYS',
+      lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
+      callBuiltin: (name: string, rawArgs: string) =>
+        this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
+    };
+
+    const outcome = runAnonymousBlock(sql, host);
+    if (!outcome.parseError) {
+      if (putBuffer) { output.push(putBuffer); putBuffer = ''; }
+      if (!outcome.ok && outcome.error) {
+        return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+      }
+      if (ctx.serverOutput && output.length > 0) {
+        return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
+      }
+      return emptyResult('PL/SQL procedure successfully completed.');
+    }
+
+    return this.executePLSQLLegacy(executor, sql);
+  }
+
+  private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {
+    const schema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const up = name.toUpperCase();
+    const unit = this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`);
+    if (!unit) return undefined;
+    return unit as StoredUnitLike;
+  }
+
+  private routeBuiltinPackageCall(executor: OracleExecutor, call: string, output: string[]): boolean {
+    const upper = call.toUpperCase();
+    const noVars = new Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>();
+    if (
+      upper.startsWith('DBMS_SESSION.')
+      || upper.startsWith('DBMS_APPLICATION_INFO.')
+      || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
+      || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+      || upper.startsWith('DBMS_STATS.')
+      || upper.startsWith('DBMS_SCHEDULER.')
+    ) {
+      this.invokeBuiltinPackage(executor, call, noVars, output);
+      return true;
+    }
+    if (upper.startsWith('DBMS_RLS.')) { this.executeDbmsRlsCall(executor, call); return true; }
+    if (upper.startsWith('DBMS_FGA.')) { this.executeDbmsFgaCall(executor, call); return true; }
+    if (upper.startsWith('DBMS_MACADM.')) { this.executeDbmsMacadmCall(call); return true; }
+    if (
+      upper.startsWith('DBMS_AUDIT_MGMT.')
+      || upper.startsWith('DBMS_METADATA.')
+      || upper.startsWith('UTL_FILE.')
+      || upper.startsWith('DBMS_LOB.')
+      || upper.startsWith('DBMS_FLASHBACK.')
+      || upper.startsWith('DBMS_SPACE.')
+      || upper.startsWith('DBMS_LOCK.')
+      || upper.startsWith('DBMS_UTILITY.')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private executePLSQLLegacy(executor: OracleExecutor, sql: string): ResultSet {
     const output: string[] = [];
     const variables = new Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>();
 
@@ -627,9 +895,11 @@ export class OracleDatabase {
       }
 
       if (!handled) {
-        if ((executor as { context: ExecutionContext }).context.serverOutput) {
-          output.push(errMsg);
-        }
+        // Unhandled PL/SQL exception: surface the ORA-xxxx message
+        // exactly the way real Oracle does. RAISE_APPLICATION_ERROR
+        // and predefined exceptions both flow through here.
+        const ora6512 = `ORA-06512: at line 1`;
+        return emptyResult(`${errMsg}\n${ora6512}`);
       }
     }
 
@@ -827,6 +1097,47 @@ export class OracleDatabase {
 
     const upper = trimmed.toUpperCase();
 
+    // RAISE_APPLICATION_ERROR(-20xxx, 'message') — DBMS_STANDARD.
+    const raise = trimmed.match(/^RAISE_APPLICATION_ERROR\s*\(\s*(-?\d+)\s*,\s*'([\s\S]*?)'\s*\)/i);
+    if (raise) {
+      const code = parseInt(raise[1], 10);
+      const message = raise[2];
+      throw new PlsqlException('USER_DEFINED', code,
+        `ORA${code < 0 ? code : '-' + code.toString().padStart(5, '0')}: ${message}`, true);
+    }
+
+    // EXECUTE IMMEDIATE 'sql' [USING ...] [INTO var]
+    if (upper.startsWith('EXECUTE IMMEDIATE ')) {
+      const m = trimmed.match(/^EXECUTE\s+IMMEDIATE\s+'([\s\S]*?)'\s*(?:INTO\s+([\w,\s]+))?\s*;?$/i);
+      if (m) {
+        const dynamicSql = m[1];
+        const intoVars = m[2] ? m[2].split(',').map(v => v.trim().toUpperCase()) : [];
+        const result = this.executeSql(executor, dynamicSql);
+        // SELECT INTO bind: copy first-row values into the named variables.
+        if (intoVars.length > 0 && result.isQuery && result.rows.length > 0) {
+          const row = result.rows[0];
+          intoVars.forEach((v, i) => {
+            const slot = variables.get(v);
+            if (slot) slot.value = row[i] ?? null;
+          });
+        }
+      }
+      return;
+    }
+
+    // RAISE <named-exception>
+    const rais = trimmed.match(/^RAISE\s+(\w+)\s*;?$/i);
+    if (rais) {
+      const def = findPredefinedException(rais[1]);
+      if (def) {
+        throw new PlsqlException(def.name, def.errorCode, def.defaultMessage, false);
+      }
+      // Unknown name → user-defined PL/SQL exception (PLS-00201 if undeclared
+      // in real Oracle, but we surface a generic raised marker).
+      throw new PlsqlException(rais[1].toUpperCase(), -20999,
+        `ORA-06510: PL/SQL: unhandled user-defined exception (${rais[1].toUpperCase()})`, true);
+    }
+
     // DBMS_OUTPUT.PUT_LINE
     if (upper.startsWith('DBMS_OUTPUT.PUT_LINE')) {
       const match = trimmed.match(/DBMS_OUTPUT\.PUT_LINE\s*\(\s*(.*)\s*\)/is);
@@ -869,15 +1180,19 @@ export class OracleDatabase {
       return;
     }
 
-    // DBMS_STATS.GATHER_TABLE_STATS / GATHER_SCHEMA_STATS
-    if (upper.startsWith('DBMS_STATS.')) {
-      // Simulated — no actual stats gathering
+    // Built-in PL/SQL packages → route through the registry. Any
+    // DBMS_* call whose prefix is registered hits the concrete
+    // strategy class for the routine.
+    if (
+      upper.startsWith('DBMS_SESSION.')
+      || upper.startsWith('DBMS_APPLICATION_INFO.')
+      || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
+      || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+      || upper.startsWith('DBMS_STATS.')
+      || upper.startsWith('DBMS_SCHEDULER.')
+    ) {
+      this.invokeBuiltinPackage(executor, trimmed, variables, output);
       return;
-    }
-
-    // DBMS_SESSION.SET_ROLE / SET_NLS
-    if (upper.startsWith('DBMS_SESSION.')) {
-      return; // No-op in simulator
     }
 
     // DBMS_RLS.{ADD_POLICY,ADD_GROUPED_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY,DROP_GROUPED_POLICY}
@@ -1708,6 +2023,24 @@ export class OracleDatabase {
 
   /** Parse and execute CREATE [OR REPLACE] TRIGGER using regex (body may contain semicolons) */
   private executeCreateTrigger(executor: OracleExecutor, sql: string): ResultSet {
+    // System-level event triggers come first so the DML-trigger regex
+    // does not steal them.
+    const sys = sql.match(
+      /^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER)\s+(STARTUP|SHUTDOWN|LOGON|LOGOFF|SERVERERROR|CREATE|ALTER|DROP)\s+ON\s+(DATABASE|SCHEMA|(\w+)\.SCHEMA)\s+([\s\S]*)$/i,
+    );
+    if (sys) {
+      const owner = (sys[1] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const name = sys[2].toUpperCase();
+      const timing = sys[3].toUpperCase() as 'BEFORE' | 'AFTER';
+      const event = sys[4].toUpperCase() as import('./triggers/SystemTrigger').TriggerEvent;
+      const scope = sys[5].toUpperCase() === 'DATABASE' ? 'DATABASE' : 'SCHEMA';
+      const scopeSchema = scope === 'SCHEMA' ? (sys[6] ?? owner).toUpperCase() : null;
+      const body = (sys[7] || '').trim();
+      this.instance.systemTriggers.register(new SystemTrigger({
+        owner, name, timing, event, scope, scopeSchema, body, enabled: true,
+      }));
+      return emptyResult('Trigger created.');
+    }
     const match = sql.match(
       /^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:(\w+)\.)?(\w+)(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
     );
@@ -1782,6 +2115,62 @@ export class OracleDatabase {
       return trimmed.slice(1, -1);
     }
     return trimmed;
+  }
+
+  /**
+   * Dispatch a `package.routine(args)` call to the concrete
+   * IPackageRoutine registered for it. The caller has already
+   * verified the prefix; this method extracts the routine name and
+   * positional argument list, then forwards.
+   */
+  private invokeBuiltinPackage(
+    executor: OracleExecutor,
+    call: string,
+    _variables: Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>,
+    output: string[],
+  ): void {
+    const m = call.match(/^([A-Z_][A-Z0-9_]*\.[A-Z_][A-Z0-9_]*)\s*(?:\(([\s\S]*)\))?/i);
+    if (!m) return;
+    const fullName = m[1].toUpperCase();
+    const argString = m[2] ?? '';
+    const routine = builtinPackageRegistry.resolve(fullName);
+    if (!routine) return;                  // unknown routine → swallow
+
+    const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
+    const session = (executor as { context: { session?: import('./security/OracleSession').OracleSession } }).context.session;
+    if (!session) return;
+    const result = routine.invoke(args, { session, rawCall: call });
+    if (result !== null) output.push(result);
+  }
+
+  /** Split "a, 'b,c', d(e,f)" on top-level commas. */
+  private splitTopLevelArgs(s: string): string[] {
+    const out: string[] = [];
+    let depth = 0, quote: string | null = null, buf = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quote) {
+        buf += c;
+        if (c === quote && s[i - 1] !== '\\') quote = null;
+        continue;
+      }
+      if (c === "'" || c === '"') { quote = c; buf += c; continue; }
+      if (c === '(') { depth++; buf += c; continue; }
+      if (c === ')') { depth--; buf += c; continue; }
+      if (c === ',' && depth === 0) { out.push(buf.trim()); buf = ''; continue; }
+      buf += c;
+    }
+    if (buf.trim()) out.push(buf.trim());
+    return out;
+  }
+
+  /** Strip the outer quotes of a literal arg; preserve bare identifiers. */
+  private unquoteLiteral(s: string): string {
+    const t = s.trim();
+    if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) {
+      return t.slice(1, -1).replace(/''/g, "'");
+    }
+    return t;
   }
 
   private executeDbmsRlsCall(_executor: OracleExecutor, call: string): void {

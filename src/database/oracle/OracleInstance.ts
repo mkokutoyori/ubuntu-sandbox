@@ -25,6 +25,22 @@ import { DataRedactionManager } from './security/DataRedactionManager';
 import { IndexUsageMonitor } from './metadata/IndexUsageMonitor';
 import { TypeRegistry } from './metadata/TypeRegistry';
 import { ExternalTableRegistry } from './metadata/ExternalTableRegistry';
+import { UserActivityTracker } from './security/audit/UserActivityTracker';
+import { SystemTriggerRegistry } from './triggers/SystemTriggerRegistry';
+import { SystemTriggerExecutor } from './triggers/SystemTriggerExecutor';
+import { WaitEventEngine } from './wait/WaitEventEngine';
+import { ResourceManager } from './resource/ResourceManager';
+import { AwrSnapshotManager } from './awr/AwrSnapshotManager';
+import { PlanCache } from './plan/PlanCache';
+import { StatisticsManager } from './statistics/StatisticsManager';
+import { MultitenantManager } from './multitenant/PluggableDatabase';
+import { DataGuardConfiguration } from './dataguard/DataGuardConfiguration';
+import { ReplicationManager } from './replication/Replication';
+import { FlashbackArchiveManager } from './flashback/FlashbackArchive';
+import { ResultCacheManager } from './resultcache/ResultCache';
+import { InMemoryManager } from './resultcache/InMemoryManager';
+import { LockManager } from './lock/LockManager';
+import { LockActor } from './lock/LockActor';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -87,6 +103,37 @@ export class OracleInstance {
    *  Surfaces forensic data through the DBA_* security views. */
   private readonly _auditJournal = new AuditJournal();
   private _securityAuditActor: SecurityAuditActor | null = null;
+  private _userActivity: UserActivityTracker | null = null;
+  /** Database-level event-trigger catalogue + executor. */
+  readonly systemTriggers = new SystemTriggerRegistry();
+  private _systemTriggerExecutor: SystemTriggerExecutor | null = null;
+  /** Wait-event engine — feeds V$SESSION_EVENT / V$SYSTEM_EVENT / V$EVENT_HISTOGRAM. */
+  private _waitEngine: WaitEventEngine | null = null;
+  /** Resource Manager — plans, consumer groups, mappings, directives. */
+  readonly resourceManager = new ResourceManager();
+  /** AWR snapshot manager — DBA_HIST_SNAPSHOT and friends. */
+  readonly awrManager = new AwrSnapshotManager(this);
+  /** SQL plan cache — feeds V$SQL_PLAN. Populated by the executor.
+   *  Sized generously so a fresh database with demo schemas does not
+   *  evict every plan before user activity starts. */
+  readonly planCache = new PlanCache(2000);
+  readonly multitenant = new MultitenantManager();
+  readonly dataGuard = new DataGuardConfiguration();
+  readonly replication = new ReplicationManager();
+  readonly flashbackArchive = new FlashbackArchiveManager();
+  readonly resultCache = new ResultCacheManager();
+  readonly inMemory = new InMemoryManager();
+  readonly lockManager = new LockManager();
+  private _lockActor: LockActor | null = null;
+  statistics: StatisticsManager | null = null;
+  scheduler: import('./scheduler/SchedulerManager').SchedulerManager | null = null;
+  attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {
+    this.scheduler = s;
+  }
+  attachStatistics(storage: OracleStorage): StatisticsManager {
+    if (!this.statistics) this.statistics = new StatisticsManager(storage);
+    return this.statistics;
+  }
   /** Network ACL administration (DBMS_NETWORK_ACL_ADMIN). */
   readonly networkAcls = new NetworkAclManager();
   /** Data Redaction policies (DBMS_REDACT). */
@@ -125,6 +172,24 @@ export class OracleInstance {
     this._bus = bus;
     this.reattachRefreshActor();
   }
+
+  /**
+   * Provider returning every currently-open OracleSession. Set by
+   * OracleDatabase so views (V$SESSION_CONTEXT) can read live
+   * per-session state without OracleInstance importing OracleSession.
+   */
+  private _liveSessionProvider: (() => Array<{
+    sid: number; serial: number; username: string;
+    listContextEntries(): Array<{ namespace: string; attribute: string; value: string }>;
+    module: string | null; action: string | null;
+    clientInfo: string | null; clientIdentifier: string | null;
+  }>) | null = null;
+  setLiveSessionProvider(fn: NonNullable<typeof this._liveSessionProvider>): void {
+    this._liveSessionProvider = fn;
+  }
+  getLiveSessions(): ReturnType<NonNullable<typeof this._liveSessionProvider>> {
+    return this._liveSessionProvider?.() ?? [];
+  }
   /** Set the deviceId scoping all `oracle.*` events from this instance. */
   setDeviceId(deviceId: string): void {
     this._deviceId = deviceId;
@@ -145,12 +210,37 @@ export class OracleInstance {
       this._securityAuditActor.stop();
       this._securityAuditActor = null;
     }
+    if (this._userActivity) {
+      this._userActivity.stop();
+      this._userActivity = null;
+    }
+    if (this._systemTriggerExecutor) {
+      this._systemTriggerExecutor.stop();
+      this._systemTriggerExecutor = null;
+    }
+    if (this._waitEngine) {
+      this._waitEngine.stop();
+      this._waitEngine = null;
+    }
+    if (this._lockActor) {
+      this._lockActor.stop();
+      this._lockActor = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
     this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
     this._runtimeStateActor.start();
     this._securityAuditActor = new SecurityAuditActor(this.getBus(), this._deviceId, this._auditJournal);
     this._securityAuditActor.start();
+    this._userActivity = new UserActivityTracker(this.getBus(), this._deviceId, this._auditJournal);
+    this._userActivity.start();
+    this._systemTriggerExecutor = new SystemTriggerExecutor(
+      this.getBus(), this._deviceId, this.systemTriggers, this);
+    this._systemTriggerExecutor.start();
+    this._waitEngine = new WaitEventEngine(this.getBus(), this._deviceId);
+    this._waitEngine.start();
+    this._lockActor = new LockActor(this.getBus(), this._deviceId, this.lockManager);
+    this._lockActor.start();
     // Reattach the index usage monitor with the current bus/deviceId so
     // its subscription tracks the same scoping the other actors use.
     if (this._indexUsageStorage) {
@@ -164,6 +254,12 @@ export class OracleInstance {
   getAuditJournal(): AuditJournal { return this._auditJournal; }
   /** The actor wires bus → journal; exposed so external evaluators reuse it. */
   getSecurityAuditActor(): SecurityAuditActor | null { return this._securityAuditActor; }
+  /** Per-user activity ledger (reactive). */
+  getUserActivityTracker(): UserActivityTracker | null { return this._userActivity; }
+  /** Database-level trigger executor (reactive). */
+  getSystemTriggerExecutor(): SystemTriggerExecutor | null { return this._systemTriggerExecutor; }
+  /** Wait-event engine (reactive). */
+  getWaitEngine(): WaitEventEngine | null { return this._waitEngine; }
 
   /** Snapshot of the event-fed runtime state used by the V$/GV$ views. */
   getRuntimeState(): OracleRuntimeState { return this._runtimeState; }

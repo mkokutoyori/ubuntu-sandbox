@@ -188,6 +188,17 @@ export class OracleExecutor extends BaseExecutor {
     const sqlId = makeSqlId(text);
     this._lastSqlText = text;
     this._lastSqlId = sqlId;
+    // Generate an ExecutionPlan now so V$SQL_PLAN / DBMS_XPLAN see it
+    // for every parsed statement. Cached by SQL_ID with LRU eviction.
+    const db = (this as { _db?: { planGenerator: import('./plan/PlanGenerator').PlanGenerator } })._db;
+    if (db) {
+      try {
+        const plan = db.planGenerator.generate(statement, sqlId, text, this.context.currentSchema);
+        this.instance.planCache.put(plan);
+      } catch {
+        // PlanGenerator is best-effort. Don't break the actual statement.
+      }
+    }
     this.bus.publish({
       topic: 'oracle.sql.parsed',
       payload: {
@@ -198,6 +209,13 @@ export class OracleExecutor extends BaseExecutor {
         hardParse: true,
       },
     });
+  }
+
+  /** OracleDatabase injects itself so the executor can reach the
+   *  PlanGenerator without a circular import. Optional — when unset
+   *  the plan cache stays empty (matches a fresh database). */
+  setDatabaseRef(db: { planGenerator: import('./plan/PlanGenerator').PlanGenerator }): void {
+    (this as unknown as { _db: typeof db })._db = db;
   }
 
   private emitSqlExecuted(statement: Statement, result: ResultSet, elapsedMs: number): void {
@@ -3038,7 +3056,26 @@ export class OracleExecutor extends BaseExecutor {
       catalog.getSecurityEngine()?.applyQuotas(username, stmt.quota);
     }
     this.storage.ensureSchema(username);
+    this.emitUserActivity(username, 'CREATED', { profile: profileName, authType });
     return emptyResult('User created.');
+  }
+
+  /** Publish an `oracle.user.activity` event onto the instance bus. */
+  private emitUserActivity(
+    username: string,
+    kind: import('./events').UserActivityKind,
+    detail: Record<string, string | number | boolean>,
+  ): void {
+    this.bus.publish({
+      topic: 'oracle.user.activity',
+      payload: {
+        deviceId: this.deviceId, sid: this.sid,
+        username: username.toUpperCase(), kind,
+        sessionId: parseInt(this._sessionId, 10) || 0,
+        performedBy: this.context.currentSchema,
+        detail, timestamp: new Date(),
+      },
+    });
   }
 
   private executeAlterUser(stmt: AlterUserStatement): ResultSet {
@@ -3077,6 +3114,7 @@ export class OracleExecutor extends BaseExecutor {
         user.authenticationType = 'PASSWORD';
         user.externalName = undefined;
       }
+      this.emitUserActivity(username, 'PASSWORD_CHANGED', { profile: profileName });
     } else if (stmt.authenticationKind && user) {
       user.authenticationType = stmt.authenticationKind;
       if (stmt.externalName !== undefined) {
@@ -3090,13 +3128,16 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.accountLock) {
       catalog.lockUser(username);
       engine?.loginTracker.lockAccount(username);
+      this.emitUserActivity(username, 'LOCKED', { by: 'ALTER USER' });
     }
     if (stmt.accountUnlock) {
       catalog.unlockUser(username);
       engine?.loginTracker.unlockAccount(username);
+      this.emitUserActivity(username, 'UNLOCKED', { by: 'ALTER USER' });
     }
     if (stmt.passwordExpire) {
       engine?.passwords.expirePassword(username);
+      this.emitUserActivity(username, 'PASSWORD_EXPIRED', {});
       // Do NOT set accountStatus here — dbaUsers() derives the combined status
       // from PasswordManager + lock state to handle EXPIRED & LOCKED correctly.
     }
@@ -3147,6 +3188,7 @@ export class OracleExecutor extends BaseExecutor {
     }
     catalog.getSecurityEngine()?.dropUserCleanup(username);
     catalog.dropUser(username);
+    this.emitUserActivity(username, 'DROPPED', {});
     return emptyResult('User dropped.');
   }
 

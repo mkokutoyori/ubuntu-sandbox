@@ -256,6 +256,19 @@ export class SecurityAuditActor {
         }
       })),
 
+      // Idle snipe → anomaly so DBA_OUTSTANDING_ALERTS picks it up.
+      this.bus.subscribe('oracle.session.idle-sniped', scoped<{
+        deviceId: string; sid: string; sessionId: number; username: string;
+        idleSeconds: number; thresholdSeconds: number;
+      }>((p) => {
+        this.emitAnomaly({
+          kind: 'OFF_HOURS_DML', severity: 'LOW',
+          username: p.username, sessionId: p.sessionId,
+          description: `Idle session sniped after ${p.idleSeconds}s (limit ${p.thresholdSeconds}s)`,
+          evidence: { idleSeconds: p.idleSeconds, threshold: p.thresholdSeconds },
+        });
+      })),
+
       // 5. Instance shutdown drains everything.
       this.bus.subscribe('oracle.instance.state-changed', scoped<{
         deviceId: string; sid: string; newState: string;
