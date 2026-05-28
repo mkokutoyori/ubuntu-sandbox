@@ -60,12 +60,16 @@ export class VirtualFileSystem {
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
       '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
+      '/var/tmp', '/var/cache', '/var/spool', '/var/spool/mail', '/var/spool/cron',
+      '/var/local', '/var/opt', '/var/backups', '/var/run',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
     ];
     for (const dir of dirs) {
       this.mkdirp(dir, 0o755, 0, 0);
     }
+    this.chmod('/tmp',     0o1777);
+    this.chmod('/var/tmp', 0o1777);
 
     // Modern Linux root symlinks (bin -> usr/bin, etc.)
     this.createSymlink('/bin', 'usr/bin', 0, 0);

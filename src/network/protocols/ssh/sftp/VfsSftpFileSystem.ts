@@ -106,36 +106,53 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
   }
 
   mkdir(path: string): Result<void> {
-    if (this.vfs.mkdirp) { this.vfs.mkdirp(path, 0o755, this.defaults.uid, this.defaults.gid); return ok(undefined); }
-    if (this.vfs.mkdir)  { this.vfs.mkdir(path,  0o755, this.defaults.uid, this.defaults.gid); return ok(undefined); }
-    return err({ kind: 'IO_ERROR', message: 'mkdir not supported' } as SshError);
+    if (!this.vfs.mkdir) return err({ kind: 'IO_ERROR', message: 'mkdir not supported' } as SshError);
+    const success = this.vfs.mkdir(path, 0o755, this.defaults.uid, this.defaults.gid);
+    if (!success) return err({ kind: 'IO_ERROR', message: `mkdir ${path}: No such file or directory` } as SshError);
+    return ok(undefined);
   }
 
   deleteFile(path: string): Result<void> {
+    const type = this.entryType(path);
+    if (type === null) return err({ kind: 'IO_ERROR', message: `${path}: No such file or directory` } as SshError);
+    if (type === 'directory') return err({ kind: 'IO_ERROR', message: `${path}: Is a directory` } as SshError);
     if (this.vfs.unlink     && this.vfs.unlink(path))      return ok(undefined);
     if (this.vfs.deleteFile && this.vfs.deleteFile(path))  return ok(undefined);
-    return err({ kind: 'IO_ERROR', message: `${path}: not removed` } as SshError);
+    return err({ kind: 'IO_ERROR', message: `${path}: Permission denied` } as SshError);
   }
 
   rmdir(path: string): Result<void> {
     if (!this.vfs.rmdir) return err({ kind: 'IO_ERROR', message: 'rmdir not supported' } as SshError);
-    return this.vfs.rmdir(path)
-      ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: not removed` } as SshError);
+    const type = this.entryType(path);
+    if (type === null)       return err({ kind: 'IO_ERROR', message: `${path}: No such file or directory` } as SshError);
+    if (type !== 'directory') return err({ kind: 'IO_ERROR', message: `${path}: Not a directory` } as SshError);
+    if (!this.isEmptyDir(path)) return err({ kind: 'IO_ERROR', message: `${path}: Directory not empty` } as SshError);
+    if (this.vfs.rmdir(path)) return ok(undefined);
+    return err({ kind: 'IO_ERROR', message: `${path}: Permission denied` } as SshError);
   }
 
   rename(src: string, dst: string): Result<void> {
     if (!this.vfs.rename) return err({ kind: 'IO_ERROR', message: 'rename not supported' } as SshError);
-    return this.vfs.rename(src, dst)
-      ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${src}: rename failed` } as SshError);
+    if (this.entryType(src) === null) return err({ kind: 'IO_ERROR', message: `${src}: No such file or directory` } as SshError);
+    if (this.entryType(dst) !== null) return err({ kind: 'IO_ERROR', message: `${dst}: File exists` } as SshError);
+    if (this.vfs.rename(src, dst)) return ok(undefined);
+    return err({ kind: 'IO_ERROR', message: `${src}: rename failed` } as SshError);
   }
 
   setPermissions(path: string, mode: number): Result<void> {
     if (!this.vfs.chmod) return err({ kind: 'IO_ERROR', message: 'chmod not supported' } as SshError);
-    return this.vfs.chmod(path, mode)
-      ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: chmod failed` } as SshError);
+    if (this.entryType(path) === null) return err({ kind: 'IO_ERROR', message: `${path}: No such file or directory` } as SshError);
+    if (this.vfs.chmod(path, mode)) return ok(undefined);
+    return err({ kind: 'IO_ERROR', message: `${path}: chmod failed` } as SshError);
+  }
+
+  private entryType(path: string): 'file' | 'directory' | 'symlink' | null {
+    return this.getEntryType(path);
+  }
+
+  private isEmptyDir(path: string): boolean {
+    const r = this.listDirectory(path);
+    return r.ok && r.value.filter(e => e.name !== '.' && e.name !== '..').length === 0;
   }
 
   setOwner(path: string, uid: number, gid: number): Result<void> {

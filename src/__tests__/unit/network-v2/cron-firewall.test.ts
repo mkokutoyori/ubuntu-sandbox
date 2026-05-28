@@ -126,10 +126,10 @@ describe('CF-04 — ufw records blocked SSH in /var/log/ufw.log', () => {
 
   it('a UFW BLOCK line lands in ufw.log after a denied connection', async () => {
     const { pc1, pc2 } = buildPair();
-    await pc2.executeCommand('ufw enable');
-    await pc2.executeCommand('ufw deny 22');
+    await pc2.executeCommand('sudo ufw enable');
+    await pc2.executeCommand('sudo ufw deny 22');
     await pc1.executeCommand('ssh alice@10.0.0.2');
-    const log = await pc2.executeCommand('cat /var/log/ufw.log');
+    const log = await pc2.executeCommand('sudo cat /var/log/ufw.log');
     expect(log).toMatch(/\[UFW (BLOCK|REJECT)\]/);
     expect(log).toContain('DPT=22');
   });
@@ -137,7 +137,7 @@ describe('CF-04 — ufw records blocked SSH in /var/log/ufw.log', () => {
   it('nothing is logged while ufw is disabled', async () => {
     const { pc1, pc2 } = buildPair();
     await pc1.executeCommand('ssh alice@10.0.0.2');
-    const log = await pc2.executeCommand('cat /var/log/ufw.log');
+    const log = await pc2.executeCommand('sudo cat /var/log/ufw.log');
     expect(log).not.toMatch(/\[UFW BLOCK\]/);
   });
 });
