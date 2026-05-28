@@ -232,6 +232,21 @@ export class OracleParser extends BaseParser {
     }
   }
 
+  private parseAlterSession(pos: SourcePosition): import('../engine/parser/ASTNode').AlterSessionStatement {
+    let param: string | undefined;
+    let value: string | undefined;
+    if (this.matchKeyword('SET')) {
+      param = this.expectIdentifierOrKeyword().toUpperCase();
+      this.match(TokenType.COMPARISON_OP, '=');
+      if (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+        const raw = this.advance().value;
+        value = raw.replace(/^['"]|['"]$/g, '').toUpperCase();
+      }
+    }
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AlterSessionStatement', position: pos, param, value };
+  }
+
   private normalizeLockMode(phrase: string): import('../engine/parser/ASTNode').LockTableStatement['lockMode'] {
     const p = phrase.replace(/\s+/g, ' ').trim();
     switch (p) {
@@ -496,6 +511,7 @@ export class OracleParser extends BaseParser {
 
   protected override parseDialectAlter(pos: SourcePosition): Statement | null {
     if (this.matchWord('PLUGGABLE')) return this.parsePluggableDatabase(pos, 'ALTER');
+    if (this.matchKeyword('SESSION')) return this.parseAlterSession(pos);
     if (this.matchKeyword('SYSTEM')) return this.parseAlterSystem(pos);
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);

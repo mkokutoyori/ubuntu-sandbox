@@ -17,7 +17,7 @@ import { OracleParser } from './OracleParser';
 import type { SqlCommandHost } from './SqlCommandHost';
 import type {
   LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
-  PluggableDatabaseStatement, CreateTypeStatement,
+  PluggableDatabaseStatement, CreateTypeStatement, AlterSessionStatement,
 } from '../engine/parser/ASTNode';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
@@ -564,10 +564,6 @@ export class OracleDatabase implements SqlCommandHost {
       return this.executeCreateTrigger(executor, trimmed);
     }
 
-    // Check for ALTER SESSION (handled specially)
-    if (upper.startsWith('ALTER SESSION')) {
-      return this.executeAlterSession(executor, trimmed);
-    }
 
     // Check for DROP PROCEDURE/FUNCTION
     if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
@@ -685,22 +681,17 @@ export class OracleDatabase implements SqlCommandHost {
     }
   }
 
-  private executeAlterSession(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/ALTER\s+SESSION\s+SET\s+(\w+)\s*=\s*(\S+)/i);
-    if (match) {
-      const param = match[1].toUpperCase();
-      const value = match[2].replace(/['"]/g, '').toUpperCase();
-      if (param === 'SERVEROUTPUT') {
-        (executor as { context: ExecutionContext }).context.serverOutput = value === 'ON';
-      } else if (param === 'CURRENT_SCHEMA') {
-        if (!this.catalog.userExists(value)) {
+  execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet {
+    if (stmt.param && stmt.value !== undefined) {
+      if (stmt.param === 'SERVEROUTPUT') {
+        ctx.serverOutput = stmt.value === 'ON';
+      } else if (stmt.param === 'CURRENT_SCHEMA') {
+        if (!this.catalog.userExists(stmt.value)) {
           return emptyResult('ORA-02248: invalid option for ALTER SESSION');
         }
-        executor.updateContext({ currentSchema: value });
-        // Keep the live OracleSession in sync — USERENV reads from it.
-        const ctx = (executor as { context: ExecutionContext }).context;
+        ctx.currentSchema = stmt.value;
         const sess = ctx.session as { setCurrentSchema?: (s: string) => void } | undefined;
-        sess?.setCurrentSchema?.(value);
+        sess?.setCurrentSchema?.(stmt.value);
       }
     }
     return emptyResult('Session altered.');

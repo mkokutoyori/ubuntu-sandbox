@@ -1050,6 +1050,13 @@ export interface CreateTypeStatement extends ASTNode {
   elemType?: string;
 }
 
+/** `ALTER SESSION SET param = value` (and other ALTER SESSION forms, captured loosely). */
+export interface AlterSessionStatement extends ASTNode {
+  type: 'AlterSessionStatement';
+  param?: string;
+  value?: string;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -1091,6 +1098,7 @@ export type Statement =
   | CreateFlashbackArchiveStatement | DropFlashbackArchiveStatement
   | PluggableDatabaseStatement
   | CreateTypeStatement
+  | AlterSessionStatement
   | CommentStatement
   // PL/SQL
   | PLSQLBlock;

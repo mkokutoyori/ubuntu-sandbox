@@ -3,6 +3,7 @@ import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type {
   LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
   PluggableDatabaseStatement, CreateTypeStatement, AlterTableAction,
+  AlterSessionStatement,
 } from '../engine/parser/ASTNode';
 
 export type AlterTableStorageAction = Extract<AlterTableAction,
@@ -15,4 +16,5 @@ export interface SqlCommandHost {
   execPluggableDatabase(stmt: PluggableDatabaseStatement, ctx: ExecutionContext): ResultSet;
   execCreateType(stmt: CreateTypeStatement, ctx: ExecutionContext): ResultSet;
   execAlterTableStorage(schema: string, table: string, action: AlterTableStorageAction): ResultSet;
+  execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet;
 }
