@@ -14,6 +14,7 @@ import type { WindowsSecurityAudit } from './WindowsSecurityAudit';
 import type {
   WindowsAccountChangedPayload,
   WindowsLogonEventPayload,
+  WindowsLogoffEventPayload,
   WindowsGroupEventPayload,
   WindowsGroupMemberEventPayload,
   WindowsProcessEventPayload,
@@ -30,6 +31,7 @@ export class WindowsSecurityAuditProjection {
     this.subscriptions.push(
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
       bus.subscribe('windows.account.logon', (e) => this.onLogon(e.payload)),
+      bus.subscribe('windows.account.logoff', (e) => this.onLogoff(e.payload)),
       bus.subscribe('windows.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('windows.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
@@ -62,6 +64,11 @@ export class WindowsSecurityAuditProjection {
     if (p.deviceId !== this.deviceId) return;
     if (p.success) this.audit.logonSuccess(p.account, p.logonType);
     else this.audit.logonFailure(p.account);
+  }
+
+  private onLogoff(p: WindowsLogoffEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.audit.logoff(p.account);
   }
 
   private onGroupCreated(p: WindowsGroupEventPayload): void {

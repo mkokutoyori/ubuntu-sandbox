@@ -77,6 +77,23 @@ export class SshAuthThrottler {
     return until;
   }
 
+  /** Snapshot of currently-banned IPs (block has not yet expired). */
+  bannedIps(): string[] {
+    const now = this.clock();
+    const out: string[] = [];
+    for (const [ip, until] of this.blockUntilByIp) {
+      if (now < until) out.push(ip);
+    }
+    return out;
+  }
+
+  /** Total recorded failures across the lifetime of the throttler. */
+  totalFailures(): number {
+    let n = 0;
+    for (const list of this.failuresByIp.values()) n += list.length;
+    return n;
+  }
+
   // ─── private ─────────────────────────────────────────────────────
 
   private handle(event: SshServerEvent): void {

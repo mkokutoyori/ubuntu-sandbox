@@ -33,6 +33,7 @@ import {
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
+import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
@@ -59,7 +60,7 @@ interface WtmpEntry {
   user: string;
   ip: string;
   at: number;
-  type: 'login' | 'reboot';
+  type: 'login' | 'logout' | 'reboot';
   tty: string;
 }
 
@@ -126,6 +127,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly events: ISshServerEventBus;
   private readonly throttler: SshAuthThrottler | null;
   private readonly syslogger: SshSyslogger | null;
+  private readonly utmpProjection: LinuxUtmpProjection | null;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -160,6 +162,9 @@ export class LinuxSshServerContext implements ISshServerContext {
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostname,
           port: this.sshdConfig.listenPort,
+          // Hand the device's journal in so SSH events surface in
+          // `journalctl -u sshd`, not just in /var/log/auth.log.
+          logMgr: this.executor?.logMgr,
         })
       : null;
 
@@ -170,11 +175,28 @@ export class LinuxSshServerContext implements ISshServerContext {
           blockMs: opts.throttlerBlockMs,
         })
       : null;
+
+    // utmp / btmp are owned by recordLogin / recordAuthFailure on
+    // this same context — the projection exists for tests that drive
+    // SshServerEventBus directly without instantiating a full
+    // LinuxSshServerContext, so we deliberately do NOT subscribe a
+    // second writer here (it would double every row).
+    this.utmpProjection = null;
   }
 
   /** Tell SshServerHandler whether the source IP is currently rate-limited. */
   isClientBlocked(ip: string): boolean {
     return this.throttler?.isBlocked(ip) ?? false;
+  }
+
+  /** Currently-banned IPs (fail2ban-client status backend). */
+  bannedIps(): string[] {
+    return this.throttler?.bannedIps() ?? [];
+  }
+
+  /** Total recorded auth failures across the throttler's lifetime. */
+  totalAuthFailures(): number {
+    return this.throttler?.totalFailures() ?? 0;
   }
 
   /** PermitEmptyPasswords gate consulted by SshServerHandler. */
@@ -297,6 +319,23 @@ export class LinuxSshServerContext implements ISshServerContext {
     // the JSON file. The registry rotates current ↔ previous, keeping
     // PAM-like semantics.
     this.executor?.lastlog.record(user, fromIp, 'pts/0');
+  }
+
+  /**
+   * Pair with {@link recordLogin}: append a DEAD_PROCESS-style row when
+   * the SSH session ends, so `last` can show LOGOUT times instead of
+   * just "still logged in". Real wtmp pairs USER_PROCESS / DEAD_PROCESS
+   * by tty; we keep the same `tty: 'pts/0'` simplification as the login
+   * side and tag the row `type: 'logout'`.
+   */
+  recordLogout(user: string, fromIp: string): void {
+    this.appendWtmp({
+      user,
+      ip: fromIp,
+      at: Date.now(),
+      type: 'logout',
+      tty: 'pts/0',
+    });
   }
 
   /**

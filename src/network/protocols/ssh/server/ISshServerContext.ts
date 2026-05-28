@@ -36,6 +36,14 @@ export interface ISshServerContext {
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;
   /**
+   * Optional logout hook fired by SshServerHandler when an authenticated
+   * session ends (channel close, client disconnect, or transport drop).
+   * Implementations append to /var/log/wtmp.json on Linux and publish
+   * `windows.account.logoff` on Windows so the Security event log
+   * receives 4634 in addition to the 4624/4625 it already gets.
+   */
+  recordLogout?(user: string, fromIp: string): void;
+  /**
    * Optional auth-failure hook used by SshServerHandler when the handshake or
    * password/pubkey check is rejected (analysis doc §1.4/§1.5). Implementations
    * append to /var/log/auth.log and /var/log/btmp.json.

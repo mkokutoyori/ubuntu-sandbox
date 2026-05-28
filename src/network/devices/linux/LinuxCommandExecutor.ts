@@ -45,6 +45,8 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdWait, cmdPstree } from './jobs/Job
 import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress } from './network/HostLookup';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
+import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
+import { SshUserContext } from '../../protocols/ssh/SshUserContext';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
@@ -482,12 +484,13 @@ export class LinuxCommandExecutor {
     // scp / sftp select an alternate port with -P (rsync uses -e); translate
     // it into the ssh client's own -p so the probe targets the right port.
     const pIdx = args.indexOf('-P');
-    // `hostname` is the universally-supported probe verb (every vendor's
-    // sync exec bridge implements it). `true` is Unix-only and would be
-    // rejected by Windows / Cisco / Huawei.
-    const probeArgs = pIdx >= 0 && args[pIdx + 1]
-      ? ['-p', args[pIdx + 1], probeTarget, 'hostname']
-      : [probeTarget, 'hostname'];
+    const probeArgs: string[] = [];
+    if (pIdx >= 0 && args[pIdx + 1]) probeArgs.push('-p', args[pIdx + 1]);
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
+      else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
+    }
+    probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
     const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
@@ -509,12 +512,26 @@ export class LinuxCommandExecutor {
       return session.run();
     }
 
-    // sftp delegates to SftpInteractiveSession, parsing stdin as a batch.
     if (cmd === 'sftp') {
-      const stdin = stdinArg ?? '';
+      const bIdx = args.indexOf('-b');
+      let stdin = stdinArg ?? '';
+      if (bIdx >= 0) {
+        const batchPath = args[bIdx + 1];
+        if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
+        const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
+        if (body === null) {
+          return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
+        }
+        stdin = body;
+      }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
-      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device);
+      const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
+      const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+      const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
+        ?.getSshServerContext?.()?.events;
+      const t0 = Date.now();
+      remoteEvents?.emit({ kind: 'channel_opened', user: remoteUserName, channelType: 'sftp' });
       const session = new SftpInteractiveSession({
         local: new VfsSftpFileSystem(this.vfs, {
           uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
@@ -523,6 +540,7 @@ export class LinuxCommandExecutor {
         initialLocalCwd: this.cwd,
       });
       session.run(SftpCommandScript.parse(stdin));
+      remoteEvents?.emit({ kind: 'channel_closed', user: remoteUserName, channelType: 'sftp', durationMs: Date.now() - t0 });
       return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
     }
 
@@ -547,29 +565,43 @@ export class LinuxCommandExecutor {
    * null when the host doesn't exist or has no VFS exposed — letting the
    * ScpSession surface "no route to host" the same way OpenSSH does.
    */
-  private resolveRemoteSftpFs(host: string): ISftpFileSystem | null {
+  private resolveRemoteSftpFs(host: string, asUser?: string): ISftpFileSystem | null {
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) });
-    return this.resolveRemoteSftpFsFromDevice(found?.device);
+    return this.resolveRemoteSftpFsFromDevice(found?.device, asUser);
   }
 
-  private resolveRemoteSftpFsFromDevice(device: unknown): ISftpFileSystem | null {
+  private resolveRemoteSftpFsFromDevice(device: unknown, asUser?: string): ISftpFileSystem | null {
     if (!device) return null;
     const linuxVfs = (device as { executor?: { vfs?: VirtualFileSystem } }).executor?.vfs;
     if (linuxVfs) {
-      return new VfsSftpFileSystem(linuxVfs, { uid: 0, gid: 0, umask: 0o022 });
+      const userCtx = this.buildRemoteUserCtx(device, asUser);
+      const raw = new VfsSftpFileSystem(linuxVfs, { uid: userCtx.uid, gid: userCtx.gid, umask: 0o022 });
+      return new PermissionCheckingFSDecorator(raw, userCtx);
     }
     const windowsFs = (device as { fs?: unknown; getFileSystem?: () => unknown }).fs
       ?? (device as { getFileSystem?: () => unknown }).getFileSystem?.();
     if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {
       return new WindowsSftpFileSystem(windowsFs as ConstructorParameters<typeof WindowsSftpFileSystem>[0]);
     }
-    // Router-style targets (Cisco / Huawei) expose synthetic system
-    // files via getSftpFileSource() — wrapped in RouterSftpFileSystem.
     const sftpSource = (device as { getSftpFileSource?: () => unknown }).getSftpFileSource?.();
     if (sftpSource && typeof (sftpSource as { read?: unknown }).read === 'function') {
       return new RouterSftpFileSystem(sftpSource as ConstructorParameters<typeof RouterSftpFileSystem>[0]);
     }
     return null;
+  }
+
+  private buildRemoteUserCtx(device: unknown, asUser?: string): SshUserContext {
+    const userMgr = (device as { executor?: { userMgr?: {
+      getUser(n: string): { uid: number; gid: number; home: string } | undefined;
+      getGroupsForUser?(n: string): readonly number[];
+    } } }).executor?.userMgr;
+    const name = asUser ?? this.userMgr.currentUser;
+    const entry = userMgr?.getUser(name);
+    if (!entry) {
+      return new SshUserContext(name, 65534, 65534, [], '/');
+    }
+    const groups = userMgr?.getGroupsForUser?.(name) ?? [];
+    return new SshUserContext(name, entry.uid, entry.gid, groups, entry.home);
   }
 
   private sshHomeDir(): string {
@@ -1674,6 +1706,7 @@ export class LinuxCommandExecutor {
         return { output: cmdLast(c, args), exitCode: 0 };
       }
       case 'lastb': return { output: cmdLastb(c, args), exitCode: 0 };
+      case 'lastlog': return { output: this.renderLastlog(args), exitCode: 0 };
       case 'getent': {
         // Real getent consults `/etc/nsswitch.conf` and walks the
         // declared sources per database. All output / exit-code logic
@@ -2000,6 +2033,7 @@ export class LinuxCommandExecutor {
       // ── System administration commands ──────────────────────────────
       case 'systemctl': return cmdSystemctl(args, this.serviceMgr);
       case 'service': return cmdService(args, this.serviceMgr);
+      case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
@@ -2721,6 +2755,89 @@ export class LinuxCommandExecutor {
     const username = args.find(a => !a.startsWith('-'));
     const out = this.userMgr.finger(username);
     return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
+  }
+
+  /**
+   * `lastlog` — one row per known account showing the most-recent login
+   * the lastlog registry recorded (or "Never logged in" when absent).
+   * Mirrors util-linux output: `Username Port From Latest`.
+   *
+   * Supported flags:
+   *   -u, --user <name>   restrict to a single user
+   *   -b, --before <days> hide rows older than N days
+   *   -t, --time  <days>  hide rows older than N days (alias of -b's inverse)
+   *
+   * Real lastlog is backed by a binary `/var/log/lastlog` indexed by UID;
+   * the simulator stores the same triple `{when, sourceHost, tty}` in
+   * LinuxLastlogRegistry — the rendering is identical.
+   */
+  private cmdFail2banClient(args: string[]): string {
+    const ctx = this.sshContextForFail2ban?.();
+    if (!ctx) return 'ERROR  NOK: ("sshd",)';
+    if (args[0] === 'status' && args[1] === 'sshd') {
+      const banned = ctx.bannedIps();
+      const totalFailed = ctx.totalAuthFailures();
+      return [
+        'Status for the jail: sshd',
+        '|- Filter',
+        `|  |- Currently failed: ${banned.length === 0 ? totalFailed : 0}`,
+        `|  |- Total failed:     ${totalFailed}`,
+        '|  `- File list:        /var/log/auth.log',
+        '`- Actions',
+        `   |- Currently banned: ${banned.length}`,
+        `   |- Total banned:     ${banned.length}`,
+        `   \`- Banned IP list:   ${banned.join(' ')}`,
+      ].join('\n');
+    }
+    if (args[0] === 'status') {
+      return 'Status\n|- Number of jail:	1\n`- Jail list:	sshd';
+    }
+    if (args[0] === 'version') return '1.0.2';
+    if (args[0] === 'ping') return 'Server replied: pong';
+    return 'Usage: fail2ban-client [OPTIONS] <COMMAND>';
+  }
+
+  /** Optional accessor to the SSH server context, wired by LinuxMachine. */
+  sshContextForFail2ban: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null = null;
+
+  private renderLastlog(args: string[]): string {
+    let filterUser: string | null = null;
+    let beforeDays: number | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-u' || a === '--user') filterUser = args[++i] ?? null;
+      else if (a === '-b' || a === '--before') beforeDays = Number(args[++i]);
+      else if (a === '-t' || a === '--time')   beforeDays = Number(args[++i]);
+    }
+
+    const header = 'Username         Port     From             Latest';
+    const rows: string[] = [header];
+    const cutoff = beforeDays !== null && Number.isFinite(beforeDays)
+      ? Date.now() - beforeDays * 86400_000
+      : null;
+
+    const all = this.userMgr.getAllUsers();
+    for (const u of all) {
+      if (filterUser && u.username !== filterUser) continue;
+      const entry = this.lastlog.getCurrent(u.username);
+      if (!entry) {
+        rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
+        continue;
+      }
+      if (cutoff !== null && entry.when < cutoff) continue;
+      const d = new Date(entry.when);
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const latest =
+        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
+        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
+      rows.push(
+        `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
+      );
+    }
+    return rows.join('\n');
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {

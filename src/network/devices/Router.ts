@@ -1136,6 +1136,18 @@ export abstract class Router extends Equipment {
     if (cached) {
       this.counters.ipForwDatagrams++;
       this.counters.ifOutOctets += fwdPkt.totalLength;
+      Logger.info(
+        this.id, 'router:forward',
+        `${this.name}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP} via ${nextHopIP} (${route.iface}, ttl=${fwdPkt.ttl})`,
+        {
+          src: fwdPkt.sourceIP.toString(),
+          dst: fwdPkt.destinationIP.toString(),
+          nextHop: nextHopIP.toString(),
+          iface: route.iface,
+          ttl: fwdPkt.ttl,
+          totalLength: fwdPkt.totalLength,
+        },
+      );
       this.sendFrame(route.iface, {
         srcMAC: outPort.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_IPV4, payload: fwdPkt,

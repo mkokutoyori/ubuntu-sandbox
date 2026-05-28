@@ -449,7 +449,7 @@ describe('§6 — mkdir creates remote directories', () => {
     },
     {
       name: 'mkdir relative to cwd creates underneath it',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/base'); },
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/base && chown alice:alice /tmp/base'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['cd /tmp/base', 'mkdir leaf', 'cd leaf', 'pwd']),
       contains: [/Remote working directory: \/tmp\/base\/leaf/],
@@ -477,7 +477,7 @@ describe('§7 — rmdir removes empty directories', () => {
   const rows: Row[] = [
     {
       name: 'rmdir on an empty dir removes it; subsequent cd fails',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/togo'); },
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/togo && chown alice:alice /tmp/togo'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/togo', 'cd /tmp/togo']),
       contains: [/Not a directory|No such/i],
@@ -485,7 +485,7 @@ describe('§7 — rmdir removes empty directories', () => {
     {
       name: 'rmdir on a non-empty directory fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /tmp/full && echo x > /tmp/full/x');
+        await l.pc2.executeCommand('mkdir -p /tmp/full && echo x > /tmp/full/x && chown -R alice:alice /tmp/full');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/full']),
@@ -499,7 +499,7 @@ describe('§7 — rmdir removes empty directories', () => {
     },
     {
       name: 'rmdir on a regular file fails (not a directory)',
-      setup: async (l) => { await l.pc2.executeCommand('echo nope > /tmp/notadir'); },
+      setup: async (l) => { await l.pc2.executeCommand('echo nope > /tmp/notadir && chown alice:alice /tmp/notadir'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/notadir']),
       contains: [/rmdir failed|Not a directory|Failure/i],
@@ -527,14 +527,14 @@ describe('§8 — rm / delete remove remote files', () => {
   const rows: Row[] = [
     {
       name: 'rm of a regular file removes it',
-      setup: async (l) => { await l.pc2.executeCommand('echo gone > /tmp/doomed.txt'); },
+      setup: async (l) => { await l.pc2.executeCommand('echo gone > /tmp/doomed.txt && chown alice:alice /tmp/doomed.txt'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/doomed.txt', 'ls /tmp']),
       excludes: ['doomed.txt'],
     },
     {
       name: 'delete is an alias for rm',
-      setup: async (l) => { await l.pc2.executeCommand('echo bye > /tmp/aliased'); },
+      setup: async (l) => { await l.pc2.executeCommand('echo bye > /tmp/aliased && chown alice:alice /tmp/aliased'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['delete /tmp/aliased', 'ls /tmp']),
       excludes: ['aliased'],
@@ -547,7 +547,7 @@ describe('§8 — rm / delete remove remote files', () => {
     },
     {
       name: 'rm of a directory is refused (not a regular file)',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/dir-rm'); },
+      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/dir-rm && chown alice:alice /tmp/dir-rm'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/dir-rm']),
       contains: [/unlink failed|directory|Failure/i],
@@ -555,7 +555,7 @@ describe('§8 — rm / delete remove remote files', () => {
     {
       name: 'multiple rms in one batch keep going through errors',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo 1 > /tmp/r1 && echo 2 > /tmp/r2');
+        await l.pc2.executeCommand('echo 1 > /tmp/r1 && echo 2 > /tmp/r2 && chown alice:alice /tmp/r1 /tmp/r2');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/r1', 'rm /tmp/ghost', 'rm /tmp/r2', 'ls /tmp']),
@@ -692,7 +692,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename old new moves the file',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/from');
+        await l.pc2.executeCommand('echo r > /tmp/from && chown alice:alice /tmp/from');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from /tmp/to']));
       },
       on: l => l.pc2,
@@ -702,7 +702,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename leaves no file at the source',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/from2');
+        await l.pc2.executeCommand('echo r > /tmp/from2 && chown alice:alice /tmp/from2');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from2 /tmp/to2']));
       },
       on: l => l.pc2,
@@ -713,7 +713,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'mv is an alias for rename',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/mv-src');
+        await l.pc2.executeCommand('echo r > /tmp/mv-src && chown alice:alice /tmp/mv-src');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mv /tmp/mv-src /tmp/mv-dst']));
       },
       on: l => l.pc2,
@@ -723,7 +723,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename when destination already exists fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo a > /tmp/ra && echo b > /tmp/rb');
+        await l.pc2.executeCommand('echo a > /tmp/ra && echo b > /tmp/rb && chown alice:alice /tmp/ra /tmp/rb');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']),
@@ -759,7 +759,7 @@ describe('§12 — chmod changes remote file permissions', () => {
     {
       name: 'chmod 600 /tmp/secret sets mode 0600',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo s > /tmp/secret');
+        await l.pc2.executeCommand('echo s > /tmp/secret && chown alice:alice /tmp/secret');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 600 /tmp/secret']));
       },
       on: l => l.pc2,
@@ -769,7 +769,7 @@ describe('§12 — chmod changes remote file permissions', () => {
     {
       name: 'chmod 755 on a directory updates its mode',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /tmp/dir-perm');
+        await l.pc2.executeCommand('mkdir -p /tmp/dir-perm && chown alice:alice /tmp/dir-perm');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 755 /tmp/dir-perm']));
       },
       on: l => l.pc2,
@@ -1647,8 +1647,8 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
     {
       name: 'ufw deny 22 blocks sftp the same way iptables DROP does',
       setup: async (l) => {
-        await l.pc2.executeCommand('ufw enable');
-        await l.pc2.executeCommand('ufw deny 22');
+        await l.pc2.executeCommand('sudo ufw enable');
+        await l.pc2.executeCommand('sudo ufw deny 22');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
@@ -1906,7 +1906,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['chmod 777 /tmp/owned']),
-      contains: [/Operation not permitted|chmod failed|Failure/i],
+      contains: [/Operation not permitted|Permission denied|chmod failed|Failure/i],
     },
     {
       name: 'setfacl deny on a directory blocks put even when world-writable',

@@ -1310,8 +1310,8 @@ describe('§20 — firewall rules blocking port 22', () => {
     {
       name: 'ufw deny 22 has the same effect as iptables DROP on 22',
       setup: async (l) => {
-        await l.pc2.executeCommand('ufw enable');
-        await l.pc2.executeCommand('ufw deny 22');
+        await l.pc2.executeCommand('sudo ufw enable');
+        await l.pc2.executeCommand('sudo ufw deny 22');
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
@@ -1337,11 +1337,11 @@ describe('§20 — firewall rules blocking port 22', () => {
     {
       name: 'ufw status shows enabled + rule list',
       setup: async (l) => {
-        await l.pc2.executeCommand('ufw enable');
-        await l.pc2.executeCommand('ufw deny 22');
+        await l.pc2.executeCommand('sudo ufw enable');
+        await l.pc2.executeCommand('sudo ufw deny 22');
       },
       on: l => l.pc2,
-      cmd: 'ufw status',
+      cmd: 'sudo ufw status',
       contains: [/Status: active/, /22.*DENY/],
     },
   ];
