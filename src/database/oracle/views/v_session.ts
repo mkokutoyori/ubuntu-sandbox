@@ -121,6 +121,7 @@ registerView({
         const action = live?.action ?? s.action;
         const clientInfo = live?.clientInfo ?? s.clientInfo;
         const clientIdentifier = live?.clientIdentifier ?? null;
+        const blocker = instance.lockManager.blockingSessionFor(String(s.sid)) ?? s.blockingSession;
         return [
         saddr(s.sid), s.sid, s.serial, s.sid, paddr(s.sid),
         s.sid, s.username, 3, 2147483644, null, null, s.status,
@@ -136,8 +137,8 @@ registerView({
         'NO', 'NONE', 'NONE', 'NO',
         s.resourceConsumerGroup, 'DISABLED', 'ENABLED', 'ENABLED',
         0, s.event, 6, s.waitClass, 0, s.secondsInWait, s.state,
-        s.blockingSession === null ? 'NO HOLDER' : 'VALID',
-        s.blockingSession, 'DISABLED', s.service, 1,
+        blocker === null ? 'NO HOLDER' : 'VALID',
+        blocker, 'DISABLED', s.service, 1,
       ];
       });
       return queryResult(cols, [...bgRows, ...userRows]);

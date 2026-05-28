@@ -515,6 +515,32 @@ export class OracleDatabase {
       return this.executePLSQL(executor, trimmed);
     }
 
+    const lockTbl = trimmed.match(/^LOCK\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+IN\s+(ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|SHARE\s+UPDATE)\s+MODE(\s+NOWAIT)?/i);
+    if (lockTbl) {
+      const ctx = (executor as unknown as { context: ExecutionContext }).context;
+      const owner = (lockTbl[1] ?? ctx.currentSchema).toUpperCase();
+      const table = lockTbl[2].toUpperCase();
+      if (!this.storage.getTableMeta(owner, table)) {
+        return emptyResult(`ORA-00942: table or view does not exist`);
+      }
+      const modeWord = lockTbl[3].toUpperCase().replace(/\s+/g, ' ');
+      const modeMap: Record<string, 2 | 3 | 4 | 5 | 6> = {
+        'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
+        'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
+      };
+      const sess = ctx.session;
+      const sid = sess?.sid ?? 0;
+      try {
+        this.instance.lockManager.lockTable({
+          sessionId: String(sid), sid, schema: owner, table,
+          mode: modeMap[modeWord] ?? 3, nowait: !!lockTbl[4],
+        });
+      } catch (e: unknown) {
+        return emptyResult(e instanceof Error ? e.message : String(e));
+      }
+      return emptyResult('Table(s) Locked.');
+    }
+
     const fba = upper.match(/^CREATE\s+FLASHBACK\s+ARCHIVE\s+(?:DEFAULT\s+)?(\w+)\s+TABLESPACE\s+(\w+)(?:\s+QUOTA\s+(\d+)\s*M)?\s+RETENTION\s+(\d+)\s+(?:DAY|YEAR|MONTH)/i);
     if (fba) {
       const isDefault = /CREATE\s+FLASHBACK\s+ARCHIVE\s+DEFAULT/i.test(trimmed);
@@ -676,8 +702,32 @@ export class OracleDatabase {
       // user text — the AST type alone is useless to a DBA.
       (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
       result = executor.execute(stmt);
+      try {
+        this.maybeLockForUpdate(executor, stmt);
+      } catch (e: unknown) {
+        return emptyResult(e instanceof Error ? e.message : String(e));
+      }
     }
     return result;
+  }
+
+  private maybeLockForUpdate(executor: OracleExecutor, stmt: unknown): ResultSet | void {
+    const s = stmt as { type?: string; from?: Array<{ type?: string; schema?: string; name?: string }>;
+      forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
+    if (s.type !== 'SelectStatement' || !s.forUpdate || !s.from) return;
+    const ctx = (executor as unknown as { context: ExecutionContext }).context;
+    const sess = ctx.session;
+    const sid = sess?.sid ?? 0;
+    const nowait = s.forUpdate.wait === 'NOWAIT';
+    for (const f of s.from) {
+      if (f.type !== 'TableRef' || !f.name) continue;
+      const owner = (f.schema ?? ctx.currentSchema).toUpperCase();
+      const table = f.name.toUpperCase();
+      if (!this.storage.getTableMeta(owner, table)) continue;
+      this.instance.lockManager.lockRowsForUpdate({
+        sessionId: String(sid), sid, schema: owner, table, txId: sid, nowait,
+      });
+    }
   }
 
   private executeAlterSession(executor: OracleExecutor, sql: string): ResultSet {

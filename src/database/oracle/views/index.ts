@@ -461,5 +461,7 @@ import './dba_flashback_archive_ts';
 import './v_result_cache_objects';
 import './v_result_cache_dependency';
 import './v_im_segments';
+import './dba_blockers';
+import './dba_waiters';
 
 export { };

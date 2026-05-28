@@ -39,6 +39,8 @@ import { ReplicationManager } from './replication/Replication';
 import { FlashbackArchiveManager } from './flashback/FlashbackArchive';
 import { ResultCacheManager } from './resultcache/ResultCache';
 import { InMemoryManager } from './resultcache/InMemoryManager';
+import { LockManager } from './lock/LockManager';
+import { LockActor } from './lock/LockActor';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -121,6 +123,8 @@ export class OracleInstance {
   readonly flashbackArchive = new FlashbackArchiveManager();
   readonly resultCache = new ResultCacheManager();
   readonly inMemory = new InMemoryManager();
+  readonly lockManager = new LockManager();
+  private _lockActor: LockActor | null = null;
   statistics: StatisticsManager | null = null;
   scheduler: import('./scheduler/SchedulerManager').SchedulerManager | null = null;
   attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {
@@ -218,6 +222,10 @@ export class OracleInstance {
       this._waitEngine.stop();
       this._waitEngine = null;
     }
+    if (this._lockActor) {
+      this._lockActor.stop();
+      this._lockActor = null;
+    }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
     this._runtimeStateActor = new OracleRuntimeStateActor(this.getBus(), this._deviceId, this._runtimeState);
@@ -231,6 +239,8 @@ export class OracleInstance {
     this._systemTriggerExecutor.start();
     this._waitEngine = new WaitEventEngine(this.getBus(), this._deviceId);
     this._waitEngine.start();
+    this._lockActor = new LockActor(this.getBus(), this._deviceId, this.lockManager);
+    this._lockActor.start();
     // Reattach the index usage monitor with the current bus/deviceId so
     // its subscription tracks the same scoping the other actors use.
     if (this._indexUsageStorage) {
