@@ -527,6 +527,10 @@ export class LinuxCommandExecutor {
       const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
       const remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+      const remoteEvents = (found?.device as { getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; channelType?: string; durationMs?: number }) => void } } } | undefined)
+        ?.getSshServerContext?.()?.events;
+      const t0 = Date.now();
+      remoteEvents?.emit({ kind: 'channel_opened', user: remoteUserName, channelType: 'sftp' });
       const session = new SftpInteractiveSession({
         local: new VfsSftpFileSystem(this.vfs, {
           uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
@@ -535,6 +539,7 @@ export class LinuxCommandExecutor {
         initialLocalCwd: this.cwd,
       });
       session.run(SftpCommandScript.parse(stdin));
+      remoteEvents?.emit({ kind: 'channel_closed', user: remoteUserName, channelType: 'sftp', durationMs: Date.now() - t0 });
       return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
     }
 

@@ -96,15 +96,18 @@ export class SshSyslogger {
       case 'client_connected':
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${this.hostname} port ${this.port}`;
 
-      case 'auth_success':
+      case 'auth_success': {
+        const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
         if (event.method === 'publickey' && event.keyFingerprint) {
-          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
+          return `Accepted publickey for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
         }
-        return `Accepted ${event.method} for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
+        return `Accepted ${event.method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
+      }
 
       case 'auth_failure': {
         const method = event.method ?? 'unknown';
-        return `Failed ${method} for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
+        const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
+        return `Failed ${method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
       }
 
       case 'auth_invalid_user':
@@ -121,6 +124,9 @@ export class SshSyslogger {
       }
 
       case 'channel_opened':
+        if (event.channelType === 'sftp') {
+          return `subsystem request for sftp by user ${event.user}`;
+        }
         return `pam_unix(sshd:session): session opened for user ${event.user} (channel ${event.channelType})`;
 
       case 'channel_closed':

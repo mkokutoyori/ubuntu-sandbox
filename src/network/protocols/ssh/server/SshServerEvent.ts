@@ -50,6 +50,7 @@ export type SshServerEvent =
       ip: string;
       port?: number;
       keyFingerprint?: string;
+      fromHost?: string;
       timestamp?: number;
     }
   | {
@@ -59,6 +60,7 @@ export type SshServerEvent =
       ip: string;
       method?: string;
       port?: number;
+      fromHost?: string;
       timestamp?: number;
     }
   | {

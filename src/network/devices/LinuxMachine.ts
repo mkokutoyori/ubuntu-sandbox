@@ -285,9 +285,9 @@ export abstract class LinuxMachine extends EndHost {
   ): void {
     const events = this.getSshServerContext().events;
     if (accepted) {
-      events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, port: 50000 });
+      events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, fromHost, port: 50000 });
     } else {
-      events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, port: 50000, reason: 'authentication failure' });
+      events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: 'authentication failure' });
     }
     // Track active sessions in the session table for `w`, `who`, `last`.
     if (accepted) {
