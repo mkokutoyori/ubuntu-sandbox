@@ -78,8 +78,46 @@ export class OracleParser extends BaseParser {
       case 'AUDIT': return this.parseAudit();
       case 'NOAUDIT': return this.parseNoaudit();
       case 'ADMINISTER': return this.parseAdministerKeyManagement();
+      case 'LOCK': return this.parseLockTable();
     }
     return null;
+  }
+
+  /**
+   * `LOCK TABLE [schema.]table IN <mode> MODE [NOWAIT]`. The mode is a
+   * one-to-three keyword phrase; we normalise it to the canonical
+   * space-separated form so the executor can map it to a TM lock level.
+   */
+  private parseLockTable(): import('../engine/parser/ASTNode').LockTableStatement {
+    const pos = this.current().position;
+    this.expectKeyword('LOCK');
+    this.expectKeyword('TABLE');
+    let schema: string | undefined;
+    let table = this.expectIdentifier();
+    if (this.match(TokenType.DOT)) { schema = table; table = this.expectIdentifier(); }
+    this.expectKeyword('IN');
+    const words: string[] = [];
+    while (!this.checkIdentifierOrKeyword('MODE') && !this.check(TokenType.EOF)) {
+      words.push(this.expectIdentifierOrKeyword().toUpperCase());
+    }
+    this.expectIdentifierOrKeyword(); // MODE
+    const nowait = this.checkIdentifierOrKeyword('NOWAIT');
+    if (nowait) this.advance();
+    const lockMode = this.normalizeLockMode(words.join(' '));
+    return { type: 'LockTableStatement', position: pos, schema, table, lockMode, nowait };
+  }
+
+  private normalizeLockMode(phrase: string): import('../engine/parser/ASTNode').LockTableStatement['lockMode'] {
+    const p = phrase.replace(/\s+/g, ' ').trim();
+    switch (p) {
+      case 'ROW SHARE': return 'ROW SHARE';
+      case 'SHARE UPDATE': return 'SHARE UPDATE';
+      case 'ROW EXCLUSIVE': return 'ROW EXCLUSIVE';
+      case 'SHARE': return 'SHARE';
+      case 'SHARE ROW EXCLUSIVE': return 'SHARE ROW EXCLUSIVE';
+      case 'EXCLUSIVE': return 'EXCLUSIVE';
+      default: return 'EXCLUSIVE';
+    }
   }
 
   /**

@@ -14,6 +14,8 @@ import { OracleStorage } from './OracleStorage';
 import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
+import type { SqlCommandHost } from './SqlCommandHost';
+import type { LockTableStatement } from '../engine/parser/ASTNode';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
@@ -75,7 +77,7 @@ export interface StoredPLSQLUnit {
   status: 'VALID' | 'INVALID';
 }
 
-export class OracleDatabase {
+export class OracleDatabase implements SqlCommandHost {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
   readonly catalog: OracleCatalog;
@@ -341,6 +343,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
   }
@@ -396,6 +399,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
   }
@@ -445,6 +449,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
   }
@@ -517,31 +522,6 @@ export class OracleDatabase {
       return this.executePLSQL(executor, trimmed);
     }
 
-    const lockTbl = trimmed.match(/^LOCK\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+IN\s+(ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|SHARE\s+UPDATE)\s+MODE(\s+NOWAIT)?/i);
-    if (lockTbl) {
-      const ctx = (executor as unknown as { context: ExecutionContext }).context;
-      const owner = (lockTbl[1] ?? ctx.currentSchema).toUpperCase();
-      const table = lockTbl[2].toUpperCase();
-      if (!this.storage.getTableMeta(owner, table)) {
-        return emptyResult(`ORA-00942: table or view does not exist`);
-      }
-      const modeWord = lockTbl[3].toUpperCase().replace(/\s+/g, ' ');
-      const modeMap: Record<string, 2 | 3 | 4 | 5 | 6> = {
-        'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
-        'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
-      };
-      const sess = ctx.session;
-      const sid = sess?.sid ?? 0;
-      try {
-        this.instance.lockManager.lockTable({
-          sessionId: String(sid), sid, schema: owner, table,
-          mode: modeMap[modeWord] ?? 3, nowait: !!lockTbl[4],
-        });
-      } catch (e: unknown) {
-        return emptyResult(e instanceof Error ? e.message : String(e));
-      }
-      return emptyResult('Table(s) Locked.');
-    }
 
     const fba = upper.match(/^CREATE\s+FLASHBACK\s+ARCHIVE\s+(?:DEFAULT\s+)?(\w+)\s+TABLESPACE\s+(\w+)(?:\s+QUOTA\s+(\d+)\s*M)?\s+RETENTION\s+(\d+)\s+(?:DAY|YEAR|MONTH)/i);
     if (fba) {
@@ -711,6 +691,28 @@ export class OracleDatabase {
       }
     }
     return result;
+  }
+
+  execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
+    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
+    const table = stmt.table.toUpperCase();
+    if (!this.storage.getTableMeta(owner, table)) {
+      return emptyResult('ORA-00942: table or view does not exist');
+    }
+    const modeMap: Record<LockTableStatement['lockMode'], 2 | 3 | 4 | 5 | 6> = {
+      'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
+      'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
+    };
+    const sid = (ctx.session as { sid?: number } | undefined)?.sid ?? 0;
+    try {
+      this.instance.lockManager.lockTable({
+        sessionId: String(sid), sid, schema: owner, table,
+        mode: modeMap[stmt.lockMode], nowait: stmt.nowait,
+      });
+    } catch (e: unknown) {
+      return emptyResult(e instanceof Error ? e.message : String(e));
+    }
+    return emptyResult('Table(s) Locked.');
   }
 
   private maybeLockForUpdate(executor: OracleExecutor, stmt: unknown): ResultSet | void {

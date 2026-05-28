@@ -987,6 +987,18 @@ export interface AuditPolicyStatement extends ASTNode {
   disable?: boolean;
 }
 
+/**
+ * `LOCK TABLE [schema.]table IN <mode> MODE [NOWAIT]` — explicit DML
+ * lock acquisition. Modes follow the six Oracle TM lock modes.
+ */
+export interface LockTableStatement extends ASTNode {
+  type: 'LockTableStatement';
+  schema?: string;
+  table: string;
+  lockMode: 'ROW SHARE' | 'ROW EXCLUSIVE' | 'SHARE UPDATE' | 'SHARE' | 'SHARE ROW EXCLUSIVE' | 'EXCLUSIVE';
+  nowait: boolean;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -1024,6 +1036,7 @@ export type Statement =
   | AuditStatement | NoauditStatement
   | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement
   | AdministerKeyManagementStatement
+  | LockTableStatement
   | CommentStatement
   // PL/SQL
   | PLSQLBlock;
