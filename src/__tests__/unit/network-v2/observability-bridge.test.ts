@@ -57,6 +57,52 @@ describe('observability: lastlog / journalctl coherency', () => {
       expect(out).toContain('alice');
       expect(out).not.toContain('bob');
     });
+
+    it('-t DAYS shows only entries more recent than the cutoff', async () => {
+      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('bob',   { uid: 1002 });
+      exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
+      const veryOld = Date.now() - 30 * 86400_000;
+      const slot = (exec.lastlog as unknown as { entries: Map<string, { current: { when: number; sourceHost: string; tty: string } }> }).entries;
+      slot.set('bob', { current: { when: veryOld, sourceHost: '10.0.0.6', tty: 'pts/1' } });
+      const out = exec.execute('lastlog -t 7');
+      expect(out).toContain('alice');
+      expect(out).not.toMatch(/^bob /m);
+    });
+
+    it('-b DAYS shows only entries older than the cutoff', async () => {
+      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('bob',   { uid: 1002 });
+      const old = Date.now() - 30 * 86400_000;
+      const slot = (exec.lastlog as unknown as { entries: Map<string, { current: { when: number; sourceHost: string; tty: string } }> }).entries;
+      slot.set('bob', { current: { when: old, sourceHost: '10.0.0.6', tty: 'pts/1' } });
+      exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
+      const out = exec.execute('lastlog -b 7 -u alice');
+      expect(out).not.toMatch(/^alice\s+pts\/0/m);
+      const outBob = exec.execute('lastlog -b 7 -u bob');
+      expect(outBob).toMatch(/^bob\s+pts\/1/m);
+    });
+
+    it('-C clears a single user; subsequent lastlog shows Never logged in', async () => {
+      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
+      exec.userMgr.currentUid = 0;
+      exec.execute('lastlog -C -u alice');
+      const out = exec.execute('lastlog -u alice');
+      expect(out).toContain('**Never logged in**');
+    });
+
+    it('--help prints the synopsis', async () => {
+      const out = exec.execute('lastlog --help');
+      expect(out).toMatch(/Usage:\s*\n\s*lastlog \[options\]/);
+      expect(out).toContain('--before DAYS');
+      expect(out).toContain('--clear');
+    });
+
+    it('--version reports util-linux 2.37.x', async () => {
+      const out = exec.execute('lastlog --version');
+      expect(out).toMatch(/^lastlog from util-linux 2\./);
+    });
   });
 
   // ────────────── §JB1/§JB2 journal/auth.log coherency ─────────────

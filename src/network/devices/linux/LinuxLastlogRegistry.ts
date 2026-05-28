@@ -82,6 +82,11 @@ export class LinuxLastlogRegistry {
     this.entries.clear();
   }
 
+  /** Drop a single user's entry; used by `lastlog -C -u <user>`. */
+  clearUser(user: string): void {
+    this.entries.delete(user);
+  }
+
   /**
    * Format an entry as the canonical OpenSSH "Last login: …" line.
    * Example: `Last login: Tue Jan 23 12:34:56 2024 from 10.0.0.1`

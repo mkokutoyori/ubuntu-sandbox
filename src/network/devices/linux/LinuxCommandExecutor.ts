@@ -123,6 +123,26 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
 
+const LASTLOG_HELP = [
+  '',
+  'Usage:',
+  ' lastlog [options]',
+  '',
+  'Reports the most recent login of all users or of a given user.',
+  '',
+  'Options:',
+  ' -b, --before DAYS    print only lastlog records older than DAYS',
+  ' -C, --clear          clear lastlog record of a user (usable only with -u)',
+  ' -R, --root CHROOT_DIR  directory to chroot into',
+  ' -S, --set            set lastlog record to current time (usable only with -u)',
+  ' -t, --time DAYS      print only lastlog records more recent than DAYS',
+  ' -u, --user LOGIN     print lastlog record of the specified LOGIN',
+  ' -h, --help           display this help',
+  ' -V, --version        display version',
+  '',
+  'For more details see lastlog(8).',
+].join('\n');
+
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
@@ -2836,36 +2856,58 @@ export class LinuxCommandExecutor {
   private renderLastlog(args: string[]): string {
     let filterUser: string | null = null;
     let beforeDays: number | null = null;
+    let timeDays: number | null = null;
+    let clear = false;
+    let setNow = false;
+
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
-      if (a === '-u' || a === '--user') filterUser = args[++i] ?? null;
-      else if (a === '-b' || a === '--before') beforeDays = Number(args[++i]);
-      else if (a === '-t' || a === '--time')   beforeDays = Number(args[++i]);
+      if (a === '-h' || a === '--help') return LASTLOG_HELP;
+      if (a === '-V' || a === '--version') return 'lastlog from util-linux 2.37.2';
+      if (a === '-u' || a === '--user') { filterUser = args[++i] ?? null; continue; }
+      if (a === '-b' || a === '--before') { beforeDays = Number(args[++i]); continue; }
+      if (a === '-t' || a === '--time')   { timeDays   = Number(args[++i]); continue; }
+      if (a === '-C' || a === '--clear')  { clear = true; continue; }
+      if (a === '-S' || a === '--set')    { setNow = true; continue; }
+      if (a === '-R' || a === '--root') { i++; continue; }
+    }
+
+    if (clear || setNow) {
+      if (!filterUser) return 'lastlog: option requires -u/--user';
+      if (this.userMgr.currentUid !== 0) return 'lastlog: must be root';
+      if (clear) this.lastlog.clearUser(filterUser);
+      if (setNow) this.lastlog.record(filterUser, '0.0.0.0', 'pts/0');
+      return '';
     }
 
     const header = 'Username         Port     From             Latest';
     const rows: string[] = [header];
-    const cutoff = beforeDays !== null && Number.isFinite(beforeDays)
-      ? Date.now() - beforeDays * 86400_000
+    const now = Date.now();
+    const beforeCutoff = beforeDays !== null && Number.isFinite(beforeDays)
+      ? now - beforeDays * 86400_000
+      : null;
+    const timeCutoff = timeDays !== null && Number.isFinite(timeDays)
+      ? now - timeDays * 86400_000
       : null;
 
-    const all = this.userMgr.getAllUsers();
-    for (const u of all) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+
+    for (const u of this.userMgr.getAllUsers()) {
       if (filterUser && u.username !== filterUser) continue;
       const entry = this.lastlog.getCurrent(u.username);
       if (!entry) {
         rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
         continue;
       }
-      if (cutoff !== null && entry.when < cutoff) continue;
+      if (beforeCutoff !== null && entry.when >= beforeCutoff) continue;
+      if (timeCutoff !== null && entry.when < timeCutoff) continue;
       const d = new Date(entry.when);
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const pad2 = (n: number) => String(n).padStart(2, '0');
       const latest =
         `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ${pad2(d.getUTCDate())} ` +
-        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} ${d.getUTCFullYear()}`;
+        `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} +0000 ${d.getUTCFullYear()}`;
       rows.push(
         `${u.username.padEnd(16)} ${entry.tty.padEnd(8)} ${entry.sourceHost.padEnd(16)} ${latest}`,
       );
