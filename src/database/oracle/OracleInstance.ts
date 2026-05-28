@@ -35,6 +35,10 @@ import { PlanCache } from './plan/PlanCache';
 import { StatisticsManager } from './statistics/StatisticsManager';
 import { MultitenantManager } from './multitenant/PluggableDatabase';
 import { DataGuardConfiguration } from './dataguard/DataGuardConfiguration';
+import { ReplicationManager } from './replication/Replication';
+import { FlashbackArchiveManager } from './flashback/FlashbackArchive';
+import { ResultCacheManager } from './resultcache/ResultCache';
+import { InMemoryManager } from './resultcache/InMemoryManager';
 import type { OracleStorage } from './OracleStorage';
 
 export type InstanceState = 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
@@ -113,6 +117,10 @@ export class OracleInstance {
   readonly planCache = new PlanCache(2000);
   readonly multitenant = new MultitenantManager();
   readonly dataGuard = new DataGuardConfiguration();
+  readonly replication = new ReplicationManager();
+  readonly flashbackArchive = new FlashbackArchiveManager();
+  readonly resultCache = new ResultCacheManager();
+  readonly inMemory = new InMemoryManager();
   statistics: StatisticsManager | null = null;
   scheduler: import('./scheduler/SchedulerManager').SchedulerManager | null = null;
   attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {

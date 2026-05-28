@@ -35,6 +35,8 @@ import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
 import { SchedulerManager } from './scheduler/SchedulerManager';
+import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
+import { InMemorySegment } from './resultcache/InMemoryManager';
 import type { UserActivityTracker } from './security/audit/UserActivityTracker';
 import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
@@ -511,6 +513,59 @@ export class OracleDatabase {
     const upper = trimmed.toUpperCase();
     if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
       return this.executePLSQL(executor, trimmed);
+    }
+
+    const fba = upper.match(/^CREATE\s+FLASHBACK\s+ARCHIVE\s+(?:DEFAULT\s+)?(\w+)\s+TABLESPACE\s+(\w+)(?:\s+QUOTA\s+(\d+)\s*M)?\s+RETENTION\s+(\d+)\s+(?:DAY|YEAR|MONTH)/i);
+    if (fba) {
+      const isDefault = /CREATE\s+FLASHBACK\s+ARCHIVE\s+DEFAULT/i.test(trimmed);
+      const name = fba[1];
+      const ts = fba[2];
+      const quota = fba[3] ? parseInt(fba[3], 10) : null;
+      const days = parseInt(fba[4], 10);
+      this.instance.flashbackArchive.createArchive(new FlashbackArchive({
+        flashbackArchiveName: name, retentionInDays: days, isDefault,
+        tablespaces: [new FlashbackArchiveTablespace(name, ts, quota)],
+      }));
+      return emptyResult('Flashback archive created.');
+    }
+    const dropFba = upper.match(/^DROP\s+FLASHBACK\s+ARCHIVE\s+(\w+)/i);
+    if (dropFba) {
+      this.instance.flashbackArchive.dropArchive(dropFba[1]);
+      return emptyResult('Flashback archive dropped.');
+    }
+    const fbaTab = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+FLASHBACK\s+ARCHIVE(?:\s+(\w+))?/i);
+    if (fbaTab) {
+      const owner = (fbaTab[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      const table = fbaTab[2].toUpperCase();
+      const arch = fbaTab[3] ?? undefined;
+      this.instance.flashbackArchive.enableTable(owner, table, arch);
+      return emptyResult('Table altered.');
+    }
+    const fbaTabOff = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+FLASHBACK\s+ARCHIVE/i);
+    if (fbaTabOff) {
+      const owner = (fbaTabOff[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      this.instance.flashbackArchive.disableTable(owner, fbaTabOff[2]);
+      return emptyResult('Table altered.');
+    }
+    const im = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+INMEMORY/i);
+    if (im) {
+      const owner = (im[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      const table = im[2].toUpperCase();
+      const meta = this.storage.getTableMeta(owner, table);
+      if (meta) {
+        const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
+        this.instance.inMemory.addSegment(new InMemorySegment({
+          owner, segmentName: table, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
+          inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
+        }));
+      }
+      return emptyResult('Table altered.');
+    }
+    const noIm = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+INMEMORY/i);
+    if (noIm) {
+      const owner = (noIm[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
+      this.instance.inMemory.removeSegment(owner, noIm[2]);
+      return emptyResult('Table altered.');
     }
 
     const pdbMatch = upper.match(/^(?:ALTER\s+PLUGGABLE\s+DATABASE|CREATE\s+PLUGGABLE\s+DATABASE|DROP\s+PLUGGABLE\s+DATABASE)\s+(\w+)/);

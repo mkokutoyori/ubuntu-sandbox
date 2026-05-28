@@ -450,5 +450,16 @@ import './v_dataguard_config';
 import './v_dataguard_stats';
 import './v_dataguard_status';
 import './v_standby_log';
+import './dba_capture';
+import './dba_apply';
+import './dba_propagation';
+import './dba_gg_extract';
+import './dba_gg_replicat';
+import './dba_flashback_archive';
+import './dba_flashback_archive_tables';
+import './dba_flashback_archive_ts';
+import './v_result_cache_objects';
+import './v_result_cache_dependency';
+import './v_im_segments';
 
 export { };
