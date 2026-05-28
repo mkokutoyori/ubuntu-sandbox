@@ -385,7 +385,11 @@ export type AlterTableAction =
   | { action: 'DROP_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string }
   | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' }
   | { action: 'ENCRYPT_COLUMN'; columnName: string; algorithm?: string; salt?: boolean; integrity?: string }
-  | { action: 'DECRYPT_COLUMN'; columnName: string };
+  | { action: 'DECRYPT_COLUMN'; columnName: string }
+  | { action: 'FLASHBACK_ARCHIVE'; archive?: string }
+  | { action: 'NO_FLASHBACK_ARCHIVE' }
+  | { action: 'INMEMORY' }
+  | { action: 'NO_INMEMORY' };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';

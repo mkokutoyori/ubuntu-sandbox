@@ -2517,6 +2517,11 @@ export class OracleExecutor extends BaseExecutor {
           case 'FOREIGN_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', fk: true }); break;
           case 'ALL':         inst.setSupplementalLog({ min: 'IMPLICIT', all: true, pk: supp.pk, ui: supp.ui, fk: supp.fk }); break;
         }
+      } else if (
+        action.action === 'FLASHBACK_ARCHIVE' || action.action === 'NO_FLASHBACK_ARCHIVE'
+        || action.action === 'INMEMORY' || action.action === 'NO_INMEMORY'
+      ) {
+        this.requireCommandHost().execAlterTableStorage(schema, tableName, action);
       }
     }
 

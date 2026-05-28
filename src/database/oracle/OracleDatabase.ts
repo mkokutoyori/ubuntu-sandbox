@@ -526,41 +526,6 @@ export class OracleDatabase implements SqlCommandHost {
     }
 
 
-    const fbaTab = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+FLASHBACK\s+ARCHIVE(?:\s+(\w+))?/i);
-    if (fbaTab) {
-      const owner = (fbaTab[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      const table = fbaTab[2].toUpperCase();
-      const arch = fbaTab[3] ?? undefined;
-      this.instance.flashbackArchive.enableTable(owner, table, arch);
-      return emptyResult('Table altered.');
-    }
-    const fbaTabOff = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+FLASHBACK\s+ARCHIVE/i);
-    if (fbaTabOff) {
-      const owner = (fbaTabOff[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      this.instance.flashbackArchive.disableTable(owner, fbaTabOff[2]);
-      return emptyResult('Table altered.');
-    }
-    const im = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+INMEMORY/i);
-    if (im) {
-      const owner = (im[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      const table = im[2].toUpperCase();
-      const meta = this.storage.getTableMeta(owner, table);
-      if (meta) {
-        const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
-        this.instance.inMemory.addSegment(new InMemorySegment({
-          owner, segmentName: table, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
-          inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
-        }));
-      }
-      return emptyResult('Table altered.');
-    }
-    const noIm = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+INMEMORY/i);
-    if (noIm) {
-      const owner = (noIm[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      this.instance.inMemory.removeSegment(owner, noIm[2]);
-      return emptyResult('Table altered.');
-    }
-
 
 
     // CREATE TABLE … ORGANIZATION EXTERNAL — register an external table.
@@ -1583,6 +1548,34 @@ export class OracleDatabase implements SqlCommandHost {
    * DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES; PL/SQL bodies are
    * accepted but ignored (simulator does not run them).
    */
+  execAlterTableStorage(schema: string, table: string, action: import('./SqlCommandHost').AlterTableStorageAction): ResultSet {
+    const owner = schema.toUpperCase();
+    const tbl = table.toUpperCase();
+    switch (action.action) {
+      case 'FLASHBACK_ARCHIVE':
+        this.instance.flashbackArchive.enableTable(owner, tbl, action.archive);
+        break;
+      case 'NO_FLASHBACK_ARCHIVE':
+        this.instance.flashbackArchive.disableTable(owner, tbl);
+        break;
+      case 'INMEMORY': {
+        const meta = this.storage.getTableMeta(owner, tbl);
+        if (meta) {
+          const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
+          this.instance.inMemory.addSegment(new InMemorySegment({
+            owner, segmentName: tbl, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
+            inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
+          }));
+        }
+        break;
+      }
+      case 'NO_INMEMORY':
+        this.instance.inMemory.removeSegment(owner, tbl);
+        break;
+    }
+    return emptyResult('Table altered.');
+  }
+
   execCreateType(stmt: CreateTypeStatement, ctx: ExecutionContext): ResultSet {
     const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
     const name = stmt.name.toUpperCase();
