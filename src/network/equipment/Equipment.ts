@@ -57,6 +57,10 @@ export abstract class Equipment {
   /** Inject a custom bus (test-only / multi-topology scenarios). */
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
+    // Cascade to hardware children so the Port-level events
+    // (port.frame.*, port.security.*) reach the same observer the
+    // equipment's events reach.
+    for (const port of this.ports.values()) port.setEventBus(bus);
   }
 
   protected getBus(): IEventBus {
@@ -227,6 +231,7 @@ export abstract class Equipment {
    */
   protected addPort(port: Port): void {
     port.setEquipmentId(this.id);
+    if (this.busOverride) port.setEventBus(this.busOverride);
     port.onFrame((portName, frame) => {
       if (!this.isPoweredOn) {
         Logger.warn(this.id, 'equipment:frame-dropped', `${this.name}: powered off, dropping frame on ${portName}`);

@@ -161,6 +161,20 @@ export interface PortSecurityViolationPayload extends PortRef {
   action: 'discarded' | 'shutdown' | 'restricted';
 }
 
+export interface PortSecurityErrDisabledPayload extends PortRef {
+  mac: MACAddress;
+}
+export interface PortSecurityRecoveredPayload extends PortRef {}
+export interface PortSecurityStickySavedPayload extends PortRef {
+  mac: MACAddress;
+  vlan: number;
+}
+export interface PortSecurityMacAgedPayload extends PortRef {
+  mac: MACAddress;
+  vlan: number;
+  type: 'static' | 'sticky' | 'dynamic';
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Hardware: Cable (Phase 3)
 // ──────────────────────────────────────────────────────────────────────────
@@ -235,6 +249,10 @@ export type DomainEvent =
   | { topic: 'port.config.speed-changed'; payload: PortSpeedChangedPayload }
   | { topic: 'port.config.duplex-changed'; payload: PortDuplexChangedPayload }
   | { topic: 'port.security.violation'; payload: PortSecurityViolationPayload }
+  | { topic: 'port.security.errdisable.set'; payload: PortSecurityErrDisabledPayload }
+  | { topic: 'port.security.errdisable.cleared'; payload: PortSecurityRecoveredPayload }
+  | { topic: 'port.security.sticky-saved'; payload: PortSecurityStickySavedPayload }
+  | { topic: 'port.security.mac-aged'; payload: PortSecurityMacAgedPayload }
   // Cable
   | { topic: 'cable.connected'; payload: CableConnectedPayload }
   | { topic: 'cable.disconnected'; payload: CableDisconnectedPayload }

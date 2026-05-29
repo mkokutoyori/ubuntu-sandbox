@@ -154,6 +154,16 @@ export abstract class Switch extends Equipment {
   private arpErrDisableTimestamps: Map<string, number> = new Map();
   private arpUnsubscribers: Array<() => void> = [];
 
+  // ─── Port-Security err-disable + aging ─────────────────────────
+  private psecRecoverySec: number = 0;
+  private psecErrDisabledPorts: Set<string> = new Set();
+  private psecErrDisableTimestamps: Map<string, number> = new Map();
+  private psecRecoveryTimer: TimerHandle | null = null;
+  private psecRecoveryScheduler: IScheduler | null = null;
+  private psecAgingTimer: TimerHandle | null = null;
+  private psecAgingScheduler: IScheduler | null = null;
+  private psecUnsubscribers: Array<() => void> = [];
+
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
 
@@ -165,6 +175,122 @@ export abstract class Switch extends Equipment {
     this.startMACAgingProcess();
     this.shell = this.createShell();
     this.initArpInspection();
+    this.initPortSecurity();
+  }
+
+  private initPortSecurity(): void {
+    // React to violations on our own ports: log + auto err-disable book-keeping.
+    this.psecUnsubscribers.push(this.getBus().subscribeWhere(
+      'port.security.violation',
+      (p) => p.deviceId === this.id,
+      (e) => {
+        const { portName, mac, mode, action } = e.payload;
+        const ts = new Date().toISOString();
+        this.snoopingLog.push(
+          `*${ts}: %PORT_SECURITY-2-PSECURE_VIOLATION: Security violation occurred,` +
+          ` caused by MAC address ${mac.toString().toLowerCase()} on port ${portName}` +
+          ` (mode=${mode}, action=${action})`,
+        );
+        if (action === 'shutdown') {
+          this.psecErrDisabledPorts.add(portName);
+          this.psecErrDisableTimestamps.set(portName, Date.now());
+          if (this.psecRecoverySec > 0) this.ensurePsecRecoveryTimer();
+        }
+      },
+    ));
+
+    // React to sticky-saved on our own ports: the running-config dirty
+    // bit is implicit (NVRAM is rebuilt from PortSecurity on each
+    // `getRunningConfig`), but we still log it so `show logging` shows
+    // the trail just like real IOS does.
+    this.psecUnsubscribers.push(this.getBus().subscribeWhere(
+      'port.security.sticky-saved',
+      (p) => p.deviceId === this.id,
+      (e) => {
+        const { portName, mac } = e.payload;
+        const ts = new Date().toISOString();
+        this.snoopingLog.push(
+          `*${ts}: %PORT_SECURITY-6-STICKY_LEARN: ${portName} learned sticky MAC ${mac.toString().toLowerCase()}`,
+        );
+      },
+    ));
+
+    // Aging tick: every minute, walk all ports and let PortSecurity drop
+    // expired entries. We don't run when no port has aging configured.
+    this.startPsecAgingProcess();
+  }
+
+  private ensurePsecRecoveryTimer(): void {
+    if (this.psecRecoveryTimer !== null || this.psecRecoverySec <= 0) return;
+    const scheduler = this.getScheduler();
+    this.psecRecoveryScheduler = scheduler;
+    this.psecRecoveryTimer = scheduler.setInterval(() => this.recoverPsecErrDisabled(), 1000);
+  }
+
+  private recoverPsecErrDisabled(): void {
+    if (this.psecRecoverySec <= 0 || this.psecErrDisabledPorts.size === 0) {
+      this.stopPsecRecoveryTimer();
+      return;
+    }
+    const now = Date.now();
+    for (const port of [...this.psecErrDisabledPorts]) {
+      const ts = this.psecErrDisableTimestamps.get(port) ?? now;
+      if ((now - ts) / 1000 >= this.psecRecoverySec) {
+        this.psecErrDisabledPorts.delete(port);
+        this.psecErrDisableTimestamps.delete(port);
+        const p = this.getPort(port);
+        if (p) {
+          p.getPortSecurity().resetViolationCount();
+          p.setUp(true);
+        }
+        this.getBus().publish({
+          topic: 'port.security.errdisable.cleared',
+          payload: { deviceId: this.id, portName: port },
+        });
+      }
+    }
+    if (this.psecErrDisabledPorts.size === 0) this.stopPsecRecoveryTimer();
+  }
+
+  private stopPsecRecoveryTimer(): void {
+    if (this.psecRecoveryTimer !== null) {
+      (this.psecRecoveryScheduler ?? this.getScheduler()).clear(this.psecRecoveryTimer);
+      this.psecRecoveryTimer = null;
+      this.psecRecoveryScheduler = null;
+    }
+  }
+
+  private startPsecAgingProcess(): void {
+    if (this.psecAgingTimer !== null) return;
+    const scheduler = this.getScheduler();
+    this.psecAgingScheduler = scheduler;
+    this.psecAgingTimer = scheduler.setInterval(() => this.tickPsecAging(), 60_000);
+  }
+
+  private stopPsecAgingProcess(): void {
+    if (this.psecAgingTimer !== null) {
+      (this.psecAgingScheduler ?? this.getScheduler()).clear(this.psecAgingTimer);
+      this.psecAgingTimer = null;
+      this.psecAgingScheduler = null;
+    }
+  }
+
+  private tickPsecAging(): void {
+    const now = Date.now();
+    for (const [portName, port] of this.ports) {
+      const sec = port.getPortSecurity();
+      if (!sec.isEnabled() || sec.getAgingTimeMin() <= 0) continue;
+      const aged = sec.ageOut(now);
+      for (const entry of aged) {
+        this.getBus().publish({
+          topic: 'port.security.mac-aged',
+          payload: {
+            deviceId: this.id, portName,
+            mac: entry.mac, vlan: entry.vlan, type: entry.type,
+          },
+        });
+      }
+    }
   }
 
   private initArpInspection(): void {
@@ -311,17 +437,35 @@ export abstract class Switch extends Equipment {
     this.vlans.set(1, { id: 1, name: 'default', ports: allPorts });
   }
 
+  override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
+    super.setEventBus(bus);
+    // Subscribers are attached to a specific bus instance — re-install
+    // them so they observe the bus that publishes go through.
+    for (const u of this.arpUnsubscribers) u();
+    this.arpUnsubscribers = [];
+    for (const u of this.psecUnsubscribers) u();
+    this.psecUnsubscribers = [];
+    if (this.arpInspectionPipeline) this.initArpInspection();
+    this.initPortSecurity();
+  }
+
   // ─── Power Management ────────────────────────────────────────────
 
   override powerOff(): void {
     super.powerOff();
     this.stopMACAgingProcess();
     this.stopRecoveryTimer();
+    this.stopPsecRecoveryTimer();
+    this.stopPsecAgingProcess();
     for (const u of this.arpUnsubscribers) u();
     this.arpUnsubscribers = [];
+    for (const u of this.psecUnsubscribers) u();
+    this.psecUnsubscribers = [];
     this.arpInspectionPipeline?.resetStats();
     this.arpErrDisabledPorts.clear();
     this.arpErrDisableTimestamps.clear();
+    this.psecErrDisabledPorts.clear();
+    this.psecErrDisableTimestamps.clear();
   }
 
   override powerOn(): void {
@@ -347,7 +491,10 @@ export abstract class Switch extends Equipment {
     // Reset volatile DAI runtime (keep config — it lives in NVRAM via running-config).
     this.arpErrDisabledPorts.clear();
     this.arpErrDisableTimestamps.clear();
+    this.psecErrDisabledPorts.clear();
+    this.psecErrDisableTimestamps.clear();
     this.initArpInspection();
+    this.initPortSecurity();
     // Restore startup config (NVRAM) if available
     if (this.startupConfig) {
       this.restoreFromStartupConfig();
@@ -1051,6 +1198,34 @@ export abstract class Switch extends Equipment {
   }
   _resetArpInspectionStats(): void {
     this.arpInspectionPipeline?.resetStats();
+  }
+
+  // ─── Port-Security accessors ─────────────────────────────────────
+
+  _getPsecRecoverySec(): number { return this.psecRecoverySec; }
+  _setPsecRecoverySec(sec: number): void {
+    this.psecRecoverySec = Math.max(0, sec);
+    if (this.psecRecoverySec > 0 && this.psecErrDisabledPorts.size > 0) {
+      this.ensurePsecRecoveryTimer();
+    } else if (this.psecRecoverySec === 0) {
+      this.stopPsecRecoveryTimer();
+    }
+  }
+  _getPsecErrDisabledPorts(): Set<string> { return this.psecErrDisabledPorts; }
+  _clearPsecErrDisable(port: string): boolean {
+    if (!this.psecErrDisabledPorts.delete(port)) return false;
+    this.psecErrDisableTimestamps.delete(port);
+    const p = this.getPort(port);
+    if (p) {
+      p.getPortSecurity().resetViolationCount();
+      p.setUp(true);
+    }
+    this.getBus().publish({
+      topic: 'port.security.errdisable.cleared',
+      payload: { deviceId: this.id, portName: port },
+    });
+    if (this.psecErrDisabledPorts.size === 0) this.stopPsecRecoveryTimer();
+    return true;
   }
 
   // ─── CLI ──────────────────────────────────────────────────────────

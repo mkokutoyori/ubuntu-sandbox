@@ -21,6 +21,7 @@ import type { Switch } from '../Switch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
+import { MACAddress } from '../../core/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -143,6 +144,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     });
     this.registerDaiCommands();
+    this.registerPortSecurityCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) {
@@ -180,15 +182,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         return out.join('\n');
       });
       t.registerGreedy('show port-security', 'Display port security', (args) => {
-        if (args[0]?.toLowerCase() === 'interface') {
-          return [`Port Security              : Enabled`,
-            `Port Status                : Secure-up`,
-            `Violation Mode             : Shutdown`,
-            `Maximum MAC Addresses      : 1`,
-            `Total MAC Addresses        : 0`].join('\n');
+        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
+          return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
         }
-        return ['Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
-          '------------------------------------------------------------------------------'].join('\n');
+        if (args[0]?.toLowerCase() === 'address') {
+          return this.showPortSecurityAddress(this.d());
+        }
+        return this.showPortSecurityOverview(this.d());
       });
     }
   }
@@ -343,6 +343,266 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       raw: `${kw} ${args.join(' ')}`.trim(),
     });
     return '';
+  }
+
+  private registerPortSecurityCommands(): void {
+    const parseMac = (s: string): MACAddress | null => {
+      try { return new MACAddress(s); } catch { return null; }
+    };
+
+    // ── enable / disable ──
+    this.configIfTrie.register('switchport port-security', 'Enable port-security', () =>
+      this.applyToSelectedInterfaces(p => {
+        const port = this.d().getPort(p); if (port) port.getPortSecurity().enable();
+        return '';
+      }));
+    this.configIfTrie.register('no switchport port-security', 'Disable port-security', () =>
+      this.applyToSelectedInterfaces(p => {
+        const port = this.d().getPort(p); if (port) port.getPortSecurity().disable();
+        return '';
+      }));
+
+    // ── maximum ──
+    this.configIfTrie.registerGreedy('switchport port-security maximum',
+      'Max secure MAC addresses', (args) => {
+        const n = parseInt(args[0] ?? '', 10);
+        if (isNaN(n) || n < 1) return '% Invalid maximum value';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setMaxMACAddresses(n);
+          return '';
+        });
+      });
+
+    // ── violation mode ──
+    this.configIfTrie.registerGreedy('switchport port-security violation',
+      'Violation mode', (args) => {
+        const m = (args[0] ?? '').toLowerCase();
+        if (m !== 'shutdown' && m !== 'restrict' && m !== 'protect') return '% Invalid mode';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p);
+          if (port) port.getPortSecurity().setViolationMode(m as 'shutdown' | 'restrict' | 'protect');
+          return '';
+        });
+      });
+
+    // ── mac-address (static + sticky toggle + sticky <mac>) ──
+    this.configIfTrie.registerGreedy('switchport port-security mac-address',
+      'Configure secure MAC', (args) => {
+        if (args.length === 0) return '% Incomplete command.';
+        if (args[0].toLowerCase() === 'sticky') {
+          if (args.length === 1) {
+            return this.applyToSelectedInterfaces(p => {
+              const port = this.d().getPort(p); if (port) port.getPortSecurity().enableSticky();
+              return '';
+            });
+          }
+          const mac = parseMac(args[1]); if (!mac) return `% Invalid MAC "${args[1]}"`;
+          return this.applyToSelectedInterfaces(p => {
+            const port = this.d().getPort(p); if (port) port.getPortSecurity().addStickyMAC(mac);
+            return '';
+          });
+        }
+        const mac = parseMac(args[0]); if (!mac) return `% Invalid MAC "${args[0]}"`;
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().addStaticMAC(mac);
+          return '';
+        });
+      });
+    this.configIfTrie.registerGreedy('no switchport port-security mac-address',
+      'Remove secure MAC', (args) => {
+        if (args.length === 0) return '% Incomplete command.';
+        if (args[0].toLowerCase() === 'sticky' && args.length === 1) {
+          return this.applyToSelectedInterfaces(p => {
+            const port = this.d().getPort(p); if (port) port.getPortSecurity().disableSticky();
+            return '';
+          });
+        }
+        const target = args[args.length - 1];
+        const mac = parseMac(target); if (!mac) return `% Invalid MAC "${target}"`;
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().removeMAC(mac);
+          return '';
+        });
+      });
+
+    // ── aging ──
+    this.configIfTrie.registerGreedy('switchport port-security aging time',
+      'Aging window (minutes)', (args) => {
+        const n = parseInt(args[0] ?? '', 10);
+        if (isNaN(n) || n < 0) return '% Invalid aging time';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingTimeMin(n);
+          return '';
+        });
+      });
+    this.configIfTrie.registerGreedy('switchport port-security aging type',
+      'Aging strategy', (args) => {
+        const t = (args[0] ?? '').toLowerCase();
+        if (t !== 'absolute' && t !== 'inactivity') return '% Invalid aging type';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingType(t as 'absolute' | 'inactivity');
+          return '';
+        });
+      });
+    this.configIfTrie.register('switchport port-security aging static',
+      'Apply aging to static entries', () =>
+        this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(true);
+          return '';
+        }));
+    this.configIfTrie.register('no switchport port-security aging static',
+      'Exempt static entries from aging', () =>
+        this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(false);
+          return '';
+        }));
+
+    // ── errdisable recovery ──
+    this.configTrie.register('errdisable recovery cause psecure-violation',
+      'Auto-recover ports err-disabled by port-security', () => {
+        if (this.d()._getPsecRecoverySec() <= 0) this.d()._setPsecRecoverySec(30);
+        return '';
+      });
+
+    // ── clear ──
+    this.privilegedTrie.registerGreedy('clear port-security',
+      'Clear secure MAC entries', (args) => {
+        const kind = (args[0] ?? '').toLowerCase();
+        if (!['all', 'configured', 'dynamic', 'sticky'].includes(kind)) {
+          return '% Usage: clear port-security {all|configured|dynamic|sticky} [interface <if>]';
+        }
+        const ifIdx = args.findIndex(a => a.toLowerCase() === 'interface');
+        const portFilter = ifIdx >= 0
+          ? this.resolveInterfaceName(args.slice(ifIdx + 1).join(' '))
+          : null;
+        for (const [name, p] of this.d()._getPortsInternal()) {
+          if (portFilter && name !== portFilter) continue;
+          const sec = p.getPortSecurity();
+          if (kind === 'all') sec.clearAll();
+          else if (kind === 'dynamic') sec.clearDynamic();
+          else if (kind === 'sticky') sec.clearSticky();
+          else if (kind === 'configured') { sec.clearSticky(); sec.clearDynamic(); }
+        }
+        return '';
+      });
+    this.privilegedTrie.registerGreedy('clear errdisable interface',
+      'Recover an err-disabled port', (args) => {
+        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
+        const cleared = this.d()._clearArpInspectionErrDisable(portName)
+          || this.d()._clearPsecErrDisable(portName);
+        return cleared ? '' : '';
+      });
+  }
+
+  // ─── Port-Security Display ────────────────────────────────────────
+
+  private renderPortSecurityLines(port: import('../../hardware/Port').Port): string[] {
+    const sec = port.getPortSecurity();
+    if (!sec.isEnabled()) return [];
+    const out: string[] = ['switchport port-security'];
+    if (sec.getMaxMACAddresses() !== 1) {
+      out.push(`switchport port-security maximum ${sec.getMaxMACAddresses()}`);
+    }
+    if (sec.getViolationMode() !== 'shutdown') {
+      out.push(`switchport port-security violation ${sec.getViolationMode()}`);
+    }
+    if (sec.isStickyEnabled()) {
+      out.push('switchport port-security mac-address sticky');
+    }
+    for (const e of sec.getEntries()) {
+      if (e.type === 'sticky') {
+        out.push(`switchport port-security mac-address sticky ${this.formatMacCisco(e.mac)}`);
+      } else if (e.type === 'static') {
+        out.push(`switchport port-security mac-address ${this.formatMacCisco(e.mac)}`);
+      }
+    }
+    if (sec.getAgingTimeMin() > 0) {
+      out.push(`switchport port-security aging time ${sec.getAgingTimeMin()}`);
+      if (sec.getAgingType() !== 'absolute') {
+        out.push(`switchport port-security aging type ${sec.getAgingType()}`);
+      }
+      if (sec.getAgingStatic()) out.push('switchport port-security aging static');
+    }
+    return out;
+  }
+
+  private formatMacCisco(mac: MACAddress): string {
+    const hex = mac.toString().replace(/[:-]/g, '');
+    return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+  }
+
+  private showPortSecurityOverview(sw: Switch): string {
+    const lines = [
+      'Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
+      '             (Count)        (Count)      (Count)',
+      '------------------------------------------------------------------------------',
+    ];
+    for (const [name, port] of sw._getPortsInternal()) {
+      const sec = port.getPortSecurity();
+      if (!sec.isEnabled()) continue;
+      lines.push(
+        `${this.abbreviateInterface(name).padEnd(12)} ` +
+        `${String(sec.getMaxMACAddresses()).padEnd(14)} ` +
+        `${String(sec.getEntries().length).padEnd(12)} ` +
+        `${String(sec.getViolationCount()).padEnd(18)} ` +
+        sec.getViolationMode(),
+      );
+    }
+    return lines.join('\n');
+  }
+
+  private showPortSecurityInterface(sw: Switch, ifaceArg: string): string {
+    const name = this.resolveInterfaceName(ifaceArg) ?? ifaceArg;
+    const port = sw.getPort(name);
+    if (!port) return `% Invalid interface "${ifaceArg}"`;
+    const sec = port.getPortSecurity();
+    const errd = sw._getPsecErrDisabledPorts().has(name);
+    const status = !sec.isEnabled() ? 'Disabled' :
+                   errd ? 'Secure-shutdown' :
+                   port.getIsUp() ? 'Secure-up' : 'Secure-down';
+    return [
+      `Port Security              : ${sec.isEnabled() ? 'Enabled' : 'Disabled'}`,
+      `Port Status                : ${status}`,
+      `Violation Mode             : ${sec.getViolationMode().charAt(0).toUpperCase() + sec.getViolationMode().slice(1)}`,
+      `Aging Time                 : ${sec.getAgingTimeMin()} mins`,
+      `Aging Type                 : ${sec.getAgingType().charAt(0).toUpperCase() + sec.getAgingType().slice(1)}`,
+      `SecureStatic Address Aging : ${sec.getAgingStatic() ? 'Enabled' : 'Disabled'}`,
+      `Maximum MAC Addresses      : ${sec.getMaxMACAddresses()}`,
+      `Total MAC Addresses        : ${sec.getEntries().length}`,
+      `Configured MAC Addresses   : ${sec.getEntries().filter(e => e.type === 'static').length}`,
+      `Sticky MAC Addresses       : ${sec.getEntries().filter(e => e.type === 'sticky').length}`,
+      `Last Source Address:Vlan   : ${sec.getEntries().length > 0
+          ? `${this.formatMacCisco(sec.getEntries()[sec.getEntries().length - 1].mac)}:${sec.getEntries()[sec.getEntries().length - 1].vlan}`
+          : '0000.0000.0000:0'}`,
+      `Security Violation Count   : ${sec.getViolationCount()}`,
+    ].join('\n');
+  }
+
+  private showPortSecurityAddress(sw: Switch): string {
+    const lines = [
+      '          Secure Mac Address Table',
+      '------------------------------------------------------------------------',
+      'Vlan    Mac Address       Type                          Ports   Remaining Age',
+      '----    -----------       ----                          -----   -------------',
+    ];
+    let n = 0;
+    for (const [name, port] of sw._getPortsInternal()) {
+      const sec = port.getPortSecurity();
+      if (!sec.isEnabled()) continue;
+      for (const e of sec.getEntries()) {
+        const typeStr = e.type === 'static' ? 'SecureConfigured'
+          : e.type === 'sticky' ? 'SecureSticky' : 'SecureDynamic';
+        lines.push(
+          `${String(e.vlan).padEnd(8)}${this.formatMacCisco(e.mac).padEnd(18)}` +
+          `${typeStr.padEnd(30)}${this.abbreviateInterface(name).padEnd(8)}` +
+          `${sec.getAgingTimeMin() > 0 ? `${sec.getAgingTimeMin()}m` : '-'}`,
+        );
+        n++;
+      }
+    }
+    lines.push('');
+    lines.push(`Total Addresses: ${n}`);
+    return lines.join('\n');
   }
 
   private registerStpCommands(): void {
@@ -537,6 +797,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
       for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
+      const port = this.d().getPort(name);
+      if (port) for (const l of this.renderPortSecurityLines(port)) out.push(` ${l}`);
       out.push('end');
       return out.join('\n');
     });
@@ -806,7 +1068,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     };
     for (const sub of [
       'switchport trunk encapsulation', 'switchport nonegotiate',
-      'switchport voice', 'switchport port-security', 'switchport priority',
+      'switchport voice', 'switchport priority',
       'channel-group', 'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
@@ -912,6 +1174,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('errdisable recovery cause arp-inspection');
       lines.push(`errdisable recovery interval ${dai.errDisableRecoverySec}`);
     }
+    if (sw._getPsecRecoverySec() > 0) {
+      lines.push('errdisable recovery cause psecure-violation');
+    }
     if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
 
     const ports = sw._getPortsInternal();
@@ -953,6 +1218,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (daiRate && daiRate > 0) {
         lines.push(` ip arp inspection limit rate ${daiRate}`);
       }
+      for (const l of this.renderPortSecurityLines(port)) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
