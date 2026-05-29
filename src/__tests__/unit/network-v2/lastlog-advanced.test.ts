@@ -174,15 +174,15 @@ describe('lastlog — advanced multi-layer', () => {
   // ─────────────────────────── §C access ────────────────────────────
   describe('§C access & identity', () => {
     it('C1 -u accepts a numeric UID', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1501 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
-      const out = exec.execute('lastlog -u 1001');
+      const out = exec.execute('lastlog -u 1501');
       expect(out).toMatch(/^alice\b/m);
     });
 
     it('C2 -u LO-HI selects an inclusive UID range', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
-      exec.userMgr.useradd('bob', { uid: 2002 });
+      exec.userMgr.useradd('alice', { u: 1100 });
+      exec.userMgr.useradd('bob', { u: 2002 });
       const out = exec.execute('lastlog -u 1000-1500');
       expect(out).toMatch(/^alice\b/m);
       expect(out).not.toMatch(/^bob\b/m);
