@@ -1672,7 +1672,10 @@ export class LinuxCommandExecutor {
       }
 
       // Text commands
-      case 'grep': return { output: cmdGrep(c, args, stdin), exitCode: 0 };
+      case 'grep': return cmdGrep(c, args, stdin);
+      case 'egrep': return cmdGrep(c, args, stdin, 'egrep');
+      case 'fgrep': return cmdGrep(c, args, stdin, 'fgrep');
+      case 'rgrep': return cmdGrep(c, ['-r', ...args], stdin);
       case 'head': return { output: cmdHead(c, args, stdin), exitCode: 0 };
       case 'tail': return { output: cmdTail(c, args, stdin), exitCode: 0 };
       case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
