@@ -29,7 +29,7 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, MACAddress } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress } from '../core/types';
 import { Logger } from '../core/Logger';
 import {
   getDefaultScheduler,
@@ -41,6 +41,12 @@ import {
   DHCPSnoopingBinding,
   createDefaultSnoopingConfig,
 } from '../dhcp/types';
+import {
+  type ArpAccessList,
+  type ArpInspectionConfig,
+  createDefaultArpInspectionConfig,
+} from '../arp/types';
+import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import type { ISwitchShell } from './shells/ISwitchShell';
 
 // Re-export shell classes for backward compatibility
@@ -138,6 +144,16 @@ export abstract class Switch extends Equipment {
   // ─── Management ARP Table ──────────────────────────────────────
   private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
 
+  // ─── Dynamic ARP Inspection ────────────────────────────────────
+  private arpInspection: ArpInspectionConfig = createDefaultArpInspectionConfig();
+  private arpAccessLists: Map<string, ArpAccessList> = new Map();
+  private arpErrDisabledPorts: Set<string> = new Set();
+  private arpInspectionPipeline: ArpInspectionPipeline | null = null;
+  private arpRecoveryTimer: TimerHandle | null = null;
+  private arpRecoveryScheduler: IScheduler | null = null;
+  private arpErrDisableTimestamps: Map<string, number> = new Map();
+  private arpUnsubscribers: Array<() => void> = [];
+
   // ─── CLI Shell ──────────────────────────────────────────────────
   private shell: ISwitchShell;
 
@@ -148,6 +164,89 @@ export abstract class Switch extends Equipment {
     this.initDefaultVLAN();
     this.startMACAgingProcess();
     this.shell = this.createShell();
+    this.initArpInspection();
+  }
+
+  private initArpInspection(): void {
+    this.arpInspectionPipeline = new ArpInspectionPipeline(
+      {
+        id: this.id,
+        name: this.name,
+        _getArpInspectionConfig: () => this.arpInspection,
+        _getArpAccessLists: () => this.arpAccessLists,
+        _getSnoopingBindings: () => this.snoopingBindings,
+        _addSnoopingLog: (msg) => this.snoopingLog.push(msg),
+        _arpErrDisable: (port) => this.arpErrDisablePort(port),
+        _isArpErrDisabled: (port) => this.arpErrDisabledPorts.has(port),
+      },
+      () => this.getBus(),
+    );
+
+    // React: link going down → drop rate-limit accounting for the port.
+    // Counters are kept across flaps to match Cisco's `show ip arp inspection
+    // statistics` semantics (only `clear ip arp inspection statistics` zeroes
+    // them out).
+    this.arpUnsubscribers.push(this.getBus().subscribeWhere(
+      'port.link.down',
+      (p) => p.deviceId === this.id,
+      (e) => this.arpInspectionPipeline?.resetPort(e.payload.portName),
+    ));
+  }
+
+  private arpErrDisablePort(port: string): void {
+    if (this.arpErrDisabledPorts.has(port)) return;
+    this.arpErrDisabledPorts.add(port);
+    this.arpErrDisableTimestamps.set(port, Date.now());
+    const p = this.getPort(port);
+    if (p) p.setUp(false);
+    this.getBus().publish({
+      topic: 'arp.errdisable.set',
+      payload: { switchId: this.id, switchName: this.name, port, cause: 'arp-inspection' },
+    });
+    Logger.warn(this.id, 'switch:arp-errdisable',
+      `${this.name}: ${port} err-disabled by arp-inspection`);
+    this.ensureRecoveryTimer();
+  }
+
+  private ensureRecoveryTimer(): void {
+    if (this.arpRecoveryTimer !== null) return;
+    if (this.arpInspection.errDisableRecoverySec <= 0) return;
+    const scheduler = this.getScheduler();
+    this.arpRecoveryScheduler = scheduler;
+    this.arpRecoveryTimer = scheduler.setInterval(() => this.recoverErrDisabled(), 1000);
+  }
+
+  private recoverErrDisabled(): void {
+    const recoverySec = this.arpInspection.errDisableRecoverySec;
+    if (recoverySec <= 0 || this.arpErrDisabledPorts.size === 0) {
+      this.stopRecoveryTimer();
+      return;
+    }
+    const now = Date.now();
+    for (const port of [...this.arpErrDisabledPorts]) {
+      const ts = this.arpErrDisableTimestamps.get(port) ?? now;
+      if ((now - ts) / 1000 >= recoverySec) {
+        this.arpErrDisabledPorts.delete(port);
+        this.arpErrDisableTimestamps.delete(port);
+        const p = this.getPort(port);
+        if (p) p.setUp(true);
+        this.getBus().publish({
+          topic: 'arp.errdisable.cleared',
+          payload: { switchId: this.id, switchName: this.name, port },
+        });
+        Logger.info(this.id, 'switch:arp-recover',
+          `${this.name}: ${port} recovered from arp-inspection err-disable`);
+      }
+    }
+    if (this.arpErrDisabledPorts.size === 0) this.stopRecoveryTimer();
+  }
+
+  private stopRecoveryTimer(): void {
+    if (this.arpRecoveryTimer !== null) {
+      (this.arpRecoveryScheduler ?? this.getScheduler()).clear(this.arpRecoveryTimer);
+      this.arpRecoveryTimer = null;
+      this.arpRecoveryScheduler = null;
+    }
   }
 
   // ─── Vendor Hooks (overridden by subclasses) ───────────────────
@@ -217,6 +316,12 @@ export abstract class Switch extends Equipment {
   override powerOff(): void {
     super.powerOff();
     this.stopMACAgingProcess();
+    this.stopRecoveryTimer();
+    for (const u of this.arpUnsubscribers) u();
+    this.arpUnsubscribers = [];
+    this.arpInspectionPipeline?.resetStats();
+    this.arpErrDisabledPorts.clear();
+    this.arpErrDisableTimestamps.clear();
   }
 
   override powerOn(): void {
@@ -239,6 +344,10 @@ export abstract class Switch extends Equipment {
     // Reset shell FSM to user mode
     this.shell = this.createShell();
     this.startMACAgingProcess();
+    // Reset volatile DAI runtime (keep config — it lives in NVRAM via running-config).
+    this.arpErrDisabledPorts.clear();
+    this.arpErrDisableTimestamps.clear();
+    this.initArpInspection();
     // Restore startup config (NVRAM) if available
     if (this.startupConfig) {
       this.restoreFromStartupConfig();
@@ -544,6 +653,26 @@ export abstract class Switch extends Equipment {
       }
     }
 
+    // ─── Step 1.5: Dynamic ARP Inspection (untrusted / DAI-enabled VLANs)
+    if (frame.etherType === ETHERTYPE_ARP && this.arpInspectionPipeline) {
+      const arp = frame.payload as ARPPacket;
+      if (arp && arp.type === 'arp') {
+        const passed = this.arpInspectionPipeline.process({
+          ingressPort: portName,
+          vlan: ingressVlan,
+          senderIp: arp.senderIP,
+          senderMac: arp.senderMAC,
+          targetIp: arp.targetIP,
+          targetMac: arp.targetMAC,
+          ethSrcMac: frame.srcMAC,
+          ethDstMac: frame.dstMAC,
+          operation: arp.operation,
+        });
+        if (!passed) return;
+        this.snoopLearnArp(arp, portName, ingressVlan);
+      }
+    }
+
     // ─── Step 2: MAC Learning (allowed in learning + forwarding) ─
     const srcMAC = frame.srcMAC.toString().toLowerCase();
     const macKey = `${ingressVlan}:${srcMAC}`;
@@ -831,6 +960,44 @@ export abstract class Switch extends Equipment {
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }
   _getInterfaceDescriptions(): Map<string, string> { return this.interfaceDescriptions; }
 
+  // ─── ARP Snoop-learn into management table ──────────────────────
+
+  /**
+   * Real switches with an SVI populate their management ARP cache from
+   * every broadcast/unicast ARP they observe — that's how `show ip arp`
+   * lists hosts on the local segment without the switch ever sending an
+   * ARP request itself. We replicate the same behaviour: any ARP frame
+   * accepted by inspection is mirrored into the local `arpTable` (as
+   * `dynamic`, never overwriting a `static` entry) and announced on the
+   * bus so observers can react.
+   */
+  private snoopLearnArp(arp: ARPPacket, ingressPort: string, vlan: number): void {
+    const ip = arp.senderIP.toString();
+    if (ip === '0.0.0.0') return;
+    const existing = this.arpTable.get(ip);
+    if (existing && existing.type === 'static') return;
+    const senderMacStr = arp.senderMAC.toString().toLowerCase();
+    if (existing &&
+        existing.mac.toString().toLowerCase() === senderMacStr &&
+        existing.iface === ingressPort) {
+      existing.timestamp = Date.now();
+      return;
+    }
+    this.arpTable.set(ip, {
+      mac: arp.senderMAC,
+      iface: ingressPort,
+      timestamp: Date.now(),
+      type: 'dynamic',
+    });
+    this.getBus().publish({
+      topic: 'arp.snoop.learned',
+      payload: {
+        switchId: this.id, switchName: this.name,
+        ip, mac: senderMacStr, ingressPort, vlan,
+      },
+    });
+  }
+
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 
   _getArpTableInternal() { return this.arpTable; }
@@ -849,6 +1016,41 @@ export abstract class Switch extends Equipment {
         this.arpTable.delete(ip);
       }
     }
+  }
+
+  // ─── DAI Accessors ────────────────────────────────────────────────
+
+  _getArpInspectionConfig(): ArpInspectionConfig { return this.arpInspection; }
+  _getArpAccessLists(): Map<string, ArpAccessList> { return this.arpAccessLists; }
+  _getArpErrDisabledPorts(): Set<string> { return this.arpErrDisabledPorts; }
+  _getArpInspectionStats() {
+    return this.arpInspectionPipeline?.getStats() ?? new Map();
+  }
+  _getArpInspectionPortStats(port: string) {
+    return this.arpInspectionPipeline?.getPortStats(port);
+  }
+  _clearArpInspectionErrDisable(port: string): boolean {
+    if (!this.arpErrDisabledPorts.delete(port)) return false;
+    this.arpErrDisableTimestamps.delete(port);
+    const p = this.getPort(port);
+    if (p) p.setUp(true);
+    this.getBus().publish({
+      topic: 'arp.errdisable.cleared',
+      payload: { switchId: this.id, switchName: this.name, port },
+    });
+    if (this.arpErrDisabledPorts.size === 0) this.stopRecoveryTimer();
+    return true;
+  }
+  _setArpRecoverySec(sec: number): void {
+    this.arpInspection.errDisableRecoverySec = Math.max(0, sec);
+    if (this.arpInspection.errDisableRecoverySec > 0 && this.arpErrDisabledPorts.size > 0) {
+      this.ensureRecoveryTimer();
+    } else if (this.arpInspection.errDisableRecoverySec === 0) {
+      this.stopRecoveryTimer();
+    }
+  }
+  _resetArpInspectionStats(): void {
+    this.arpInspectionPipeline?.resetStats();
   }
 
   // ─── CLI ──────────────────────────────────────────────────────────

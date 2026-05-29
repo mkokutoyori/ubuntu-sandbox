@@ -48,6 +48,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private ifExtra = new Map<string, string[]>();
   private configAclTrie = new CommandTrie();
   private selectedAcl: string | null = null;
+  private selectedArpAcl: string | null = null;
   private acls = new Map<string, string[]>();
 
   constructor() {
@@ -97,6 +98,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (f === 'selectedInterface') this.selectedInterface = null;
       if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
       if (f === 'selectedVlan') this.selectedVlan = null;
+      if (f === 'selectedAcl') { this.selectedAcl = null; this.selectedArpAcl = null; }
     }
   }
 
@@ -140,11 +142,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       this.mode = 'config-acl';
       return '';
     });
-    this.configTrie.registerGreedy('ip arp inspection', 'Dynamic ARP Inspection', () => '');
-    this.configIfTrie.registerGreedy('ip arp inspection', 'DAI trust', (args) =>
-      this.applyToSelectedInterfaces(() => { void args; return ''; }));
+    this.registerDaiCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
+        if (this.selectedArpAcl) {
+          return this.handleArpAclLine(kw, args);
+        }
         if (this.selectedAcl) {
           this.acls.get(this.selectedAcl)!.push(`${kw} ${args.join(' ')}`.trim());
         }
@@ -188,6 +191,158 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
           '------------------------------------------------------------------------------'].join('\n');
       });
     }
+  }
+
+  private registerDaiCommands(): void {
+    const parseList = (spec: string): number[] => {
+      const out: number[] = [];
+      for (const part of spec.split(',')) {
+        const m = part.match(/^(\d+)-(\d+)$/);
+        if (m) { for (let i = +m[1]; i <= +m[2]; i++) out.push(i); }
+        else { const n = parseInt(part, 10); if (!isNaN(n)) out.push(n); }
+      }
+      return out;
+    };
+
+    // ── Global ── ip arp inspection vlan <list>
+    this.configTrie.registerGreedy('ip arp inspection vlan', 'Enable DAI on VLAN(s)', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const v of parseList(args.join(','))) cfg.vlans.add(v);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip arp inspection vlan', 'Disable DAI on VLAN(s)', (args) => {
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const v of parseList(args.join(','))) cfg.vlans.delete(v);
+      return '';
+    });
+    this.configTrie.registerGreedy('ip arp inspection validate', 'Extra DAI checks', (args) => {
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const tok of args) {
+        const k = tok.toLowerCase();
+        if (k === 'src-mac') cfg.validate.srcMac = true;
+        else if (k === 'dst-mac') cfg.validate.dstMac = true;
+        else if (k === 'ip') cfg.validate.ip = true;
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip arp inspection validate', 'Clear DAI checks', (args) => {
+      const cfg = this.d()._getArpInspectionConfig();
+      if (args.length === 0) {
+        cfg.validate.srcMac = false; cfg.validate.dstMac = false; cfg.validate.ip = false;
+      } else for (const tok of args) {
+        const k = tok.toLowerCase();
+        if (k === 'src-mac') cfg.validate.srcMac = false;
+        else if (k === 'dst-mac') cfg.validate.dstMac = false;
+        else if (k === 'ip') cfg.validate.ip = false;
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('ip arp inspection filter', 'Apply ARP ACL to VLAN(s)', (args) => {
+      // ip arp inspection filter <acl> vlan <list> [static]
+      const aclName = args[0]; const vlanIdx = args.indexOf('vlan');
+      if (!aclName || vlanIdx < 1) return '% Incomplete command.';
+      const list = args[vlanIdx + 1];
+      if (!list) return '% Incomplete command.';
+      const isStatic = args[vlanIdx + 2]?.toLowerCase() === 'static';
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const v of parseList(list)) cfg.vlanAclFilters.set(v, { aclName, staticMode: isStatic });
+      return '';
+    });
+    this.configTrie.registerGreedy('errdisable recovery cause arp-inspection',
+      'Auto-recover DAI err-disabled ports', () => {
+        const cfg = this.d()._getArpInspectionConfig();
+        if (cfg.errDisableRecoverySec <= 0) this.d()._setArpRecoverySec(30);
+        return '';
+      });
+    this.configTrie.registerGreedy('errdisable recovery interval',
+      'Auto-recovery interval (sec)', (args) => {
+        const n = parseInt(args[0] ?? '', 10);
+        if (!isNaN(n) && n > 0) this.d()._setArpRecoverySec(n);
+        return '';
+      });
+
+    // ── arp access-list ──
+    this.configTrie.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
+      const name = args[0]; if (!name) return '% Incomplete command.';
+      const map = this.d()._getArpAccessLists();
+      if (!map.has(name)) map.set(name, { name, entries: [] });
+      this.selectedArpAcl = name;
+      this.selectedAcl = null;
+      this.mode = 'config-acl';
+      return '';
+    });
+
+    // ── Interface ── trust + limit rate
+    this.configIfTrie.register('ip arp inspection trust', 'Trust port for DAI', () => {
+      const cfg = this.d()._getArpInspectionConfig();
+      return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
+    });
+    this.configIfTrie.register('no ip arp inspection trust', 'Untrust port for DAI', () => {
+      const cfg = this.d()._getArpInspectionConfig();
+      return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.delete(p); return ''; });
+    });
+    this.configIfTrie.registerGreedy('ip arp inspection limit rate', 'Per-port pps cap', (args) => {
+      const r = parseInt(args[0] ?? '', 10);
+      if (isNaN(r) || r < 0) return '% Invalid rate value';
+      const cfg = this.d()._getArpInspectionConfig();
+      return this.applyToSelectedInterfaces(p => { cfg.rateLimits.set(p, r); return ''; });
+    });
+
+    // ── Show ──
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
+      t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
+        this.showArpInspectionVlan(this.d(), args.join(',')));
+      t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
+        this.showArpInspectionStats(this.d()));
+      t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
+        this.showArpInspectionIfs(this.d()));
+      t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
+    }
+
+    // ── clear / recovery ──
+    this.privilegedTrie.register('clear ip arp inspection statistics',
+      'Reset DAI counters', () => { this.d()._resetArpInspectionStats(); return ''; });
+    this.privilegedTrie.registerGreedy('clear errdisable interface',
+      'Recover an err-disabled port', (args) => {
+        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
+        this.d()._clearArpInspectionErrDisable(portName);
+        return '';
+      });
+  }
+
+  private handleArpAclLine(kw: string, args: string[]): string {
+    if (!this.selectedArpAcl) return '';
+    const map = this.d()._getArpAccessLists();
+    const acl = map.get(this.selectedArpAcl);
+    if (!acl) return '';
+    if (kw === 'no') {
+      const raw = args.join(' ');
+      const idx = acl.entries.findIndex(e => e.raw === raw);
+      if (idx >= 0) acl.entries.splice(idx, 1);
+      return '';
+    }
+    if (kw !== 'permit' && kw !== 'deny') return '';
+    // Syntax: permit ip {host <ip>|any} mac {host <mac>|any}
+    let i = 0;
+    let senderIp: string | null = null;
+    let senderMac: string | null = null;
+    if (args[i]?.toLowerCase() === 'ip') {
+      i++;
+      if (args[i]?.toLowerCase() === 'host') { senderIp = args[i + 1] ?? null; i += 2; }
+      else if (args[i]?.toLowerCase() === 'any') { i++; }
+    }
+    if (args[i]?.toLowerCase() === 'mac') {
+      i++;
+      if (args[i]?.toLowerCase() === 'host') { senderMac = (args[i + 1] ?? '').toLowerCase() || null; i += 2; }
+      else if (args[i]?.toLowerCase() === 'any') { i++; }
+    }
+    acl.entries.push({
+      action: kw, senderIp, senderMac,
+      raw: `${kw} ${args.join(' ')}`.trim(),
+    });
+    return '';
   }
 
   private registerStpCommands(): void {
@@ -730,6 +885,35 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('!');
     }
 
+    // ── ARP ACLs ──
+    for (const [, acl] of sw._getArpAccessLists()) {
+      lines.push(`arp access-list ${acl.name}`);
+      for (const e of acl.entries) lines.push(` ${e.raw}`);
+      lines.push('!');
+    }
+
+    // ── DAI globals ──
+    const dai = sw._getArpInspectionConfig();
+    if (dai.vlans.size > 0) {
+      const sorted = Array.from(dai.vlans).sort((a, b) => a - b);
+      lines.push(`ip arp inspection vlan ${this.compactVlanList(sorted)}`);
+    }
+    if (dai.validate.srcMac || dai.validate.dstMac || dai.validate.ip) {
+      const toks: string[] = [];
+      if (dai.validate.srcMac) toks.push('src-mac');
+      if (dai.validate.dstMac) toks.push('dst-mac');
+      if (dai.validate.ip) toks.push('ip');
+      lines.push(`ip arp inspection validate ${toks.join(' ')}`);
+    }
+    for (const [vlan, f] of dai.vlanAclFilters) {
+      lines.push(`ip arp inspection filter ${f.aclName} vlan ${vlan}${f.staticMode ? ' static' : ''}`);
+    }
+    if (dai.errDisableRecoverySec > 0) {
+      lines.push('errdisable recovery cause arp-inspection');
+      lines.push(`errdisable recovery interval ${dai.errDisableRecoverySec}`);
+    }
+    if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
+
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
     const descs = sw._getInterfaceDescriptions();
@@ -762,6 +946,13 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
+      if (dai.trustedPorts.has(portName)) {
+        lines.push(' ip arp inspection trust');
+      }
+      const daiRate = dai.rateLimits.get(portName);
+      if (daiRate && daiRate > 0) {
+        lines.push(` ip arp inspection limit rate ${daiRate}`);
+      }
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
@@ -957,6 +1148,108 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
     }
 
+    return lines.join('\n');
+  }
+
+  // ─── DAI Display ──────────────────────────────────────────────────
+
+  private showArpInspection(sw: Switch): string {
+    const cfg = sw._getArpInspectionConfig();
+    const lines: string[] = [];
+    const vlans = Array.from(cfg.vlans).sort((a, b) => a - b);
+    lines.push('Source Mac Validation      : ' + (cfg.validate.srcMac ? 'Enabled' : 'Disabled'));
+    lines.push('Destination Mac Validation : ' + (cfg.validate.dstMac ? 'Enabled' : 'Disabled'));
+    lines.push('IP Address Validation      : ' + (cfg.validate.ip ? 'Enabled' : 'Disabled'));
+    lines.push('');
+    lines.push(' Vlan     Configuration    Operation   ACL Match          Static ACL');
+    lines.push(' ----     -------------    ---------   ---------          ----------');
+    if (vlans.length === 0) {
+      lines.push(' (no VLANs enabled for ARP inspection)');
+    } else for (const v of vlans) {
+      const filt = cfg.vlanAclFilters.get(v);
+      const acl = filt ? filt.aclName : '';
+      const stat = filt && filt.staticMode ? 'Yes' : 'No';
+      lines.push(` ${String(v).padEnd(8)} Enabled          Active      ${acl.padEnd(18)} ${stat}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpInspectionVlan(sw: Switch, spec: string): string {
+    const wanted = new Set<number>();
+    for (const part of spec.split(',')) {
+      const m = part.match(/^(\d+)-(\d+)$/);
+      if (m) for (let i = +m[1]; i <= +m[2]; i++) wanted.add(i);
+      else { const n = parseInt(part, 10); if (!isNaN(n)) wanted.add(n); }
+    }
+    const cfg = sw._getArpInspectionConfig();
+    const lines: string[] = [' Vlan     Configuration    Operation   ACL Match          Static ACL',
+                            ' ----     -------------    ---------   ---------          ----------'];
+    for (const v of [...wanted].sort((a, b) => a - b)) {
+      const enabled = cfg.vlans.has(v);
+      const filt = cfg.vlanAclFilters.get(v);
+      const acl = filt ? filt.aclName : '';
+      const stat = filt && filt.staticMode ? 'Yes' : 'No';
+      lines.push(` ${String(v).padEnd(8)} ${(enabled ? 'Enabled' : 'Disabled').padEnd(16)} ` +
+                 `${(enabled ? 'Active' : 'Inactive').padEnd(11)} ${acl.padEnd(18)} ${stat}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpInspectionStats(sw: Switch): string {
+    const stats = sw._getArpInspectionStats();
+    const lines = [
+      ' Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops',
+      ' ----  ---------     -------       ----------    ---------',
+    ];
+    const ports = sw._getPortsInternal();
+    let fwd = 0, drop = 0, bind = 0, acl = 0;
+    for (const [port] of ports) {
+      const s = stats.get(port);
+      if (!s) continue;
+      fwd += s.forwarded; drop += s.dropped;
+      bind += s.droppedBindingMismatch; acl += s.droppedAclDeny;
+    }
+    lines.push(` ${'(all)'.padEnd(5)} ${String(fwd).padEnd(13)} ${String(drop).padEnd(13)} ` +
+               `${String(bind).padEnd(13)} ${acl}`);
+    lines.push('');
+    lines.push(' Interface          Packets Received  Permitted  Dropped');
+    lines.push(' ----------------   ----------------  ---------  -------');
+    for (const [port] of ports) {
+      const s = stats.get(port);
+      if (!s || s.received === 0) continue;
+      lines.push(` ${this.abbreviateInterface(port).padEnd(18)} ` +
+                 `${String(s.received).padEnd(17)} ${String(s.forwarded).padEnd(10)} ${s.dropped}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpInspectionIfs(sw: Switch): string {
+    const cfg = sw._getArpInspectionConfig();
+    const errd = sw._getArpErrDisabledPorts();
+    const lines = [
+      ' Interface          Trust State     Rate (pps)    Burst Interval     ErrDisable',
+      ' ----------------   -------------   ----------    --------------     ----------',
+    ];
+    for (const port of sw.getPortNames()) {
+      const trust = cfg.trustedPorts.has(port) ? 'Trusted' : 'Untrusted';
+      const rate = cfg.rateLimits.get(port);
+      const rateStr = rate && rate > 0 ? String(rate) : 'None';
+      const burst = String(cfg.rateBurstSec);
+      const err = errd.has(port) ? 'Yes' : 'No';
+      lines.push(` ${this.abbreviateInterface(port).padEnd(18)} ${trust.padEnd(15)} ` +
+                 `${rateStr.padEnd(13)} ${burst.padEnd(18)} ${err}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpAcls(sw: Switch): string {
+    const map = sw._getArpAccessLists();
+    if (map.size === 0) return '';
+    const lines: string[] = [];
+    for (const [name, acl] of map) {
+      lines.push(`ARP access list ${name}`);
+      for (const e of acl.entries) lines.push(`    ${e.raw}`);
+    }
     return lines.join('\n');
   }
 

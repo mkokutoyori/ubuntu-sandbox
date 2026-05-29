@@ -25,6 +25,7 @@ import type { OspfDomainEvent } from '@/network/ospf/events';
 import type { IpsecDomainEvent } from '@/network/ipsec/events';
 import type { RipDomainEvent } from '@/network/rip/events';
 import type { DhcpDomainEvent } from '@/network/dhcp/events';
+import type { ArpDomainEvent } from '@/network/arp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
@@ -250,6 +251,8 @@ export type DomainEvent =
   | RipDomainEvent
   // DHCP (sub-union, see src/network/dhcp/events.ts)
   | DhcpDomainEvent
+  // ARP / DAI (sub-union, see src/network/arp/events.ts)
+  | ArpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
   // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)
