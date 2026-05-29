@@ -5,6 +5,7 @@
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { ShellContext, expandGlob } from './LinuxFileCommands';
 import { runAwk, type AwkHost } from './awk';
+import { runSed, type SedFileIO } from './sed';
 
 export function cmdGrep(ctx: ShellContext, args: string[], stdin?: string): string {
   let caseInsensitive = false;
@@ -810,67 +811,14 @@ function resolveAwkValue(val: string, fields: string[], fs: string, vars: Map<st
  * may be provided via repeated `-e` or by joining with `;`.
  */
 export function cmdSed(ctx: ShellContext, args: string[], stdin?: string): string {
-  let inPlace = false;
-  const scripts: string[] = [];
-  const files: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-i' || a.startsWith('-i')) { inPlace = true; continue; }
-    if (a === '-e' && args[i + 1] !== undefined) { scripts.push(args[++i]); continue; }
-    if (a === '-n' || a === '-E' || a === '-r') continue;
-    if (a.startsWith('-')) continue;
-    if (scripts.length === 0) { scripts.push(a); continue; }
-    files.push(a);
-  }
-
-  const allScripts = scripts.flatMap(s => s.split(';')).map(s => s.trim()).filter(Boolean);
-
-  const applyScripts = (input: string): string => {
-    let text = input;
-    for (const script of allScripts) {
-      const m = /^s(.)(.*)$/s.exec(script);
-      if (!m) continue;
-      const delim = m[1];
-      const rest = m[2];
-      const parts: string[] = [];
-      let cur = '';
-      for (let i = 0; i < rest.length; i++) {
-        const c = rest[i];
-        if (c === '\\' && rest[i + 1] !== undefined) { cur += c + rest[++i]; continue; }
-        if (c === delim) { parts.push(cur); cur = ''; continue; }
-        cur += c;
-      }
-      parts.push(cur);
-      if (parts.length < 2) continue;
-      const pattern = parts[0];
-      const replacement = parts[1].replace(/\\(\d)/g, '$$$1');
-      const flags = parts[2] ?? '';
-      const reFlags = 'm' + (flags.includes('g') ? 'g' : '') + (flags.includes('i') ? 'i' : '');
-      const jsPattern = pattern.replace(/\\\?/g, '?').replace(/\\\+/g, '+');
-      try {
-        text = text.replace(new RegExp(jsPattern, reFlags), replacement);
-      } catch {
-        /* ignore bad pattern */
-      }
-    }
-    return text;
+  const io: SedFileIO = {
+    readFile: (p) => ctx.vfs.readFile(ctx.vfs.normalizePath(p, ctx.cwd)),
+    writeFile: (p, content) => { ctx.vfs.writeFile(ctx.vfs.normalizePath(p, ctx.cwd), content, ctx.uid, ctx.gid, 0o022); },
+    appendFile: (p, content) => {
+      const abs = ctx.vfs.normalizePath(p, ctx.cwd);
+      ctx.vfs.writeFile(abs, (ctx.vfs.readFile(abs) ?? '') + content, ctx.uid, ctx.gid, 0o022);
+    },
   };
-
-  if (files.length === 0) {
-    return applyScripts(stdin ?? '');
-  }
-
-  const outputs: string[] = [];
-  for (const f of files) {
-    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    const content = ctx.vfs.readFile(absPath) ?? '';
-    const next = applyScripts(content);
-    if (inPlace) {
-      ctx.vfs.writeFile(absPath, next, ctx.uid, ctx.gid, 0o022);
-    } else {
-      outputs.push(next);
-    }
-  }
-  return outputs.join('');
+  const r = runSed({ argv: args, stdin: stdin ?? '', io });
+  return r.error ?? r.output;
 }
