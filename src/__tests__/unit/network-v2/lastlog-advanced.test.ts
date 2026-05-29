@@ -174,18 +174,18 @@ describe('lastlog — advanced multi-layer', () => {
   // ─────────────────────────── §C access ────────────────────────────
   describe('§C access & identity', () => {
     it('C1 -u accepts a numeric UID', () => {
-      exec.userMgr.useradd('alice', { u: 1501 });
-      exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
-      const out = exec.execute('lastlog -u 1501');
-      expect(out).toMatch(/^alice\b/m);
+      exec.userMgr.useradd('zoe', { u: 1777 });
+      exec.lastlog.record('zoe', '10.0.0.5', 'pts/0');
+      const out = exec.execute('lastlog -u 1777');
+      expect(out).toMatch(/^zoe\b/m);
     });
 
     it('C2 -u LO-HI selects an inclusive UID range', () => {
-      exec.userMgr.useradd('alice', { u: 1100 });
-      exec.userMgr.useradd('bob', { u: 2002 });
+      exec.userMgr.useradd('zoe', { u: 1200 });
+      exec.userMgr.useradd('yan', { u: 2200 });
       const out = exec.execute('lastlog -u 1000-1500');
-      expect(out).toMatch(/^alice\b/m);
-      expect(out).not.toMatch(/^bob\b/m);
+      expect(out).toMatch(/^zoe\b/m);
+      expect(out).not.toMatch(/^yan\b/m);
     });
 
     it('C3 -u 0-999 targets the system-account range', () => {
