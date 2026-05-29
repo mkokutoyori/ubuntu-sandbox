@@ -281,6 +281,9 @@ export class LinuxCommandExecutor {
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
+    // Project the lastlog registry onto the canonical /var/log/lastlog file
+    // so the filesystem view stays coherent with the in-memory registry.
+    this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
     this.iptables = new LinuxIptablesManager(this.vfs);
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
@@ -2967,8 +2970,29 @@ export class LinuxCommandExecutor {
       return '';
     }
 
-    if (filterUser && !this.userMgr.getAllUsers().some(u => u.username === filterUser)) {
-      return `lastlog: Unknown user or range: ${filterUser}`;
+    // Resolve -u into a row predicate. lastlog(8) accepts a login name,
+    // a numeric UID, or an inclusive UID range "LO-HI" (either bound may
+    // be omitted for an open range). A name/UID that matches no account
+    // is an error; a range that matches nothing is simply empty.
+    let userFilter: ((u: UserEntry) => boolean) | null = null;
+    if (filterUser !== null) {
+      const range = /^(\d*)-(\d*)$/.exec(filterUser);
+      if (range && (range[1] !== '' || range[2] !== '')) {
+        const lo = range[1] === '' ? 0 : Number(range[1]);
+        const hi = range[2] === '' ? Number.MAX_SAFE_INTEGER : Number(range[2]);
+        userFilter = (u) => u.uid >= lo && u.uid <= hi;
+      } else if (/^\d+$/.test(filterUser)) {
+        const uid = Number(filterUser);
+        if (!this.userMgr.getAllUsers().some(u => u.uid === uid)) {
+          return `lastlog: Unknown user or range: ${filterUser}`;
+        }
+        userFilter = (u) => u.uid === uid;
+      } else {
+        if (!this.userMgr.getAllUsers().some(u => u.username === filterUser)) {
+          return `lastlog: Unknown user or range: ${filterUser}`;
+        }
+        userFilter = (u) => u.username === filterUser;
+      }
     }
 
     const header = 'Username         Port     From             Latest';
@@ -2987,7 +3011,7 @@ export class LinuxCommandExecutor {
     const pad2 = (n: number) => String(n).padStart(2, '0');
 
     for (const u of this.userMgr.getAllUsers()) {
-      if (filterUser && u.username !== filterUser) continue;
+      if (userFilter && !userFilter(u)) continue;
       const entry = this.lastlog.getCurrent(u.username);
       if (!entry) {
         rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
