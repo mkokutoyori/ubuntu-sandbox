@@ -16,7 +16,11 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import {
+  runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
+  type TestFs, type TestEnv,
+} from './coreutils';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
@@ -91,6 +95,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+  'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -1710,12 +1715,8 @@ export class LinuxCommandExecutor {
         return { output: result.output, exitCode: 0 };
       }
       case 'test':
-      case '[': {
-        // Handle [ ... ] syntax
-        const testArgs = cmd === '[' ? args.filter(a => a !== ']') : args;
-        const result = cmdTest(c, testArgs);
-        return { output: '', exitCode: result.success ? 0 : 1 };
-      }
+      case '[': return this.handleTest(cmd, args);
+      case 'expr': return this.handleExpr(args);
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
@@ -1880,19 +1881,8 @@ export class LinuxCommandExecutor {
       }
 
       // time — run a command and report its elapsed wall/user/sys time
-      case 'time': {
-        if (args.length === 0) {
-          return { output: '\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s', exitCode: 0 };
-        }
-        const started = Date.now();
-        const inner = this.dispatchFromInterpreter(args, this._cmdEnv);
-        const elapsed = ((Date.now() - started) / 1000).toFixed(3);
-        const body = inner.output ? inner.output.replace(/\n$/, '') + '\n' : '';
-        return {
-          output: `${body}\nreal\t0m${elapsed}s\nuser\t0m0.001s\nsys\t0m0.001s`,
-          exitCode: inner.exitCode,
-        };
-      }
+      case 'time': return this.handleTime(args);
+      case 'watch': return this.handleWatch(args);
 
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
@@ -2024,8 +2014,12 @@ export class LinuxCommandExecutor {
       case 'clear': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
       case 'reset': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
 
-      // Sleep — non-blocking simulator no-op
-      case 'sleep': return { output: '', exitCode: 0 };
+      // Sleep — parses the duration (incl. multi-arg sums and suffixes)
+      // but never blocks; the simulator advances time logically.
+      case 'sleep': {
+        const r = runSleep(args);
+        return { output: r.output, exitCode: r.exitCode };
+      }
       // `timeout <N> <cmd ...>` — run the inner command. In real life
       // the cmd is killed with SIGTERM after N seconds; the simulator
       // is synchronous so we just delegate (the inner cmd runs to
@@ -2274,11 +2268,8 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
       case 'seq': {
-        const nums = args.filter(a => !a.startsWith('-')).map(Number);
-        if (nums.length === 1) return { output: Array.from({length: nums[0]}, (_, i) => i + 1).join('\n'), exitCode: 0 };
-        if (nums.length === 2) return { output: Array.from({length: nums[1] - nums[0] + 1}, (_, i) => nums[0] + i).join('\n'), exitCode: 0 };
-        if (nums.length === 3) { const r: number[] = []; for (let i = nums[0]; i <= nums[2]; i += nums[1]) r.push(i); return { output: r.join('\n'), exitCode: 0 }; }
-        return { output: 'seq: missing operand', exitCode: 1 };
+        const r = runSeq(args);
+        return { output: r.output, exitCode: r.exitCode };
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
       case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
@@ -3187,6 +3178,54 @@ export class LinuxCommandExecutor {
       }
     }
     return { output: out.join('\n'), exitCode };
+  }
+
+  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number } {
+    const fs: TestFs = {
+      exists: (p) => this.vfs.exists(p),
+      resolveInode: (p) => this.vfs.resolveInode(p),
+      getType: (p, follow) => this.vfs.getType(p, follow),
+      normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+    };
+    const env: TestEnv = {
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      cwd: this.cwd,
+      isatty: (fd) => fd === 0 || fd === 1 || fd === 2
+        ? this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1'
+        : false,
+    };
+    const r = runTest(fs, env, args, cmd === '[');
+    return { output: r.stderr, exitCode: r.exitCode };
+  }
+
+  private handleExpr(args: string[]): { output: string; exitCode: number } {
+    const r = runExpr(args);
+    return { output: r.output, exitCode: r.exitCode };
+  }
+
+  private handleTime(args: string[]): { output: string; exitCode: number } {
+    const fmt = chooseTimeFormat(this._cmdEnv ?? Object.fromEntries(this.env));
+    if (args.length === 0) {
+      return { output: formatTimes({ realMs: 0, userMs: 0, sysMs: 0 }, fmt), exitCode: 0 };
+    }
+    const { result, timing } = measure(() => this.dispatchFromInterpreter(args, this._cmdEnv));
+    const body = result.output ? result.output.replace(/\n$/, '') + '\n' : '';
+    return { output: body + formatTimes(timing, fmt), exitCode: result.exitCode };
+  }
+
+  private handleWatch(args: string[]): { output: string; exitCode: number } {
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const r = runWatch(args, {
+      hostname,
+      now: () => {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      },
+      run: (cmdline) => this.dispatchFromInterpreter(cmdline, this._cmdEnv),
+    });
+    return { output: r.output, exitCode: r.exitCode };
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {
