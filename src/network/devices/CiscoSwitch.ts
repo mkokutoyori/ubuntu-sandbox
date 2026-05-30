@@ -17,44 +17,56 @@ import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
 import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
+import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { ETHERTYPE_LLDP } from '../lldp/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoSwitch extends Switch {
   private readonly cdpAgent: CdpAgent;
+  private readonly lldpAgent: LldpAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
-    this.cdpAgent = new CdpAgent({
+    const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
-      getPort: (n) => this.getPort(n),
+      getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
-      sendFrame: (p, f) => { this.sendFrame(p, f); },
-      getNativeVlan: (p) => this.getSwitchportConfig(p)?.accessVlan,
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.cdpAgent = new CdpAgent({
+      ...hostBase,
+      getNativeVlan: (p: string) => this.getSwitchportConfig(p)?.accessVlan,
     }, () => this.getBus());
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
+    this.lldpAgent.start();
   }
-
-  // ─── CDP integration ──────────────────────────────────────────
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    // Subscribers are bus-bound; rewire on bus change.
     if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
+    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
     if (frame.etherType === ETHERTYPE_CDP) {
       this.cdpAgent.handleFrame(portName, frame);
-      return; // never flood / never MAC-learn link-local protocol frames
+      return;
+    }
+    if (frame.etherType === ETHERTYPE_LLDP) {
+      this.lldpAgent.handleFrame(portName, frame);
+      return;
     }
     super.handleFrame(portName, frame);
   }
 
   getCdpAgent(): CdpAgent { return this.cdpAgent; }
   getCdpNeighbors(): NeighborDTO[] { return cdpToNeighborDTO(this.cdpAgent.getNeighbors()); }
+  getLldpAgent(): LldpAgent { return this.lldpAgent; }
+  getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
 
   // ─── Vendor Hooks ──────────────────────────────────────────────
 
@@ -129,5 +141,17 @@ function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
     remoteType: n.remoteType,
     remotePlatform: n.remotePlatform,
     remoteCapability: n.remoteCapability,
+  }));
+}
+
+function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
+  return rows.map(n => ({
+    localPort: n.localPort,
+    remoteHost: n.systemName,
+    remotePort: n.portId,
+    remoteType: n.remoteType,
+    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
+    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
+      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
   }));
 }

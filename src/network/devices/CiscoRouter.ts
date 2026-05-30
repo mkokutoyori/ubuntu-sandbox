@@ -18,39 +18,45 @@ import {
 } from './shells/cisco/CiscoShowCommands';
 import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP, CDP_MULTICAST_MAC } from '../cdp/types';
+import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { EthernetFrame } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoRouter extends Router {
   private readonly cdpAgent: CdpAgent;
+  private readonly lldpAgent: LldpAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
-    this.cdpAgent = new CdpAgent({
+    const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
-      getPort: (n) => this.getPort(n),
+      getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
-      sendFrame: (p, f) => { this.sendFrame(p, f); },
-    }, () => this.getBus());
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
+    this.lldpAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
+    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
   }
 
-  /**
-   * Routers normally drop frames not addressed to one of their MACs.
-   * CDP travels on the reserved multicast 01:00:0c:cc:cc:cc which the
-   * generic Router filter rejects — handle it here before delegating.
-   */
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
-    if (frame.etherType === ETHERTYPE_CDP
-        && frame.dstMAC.toString().toLowerCase() === CDP_MULTICAST_MAC) {
+    const dst = frame.dstMAC.toString().toLowerCase();
+    if (frame.etherType === ETHERTYPE_CDP && dst === CDP_MULTICAST_MAC) {
       this.cdpAgent.handleFrame(portName, frame);
+      return;
+    }
+    if (frame.etherType === ETHERTYPE_LLDP && dst === LLDP_MULTICAST_MAC) {
+      this.lldpAgent.handleFrame(portName, frame);
       return;
     }
     super.handleFrame(portName, frame);
@@ -58,6 +64,8 @@ export class CiscoRouter extends Router {
 
   getCdpAgent(): CdpAgent { return this.cdpAgent; }
   getCdpNeighbors(): NeighborDTO[] { return cdpToNeighborDTO(this.cdpAgent.getNeighbors()); }
+  getLldpAgent(): LldpAgent { return this.lldpAgent; }
+  getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
@@ -198,5 +206,17 @@ function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
     remoteType: n.remoteType,
     remotePlatform: n.remotePlatform,
     remoteCapability: n.remoteCapability,
+  }));
+}
+
+function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
+  return rows.map(n => ({
+    localPort: n.localPort,
+    remoteHost: n.systemName,
+    remotePort: n.portId,
+    remoteType: n.remoteType,
+    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
+    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
+      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
   }));
 }

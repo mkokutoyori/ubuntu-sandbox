@@ -121,6 +121,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (agent) fn(agent);
   }
 
+  protected applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
+    const agent = (this.d() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+    if (agent) fn(agent);
+  }
+
   /**
    * Resolve the per-interface scope selected in `config-if`. The base
    * implementation returns the single `selectedInterface`; switch shells
@@ -627,7 +632,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.applyToCdpAgent(a => a.setHoldtimeSec(n));
       return '';
     });
-    flag('lldp', 'lldp run', 'LLDP');
+    this.configTrie.registerGreedy('lldp run', 'Enable LLDP globally', () => {
+      this.configState.set('lldp', true);
+      this.applyToLldpAgent(a => a.setEnabled(true));
+      return '';
+    });
+    this.configTrie.registerGreedy('no lldp run', 'Disable LLDP globally', () => {
+      this.configState.set('lldp', false);
+      this.applyToLldpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp timer', 'Advertisement period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 5 || n > 32768) return '% Invalid timer value (5-32768)';
+      this.applyToLldpAgent(a => a.setTimerSec(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp holdtime-multiplier', 'TTL = timer x multiplier', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 2 || n > 10) return '% Invalid multiplier (2-10)';
+      this.applyToLldpAgent(a => a.setHoldtimeMultiplier(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp reinit', 'Re-init delay (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 1 || n > 10) return '% Invalid reinit delay (1-10)';
+      this.applyToLldpAgent(a => a.setReinitDelaySec(n));
+      return '';
+    });
 
     // [no] cdp enable — per-interface — needs `selectedInterface` /
     // `selectedInterfaceRange` from the device-specific shell, but the
@@ -640,6 +672,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configIfTrie.register('no cdp enable', 'Disable CDP on this interface', () => {
       const ports = this.selectedPortsForConfigIf();
       for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, false));
+      return '';
+    });
+    this.configIfTrie.register('lldp transmit', 'Enable LLDP transmit on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortTransmit(p, true));
+      return '';
+    });
+    this.configIfTrie.register('no lldp transmit', 'Disable LLDP transmit on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortTransmit(p, false));
+      return '';
+    });
+    this.configIfTrie.register('lldp receive', 'Enable LLDP receive on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortReceive(p, true));
+      return '';
+    });
+    this.configIfTrie.register('no lldp receive', 'Disable LLDP receive on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortReceive(p, false));
       return '';
     });
     flag('ip cef', 'ip cef', 'CEF');

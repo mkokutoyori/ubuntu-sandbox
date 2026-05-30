@@ -27,6 +27,7 @@ import type { RipDomainEvent } from '@/network/rip/events';
 import type { DhcpDomainEvent } from '@/network/dhcp/events';
 import type { ArpDomainEvent } from '@/network/arp/events';
 import type { CdpDomainEvent } from '@/network/cdp/events';
+import type { LldpDomainEvent } from '@/network/lldp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
@@ -274,6 +275,7 @@ export type DomainEvent =
   | ArpDomainEvent
   // CDP (sub-union, see src/network/cdp/events.ts)
   | CdpDomainEvent
+  | LldpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
   // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)

@@ -23,9 +23,10 @@ export interface ShowStateDevice {
   getType(): DeviceType;
   getPorts(): Port[];
   getInterfaceDescription?(portName: string): string | undefined;
-  /** Optional hook — Cisco devices expose their CdpAgent's table here. */
   getCdpNeighbors?(): NeighborDTO[];
   getCdpAgent?(): import('@/network/cdp/CdpAgent').CdpAgent | undefined;
+  getLldpNeighbors?(): NeighborDTO[];
+  getLldpAgent?(): import('@/network/lldp/LldpAgent').LldpAgent | undefined;
 }
 
 /** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
@@ -203,8 +204,22 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
   ].join('\n');
 }
 
-/** `show lldp [neighbors [detail]]` — from the REAL cabled topology. */
+function lldpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
+  const learnt = dev.getLldpNeighbors?.();
+  if (!learnt) return new EquipmentStateView(dev).neighbors();
+  const linkPeers = new EquipmentStateView(dev).neighbors();
+  const byKey = new Map<string, NeighborDTO>();
+  for (const p of linkPeers) byKey.set(p.localPort, p);
+  for (const p of learnt) byKey.set(p.localPort, p);
+  return Array.from(byKey.values());
+}
+
 export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string {
+  const cfg = dev.getLldpAgent?.()?.getConfig();
+  const timer = cfg?.timerSec ?? 30;
+  const mul = cfg?.holdtimeMultiplier ?? 4;
+  const ttl = timer * mul;
+  const reinit = cfg?.reinitDelaySec ?? 2;
   if (!enabled) {
     if (arg.toLowerCase().includes('neighbor')) {
       return 'Capability codes:\n' +
@@ -216,7 +231,31 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
     return '% LLDP is not enabled';
   }
   if (arg.toLowerCase().includes('neighbor')) {
-    const ns = neighbours(dev);
+    const ns = lldpNeighbours(dev);
+    const detail = arg.toLowerCase().includes('detail');
+    if (detail) {
+      if (ns.length === 0) return 'Total entries displayed: 0';
+      const agent = dev.getLldpAgent?.();
+      const allRows = agent ? agent.getNeighbors() : [];
+      const blocks = allRows.map(n => [
+        '------------------------------------------------',
+        `Local Intf: ${n.localPort}`,
+        `Chassis id: ${n.chassisId}`,
+        `Port id: ${n.portId}`,
+        `Port Description: ${n.portDescription}`,
+        `System Name: ${n.systemName}`,
+        `System Description:`,
+        n.systemDescription,
+        `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
+        `System Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `Enabled Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `Management Addresses:`,
+        ...(n.managementAddresses.length > 0
+          ? n.managementAddresses.map(a => `    IP: ${a}`)
+          : ['    not advertised']),
+      ].join('\n'));
+      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${allRows.length}`;
+    }
     const hdr = [
       'Capability codes:',
       '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device',
@@ -225,16 +264,30 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
       'Device ID           Local Intf     Hold-time  Capability      Port ID',
     ];
     const rows = ns.map((n) =>
-      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}120        ` +
+      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}${String(ttl).padEnd(11)}` +
       `${n.remoteCapability.padEnd(16)}${n.remotePort}`);
     return [...hdr, ...rows, '', `Total entries displayed: ${ns.length}`].join('\n');
+  }
+  if (arg.toLowerCase().includes('interface')) {
+    const agent = dev.getLldpAgent?.();
+    const lines: string[] = [];
+    for (const p of dev.getPorts()) {
+      const tx = agent?.isPortTransmitEnabled(p.getName()) ?? true;
+      const rx = agent?.isPortReceiveEnabled(p.getName()) ?? true;
+      lines.push(`${p.getName()}:`);
+      lines.push(`    Tx: ${tx ? 'enabled' : 'disabled'}`);
+      lines.push(`    Rx: ${rx ? 'enabled' : 'disabled'}`);
+      lines.push(`    Tx state: ${tx && p.getIsUp() && p.isConnected() ? 'IDLE' : 'INIT'}`);
+      lines.push(`    Rx state: ${rx && p.getIsUp() && p.isConnected() ? 'WAIT FOR FRAME' : 'INIT'}`);
+    }
+    return lines.length ? lines.join('\n') : 'LLDP is not enabled on any interface';
   }
   return [
     'Global LLDP Information:',
     '    Status: ACTIVE',
-    '    LLDP advertisements are sent every 30 seconds',
-    '    LLDP hold time advertised is 120 seconds',
-    '    LLDP interface reinitialisation delay is 2 seconds',
+    `    LLDP advertisements are sent every ${timer} seconds`,
+    `    LLDP hold time advertised is ${ttl} seconds`,
+    `    LLDP interface reinitialisation delay is ${reinit} seconds`,
   ].join('\n');
 }
 
