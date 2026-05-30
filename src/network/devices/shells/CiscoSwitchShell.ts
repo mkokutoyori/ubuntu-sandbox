@@ -291,6 +291,39 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
     // ── Show ──
     for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show dtp', 'Display DTP information', (args) => {
+        const dtp = this.d().getDtpAgent();
+        const ports = this.d().getPortNames();
+        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
+          const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
+          if (!this.d().getPort(name)) return `% Invalid interface "${args.slice(1).join(' ')}"`;
+          const s = dtp.getPortState(name);
+          return [
+            `DTP information for ${name}:`,
+            `  TOS/TAS/TNS:                            ${s.operationalMode === 'trunk' ? 'TRUNK' : 'ACCESS'}/${this.dtpAdminLabel(s.adminMode)}/NONE`,
+            `  TOT/TAT/TNT:                            ${s.trunkEncapsulation.toUpperCase()}/NEGOTIATE/NONE`,
+            `  Neighbor address 1:                     ${s.peerMac ?? '000000000000'}`,
+            `  Neighbor address 2:                     000000000000`,
+            `  Hello timer expiration (sec/state):     0/RUNNING`,
+            `  Access timer expiration (sec/state):    never/STOPPED`,
+            `  Negotiation timer expiration (sec/st):  never/STOPPED`,
+            `  Multidrop timer expiration (sec/state): never/STOPPED`,
+            `  FSM state:                              S6:TRUNK`,
+          ].join('\n');
+        }
+        const lines = ['Global DTP information', `  Sending DTP Hello packets every ${dtp.getConfig().helloSec} seconds`, '  Dynamic Trunk timeout is 300 seconds', ''];
+        lines.push('Interface       Mode             Status         Negotiation');
+        lines.push('--------------- ---------------- -------------- -----------');
+        for (const p of ports) {
+          const s = dtp.getPortState(p);
+          lines.push(
+            `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
+            `${s.operationalMode.padEnd(15)}${s.adminMode === 'nonegotiate' ? 'off' : 'on'}`,
+          );
+        }
+        return lines.join('\n');
+      });
+
       t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
       t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
         this.showArpInspectionVlan(this.d(), args.join(',')));
@@ -524,6 +557,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (sec.getAgingStatic()) out.push('switchport port-security aging static');
     }
     return out;
+  }
+
+  private dtpAdminLabel(m: import('../../dtp/types').DtpAdminMode): string {
+    switch (m) {
+      case 'access': return 'ACCESS';
+      case 'trunk': return 'TRUNK';
+      case 'dynamic-auto': return 'DYN-AUTO';
+      case 'dynamic-desirable': return 'DYN-DESIRABLE';
+      case 'nonegotiate': return 'TRUNK';
+    }
   }
 
   private formatMacCisco(mac: MACAddress): string {
@@ -994,6 +1037,34 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       );
     });
 
+    this.configIfTrie.register('switchport mode dynamic auto', 'Negotiate trunk via DTP (passive)', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-auto');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('switchport mode dynamic desirable', 'Negotiate trunk via DTP (active)', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-desirable');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('switchport nonegotiate', 'Force trunk without DTP', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'nonegotiate');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('no switchport nonegotiate', 'Re-enable DTP negotiation', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-auto');
+        return '';
+      });
+    });
+
     this.configIfTrie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       const vlanId = parseInt(args[0], 10);
@@ -1071,7 +1142,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     };
     for (const sub of [
-      'switchport trunk encapsulation', 'switchport nonegotiate',
+      'switchport trunk encapsulation',
       'switchport voice', 'switchport priority',
       'channel-group', 'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
@@ -1198,12 +1269,22 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`interface ${portName}`);
       const desc = descs.get(portName);
       if (desc) lines.push(` description ${desc}`);
+      const dtpAdmin = sw.getDtpAgent().getAdminMode(portName);
+      if (dtpAdmin === 'dynamic-auto') {
+        lines.push(' switchport mode dynamic auto');
+      } else if (dtpAdmin === 'dynamic-desirable') {
+        lines.push(' switchport mode dynamic desirable');
+      } else if (dtpAdmin === 'nonegotiate') {
+        lines.push(' switchport nonegotiate');
+      } else if (dtpAdmin === 'trunk') {
+        lines.push(' switchport mode trunk');
+      } else {
+        lines.push(' switchport mode access');
+      }
       if (cfg.mode === 'trunk') {
-        lines.push(` switchport mode trunk`);
         if (cfg.trunkNativeVlan !== 1) {
           lines.push(` switchport trunk native vlan ${cfg.trunkNativeVlan}`);
         }
-        // Only show allowed VLAN line when not the default (all VLANs)
         if (cfg.trunkAllowedVlans.size < 4094) {
           if (cfg.trunkAllowedVlans.size === 0) {
             lines.push(` switchport trunk allowed vlan none`);
@@ -1212,11 +1293,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
             lines.push(` switchport trunk allowed vlan ${this.compactVlanList(sorted)}`);
           }
         }
-      } else {
-        lines.push(` switchport mode access`);
-        if (cfg.accessVlan !== 1) {
-          lines.push(` switchport access vlan ${cfg.accessVlan}`);
-        }
+      } else if (cfg.accessVlan !== 1) {
+        lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);

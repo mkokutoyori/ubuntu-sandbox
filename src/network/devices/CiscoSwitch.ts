@@ -19,12 +19,15 @@ import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
 import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
+import { DtpAgent } from '../dtp/DtpAgent';
+import { ETHERTYPE_DTP, type DtpOperationalMode } from '../dtp/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoSwitch extends Switch {
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
+  private readonly dtpAgent: DtpAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -41,14 +44,27 @@ export class CiscoSwitch extends Switch {
       getNativeVlan: (p: string) => this.getSwitchportConfig(p)?.accessVlan,
     }, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    this.dtpAgent = new DtpAgent({
+      ...hostBase,
+      onOperationalModeChanged: (p, m) => this.applyDtpOperationalMode(p, m),
+    }, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
+    this.dtpAgent.start();
+  }
+
+  private applyDtpOperationalMode(portName: string, mode: DtpOperationalMode): void {
+    const cfg = this.getSwitchportConfig(portName);
+    if (!cfg) return;
+    if (cfg.mode === mode) return;
+    super.setSwitchportMode(portName, mode);
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
+    if (this.dtpAgent) { this.dtpAgent.stop(); this.dtpAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -60,7 +76,19 @@ export class CiscoSwitch extends Switch {
       this.lldpAgent.handleFrame(portName, frame);
       return;
     }
+    if (frame.etherType === ETHERTYPE_DTP) {
+      this.dtpAgent.handleFrame(portName, frame);
+      return;
+    }
     super.handleFrame(portName, frame);
+  }
+
+  getDtpAgent(): DtpAgent { return this.dtpAgent; }
+
+  override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
+    const r = super.setSwitchportMode(portName, mode);
+    if (r) this.dtpAgent.setAdminMode(portName, mode);
+    return r;
   }
 
   getCdpAgent(): CdpAgent { return this.cdpAgent; }
