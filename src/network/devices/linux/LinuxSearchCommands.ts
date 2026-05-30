@@ -113,43 +113,6 @@ export function cmdLocate(ctx: ShellContext, args: string[]): string {
   return matches.join('\n');
 }
 
-export function cmdWhich(ctx: ShellContext, args: string[]): string {
-  const results: string[] = [];
-  for (const cmd of args) {
-    if (cmd.startsWith('-')) continue;
-    // Search in standard paths
-    const searchPaths = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin'];
-    let found = false;
-    for (const dir of searchPaths) {
-      const path = `${dir}/${cmd}`;
-      if (ctx.vfs.exists(path)) {
-        results.push(path);
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      results.push(`which: no ${cmd} in (/bin:/usr/bin:/sbin:/usr/sbin)`);
-    }
-  }
-  return results.join('\n');
-}
-
-export function cmdWhereis(ctx: ShellContext, args: string[]): string {
-  const results: string[] = [];
-  for (const cmd of args) {
-    if (cmd.startsWith('-')) continue;
-    const locations: string[] = [];
-    const searchPaths = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin'];
-    for (const dir of searchPaths) {
-      const path = `${dir}/${cmd}`;
-      if (ctx.vfs.exists(path)) locations.push(path);
-    }
-    results.push(`${cmd}: ${locations.join(' ')}`);
-  }
-  return results.join('\n');
-}
-
 /**
  * `command` — resolve / describe a command name, used here for the
  * `-v` (terse path) and `-V` (verbose) introspection forms. Execution

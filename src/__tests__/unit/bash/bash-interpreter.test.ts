@@ -408,15 +408,10 @@ describe('Interpreter — Builtins', () => {
     expect(result.output).toBe('nonempty\n');
   });
 
-  it('type identifies builtins', () => {
-    const result = run('type echo');
-    expect(result.output).toContain('shell builtin');
-  });
-
-  it('type identifies functions', () => {
-    const result = run('f() { true; }\ntype f');
-    expect(result.output).toContain('function');
-  });
+  // The `type` builtin moved out of the interpreter into the executor
+  // dispatch (LinuxCommandExecutor.handleType) so it can consult $PATH,
+  // the bash keyword catalogue and the alias table. Its behaviour is
+  // covered end-to-end by which-whereis-type.test.ts under network-v2/.
 
   it('let evaluates arithmetic', () => {
     const result = run('let X=5+3\necho $X');

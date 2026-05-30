@@ -11,7 +11,11 @@ import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
-import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
+import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
+import {
+  SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
+  type ShellIntrospection, type FileLocation, type WhereisSelector,
+} from './resolve';
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
@@ -1689,8 +1693,9 @@ export class LinuxCommandExecutor {
       // Search commands
       case 'find': return { output: cmdFind(c, args), exitCode: 0 };
       case 'locate': return { output: cmdLocate(c, args), exitCode: 0 };
-      case 'which': return { output: cmdWhich(c, args), exitCode: 0 };
-      case 'whereis': return { output: cmdWhereis(c, args), exitCode: 0 };
+      case 'which': return this.handleWhich(args);
+      case 'whereis': return this.handleWhereis(args);
+      case 'type': return this.handleType(args);
       case 'command': return cmdCommand(c, args, KNOWN_LINUX_COMMAND_SET);
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
@@ -2239,7 +2244,6 @@ export class LinuxCommandExecutor {
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
       case 'tput':
-      case 'type':
       case 'set':
       case 'unset':
       case 'declare':
@@ -3031,6 +3035,158 @@ export class LinuxCommandExecutor {
       );
     }
     return rows.join('\n');
+  }
+
+  /** Build the shell-state view consumed by which / type / command. */
+  private shellIntrospection(): ShellIntrospection {
+    const pathDirs = (this.env.get('PATH') ?? '').split(':').filter(Boolean);
+    const vfs = this.vfs;
+    const cwd = this.cwd;
+    const known = KNOWN_LINUX_COMMAND_SET;
+    const toLocation = (path: string): FileLocation => {
+      const inode = vfs.resolveInode(path);
+      const slash = path.lastIndexOf('/');
+      return {
+        path,
+        directory: slash > 0 ? path.slice(0, slash) : '/',
+        basename: path.slice(slash + 1),
+        executable: inode ? (inode.permissions & 0o111) !== 0 : true,
+        synthetic: !inode,
+      };
+    };
+    return {
+      pathDirs,
+      aliasValue: (n) => this.aliases.get(n)?.value,
+      isFunction: (n) => this.functions.has(n),
+      keywordDescription: (n) => SHELL_CATALOG.keyword(n)?.description,
+      builtinInfo: (n) => {
+        const b = SHELL_CATALOG.builtin(n);
+        return b ? { description: b.description, special: b.special } : undefined;
+      },
+      fileMatches: (n) => {
+        const out: FileLocation[] = [];
+        if (n.includes('/')) {
+          const abs = vfs.normalizePath(n, cwd);
+          if (vfs.exists(abs) && vfs.getType(abs) !== 'directory') out.push(toLocation(abs));
+          return out;
+        }
+        for (const dir of pathDirs) {
+          const p = `${dir}/${n}`;
+          if (vfs.exists(p) && vfs.getType(p) !== 'directory') out.push(toLocation(p));
+        }
+        // Simulator-provided command with no seeded binary: report its
+        // conventional location so which/type stay useful.
+        if (out.length === 0 && known.has(n)) {
+          out.push({ path: `/usr/bin/${n}`, directory: '/usr/bin', basename: n, executable: true, synthetic: true });
+        }
+        return out;
+      },
+    };
+  }
+
+  private handleWhich(args: string[]): { output: string; exitCode: number } {
+    let all = false;
+    const names: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
+      if (a === '-a' || a === '--all') { all = true; continue; }
+      if (a === '--version') return { output: 'GNU which v2.21', exitCode: 0 };
+      if (a.startsWith('-') && a.length > 1) { for (const f of a.slice(1)) if (f === 'a') all = true; continue; }
+      names.push(a);
+    }
+    if (names.length === 0) return { output: '', exitCode: 0 };
+
+    const resolver = new CommandResolver(this.shellIntrospection());
+    const out: string[] = [];
+    let allFound = true;
+    for (const name of names) {
+      const files = resolver.resolveAll(name, { forcePath: true }).filter(r => r.kind === 'file');
+      if (files.length === 0) { allFound = false; continue; }
+      if (all) for (const f of files) out.push(f.path!);
+      else out.push(files[0].path!);
+    }
+    return { output: out.join('\n'), exitCode: allFound ? 0 : 1 };
+  }
+
+  private handleWhereis(args: string[]): { output: string; exitCode: number } {
+    let b = false, m = false, s = false, listDirs = false;
+    const names: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
+      if (a === '-b') { b = true; continue; }
+      if (a === '-m') { m = true; continue; }
+      if (a === '-s') { s = true; continue; }
+      if (a === '-l') { listDirs = true; continue; }
+      if (a === '-B' || a === '-M' || a === '-S') { while (i + 1 < args.length && args[i + 1] !== '-f') i++; continue; }
+      if (a === '-f') continue;
+      if (a.startsWith('-')) continue;
+      names.push(a);
+    }
+    const known = KNOWN_LINUX_COMMAND_SET;
+    const resolver = new WhereisResolver({
+      exists: (p) => this.vfs.exists(p),
+      list: (dir) => {
+        const entries = this.vfs.listDirectory(this.vfs.normalizePath(dir, '/'));
+        return entries ? entries.filter(e => e.name !== '.' && e.name !== '..').map(e => e.name) : null;
+      },
+    });
+    if (listDirs) return { output: resolver.allDirectories().join('\n'), exitCode: 0 };
+
+    const sel: WhereisSelector = (b || m || s) ? { binary: b, manual: m, source: s } : ALL_CATEGORIES;
+    const lines: string[] = [];
+    for (const name of names) {
+      const result = resolver.locate(name, sel);
+      if (sel.binary && result.binaries.length === 0 && known.has(name)) result.binaries.push(`/usr/bin/${name}`);
+      lines.push(WhereisResolver.format(result, sel));
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private handleType(args: string[]): { output: string; exitCode: number } {
+    let typeOnly = false, pathOnly = false, all = false, forcePath = false;
+    const names: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
+      if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
+        for (const f of a.slice(1)) {
+          if (f === 't') typeOnly = true;
+          else if (f === 'p') pathOnly = true;
+          else if (f === 'a') all = true;
+          else if (f === 'P') { forcePath = true; pathOnly = true; }
+          else if (f === 'f') { /* suppress function lookup — accepted */ }
+        }
+        continue;
+      }
+      names.push(a);
+    }
+
+    const resolver = new CommandResolver(this.shellIntrospection());
+    const out: string[] = [];
+    let exitCode = 0;
+    for (const name of names) {
+      const resolutions = resolver.resolveAll(name, { forcePath });
+      const found = resolutions[0].kind !== 'not-found';
+      if (!found) {
+        exitCode = 1;
+        if (!typeOnly && !pathOnly) out.push(`bash: type: ${name}: not found`);
+        continue;
+      }
+      if (typeOnly) {
+        const words = (all ? resolutions : [resolutions[0]]).map(r => r.typeWord).filter(Boolean);
+        out.push(...words);
+      } else if (pathOnly) {
+        const files = resolutions.filter(r => r.kind === 'file');
+        if (all) out.push(...files.map(f => f.path!));
+        else if (files.length > 0 && (forcePath || resolutions[0].kind === 'file')) out.push(files[0].path!);
+      } else {
+        const shown = all ? resolutions : [resolutions[0]];
+        out.push(...shown.map(r => r.describe()));
+      }
+    }
+    return { output: out.join('\n'), exitCode };
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {

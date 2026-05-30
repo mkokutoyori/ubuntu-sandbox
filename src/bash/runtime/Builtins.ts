@@ -32,7 +32,7 @@ const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
   'local', 'read', 'true', 'false',
   'exit', 'return', 'break', 'continue',
-  'shift', 'type', 'source', '.', 'declare', 'readonly', 'let',
+  'shift', 'source', '.', 'declare', 'readonly', 'let',
   'eval', 'alias', 'unalias',
 ]);
 
