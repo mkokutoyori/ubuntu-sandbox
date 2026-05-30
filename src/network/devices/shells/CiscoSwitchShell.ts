@@ -799,6 +799,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
       const port = this.d().getPort(name);
       if (port) for (const l of this.renderPortSecurityLines(port)) out.push(` ${l}`);
+      const cdpA = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+      if (cdpA) for (const l of cdpA.runningConfigInterfaceLines(name)) out.push(` ${l}`);
       out.push('end');
       return out.join('\n');
     });
@@ -1177,6 +1179,10 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     if (sw._getPsecRecoverySec() > 0) {
       lines.push('errdisable recovery cause psecure-violation');
     }
+
+    // CDP non-default knobs
+    const cdpAgent = (sw as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+    if (cdpAgent) for (const l of cdpAgent.runningConfigGlobalLines()) lines.push(l);
     if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
 
     const ports = sw._getPortsInternal();
@@ -1219,6 +1225,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         lines.push(` ip arp inspection limit rate ${daiRate}`);
       }
       for (const l of this.renderPortSecurityLines(port)) lines.push(` ${l}`);
+      if (cdpAgent) for (const l of cdpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }

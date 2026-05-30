@@ -115,6 +115,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.d() as unknown as ShowStateDevice;
   }
 
+  /** Hand the device's CDP agent (if any) to `fn`. No-op on non-Cisco. */
+  protected applyToCdpAgent(fn: (a: import('@/network/cdp/CdpAgent').CdpAgent) => void): void {
+    const agent = (this.d() as unknown as { getCdpAgent?: () => import('@/network/cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+    if (agent) fn(agent);
+  }
+
+  /**
+   * Resolve the per-interface scope selected in `config-if`. The base
+   * implementation returns the single `selectedInterface`; switch shells
+   * override to spread a range / a multi-port `interface range`.
+   */
+  protected selectedPortsForConfigIf(): string[] {
+    const dev = this as unknown as { getSelectedInterface?: () => string | null; getSelectedInterfaceRange?: () => string[] };
+    const range = dev.getSelectedInterfaceRange?.();
+    if (range && range.length > 0) return range;
+    const single = dev.getSelectedInterface?.();
+    return single ? [single] : [];
+  }
+
   // ─── Initialization ─────────────────────────────────────────────
 
   /**
@@ -583,8 +602,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '';
       });
     };
-    flag('cdp', 'cdp run', 'CDP');
+    // cdp/lldp follow the `flag` pattern, but the cdp toggle must also
+    // start / stop the per-device protocol agent so `show cdp neighbors`
+    // reflects real learnt state (and stops learning when disabled).
+    this.configTrie.registerGreedy('cdp run', 'Enable CDP globally', () => {
+      this.configState.set('cdp', true);
+      this.applyToCdpAgent(a => a.setEnabled(true));
+      return '';
+    });
+    this.configTrie.registerGreedy('no cdp run', 'Disable CDP globally', () => {
+      this.configState.set('cdp', false);
+      this.applyToCdpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.configTrie.registerGreedy('cdp timer', 'Advertisement period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 5 || n > 254) return '% Invalid timer value (5-254)';
+      this.applyToCdpAgent(a => a.setTimerSec(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('cdp holdtime', 'Hold-time advertised to peers (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 10 || n > 255) return '% Invalid holdtime value (10-255)';
+      this.applyToCdpAgent(a => a.setHoldtimeSec(n));
+      return '';
+    });
     flag('lldp', 'lldp run', 'LLDP');
+
+    // [no] cdp enable — per-interface — needs `selectedInterface` /
+    // `selectedInterfaceRange` from the device-specific shell, but the
+    // applyToSelectedInterfaces helper is implemented per subclass.
+    this.configIfTrie.register('cdp enable', 'Enable CDP on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, true));
+      return '';
+    });
+    this.configIfTrie.register('no cdp enable', 'Disable CDP on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, false));
+      return '';
+    });
     flag('ip cef', 'ip cef', 'CEF');
     flag('ip http server', 'ip http server', 'HTTP server');
     flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');

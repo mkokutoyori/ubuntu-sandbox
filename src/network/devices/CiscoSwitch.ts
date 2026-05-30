@@ -11,16 +11,50 @@
  *   - Boot: Cisco IOS C2960 format
  */
 
-import { DeviceType } from '../core/types';
+import { DeviceType, EthernetFrame } from '../core/types';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
+import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
+import { ETHERTYPE_CDP } from '../cdp/types';
+import type { NeighborDTO } from './inspection/DeviceStateView';
+import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoSwitch extends Switch {
+  private readonly cdpAgent: CdpAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
+    this.cdpAgent = new CdpAgent({
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getType: () => this.getType(),
+      getPort: (n) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p, f) => { this.sendFrame(p, f); },
+      getNativeVlan: (p) => this.getSwitchportConfig(p)?.accessVlan,
+    }, () => this.getBus());
+    this.cdpAgent.start();
   }
+
+  // ─── CDP integration ──────────────────────────────────────────
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    // Subscribers are bus-bound; rewire on bus change.
+    if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
+  }
+
+  protected override handleFrame(portName: string, frame: EthernetFrame): void {
+    if (frame.etherType === ETHERTYPE_CDP) {
+      this.cdpAgent.handleFrame(portName, frame);
+      return; // never flood / never MAC-learn link-local protocol frames
+    }
+    super.handleFrame(portName, frame);
+  }
+
+  getCdpAgent(): CdpAgent { return this.cdpAgent; }
+  getCdpNeighbors(): NeighborDTO[] { return cdpToNeighborDTO(this.cdpAgent.getNeighbors()); }
 
   // ─── Vendor Hooks ──────────────────────────────────────────────
 
@@ -84,4 +118,16 @@ export class CiscoSwitch extends Switch {
       'Press RETURN to get started.',
     ].join('\n');
   }
+}
+
+/** Map CDP neighbour rows to the inspection DTO `showCdp` consumes. */
+function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
+  return rows.map(n => ({
+    localPort: n.localPort,
+    remoteHost: n.remoteHost,
+    remotePort: n.remotePort,
+    remoteType: n.remoteType,
+    remotePlatform: n.remotePlatform,
+    remoteCapability: n.remoteCapability,
+  }));
 }

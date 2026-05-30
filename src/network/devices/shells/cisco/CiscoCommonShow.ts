@@ -23,6 +23,9 @@ export interface ShowStateDevice {
   getType(): DeviceType;
   getPorts(): Port[];
   getInterfaceDescription?(portName: string): string | undefined;
+  /** Optional hook — Cisco devices expose their CdpAgent's table here. */
+  getCdpNeighbors?(): NeighborDTO[];
+  getCdpAgent?(): import('@/network/cdp/CdpAgent').CdpAgent | undefined;
 }
 
 /** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
@@ -35,9 +38,33 @@ function shortIf(name: string): string {
   return `${abbr} ${rest}`.trim();
 }
 
-/** Real cabled neighbours via the inspection facade (single source). */
+/** Cable-graph neighbours (LLDP, generic introspection). */
 function neighbours(dev: ShowStateDevice): NeighborDTO[] {
   return new EquipmentStateView(dev).neighbors();
+}
+
+/**
+ * Real CDP neighbours.
+ *
+ * When the device hosts a CdpAgent the protocol-learnt table is the
+ * truthful source — it reflects which peers actually advertised. We
+ * keep a cable-graph fallback for the same reason real Cisco does
+ * with limited info from the link-layer when no CDP TLV is available:
+ * test-time topologies and non-CDP peers (Linux/Windows) still surface.
+ */
+function cdpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
+  const protocolLearnt = dev.getCdpNeighbors?.();
+  if (!protocolLearnt) return new EquipmentStateView(dev).neighbors();
+  const linkPeers = new EquipmentStateView(dev).neighbors();
+  // Merge: protocol entries take precedence; cable-only peers (non-CDP
+  // talkers like Linux hosts) are still listed so the operator can see
+  // every wire that came up — matching the pre-protocol UX while still
+  // showing real protocol attributes (holdtime, capability) for Cisco
+  // peers that actually advertised.
+  const byKey = new Map<string, NeighborDTO>();
+  for (const p of linkPeers) byKey.set(p.localPort, p);
+  for (const p of protocolLearnt) byKey.set(p.localPort, p);
+  return Array.from(byKey.values());
 }
 
 /** `show clock` — IOS format: HH:MM:SS.mmm zone day mon dd yyyy */
@@ -123,18 +150,23 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     return '% CDP is not enabled';
   }
   if (a.includes('interface')) {
+    const agentCfg = dev.getCdpAgent?.()?.getConfig();
+    const timer = agentCfg?.timerSec ?? 60;
+    const hold = agentCfg?.holdtimeSec ?? 180;
+    const disabled = agentCfg?.disabledPorts ?? new Set<string>();
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
+      if (disabled.has(p.getName())) continue;
       lines.push(`${p.getName()} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
         `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
       lines.push('  Encapsulation ARPA');
-      lines.push('  Sending CDP packets every 60 seconds');
-      lines.push('  Holdtime is 180 seconds');
+      lines.push(`  Sending CDP packets every ${timer} seconds`);
+      lines.push(`  Holdtime is ${hold} seconds`);
     }
     return lines.length ? lines.join('\n') : 'CDP is not enabled on any interface';
   }
   if (a.includes('neighbor')) {
-    const ns = neighbours(dev);
+    const ns = cdpNeighbours(dev);
     const detail = a.includes('detail');
     if (detail) {
       if (!ns.length) return 'Total cdp entries displayed : 0';
@@ -160,10 +192,13 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       `${n.remotePlatform.padEnd(9)} ${shortIf(n.remotePort)}`);
     return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
+  const cfg = dev.getCdpAgent?.()?.getConfig();
+  const t = cfg?.timerSec ?? 60;
+  const h = cfg?.holdtimeSec ?? 180;
   return [
     'Global CDP information:',
-    '        Sending CDP packets every 60 seconds',
-    '        Sending a holdtime value of 180 seconds',
+    `        Sending CDP packets every ${t} seconds`,
+    `        Sending a holdtime value of ${h} seconds`,
     '        Sending CDPv2 advertisements is  enabled',
   ].join('\n');
 }
