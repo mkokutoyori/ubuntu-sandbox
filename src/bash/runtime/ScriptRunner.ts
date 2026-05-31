@@ -247,6 +247,15 @@ function buildIOContext(ctx: ShellContext): IOContext {
       if (!inode) return null;
       return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
     },
+    globExpand(pattern: string, cwd: string) {
+      const hits = ctx.vfs.globExpand(pattern, cwd);
+      if (hits.length === 0) return null;
+      if (!pattern.startsWith('/')) {
+        const prefix = cwd === '/' ? '/' : cwd + '/';
+        return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
+      }
+      return hits;
+    },
   };
 }
 

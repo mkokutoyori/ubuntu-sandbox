@@ -452,15 +452,23 @@ export class BashParser {
     const name = tok.value.substring(0, eqIdx);
     const rawValue = tok.value.substring(eqIdx + 1);
 
-    let value: Word | null;
-    if (rawValue) {
-      value = makeLiteralWord(rawValue, pos);
-    } else if (this.isWordToken() && !this.isCompoundEnd()) {
-      // Consume the next token as the value: X=$VAR, X=$(cmd), X=$((expr))
-      value = this.parseWord();
-    } else {
-      value = null;
+    // Collect any adjacent (no-whitespace) tokens that continue the value.
+    // This makes `ROOT=/srv/$1`, `OUT=$(date)foo`, `LIST="a b"$XS` parse
+    // as a single compound assignment value rather than splitting after
+    // the literal prefix.
+    const parts: Word[] = [];
+    if (rawValue) parts.push(makeLiteralWord(rawValue, pos));
+    while (!this.isAtEnd() && this.peek().adjacent && this.isWordToken() && !this.isCompoundEnd()) {
+      parts.push(this.parseWordAtom());
     }
+    // Empty form `X=` followed by whitespace: also support `X=$VAR` where
+    // the value starts at the next (separated) word.
+    if (parts.length === 0 && this.isWordToken() && !this.isCompoundEnd()) {
+      parts.push(this.parseWord());
+    }
+    let value: Word | null = null;
+    if (parts.length === 1) value = parts[0];
+    else if (parts.length > 1) value = { type: 'CompoundWord', parts, position: pos };
     return makeAssignment(name, value, pos);
   }
 

@@ -28,6 +28,8 @@ export class Environment {
   private exported: Set<string> = new Set();
   /** Readonly variable names. */
   private readonlyVars: Set<string> = new Set();
+  /** Names explicitly declared `local` in this scope — confines writes here. */
+  private localNames: Set<string> = new Set();
   /** Parent scope (for local variable lookups). */
   private parent: Environment | null = null;
   /** Last exit code ($?). */
@@ -64,12 +66,37 @@ export class Environment {
     return this.parent?.get(name);
   }
 
-  /** Set a variable in the current scope. Throws if readonly. */
+  /**
+   * Bash dynamic-scoping `set`:
+   *   - if `name` was declared `local` in this scope → write here;
+   *   - else walk up to the nearest scope that already owns `name`
+   *     (skipping scopes where it was declared local) → write there;
+   *   - else (truly new variable) write to the global/root scope.
+   * Throws when the chosen binding is readonly.
+   */
   set(name: string, value: string): void {
-    if (this.readonlyVars.has(name)) {
+    const target = this.localNames.has(name) ? this : this.resolveSetTarget(name);
+    if (target.readonlyVars.has(name)) {
       throw new Error(`bash: ${name}: readonly variable`);
     }
-    this.vars.set(name, value);
+    target.vars.set(name, value);
+  }
+
+  /** Find the scope that should receive a non-local assignment. */
+  private resolveSetTarget(name: string): Environment {
+    let cursor: Environment | null = this;
+    while (cursor) {
+      if (cursor.localNames.has(name)) return cursor;       // local binding owns it
+      if (cursor.vars.has(name)) return cursor;             // first non-local owner
+      if (cursor.parent === null) return cursor;            // fell off the chain → root
+      cursor = cursor.parent;
+    }
+    return this;                                            // unreachable
+  }
+
+  /** Declare `name` as local to this scope so future writes stay here. */
+  declareLocal(name: string): void {
+    this.localNames.add(name);
   }
 
   /** Mark a variable as readonly (optionally set its value). */
@@ -157,6 +184,23 @@ export class Environment {
     // Inherit PID and script name
     child.vars.set('0', this.get('0') ?? '');
     return child;
+  }
+
+  /**
+   * Subshell scope — a snapshot of every visible variable from this
+   * environment, with NO parent link. Writes inside the subshell stay
+   * confined; on disposal the parent shell is unchanged, matching real
+   * `(…)` fork-semantics.
+   */
+  createSubshell(): Environment {
+    const sub = new Environment({ pid: this.pid, ppid: this.ppid });
+    // Inline the visible variable set rather than chain to `this` so
+    // writes against the snapshot never bubble up.
+    for (const [k, v] of this.getAll()) sub.vars.set(k, v);
+    for (const ex of this.exported) sub.exported.add(ex);
+    for (const ro of this.readonlyVars) sub.readonlyVars.add(ro);
+    sub.vars.set('0', this.get('0') ?? '');
+    return sub;
   }
 
   // ─── Exit Code ────────────────────────────────────────────────

@@ -409,11 +409,15 @@ export class BashLexer {
       // Other operator starts
       if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}') break;
 
-      // Escape
+      // Escape — keep both bytes in the raw value so downstream
+      // glob/quote-removal can tell escaped meta-chars (`\*`, `\?`,
+      // `\[`) apart from naturally unquoted ones. Quote removal at
+      // expansion time strips the backslash before the value reaches
+      // the dispatched command.
       if (ch === '\\' && !this.isAtEnd()) {
         this.advance();
         if (!this.isAtEnd()) {
-          value += this.peek();
+          value += '\\' + this.peek();
           this.advance();
         }
         continue;

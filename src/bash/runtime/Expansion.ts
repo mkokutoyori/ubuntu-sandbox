@@ -22,6 +22,16 @@ export type CommandSubstitutionFn = (command: string) => string;
 /**
  * Expand a Word AST node into its final string value.
  */
+/** Strip `\<ch>` → `<ch>` (quote removal for shell-style escapes). */
+function stripBackslashEscapes(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && i + 1 < s.length) { out += s[i + 1]; i++; continue; }
+    out += s[i];
+  }
+  return out;
+}
+
 export function expandWord(
   word: Word,
   env: Environment,
@@ -29,7 +39,7 @@ export function expandWord(
 ): string {
   switch (word.type) {
     case 'LiteralWord':
-      return word.value;
+      return stripBackslashEscapes(word.value);
     case 'SingleQuotedWord':
       return word.value;
     case 'DoubleQuotedWord':
@@ -50,10 +60,18 @@ export function expandWord(
 /**
  * Expand an array of Words (e.g. command arguments).
  */
+/**
+ * Glob-expand `pattern` against the live filesystem. The callback owns
+ * cwd-resolution; returning `null` means "no glob support" and the
+ * interpreter keeps the literal (bash `nullglob`-off semantics).
+ */
+export type GlobFn = (pattern: string) => string[] | null;
+
 export function expandWords(
   words: Word[],
   env: Environment,
   execCmd?: CommandSubstitutionFn,
+  glob?: GlobFn,
 ): string[] {
   const result: string[] = [];
   for (const w of words) {
@@ -67,15 +85,59 @@ export function expandWords(
       for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
         result.push(String(i));
       }
-    } else if (shouldWordSplit(w) && expanded.includes(' ')) {
+      continue;
+    }
+    if (shouldWordSplit(w) && expanded.includes(' ')) {
       // Word splitting: unquoted variable/command expansions are split on IFS (whitespace)
       const parts = expanded.split(/\s+/).filter(Boolean);
-      result.push(...parts);
-    } else {
-      result.push(expanded);
+      for (const part of parts) result.push(...maybeGlob(part, w, glob));
+      continue;
     }
+    result.push(...maybeGlob(expanded, w, glob));
   }
   return result;
+}
+
+/**
+ * Apply glob expansion only when the original word carries at least one
+ * UN-escaped, UN-quoted meta-character. Bash semantics: a no-match
+ * keeps the literal pattern.
+ */
+function maybeGlob(value: string, w: Word, glob?: GlobFn): string[] {
+  if (!glob) return [value];
+  if (!hasUnescapedMeta(w)) return [value];
+  const hits = glob(value);
+  if (hits === null || hits.length === 0) return [value];
+  return hits;
+}
+
+/** True when the word contains an unquoted, unescaped `*`/`?`/`[`. */
+function hasUnescapedMeta(w: Word): boolean {
+  switch (w.type) {
+    case 'SingleQuotedWord':
+    case 'DoubleQuotedWord':
+      return false;
+    case 'LiteralWord':
+      return literalHasUnescapedMeta(w.value);
+    case 'CompoundWord':
+      return w.parts.some(hasUnescapedMeta);
+    case 'VariableRef':
+    case 'CommandSubstitution':
+    case 'ArithmeticSubstitution':
+      // Expansions undergo word-splitting but not glob in our model
+      // (matches bash without `set -f` only for cases without meta).
+      return false;
+    default:
+      return false;
+  }
+}
+
+function literalHasUnescapedMeta(raw: string): boolean {
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === '\\') { i++; continue; }
+    if (raw[i] === '*' || raw[i] === '?' || raw[i] === '[') return true;
+  }
+  return false;
 }
 
 /** Determine if a word should undergo IFS word splitting (unquoted expansions). */
@@ -89,6 +151,48 @@ function shouldWordSplit(w: Word): boolean {
 
 // ─── Variable Expansion ─────────────────────────────────────────
 
+/**
+ * Convert a bash glob pattern (used by parameter-expansion `#`/`%`/`/`
+ * operators) into a JS regex source. Supports `*` `?` `[…]` and
+ * literal-escapes everything else. Anchored by the caller via `^`/`$`.
+ */
+function globToRegexSource(pattern: string): string {
+  let out = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '*') { out += '.*'; continue; }
+    if (c === '?') { out += '.';  continue; }
+    if (c === '[') {
+      let cls = '[';
+      i++;
+      if (pattern[i] === '!' || pattern[i] === '^') { cls += '^'; i++; }
+      while (i < pattern.length && pattern[i] !== ']') { cls += pattern[i]; i++; }
+      cls += ']';
+      out += cls;
+      continue;
+    }
+    if (/[.+(){}^$|\\]/.test(c)) out += '\\' + c;
+    else out += c;
+  }
+  return out;
+}
+
+/**
+ * Bash parameter expansion. Supports the full POSIX/Bash menagerie:
+ *
+ *   ${name}              plain                ${#name}            length
+ *   ${name:-w}  ${name-w}                     use default
+ *   ${name:=w}  ${name=w}                     assign default
+ *   ${name:+w}  ${name+w}                     use alternative
+ *   ${name:?w}  ${name?w}                     error if unset
+ *   ${name:n}   ${name:n:m}                   substring (negative ⇒ tail)
+ *   ${name#pat} ${name##pat}                  strip prefix (short/long)
+ *   ${name%pat} ${name%%pat}                  strip suffix (short/long)
+ *   ${name/pat/repl}   ${name//pat/repl}      replace first / all
+ *   ${name/#pat/repl}  ${name/%pat/repl}      anchored replace
+ *   ${name^}   ${name^^}                      upper-case (first / all)
+ *   ${name,}   ${name,,}                      lower-case (first / all)
+ */
 function expandVariable(
   name: string,
   braced: boolean,
@@ -96,44 +200,143 @@ function expandVariable(
   env: Environment,
 ): string {
   if (!modifier) {
-    return env.get(name) ?? '';
+    const v = env.get(name);
+    if (v === undefined && isNounsetActive(env)) {
+      throw new BashRuntimeError(`${name}: unbound variable`);
+    }
+    return v ?? '';
   }
 
-  // Length prefix: ${#VAR}
-  if (modifier === '#') {
-    const val = env.get(name) ?? '';
-    return String(val.length);
-  }
+  // ${#name} — length
+  if (modifier === '#') return String((env.get(name) ?? '').length);
 
-  // Modifiers: ${VAR:-default}, ${VAR:+alt}, ${VAR:=val}, ${VAR-default}
-  const match = modifier.match(/^(:-|:=|:\+|:|-|=|\+)(.*)$/);
-  if (!match) return env.get(name) ?? '';
-
-  const [, op, word] = match;
   const val = env.get(name);
+  const raw = val ?? '';
 
-  switch (op) {
-    case ':-':
-    case '-':
-      // Use default if unset or (for :-) empty
-      if (val === undefined || (op === ':-' && val === '')) return word;
-      return val;
-    case ':=':
-    case '=':
-      // Assign default if unset or (for :=) empty
-      if (val === undefined || (op === ':=' && val === '')) {
-        env.set(name, word);
-        return word;
-      }
-      return val;
-    case ':+':
-    case '+':
-      // Use alternative if set and (for :+) non-empty
-      if (op === ':+') return val !== undefined && val !== '' ? word : '';
-      return val !== undefined ? word : '';
-    default:
-      return val ?? '';
+  // ── Default / alternative / assign / error ────────────────────────
+  // Recognise the multi-char variants BEFORE bare `:` substring form.
+  const dm = modifier.match(/^(:[-+=?]|[-+=?])(.*)$/s);
+  if (dm) {
+    const [, op, word] = dm;
+    const isColon = op.startsWith(':');
+    const isEmpty = val === undefined || (isColon && val === '');
+    switch (op[op.length - 1]) {
+      case '-': return isEmpty ? word : raw;
+      case '=':
+        if (isEmpty) { env.set(name, word); return word; }
+        return raw;
+      case '+':
+        return val !== undefined && (!isColon || val !== '') ? word : '';
+      case '?':
+        if (isEmpty) throw new BashRuntimeError(word || `${name}: parameter null or not set`);
+        return raw;
+    }
   }
+
+  // ── Substring: ${name:offset} / ${name:offset:length} ─────────────
+  if (modifier.startsWith(':') && /^-?\d/.test(modifier.slice(1))) {
+    const parts = modifier.slice(1).split(':');
+    const offsetRaw = Number.parseInt(parts[0], 10);
+    const lenRaw    = parts.length > 1 ? Number.parseInt(parts[1], 10) : undefined;
+    const len = lenRaw;
+    let start = offsetRaw < 0 ? Math.max(0, raw.length + offsetRaw) : offsetRaw;
+    if (start > raw.length) start = raw.length;
+    if (len === undefined) return raw.slice(start);
+    if (len < 0) {
+      const end = Math.max(start, raw.length + len);
+      return raw.slice(start, end);
+    }
+    return raw.slice(start, start + len);
+  }
+
+  // ── Prefix strip: ${name#pat} / ${name##pat} ──────────────────────
+  if (modifier.startsWith('#')) {
+    const longest = modifier.startsWith('##');
+    const pat = modifier.slice(longest ? 2 : 1);
+    if (pat === '') return raw;
+    const re = new RegExp(longest ? `^(?:${globToRegexSource(pat)})` : `^(?:${globToRegexSource(pat)}?)`);
+    return longest ? raw.replace(re, '') : stripShortestPrefix(raw, pat);
+  }
+
+  // ── Suffix strip: ${name%pat} / ${name%%pat} ──────────────────────
+  if (modifier.startsWith('%')) {
+    const longest = modifier.startsWith('%%');
+    const pat = modifier.slice(longest ? 2 : 1);
+    if (pat === '') return raw;
+    return longest ? stripLongestSuffix(raw, pat) : stripShortestSuffix(raw, pat);
+  }
+
+  // ── Pattern replacement: ${name/pat/repl}, ${name//pat/repl} ──────
+  if (modifier.startsWith('/')) {
+    const all  = modifier.startsWith('//');
+    const body = modifier.slice(all ? 2 : 1);
+    let anchor: '^' | '$' | '' = '';
+    let rest = body;
+    if (body.startsWith('#')) { anchor = '^'; rest = body.slice(1); }
+    else if (body.startsWith('%')) { anchor = '$'; rest = body.slice(1); }
+    // Split on the first unescaped '/'.
+    let pat = '', repl = '', sawSlash = false;
+    for (let i = 0; i < rest.length; i++) {
+      const c = rest[i];
+      if (!sawSlash && c === '\\' && rest[i + 1] === '/') { pat += '/'; i++; continue; }
+      if (!sawSlash && c === '/') { sawSlash = true; continue; }
+      if (sawSlash) repl += c; else pat += c;
+    }
+    if (pat === '') return raw;
+    const flags = all ? 'g' : '';
+    const src = anchor === '^' ? '^' + globToRegexSource(pat)
+              : anchor === '$' ? globToRegexSource(pat) + '$'
+              : globToRegexSource(pat);
+    try { return raw.replace(new RegExp(src, flags), repl); }
+    catch { return raw; }
+  }
+
+  // ── Case modification: ${name^}, ${name^^}, ${name,}, ${name,,} ───
+  if (modifier === '^^') return raw.toUpperCase();
+  if (modifier === ',,') return raw.toLowerCase();
+  if (modifier === '^')  return raw.length === 0 ? '' : raw[0].toUpperCase() + raw.slice(1);
+  if (modifier === ',')  return raw.length === 0 ? '' : raw[0].toLowerCase() + raw.slice(1);
+  if (modifier.startsWith('^^')) {
+    const pat = modifier.slice(2); if (pat === '') return raw.toUpperCase();
+    return raw.replace(new RegExp(globToRegexSource(pat), 'g'), (m) => m.toUpperCase());
+  }
+  if (modifier.startsWith(',,')) {
+    const pat = modifier.slice(2); if (pat === '') return raw.toLowerCase();
+    return raw.replace(new RegExp(globToRegexSource(pat), 'g'), (m) => m.toLowerCase());
+  }
+
+  return raw;
+}
+
+/** Bash runtime error thrown by `${var:?msg}` and similar guards. */
+export class BashRuntimeError extends Error {}
+
+/** True when `set -u` (nounset) is active for the given environment. */
+function isNounsetActive(env: Environment): boolean {
+  const so = env.get('SHELLOPTS');
+  return !!so && so.split(':').includes('nounset');
+}
+
+function stripShortestPrefix(s: string, pattern: string): string {
+  const src = globToRegexSource(pattern);
+  for (let len = 0; len <= s.length; len++) {
+    if (new RegExp(`^(?:${src})$`).test(s.slice(0, len))) return s.slice(len);
+  }
+  return s;
+}
+function stripShortestSuffix(s: string, pattern: string): string {
+  const src = globToRegexSource(pattern);
+  for (let len = 0; len <= s.length; len++) {
+    if (new RegExp(`^(?:${src})$`).test(s.slice(s.length - len))) return s.slice(0, s.length - len);
+  }
+  return s;
+}
+function stripLongestSuffix(s: string, pattern: string): string {
+  const src = globToRegexSource(pattern);
+  for (let len = s.length; len >= 0; len--) {
+    if (new RegExp(`^(?:${src})$`).test(s.slice(s.length - len))) return s.slice(0, s.length - len);
+  }
+  return s;
 }
 
 // ─── Double-Quoted Expansion ────────────────────────────────────
@@ -222,18 +425,30 @@ function expandInlineVars(
         continue;
       }
 
-      // ${VAR...} — braced variable
+      // ${VAR...} — braced variable. Brace nesting is honoured so
+      // patterns containing `}` (rare, but legal inside replacement
+      // bodies) survive.
       if (next === '{') {
         i += 2;
         let content = '';
-        while (i < text.length && text[i] !== '}') { content += text[i]; i++; }
-        if (i < text.length) i++; // skip }
-        // Parse modifier if present
-        const modMatch = content.match(/^([A-Za-z_][A-Za-z_0-9]*|[0-9]+)(#|:-|:=|:\+|:|-|=|\+)(.*)$/);
-        if (modMatch) {
-          result += expandVariable(modMatch[1], true, modMatch[2] + stripQuotes(modMatch[3]), env);
-        } else if (content.startsWith('#')) {
+        let depth = 1;
+        while (i < text.length && depth > 0) {
+          const ch = text[i];
+          if (ch === '{') { depth++; content += ch; i++; continue; }
+          if (ch === '}') { depth--; if (depth === 0) { i++; break; } content += ch; i++; continue; }
+          content += ch; i++;
+        }
+        // ${#NAME} — length
+        if (content.startsWith('#') && /^#[A-Za-z_][A-Za-z_0-9]*$/.test(content)) {
           result += expandVariable(content.slice(1), true, '#', env);
+          continue;
+        }
+        // Split the head (name) from the modifier suffix.
+        const head = content.match(/^([A-Za-z_][A-Za-z_0-9]*|[0-9]+|[?@*#$!])/);
+        if (head) {
+          const name = head[1];
+          const modifier = content.slice(name.length);
+          result += expandVariable(name, true, modifier || undefined, env);
         } else {
           result += env.get(content) ?? '';
         }
@@ -245,7 +460,11 @@ function expandInlineVars(
         i++;
         let name = '';
         while (i < text.length && /[A-Za-z_0-9]/.test(text[i])) { name += text[i]; i++; }
-        result += env.get(name) ?? '';
+        const v = env.get(name);
+        if (v === undefined && isNounsetActive(env)) {
+          throw new BashRuntimeError(`${name}: unbound variable`);
+        }
+        result += v ?? '';
         continue;
       }
       if (/[?#@*$!\d]/.test(next)) {

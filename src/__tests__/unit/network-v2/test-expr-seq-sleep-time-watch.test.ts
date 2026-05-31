@@ -93,7 +93,7 @@ describe('expr', () => {
   it('E1 simple arithmetic +/-/*/%', () => {
     expect(run('expr 2 + 3')).toBe('5');
     expect(run('expr 10 - 4')).toBe('6');
-    expect(run('expr 6 * 7')).toBe('42');
+    expect(run('expr 6 \\* 7')).toBe('42');
     expect(run('expr 7 % 3')).toBe('1');
   });
   it('E2 integer division truncates toward zero', () => {

@@ -605,6 +605,7 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
         value = args[i + 1];
         i++;
       }
+      env.declareLocal(name);
       try {
         env.set(name, value);
       } catch (e) {
@@ -612,6 +613,7 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
         exitCode = 1;
       }
     } else {
+      env.declareLocal(arg);
       if (!env.isSet(arg)) {
         try { env.set(arg, ''); } catch { /* readonly */ }
       }
