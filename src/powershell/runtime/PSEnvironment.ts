@@ -141,8 +141,13 @@ export function seedBuiltins(env: PSEnvironment): void {
   env.set('false', false);
   env.set('null',  null);
 
+  const psVersion = {
+    Major: 5, Minor: 1, Build: 0, Revision: -1,
+    MajorRevision: -1, MinorRevision: -1,
+    toString() { return '5.1.0'; },
+  } as unknown as PSValue;
   env.set('PSVersionTable', {
-    PSVersion:           '5.1.0',
+    PSVersion:           psVersion,
     PSEdition:           'Desktop',
     BuildVersion:        '10.0.19041.1',
     CLRVersion:          '4.0.30319.42000',

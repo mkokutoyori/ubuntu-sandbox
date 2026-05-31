@@ -124,18 +124,13 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
   } as Record<string, PSValue>,
 
   datetime: {
-    // [datetime]::Now
-    now:     new Date() as unknown as PSValue,
-    // [datetime]::UtcNow
-    utcnow:  new Date() as unknown as PSValue,
-    // [datetime]::Today
-    today:   (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })() as unknown as PSValue,
-    // [datetime]::Parse(s) → Date
-    parse:   (s: PSValue) => new Date(String(s)) as unknown as PSValue,
-    // [datetime]::ParseExact(s, fmt, culture) → Date (simplified)
+    get now()    { return new Date() as unknown as PSValue; },
+    get utcnow() { return new Date() as unknown as PSValue; },
+    get today()  { const d = new Date(); d.setHours(0,0,0,0); return d as unknown as PSValue; },
+    parse:      (s: PSValue) => new Date(String(s)) as unknown as PSValue,
     parseexact: (s: PSValue) => new Date(String(s)) as unknown as PSValue,
-    minvalue: new Date(0) as unknown as PSValue,
-    maxvalue: new Date(8640000000000000) as unknown as PSValue,
+    minvalue:   new Date(0) as unknown as PSValue,
+    maxvalue:   new Date(8640000000000000) as unknown as PSValue,
   } as Record<string, PSValue>,
 
   'system.io.path': {
@@ -156,6 +151,87 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     pathseparator:         ';' as PSValue,
     altdirectoryseparatorchar: '/' as PSValue,
   } as Record<string, PSValue>,
+
+  string: {
+    format:           (...args: PSValue[]) => {
+      const [fmt, ...rest] = args;
+      return String(fmt).replace(/\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g,
+        (_m, idx, pad, _spec) => {
+          const v = rest[Number.parseInt(String(idx), 10)];
+          let body = v === null || v === undefined ? '' : String(v);
+          if (pad !== undefined) {
+            const w = Number.parseInt(String(pad), 10);
+            const need = Math.abs(w) - body.length;
+            if (need > 0) body = w < 0 ? body + ' '.repeat(need) : ' '.repeat(need) + body;
+          }
+          return body;
+        }) as PSValue;
+    },
+    isnullorempty:    (s: PSValue) => (s === null || s === undefined || String(s) === '') as PSValue,
+    isnullorwhitespace: (s: PSValue) => (s === null || s === undefined || String(s).trim() === '') as PSValue,
+    join:             (sep: PSValue, ...parts: PSValue[]) => {
+      const list = parts.length === 1 && Array.isArray(parts[0]) ? parts[0] as PSValue[] : parts;
+      return list.map(String).join(String(sep)) as PSValue;
+    },
+    concat:           (...parts: PSValue[]) => parts.map(String).join('') as PSValue,
+    compare:          (a: PSValue, b: PSValue) => {
+      const sa = String(a), sb = String(b);
+      return (sa < sb ? -1 : sa > sb ? 1 : 0) as PSValue;
+    },
+    empty:            '' as PSValue,
+  } as Record<string, PSValue>,
+
+  int32: {
+    parse:    (s: PSValue) => {
+      const n = Number.parseInt(String(s), 10);
+      if (!Number.isFinite(n)) throw new Error(`Cannot convert '${s}' to int`);
+      return n as PSValue;
+    },
+    tryparse: (s: PSValue) => Number.isFinite(Number.parseInt(String(s), 10)) as PSValue,
+    minvalue: -2147483648 as PSValue,
+    maxvalue:  2147483647 as PSValue,
+  } as Record<string, PSValue>,
+
+  int64: {
+    parse:    (s: PSValue) => {
+      const n = Number(BigInt(String(s)));
+      return n as PSValue;
+    },
+    minvalue: -9223372036854775808 as PSValue,
+    maxvalue:  9223372036854775807 as PSValue,
+  } as Record<string, PSValue>,
+
+  double: {
+    parse:    (s: PSValue) => {
+      const n = Number.parseFloat(String(s));
+      if (!Number.isFinite(n)) throw new Error(`Cannot convert '${s}' to double`);
+      return n as PSValue;
+    },
+    nan:      Number.NaN as PSValue,
+    epsilon:  Number.EPSILON as PSValue,
+    minvalue: -Number.MAX_VALUE as PSValue,
+    maxvalue:  Number.MAX_VALUE as PSValue,
+  } as Record<string, PSValue>,
+
+  convert: {
+    tostring:  (v: PSValue) => String(v ?? '') as PSValue,
+    toint32:   (v: PSValue) => Number.parseInt(String(v), 10) as PSValue,
+    toint64:   (v: PSValue) => Number(BigInt(String(v))) as PSValue,
+    todouble:  (v: PSValue) => Number.parseFloat(String(v)) as PSValue,
+    toboolean: (v: PSValue) => (v !== null && v !== undefined && v !== false && v !== 0 && v !== '') as PSValue,
+    tobase64string: (v: PSValue) => Buffer.from(Array.isArray(v) ? Uint8Array.from(v as number[]) : String(v)).toString('base64') as PSValue,
+    frombase64string: (v: PSValue) => Buffer.from(String(v), 'base64').toString() as PSValue,
+  } as Record<string, PSValue>,
+
+  environment: {
+    machinename:        'WIN-LOCAL' as PSValue,
+    username:           'Administrator' as PSValue,
+    osversion:          { Platform: 'Win32NT', VersionString: 'Microsoft Windows NT 10.0.19041.0' } as unknown as PSValue,
+    currentdirectory:   'C:\\' as PSValue,
+    newline:            '\r\n' as PSValue,
+    tickcount:          () => Date.now() as PSValue,
+    getenvironmentvariable: (name: PSValue) => process.env[String(name)] ?? null as PSValue,
+  } as Record<string, PSValue>,
 } as Record<string, Record<string, PSValue>>;
 STATIC_TYPES['system.math'] = STATIC_TYPES['math'];
 STATIC_TYPES['system.text.regularexpressions.regex'] = STATIC_TYPES['regex'];
@@ -163,6 +239,14 @@ STATIC_TYPES['system.guid'] = STATIC_TYPES['guid'];
 STATIC_TYPES['system.datetime'] = STATIC_TYPES['datetime'];
 STATIC_TYPES['io.path'] = STATIC_TYPES['system.io.path'];
 STATIC_TYPES['path'] = STATIC_TYPES['system.io.path'];
+STATIC_TYPES['system.string'] = STATIC_TYPES['string'];
+STATIC_TYPES['system.int32'] = STATIC_TYPES['int32'];
+STATIC_TYPES['int'] = STATIC_TYPES['int32'];
+STATIC_TYPES['system.int64'] = STATIC_TYPES['int64'];
+STATIC_TYPES['long'] = STATIC_TYPES['int64'];
+STATIC_TYPES['system.double'] = STATIC_TYPES['double'];
+STATIC_TYPES['system.convert'] = STATIC_TYPES['convert'];
+STATIC_TYPES['system.environment'] = STATIC_TYPES['environment'];
 
 // ─── Collection type factories ────────────────────────────────────────────────
 
@@ -2330,7 +2414,9 @@ export class PSRuntime {
       case 'bool': case 'boolean':       return typeof val === 'boolean';
       case 'array':                      return Array.isArray(val);
       case 'null':                       return val === null;
-      case 'hashtable': case 'object':   return val !== null && typeof val === 'object' && !Array.isArray(val);
+      case 'datetime': case 'system.datetime': return val instanceof Date;
+      case 'hashtable':                  return val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date);
+      case 'object':                     return val !== null && typeof val === 'object';
       default:                           return false;
     }
   }

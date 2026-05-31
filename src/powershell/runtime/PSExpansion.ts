@@ -182,12 +182,17 @@ export function psValueToString(value: PSValue): string {
   }
   if (Array.isArray(value)) return value.map(psValueToString).join(' ');
   if (value instanceof Error) return value.message;
+  if (typeof value === 'function') return '';
   if (typeof value === 'object') {
     const rec = value as Record<string, PSValue>;
     if (typeof rec.Message === 'string' && 'Exception' in rec && 'CategoryInfo' in rec) {
       return String(rec.Message);
     }
-    const entries = Object.entries(rec);
+    if (typeof (rec as { toString?: unknown }).toString === 'function'
+        && rec.toString !== Object.prototype.toString) {
+      try { return String((rec as { toString: () => string }).toString()); } catch { /* fall through */ }
+    }
+    const entries = Object.entries(rec).filter(([, v]) => typeof v !== 'function');
     if (entries.length === 0) return '';
     return entries.map(([k, v]) => `${k}=${psValueToString(v)}`).join('; ');
   }
