@@ -659,6 +659,25 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
     this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
       if (args[0]?.toLowerCase() === 'mode' && args[1]) this.stpMode = args[1];
+      if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
+        const knob = args[2].toLowerCase();
+        const n = parseInt(args[3] ?? '', 10);
+        const agent = this.d().getStpAgent();
+        if (knob === 'priority' && !isNaN(n)) agent.setBridgePriority(n);
+        else if (knob === 'hello-time' && !isNaN(n)) agent.setHelloSec(n);
+        else if (knob === 'max-age' && !isNaN(n)) agent.setMaxAgeSec(n);
+        else if (knob === 'forward-time' && !isNaN(n)) agent.setForwardDelaySec(n);
+      }
+      if (args[0]?.toLowerCase() === 'priority') {
+        const n = parseInt(args[1] ?? '', 10);
+        if (!isNaN(n)) this.d().getStpAgent().setBridgePriority(n);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
+      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
+        this.d().getStpAgent().setEnabled(false);
+      }
       return '';
     });
 
@@ -1257,6 +1276,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     if (cdpAgent) for (const l of cdpAgent.runningConfigGlobalLines()) lines.push(l);
     const lldpAgent = (sw as unknown as { getLldpAgent?: () => import('../../lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
     if (lldpAgent) for (const l of lldpAgent.runningConfigGlobalLines()) lines.push(l);
+    const stpAgent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+    if (stpAgent) for (const l of stpAgent.runningConfigGlobalLines()) lines.push(l);
     if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
 
     const ports = sw._getPortsInternal();
@@ -1399,26 +1420,40 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showSpanningTree(sw: Switch): string {
     const stpStates = sw._getSTPStates();
+    const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+    const root = agent?.getRootBridge();
+    const cost = agent?.getRootPathCost() ?? 0;
+    const rootPort = agent?.getRootPort();
+    const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
+    const rootPrio = root ? root.priority + 1 : 32769;
     const lines = [
       'VLAN0001',
       '  Spanning tree enabled protocol ieee',
-      '  Root ID    Priority    32769',
-      `             Address     ${sw.getPort(sw.getPortNames()[0])?.getMAC() || '0000.0000.0000'}`,
+      `  Root ID    Priority    ${rootPrio}`,
+      `             Address     ${rootMacFmt}`,
+      `             Cost        ${cost}`,
+      rootPort
+        ? `             Port        ${this.abbreviateInterface(rootPort)}`
+        : '             This bridge is the root',
       '',
       'Interface        Role  Sts  Cost      Prio.Nbr  Type',
       '---------------- ----  ---  --------  --------  ----',
     ];
-
     for (const [portName, state] of stpStates) {
       const shortName = this.abbreviateInterface(portName).padEnd(17);
-      const role = 'Desg';
-      const sts = state === 'forwarding' ? 'FWD' :
-                  state === 'blocking'   ? 'BLK' :
-                  state === 'listening'  ? 'LIS' :
-                  state === 'learning'   ? 'LRN' : 'DIS';
+      const stpRole = agent?.getPortRole(portName) ?? 'designated';
+      const role =
+        stpRole === 'root' ? 'Root'
+        : stpRole === 'alternate' ? 'Altn'
+        : stpRole === 'disabled' ? 'Disa'
+        : 'Desg';
+      const sts = state === 'forwarding' ? 'FWD'
+        : state === 'blocking' ? 'BLK'
+        : state === 'listening' ? 'LIS'
+        : state === 'learning' ? 'LRN'
+        : 'DIS';
       lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}19        128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
     }
-
     return lines.join('\n');
   }
 

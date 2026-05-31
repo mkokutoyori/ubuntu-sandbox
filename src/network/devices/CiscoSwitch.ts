@@ -21,6 +21,8 @@ import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { DtpAgent } from '../dtp/DtpAgent';
 import { ETHERTYPE_DTP, type DtpOperationalMode } from '../dtp/types';
+import { StpAgent, type StpForwardState } from '../stp/StpAgent';
+import { ETHERTYPE_STP } from '../stp/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -28,6 +30,7 @@ export class CiscoSwitch extends Switch {
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
   private readonly dtpAgent: DtpAgent;
+  private readonly stpAgent: StpAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -48,9 +51,16 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       onOperationalModeChanged: (p, m) => this.applyDtpOperationalMode(p, m),
     }, () => this.getBus());
+    const firstPort = this.getPorts()[0];
+    const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
+    this.stpAgent = new StpAgent({
+      ...hostBase,
+      onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+    }, () => this.getBus(), baseMac);
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.dtpAgent.start();
+    this.stpAgent.start();
   }
 
   private applyDtpOperationalMode(portName: string, mode: DtpOperationalMode): void {
@@ -60,11 +70,18 @@ export class CiscoSwitch extends Switch {
     super.setSwitchportMode(portName, mode);
   }
 
+  private applyStpForwardState(portName: string, state: StpForwardState): void {
+    if (state === 'forwarding') this.setSTPState(portName, 'forwarding');
+    else if (state === 'blocking') this.setSTPState(portName, 'blocking');
+    else this.setSTPState(portName, 'disabled');
+  }
+
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
     if (this.dtpAgent) { this.dtpAgent.stop(); this.dtpAgent.start(); }
+    if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -80,10 +97,15 @@ export class CiscoSwitch extends Switch {
       this.dtpAgent.handleFrame(portName, frame);
       return;
     }
+    if (frame.etherType === ETHERTYPE_STP) {
+      this.stpAgent.handleFrame(portName, frame);
+      return;
+    }
     super.handleFrame(portName, frame);
   }
 
   getDtpAgent(): DtpAgent { return this.dtpAgent; }
+  getStpAgent(): StpAgent { return this.stpAgent; }
 
   override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
     const r = super.setSwitchportMode(portName, mode);
