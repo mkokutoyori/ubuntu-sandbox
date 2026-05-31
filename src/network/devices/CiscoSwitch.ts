@@ -23,6 +23,8 @@ import { DtpAgent } from '../dtp/DtpAgent';
 import { ETHERTYPE_DTP, type DtpOperationalMode } from '../dtp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
 import { ETHERTYPE_STP } from '../stp/types';
+import { LacpAgent } from '../lacp/LacpAgent';
+import { ETHERTYPE_LACP } from '../lacp/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -31,6 +33,7 @@ export class CiscoSwitch extends Switch {
   private readonly lldpAgent: LldpAgent;
   private readonly dtpAgent: DtpAgent;
   private readonly stpAgent: StpAgent;
+  private readonly lacpAgent: LacpAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -57,10 +60,12 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
     }, () => this.getBus(), baseMac);
+    this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.dtpAgent.start();
     this.stpAgent.start();
+    this.lacpAgent.start();
   }
 
   private applyDtpOperationalMode(portName: string, mode: DtpOperationalMode): void {
@@ -82,6 +87,7 @@ export class CiscoSwitch extends Switch {
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
     if (this.dtpAgent) { this.dtpAgent.stop(); this.dtpAgent.start(); }
     if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
+    if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -101,11 +107,16 @@ export class CiscoSwitch extends Switch {
       this.stpAgent.handleFrame(portName, frame);
       return;
     }
+    if (frame.etherType === ETHERTYPE_LACP) {
+      this.lacpAgent.handleFrame(portName, frame);
+      return;
+    }
     super.handleFrame(portName, frame);
   }
 
   getDtpAgent(): DtpAgent { return this.dtpAgent; }
   getStpAgent(): StpAgent { return this.stpAgent; }
+  getLacpAgent(): LacpAgent { return this.lacpAgent; }
 
   override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
     const r = super.setSwitchportMode(portName, mode);

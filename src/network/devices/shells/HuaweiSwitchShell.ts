@@ -65,6 +65,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent } | null)?.getLldpAgent?.();
     if (ag) fn(ag);
   }
+
+  private applyToLacpAgent(fn: (a: import('@/network/lacp/LacpAgent').LacpAgent) => void): void {
+    const ag = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    if (ag) fn(ag);
+  }
   private history: string[] = [];
 
   // STP/RSTP/MSTP global config (switch-only, L2). Default: VRP MSTP.
@@ -614,6 +619,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const list = this.ifCfg.get(this.selectedInterface) ?? [];
       list.push(`eth-trunk ${id}`);
       this.ifCfg.set(this.selectedInterface, list);
+      this.applyToLacpAgent(a => {
+        const lacpMode = t.mode === 'lacp-dynamic' ? 'active'
+          : t.mode === 'lacp-static' ? 'active' : 'on';
+        a.ensureGroup(id, `Eth-Trunk${id}`, t.loadBalance);
+        a.addPortToGroup(this.selectedInterface!, id, lacpMode);
+      });
       return '';
     });
 

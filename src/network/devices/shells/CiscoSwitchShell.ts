@@ -803,11 +803,49 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return rows.join('\n');
     });
 
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', () =>
-      ['Flags:  D - down        P - bundled in port-channel',
-       'Number of channel-groups in use: 0',
-       'Group  Port-channel  Protocol    Ports',
-       '------+-------------+-----------+-----------------------------------------'].join('\n'));
+    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
+      const lacp = this.d().getLacpAgent();
+      const groups = lacp.getAllGroups();
+      if (args[0]?.toLowerCase() === 'summary' || args.length === 0) {
+        const lines = [
+          'Flags:  D - down        P - bundled in port-channel',
+          '        I - stand-alone s - suspended',
+          '        H - Hot-standby (LACP only)',
+          '        s - suspended',
+          `Number of channel-groups in use: ${groups.length}`,
+          'Group  Port-channel  Protocol    Ports',
+          '------+-------------+-----------+-----------------------------------------',
+        ];
+        for (const g of groups) {
+          const protocol = g.members.every(m => m.mode === 'on') ? '-' : 'LACP';
+          const portList = g.members.map(m => {
+            const flag = m.bundled ? 'P' : m.state === 'standalone' ? 'I' : 's';
+            return `${this.abbreviateInterface(m.portName)}(${flag})`;
+          }).join(' ');
+          lines.push(`${String(g.id).padEnd(7)}${g.name.padEnd(14)}${protocol.padEnd(12)}${portList}`);
+        }
+        return lines.join('\n');
+      }
+      if (args[0]?.toLowerCase() === 'detail') {
+        const out: string[] = [];
+        for (const g of groups) {
+          out.push(`Group: ${g.id}`);
+          out.push(`Port-channels in the group: 1`);
+          out.push(`Port-channel: ${g.name}`);
+          out.push(`Number of ports = ${g.members.length}`);
+          for (const m of g.members) {
+            const port = this.d().getPort(m.portName);
+            out.push(`  Port: ${m.portName}`);
+            out.push(`    Status: ${m.bundled ? 'bundled' : m.state}`);
+            out.push(`    Mode: ${m.mode}`);
+            out.push(`    Partner: ${m.partner?.systemId ?? 'none'}`);
+            out.push(`    Link: ${port?.getIsUp() ? 'up' : 'down'}`);
+          }
+        }
+        return out.length > 0 ? out.join('\n') : 'No EtherChannel groups configured';
+      }
+      return 'EtherChannel: no detail';
+    });
 
     // `show interfaces <if> switchport`
     this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
@@ -1163,12 +1201,35 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     for (const sub of [
       'switchport trunk encapsulation',
       'switchport voice', 'switchport priority',
-      'channel-group', 'channel-protocol', 'storm-control', 'mls qos',
+      'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
       this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) =>
         recordIf(`${sub} ${args.join(' ')}`.trim()));
     }
+
+    this.configIfTrie.registerGreedy('channel-group', 'EtherChannel membership', (args) => {
+      if (args.length < 3) return '% Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id) || id < 1 || id > 64) return '% Invalid channel-group id';
+      if (args[1].toLowerCase() !== 'mode') return '% Incomplete command.';
+      const m = args[2].toLowerCase();
+      let mode: 'active' | 'passive' | 'on';
+      if (m === 'active' || m === 'desirable') mode = 'active';
+      else if (m === 'passive' || m === 'auto') mode = 'passive';
+      else if (m === 'on') mode = 'on';
+      else return '% Invalid channel-group mode';
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getLacpAgent().addPortToGroup(portName, id, mode);
+        return '';
+      });
+    });
+    this.configIfTrie.registerGreedy('no channel-group', 'Remove EtherChannel membership', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getLacpAgent().removePort(portName);
+        return '';
+      });
+    });
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => {
@@ -1329,6 +1390,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       for (const l of this.renderPortSecurityLines(port)) lines.push(` ${l}`);
       if (cdpAgent) for (const l of cdpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (lldpAgent) for (const l of lldpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
+      for (const l of sw.getLacpAgent().runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
