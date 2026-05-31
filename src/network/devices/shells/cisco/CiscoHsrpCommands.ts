@@ -15,11 +15,29 @@ interface HsrpCtx {
   getSelectedInterface(): string | null;
 }
 
-/** Real operational state of a group, derived from the live port. */
-function groupState(router: Router, g: HsrpGroup): 'Active' | 'Init' {
+function groupState(router: Router, g: HsrpGroup): string {
+  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const live = agent?.getGroup(g.iface, g.group);
+  if (live) {
+    const s = live.state;
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
   const port = router._getPortsInternal().get(g.iface);
-  // A lone simulated speaker owns the group while its interface is up.
   return port && port.getIsUp() && port.isConnected() ? 'Active' : 'Init';
+}
+
+function activeRouterLabel(router: Router, g: HsrpGroup): string {
+  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const live = agent?.getGroup(g.iface, g.group);
+  if (live?.state === 'active') return 'local';
+  return live?.activeRouterIp ?? 'unknown';
+}
+
+function standbyRouterLabel(router: Router, g: HsrpGroup): string {
+  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const live = agent?.getGroup(g.iface, g.group);
+  if (live?.state === 'standby') return 'local';
+  return live?.standbyRouterIp ?? 'unknown';
 }
 
 function renderDetail(router: Router, g: HsrpGroup): string {
@@ -32,8 +50,8 @@ function renderDetail(router: Router, g: HsrpGroup): string {
     `  Hello time ${g.helloSec} sec, hold time ${g.holdSec} sec`,
     `  ${g.preempt ? 'Preemption enabled' : 'Preemption disabled'}` +
       (g.preempt && g.preemptDelay ? `, delay min ${g.preemptDelay} secs` : ''),
-    `  Active router is ${state === 'Active' ? 'local' : 'unknown'}`,
-    '  Standby router is unknown',
+    `  Active router is ${activeRouterLabel(router, g)}`,
+    `  Standby router is ${standbyRouterLabel(router, g)}`,
     `  Priority ${g.priority} (configured ${g.priority})`,
   ];
   for (const t of g.trackDecr) {
@@ -55,18 +73,18 @@ function renderBrief(router: Router, groups: HsrpGroup[]): string {
     rows.push(
       `${g.iface.slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
       `${String(g.priority).padEnd(4)}${g.preempt ? 'P' : ' '} ` +
-      `${state.padEnd(8)} ${(state === 'Active' ? 'local' : 'unknown').padEnd(15)} ` +
-      `${'unknown'.padEnd(15)} ${g.vip ?? 'unknown'}`);
+      `${state.padEnd(8)} ${activeRouterLabel(router, g).padEnd(15)} ` +
+      `${standbyRouterLabel(router, g).padEnd(15)} ${g.vip ?? 'unknown'}`);
   }
   return rows.join('\n');
 }
 
-/** Parse and apply one `standby …` line on the selected interface. */
-function applyStandby(repo: FhrpRepository, iface: string, args: string[]): string {
-  // Interface-wide forms (no leading group number).
+function applyStandby(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
+  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
   if (args[0] === 'version') {
     const v = args[1] === '2' ? 2 : 1;
     repo.setInterfaceVersion(iface, v);
+    agent?.setVersion(iface, v);
     return '';
   }
   if (args[0] === 'use-bia' || args[0] === 'delay') return '';
@@ -74,31 +92,40 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[]): stri
   const group = parseInt(args[0], 10);
   if (Number.isNaN(group)) return '% Invalid standby group';
   const g = repo.ensure(iface, group);
+  agent?.ensureGroup(iface, group, g.version);
   const kw = args[1];
   const rest = args.slice(2);
   switch (kw) {
     case 'ip':
       if (rest[1] === 'secondary') g.secondary.push(rest[0]);
-      else g.vip = rest[0] ?? null;
+      else {
+        g.vip = rest[0] ?? null;
+        if (g.vip) agent?.setVip(iface, group, g.vip);
+      }
       return '';
     case 'priority':
       g.priority = parseInt(rest[0], 10) || g.priority;
+      agent?.setPriority(iface, group, g.priority);
       return '';
     case 'preempt':
       g.preempt = true;
       if (rest[0] === 'delay' && rest[1] === 'minimum') {
         g.preemptDelay = parseInt(rest[2], 10) || undefined;
       }
+      agent?.setPreempt(iface, group, true);
       return '';
     case 'timers': {
       const nums = rest.filter((t) => /^\d+$/.test(t)).map(Number);
-      if (nums.length >= 2) { g.helloSec = nums[0]; g.holdSec = nums[1]; }
+      if (nums.length >= 2) {
+        g.helloSec = nums[0]; g.holdSec = nums[1];
+        agent?.setTimers(iface, group, g.helloSec, g.holdSec);
+      }
       return '';
     }
     case 'authentication': {
       const idx = rest.indexOf('key-string');
       const keyStr = idx >= 0 ? rest[idx + 1] : rest[rest.length - 1];
-      if (rest[0] === 'md5') g.authMd5 = keyStr; else g.authText = keyStr;
+      if (rest[0] === 'md5') g.authMd5 = keyStr; else { g.authText = keyStr; agent?.setAuth(iface, group, keyStr); }
       return '';
     }
     case 'track': {
@@ -129,7 +156,7 @@ export function buildHsrpInterfaceCommands(
     const iface = ctx.getSelectedInterface();
     if (!iface) return '% No interface selected';
     if (args.length === 0) return '% Incomplete command.';
-    return applyStandby(repo, iface, args);
+    return applyStandby(repo, iface, args, ctx.r());
   });
   trie.registerGreedy('no standby', 'Remove HSRP configuration', (args) => {
     const iface = ctx.getSelectedInterface();

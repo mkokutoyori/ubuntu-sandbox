@@ -764,7 +764,7 @@ export abstract class Router extends Equipment {
 
   // ─── Data Plane: Phase B+C — IPv4 Processing ──────────────────
 
-  private processIPv4(inPort: string, ipPkt: IPv4Packet): void {
+  protected processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Phase B: L3 Header Sanity Check (RFC 1812 §5.2.2)

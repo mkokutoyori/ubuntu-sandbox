@@ -20,13 +20,17 @@ import { CdpAgent, type CdpNeighbor } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP, CDP_MULTICAST_MAC } from '../cdp/types';
 import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
-import type { EthernetFrame } from '../core/types';
+import { HsrpAgent } from '../hsrp/HsrpAgent';
+import { UDP_PORT_HSRP } from '../hsrp/types';
+import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
+import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class CiscoRouter extends Router {
   private readonly cdpAgent: CdpAgent;
   private readonly lldpAgent: LldpAgent;
+  private readonly hsrpAgent: HsrpAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
@@ -39,14 +43,28 @@ export class CiscoRouter extends Router {
     };
     this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    this.hsrpAgent = new HsrpAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
+    this.hsrpAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.cdpAgent) { this.cdpAgent.stop(); this.cdpAgent.start(); }
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
+    if (this.hsrpAgent) { this.hsrpAgent.stop(); this.hsrpAgent.start(); }
+  }
+
+  protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
+    if (ipPkt.protocol === IP_PROTO_UDP) {
+      const udp = ipPkt.payload as UDPPacket | undefined;
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_HSRP) {
+        this.hsrpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+    }
+    super.processIPv4(inPort, ipPkt);
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -59,6 +77,18 @@ export class CiscoRouter extends Router {
       this.lldpAgent.handleFrame(portName, frame);
       return;
     }
+    const octets = frame.dstMAC.getOctets();
+    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
+    if (frame.etherType === 0x0800 && isIpv4Multicast) {
+      const ipPkt = frame.payload as IPv4Packet | undefined;
+      if (ipPkt && ipPkt.protocol === IP_PROTO_UDP) {
+        const udp = ipPkt.payload as UDPPacket | undefined;
+        if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_HSRP) {
+          this.hsrpAgent.handleUdp(portName, ipPkt.sourceIP, udp);
+          return;
+        }
+      }
+    }
     super.handleFrame(portName, frame);
   }
 
@@ -66,6 +96,7 @@ export class CiscoRouter extends Router {
   getCdpNeighbors(): NeighborDTO[] { return cdpToNeighborDTO(this.cdpAgent.getNeighbors()); }
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
+  getHsrpAgent(): HsrpAgent { return this.hsrpAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
