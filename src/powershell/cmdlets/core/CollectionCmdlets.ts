@@ -499,16 +499,26 @@ export class MeasureObjectCmdlet implements ICmdlet {
     );
     const nums = rawValues.map(v => Number(v)).filter(n => !isNaN(n));
 
-    const wantSum = isTruthy(ctx.named['sum']     ?? false);
-    const wantAvg = isTruthy(ctx.named['average'] ?? false);
-    const wantMin = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);
-    const wantMax = isTruthy(ctx.named['maximum'] ?? ctx.named['max'] ?? false);
+    const wantSum  = isTruthy(ctx.named['sum']     ?? false);
+    const wantAvg  = isTruthy(ctx.named['average'] ?? false);
+    const wantMin  = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);
+    const wantMax  = isTruthy(ctx.named['maximum'] ?? ctx.named['max'] ?? false);
+    const wantLine = isTruthy(ctx.named['line']      ?? false);
+    const wantWord = isTruthy(ctx.named['word']      ?? false);
+    const wantChar = isTruthy(ctx.named['character'] ?? false);
 
     const result: Record<string, PSValue> = { Count: input.length };
     result['Sum']     = wantSum  ? nums.reduce((a, b) => a + b, 0) : null;
     result['Average'] = wantAvg  ? (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null) : null;
     result['Minimum'] = wantMin  ? (nums.length ? Math.min(...nums) : null) : null;
     result['Maximum'] = wantMax  ? (nums.length ? Math.max(...nums) : null) : null;
+
+    if (wantLine || wantWord || wantChar) {
+      const strs = input.map(v => psValueToString(v));
+      if (wantLine) result['Lines'] = strs.reduce((a, s) => a + s.split(/\r?\n/).length, 0);
+      if (wantWord) result['Words'] = strs.reduce((a, s) => a + s.split(/\s+/).filter(Boolean).length, 0);
+      if (wantChar) result['Characters'] = strs.reduce((a, s) => a + s.length, 0);
+    }
     result['Property'] = props[0] ?? null;
 
     return result;

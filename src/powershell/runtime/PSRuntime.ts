@@ -1395,12 +1395,26 @@ export class PSRuntime {
     const obj = this.evalExpr(node.object, env);
     const idx = this.evalExpr(node.index,  env);
     if (Array.isArray(obj)) {
+      if (Array.isArray(idx)) {
+        const out: PSValue[] = [];
+        for (const r of idx) {
+          let i = Number(r);
+          if (i < 0) i = obj.length + i;
+          if (i >= 0 && i < obj.length) out.push(obj[i]);
+        }
+        return out;
+      }
       let i = idx as number;
       if (i < 0) i = obj.length + i;
       return obj[i] ?? null;
     }
-    if (obj !== null && typeof obj === 'object')
-      return (obj as Record<string, PSValue>)[String(idx)] ?? null;
+    if (obj !== null && typeof obj === 'object') {
+      const rec = obj as Record<string, PSValue>;
+      if (Array.isArray(idx)) {
+        return (idx as PSValue[]).map(k => rec[String(k)] ?? null);
+      }
+      return rec[String(idx)] ?? null;
+    }
     return null;
   }
 
