@@ -21,13 +21,17 @@ import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP, VRRP_MULTICAST_MAC } from '../vrrp/types';
-import type { EthernetFrame, IPv4Packet } from '../core/types';
+import { NtpAgent } from '../ntp/NtpAgent';
+import { UDP_PORT_NTP } from '../ntp/types';
+import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
+import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class HuaweiRouter extends Router {
   private readonly lldpAgent: LldpAgent;
   private readonly vrrpAgent: VrrpAgent;
+  private readonly ntpAgent: NtpAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
     const hostBase = {
@@ -40,14 +44,29 @@ export class HuaweiRouter extends Router {
     };
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
+    this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
     this.vrrpAgent.start();
+    this.ntpAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
     if (this.vrrpAgent) { this.vrrpAgent.stop(); this.vrrpAgent.start(); }
+    if (this.ntpAgent) { this.ntpAgent.stop(); this.ntpAgent.start(); }
+  }
+
+  protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
+    if (ipPkt.protocol === IP_PROTO_UDP) {
+      const udp = ipPkt.payload as UDPPacket | undefined;
+      if (udp && udp.type === 'udp'
+          && (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP)) {
+        this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+    }
+    super.processIPv4(inPort, ipPkt);
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -69,6 +88,7 @@ export class HuaweiRouter extends Router {
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
   getVrrpAgent(): VrrpAgent { return this.vrrpAgent; }
+  getNtpAgent(): NtpAgent { return this.ntpAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;

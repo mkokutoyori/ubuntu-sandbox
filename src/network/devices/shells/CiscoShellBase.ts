@@ -324,9 +324,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
-    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus());
+    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
     trie.registerGreedy('show ntp', 'Display NTP associations', () =>
-      showNtpAssociations());
+      showNtpAssociations(this.cs()));
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
@@ -744,7 +744,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.logging.apply(args, true);
       return '';
     });
-    this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
+    this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
+      const a = args.map(s => s.toLowerCase());
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      if (!agent) return '';
+      if (a[0] === 'server' && a[1]) {
+        agent.addServer(a[1], a[2] === 'prefer' || a[3] === 'prefer');
+      } else if (a[0] === 'master') {
+        agent.setServerMode(true);
+        if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no ntp', 'Remove NTP config', (args) => {
+      const a = args.map(s => s.toLowerCase());
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      if (!agent) return '';
+      if (a[0] === 'server' && a[1]) agent.removeServer(a[1]);
+      else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
+      return '';
+    });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
 
     // Management commands missing on BOTH switch & router → shared here

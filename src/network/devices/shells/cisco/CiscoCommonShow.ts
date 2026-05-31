@@ -27,6 +27,7 @@ export interface ShowStateDevice {
   getCdpAgent?(): import('@/network/cdp/CdpAgent').CdpAgent | undefined;
   getLldpNeighbors?(): NeighborDTO[];
   getLldpAgent?(): import('@/network/lldp/LldpAgent').LldpAgent | undefined;
+  getNtpAgent?(): import('@/network/ntp/NtpAgent').NtpAgent | undefined;
 }
 
 /** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
@@ -305,16 +306,38 @@ export function showSnmp(): string {
   ].join('\n');
 }
 
-export function showNtpStatus(): string {
-  return 'Clock is unsynchronized, stratum 16, no reference clock';
+export function showNtpStatus(dev?: ShowStateDevice): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  if (!ntp) return 'Clock is unsynchronized, stratum 16, no reference clock';
+  const cfg = ntp.getConfig();
+  const synced = ntp.isSynced();
+  return [
+    `Clock is ${synced ? 'synchronized' : 'unsynchronized'}, stratum ${cfg.localStratum}, reference is ${cfg.refIdentifier || '.INIT.'}`,
+    `nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18`,
+    `reference time is ${new Date(cfg.lastSyncMs || Date.now()).toISOString()}`,
+    `clock offset is ${cfg.offsetMs.toFixed(2)} msec`,
+  ].join('\n');
 }
 
-export function showNtpAssociations(): string {
-  return [
+export function showNtpAssociations(dev?: ShowStateDevice): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  const header = [
     '  address         ref clock     st  when poll reach delay offset disp',
     ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured',
-    'No NTP associations configured.',
-  ].join('\n');
+  ];
+  if (!ntp || ntp.getConfig().associations.size === 0) {
+    return [...header, 'No NTP associations configured.'].join('\n');
+  }
+  const rows: string[] = [];
+  for (const [, a] of ntp.getConfig().associations) {
+    const marker = a.preferred ? '*' : a.prefer ? '+' : ' ';
+    const since = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 999;
+    rows.push(
+      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? 'INIT' : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
+      `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
+    );
+  }
+  return [...header, ...rows].join('\n');
 }
 
 /** `show line` — the device's real default line inventory. */
