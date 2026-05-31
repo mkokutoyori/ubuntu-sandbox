@@ -154,11 +154,7 @@ describe('B. parameter expansion', () => {
 });
 
 // ─── §C — Indexed arrays ──────────────────────────────────────────────
-// DEFERRED: indexed-array literal `arr=(a b c)` is not yet recognised by
-// the bash lexer/parser. The .skip block documents the intended surface
-// for the next bash-enhancement pass; remove `.skip` when the parser
-// learns `(` after an assignment word.
-describe.skip('C. arrays', () => {
+describe('C. arrays', () => {
   it('C1 declares an indexed array and accesses each element', () => {
     expect(run('arr=(a b c); echo "${arr[0]} ${arr[1]} ${arr[2]}"')).toBe('a b c');
   });
@@ -184,6 +180,61 @@ describe.skip('C. arrays', () => {
   });
   it('C6 ${arr[-1]} reaches the last element', () => {
     expect(run('arr=(a b c); echo "${arr[-1]}"')).toBe('c');
+  });
+  it('C7 empty array literal', () => {
+    expect(run('arr=(); echo "${#arr[@]}"')).toBe('0');
+  });
+  it('C8 array element preserves spaces inside quoted item', () => {
+    const out = runScript(`
+      arr=("hello world" foo)
+      echo "[\${arr[0]}]"
+      echo "count=\${#arr[@]}"
+    `);
+    expect(out).toContain('[hello world]');
+    expect(out).toContain('count=2');
+  });
+  it('C9 array elements survive whitespace splitting when iterated quoted', () => {
+    const out = runScript(`
+      arr=("a b" "c d")
+      for x in "\${arr[@]}"; do echo "[$x]"; done
+    `);
+    expect(out).toContain('[a b]');
+    expect(out).toContain('[c d]');
+  });
+  it('C10 ${arr[*]} joins on first IFS char (space by default)', () => {
+    expect(run('arr=(x y z); echo "${arr[*]}"')).toBe('x y z');
+  });
+  it('C11 ${#arr[N]} returns the length of a single element', () => {
+    expect(run('arr=(hi hello); echo "${#arr[1]}"')).toBe('5');
+  });
+  it('C12 round-trip: build an array from a command, iterate, sum sizes', () => {
+    exec.vfs.mkdirp('/data', 0o755, 0, 0);
+    run('echo 12345 > /data/a');
+    run('echo 67 > /data/b');
+    const out = runScript(`
+      files=(/data/a /data/b)
+      total=0
+      for f in "\${files[@]}"; do
+        n=$(wc -c < "$f")
+        total=$((total + n))
+      done
+      echo "total=$total"
+    `);
+    expect(out).toContain('total=9');   // 5+1 + 2+1 newlines
+  });
+  it('C13 array param expansion: slice modifier on element', () => {
+    expect(run('arr=(hello world); echo "${arr[0]:1:3}"')).toBe('ell');
+  });
+  it('C14 append accumulates across multiple assignments', () => {
+    const out = runScript(`
+      arr=(a)
+      arr+=(b c)
+      arr+=(d)
+      echo "\${arr[@]}"
+      echo "\${#arr[@]}"
+    `);
+    expect(out).toContain('a b c d');
+    expect(out).toContain('4');
   });
 });
 
@@ -362,6 +413,42 @@ describe('G. real-world stateful scripts', () => {
     expect(make('start')).toContain('STARTING');
     expect(make('stop')).toContain('STOPPING');
     expect(make('zzz')).toContain('unknown: zzz');
+  });
+});
+
+// ─── §I — Reserved-word context-sensitivity ──────────────────────────
+describe('I. reserved words outside compound context', () => {
+  it('I1 `echo done` works at the top level', () => {
+    expect(run('echo done')).toBe('done');
+  });
+  it('I2 `echo fi`, `echo esac`, `echo then` all parse as plain words', () => {
+    expect(run('echo fi')).toBe('fi');
+    expect(run('echo esac')).toBe('esac');
+    expect(run('echo then')).toBe('then');
+  });
+  it('I3 reserved words still terminate their own compound', () => {
+    expect(run('for x in 1 2; do echo $x; done')).toBe('1\n2');
+  });
+  it('I4 reserved words inside a nested loop are still treated as keywords', () => {
+    const out = runScript(`
+      for i in 1 2; do
+        for j in a b; do
+          echo "$i-$j"
+        done
+      done
+    `);
+    expect(out).toContain('1-a');
+    expect(out).toContain('2-b');
+  });
+  it('I5 a script can echo a literal `done` between commands', () => {
+    const out = runScript(`
+      echo before
+      echo done
+      echo after
+    `);
+    expect(out).toContain('before');
+    expect(out).toContain('done');
+    expect(out).toContain('after');
   });
 });
 

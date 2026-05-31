@@ -207,7 +207,11 @@ export interface CompoundWord extends ASTBase {
 export interface Assignment extends ASTBase {
   type: 'Assignment';
   name: string;
-  value: Word | null;   // null if VAR= (empty)
+  value: Word | null;       // null if VAR= (empty)
+  /** Present for `name=(elem …)` indexed-array literals. */
+  arrayElements?: Word[];
+  /** True for `name+=value` / `name+=(…)` (append rather than replace). */
+  append?: boolean;
 }
 
 // ─── Redirection ────────────────────────────────────────────────

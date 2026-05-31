@@ -302,11 +302,10 @@ export class BashInterpreter {
       }
     }
 
-    // Process assignments
+    // Process assignments — scalar, scalar+=value, array literal, array+=().
     for (const assign of node.assignments) {
-      const value = assign.value ? expandWord(assign.value, this.env, cmdExec) : '';
       try {
-        this.env.set(assign.name, value);
+        this.applyAssignment(assign, cmdExec);
       } catch (e) {
         if (e instanceof Error) this.output.push(e.message + '\n');
         this.env.lastExitCode = 1;
@@ -401,6 +400,34 @@ export class BashInterpreter {
    * The `command` builtin: run an operand skipping function and alias
    * lookup, or — with `-v` / `-V` — describe how it would resolve.
    */
+  /**
+   * Realise an Assignment node against the live environment. Handles
+   * every Bash assignment form: scalar `VAR=val`, scalar append
+   * `VAR+=val`, array literal `arr=(a b c)`, and array append
+   * `arr+=(d e)`. The append variants concatenate strings / extend
+   * arrays rather than replacing them.
+   */
+  private applyAssignment(
+    assign: import('@/bash/parser/ASTNode').Assignment,
+    cmdExec: (cmd: string) => string,
+  ): void {
+    // Array literal — `name=(elem …)` or `name+=(elem …)`
+    if (assign.arrayElements !== undefined) {
+      const elems = expandWords(assign.arrayElements, this.env, cmdExec, this.makeGlobFn());
+      if (assign.append) this.env.appendArray(assign.name, elems);
+      else this.env.setArray(assign.name, elems);
+      return;
+    }
+    // Scalar — `name=value` or `name+=value`
+    const value = assign.value ? expandWord(assign.value, this.env, cmdExec) : '';
+    if (assign.append) {
+      const existing = this.env.get(assign.name) ?? '';
+      this.env.set(assign.name, existing + value);
+    } else {
+      this.env.set(assign.name, value);
+    }
+  }
+
   private runCommandWord(rest: string[], pipeInput?: string): void {
     let mode: 'run' | 'v' | 'V' = 'run';
     let i = 0;

@@ -434,10 +434,14 @@ export class BashLexer {
       return { type: TokenType.WORD, value: ch, position: start };
     }
 
-    // Detect assignment: VAR=value
+    // Detect assignment: `VAR=value` or `VAR+=value` (the `+=` form is
+    // the append variant the parser routes to appendArray / appendVar).
     const eqIdx = value.indexOf('=');
-    if (eqIdx > 0 && this.isValidName(value.substring(0, eqIdx))) {
-      return { type: TokenType.ASSIGNMENT_WORD, value, position: start };
+    if (eqIdx > 0) {
+      const nameEnd = eqIdx > 0 && value[eqIdx - 1] === '+' ? eqIdx - 1 : eqIdx;
+      if (this.isValidName(value.substring(0, nameEnd))) {
+        return { type: TokenType.ASSIGNMENT_WORD, value, position: start };
+      }
     }
 
     return { type: TokenType.WORD, value, position: start };

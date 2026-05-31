@@ -22,9 +22,21 @@ import {
   makeSimpleCommand, makeLiteralWord, makeAssignment, makeRedirection,
 } from './ASTNode';
 
+/**
+ * Open compound-command context. The parser pushes one of these onto
+ * `contextStack` while parsing the body of an `if`/`for`/`while`/`until`/
+ * `case` so that reserved-word recognition (and therefore the
+ * "compound-end" check) is context-sensitive — `done` only ends a
+ * loop body, `fi` only ends an `if`, `esac` only ends a `case`, and
+ * outside any of them all of these are just plain words.
+ */
+type ParseContext = 'if' | 'loop' | 'case';
+
 export class BashParser {
   private tokens: Token[] = [];
   private pos: number = 0;
+  /** Stack of open compound contexts; the top governs which reserved words terminate. */
+  private contextStack: ParseContext[] = [];
 
   /**
    * Parse a token stream into a Program AST.
@@ -155,40 +167,41 @@ export class BashParser {
     const pos = this.peek().position;
     this.expectWord('if');
     this.skipNewlines();
-
-    const condition = this.parseCommandList();
-    this.skipNewlines();
-    this.expectWord('then');
-    this.skipNewlines();
-
-    const thenBody = this.parseCommandList();
-    this.skipNewlines();
-
-    const elifClauses: ElifClause[] = [];
-    while (this.checkWord('elif')) {
-      this.advance();
-      this.skipNewlines();
-      const elifCondition = this.parseCommandList();
+    return this.withContext('if', () => {
+      const condition = this.parseCommandList();
       this.skipNewlines();
       this.expectWord('then');
       this.skipNewlines();
-      const elifBody = this.parseCommandList();
-      this.skipNewlines();
-      elifClauses.push({ condition: elifCondition, body: elifBody });
-    }
 
-    let elseBody: CommandList | null = null;
-    if (this.checkWord('else')) {
-      this.advance();
+      const thenBody = this.parseCommandList();
       this.skipNewlines();
-      elseBody = this.parseCommandList();
-      this.skipNewlines();
-    }
 
-    this.expectWord('fi');
+      const elifClauses: ElifClause[] = [];
+      while (this.checkWord('elif')) {
+        this.advance();
+        this.skipNewlines();
+        const elifCondition = this.parseCommandList();
+        this.skipNewlines();
+        this.expectWord('then');
+        this.skipNewlines();
+        const elifBody = this.parseCommandList();
+        this.skipNewlines();
+        elifClauses.push({ condition: elifCondition, body: elifBody });
+      }
 
-    const redirections = this.parseTrailingRedirections();
-    return { type: 'IfClause', condition, thenBody, elifClauses, elseBody, redirections, position: pos };
+      let elseBody: CommandList | null = null;
+      if (this.checkWord('else')) {
+        this.advance();
+        this.skipNewlines();
+        elseBody = this.parseCommandList();
+        this.skipNewlines();
+      }
+
+      this.expectWord('fi');
+
+      const redirections = this.parseTrailingRedirections();
+      return { type: 'IfClause', condition, thenBody, elifClauses, elseBody, redirections, position: pos };
+    });
   }
 
   // ─── For Clause (Grammar Rules 46-47) ─────────────────────────
@@ -216,15 +229,15 @@ export class BashParser {
 
     this.matchSeparator();
     this.skipNewlines();
-    this.expectWord('do');
-    this.skipNewlines();
-
-    const body = this.parseCommandList();
-    this.skipNewlines();
-    this.expectWord('done');
-
-    const redirections = this.parseTrailingRedirections();
-    return { type: 'ForClause', variable, words, body, redirections, position: pos };
+    return this.withContext('loop', () => {
+      this.expectWord('do');
+      this.skipNewlines();
+      const body = this.parseCommandList();
+      this.skipNewlines();
+      this.expectWord('done');
+      const redirections = this.parseTrailingRedirections();
+      return { type: 'ForClause', variable, words, body, redirections, position: pos };
+    });
   }
 
   // ─── While Clause (Grammar Rule 48) ───────────────────────────
@@ -233,18 +246,17 @@ export class BashParser {
     const pos = this.peek().position;
     this.expectWord('while');
     this.skipNewlines();
-
-    const condition = this.parseCommandList();
-    this.skipNewlines();
-    this.expectWord('do');
-    this.skipNewlines();
-
-    const body = this.parseCommandList();
-    this.skipNewlines();
-    this.expectWord('done');
-
-    const redirections = this.parseTrailingRedirections();
-    return { type: 'WhileClause', condition, body, redirections, position: pos };
+    return this.withContext('loop', () => {
+      const condition = this.parseCommandList();
+      this.skipNewlines();
+      this.expectWord('do');
+      this.skipNewlines();
+      const body = this.parseCommandList();
+      this.skipNewlines();
+      this.expectWord('done');
+      const redirections = this.parseTrailingRedirections();
+      return { type: 'WhileClause', condition, body, redirections, position: pos };
+    });
   }
 
   // ─── Until Clause (Grammar Rule 49) ───────────────────────────
@@ -253,18 +265,17 @@ export class BashParser {
     const pos = this.peek().position;
     this.expectWord('until');
     this.skipNewlines();
-
-    const condition = this.parseCommandList();
-    this.skipNewlines();
-    this.expectWord('do');
-    this.skipNewlines();
-
-    const body = this.parseCommandList();
-    this.skipNewlines();
-    this.expectWord('done');
-
-    const redirections = this.parseTrailingRedirections();
-    return { type: 'UntilClause', condition, body, redirections, position: pos };
+    return this.withContext('loop', () => {
+      const condition = this.parseCommandList();
+      this.skipNewlines();
+      this.expectWord('do');
+      this.skipNewlines();
+      const body = this.parseCommandList();
+      this.skipNewlines();
+      this.expectWord('done');
+      const redirections = this.parseTrailingRedirections();
+      return { type: 'UntilClause', condition, body, redirections, position: pos };
+    });
   }
 
   // ─── Case Clause (Grammar Rules 50-58) ────────────────────────
@@ -276,17 +287,16 @@ export class BashParser {
     this.skipNewlines();
     this.expectWord('in');
     this.skipNewlines();
-
-    const items: CaseItem[] = [];
-    while (!this.isAtEnd() && !this.checkWord('esac')) {
-      items.push(this.parseCaseItem());
-      this.skipNewlines();
-    }
-
-    this.expectWord('esac');
-
-    const redirections = this.parseTrailingRedirections();
-    return { type: 'CaseClause', word, items, redirections, position: pos };
+    return this.withContext('case', () => {
+      const items: CaseItem[] = [];
+      while (!this.isAtEnd() && !this.checkWord('esac')) {
+        items.push(this.parseCaseItem());
+        this.skipNewlines();
+      }
+      this.expectWord('esac');
+      const redirections = this.parseTrailingRedirections();
+      return { type: 'CaseClause', word, items, redirections, position: pos };
+    });
   }
 
   private parseCaseItem(): CaseItem {
@@ -448,9 +458,28 @@ export class BashParser {
   private parseAssignment(): Assignment {
     const tok = this.advance();
     const pos = tok.position;
+    // The lexer marks `name+=…` as ASSIGNMENT_WORD too (the `+=` literal
+    // is encoded in the raw value); detect it here.
     const eqIdx = tok.value.indexOf('=');
-    const name = tok.value.substring(0, eqIdx);
+    const append = eqIdx > 0 && tok.value[eqIdx - 1] === '+';
+    const name = tok.value.substring(0, append ? eqIdx - 1 : eqIdx);
     const rawValue = tok.value.substring(eqIdx + 1);
+
+    // ── Array literal: `name=(elem1 elem2 …)` ────────────────────
+    // Triggered when the RHS is empty (the lexer broke at `(`) and the
+    // very next token is `(` with no intervening whitespace.
+    if (rawValue === '' && this.check(TokenType.LPAREN) && this.peek().adjacent) {
+      this.advance();                                       // consume `(`
+      this.skipNewlines();
+      const elements: Word[] = [];
+      while (!this.isAtEnd() && !this.check(TokenType.RPAREN)) {
+        if (this.isWordToken()) elements.push(this.parseWord());
+        else this.advance();                                // skip stray whitespace / newlines
+        this.skipNewlines();
+      }
+      this.expect(TokenType.RPAREN);
+      return { type: 'Assignment', name, value: null, arrayElements: elements, append, position: pos };
+    }
 
     // Collect any adjacent (no-whitespace) tokens that continue the value.
     // This makes `ROOT=/srv/$1`, `OUT=$(date)foo`, `LIST="a b"$XS` parse
@@ -469,7 +498,7 @@ export class BashParser {
     let value: Word | null = null;
     if (parts.length === 1) value = parts[0];
     else if (parts.length > 1) value = { type: 'CompoundWord', parts, position: pos };
-    return makeAssignment(name, value, pos);
+    return { type: 'Assignment', name, value, append, position: pos };
   }
 
   // ─── Redirection Parsing ──────────────────────────────────────
@@ -599,14 +628,37 @@ export class BashParser {
       || t === TokenType.DLBRACKET || t === TokenType.DRBRACKET;
   }
 
-  /** Check if current token is a compound command terminator. */
+  /**
+   * Is the current token a compound-command terminator? Reserved-word
+   * recognition is gated on `contextStack`: `done` ends a loop only
+   * when one is open, `fi` ends an `if` only inside one, etc. This is
+   * why bare `echo done` parses cleanly at the top level instead of
+   * tripping over `done` as a stray keyword.
+   *
+   * `RBRACE`, `RPAREN`, and `DSEMI` are unambiguous operator tokens,
+   * so they always terminate regardless of context.
+   */
   private isCompoundEnd(): boolean {
     if (this.isAtEnd()) return false;
-    const v = this.peek().value;
-    return v === 'then' || v === 'elif' || v === 'else' || v === 'fi'
-      || v === 'do' || v === 'done' || v === 'esac'
-      || this.peek().type === TokenType.RBRACE || this.peek().type === TokenType.RPAREN
-      || this.peek().type === TokenType.DSEMI;
+    const tok = this.peek();
+    if (tok.type === TokenType.RBRACE || tok.type === TokenType.RPAREN || tok.type === TokenType.DSEMI) {
+      return true;
+    }
+    if (tok.type !== TokenType.WORD) return false;
+    const v = tok.value;
+    const top = this.contextStack[this.contextStack.length - 1];
+    if (!top) return false;                  // no open compound → no reserved-word ends
+    if (top === 'if')   return v === 'then' || v === 'elif' || v === 'else' || v === 'fi';
+    if (top === 'loop') return v === 'do' || v === 'done';
+    if (top === 'case') return v === 'esac';
+    return false;
+  }
+
+  /** Run `fn` with `ctx` pushed on the context stack. */
+  private withContext<T>(ctx: ParseContext, fn: () => T): T {
+    this.contextStack.push(ctx);
+    try { return fn(); }
+    finally { this.contextStack.pop(); }
   }
 
   /** Detect function definition: WORD ( ) */

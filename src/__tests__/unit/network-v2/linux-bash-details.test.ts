@@ -600,9 +600,13 @@ describe('Bash Interpreter TDD Suite', () => {
       expect(out).toContain('syntax error');
     });
 
-    it('G11-02: should fail on unexpected token (e.g., extra `fi`)', async () => {
+    it('G11-02: bare reserved word `fi` outside any if-clause is a plain command (real-bash behaviour)', async () => {
+      // Real bash recognises `fi`, `done`, `esac`, etc. as reserved
+      // words ONLY when they terminate the matching compound — at the
+      // top level they are plain command words. Bash then reports
+      // "command not found" (exit 127), never "syntax error".
       const out = await server.executeCommand('fi');
-      expect(out).toContain('syntax error');
+      expect(out).toMatch(/command not found|not found/);
     });
     
     it('G11-03: should fail on incomplete pipe', async () => {

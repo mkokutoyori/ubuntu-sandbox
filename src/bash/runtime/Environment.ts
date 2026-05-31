@@ -24,6 +24,12 @@ export interface EnvironmentOptions {
 export class Environment {
   /** Variable storage: name → value. */
   private vars: Map<string, string> = new Map();
+  /** Indexed-array storage: name → ordered element list. Lives in a
+   *  parallel map (rather than a tagged-union value) so the existing
+   *  string-only `vars` map and every consumer of `get()` keep working
+   *  unchanged. Array scalar-style access (`$arr` → first element)
+   *  reads this map; element/slice access goes through `getArrayElement`. */
+  private arrays: Map<string, string[]> = new Map();
   /** Exported variable names. */
   private exported: Set<string> = new Set();
   /** Readonly variable names. */
@@ -113,12 +119,82 @@ export class Environment {
   /** Unset a variable. */
   unset(name: string): void {
     this.vars.delete(name);
+    this.arrays.delete(name);
     this.exported.delete(name);
   }
 
   /** Check if a variable is set (including empty string). */
   isSet(name: string): boolean {
-    return this.get(name) !== undefined;
+    return this.get(name) !== undefined || this.lookupArray(name) !== undefined;
+  }
+
+  // ─── Indexed Arrays ───────────────────────────────────────────
+
+  /**
+   * Find the (parent-walked) scope owning `name`'s array, mirroring
+   * `get()` lookup semantics so child scopes see the parent's arrays.
+   */
+  private lookupArray(name: string): string[] | undefined {
+    if (this.arrays.has(name)) return this.arrays.get(name);
+    return this.parent?.lookupArray(name);
+  }
+
+  /**
+   * Replace `name`'s array with `values`. Dynamic-scoping rules match
+   * `set()`: writes go to the nearest owner, falling back to root.
+   */
+  setArray(name: string, values: string[]): void {
+    const target = this.localNames.has(name) ? this : this.resolveArrayTarget(name);
+    if (target.readonlyVars.has(name)) {
+      throw new Error(`bash: ${name}: readonly variable`);
+    }
+    target.arrays.set(name, [...values]);
+    // Keep the scalar slot in sync with element 0 so bare $name reads
+    // the first element (the convention real bash follows for indexed
+    // arrays); legacy consumers that only know about scalars still see
+    // a sensible value.
+    target.vars.set(name, values[0] ?? '');
+  }
+
+  /** Locate the scope to receive an array assignment. */
+  private resolveArrayTarget(name: string): Environment {
+    let cursor: Environment | null = this;
+    while (cursor) {
+      if (cursor.localNames.has(name)) return cursor;
+      if (cursor.arrays.has(name) || cursor.vars.has(name)) return cursor;
+      if (cursor.parent === null) return cursor;
+      cursor = cursor.parent;
+    }
+    return this;
+  }
+
+  /** Append `values` to `name`'s array (creating it if absent). */
+  appendArray(name: string, values: string[]): void {
+    const current = this.lookupArray(name) ?? (this.isSet(name) ? [this.get(name) ?? ''] : []);
+    this.setArray(name, [...current, ...values]);
+  }
+
+  /** Read the full element list (or `undefined` when `name` is not an array). */
+  getArray(name: string): string[] | undefined {
+    return this.lookupArray(name);
+  }
+
+  /**
+   * `${arr[idx]}` — return the element at `idx`. Negative indices count
+   * from the end (Bash 4.3+). Returns `undefined` when out of range or
+   * when `name` is not an array.
+   */
+  getArrayElement(name: string, idx: number): string | undefined {
+    const arr = this.lookupArray(name);
+    if (!arr) return undefined;
+    const real = idx < 0 ? arr.length + idx : idx;
+    if (real < 0 || real >= arr.length) return undefined;
+    return arr[real];
+  }
+
+  /** `${#arr[@]}` — element count, or 0 when no such array. */
+  getArrayLength(name: string): number {
+    return this.lookupArray(name)?.length ?? 0;
   }
 
   // ─── Export ───────────────────────────────────────────────────
