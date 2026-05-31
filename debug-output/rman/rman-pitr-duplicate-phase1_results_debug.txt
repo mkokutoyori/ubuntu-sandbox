@@ -1,12 +1,12 @@
 ============================================================
 RMAN debug transcript — rman-pitr-duplicate-phase1
-Generated: 2026-05-30T10:54:09.362Z
+Generated: 2026-05-31T13:43:36.477Z
 Topology:  LinuxServer db-pitr — Oracle PITRDB OPEN baseline
 Total commands: 17
 ============================================================
 
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 30-MAY-2026 10:54:09
+  Recovery Manager: Release 19.0.0.0.0 - Production on 31-MAY-2026 13:43:36
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
@@ -59,52 +59,52 @@ RMAN [3/17]> SHOW ALL
 
 RMAN [4/17]> BACKUP DATABASE
   
-  Starting backup at 30-MAY-2026 10:54:09
+  Starting backup at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_hwzy56bl.bkp tag=TAG20260530T105409
+  piece handle=/u01/backup/ORCL_lozhe24y.bkp tag=TAG20260531T134336
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 30-MAY-2026 10:54:09
+  Finished backup at 31-MAY-2026 13:43:36
   
 
 RMAN [5/17]> BACKUP DATABASE TAG 'BL_OPEN_001'
   
-  Starting backup at 30-MAY-2026 10:54:09
+  Starting backup at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_t4a2rmw7.bkp tag=BL_OPEN_001
+  piece handle=/u01/backup/ORCL_eolxwzww.bkp tag=BL_OPEN_001
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 30-MAY-2026 10:54:09
+  Finished backup at 31-MAY-2026 13:43:36
   
 
 RMAN [6/17]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 30-MAY-2026 10:54:09
+  Starting backup at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_d2wc9loh.bkp tag=TAG20260530T105409
+  piece handle=/u01/backup/ORCL_hfys9wd9.bkp tag=TAG20260531T134336
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 30-MAY-2026 10:54:09
+  Finished backup at 31-MAY-2026 13:43:36
   
 
 RMAN [7/17]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 30-MAY-2026 10:54:09
+  Starting backup at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_9bkjaqlt.bkp tag=TAG20260530T105409
+  piece handle=/u01/backup/ORCL_3rip8cj9.bkp tag=TAG20260531T134336
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 30-MAY-2026 10:54:09
+  Finished backup at 31-MAY-2026 13:43:36
   
 
 RMAN [8/17]> LIST BACKUP SUMMARY
@@ -113,17 +113,17 @@ RMAN [8/17]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  1       B  F  A DISK        30-MAY-2026 10:54:09  1       1       NO         TAG20260530T105409
-  2       B  F  A DISK        30-MAY-2026 10:54:09  1       1       NO         BL_OPEN_001
-  3       B  A  A DISK        30-MAY-2026 10:54:09  1       1       NO         TAG20260530T105409
-  4       B  F  A DISK        30-MAY-2026 10:54:09  1       1       NO         TAG20260530T105409
+  1       B  F  A DISK        31-MAY-2026 13:43:36  1       1       NO         TAG20260531T134336
+  2       B  F  A DISK        31-MAY-2026 13:43:36  1       1       NO         BL_OPEN_001
+  3       B  A  A DISK        31-MAY-2026 13:43:36  1       1       NO         TAG20260531T134336
+  4       B  F  A DISK        31-MAY-2026 13:43:36  1       1       NO         TAG20260531T134336
   
 
 
 --- [9] § 1.2 RESTORE against OPEN (should fail) ---
 RMAN [9/17]> RESTORE DATABASE
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -135,7 +135,7 @@ RMAN [9/17]> RESTORE DATABASE
 
 RMAN [10/17]> RESTORE TABLESPACE USERS
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=105 device type=DISK
   channel ORA_DISK_1: starting tablespace USERS restore
@@ -147,7 +147,7 @@ RMAN [10/17]> RESTORE TABLESPACE USERS
 
 RMAN [11/17]> RESTORE DATAFILE 1
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=106 device type=DISK
   channel ORA_DISK_1: starting datafile 1 restore
@@ -159,7 +159,7 @@ RMAN [11/17]> RESTORE DATAFILE 1
 
 RMAN [12/17]> RESTORE DATAFILE 4
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=107 device type=DISK
   channel ORA_DISK_1: starting datafile 4 restore
@@ -171,7 +171,7 @@ RMAN [12/17]> RESTORE DATAFILE 4
 
 RMAN [13/17]> RESTORE DATABASE FROM TAG 'BL_OPEN_001'
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=108 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -183,7 +183,7 @@ RMAN [13/17]> RESTORE DATABASE FROM TAG 'BL_OPEN_001'
 
 RMAN [14/17]> RESTORE DATABASE PREVIEW
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=109 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -195,7 +195,7 @@ RMAN [14/17]> RESTORE DATABASE PREVIEW
 
 RMAN [15/17]> RESTORE DATABASE VALIDATE
   
-  Starting restore at 30-MAY-2026 10:54:09
+  Starting restore at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=110 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -228,13 +228,13 @@ RMAN [16/17]> SHOW ALL
 
 RMAN [17/17]> BACKUP DATABASE
   
-  Starting backup at 30-MAY-2026 10:54:09
+  Starting backup at 31-MAY-2026 13:43:36
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=111 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_hhlsbolf.bkp tag=TAG20260530T105409
+  piece handle=/u01/backup/ORCL_n9kkl0tx.bkp tag=TAG20260531T134336
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 30-MAY-2026 10:54:09
+  Finished backup at 31-MAY-2026 13:43:36
   
