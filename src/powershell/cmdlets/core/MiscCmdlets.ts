@@ -153,9 +153,53 @@ export class GetHelpCmdlet implements ICmdlet {
       ctx.emit('TOPIC\n    PowerShell Help System\n\nSHORT DESCRIPTION\n    Use Get-Help <cmdlet> for cmdlet help.');
       return null;
     }
+    const source = ctx.runtime.getFunctionSource(name);
+    if (source) {
+      const help = extractCommentHelp(source);
+      const synopsis = help['synopsis'] ?? '';
+      const description = help['description'] ?? '';
+      const examples = help['example'] ?? '';
+      const sections: string[] = [`NAME\n    ${name}`];
+      if (synopsis) sections.push(`SYNOPSIS\n    ${synopsis}`);
+      sections.push(`SYNTAX\n    ${name} [<CommonParameters>]`);
+      if (description) sections.push(`DESCRIPTION\n    ${description}`);
+      if (examples) sections.push(`EXAMPLES\n    ${examples}`);
+      ctx.emit(sections.join('\n\n'));
+      return null;
+    }
     ctx.emit(`NAME\n    ${name}\n\nSYNTAX\n    ${name} [<CommonParameters>]\n\nDESCRIPTION\n    Displays help for the ${name} cmdlet.`);
     return null;
   }
+}
+
+function extractCommentHelp(source: string): Record<string, string> {
+  const blockRe = /<#([\s\S]*?)#>/;
+  const block = blockRe.exec(source);
+  if (!block) return {};
+  const body = block[1];
+  const result: Record<string, string> = {};
+  const sectionRe = /^\s*\.([A-Z][A-Z]+)\s*$([\s\S]*?)(?=^\s*\.[A-Z][A-Z]+\s*$|\Z)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = sectionRe.exec(body)) !== null) {
+    result[m[1].toLowerCase()] = m[2].trim();
+  }
+  if (Object.keys(result).length === 0) {
+    const lines = body.split(/\n/);
+    let currentKey = '';
+    let buf: string[] = [];
+    const flush = () => { if (currentKey) result[currentKey] = buf.join('\n').trim(); buf = []; };
+    for (const raw of lines) {
+      const headerMatch = raw.match(/^\s*\.([A-Z][A-Z_]+)\s*$/);
+      if (headerMatch) {
+        flush();
+        currentKey = headerMatch[1].toLowerCase();
+      } else if (currentKey) {
+        buf.push(raw.trim());
+      }
+    }
+    flush();
+  }
+  return result;
 }
 
 // ─── Get-Command ──────────────────────────────────────────────────────────

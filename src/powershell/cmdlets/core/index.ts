@@ -47,6 +47,7 @@ import {
   NewPSDriveCmdlet, GetPSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
 } from './MiscCmdlets';
+import { AddMemberCmdlet } from './AddMemberCmdlet';
 import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
   RestartServiceCmdlet, SuspendServiceCmdlet, ResumeServiceCmdlet,
@@ -182,6 +183,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
+  registry.register(new AddMemberCmdlet());
   registry.register(new GetRandomCmdlet());
   registry.register(new InvokeExpressionCmdlet());
   registry.register(new ConvertToSecureStringCmdlet());
