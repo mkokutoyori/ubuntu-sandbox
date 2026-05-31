@@ -10,11 +10,26 @@
  */
 
 import { TokenType, BASH_KEYWORDS, type Token, type SourcePosition } from '@/bash/lexer/Token';
+
+/** Unary `[[ … ]]` operators (subset of POSIX `test` plus bash extras). */
+const DB_UNARY_OPS = new Set([
+  '-a','-b','-c','-d','-e','-f','-g','-h','-k','-L','-N','-O','-G',
+  '-p','-r','-s','-S','-t','-u','-w','-x',
+  '-n','-z','-v','-R',
+]);
+
+/** Binary `[[ … ]]` operators. `==` and `=` perform glob match; `=~` regex. */
+const DB_BINARY_OPS = new Set([
+  '=','==','!=','=~','<','>',
+  '-eq','-ne','-lt','-le','-gt','-ge',
+  '-nt','-ot','-ef',
+]);
 import { ParserError } from './ParserError';
 import type {
   Program, CommandList, AndOrList, AndOrPart, Pipeline, Command,
   SimpleCommand, IfClause, ElifClause, ForClause, WhileClause, UntilClause,
   CaseClause, CaseItem, FunctionDef, BraceGroup, Subshell,
+  DoubleBracket, DBExpr, ArithmeticCommand, CStyleForClause,
   Word, Assignment, Redirection, RedirectionOp,
 } from './ASTNode';
 import {
@@ -123,10 +138,20 @@ export class BashParser {
     if (this.checkWord('case')) return this.parseCaseClause();
     if (this.checkWord('function')) return this.parseFunctionDef();
     if (this.check(TokenType.LBRACE)) return this.parseBraceGroup();
+    if (this.check(TokenType.DLBRACKET)) return this.parseDoubleBracket();
+    if (this.check(TokenType.LPAREN) && this.peekAt(1)?.type === TokenType.LPAREN
+        && this.peek().adjacent !== false) {
+      return this.parseArithmeticCommand();
+    }
     if (this.check(TokenType.LPAREN)) return this.parseSubshell();
 
     // Simple command
     return this.parseSimpleCommand();
+  }
+
+  /** Look at the token N positions ahead of the cursor. */
+  private peekAt(offset: number): Token | undefined {
+    return this.tokens[this.pos + offset];
   }
 
   // ─── Simple Command (Grammar Rules 16-29) ─────────────────────
@@ -206,10 +231,16 @@ export class BashParser {
 
   // ─── For Clause (Grammar Rules 46-47) ─────────────────────────
 
-  private parseForClause(): ForClause {
+  private parseForClause(): ForClause | CStyleForClause {
     const pos = this.peek().position;
     this.expectWord('for');
     this.skipNewlines();
+
+    // `for ((init; cond; update))` C-style form.
+    if (this.check(TokenType.LPAREN) && this.peekAt(1)?.type === TokenType.LPAREN
+        && this.peek().adjacent !== false) {
+      return this.parseCStyleForClause(pos);
+    }
 
     const varTok = this.advance();
     if (varTok.type !== TokenType.WORD) {
@@ -375,6 +406,161 @@ export class BashParser {
     this.expect(TokenType.RPAREN);
     const redirections = this.parseTrailingRedirections();
     return { type: 'Subshell', body, redirections, position: pos };
+  }
+
+  // ─── [[ … ]] Extended Test ────────────────────────────────────
+
+  /**
+   * Parse the body between `[[` and `]]` into a `DBExpr` tree. We let
+   * bash's "no word splitting / no glob" semantics fall out for free
+   * because the interpreter walks the tree directly — `expandWord` runs
+   * once per primary operand and the result feeds the comparator
+   * without re-passing through `expandWords`.
+   *
+   * `&&` / `||` here are boolean operators, NOT command separators —
+   * the lexer hands us AND_IF/OR_IF tokens but inside this scope we
+   * give them their boolean meaning.
+   */
+  private parseDoubleBracket(): DoubleBracket {
+    const pos = this.peek().position;
+    this.expect(TokenType.DLBRACKET);
+    const expr = this.parseDBExpr();
+    this.expect(TokenType.DRBRACKET);
+    return { type: 'DoubleBracket', expr, position: pos };
+  }
+
+  private parseDBExpr(): DBExpr {
+    let left = this.parseDBAnd();
+    while (this.check(TokenType.OR_IF)) {
+      this.advance();
+      const right = this.parseDBAnd();
+      left = { kind: 'or', left, right };
+    }
+    return left;
+  }
+
+  private parseDBAnd(): DBExpr {
+    let left = this.parseDBNot();
+    while (this.check(TokenType.AND_IF)) {
+      this.advance();
+      const right = this.parseDBNot();
+      left = { kind: 'and', left, right };
+    }
+    return left;
+  }
+
+  private parseDBNot(): DBExpr {
+    if (this.peek().type === TokenType.WORD && this.peek().value === '!') {
+      this.advance();
+      return { kind: 'not', expr: this.parseDBNot() };
+    }
+    return this.parseDBPrimary();
+  }
+
+  private parseDBPrimary(): DBExpr {
+    if (this.check(TokenType.LPAREN)) {
+      this.advance();
+      const inner = this.parseDBExpr();
+      this.expect(TokenType.RPAREN);
+      return inner;
+    }
+    // Lookahead for `WORD OP WORD` (binary) or `OP WORD` (unary).
+    const first = this.peek();
+    const second = this.peekAt(1);
+    // Unary form: `-e file`, `-z str`, …
+    if (first.type === TokenType.WORD && /^-[a-zA-Z]$/.test(first.value)
+        && DB_UNARY_OPS.has(first.value)) {
+      this.advance();
+      const arg = this.parseWord();
+      return { kind: 'unary', op: first.value, arg };
+    }
+    // Binary form: peek ahead for an operator token.
+    const lhs = this.parseWord();
+    const opTok = this.peek();
+    if (opTok && DB_BINARY_OPS.has(opTok.value)) {
+      this.advance();
+      const rhs = this.parseWord();
+      return { kind: 'binary', op: opTok.value, lhs, rhs };
+    }
+    // Lone operand — truthy iff the expanded string is non-empty.
+    return { kind: 'lit', word: lhs };
+  }
+
+  // ─── (( arithmetic command )) ────────────────────────────────
+
+  /**
+   * Parse `((expr))`. We consume two adjacent `(` tokens, then read
+   * everything up to the matching `))`, joined into a single string
+   * that the existing arithmetic evaluator can evaluate at run time.
+   */
+  private parseArithmeticCommand(): ArithmeticCommand {
+    const pos = this.peek().position;
+    this.expect(TokenType.LPAREN);
+    this.expect(TokenType.LPAREN);
+    const expression = this.collectUntilDoubleRParen();
+    return { type: 'ArithmeticCommand', expression, position: pos };
+  }
+
+  /** Used by both `((expr))` and `for ((init; cond; update))`. */
+  private collectUntilDoubleRParen(): string {
+    const parts: string[] = [];
+    let depth = 1;
+    while (!this.isAtEnd()) {
+      const tok = this.peek();
+      if (tok.type === TokenType.RPAREN && this.peekAt(1)?.type === TokenType.RPAREN && depth === 1) {
+        this.advance(); this.advance();
+        return parts.join('').trim();
+      }
+      if (tok.type === TokenType.LPAREN) depth++;
+      if (tok.type === TokenType.RPAREN) depth--;
+      // Preserve whitespace adjacency cues by inserting a space when
+      // the token did not abut the previous one.
+      if (parts.length > 0 && !tok.adjacent) parts.push(' ');
+      parts.push(tok.value);
+      this.advance();
+    }
+    throw new ParserError("Unterminated arithmetic expression — expected '))'", this.peek().position);
+  }
+
+  // ─── for ((init; cond; update)) ──────────────────────────────
+
+  private parseCStyleForClause(pos: SourcePosition | undefined): CStyleForClause {
+    this.expect(TokenType.LPAREN);
+    this.expect(TokenType.LPAREN);
+    // Collect everything to `))`, then split on the two top-level `;`
+    // boundaries. The lexer treats `;` as a SEMI operator token, so
+    // capture verbatim and parse by position.
+    const segments: string[] = ['', '', ''];
+    let idx = 0;
+    let depth = 1;
+    while (!this.isAtEnd()) {
+      const tok = this.peek();
+      if (tok.type === TokenType.RPAREN && this.peekAt(1)?.type === TokenType.RPAREN && depth === 1) {
+        this.advance(); this.advance();
+        break;
+      }
+      if (tok.type === TokenType.LPAREN) depth++;
+      if (tok.type === TokenType.RPAREN) depth--;
+      if (tok.type === TokenType.SEMI && depth === 1 && idx < 2) {
+        idx++;
+        this.advance();
+        continue;
+      }
+      if (segments[idx].length > 0 && !tok.adjacent) segments[idx] += ' ';
+      segments[idx] += tok.value;
+      this.advance();
+    }
+    const [init, cond, update] = segments.map(s => s.trim());
+    this.matchSeparator();
+    this.skipNewlines();
+    return this.withContext('loop', () => {
+      this.expectWord('do');
+      this.skipNewlines();
+      const body = this.parseCommandList();
+      this.skipNewlines();
+      this.expectWord('done');
+      return { type: 'CStyleForClause', init, cond, update, body, position: pos };
+    });
   }
 
   // ─── Word Parsing ─────────────────────────────────────────────

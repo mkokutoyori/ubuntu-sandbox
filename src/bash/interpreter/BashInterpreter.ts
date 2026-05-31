@@ -9,10 +9,11 @@ import type {
   Program, CommandList, AndOrList, Pipeline, Command,
   SimpleCommand, IfClause, ForClause, WhileClause, UntilClause,
   CaseClause, FunctionDef, BraceGroup, Subshell,
+  DoubleBracket, DBExpr, ArithmeticCommand, CStyleForClause,
   Word, Assignment,
 } from '@/bash/parser/ASTNode';
 import { Environment } from '@/bash/runtime/Environment';
-import { expandWord, expandWords, BashRuntimeError } from '@/bash/runtime/Expansion';
+import { expandWord, expandWords, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import {
   ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
 } from '@/bash/errors/BashError';
@@ -272,6 +273,9 @@ export class BashInterpreter {
       case 'FunctionDef': this.visitFunctionDef(node); break;
       case 'BraceGroup': this.visitBraceGroup(node); break;
       case 'Subshell': this.visitSubshell(node); break;
+      case 'DoubleBracket': this.visitDoubleBracket(node); break;
+      case 'ArithmeticCommand': this.visitArithmeticCommand(node); break;
+      case 'CStyleForClause': this.visitCStyleFor(node); break;
     }
   }
 
@@ -781,6 +785,148 @@ export class BashInterpreter {
       savedEnv.lastExitCode = childEnv.lastExitCode;
     }
   }
+
+  // ─── [[ … ]] Extended Test ────────────────────────────────────
+
+  private visitDoubleBracket(node: DoubleBracket): void {
+    const value = this.evalDB(node.expr);
+    this.env.lastExitCode = value ? 0 : 1;
+  }
+
+  /** Recursive evaluator for the `[[ … ]]` expression tree. */
+  private evalDB(expr: DBExpr): boolean {
+    const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
+    switch (expr.kind) {
+      case 'or':  return this.evalDB(expr.left) || this.evalDB(expr.right);
+      case 'and': return this.evalDB(expr.left) && this.evalDB(expr.right);
+      case 'not': return !this.evalDB(expr.expr);
+      case 'lit': return expandWord(expr.word, this.env, cmdExec) !== '';
+      case 'unary': {
+        const v = expandWord(expr.arg, this.env, cmdExec);
+        return this.dbUnary(expr.op, v);
+      }
+      case 'binary': {
+        const lhs = expandWord(expr.lhs, this.env, cmdExec);
+        const rhs = expandWord(expr.rhs, this.env, cmdExec);
+        return this.dbBinary(expr.op, lhs, rhs, expr.rhs);
+      }
+    }
+  }
+
+  private dbUnary(op: string, v: string): boolean {
+    switch (op) {
+      case '-n': return v.length > 0;
+      case '-z': return v.length === 0;
+      case '-v': return this.env.isSet(v);
+    }
+    // File tests — delegate to the IOContext stat hook.
+    const stat = this.io?.stat;
+    if (!stat) return false;
+    const abs = this.io?.resolvePath?.(v) ?? v;
+    const st = stat(abs);
+    switch (op) {
+      case '-e':
+      case '-a': return !!st;
+      case '-f': return st?.type === 'file';
+      case '-d': return st?.type === 'directory';
+      default:  return false;          // -b/-c/-p/-S/-r/-w/-x/-O/-G/-N/-t/-u/-g/-k → unsupported in plain IOContext
+    }
+  }
+
+  private dbBinary(op: string, lhs: string, rhs: string, rhsWord: Word): boolean {
+    switch (op) {
+      case '=':
+      case '==': return globMatch(rhs, lhs);
+      case '!=': return !globMatch(rhs, lhs);
+      case '=~': return this.regexMatch(lhs, rhs, rhsWord);
+      case '<':  return lhs < rhs;
+      case '>':  return lhs > rhs;
+      case '-eq': return Number.parseInt(lhs, 10) === Number.parseInt(rhs, 10);
+      case '-ne': return Number.parseInt(lhs, 10) !== Number.parseInt(rhs, 10);
+      case '-lt': return Number.parseInt(lhs, 10) <   Number.parseInt(rhs, 10);
+      case '-le': return Number.parseInt(lhs, 10) <=  Number.parseInt(rhs, 10);
+      case '-gt': return Number.parseInt(lhs, 10) >   Number.parseInt(rhs, 10);
+      case '-ge': return Number.parseInt(lhs, 10) >=  Number.parseInt(rhs, 10);
+    }
+    return false;
+  }
+
+  /**
+   * `=~` matches LHS against RHS as an ERE. Bash treats unquoted RHS
+   * as a regex and quoted RHS as a literal; we approximate via the
+   * Word AST (LiteralWord → regex, quoted forms → literal).
+   */
+  private regexMatch(value: string, pattern: string, patternWord: Word): boolean {
+    const literal = patternWord.type === 'SingleQuotedWord' || patternWord.type === 'DoubleQuotedWord';
+    try {
+      const re = new RegExp(literal ? escapeRegex(pattern) : pattern);
+      return re.test(value);
+    } catch {
+      return false;
+    }
+  }
+
+  // ─── (( arithmetic command )) ────────────────────────────────
+
+  private visitArithmeticCommand(node: ArithmeticCommand): void {
+    const result = evaluateArithmetic(node.expression, this.env);
+    // Bash: exit 0 iff the arithmetic result is non-zero.
+    this.env.lastExitCode = Number.parseInt(result, 10) !== 0 ? 0 : 1;
+  }
+
+  // ─── for ((init; cond; update)) ──────────────────────────────
+
+  private visitCStyleFor(node: CStyleForClause): void {
+    const MAX = 100_000;
+    if (node.init) evaluateArithmetic(node.init, this.env);
+    let iters = 0;
+    while (iters++ < MAX) {
+      if (node.cond) {
+        const v = evaluateArithmetic(node.cond, this.env);
+        if (Number.parseInt(v, 10) === 0) break;
+      }
+      try {
+        this.visitCommandList(node.body);
+      } catch (e) {
+        if (e instanceof BreakSignal) {
+          if (e.levels > 1) throw new BreakSignal(e.levels - 1);
+          break;
+        }
+        if (e instanceof ContinueSignal) {
+          if (e.levels > 1) throw new ContinueSignal(e.levels - 1);
+        } else { throw e; }
+      }
+      if (node.update) evaluateArithmetic(node.update, this.env);
+    }
+  }
+}
+
+/** Glob-style match used by `[[ … ]]`'s `==` / `!=`. */
+function globMatch(pattern: string, value: string): boolean {
+  // Convert the glob to a regex anchored on both ends.
+  let src = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\' && i + 1 < pattern.length) { src += escapeRegex(pattern[++i]); continue; }
+    if (c === '*') { src += '.*'; continue; }
+    if (c === '?') { src += '.';  continue; }
+    if (c === '[') {
+      let cls = '[';
+      i++;
+      if (pattern[i] === '!' || pattern[i] === '^') { cls += '^'; i++; }
+      while (i < pattern.length && pattern[i] !== ']') { cls += pattern[i]; i++; }
+      cls += ']';
+      src += cls;
+      continue;
+    }
+    src += escapeRegex(c);
+  }
+  try { return new RegExp('^' + src + '$').test(value); }
+  catch { return pattern === value; }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ─── Glob Matching (for case patterns) ─────────────────────────

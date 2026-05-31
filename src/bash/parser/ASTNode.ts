@@ -64,7 +64,46 @@ export type Command =
   | CaseClause
   | FunctionDef
   | BraceGroup
-  | Subshell;
+  | Subshell
+  | DoubleBracket
+  | ArithmeticCommand
+  | CStyleForClause;
+
+// ─── `[[ … ]]` extended-test expression tree ────────────────────
+
+/**
+ * A parsed `[[ … ]]` expression. Stored as a small tree rather than
+ * verbatim tokens so the interpreter can apply bash semantics —
+ * `=~` regex, glob `==`, lexical `<`/`>`, no word-splitting — without
+ * re-tokenising at run time.
+ */
+export type DBExpr =
+  | { kind: 'or';   left: DBExpr; right: DBExpr }
+  | { kind: 'and';  left: DBExpr; right: DBExpr }
+  | { kind: 'not';  expr: DBExpr }
+  | { kind: 'unary'; op: string; arg: Word }
+  | { kind: 'binary'; op: string; lhs: Word; rhs: Word }
+  | { kind: 'lit'; word: Word };
+
+export interface DoubleBracket extends ASTBase {
+  type: 'DoubleBracket';
+  expr: DBExpr;
+}
+
+/** `((expr))` standalone arithmetic command. */
+export interface ArithmeticCommand extends ASTBase {
+  type: 'ArithmeticCommand';
+  expression: string;
+}
+
+/** `for ((init; cond; update)) do … done` C-style for-loop. */
+export interface CStyleForClause extends ASTBase {
+  type: 'CStyleForClause';
+  init: string;            // empty string when omitted
+  cond: string;
+  update: string;
+  body: CommandList;
+}
 
 // ─── Simple Command ─────────────────────────────────────────────
 

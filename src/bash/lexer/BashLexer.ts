@@ -177,6 +177,59 @@ export class BashLexer {
       return this.scanArithSub(start);
     }
 
+    // $'…' — ANSI-C quoting. Standard escape sequences are decoded
+    // (\n, \t, \r, \\, \', \", \xNN, \0NN, \uNNNN); $-expansion does
+    // NOT happen inside, mirroring real bash.
+    if (next === "'") {
+      this.advance(); // skip '
+      let value = '';
+      while (!this.isAtEnd() && this.peek() !== "'") {
+        const c = this.peek();
+        if (c === '\\' && !this.isAtEnd()) {
+          this.advance();
+          const esc = this.peek();
+          switch (esc) {
+            case 'n': value += '\n'; this.advance(); break;
+            case 't': value += '\t'; this.advance(); break;
+            case 'r': value += '\r'; this.advance(); break;
+            case 'a': value += '\x07'; this.advance(); break;
+            case 'b': value += '\b'; this.advance(); break;
+            case 'f': value += '\f'; this.advance(); break;
+            case 'v': value += '\v'; this.advance(); break;
+            case 'e': value += '\x1b'; this.advance(); break;
+            case '\\': value += '\\'; this.advance(); break;
+            case "'": value += "'"; this.advance(); break;
+            case '"': value += '"'; this.advance(); break;
+            case 'x': {
+              this.advance();
+              let hex = '';
+              for (let i = 0; i < 2 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
+                hex += this.peek(); this.advance();
+              }
+              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
+              break;
+            }
+            case 'u': {
+              this.advance();
+              let hex = '';
+              for (let i = 0; i < 4 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
+                hex += this.peek(); this.advance();
+              }
+              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
+              break;
+            }
+            default:
+              value += '\\' + esc; this.advance(); break;
+          }
+        } else {
+          value += c;
+          this.advance();
+        }
+      }
+      if (!this.isAtEnd()) this.advance(); // skip closing '
+      return { type: TokenType.SINGLE_QUOTED, value, position: start };
+    }
+
     // $(cmd) — command substitution
     if (next === '(') {
       return this.scanCmdSub(start);

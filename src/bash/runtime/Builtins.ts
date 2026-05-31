@@ -33,7 +33,7 @@ const BUILTIN_NAMES = new Set([
   'local', 'read', 'true', 'false',
   'exit', 'return', 'break', 'continue',
   'shift', 'source', '.', 'declare', 'readonly', 'let',
-  'eval', 'alias', 'unalias',
+  'eval', 'alias', 'unalias', 'getopts',
 ]);
 
 export function isBuiltin(name: string): boolean {
@@ -71,6 +71,7 @@ export function executeBuiltin(
     case 'declare': return builtinDeclare(args, env, false);
     case 'readonly': return builtinDeclare(args, env, true);
     case 'let': return builtinLet(args, env);
+    case 'getopts': return builtinGetopts(args, env);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
     case 'alias': return builtinAlias(args, aliases);
     case 'unalias': return builtinUnalias(args, aliases);
@@ -906,4 +907,98 @@ function builtinLet(args: string[], env: Environment): BuiltinResult {
   }
   // let returns 1 if last expression is 0, else 0
   return { output: '', exitCode: result === 0 ? 1 : 0 };
+}
+
+// ─── getopts ────────────────────────────────────────────────────
+
+/**
+ * POSIX `getopts` builtin — one call per option, driven by `$OPTIND`
+ * (1-based positional pointer). The spec normally reads from the
+ * caller's positional args; we honour that by inspecting
+ * `env.getPositionalArgs()`. Args after `--` or the first non-flag
+ * stop the loop with exit 1, exactly like the spec.
+ *
+ *   optstring leading `:` ⇒ silent mode: invalid options return
+ *                          `?` in `$name` with `OPTARG` set to the bad
+ *                          char, and missing args return `:` in `$name`.
+ *   trailing `:` after a flag char ⇒ that flag requires an argument.
+ *
+ * `OPTIND` is advanced after a successful read; the caller's
+ * `while getopts … opt; do …; done` loop terminates when we return
+ * exit 1 (end of options).
+ */
+function builtinGetopts(args: string[], env: Environment): BuiltinResult {
+  if (args.length < 2) {
+    return { output: 'getopts: usage: getopts optstring name [args]\n', exitCode: 2 };
+  }
+  const optstring = args[0];
+  const name = args[1];
+  const explicitArgs = args.slice(2);
+  const positional = explicitArgs.length > 0 ? explicitArgs : env.getPositionalArgs();
+  const silent = optstring.startsWith(':');
+  const spec = silent ? optstring.slice(1) : optstring;
+
+  let optind = Number.parseInt(env.get('OPTIND') ?? '1', 10);
+  if (!Number.isFinite(optind) || optind < 1) optind = 1;
+  const idx = optind - 1;
+  const cur = positional[idx];
+
+  // Reached end / first non-option → stop.
+  if (cur === undefined || cur === '--' || !cur.startsWith('-') || cur === '-') {
+    if (cur === '--') env.set('OPTIND', String(optind + 1));
+    env.set(name, '?');
+    env.unset('OPTARG');
+    return { output: '', exitCode: 1 };
+  }
+  // Clustered short flags: `-vh` ⇒ read the next char each call.
+  // OPTIND points to the operand position; we track the in-cluster
+  // offset via `__OPTSUB`.
+  let sub = Number.parseInt(env.get('__OPTSUB') ?? '1', 10);
+  if (!Number.isFinite(sub) || sub < 1) sub = 1;
+  const flag = cur[sub];
+  if (!flag) {
+    env.set('OPTIND', String(optind + 1));
+    env.unset('__OPTSUB');
+    return builtinGetopts(args, env);                  // tail-call into next arg
+  }
+  const specPos = spec.indexOf(flag);
+  if (specPos < 0) {
+    // Invalid option.
+    env.set(name, '?');
+    if (silent) env.set('OPTARG', flag);
+    else env.set('OPTARG', '');
+    if (sub + 1 < cur.length) env.set('__OPTSUB', String(sub + 1));
+    else { env.set('OPTIND', String(optind + 1)); env.unset('__OPTSUB'); }
+    return { output: silent ? '' : `bash: illegal option -- ${flag}\n`, exitCode: 0 };
+  }
+  const needsArg = spec[specPos + 1] === ':';
+  if (!needsArg) {
+    env.set(name, flag);
+    env.unset('OPTARG');
+    if (sub + 1 < cur.length) env.set('__OPTSUB', String(sub + 1));
+    else { env.set('OPTIND', String(optind + 1)); env.unset('__OPTSUB'); }
+    return { output: '', exitCode: 0 };
+  }
+  // Flag requires an argument.
+  let optarg: string | undefined;
+  if (sub + 1 < cur.length) {                          // `-fconf.yaml`
+    optarg = cur.slice(sub + 1);
+    env.set('OPTIND', String(optind + 1));
+    env.unset('__OPTSUB');
+  } else {
+    optarg = positional[idx + 1];
+    if (optarg === undefined) {
+      // Missing required argument.
+      env.set(name, silent ? ':' : '?');
+      env.set('OPTARG', silent ? flag : '');
+      env.set('OPTIND', String(optind + 1));
+      env.unset('__OPTSUB');
+      return { output: silent ? '' : `bash: option requires an argument -- ${flag}\n`, exitCode: 0 };
+    }
+    env.set('OPTIND', String(optind + 2));
+    env.unset('__OPTSUB');
+  }
+  env.set(name, flag);
+  env.set('OPTARG', optarg);
+  return { output: '', exitCode: 0 };
 }

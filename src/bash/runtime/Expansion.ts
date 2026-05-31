@@ -76,16 +76,17 @@ export function expandWords(
   const result: string[] = [];
   for (const w of words) {
     const expanded = expandWord(w, env, execCmd);
-    // Check for brace expansion: {start..end}
-    const braceMatch = expanded.match(/^\{(-?\d+)\.\.(-?\d+)\}$/);
-    if (braceMatch) {
-      const start = parseInt(braceMatch[1]);
-      const end = parseInt(braceMatch[2]);
-      const step = start <= end ? 1 : -1;
-      for (let i = start; step > 0 ? i <= end : i >= end; i += step) {
-        result.push(String(i));
+    // ── Brace expansion ──────────────────────────────────────────
+    // Runs BEFORE word splitting / globbing per bash precedence.
+    // Covers numeric ranges (`{1..5}`, `{0..10..2}`), comma lists
+    // (`{a,b,c}`), prefix/suffix concatenation (`pre{x,y}post`), and
+    // nested forms (`{a,b}{1,2}` → `a1 a2 b1 b2`).
+    if (isWordFullyUnquoted(w)) {
+      const exp = expandBraces(expanded);
+      if (exp.length > 1 || (exp.length === 1 && exp[0] !== expanded)) {
+        for (const e of exp) result.push(...maybeGlob(e, w, glob));
+        continue;
       }
-      continue;
     }
     if (shouldWordSplit(w) && expanded.includes(' ')) {
       // Word splitting: unquoted variable/command expansions are split on IFS (whitespace)
@@ -112,6 +113,101 @@ export function expandWords(
 export const ARRAY_SEP = '';
 
 /**
+ * Bash brace expansion. Order of recognition (per bash):
+ *   1. `{N..M}` / `{N..M..STEP}`   numeric range
+ *   2. `{a..z}`                    char range
+ *   3. `{a,b,c}`                   comma list, recursive
+ * Concatenation with prefix and suffix is automatic: `pre{x,y}post`
+ * → `prexpost preypost`. Multiple groups multiply across the word:
+ * `{a,b}{1,2}` → `a1 a2 b1 b2`. A `{single}` group without a comma
+ * or `..` is preserved literally — that matches real bash.
+ */
+function expandBraces(input: string): string[] {
+  const open = findBraceStart(input);
+  if (open < 0) return [input];
+  const close = findMatchingBrace(input, open);
+  if (close < 0) return [input];
+
+  const prefix = input.slice(0, open);
+  const body = input.slice(open + 1, close);
+  const suffix = input.slice(close + 1);
+
+  const expanded = expandBraceBody(body);
+  if (!expanded) {
+    const tails = expandBraces(suffix);
+    return tails.map(t => prefix + '{' + body + '}' + t);
+  }
+  const out: string[] = [];
+  for (const e of expanded) {
+    for (const tail of expandBraces(suffix)) {
+      out.push(prefix + e + tail);
+    }
+  }
+  return out;
+}
+
+function findBraceStart(s: string): number {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\') { i++; continue; }
+    if (s[i] === '{') return i;
+  }
+  return -1;
+}
+
+function findMatchingBrace(s: string, open: number): number {
+  let depth = 1;
+  for (let i = open + 1; i < s.length; i++) {
+    if (s[i] === '\\') { i++; continue; }
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+function expandBraceBody(body: string): string[] | null {
+  const range = body.match(/^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$/);
+  if (range) {
+    const start = Number.parseInt(range[1], 10);
+    const end = Number.parseInt(range[2], 10);
+    const step = Math.abs(Number.parseInt(range[3] ?? '1', 10)) || 1;
+    const dir = start <= end ? 1 : -1;
+    const out: string[] = [];
+    for (let i = start; dir > 0 ? i <= end : i >= end; i += dir * step) out.push(String(i));
+    return out;
+  }
+  const charRange = body.match(/^([A-Za-z])\.\.([A-Za-z])$/);
+  if (charRange) {
+    const a = charRange[1].charCodeAt(0);
+    const b = charRange[2].charCodeAt(0);
+    const dir = a <= b ? 1 : -1;
+    const out: string[] = [];
+    for (let i = a; dir > 0 ? i <= b : i >= b; i += dir) out.push(String.fromCharCode(i));
+    return out;
+  }
+  const segments = splitTopLevelCommas(body);
+  if (segments.length <= 1) return null;
+  const out: string[] = [];
+  for (const seg of segments) out.push(...expandBraces(seg));
+  return out;
+}
+
+function splitTopLevelCommas(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let buf = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && i + 1 < s.length) { buf += c + s[++i]; continue; }
+    if (c === '{') { depth++; buf += c; continue; }
+    if (c === '}') { depth--; buf += c; continue; }
+    if (c === ',' && depth === 0) { out.push(buf); buf = ''; continue; }
+    buf += c;
+  }
+  out.push(buf);
+  return out;
+}
+
+/**
  * Apply glob expansion only when the original word carries at least one
  * UN-escaped, UN-quoted meta-character. Bash semantics: a no-match
  * keeps the literal pattern.
@@ -125,6 +221,19 @@ function maybeGlob(value: string, w: Word, glob?: GlobFn): string[] {
 }
 
 /** True when the word contains an unquoted, unescaped `*`/`?`/`[`. */
+/** True when no part of the word came from quotes (used for brace expansion). */
+function isWordFullyUnquoted(w: Word): boolean {
+  switch (w.type) {
+    case 'SingleQuotedWord':
+    case 'DoubleQuotedWord':
+      return false;
+    case 'CompoundWord':
+      return w.parts.every(isWordFullyUnquoted);
+    default:
+      return true;
+  }
+}
+
 function hasUnescapedMeta(w: Word): boolean {
   switch (w.type) {
     case 'SingleQuotedWord':
@@ -681,6 +790,13 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
       tokens.push({ type: 'op', value: '==' }); i += 2;
     } else if (ch === '=') {
       tokens.push({ type: 'op', value: '=' }); i++;
+    } else if (ch === '+' && i + 1 < expr.length && expr[i + 1] === '+') {
+      tokens.push({ type: 'op', value: '++' }); i += 2;
+    } else if (ch === '-' && i + 1 < expr.length && expr[i + 1] === '-') {
+      tokens.push({ type: 'op', value: '--' }); i += 2;
+    } else if ((ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%')
+               && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: ch + '=' }); i += 2;
     } else if (ch === '<' && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: '<=' }); i += 2;
     } else if (ch === '<') {
@@ -738,17 +854,31 @@ class ArithParser {
     return val;
   }
 
-  // assignment: name = expr | ternary
+  // assignment: name (= | += | -= | *= | /= | %=) expr | ternary
   private parseAssignment(): number {
-    // Check for name = expr pattern
     if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'name') {
       const nameIdx = this.pos;
       const name = this.tokens[nameIdx].value;
-      if (nameIdx + 1 < this.tokens.length && this.tokens[nameIdx + 1].type === 'op' && this.tokens[nameIdx + 1].value === '=') {
+      const next = this.tokens[nameIdx + 1];
+      if (next && next.type === 'op'
+          && (next.value === '=' || next.value === '+=' || next.value === '-='
+              || next.value === '*=' || next.value === '/=' || next.value === '%=')) {
+        const op = next.value;
         this.pos = nameIdx + 2;
-        const val = this.parseAssignment();
-        this.env.set(name, String(val));
-        return val;
+        const rhs = this.parseAssignment();
+        const current = Number.parseInt(this.env.get(name) ?? '0', 10) || 0;
+        let next$: number;
+        switch (op) {
+          case '=':  next$ = rhs;             break;
+          case '+=': next$ = current + rhs;   break;
+          case '-=': next$ = current - rhs;   break;
+          case '*=': next$ = current * rhs;   break;
+          case '/=': next$ = rhs === 0 ? 0 : Math.trunc(current / rhs); break;
+          case '%=': next$ = rhs === 0 ? 0 : current - Math.trunc(current / rhs) * rhs; break;
+          default:   next$ = rhs;
+        }
+        this.env.set(name, String(next$));
+        return next$;
       }
     }
     return this.parseTernary();
@@ -847,14 +977,48 @@ class ArithParser {
     return val;
   }
 
-  // unary: ! unary | - unary | primary
+  // unary: ! unary | - unary | ++name | --name | postfix
   private parseUnary(): number {
-    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' && this.tokens[this.pos].value === '!') {
+    const tok = this.tokens[this.pos];
+    if (tok && tok.type === 'op' && tok.value === '!') {
       this.pos++;
       const val = this.parseUnary();
       return val === 0 ? 1 : 0;
     }
-    return this.parsePrimary();
+    if (tok && tok.type === 'op' && (tok.value === '++' || tok.value === '--')) {
+      this.pos++;
+      const nameTok = this.tokens[this.pos];
+      if (nameTok && nameTok.type === 'name') {
+        this.pos++;
+        const current = Number.parseInt(this.env.get(nameTok.value) ?? '0', 10) || 0;
+        const next = tok.value === '++' ? current + 1 : current - 1;
+        this.env.set(nameTok.value, String(next));
+        return next;
+      }
+      return 0;
+    }
+    return this.parsePostfix();
+  }
+
+  // postfix: primary (++ | --)?
+  private parsePostfix(): number {
+    const val = this.parsePrimary();
+    // Track the most recently consumed name so postfix can write back.
+    const tok = this.tokens[this.pos];
+    if (tok && tok.type === 'op' && (tok.value === '++' || tok.value === '--')) {
+      this.pos++;
+      // The previous primary must have been a `name` for the post-op
+      // to be meaningful; walk back to recover it.
+      const prior = this.tokens[this.pos - 2];
+      if (prior && prior.type === 'name') {
+        const current = Number.parseInt(this.env.get(prior.value) ?? '0', 10) || 0;
+        const next = tok.value === '++' ? current + 1 : current - 1;
+        this.env.set(prior.value, String(next));
+        // Postfix returns the value BEFORE the update.
+        return current;
+      }
+    }
+    return val;
   }
 
   // primary: number | name | ( expr )
