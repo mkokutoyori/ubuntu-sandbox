@@ -62,6 +62,7 @@ export class CiscoSwitch extends Switch {
     this.stpAgent = new StpAgent({
       ...hostBase,
       onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+      onStpBpduGuardErrDisable: (p) => this.applyStpBpduGuardErrDisable(p),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.vtpAgent = new VtpAgent({
@@ -89,6 +90,12 @@ export class CiscoSwitch extends Switch {
     if (state === 'forwarding') this.setSTPState(portName, 'forwarding');
     else if (state === 'blocking') this.setSTPState(portName, 'blocking');
     else this.setSTPState(portName, 'disabled');
+  }
+
+  private applyStpBpduGuardErrDisable(portName: string): void {
+    const p = this.getPort(portName);
+    if (p) p.setUp(false);
+    this.setSTPState(portName, 'disabled');
   }
 
   override setEventBus(bus: IEventBus | null): void {

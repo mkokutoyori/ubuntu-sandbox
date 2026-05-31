@@ -2,7 +2,9 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
+  type StpPortGuards,
   createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost,
+  defaultPortGuards,
   ETHERTYPE_STP, STP_BRIDGE_MAC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
@@ -18,11 +20,14 @@ export interface StpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   onForwardStateChanged(portName: string, state: StpForwardState): void;
+  onStpBpduGuardErrDisable?(portName: string, senderMac: string): void;
 }
 
 export class StpAgent {
   private config: StpConfig;
   private readonly portInfo = new Map<string, StpPortInfo>();
+  private readonly guards = new Map<string, StpPortGuards>();
+  private readonly rootInconsistent = new Set<string>();
   private readonly advertising = new Set<string>();
   private rootBridge: BridgeId;
   private rootPort: string | null = null;
@@ -99,6 +104,44 @@ export class StpAgent {
     this.config.forwardDelaySec = sec;
   }
 
+  getPortGuards(portName: string): StpPortGuards {
+    let g = this.guards.get(portName);
+    if (!g) { g = defaultPortGuards(); this.guards.set(portName, g); }
+    return g;
+  }
+
+  setPortFast(portName: string, on: boolean): void {
+    this.getPortGuards(portName).portFast = on;
+  }
+
+  setPortBpduGuard(portName: string, on: boolean): void {
+    this.getPortGuards(portName).bpduGuard = on;
+  }
+
+  setPortRootGuard(portName: string, on: boolean): void {
+    this.getPortGuards(portName).rootGuard = on;
+  }
+
+  setBpduGuardGlobal(on: boolean): void {
+    this.config.bpduGuardGlobal = on;
+  }
+
+  clearRootInconsistent(portName: string): void {
+    if (!this.rootInconsistent.delete(portName)) return;
+    this.getBus().publish({
+      topic: 'stp.root-guard.changed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        port: portName, state: 'consistent',
+      },
+    });
+    this.runElection();
+  }
+
+  isRootInconsistent(portName: string): boolean {
+    return this.rootInconsistent.has(portName);
+  }
+
   setEnabled(on: boolean): void {
     if (this.config.enabled === on) return;
     this.config.enabled = on;
@@ -138,6 +181,23 @@ export class StpAgent {
     if (payload.bpduType !== 'config') return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
+
+    const g = this.getPortGuards(portName);
+    const bpduGuard = g.bpduGuard || (g.portFast && this.config.bpduGuardGlobal);
+    if (bpduGuard) {
+      this.getBus().publish({
+        topic: 'stp.bpdu-guard.violation',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName, senderMac: payload.senderBridge.mac,
+        },
+      });
+      Logger.warn(this.host.id, 'stp:bpdu-guard',
+        `${this.host.name}: BPDU Guard triggered on ${portName} — err-disabling`);
+      this.host.onStpBpduGuardErrDisable?.(portName, payload.senderBridge.mac);
+      return;
+    }
+
     this.getBus().publish({
       topic: 'stp.bpdu.received',
       payload: {
@@ -158,6 +218,35 @@ export class StpAgent {
       ageMs: Date.now(),
     };
     this.portInfo.set(portName, info);
+
+    if (g.rootGuard) {
+      const myRoot = this.rootBridge;
+      const advertised = payload.rootBridge;
+      if (compareBridge(advertised, myRoot) < 0) {
+        if (!this.rootInconsistent.has(portName)) {
+          this.rootInconsistent.add(portName);
+          this.getBus().publish({
+            topic: 'stp.root-guard.changed',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              port: portName, state: 'inconsistent',
+            },
+          });
+          Logger.warn(this.host.id, 'stp:root-guard',
+            `${this.host.name}: Root Guard blocked ${portName} (superior BPDU from ${advertised.priority}/${advertised.mac})`);
+        }
+      } else if (this.rootInconsistent.has(portName)) {
+        this.rootInconsistent.delete(portName);
+        this.getBus().publish({
+          topic: 'stp.root-guard.changed',
+          payload: {
+            deviceId: this.host.id, hostname: this.host.getHostname(),
+            port: portName, state: 'consistent',
+          },
+        });
+      }
+    }
+
     this.runElection();
   }
 
@@ -265,6 +354,7 @@ export class StpAgent {
     for (const [portName, info] of this.portInfo) {
       const port = this.host.getPort(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      if (this.rootInconsistent.has(portName)) continue;
       const r = info.designatedRoot;
       const candidateCost = info.designatedCost + info.cost;
       if (compareBridge(r, bestRoot) < 0) {
@@ -288,6 +378,15 @@ export class StpAgent {
     for (const port of this.host.getPorts()) {
       const name = port.getName();
       if (!port.getIsUp() || !port.isConnected()) {
+        continue;
+      }
+      if (this.rootInconsistent.has(name)) {
+        this.applyRole(name, 'alternate');
+        continue;
+      }
+      const guards = this.guards.get(name);
+      if (guards?.portFast && name !== this.rootPort) {
+        this.applyRole(name, 'designated');
         continue;
       }
       if (name === this.rootPort) { this.applyRole(name, 'root'); continue; }

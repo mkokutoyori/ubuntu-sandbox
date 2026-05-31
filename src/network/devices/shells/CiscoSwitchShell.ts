@@ -736,6 +736,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         const n = parseInt(args[1] ?? '', 10);
         if (!isNaN(n)) this.d().getStpAgent().setBridgePriority(n);
       }
+      if (args[0]?.toLowerCase() === 'portfast'
+          && args[1]?.toLowerCase() === 'bpduguard'
+          && args[2]?.toLowerCase() === 'default') {
+        this.d().getStpAgent().setBpduGuardGlobal(true);
+      }
       return '';
     });
     this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
@@ -749,10 +754,35 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
+      const a = args.map(s => s.toLowerCase());
+      const agent = this.d().getStpAgent();
+      const head = a[0] ?? '';
+      const isGuardRoot = head === 'guard' && a[1] === 'root';
+      const isBpduGuard = head === 'bpduguard';
+      const isPortFast = head === 'portfast';
       for (const i of ifs) {
+        if (isPortFast) {
+          agent.setPortFast(i, a[1] !== 'disable');
+        } else if (isBpduGuard) {
+          agent.setPortBpduGuard(i, a[1] === 'enable');
+        } else if (isGuardRoot) {
+          agent.setPortRootGuard(i, true);
+        }
         const l = this.ifStp.get(i) ?? [];
         l.push(`spanning-tree ${args.join(' ')}`.trim());
         this.ifStp.set(i, l);
+      }
+      return '';
+    });
+    this.configIfTrie.registerGreedy('no spanning-tree', 'Disable interface STP knob', (args) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      const a = args.map(s => s.toLowerCase());
+      const agent = this.d().getStpAgent();
+      for (const i of ifs) {
+        if (a[0] === 'portfast') agent.setPortFast(i, false);
+        else if (a[0] === 'bpduguard') agent.setPortBpduGuard(i, false);
+        else if (a[0] === 'guard') agent.setPortRootGuard(i, false);
       }
       return '';
     });

@@ -27,6 +27,16 @@ export interface StpBpdu {
   topologyChangeAck: boolean;
 }
 
+export interface StpPortGuards {
+  portFast: boolean;
+  bpduGuard: boolean;
+  rootGuard: boolean;
+}
+
+export function defaultPortGuards(): StpPortGuards {
+  return { portFast: false, bpduGuard: false, rootGuard: false };
+}
+
 export interface StpConfig {
   enabled: boolean;
   bridgePriority: number;
@@ -34,6 +44,7 @@ export interface StpConfig {
   maxAgeSec: number;
   forwardDelaySec: number;
   baseMac: string;
+  bpduGuardGlobal: boolean;
 }
 
 export interface StpPortInfo {
@@ -54,6 +65,7 @@ export function createDefaultStpConfig(baseMac: string): StpConfig {
     maxAgeSec: 20,
     forwardDelaySec: 15,
     baseMac: baseMac.toLowerCase(),
+    bpduGuardGlobal: false,
   };
 }
 

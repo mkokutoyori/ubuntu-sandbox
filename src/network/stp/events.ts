@@ -42,10 +42,22 @@ export interface StpTopologyChangePayload extends StpDeviceRef {
   port?: string;
 }
 
+export interface StpBpduGuardViolationPayload extends StpDeviceRef {
+  port: string;
+  senderMac: string;
+}
+
+export interface StpRootGuardChangedPayload extends StpDeviceRef {
+  port: string;
+  state: 'consistent' | 'inconsistent';
+}
+
 export type StpDomainEvent =
   | { topic: 'stp.bpdu.sent'; payload: StpBpduSentPayload }
   | { topic: 'stp.bpdu.received'; payload: StpBpduReceivedPayload }
   | { topic: 'stp.role.changed'; payload: StpRoleChangedPayload }
   | { topic: 'stp.state.changed'; payload: StpStateChangedPayload }
   | { topic: 'stp.root.changed'; payload: StpRootChangedPayload }
-  | { topic: 'stp.topology.change'; payload: StpTopologyChangePayload };
+  | { topic: 'stp.topology.change'; payload: StpTopologyChangePayload }
+  | { topic: 'stp.bpdu-guard.violation'; payload: StpBpduGuardViolationPayload }
+  | { topic: 'stp.root-guard.changed'; payload: StpRootGuardChangedPayload };
