@@ -19,41 +19,56 @@ import {
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
 import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
-import type { EthernetFrame } from '../core/types';
+import { VrrpAgent } from '../vrrp/VrrpAgent';
+import { IP_PROTO_VRRP, VRRP_MULTICAST_MAC } from '../vrrp/types';
+import type { EthernetFrame, IPv4Packet } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
 export class HuaweiRouter extends Router {
   private readonly lldpAgent: LldpAgent;
+  private readonly vrrpAgent: VrrpAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
-    this.lldpAgent = new LldpAgent({
+    const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
-      getPort: (n) => this.getPort(n),
+      getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
-      sendFrame: (p, f) => { this.sendFrame(p, f); },
-    }, () => this.getBus());
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
+    this.vrrpAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
+    if (this.vrrpAgent) { this.vrrpAgent.stop(); this.vrrpAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
-    if (frame.etherType === ETHERTYPE_LLDP
-        && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC) {
+    const dst = frame.dstMAC.toString().toLowerCase();
+    if (frame.etherType === ETHERTYPE_LLDP && dst === LLDP_MULTICAST_MAC) {
       this.lldpAgent.handleFrame(portName, frame);
       return;
+    }
+    if (frame.etherType === 0x0800 && dst === VRRP_MULTICAST_MAC) {
+      const ipPkt = frame.payload as IPv4Packet | undefined;
+      if (ipPkt && ipPkt.protocol === IP_PROTO_VRRP) {
+        this.vrrpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
+        return;
+      }
     }
     super.handleFrame(portName, frame);
   }
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
+  getVrrpAgent(): VrrpAgent { return this.vrrpAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;

@@ -20,23 +20,32 @@ function isUp(router: Router, iface: string): boolean {
   return !!p && p.getIsUp() && p.isConnected();
 }
 
-function applyVrrp(repo: FhrpRepository, iface: string, args: string[]): string {
+function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
+  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
   const group = parseInt(args[0], 10);
   if (Number.isNaN(group)) return '% Invalid VRRP group';
   const g = repo.ensureVrrp(iface, group);
+  agent?.ensureGroup(iface, group);
   const rest = args.slice(2);
   switch (args[1]) {
-    case 'ip': g.vip = rest[0] ?? null; return '';
-    case 'priority': g.priority = parseInt(rest[0], 10) || g.priority; return '';
+    case 'ip':
+      g.vip = rest[0] ?? null;
+      if (g.vip) agent?.setVip(iface, group, g.vip);
+      return '';
+    case 'priority':
+      g.priority = parseInt(rest[0], 10) || g.priority;
+      agent?.setPriority(iface, group, g.priority);
+      return '';
     case 'preempt':
       g.preempt = true;
       if (rest[0] === 'delay' && rest[1] === 'minimum') {
         g.preemptDelay = parseInt(rest[2], 10) || undefined;
       }
+      agent?.setPreempt(iface, group, true);
       return '';
     case 'timers': {
       const n = rest.filter((t) => /^\d+$/.test(t)).map(Number);
-      if (n.length) g.advertiseSec = n[0];
+      if (n.length) { g.advertiseSec = n[0]; agent?.setAdvertiseSec(iface, group, n[0]); }
       return '';
     }
     case 'authentication': {
@@ -76,12 +85,27 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[]): string 
   }
 }
 
+function vrrpState(router: Router, g: VrrpGroup): string {
+  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const live = agent?.getGroup(g.iface, g.group);
+  if (live) return live.state.charAt(0).toUpperCase() + live.state.slice(1);
+  return isUp(router, g.iface) ? 'Master' : 'Init';
+}
+
+function vrrpMasterIp(router: Router, g: VrrpGroup): string {
+  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const live = agent?.getGroup(g.iface, g.group);
+  if (live?.state === 'master') return 'local';
+  return live?.masterIp ?? 'unknown';
+}
+
 function vrrpDetail(router: Router, g: VrrpGroup): string {
-  const state = isUp(router, g.iface) ? 'Master' : 'Init';
+  const state = vrrpState(router, g);
   return [
     `${g.iface} - Group ${g.group}`,
     `  State is ${state}`,
     `  Virtual IP address is ${g.vip ?? 'unknown'}`,
+    `  Master Router is ${vrrpMasterIp(router, g)}`,
     `  Advertisement interval ${g.advertiseSec} sec`,
     `  Preemption ${g.preempt ? 'enabled' : 'disabled'}`,
     `  Priority is ${g.priority}`,
@@ -111,7 +135,7 @@ export function buildVrrpGlbpInterfaceCommands(
   trie.registerGreedy('vrrp', 'VRRP configuration', (a) => {
     const i = ctx.getSelectedInterface();
     if (!i) return '% No interface selected';
-    return a.length ? applyVrrp(repo, i, a) : '% Incomplete command.';
+    return a.length ? applyVrrp(repo, i, a, ctx.r()) : '% Incomplete command.';
   });
   trie.registerGreedy('no vrrp', 'Remove VRRP group', (a) => {
     const i = ctx.getSelectedInterface();
@@ -145,8 +169,8 @@ export function registerVrrpGlbpShowCommands(
         rows.push(
           `${g.iface.slice(0, 18).padEnd(19)}${String(g.group).padEnd(4)}` +
           `${String(g.priority).padEnd(4)}    -   ${g.preempt ? 'Y' : 'N'}   ` +
-          `${(isUp(ctx.r(), g.iface) ? 'Master' : 'Init').padEnd(8)}` +
-          `${'local'.padEnd(16)}${g.vip ?? 'unknown'}`);
+          `${vrrpState(ctx.r(), g).padEnd(8)}` +
+          `${vrrpMasterIp(ctx.r(), g).padEnd(16)}${g.vip ?? 'unknown'}`);
       }
       return rows.join('\n');
     }
