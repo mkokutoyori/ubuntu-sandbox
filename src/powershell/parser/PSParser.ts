@@ -341,9 +341,21 @@ export class PSParser {
     const pos = this.pos_();
     let name = this.parseCommandName();
 
-    // When a literal (string/number) is followed by a comma at the statement
-    // level (NOT inside @()), build the full array so `"x","y" | ...` works.
-    // Inside @(...), commas are handled by the @() parser — skip this path.
+    if (name.type === 'LiteralExpression' && this.check(PSTokenType.PARAMETER)
+        && PS_OPERATOR_PARAMS.has(this.peek().value)) {
+      let expr: PSExpression = name;
+      while (true) {
+        const op = this.currentBinaryOp();
+        if (!op) break;
+        const prec = PRECEDENCE[op] ?? 0;
+        if (prec <= 0) break;
+        this.advance();
+        const right = this.parseExpression(prec);
+        expr = makeBinary(op as PSBinaryOperator, expr, right, expr.position);
+      }
+      return makeCommand(expr, [], [], pos);
+    }
+
     if (this.check(PSTokenType.COMMA) && name.type === 'LiteralExpression' && !this.insideArrayLiteral) {
       const elements: PSStatement[] = [this.exprToStatement(name)];
       while (this.check(PSTokenType.COMMA)) {

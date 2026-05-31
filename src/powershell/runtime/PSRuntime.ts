@@ -425,15 +425,28 @@ export class PSRuntime {
       } catch (e) {
         if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
         const trap = traps[0];
-        // Run trap body in same scope so variable assignments are visible to the caller
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
-          this.execScriptBlock(trap.body, env);
+          this.runTrapBody(trap.body, env);
         } catch (te) {
           if (te instanceof ContinueSignal && !te.label) continue;
           if (te instanceof BreakSignal    && !te.label) return;
           throw te;
         }
+      }
+    }
+  }
+
+  private runTrapBody(block: PSScriptBlock, env: PSEnvironment): void {
+    if (!block.body) return;
+    for (const s of block.body.statements) {
+      const before = this.outputLines.length;
+      const r = this.execStatement(s, env);
+      const emitted = this.outputLines.length > before;
+      if (!emitted && r !== null && r !== undefined
+          && s.type !== 'AssignmentStatement'
+          && s.type !== 'FunctionDefinition') {
+        this.renderValue(r);
       }
     }
   }
@@ -480,7 +493,7 @@ export class PSRuntime {
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
-          this.execScriptBlock(trap.body, env);
+          this.runTrapBody(trap.body, env);
         } catch (te) {
           if (te instanceof ContinueSignal && !te.label) continue;
           if (te instanceof BreakSignal    && !te.label) return;
@@ -535,7 +548,7 @@ export class PSRuntime {
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
-          this.execScriptBlock(trap.body, env);
+          this.runTrapBody(trap.body, env);
           // Trap body finished normally → continue to next statement
         } catch (te) {
           if (te instanceof ContinueSignal && !te.label) continue;
@@ -1146,8 +1159,11 @@ export class PSRuntime {
         return limit !== undefined ? parts.slice(0, limit) : parts;
       }
       case '-join': return (Array.isArray(left) ? left : [left]).map(psValueToString).join(String(right));
-
-      // -is / -isnot / -as handled above the switch (type extraction)
+      case '-f': {
+        const fmt = String(left);
+        const args = Array.isArray(right) ? right : [right];
+        return formatString(fmt, args);
+      }
 
       default:
         throw new PSRuntimeError(`Unknown operator: ${op}`);
@@ -1418,21 +1434,33 @@ export class PSRuntime {
   }
 
   private execTry(node: PSTryStatement, env: PSEnvironment): PSValue {
+    const renderBody = (body: PSScriptBlock): PSValue => {
+      if (!body.body) return null;
+      let last: PSValue = null;
+      for (const s of body.body.statements) {
+        const before = this.outputLines.length;
+        last = this.execStatement(s, env);
+        const emitted = this.outputLines.length > before;
+        if (!emitted && last !== null && last !== undefined
+            && s.type !== 'AssignmentStatement'
+            && s.type !== 'FunctionDefinition') {
+          this.renderValue(last);
+        }
+      }
+      return last;
+    };
     let result: PSValue = null;
     try {
-      result = this.execScriptBlock(node.tryBody, env);
+      result = renderBody(node.tryBody);
     } catch (e) {
       const errRecord = this.makeErrorRecord(e);
-      // Append to $Error list (PowerShell accumulates all errors)
       const errList = (this.global.get('Error') as PSValue[]) ?? [];
       this.global.set('Error', [errRecord, ...errList]);
 
       if (node.catchClauses.length > 0) {
         env.set('_', errRecord);
-        // Find typed catch clause matching or fall through to untyped
         const matchingClause = node.catchClauses.find(c => {
           if (c.types.length === 0) return false;
-          // Check if the error type matches
           const msg = e instanceof Error ? e.message : String(e);
           return c.types.some(t => {
             const tn = (t as unknown as { typeName?: string; value?: string }).typeName
@@ -1440,14 +1468,14 @@ export class PSRuntime {
             return msg.includes(tn) || tn.includes('Exception') || tn.toLowerCase().includes('argument');
           });
         }) ?? node.catchClauses.find(c => c.types.length === 0) ?? node.catchClauses[0];
-        result = this.execScriptBlock(matchingClause.body, env);
+        result = renderBody(matchingClause.body);
       } else {
+        if (node.finallyBody) renderBody(node.finallyBody);
         throw e;
       }
-    } finally {
-      if (node.finallyBody) this.execScriptBlock(node.finallyBody, env);
     }
-    return result;
+    if (node.finallyBody) renderBody(node.finallyBody);
+    return null;
   }
 
   private makeErrorRecord(e: unknown): Record<string, PSValue> {
@@ -1816,16 +1844,13 @@ export class PSRuntime {
       ? (Array.isArray(pipeInput) ? pipeInput : [pipeInput])
       : [];
 
-    // Check param block for ValueFromPipeline / ValueFromPipelineByPropertyName
     let pipeParamName: string | null = null;
-    let pipeByPropertyName: string | null = null;
+    const pipeByPropertyNames: string[] = [];
     if (block.paramBlock) {
       for (const p of block.paramBlock.parameters) {
         const pname = p.name.varName ?? (p.name as { name?: string }).name ?? '';
         for (const attr of p.attributes) {
           if (attr.name.toLowerCase() === 'parameter') {
-            // namedArgs covers [Parameter(ValueFromPipeline=$true)]
-            // positionalArgs covers [Parameter(ValueFromPipeline)] (bareword, no =$true)
             const vfpNamed = attr.namedArgs['ValueFromPipeline'] ?? attr.namedArgs['valuefrompipeline'];
             const vfpPositional = attr.positionalArgs.some(a => {
               const ce = a as { type?: string; name?: string };
@@ -1837,7 +1862,7 @@ export class PSRuntime {
               return ce.type === 'CommandExpression' && ce.name?.toLowerCase() === 'valuefrompipelinebypropertyname';
             });
             if (vfpNamed || vfpPositional) pipeParamName = pname;
-            if (vfbpnNamed || vfbpnPositional) pipeByPropertyName = pname;
+            if (vfbpnNamed || vfbpnPositional) pipeByPropertyNames.push(pname);
           }
         }
       }
@@ -1881,6 +1906,28 @@ export class PSRuntime {
             if (!allowed.some(a => a.toLowerCase() === val.toLowerCase()))
               throw new PSRuntimeError(`Validation error: ${pname} must be one of [${allowed.join(', ')}]`);
           }
+          if (attr.name.toLowerCase() === 'validatepattern' && resolvedNamed[pkey] !== undefined) {
+            const pat = String((attr.positionalArgs[0] as { value?: unknown })?.value ?? '');
+            const val = String(resolvedNamed[pkey]);
+            let re: RegExp | null = null;
+            try { re = new RegExp(pat); } catch { re = null; }
+            if (!re || !re.test(val))
+              throw new PSRuntimeError(`Validation error: ${pname} does not match pattern ${pat}`);
+          }
+          if (attr.name.toLowerCase() === 'validatenotnull' && (resolvedNamed[pkey] === null || resolvedNamed[pkey] === undefined)) {
+            throw new PSRuntimeError(`Validation error: ${pname} cannot be null`);
+          }
+          if (attr.name.toLowerCase() === 'validatenotnullorempty'
+              && (resolvedNamed[pkey] === null || resolvedNamed[pkey] === undefined || resolvedNamed[pkey] === '')) {
+            throw new PSRuntimeError(`Validation error: ${pname} cannot be null or empty`);
+          }
+          if (attr.name.toLowerCase() === 'validatelength' && resolvedNamed[pkey] !== undefined) {
+            const min = Number((attr.positionalArgs[0] as { value?: unknown })?.value ?? 0);
+            const max = Number((attr.positionalArgs[1] as { value?: unknown })?.value ?? Infinity);
+            const len = String(resolvedNamed[pkey]).length;
+            if (len < min || len > max)
+              throw new PSRuntimeError(`Validation error: ${pname} length must be between ${min} and ${max}`);
+          }
         }
       }
     }
@@ -1917,10 +1964,12 @@ export class PSRuntime {
               childEnv.set('_', item);
               childEnv.set('PSItem', item);
               if (pipeParamName) childEnv.set(pipeParamName, item);
-              if (pipeByPropertyName && item && typeof item === 'object' && !Array.isArray(item)) {
+              if (pipeByPropertyNames.length > 0 && item && typeof item === 'object' && !Array.isArray(item)) {
                 const rec = item as Record<string, PSValue>;
-                const key = Object.keys(rec).find(k => k.toLowerCase() === pipeByPropertyName!.toLowerCase()) ?? pipeByPropertyName;
-                childEnv.set(pipeByPropertyName, rec[key] ?? null);
+                for (const pn of pipeByPropertyNames) {
+                  const key = Object.keys(rec).find(k => k.toLowerCase() === pn.toLowerCase()) ?? pn;
+                  childEnv.set(pn, rec[key] ?? null);
+                }
               }
               try { results.push(...this.runBlockCapture(procBlock, childEnv)); }
               catch (e) {
@@ -2591,5 +2640,51 @@ export class PSRuntime {
       case 'VariableExpression': return true;
       default: return false;
     }
+  }
+}
+
+function formatString(fmt: string, args: PSValue[]): string {
+  return fmt.replace(/\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g,
+    (_m: string, idxStr: string, padStr: string | undefined, spec: string | undefined): string => {
+      const idx = Number.parseInt(idxStr, 10);
+      const value = args[idx];
+      let body = spec !== undefined ? applyFormatSpec(value, spec) : psValueToString(value);
+      if (padStr !== undefined) {
+        const width = Number.parseInt(padStr, 10);
+        const pad = Math.abs(width) - body.length;
+        if (pad > 0) {
+          body = width < 0 ? body + ' '.repeat(pad) : ' '.repeat(pad) + body;
+        }
+      }
+      return body;
+    });
+}
+
+function applyFormatSpec(value: PSValue, spec: string): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(n) && /[NDFXEPC]/i.test(spec[0] ?? '')) return psValueToString(value);
+  const code = spec[0].toUpperCase();
+  const digits = spec.length > 1 ? Number.parseInt(spec.slice(1), 10) : NaN;
+  switch (code) {
+    case 'N': {
+      const p = Number.isFinite(digits) ? digits : 2;
+      const fixed = n.toFixed(p);
+      const [intPart, decPart] = fixed.split('.');
+      const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return decPart !== undefined ? `${withCommas}.${decPart}` : withCommas;
+    }
+    case 'D': return Number.isFinite(digits) ? String(Math.trunc(n)).padStart(digits, '0') : String(Math.trunc(n));
+    case 'F': return n.toFixed(Number.isFinite(digits) ? digits : 2);
+    case 'X': {
+      const hex = Math.trunc(n).toString(16);
+      return Number.isFinite(digits) ? hex.padStart(digits, '0') : hex;
+    }
+    case 'E': return n.toExponential(Number.isFinite(digits) ? digits : 6);
+    case 'P': {
+      const p = Number.isFinite(digits) ? digits : 2;
+      return (n * 100).toFixed(p) + '%';
+    }
+    case 'C': return '$' + n.toFixed(Number.isFinite(digits) ? digits : 2);
+    default: return psValueToString(value);
   }
 }
