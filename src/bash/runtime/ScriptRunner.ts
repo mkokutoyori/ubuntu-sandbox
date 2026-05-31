@@ -256,6 +256,10 @@ function buildIOContext(ctx: ShellContext): IOContext {
       }
       return hits;
     },
+    homeFor(user: string) {
+      const u = ctx.userMgr.getUser(user);
+      return u ? u.home : null;
+    },
   };
 }
 

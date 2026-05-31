@@ -30,12 +30,18 @@ export class Environment {
    *  unchanged. Array scalar-style access (`$arr` → first element)
    *  reads this map; element/slice access goes through `getArrayElement`. */
   private arrays: Map<string, string[]> = new Map();
+  /** Associative-array storage (`declare -A name`): name → key→value map.
+   *  Kept separate from `arrays` so the two array kinds never collide;
+   *  expansion code looks up either based on which slot owns the name. */
+  private assocArrays: Map<string, Map<string, string>> = new Map();
   /** Exported variable names. */
   private exported: Set<string> = new Set();
   /** Readonly variable names. */
   private readonlyVars: Set<string> = new Set();
   /** Names explicitly declared `local` in this scope — confines writes here. */
   private localNames: Set<string> = new Set();
+  /** Active `trap` handlers, keyed by normalised signal name (EXIT, INT, …). */
+  private traps: Map<string, string> = new Map();
   /** Parent scope (for local variable lookups). */
   private parent: Environment | null = null;
   /** Last exit code ($?). */
@@ -105,6 +111,17 @@ export class Environment {
     this.localNames.add(name);
   }
 
+  // ─── trap handlers ────────────────────────────────────────────
+
+  /** Install (or replace) the handler for `signal`. */
+  setTrap(signal: string, body: string): void { this.traps.set(signal, body); }
+  /** Drop the handler for `signal`. */
+  clearTrap(signal: string): void { this.traps.delete(signal); }
+  /** Get the registered body for `signal`, or undefined. */
+  getTrap(signal: string): string | undefined { return this.traps.get(signal); }
+  /** Snapshot every (signal, body) pair, for `trap` with no args. */
+  listTraps(): Array<[string, string]> { return [...this.traps.entries()]; }
+
   /** Mark a variable as readonly (optionally set its value). */
   setReadonly(name: string, value?: string): void {
     if (value !== undefined) this.vars.set(name, value);
@@ -120,6 +137,7 @@ export class Environment {
   unset(name: string): void {
     this.vars.delete(name);
     this.arrays.delete(name);
+    this.assocArrays.delete(name);
     this.exported.delete(name);
   }
 
@@ -195,6 +213,78 @@ export class Environment {
   /** `${#arr[@]}` — element count, or 0 when no such array. */
   getArrayLength(name: string): number {
     return this.lookupArray(name)?.length ?? 0;
+  }
+
+  // ─── Associative Arrays (declare -A) ──────────────────────────
+
+  /** Walk the parent chain looking for `name` in any assoc slot. */
+  private lookupAssoc(name: string): Map<string, string> | undefined {
+    if (this.assocArrays.has(name)) return this.assocArrays.get(name);
+    return this.parent?.lookupAssoc(name);
+  }
+
+  /** Pick the scope that should receive an assoc-array write. */
+  private resolveAssocTarget(name: string): Environment {
+    let cursor: Environment | null = this;
+    while (cursor) {
+      if (cursor.localNames.has(name)) return cursor;
+      if (cursor.assocArrays.has(name)) return cursor;
+      if (cursor.parent === null) return cursor;
+      cursor = cursor.parent;
+    }
+    return this;
+  }
+
+  /** Mark `name` as an associative array, creating an empty backing map. */
+  declareAssoc(name: string): void {
+    const target = this.localNames.has(name) ? this : this.resolveAssocTarget(name);
+    if (!target.assocArrays.has(name)) {
+      target.assocArrays.set(name, new Map());
+    }
+  }
+
+  /** True when `name` was declared `-A`. */
+  isAssoc(name: string): boolean {
+    return this.lookupAssoc(name) !== undefined;
+  }
+
+  /** Set `name[key]` = value (auto-declares the map when missing). */
+  setAssocElement(name: string, key: string, value: string): void {
+    const existing = this.lookupAssoc(name);
+    const target = this.localNames.has(name) ? this : this.resolveAssocTarget(name);
+    let map = existing;
+    if (!map || (this.localNames.has(name) && !target.assocArrays.has(name))) {
+      map = new Map();
+      target.assocArrays.set(name, map);
+    }
+    map.set(key, value);
+  }
+
+  /** Read `name[key]`, or `undefined` when absent. */
+  getAssocElement(name: string, key: string): string | undefined {
+    return this.lookupAssoc(name)?.get(key);
+  }
+
+  /** Drop `name[key]`. */
+  unsetAssocElement(name: string, key: string): void {
+    this.lookupAssoc(name)?.delete(key);
+  }
+
+  /** Ordered list of values; insertion order matches JS Map iteration. */
+  getAssocValues(name: string): string[] {
+    const m = this.lookupAssoc(name);
+    return m ? [...m.values()] : [];
+  }
+
+  /** Keys for `${!name[@]}`. */
+  getAssocKeys(name: string): string[] {
+    const m = this.lookupAssoc(name);
+    return m ? [...m.keys()] : [];
+  }
+
+  /** Size for `${#name[@]}`. */
+  getAssocSize(name: string): number {
+    return this.lookupAssoc(name)?.size ?? 0;
   }
 
   // ─── Export ───────────────────────────────────────────────────

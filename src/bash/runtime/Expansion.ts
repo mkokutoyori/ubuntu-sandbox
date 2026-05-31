@@ -18,10 +18,48 @@ import { ExpansionError, ArithmeticError } from '@/bash/errors/BashError';
 
 /** Callback for executing command substitutions. */
 export type CommandSubstitutionFn = (command: string) => string;
+export type HomeForFn = (user: string) => string | null;
 
 /**
  * Expand a Word AST node into its final string value.
  */
+/**
+ * Bash tilde expansion. Applied to LiteralWord values that start with
+ * `~`, before any other expansion. Forms:
+ *   `~`             → $HOME
+ *   `~/path`        → $HOME + '/path'
+ *   `~user`         → that user's $HOME (via `homeFor`)
+ *   `~user/path`    → user's home + '/path'
+ *   `~+` / `~-`     → $PWD / $OLDPWD
+ * When no expansion applies (unknown user, no homeFor, `~` mid-word)
+ * the literal is returned unchanged.
+ */
+function expandTilde(s: string, env: Environment, homeFor?: HomeForFn): string {
+  if (!s.startsWith('~')) return s;
+  // End of the tilde-prefix is the first `/` or `:` (PATH-style) or EOS.
+  const slash = s.indexOf('/');
+  const head = slash < 0 ? s : s.slice(0, slash);
+  const tail = slash < 0 ? '' : s.slice(slash);
+  const userPart = head.slice(1);
+  if (userPart === '') {
+    const home = env.get('HOME');
+    if (home === undefined) return s;
+    return home + tail;
+  }
+  if (userPart === '+') {
+    const pwd = env.get('PWD');
+    return pwd === undefined ? s : pwd + tail;
+  }
+  if (userPart === '-') {
+    const oldpwd = env.get('OLDPWD');
+    return oldpwd === undefined ? s : oldpwd + tail;
+  }
+  if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(userPart)) return s;
+  const home = homeFor?.(userPart);
+  if (home == null) return s;
+  return home + tail;
+}
+
 /** Strip `\<ch>` → `<ch>` (quote removal for shell-style escapes). */
 function stripBackslashEscapes(s: string): string {
   let out = '';
@@ -36,10 +74,11 @@ export function expandWord(
   word: Word,
   env: Environment,
   execCmd?: CommandSubstitutionFn,
+  homeFor?: HomeForFn,
 ): string {
   switch (word.type) {
     case 'LiteralWord':
-      return stripBackslashEscapes(word.value);
+      return expandTilde(stripBackslashEscapes(word.value), env, homeFor);
     case 'SingleQuotedWord':
       return word.value;
     case 'DoubleQuotedWord':
@@ -51,7 +90,12 @@ export function expandWord(
     case 'ArithmeticSubstitution':
       return evaluateArithmetic(word.expression, env);
     case 'CompoundWord':
-      return word.parts.map(p => expandWord(p, env, execCmd)).join('');
+      return word.parts.map((p, i) =>
+        // Tilde expansion only applies to the LEADING literal of a
+        // compound word (matches bash: `foo~bar` keeps the literal).
+        i === 0 ? expandWord(p, env, execCmd, homeFor)
+                : expandWord(p, env, execCmd)
+      ).join('');
     default:
       return '';
   }
@@ -72,10 +116,11 @@ export function expandWords(
   env: Environment,
   execCmd?: CommandSubstitutionFn,
   glob?: GlobFn,
+  homeFor?: HomeForFn,
 ): string[] {
   const result: string[] = [];
   for (const w of words) {
-    const expanded = expandWord(w, env, execCmd);
+    const expanded = expandWord(w, env, execCmd, homeFor);
     // ── Brace expansion ──────────────────────────────────────────
     // Runs BEFORE word splitting / globbing per bash precedence.
     // Covers numeric ranges (`{1..5}`, `{0..10..2}`), comma lists
@@ -479,8 +524,14 @@ function expandArrayAccess(
   trailing: string | undefined,
   env: Environment,
 ): string {
+  const assoc = env.isAssoc(name);
   const arr = env.getArray(name);
   if (subscript === '@' || subscript === '*') {
+    if (assoc) {
+      const values = env.getAssocValues(name);
+      const joined = subscript === '@' ? values.join(ARRAY_SEP) : values.join(' ');
+      return trailing ? applyTrailingModifier(joined, trailing, env, name) : joined;
+    }
     if (!arr) {
       const scalar = env.get(name);
       const value = scalar === undefined ? '' : scalar;
@@ -492,6 +543,16 @@ function expandArrayAccess(
     // re-triggering IFS splitting on whitespace inside an element.
     const joined = subscript === '@' ? arr.join(ARRAY_SEP) : arr.join(' ');
     return trailing ? applyTrailingModifier(joined, trailing, env, name) : joined;
+  }
+  if (assoc) {
+    // Substitute simple `$name` references in the key before lookup.
+    const key = subscript.replace(/\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?/g, (_, n) => env.get(n) ?? '');
+    const elem = env.getAssocElement(name, key);
+    // Route through the trailing modifier even when the element is
+    // missing so `${m[k]:-default}` falls back as bash does.
+    const value = elem ?? '';
+    if (trailing) return applyTrailingModifier(value, trailing, env, name, elem === undefined);
+    return value;
   }
   const idx = Number.parseInt(subscript, 10);
   if (!Number.isFinite(idx)) return '';
@@ -517,10 +578,13 @@ function applyTrailingModifier(
   modifier: string,
   env: Environment,
   hintName: string,
+  treatAsUnset = false,
 ): string {
   const tmpName = `__bashtmp_${hintName}_${Math.random().toString(36).slice(2, 9)}`;
   env.declareLocal(tmpName);
-  env.set(tmpName, value);
+  // When the upstream lookup found nothing (`treatAsUnset`), leave the
+  // slot truly unset so default-value modifiers (`:-`, `-`) fire.
+  if (!treatAsUnset) env.set(tmpName, value);
   try { return expandVariable(tmpName, true, modifier, env); }
   finally { env.unset(tmpName); }
 }
@@ -654,15 +718,21 @@ function expandInlineVars(
         }
         // ${#NAME} — scalar length OR ${#arr[@]} — array element count.
         if (content.startsWith('#')) {
-          const lenMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)(\[(@|\*|-?\d+)\])?$/);
+          const lenMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)(\[([^\]]+)\])?$/);
           if (lenMatch) {
             const lname = lenMatch[1];
             const sub = lenMatch[3];
             if (sub === '@' || sub === '*') {
+              if (env.isAssoc(lname)) { result += String(env.getAssocSize(lname)); continue; }
               result += String(env.getArrayLength(lname));
               continue;
             }
             if (sub !== undefined) {
+              if (env.isAssoc(lname)) {
+                const v = env.getAssocElement(lname, sub) ?? '';
+                result += String(v.length);
+                continue;
+              }
               const elem = env.getArrayElement(lname, Number.parseInt(sub, 10)) ?? '';
               result += String(elem.length);
               continue;
@@ -671,6 +741,27 @@ function expandInlineVars(
             // name refers to an array (POSIX says element 0's length;
             // bash reports element 0's length too).
             result += expandVariable(lname, true, '#', env);
+            continue;
+          }
+        }
+        // ${!NAME[@]} — list of keys / indices.
+        if (content.startsWith('!')) {
+          const keyMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)\[([@*])\]$/);
+          if (keyMatch) {
+            const lname = keyMatch[1];
+            if (env.isAssoc(lname)) {
+              result += env.getAssocKeys(lname).join(ARRAY_SEP);
+            } else {
+              const arr = env.getArray(lname);
+              if (arr) result += arr.map((_, i) => String(i)).join(ARRAY_SEP);
+            }
+            continue;
+          }
+          // ${!NAME} — indirect expansion.
+          const indMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)$/);
+          if (indMatch) {
+            const target = env.get(indMatch[1]);
+            result += target !== undefined ? (env.get(target) ?? '') : '';
             continue;
           }
         }

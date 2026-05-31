@@ -24,6 +24,16 @@ const DB_BINARY_OPS = new Set([
   '-eq','-ne','-lt','-le','-gt','-ge',
   '-nt','-ot','-ef',
 ]);
+
+/** Commands whose argv may contain `name=(…)` declaration-style assignments. */
+const DECLARATION_COMMANDS = new Set([
+  'declare', 'typeset', 'local', 'readonly', 'export',
+]);
+
+function isDeclarationCommand(w: Word): boolean {
+  if (w.type !== 'LiteralWord') return false;
+  return DECLARATION_COMMANDS.has(w.value);
+}
 import { ParserError } from './ParserError';
 import type {
   Program, CommandList, AndOrList, AndOrPart, Pipeline, Command,
@@ -173,8 +183,19 @@ export class BashParser {
       }
     }
 
-    // Parse command word and suffix (cmd_word + cmd_suffix)
+    // Parse command word and suffix (cmd_word + cmd_suffix). After the
+    // command name is bound, `declare` / `local` / `readonly` / `export`
+    // / `typeset` accept `name=(…)` array-literal arguments in place of
+    // ordinary words — match that by routing ASSIGNMENT_WORDs through
+    // parseAssignment when the head word is one of those declaration
+    // commands.
     while (!this.isAtEnd() && this.isWordToken() && !this.isCompoundEnd()) {
+      if (this.check(TokenType.ASSIGNMENT_WORD)
+          && words.length > 0
+          && isDeclarationCommand(words[0])) {
+        assignments.push(this.parseAssignment());
+        continue;
+      }
       words.push(this.parseWord());
     }
 
@@ -644,12 +665,16 @@ export class BashParser {
   private parseAssignment(): Assignment {
     const tok = this.advance();
     const pos = tok.position;
-    // The lexer marks `name+=…` as ASSIGNMENT_WORD too (the `+=` literal
-    // is encoded in the raw value); detect it here.
+    // The lexer marks `name+=…` and `name[k]=…` as ASSIGNMENT_WORD too.
     const eqIdx = tok.value.indexOf('=');
     const append = eqIdx > 0 && tok.value[eqIdx - 1] === '+';
-    const name = tok.value.substring(0, append ? eqIdx - 1 : eqIdx);
+    const lhs = tok.value.substring(0, append ? eqIdx - 1 : eqIdx);
     const rawValue = tok.value.substring(eqIdx + 1);
+
+    // Split `name` from optional `[subscript]`.
+    const head = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[([^\]]+)\])?$/);
+    const name = head ? head[1] : lhs;
+    const subscript = head?.[2];
 
     // ── Array literal: `name=(elem1 elem2 …)` ────────────────────
     // Triggered when the RHS is empty (the lexer broke at `(`) and the
@@ -664,7 +689,7 @@ export class BashParser {
         this.skipNewlines();
       }
       this.expect(TokenType.RPAREN);
-      return { type: 'Assignment', name, value: null, arrayElements: elements, append, position: pos };
+      return { type: 'Assignment', name, value: null, arrayElements: elements, append, subscript, position: pos };
     }
 
     // Collect any adjacent (no-whitespace) tokens that continue the value.
@@ -684,7 +709,7 @@ export class BashParser {
     let value: Word | null = null;
     if (parts.length === 1) value = parts[0];
     else if (parts.length > 1) value = { type: 'CompoundWord', parts, position: pos };
-    return { type: 'Assignment', name, value, append, position: pos };
+    return { type: 'Assignment', name, value, append, subscript, position: pos };
   }
 
   // ─── Redirection Parsing ──────────────────────────────────────

@@ -251,6 +251,12 @@ export interface Assignment extends ASTBase {
   arrayElements?: Word[];
   /** True for `name+=value` / `name+=(…)` (append rather than replace). */
   append?: boolean;
+  /**
+   * Present for `name[subscript]=value` element assignments. The string
+   * is the raw subscript (it gets expanded / interpreted at runtime —
+   * numeric for indexed arrays, string-key for associative arrays).
+   */
+  subscript?: string;
 }
 
 // ─── Redirection ────────────────────────────────────────────────

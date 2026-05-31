@@ -65,6 +65,8 @@ export interface IOContext {
    * matching bash's `nullglob`-off default).
    */
   globExpand?(pattern: string, cwd: string): string[] | null;
+  /** Resolve the home directory of `user`; `null` means the user is unknown. */
+  homeFor?(user: string): string | null;
 }
 
 export interface InterpreterOptions {
@@ -134,6 +136,13 @@ export class BashInterpreter {
     };
   }
 
+  /** Tilde-expander bound to the host's user database (or null). */
+  private homeFor(): import('@/bash/runtime/Expansion').HomeForFn | undefined {
+    if (!this.io?.homeFor) return undefined;
+    const lookup = this.io.homeFor.bind(this.io);
+    return (user) => { try { return lookup(user); } catch { return null; } };
+  }
+
   executeSubcommand(cmd: string): string {
     try {
       const lexer = new BashLexer();
@@ -164,10 +173,22 @@ export class BashInterpreter {
         this.output.push(`bash: ${e.message}\n`);
         this.env.lastExitCode = 1;
       } else {
+        this.fireExitTrap();
         throw e;
       }
     }
+    this.fireExitTrap();
     return { output: this.output.join(''), exitCode: this.env.lastExitCode };
+  }
+
+  /** Run the EXIT trap (if any), preserving the parent script's exit code. */
+  private fireExitTrap(): void {
+    const handler = this.env.getTrap('EXIT');
+    if (!handler) return;
+    this.env.clearTrap('EXIT');                              // prevent re-entry
+    const savedExit = this.env.lastExitCode;
+    try { this.executeEval(handler); } catch { /* swallow — trap must not abort cleanup */ }
+    this.env.lastExitCode = savedExit;
   }
 
   // ─── Visitors ─────────────────────────────────────────────────
@@ -306,15 +327,34 @@ export class BashInterpreter {
       }
     }
 
-    // Process assignments — scalar, scalar+=value, array literal, array+=().
+    // Pre-pass: if this is a declaration command (`local`, `declare`,
+    // `typeset`, `readonly`, `export`) called inside a function scope,
+    // its trailing `name=value` arguments confine writes to the local
+    // scope — bash's `local` semantics. We compute the head word once
+    // (cheap literal check) and have `applyAssignment` skip the
+    // parent-walk by declaring each name local first.
+    const headWord = node.words[0];
+    const headName = headWord && headWord.type === 'LiteralWord' ? headWord.value : '';
+    const declScope = isDeclScopingCommand(headName);
+    const markReadonly = headName === 'readonly';
+    const markExport = headName === 'export';
+
+    const absorbedDecl = node.assignments.length > 0 && (declScope || markReadonly || markExport);
     for (const assign of node.assignments) {
       try {
+        if (declScope) this.env.declareLocal(assign.name);
         this.applyAssignment(assign, cmdExec);
+        if (markReadonly) this.env.setReadonly(assign.name);
+        if (markExport) this.env.export(assign.name);
       } catch (e) {
         if (e instanceof Error) this.output.push(e.message + '\n');
         this.env.lastExitCode = 1;
         return;
       }
+    }
+    if (absorbedDecl && node.words.length === 1) {
+      this.env.lastExitCode = 0;
+      return;
     }
 
     // If only assignments, no command to run
@@ -324,7 +364,7 @@ export class BashInterpreter {
     }
 
     // Command-position alias expansion happens before any resolution.
-    const args = this.expandAliases(expandWords(node.words, this.env, cmdExec, this.makeGlobFn()));
+    const args = this.expandAliases(expandWords(node.words, this.env, cmdExec, this.makeGlobFn(), this.homeFor()));
     const cmdName = args[0];
 
     // Handle eval: re-parse and execute the joined args
@@ -415,15 +455,50 @@ export class BashInterpreter {
     assign: import('@/bash/parser/ASTNode').Assignment,
     cmdExec: (cmd: string) => string,
   ): void {
-    // Array literal — `name=(elem …)` or `name+=(elem …)`
+    // Array literal — `name=(elem …)` or `name+=(elem …)`.
+    // When `subscript` is present the body is treated as an associative
+    // initializer (each elem must look like `[key]=value`).
     if (assign.arrayElements !== undefined) {
-      const elems = expandWords(assign.arrayElements, this.env, cmdExec, this.makeGlobFn());
+      const elems = expandWords(assign.arrayElements, this.env, cmdExec, this.makeGlobFn(), this.homeFor());
+      const looksAssoc = elems.every(e => /^\[[^\]]+\]=/.test(e));
+      if (this.env.isAssoc(assign.name) || (looksAssoc && elems.length > 0)) {
+        if (!assign.append) {
+          // Replace the map by re-declaring (clears existing entries).
+          this.env.unset(assign.name);
+          this.env.declareAssoc(assign.name);
+        }
+        for (const e of elems) {
+          const m = e.match(/^\[([^\]]+)\]=(.*)$/);
+          if (m) this.env.setAssocElement(assign.name, m[1], m[2]);
+        }
+        return;
+      }
       if (assign.append) this.env.appendArray(assign.name, elems);
       else this.env.setArray(assign.name, elems);
       return;
     }
+    // Element assignment — `name[subscript]=value` (indexed or assoc).
+    if (assign.subscript !== undefined) {
+      const valueWord = assign.value ? expandWord(assign.value, this.env, cmdExec, this.homeFor()) : '';
+      // Substitute simple `$name` / `${name}` refs inside the subscript
+      // so `m[$k]=v` works without re-running the full expansion pipeline.
+      const key = assign.subscript.replace(/\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?/g,
+        (_, n) => this.env.get(n) ?? '');
+      if (this.env.isAssoc(assign.name)) {
+        const prev = assign.append ? (this.env.getAssocElement(assign.name, key) ?? '') : '';
+        this.env.setAssocElement(assign.name, key, prev + valueWord);
+        return;
+      }
+      const idx = Number.parseInt(key, 10);
+      const current = this.env.getArray(assign.name) ?? [];
+      const next = [...current];
+      while (next.length <= idx) next.push('');
+      next[idx] = assign.append ? (next[idx] ?? '') + valueWord : valueWord;
+      this.env.setArray(assign.name, next);
+      return;
+    }
     // Scalar — `name=value` or `name+=value`
-    const value = assign.value ? expandWord(assign.value, this.env, cmdExec) : '';
+    const value = assign.value ? expandWord(assign.value, this.env, cmdExec, this.homeFor()) : '';
     if (assign.append) {
       const existing = this.env.get(assign.name) ?? '';
       this.env.set(assign.name, existing + value);
@@ -603,7 +678,7 @@ export class BashInterpreter {
   private visitFor(node: ForClause): void {
     const cmdExec = (cmd: string) => this.executeSubcommand(cmd);
     const items = node.words
-      ? expandWords(node.words, this.env, cmdExec, this.makeGlobFn())
+      ? expandWords(node.words, this.env, cmdExec, this.makeGlobFn(), this.homeFor())
       : this.env.getPositionalArgs();
 
     for (const item of items) {
@@ -902,6 +977,15 @@ export class BashInterpreter {
 }
 
 /** Glob-style match used by `[[ … ]]`'s `==` / `!=`. */
+/**
+ * True for the bash "declaration commands" that confine `name=value`
+ * arguments to the local scope. `readonly` and `export` are NOT in
+ * this list — they keep the parent-walking semantics.
+ */
+function isDeclScopingCommand(name: string): boolean {
+  return name === 'local' || name === 'declare' || name === 'typeset';
+}
+
 function globMatch(pattern: string, value: string): boolean {
   // Convert the glob to a regex anchored on both ends.
   let src = '';

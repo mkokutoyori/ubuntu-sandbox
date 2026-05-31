@@ -1568,6 +1568,10 @@ export class LinuxCommandExecutor {
         }
         return hits;
       },
+      homeFor: (user: string) => {
+        const u = this.userMgr.getUser(user);
+        return u ? u.home : null;
+      },
     };
   }
 
