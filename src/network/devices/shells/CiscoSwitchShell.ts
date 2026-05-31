@@ -121,7 +121,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // ── Config-vlan mode ──
     this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
       if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
-      return this.d().renameVLAN(this.selectedVlan, args[0]) ? '' : '% VLAN not found';
+      const ok = this.d().renameVLAN(this.selectedVlan, args[0]);
+      if (ok) this.d().getVtpAgent().onLocalVlanChange();
+      return ok ? '' : '% VLAN not found';
     });
 
     // ── Spanning Tree (L2, switch-only) ──
@@ -145,6 +147,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     });
     this.registerDaiCommands();
     this.registerPortSecurityCommands();
+    this.registerVtpCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) {
@@ -648,8 +651,69 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
+  private registerVtpCommands(): void {
+    this.configTrie.registerGreedy('vtp domain', 'Set VTP domain', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d().getVtpAgent().setDomain(args[0]);
+      return '';
+    });
+    this.configTrie.registerGreedy('vtp mode', 'Set VTP mode', (args) => {
+      const m = (args[0] ?? '').toLowerCase();
+      if (m !== 'server' && m !== 'client' && m !== 'transparent' && m !== 'off') {
+        return '% Invalid VTP mode';
+      }
+      this.d().getVtpAgent().setMode(m);
+      return '';
+    });
+    this.configTrie.registerGreedy('vtp password', 'Set VTP password', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d().getVtpAgent().setPassword(args[0]);
+      return '';
+    });
+    this.configTrie.registerGreedy('vtp version', 'Set VTP version', (args) => {
+      const v = parseInt(args[0] ?? '', 10);
+      if (v !== 1 && v !== 2 && v !== 3) return '% Invalid VTP version';
+      this.d().getVtpAgent().setVersion(v as 1 | 2 | 3);
+      return '';
+    });
+    this.configTrie.register('vtp pruning', 'Enable VTP pruning', () => {
+      this.d().getVtpAgent().setPruning(true);
+      return '';
+    });
+    this.configTrie.register('no vtp pruning', 'Disable VTP pruning', () => {
+      this.d().getVtpAgent().setPruning(false);
+      return '';
+    });
+
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show vtp status', 'Display VTP status', () => {
+        const cfg = this.d().getVtpAgent().getConfig();
+        const numVlans = this.d().getVLANs().size;
+        return [
+          `VTP Version capable             : 1 to ${cfg.version}`,
+          `VTP version running             : ${cfg.version}`,
+          `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
+          `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
+          `VTP Traps Generation            : Disabled`,
+          `Device ID                       : ${cfg.updaterMac}`,
+          `Configuration last modified by  : ${cfg.updaterMac}`,
+          `Local updater ID is ${cfg.updaterMac}`,
+          ``,
+          `Feature VLAN:`,
+          `--------------`,
+          `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}`,
+          `Maximum VLANs supported locally : 1005`,
+          `Number of existing VLANs        : ${numVlans}`,
+          `Configuration Revision          : ${cfg.revision}`,
+        ].join('\n');
+      });
+      t.register('show vtp counters', 'Display VTP counters', () => {
+        return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
+      });
+    }
+  }
+
   private registerStpCommands(): void {
-    // Global: `spanning-tree mst configuration` → config-mst sub-mode
     this.configTrie.register('spanning-tree mst configuration',
       'Enter MST configuration sub-mode', () => {
         this.mode = 'config-mst';
@@ -972,7 +1036,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
         return '% Invalid VLAN ID';
       }
-      for (const id of ids) if (!this.d().getVLAN(id)) this.d().createVLAN(id);
+      let created = false;
+      for (const id of ids) if (!this.d().getVLAN(id)) { this.d().createVLAN(id); created = true; }
+      if (created) this.d().getVtpAgent().onLocalVlanChange();
       if (ids.length === 1) {
         this.selectedVlan = ids[0];
         this.mode = 'config-vlan';
@@ -985,7 +1051,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const id = parseInt(args[0], 10);
       if (isNaN(id)) return '% Invalid VLAN ID';
       if (id === 1) return '% Default VLAN 1 may not be deleted.';
-      return this.d().deleteVLAN(id) ? '' : `% VLAN ${id} not found.`;
+      const ok = this.d().deleteVLAN(id);
+      if (ok) this.d().getVtpAgent().onLocalVlanChange();
+      return ok ? '' : `% VLAN ${id} not found.`;
     });
 
     this.configTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
@@ -1339,6 +1407,8 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     if (lldpAgent) for (const l of lldpAgent.runningConfigGlobalLines()) lines.push(l);
     const stpAgent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
     if (stpAgent) for (const l of stpAgent.runningConfigGlobalLines()) lines.push(l);
+    const vtpAgent = (sw as unknown as { getVtpAgent?: () => import('../../vtp/VtpAgent').VtpAgent }).getVtpAgent?.();
+    if (vtpAgent) for (const l of vtpAgent.runningConfigGlobalLines()) lines.push(l);
     if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
 
     const ports = sw._getPortsInternal();

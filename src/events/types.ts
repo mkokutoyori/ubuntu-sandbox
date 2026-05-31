@@ -31,6 +31,7 @@ import type { LldpDomainEvent } from '@/network/lldp/events';
 import type { DtpDomainEvent } from '@/network/dtp/events';
 import type { StpDomainEvent } from '@/network/stp/events';
 import type { LacpDomainEvent } from '@/network/lacp/events';
+import type { VtpDomainEvent } from '@/network/vtp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
@@ -282,6 +283,7 @@ export type DomainEvent =
   | DtpDomainEvent
   | StpDomainEvent
   | LacpDomainEvent
+  | VtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
   // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)

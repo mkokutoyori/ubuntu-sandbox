@@ -1165,6 +1165,41 @@ export abstract class Switch extends Equipment {
     }
   }
 
+  _vtpListVlans(): Array<{ id: number; name: string; mtu: number; type: 'ethernet' }> {
+    const out: Array<{ id: number; name: string; mtu: number; type: 'ethernet' }> = [];
+    for (const [, v] of this.vlans) {
+      out.push({ id: v.id, name: v.name, mtu: 1500, type: 'ethernet' });
+    }
+    return out;
+  }
+
+  _vtpApplyVlans(incoming: ReadonlyArray<{ id: number; name: string }>): { added: number[]; removed: number[] } {
+    const incomingIds = new Set(incoming.map(v => v.id));
+    const added: number[] = [];
+    const removed: number[] = [];
+    for (const [id] of this.vlans) {
+      if (id === 1) continue;
+      if (!incomingIds.has(id)) {
+        if (this.deleteVLAN(id)) removed.push(id);
+      }
+    }
+    for (const v of incoming) {
+      if (v.id === 1) continue;
+      const existing = this.vlans.get(v.id);
+      if (!existing) {
+        if (this.createVLAN(v.id, v.name)) added.push(v.id);
+      } else if (existing.name !== v.name) {
+        this.renameVLAN(v.id, v.name);
+      }
+    }
+    return { added, removed };
+  }
+
+  _vtpIsTrunkPort(portName: string): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    return !!cfg && cfg.mode === 'trunk';
+  }
+
   // ─── DAI Accessors ────────────────────────────────────────────────
 
   _getArpInspectionConfig(): ArpInspectionConfig { return this.arpInspection; }
