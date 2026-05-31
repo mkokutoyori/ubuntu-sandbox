@@ -15,3 +15,10 @@ export type { TimeMeasurement, TimeFormat } from './TimeReporter';
 
 export { runWatch, parseWatchArgs } from './WatchRunner';
 export type { WatchOptions, WatchResult, WatchRuntime } from './WatchRunner';
+
+export {
+  TailCommand, runTail, parseTailArgs, sliceTail, tailHeader,
+} from './TailCommand';
+export type {
+  TailOptions, TailSnapshot, TailSink, TailFollowHandle, TailFs, TailRunResult,
+} from './TailCommand';

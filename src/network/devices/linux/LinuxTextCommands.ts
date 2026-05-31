@@ -300,39 +300,6 @@ export function cmdHead(ctx: ShellContext, args: string[], stdin?: string): stri
   return results.join('\n');
 }
 
-export function cmdTail(ctx: ShellContext, args: string[], stdin?: string): string {
-  let lines = 10;
-  let follow = false;
-  const files: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-n' && args[i + 1]) { lines = parseInt(args[i + 1], 10); i++; continue; }
-    if (a === '-f') { follow = true; continue; }
-    if (a.match(/^-\d+$/)) { lines = parseInt(a.slice(1), 10); continue; }
-    if (!a.startsWith('-')) files.push(a);
-  }
-
-  const processContent = (content: string): string => {
-    const allLines = content.split('\n');
-    // Remove trailing empty line if content ends with \n
-    if (allLines.length > 0 && allLines[allLines.length - 1] === '') allLines.pop();
-    return allLines.slice(-lines).join('\n');
-  };
-
-  if (files.length === 0) {
-    return stdin !== undefined ? processContent(stdin) : '';
-  }
-
-  const results: string[] = [];
-  for (const f of files) {
-    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    const content = ctx.vfs.readFile(absPath);
-    if (content !== null) results.push(processContent(content));
-  }
-  // tail -f just returns content for our simulator
-  return results.join('\n');
-}
 
 export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string {
   let countBytes = false;

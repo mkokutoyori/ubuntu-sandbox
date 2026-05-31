@@ -40,9 +40,27 @@ export interface DirEntry {
   inode: INode;
 }
 
+/**
+ * Notified on every successful `writeFile()` (incl. appends and full
+ * rewrites). `previous` is the file's content before the write, `current`
+ * after; for newly-created files `previous` is the empty string. Listeners
+ * MUST NOT throw — exceptions are swallowed so a faulty subscriber can't
+ * corrupt the filesystem.
+ */
+export type VfsWriteListener = (event: VfsWriteEvent) => void;
+export interface VfsWriteEvent {
+  readonly path: string;
+  readonly previous: string;
+  readonly current: string;
+  readonly created: boolean;
+  readonly truncated: boolean;
+}
+
 export class VirtualFileSystem {
   private inodes: Map<number, INode> = new Map();
   private nextInodeId = 1;
+  /** Per-path subscribers — see `onWrite()`. */
+  private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
 
   constructor() {
     this.initializeRootFS();
@@ -455,6 +473,7 @@ export class VirtualFileSystem {
     if (inode?.type === 'file') {
       // Generated pseudo-files (procfs) are read-only — writes are discarded.
       if (inode.generator) return true;
+      const previous = inode.content;
       if (append) {
         inode.content += content;
       } else {
@@ -462,6 +481,13 @@ export class VirtualFileSystem {
       }
       inode.size = inode.content.length;
       inode.mtime = Date.now();
+      this.emitWrite({
+        path: this.canonicalKey(path),
+        previous,
+        current: inode.content,
+        created: false,
+        truncated: !append && previous.length > inode.content.length,
+      });
       return true;
     }
 
@@ -477,10 +503,52 @@ export class VirtualFileSystem {
       // Create new file
       const perms = 0o666 & ~umask;
       const newInode = this.createFileAt(path, content, perms, uid, gid);
+      if (newInode !== null) {
+        this.emitWrite({
+          path: this.canonicalKey(path),
+          previous: '',
+          current: content,
+          created: true,
+          truncated: false,
+        });
+      }
       return newInode !== null;
     }
 
     return false;
+  }
+
+  /**
+   * Subscribe to writes against `path`. The returned function detaches the
+   * listener; it is safe to call more than once. Multiple subscribers per
+   * path are supported — each receives every event.
+   */
+  onWrite(path: string, listener: VfsWriteListener): () => void {
+    const key = this.canonicalKey(path);
+    let set = this.writeListeners.get(key);
+    if (!set) { set = new Set(); this.writeListeners.set(key, set); }
+    set.add(listener);
+    return () => {
+      const s = this.writeListeners.get(key);
+      if (!s) return;
+      s.delete(listener);
+      if (s.size === 0) this.writeListeners.delete(key);
+    };
+  }
+
+  /** Fan out a write event to every subscriber registered against `path`. */
+  private emitWrite(event: VfsWriteEvent): void {
+    const set = this.writeListeners.get(event.path);
+    if (!set || set.size === 0) return;
+    for (const listener of set) {
+      try { listener(event); }
+      catch { /* listeners must not corrupt the FS */ }
+    }
+  }
+
+  /** Stable lookup key for the listener map; collapses `/a//b` → `/a/b`. */
+  private canonicalKey(path: string): string {
+    return path.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
   }
 
   deleteFile(path: string): boolean {

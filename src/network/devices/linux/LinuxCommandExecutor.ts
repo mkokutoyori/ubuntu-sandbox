@@ -10,7 +10,7 @@ import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
+import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
@@ -19,7 +19,8 @@ import {
 import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
 import {
   runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
-  type TestFs, type TestEnv,
+  runTail,
+  type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
 } from './coreutils';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
@@ -1686,7 +1687,14 @@ export class LinuxCommandExecutor {
       case 'fgrep': return cmdGrep(c, args, stdin, 'fgrep');
       case 'rgrep': return cmdGrep(c, ['-r', ...args], stdin);
       case 'head': return { output: cmdHead(c, args, stdin), exitCode: 0 };
-      case 'tail': return { output: cmdTail(c, args, stdin), exitCode: 0 };
+      case 'tail': {
+        const r = runTail(this.tailFs(), this.cwd, args, stdin);
+        if (r.kind === 'snapshot') return { output: r.output, exitCode: r.exitCode };
+        // Follow mode reached the dispatcher (no interactive sink available):
+        // emit the snapshot and exit 0 so non-streaming callers degrade
+        // gracefully. Interactive callers should use `startTailFollow()`.
+        return { output: r.preflight().output, exitCode: 0 };
+      }
       case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
       case 'sort': return { output: cmdSort(c, args, stdin), exitCode: 0 };
       case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
@@ -3026,6 +3034,47 @@ export class LinuxCommandExecutor {
       );
     }
     return rows.join('\n');
+  }
+
+  /**
+   * Build the filesystem facade required by `tail`. Resolves paths
+   * against the executor's current cwd and forwards writes to the VFS
+   * subscription registry installed in step 1.
+   */
+  private tailFs(): TailFs {
+    return {
+      readFile: (p) => this.vfs.readFile(p),
+      exists: (p) => this.vfs.exists(p),
+      normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+      onWrite: (p, listener) => this.vfs.onWrite(p, listener),
+    };
+  }
+
+  /**
+   * Inspect a command line and, if it is a `tail -f` / `tail -F`
+   * invocation, return a `TailRunResult.follow` descriptor the terminal
+   * layer can attach a sink to. Returns `null` for non-streaming tails
+   * (snapshot mode) and for any other command — the caller should then
+   * fall back to {@link execute}. Inputs go through the same
+   * whitespace-tolerant tokeniser as the executor's main path so quoting
+   * and `--lines=+5` style work consistently.
+   */
+  tryStartTailFollow(commandLine: string): Extract<TailRunResult, { kind: 'follow' }> | null {
+    const trimmed = commandLine.trim();
+    if (!/^tail\b/.test(trimmed)) return null;
+    const tokens = simpleTokenize(trimmed);
+    if (tokens.length === 0 || tokens[0] !== 'tail') return null;
+    const r = runTail(this.tailFs(), this.cwd, tokens.slice(1));
+    return r.kind === 'follow' ? r : null;
+  }
+
+  /**
+   * Convenience: open a follow stream end-to-end for the given line and
+   * attach `sink`. Returns `null` if `commandLine` is not a follow tail.
+   */
+  startTailFollow(commandLine: string, sink: TailSink): TailFollowHandle | null {
+    const follow = this.tryStartTailFollow(commandLine);
+    return follow ? follow.attach(sink) : null;
   }
 
   /** Build the shell-state view consumed by which / type / command. */
