@@ -17,11 +17,43 @@ import {
   displayIpIntBrief,
 } from './shells/huawei/HuaweiDisplayCommands';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
+import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
+import type { EthernetFrame } from '../core/types';
+import type { NeighborDTO } from './inspection/DeviceStateView';
+import type { IEventBus } from '@/events/EventBus';
 
 export class HuaweiRouter extends Router {
+  private readonly lldpAgent: LldpAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
+    this.lldpAgent = new LldpAgent({
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getType: () => this.getType(),
+      getPort: (n) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p, f) => { this.sendFrame(p, f); },
+    }, () => this.getBus());
+    this.lldpAgent.start();
   }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
+  }
+
+  protected override handleFrame(portName: string, frame: EthernetFrame): void {
+    if (frame.etherType === ETHERTYPE_LLDP
+        && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC) {
+      this.lldpAgent.handleFrame(portName, frame);
+      return;
+    }
+    super.handleFrame(portName, frame);
+  }
+
+  getLldpAgent(): LldpAgent { return this.lldpAgent; }
+  getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;
@@ -151,4 +183,16 @@ export class HuaweiRouter extends Router {
       'Press any key to get started.',
     ].join('\n');
   }
+}
+
+function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
+  return rows.map(n => ({
+    localPort: n.localPort,
+    remoteHost: n.systemName,
+    remotePort: n.portId,
+    remoteType: n.remoteType,
+    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
+    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
+      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
+  }));
 }

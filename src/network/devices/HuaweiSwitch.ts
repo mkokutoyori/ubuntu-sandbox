@@ -1,37 +1,72 @@
-/**
- * HuaweiSwitch - Huawei S-series Layer 2 Switch (VRP)
- *
- * Huawei-specific behaviors:
- *   - Port naming: GigabitEthernet0/0/X (3-slot format)
- *   - STP: Standard 802.1D → ports start in listening state
- *     Must traverse listening → learning → forwarding before traffic flows.
- *   - VLAN deletion: access ports are moved back to default VLAN (VLAN 1).
- *     Unlike Cisco, ports do NOT become suspended — they continue
- *     forwarding traffic in VLAN 1.
- *   - VLAN recreation: no-op (ports were already moved to VLAN 1)
- *   - CLI: HuaweiVRPSwitchShell (VRP-style user/system/interface modes)
- *   - Boot: Huawei VRP S5720 format
- */
-
-import { DeviceType } from '../core/types';
+import { DeviceType, EthernetFrame } from '../core/types';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
+import { LldpAgent, type LldpNeighbor } from '../lldp/LldpAgent';
+import { ETHERTYPE_LLDP } from '../lldp/types';
+import { StpAgent, type StpForwardState } from '../stp/StpAgent';
+import { ETHERTYPE_STP } from '../stp/types';
+import type { NeighborDTO } from './inspection/DeviceStateView';
+import type { IEventBus } from '@/events/EventBus';
 
 export class HuaweiSwitch extends Switch {
+  private readonly lldpAgent: LldpAgent;
+  private readonly stpAgent: StpAgent;
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
+    const hostBase = {
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getType: () => this.getType(),
+      getPort: (n: string) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    const firstPort = this.getPorts()[0];
+    const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
+    this.stpAgent = new StpAgent({
+      ...hostBase,
+      onForwardStateChanged: (p, s) => this.applyStpForwardState(p, s),
+    }, () => this.getBus(), baseMac);
+    this.lldpAgent.start();
+    this.stpAgent.start();
   }
 
-  // ─── Vendor Hooks ──────────────────────────────────────────────
+  private applyStpForwardState(portName: string, state: StpForwardState): void {
+    if (state === 'forwarding') this.setSTPState(portName, 'forwarding');
+    else if (state === 'blocking') this.setSTPState(portName, 'blocking');
+    else this.setSTPState(portName, 'disabled');
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
+    if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
+  }
+
+  protected override handleFrame(portName: string, frame: EthernetFrame): void {
+    if (frame.etherType === ETHERTYPE_LLDP) {
+      this.lldpAgent.handleFrame(portName, frame);
+      return;
+    }
+    if (frame.etherType === ETHERTYPE_STP) {
+      this.stpAgent.handleFrame(portName, frame);
+      return;
+    }
+    super.handleFrame(portName, frame);
+  }
+
+  getLldpAgent(): LldpAgent { return this.lldpAgent; }
+  getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
+  getStpAgent(): StpAgent { return this.stpAgent; }
 
   protected getPortName(index: number, _total: number): string {
     return `GigabitEthernet0/0/${index}`;
   }
 
   protected getInitialSTPState(): STPPortState {
-    // Huawei 802.1D: ports start in listening state
     return 'listening';
   }
 
@@ -39,35 +74,18 @@ export class HuaweiSwitch extends Switch {
     return new HuaweiSwitchShell();
   }
 
-  /**
-   * Huawei VRP VLAN deletion behavior:
-   * Access ports assigned to a deleted VLAN are moved back to the
-   * default VLAN (VLAN 1). They continue forwarding traffic normally.
-   * This differs from Cisco where ports become suspended.
-   */
-  protected onVlanDeleted(vlanId: number, affectedPorts: string[]): void {
+  protected onVlanDeleted(_vlanId: number, affectedPorts: string[]): void {
     const defaultVlan = this.vlans.get(1);
     for (const portName of affectedPorts) {
       const cfg = this._getSwitchportConfigs().get(portName);
-      if (cfg) {
-        cfg.accessVlan = 1; // Move port back to default VLAN
-      }
-      if (defaultVlan) {
-        defaultVlan.ports.add(portName);
-      }
-      // Port stays active — NOT suspended
+      if (cfg) cfg.accessVlan = 1;
+      if (defaultVlan) defaultVlan.ports.add(portName);
       this.portVlanStates.set(portName, 'active');
     }
   }
 
-  /**
-   * Huawei VLAN recreation behavior:
-   * No ports to reactivate since they were never suspended.
-   * Ports were moved to VLAN 1 on deletion and must be explicitly
-   * re-assigned to the new VLAN via CLI commands.
-   */
   protected onVlanRecreated(_vlanId: number): string[] {
-    return []; // No automatic reactivation
+    return [];
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -85,4 +103,16 @@ export class HuaweiSwitch extends Switch {
       'Press ENTER to get started.',
     ].join('\n');
   }
+}
+
+function lldpToNeighborDTO(rows: readonly LldpNeighbor[]): NeighborDTO[] {
+  return rows.map(n => ({
+    localPort: n.localPort,
+    remoteHost: n.systemName,
+    remotePort: n.portId,
+    remoteType: n.remoteType,
+    remotePlatform: n.systemDescription.split(',')[0] ?? n.systemDescription,
+    remoteCapability: n.remoteCapabilities[0] === 'Router' ? 'Router'
+      : n.remoteCapabilities[0] === 'Bridge' ? 'Switch' : 'Host',
+  }));
 }

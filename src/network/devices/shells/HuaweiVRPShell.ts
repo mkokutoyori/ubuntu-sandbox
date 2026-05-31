@@ -762,6 +762,32 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t);
+
+    const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
+      const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      if (ag) fn(ag);
+    };
+    t.register('lldp enable', 'Enable LLDP globally', () => {
+      applyLldp(a => a.setEnabled(true));
+      return '';
+    });
+    t.register('undo lldp enable', 'Disable LLDP globally', () => {
+      applyLldp(a => a.setEnabled(false));
+      return '';
+    });
+    t.registerGreedy('lldp message-transmission interval', 'Hello period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 5 || n > 32768) return 'Error: Wrong parameter found.';
+      applyLldp(a => a.setTimerSec(n));
+      return '';
+    });
+    t.registerGreedy('lldp message-transmission hold-multiplier', 'Hold multiplier', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 2 || n > 10) return 'Error: Wrong parameter found.';
+      applyLldp(a => a.setHoldtimeMultiplier(n));
+      return '';
+    });
+
     t.registerGreedy('header', 'Configure login/shell banner', (args) => {
       const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof router._setSshBanner === 'function') {
