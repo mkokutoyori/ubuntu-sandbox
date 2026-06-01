@@ -41,6 +41,7 @@ import type { IgmpDomainEvent } from '@/network/igmp/events';
 import type { IgmpSnoopingDomainEvent } from '@/network/igmp-snooping/events';
 import type { PimDomainEvent } from '@/network/pim/events';
 import type { SyslogDomainEvent } from '@/network/syslog/events';
+import type { RadiusDomainEvent } from '@/network/radius/events';
 import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
@@ -303,6 +304,7 @@ export type DomainEvent =
   | IgmpSnoopingDomainEvent
   | PimDomainEvent
   | SyslogDomainEvent
+  | RadiusDomainEvent
   | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent

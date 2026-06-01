@@ -35,6 +35,9 @@ import { IP_PROTO_IGMP } from '../igmp/types';
 import { PimAgent } from '../pim/PimAgent';
 import { IP_PROTO_PIM, PIM_ALL_ROUTERS_MAC } from '../pim/types';
 import { SyslogAgent } from '../syslog/SyslogAgent';
+import { RadiusClientAgent } from '../radius/RadiusClientAgent';
+import { RadiusServerAgent } from '../radius/RadiusServerAgent';
+import { UDP_PORT_RADIUS_AUTH } from '../radius/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -51,6 +54,8 @@ export class CiscoRouter extends Router {
   private readonly igmpAgent: IgmpAgent;
   private readonly pimAgent: PimAgent;
   private readonly syslogAgent: SyslogAgent;
+  private readonly radiusClient: RadiusClientAgent;
+  private readonly radiusServer: RadiusServerAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
@@ -71,6 +76,8 @@ export class CiscoRouter extends Router {
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
     this.pimAgent = new PimAgent(hostBase, () => this.getBus());
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
+    this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
+    this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.hsrpAgent.start();
@@ -81,6 +88,8 @@ export class CiscoRouter extends Router {
     this.igmpAgent.start();
     this.pimAgent.start();
     this.syslogAgent.start();
+    this.radiusClient.start();
+    this.radiusServer.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -95,6 +104,8 @@ export class CiscoRouter extends Router {
     if (this.igmpAgent) { this.igmpAgent.stop(); this.igmpAgent.start(); }
     if (this.pimAgent) { this.pimAgent.stop(); this.pimAgent.start(); }
     if (this.syslogAgent) { this.syslogAgent.stop(); this.syslogAgent.start(); }
+    if (this.radiusClient) { this.radiusClient.stop(); this.radiusClient.start(); }
+    if (this.radiusServer) { this.radiusServer.stop(); this.radiusServer.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -123,6 +134,14 @@ export class CiscoRouter extends Router {
         }
         if (udp.destinationPort === UDP_PORT_BFD_CONTROL) {
           this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.destinationPort === UDP_PORT_RADIUS_AUTH) {
+          this.radiusServer.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
+          this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
           return;
         }
       }
@@ -185,6 +204,8 @@ export class CiscoRouter extends Router {
   getIgmpAgent(): IgmpAgent { return this.igmpAgent; }
   getPimAgent(): PimAgent { return this.pimAgent; }
   getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
+  getRadiusClient(): RadiusClientAgent { return this.radiusClient; }
+  getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
