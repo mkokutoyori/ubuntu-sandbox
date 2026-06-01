@@ -164,6 +164,8 @@ export class LinuxTerminalSession extends TerminalSession {
    * ('&&' = only-on-success, '||' = only-on-failure, ';' = always).
    */
   private _pendingChainAfterEditor: Array<{ connector: ';' | '&&' | '||'; cmd: string }> | null = null;
+  /** Active `tail -f` / `tail -F` stream — Ctrl+C cancels it. */
+  private activeTailStream: import('@/network/devices/linux/coreutils').TailFollowHandle | null = null;
 
   /**
    * Local-bash IShell instance the session delegates plain-command
@@ -666,6 +668,14 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Command execution ───────────────────────────────────────────
 
   protected onEnter(): void {
+    // While a `tail -f` stream is active, Enter just emits a blank line
+    // (matching real bash behaviour); the only way out is Ctrl+C.
+    if (this.activeTailStream) {
+      this.addLine('');
+      this.input = '';
+      this.notify();
+      return;
+    }
     // Drain BOTH input buffers — `this.input` is the canonical local
     // console buffer, `_inputBuf` is the sub-shell buffer. When a
     // sub-shell unwinds back to the root bash, programmatic drivers /
@@ -681,6 +691,60 @@ export class LinuxTerminalSession extends TerminalSession {
     // command in the session transcript.
     this.executeCommand(cmd);
     this.notify();
+  }
+
+  /**
+   * Detect `tail -f` / `tail -F` and, on a match, open a follow stream
+   * whose sink pumps appended file content through `addLine` so React
+   * re-renders pick it up live. Returns `true` when a stream was opened
+   * (caller must stop processing this command); `false` for any other
+   * input. Falls back silently when the device is not a LinuxMachine or
+   * no shell session is allocated.
+   */
+  private tryStartTailStream(commandLine: string): boolean {
+    if (this.activeTailStream) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const handle = dev.startTailFollowInSession(commandLine, this.shell, {
+      write: (chunk) => this.emitTailChunk(chunk),
+      warn:  (msg)   => this.addLine(msg, 'error'),
+      error: (msg)   => this.addLine(msg, 'error'),
+    });
+    if (!handle) return false;
+    this.activeTailStream = handle;
+    this.notify();
+    return true;
+  }
+
+  /**
+   * Split a tail chunk into terminal lines. The stream is append-only
+   * and may carry partial lines, so we keep a small carry buffer so the
+   * next chunk's leading bytes join the previous line cleanly.
+   */
+  private _tailCarry = '';
+  private emitTailChunk(chunk: string): void {
+    const combined = this._tailCarry + chunk;
+    const segments = combined.split('\n');
+    this._tailCarry = segments.pop() ?? '';
+    for (const seg of segments) this.addLine(seg);
+    this.notify();
+  }
+
+  /**
+   * If a tail stream is active, cancel it and emit `^C`. Otherwise
+   * defer to the base behaviour (clear input + echo prompt^C).
+   */
+  protected override onCtrlC(): void {
+    if (this.activeTailStream) {
+      this.activeTailStream.cancel();
+      this.activeTailStream = null;
+      // Flush any trailing partial line then mark the interruption.
+      if (this._tailCarry !== '') { this.addLine(this._tailCarry); this._tailCarry = ''; }
+      this.addLine('^C');
+      this.notify();
+      return;
+    }
+    super.onCtrlC();
   }
 
   private async executeCommand(cmd: string): Promise<void> {
@@ -724,6 +788,12 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     this.pushHistory(typed);
+
+    // Intercept `tail -f` / `tail -F` — open a streaming follow on the
+    // VFS and let appended bytes flow through addLine() until Ctrl+C
+    // cancels. The handle is parked on `activeTailStream`; subsequent
+    // input is ignored by `onEnter` until the stream is torn down.
+    if (this.tryStartTailStream(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
     // (`mkdir foo && nano foo/x`). The chain is parsed up to the first

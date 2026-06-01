@@ -64,7 +64,46 @@ export type Command =
   | CaseClause
   | FunctionDef
   | BraceGroup
-  | Subshell;
+  | Subshell
+  | DoubleBracket
+  | ArithmeticCommand
+  | CStyleForClause;
+
+// ─── `[[ … ]]` extended-test expression tree ────────────────────
+
+/**
+ * A parsed `[[ … ]]` expression. Stored as a small tree rather than
+ * verbatim tokens so the interpreter can apply bash semantics —
+ * `=~` regex, glob `==`, lexical `<`/`>`, no word-splitting — without
+ * re-tokenising at run time.
+ */
+export type DBExpr =
+  | { kind: 'or';   left: DBExpr; right: DBExpr }
+  | { kind: 'and';  left: DBExpr; right: DBExpr }
+  | { kind: 'not';  expr: DBExpr }
+  | { kind: 'unary'; op: string; arg: Word }
+  | { kind: 'binary'; op: string; lhs: Word; rhs: Word }
+  | { kind: 'lit'; word: Word };
+
+export interface DoubleBracket extends ASTBase {
+  type: 'DoubleBracket';
+  expr: DBExpr;
+}
+
+/** `((expr))` standalone arithmetic command. */
+export interface ArithmeticCommand extends ASTBase {
+  type: 'ArithmeticCommand';
+  expression: string;
+}
+
+/** `for ((init; cond; update)) do … done` C-style for-loop. */
+export interface CStyleForClause extends ASTBase {
+  type: 'CStyleForClause';
+  init: string;            // empty string when omitted
+  cond: string;
+  update: string;
+  body: CommandList;
+}
 
 // ─── Simple Command ─────────────────────────────────────────────
 
@@ -207,7 +246,17 @@ export interface CompoundWord extends ASTBase {
 export interface Assignment extends ASTBase {
   type: 'Assignment';
   name: string;
-  value: Word | null;   // null if VAR= (empty)
+  value: Word | null;       // null if VAR= (empty)
+  /** Present for `name=(elem …)` indexed-array literals. */
+  arrayElements?: Word[];
+  /** True for `name+=value` / `name+=(…)` (append rather than replace). */
+  append?: boolean;
+  /**
+   * Present for `name[subscript]=value` element assignments. The string
+   * is the raw subscript (it gets expanded / interpreted at runtime —
+   * numeric for indexed arrays, string-key for associative arrays).
+   */
+  subscript?: string;
 }
 
 // ─── Redirection ────────────────────────────────────────────────

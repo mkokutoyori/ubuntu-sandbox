@@ -4,173 +4,222 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { ShellContext, expandGlob } from './LinuxFileCommands';
+import { runAwk, type AwkHost } from './awk';
+import { runSed, type SedFileIO } from './sed';
+import { compilePosix } from './regex/PosixRegex';
 
-export function cmdGrep(ctx: ShellContext, args: string[], stdin?: string): string {
-  let caseInsensitive = false;
-  let countOnly = false;
-  let recursive = false;
-  let invertMatch = false;
-  let lineNumbers = false;
-  let filesOnly = false;       // -l
-  let filesWithout = false;    // -L
-  let wholeWord = false;       // -w
-  let onlyMatching = false;    // -o
-  let quiet = false;           // -q
-  let forceFilename: boolean | null = null; // -H (true) / -h (false) / null (auto)
-  let afterContext = 0;        // -A N
-  let beforeContext = 0;       // -B N
+export type GrepVariant = 'grep' | 'egrep' | 'fgrep';
+
+interface GrepFlags {
+  caseInsensitive: boolean; countOnly: boolean; recursive: boolean; invert: boolean;
+  lineNumbers: boolean; filesOnly: boolean; filesWithout: boolean; wholeWord: boolean;
+  wholeLine: boolean; onlyMatching: boolean; quiet: boolean; suppressErrors: boolean;
+  forceFilename: boolean | null; extended: boolean; fixed: boolean;
+  maxCount: number; after: number; before: number;
+  includeGlobs: string[]; excludeGlobs: string[];
+}
+
+export function cmdGrep(
+  ctx: ShellContext, args: string[], stdin?: string, variant: GrepVariant = 'grep',
+): { output: string; exitCode: number } {
+  const fl: GrepFlags = {
+    caseInsensitive: false, countOnly: false, recursive: false, invert: false,
+    lineNumbers: false, filesOnly: false, filesWithout: false, wholeWord: false,
+    wholeLine: false, onlyMatching: false, quiet: false, suppressErrors: false,
+    forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep',
+    maxCount: Infinity, after: 0, before: 0, includeGlobs: [], excludeGlobs: [],
+  };
   const patterns: string[] = [];
   const files: string[] = [];
+  let patternGiven = false;
 
   let i = 0;
-  while (i < args.length) {
+  for (; i < args.length; i++) {
     const a = args[i];
-    if (a === '-e' && i + 1 < args.length) { patterns.push(args[++i]); i++; continue; }
-    if (a === '-A' && i + 1 < args.length) { afterContext = parseInt(args[++i]) || 0; i++; continue; }
-    if (a === '-B' && i + 1 < args.length) { beforeContext = parseInt(args[++i]) || 0; i++; continue; }
-    if (a === '-C' && i + 1 < args.length) { const n = parseInt(args[++i]) || 0; afterContext = n; beforeContext = n; i++; continue; }
+    if (a === '--') { i++; break; }
+    if (a === '-e' || a === '--regexp') { patterns.push(args[++i] ?? ''); patternGiven = true; continue; }
+    if (a.startsWith('--regexp=')) { patterns.push(a.slice(9)); patternGiven = true; continue; }
+    if (a === '-f' || a === '--file') { addPatternsFromFile(ctx, args[++i] ?? '', patterns); patternGiven = true; continue; }
+    if (a.startsWith('--file=')) { addPatternsFromFile(ctx, a.slice(7), patterns); patternGiven = true; continue; }
+    if (a === '-m' || a === '--max-count') { fl.maxCount = parseInt(args[++i], 10) || 0; continue; }
+    if (a.startsWith('--max-count=')) { fl.maxCount = parseInt(a.slice(12), 10) || 0; continue; }
+    if (a === '-A' || a === '--after-context') { fl.after = parseInt(args[++i], 10) || 0; continue; }
+    if (a === '-B' || a === '--before-context') { fl.before = parseInt(args[++i], 10) || 0; continue; }
+    if (a === '-C' || a === '--context') { const n = parseInt(args[++i], 10) || 0; fl.after = n; fl.before = n; continue; }
+    if (a.startsWith('--include=')) { fl.includeGlobs.push(a.slice(10)); continue; }
+    if (a.startsWith('--exclude=')) { fl.excludeGlobs.push(a.slice(10)); continue; }
+    if (a.startsWith('--color') || a === '--colour') continue;
+    if (a === '--line-number') { fl.lineNumbers = true; continue; }
+    if (a === '--ignore-case') { fl.caseInsensitive = true; continue; }
+    if (a === '--invert-match') { fl.invert = true; continue; }
+    if (a === '--word-regexp') { fl.wholeWord = true; continue; }
+    if (a === '--line-regexp') { fl.wholeLine = true; continue; }
+    if (a === '--only-matching') { fl.onlyMatching = true; continue; }
+    if (a === '--count') { fl.countOnly = true; continue; }
+    if (a === '--quiet' || a === '--silent') { fl.quiet = true; continue; }
+    if (a === '--no-messages') { fl.suppressErrors = true; continue; }
+    if (a === '--recursive') { fl.recursive = true; continue; }
+    if (a === '--fixed-strings') { fl.fixed = true; continue; }
+    if (a === '--extended-regexp') { fl.extended = true; continue; }
+    if (a === '--basic-regexp') { fl.extended = false; continue; }
     if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
-      for (const f of a.slice(1)) {
-        switch (f) {
-          case 'i': caseInsensitive = true; break;
-          case 'c': countOnly = true; break;
-          case 'r': case 'R': recursive = true; break;
-          case 'E': case 'P': break; // extended/perl regex: JS regex is already extended
-          case 'v': invertMatch = true; break;
-          case 'n': lineNumbers = true; break;
-          case 'l': filesOnly = true; break;
-          case 'L': filesWithout = true; break;
-          case 'w': wholeWord = true; break;
-          case 'o': onlyMatching = true; break;
-          case 'q': quiet = true; break;
-          case 'H': forceFilename = true; break;
-          case 'h': forceFilename = false; break;
-        }
-      }
-      i++;
+      if (!applyShortFlags(a.slice(1), fl)) { /* unknown short flag → ignore */ }
       continue;
     }
-    if (a === '--color' || a === '--color=auto' || a === '--color=always') { i++; continue; }
-    if (a === '--') { i++; break; } // end of options
-    if (a.startsWith('-') && a.length > 1) { i++; continue; } // skip unknown long options
-    if (patterns.length === 0) {
-      patterns.push(a);
-    } else {
-      const expanded = expandGlob(ctx, a);
-      files.push(...expanded);
-    }
-    i++;
+    if (a.startsWith('--')) continue; // unknown long option
+    if (!patternGiven) { patterns.push(a); patternGiven = true; continue; }
+    files.push(...expandGlob(ctx, a));
   }
-  // Remaining args after -- are files
-  while (i < args.length) {
-    const expanded = expandGlob(ctx, args[i]);
-    files.push(...expanded);
-    i++;
+  for (; i < args.length; i++) {
+    if (!patternGiven) { patterns.push(args[i]); patternGiven = true; continue; }
+    files.push(...expandGlob(ctx, args[i]));
   }
 
-  if (patterns.length === 0) {
-    return 'Usage: grep [OPTION]... PATTERN [FILE]...\n';
-  }
+  if (!patternGiven) return { output: 'Usage: grep [OPTION]... PATTERN [FILE]...', exitCode: 2 };
 
-  // Build regex
-  let patternStr = patterns.join('|');
-  if (wholeWord) patternStr = `\\b(?:${patternStr})\\b`;
-  const flags = caseInsensitive ? 'gi' : 'g';
-  let regex: RegExp;
-  try {
-    regex = new RegExp(patternStr, flags);
-  } catch {
-    regex = new RegExp(patternStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-  }
+  const matchers = patterns.map(p => compilePosix(p, {
+    extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
+    wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
+  }));
+  const lineMatches = (line: string): boolean => {
+    const hit = matchers.some(re => { re.lastIndex = 0; return re.test(line); });
+    return hit !== fl.invert;
+  };
+
+  // Recursive default: when -r and no files, search the current directory.
+  if (fl.recursive && files.length === 0) files.push('.');
 
   const results: string[] = [];
   const errors: string[] = [];
+  let anyMatch = false;
 
-  // Process stdin
-  if (files.length === 0 && stdin !== undefined) {
-    if (quiet) return '';
-    const lines = stdin.split('\n');
-    // Remove trailing empty line if input ends with \n
-    if (lines.length > 0 && lines[lines.length - 1] === '' && stdin.endsWith('\n')) lines.pop();
-    grepLines(lines, regex, invertMatch, lineNumbers, countOnly, onlyMatching, false, '',
-      afterContext, beforeContext, results);
-    return results.join('\n');
+  if (files.length === 0) {
+    const lines = splitInputLines(stdin ?? '');
+    const n = grepLines(lines, matchers, fl, false, '', lineMatches, results);
+    if (n > 0) anyMatch = true;
+    if (fl.quiet) return { output: '', exitCode: anyMatch ? 0 : 1 };
+    return { output: results.join('\n'), exitCode: anyMatch ? 0 : 1 };
   }
 
-  // Collect files
   const fileList: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    if (recursive && ctx.vfs.getType(absPath) === 'directory') {
-      collectFiles(ctx, absPath, f, fileList);
-    } else {
-      fileList.push(f);
-    }
+    if (fl.recursive && ctx.vfs.getType(absPath) === 'directory') collectFiles(ctx, absPath, f, fileList);
+    else fileList.push(f);
   }
+  const filtered = fileList.filter(f => includeExcludeOk(baseName(f), fl));
+  const showFilename = fl.forceFilename !== null ? fl.forceFilename : (filtered.length > 1 || fl.recursive);
 
-  const showFilename = forceFilename !== null ? forceFilename : (fileList.length > 1 || recursive);
-
-  for (const f of fileList) {
-    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    const content = ctx.vfs.readFile(absPath);
+  for (const f of filtered) {
+    const content = ctx.vfs.readFile(ctx.vfs.normalizePath(f, ctx.cwd));
     if (content === null) {
-      errors.push(`grep: ${f}: No such file or directory`);
+      if (!fl.suppressErrors) errors.push(`grep: ${f}: No such file or directory`);
       continue;
     }
+    const lines = splitInputLines(content);
 
-    if (quiet) {
-      // Just check if there's a match
-      regex.lastIndex = 0;
-      const hasMatch = content.split('\n').some(line => { regex.lastIndex = 0; return regex.test(line) !== invertMatch; });
-      if (hasMatch) return '';
+    if (fl.quiet) {
+      if (lines.some(lineMatches)) { anyMatch = true; return { output: '', exitCode: 0 }; }
       continue;
     }
-
-    const lines = content.split('\n');
-    if (lines.length > 0 && lines[lines.length - 1] === '' && content.endsWith('\n')) lines.pop();
-
-    if (filesOnly || filesWithout) {
-      const hasMatch = lines.some(line => { regex.lastIndex = 0; return regex.test(line) !== invertMatch; });
-      if (filesOnly && hasMatch) results.push(f);
-      if (filesWithout && !hasMatch) results.push(f);
+    if (fl.filesOnly || fl.filesWithout) {
+      const has = lines.some(lineMatches);
+      if (has) anyMatch = true;
+      if (fl.filesOnly && has) results.push(f);
+      if (fl.filesWithout && !has) results.push(f);
       continue;
     }
-
-    grepLines(lines, regex, invertMatch, lineNumbers, countOnly, onlyMatching, showFilename, f,
-      afterContext, beforeContext, results);
+    const n = grepLines(lines, matchers, fl, showFilename, f, lineMatches, results);
+    if (n > 0) anyMatch = true;
   }
 
-  const output = [...errors, ...results].join('\n');
-  return output;
+  const exitCode = errors.length > 0 ? 2 : anyMatch ? 0 : 1;
+  return { output: [...errors, ...results].join('\n'), exitCode };
 }
 
-/** Process lines for grep, pushing results. */
-function grepLines(
-  lines: string[], regex: RegExp, invertMatch: boolean, lineNumbers: boolean,
-  countOnly: boolean, onlyMatching: boolean, showFilename: boolean, filename: string,
-  afterContext: number, beforeContext: number, results: string[],
-): void {
-  const matchIndices: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    regex.lastIndex = 0;
-    const isMatch = regex.test(lines[i]);
-    if (isMatch !== invertMatch) matchIndices.push(i);
-  }
-
-  if (countOnly) {
-    const count = matchIndices.length.toString();
-    results.push(showFilename ? `${filename}:${count}` : count);
-    return;
-  }
-
-  // Determine which lines to show (including context)
-  const showSet = new Set<number>();
-  for (const idx of matchIndices) {
-    for (let j = Math.max(0, idx - beforeContext); j <= Math.min(lines.length - 1, idx + afterContext); j++) {
-      showSet.add(j);
+function applyShortFlags(flagChars: string, fl: GrepFlags): boolean {
+  for (const f of flagChars) {
+    switch (f) {
+      case 'i': fl.caseInsensitive = true; break;
+      case 'c': fl.countOnly = true; break;
+      case 'r': case 'R': fl.recursive = true; break;
+      case 'E': fl.extended = true; break;
+      case 'G': fl.extended = false; break;
+      case 'P': fl.extended = true; break;
+      case 'F': fl.fixed = true; break;
+      case 'v': fl.invert = true; break;
+      case 'n': fl.lineNumbers = true; break;
+      case 'l': fl.filesOnly = true; break;
+      case 'L': fl.filesWithout = true; break;
+      case 'w': fl.wholeWord = true; break;
+      case 'x': fl.wholeLine = true; break;
+      case 'o': fl.onlyMatching = true; break;
+      case 'q': fl.quiet = true; break;
+      case 's': fl.suppressErrors = true; break;
+      case 'H': fl.forceFilename = true; break;
+      case 'h': fl.forceFilename = false; break;
+      default: return false;
     }
   }
+  return true;
+}
 
+function addPatternsFromFile(ctx: ShellContext, path: string, patterns: string[]): void {
+  const content = ctx.vfs.readFile(ctx.vfs.normalizePath(path, ctx.cwd));
+  if (content === null) return;
+  const lines = content.split('\n');
+  // A trailing newline must not introduce an empty (match-everything) pattern.
+  if (lines.length > 0 && lines[lines.length - 1] === '' && content.endsWith('\n')) lines.pop();
+  for (const line of lines) patterns.push(line);
+}
+
+function splitInputLines(content: string): string[] {
+  const lines = content.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '' && content.endsWith('\n')) lines.pop();
+  return lines;
+}
+
+function baseName(p: string): string {
+  const idx = p.lastIndexOf('/');
+  return idx >= 0 ? p.slice(idx + 1) : p;
+}
+
+function globToRegExp(glob: string): RegExp {
+  let re = '';
+  for (const c of glob) {
+    if (c === '*') re += '[^/]*';
+    else if (c === '?') re += '[^/]';
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`);
+}
+
+function includeExcludeOk(name: string, fl: GrepFlags): boolean {
+  if (fl.excludeGlobs.some(g => globToRegExp(g).test(name))) return false;
+  if (fl.includeGlobs.length > 0) return fl.includeGlobs.some(g => globToRegExp(g).test(name));
+  return true;
+}
+
+/** Process lines for grep; returns the number of matching lines. */
+function grepLines(
+  lines: string[], matchers: RegExp[], fl: GrepFlags, showFilename: boolean, filename: string,
+  lineMatches: (line: string) => boolean, results: string[],
+): number {
+  const matchIndices: number[] = [];
+  for (let i = 0; i < lines.length && matchIndices.length < fl.maxCount; i++) {
+    if (lineMatches(lines[i])) matchIndices.push(i);
+  }
+
+  if (fl.countOnly) {
+    const count = matchIndices.length.toString();
+    results.push(showFilename ? `${filename}:${count}` : count);
+    return matchIndices.length;
+  }
+
+  const showSet = new Set<number>();
+  for (const idx of matchIndices) {
+    for (let j = Math.max(0, idx - fl.before); j <= Math.min(lines.length - 1, idx + fl.after); j++) showSet.add(j);
+  }
   const sortedShow = [...showSet].sort((a, b) => a - b);
   const matchSet = new Set(matchIndices);
 
@@ -178,21 +227,24 @@ function grepLines(
     const line = lines[idx];
     const isMatch = matchSet.has(idx);
     const prefix = showFilename ? `${filename}:` : '';
-    const lineNum = lineNumbers ? `${idx + 1}:` : '';
-    const separator = isMatch ? '' : '';
-
-    if (onlyMatching && isMatch) {
-      // Output only matching parts
-      regex.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = regex.exec(line)) !== null) {
-        results.push(`${prefix}${lineNum}${m[0]}`);
-        if (!regex.global) break;
+    const lineNum = fl.lineNumbers ? `${idx + 1}:` : '';
+    if (fl.onlyMatching && isMatch && !fl.invert) {
+      const hits: { index: number; text: string }[] = [];
+      for (const re of matchers) {
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(line)) !== null) {
+          hits.push({ index: m.index, text: m[0] });
+          if (m[0] === '') re.lastIndex++;
+        }
       }
+      hits.sort((a, b) => a.index - b.index);
+      for (const h of hits) results.push(`${prefix}${lineNum}${h.text}`);
     } else {
       results.push(`${prefix}${lineNum}${line}`);
     }
   }
+  return matchIndices.length;
 }
 
 function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out: string[]): void {
@@ -248,39 +300,6 @@ export function cmdHead(ctx: ShellContext, args: string[], stdin?: string): stri
   return results.join('\n');
 }
 
-export function cmdTail(ctx: ShellContext, args: string[], stdin?: string): string {
-  let lines = 10;
-  let follow = false;
-  const files: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-n' && args[i + 1]) { lines = parseInt(args[i + 1], 10); i++; continue; }
-    if (a === '-f') { follow = true; continue; }
-    if (a.match(/^-\d+$/)) { lines = parseInt(a.slice(1), 10); continue; }
-    if (!a.startsWith('-')) files.push(a);
-  }
-
-  const processContent = (content: string): string => {
-    const allLines = content.split('\n');
-    // Remove trailing empty line if content ends with \n
-    if (allLines.length > 0 && allLines[allLines.length - 1] === '') allLines.pop();
-    return allLines.slice(-lines).join('\n');
-  };
-
-  if (files.length === 0) {
-    return stdin !== undefined ? processContent(stdin) : '';
-  }
-
-  const results: string[] = [];
-  for (const f of files) {
-    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    const content = ctx.vfs.readFile(absPath);
-    if (content !== null) results.push(processContent(content));
-  }
-  // tail -f just returns content for our simulator
-  return results.join('\n');
-}
 
 export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string {
   let countBytes = false;
@@ -456,40 +475,90 @@ function expandCharSet(s: string): string {
 }
 
 export function cmdAwk(ctx: ShellContext, args: string[], stdin?: string): string {
-  let fieldSep = ' ';
-  let program = '';
+  let fieldSep: string | undefined;
+  let program: string | null = null;
   const files: string[] = [];
-  const vars: Map<string, string> = new Map();
+  const assignments: Record<string, string> = {};
+  const programFiles: string[] = [];
+
+  const handlePositional = (a: string): void => {
+    if (program === null && programFiles.length === 0) { program = a; return; }
+    files.push(a);
+  };
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a.startsWith('-F')) {
-      fieldSep = a.length > 2 ? a.slice(2) : args[++i] || ' ';
-      // Remove quotes from field separator
-      fieldSep = fieldSep.replace(/^["']|["']$/g, '');
-      continue;
-    }
+    if (a === '-F') { fieldSep = decodeAwkArg(args[++i] ?? ' '); continue; }
+    if (a.startsWith('-F')) { fieldSep = decodeAwkArg(a.slice(2).replace(/^["']|["']$/g, '')); continue; }
     if (a === '-v' && args[i + 1]) {
-      const [key, val] = args[++i].split('=');
-      vars.set(key, val);
+      const eq = args[++i];
+      const idx = eq.indexOf('=');
+      if (idx >= 0) assignments[eq.slice(0, idx)] = decodeAwkArg(eq.slice(idx + 1));
       continue;
     }
-    if (!program) {
-      program = a;
-    } else {
-      files.push(a);
+    if (a.startsWith('-v') && a.length > 2) {
+      const eq = a.slice(2);
+      const idx = eq.indexOf('=');
+      if (idx >= 0) assignments[eq.slice(0, idx)] = decodeAwkArg(eq.slice(idx + 1));
+      continue;
     }
+    if (a === '-f' && args[i + 1]) { programFiles.push(args[++i]); continue; }
+    if (a.startsWith('-f') && a.length > 2) { programFiles.push(a.slice(2)); continue; }
+    if (a === '--') { for (let j = i + 1; j < args.length; j++) handlePositional(args[j]); break; }
+    if (a.startsWith('-') && a.length > 1 && program === null && programFiles.length === 0) continue;
+    handlePositional(a);
   }
 
-  let content: string;
-  if (files.length > 0) {
-    const absPath = ctx.vfs.normalizePath(files[0], ctx.cwd);
-    content = ctx.vfs.readFile(absPath) ?? '';
-  } else {
-    content = stdin ?? '';
+  if (programFiles.length > 0) {
+    program = programFiles
+      .map(f => ctx.vfs.readFile(ctx.vfs.normalizePath(f, ctx.cwd)) ?? '')
+      .join('\n');
   }
+  if (program === null) program = '';
 
-  return executeAwk(content, program, fieldSep, vars);
+  const fileAssign: Array<{ filename: string; content: string }> = [];
+  for (const f of files) {
+    const eq = f.match(/^([A-Za-z_]\w*)=(.*)$/);
+    if (eq) { assignments[eq[1]] = decodeAwkArg(eq[2]); continue; }
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    fileAssign.push({ filename: f, content: ctx.vfs.readFile(absPath) ?? '' });
+  }
+  const sources = fileAssign.length > 0 ? fileAssign : [{ filename: '', content: stdin ?? '' }];
+
+  const host: AwkHost = {
+    readFile: (p: string) => ctx.vfs.readFile(ctx.vfs.normalizePath(p, ctx.cwd)),
+    writeFile: (p: string, content: string, append: boolean) => {
+      const abs = ctx.vfs.normalizePath(p, ctx.cwd);
+      const prior = append ? (ctx.vfs.readFile(abs) ?? '') : '';
+      ctx.vfs.writeFile(abs, prior + content, ctx.uid, ctx.gid, 0o022);
+    },
+  };
+
+  try {
+    const result = runAwk({ program, fieldSep, assignments, sources, host });
+    for (const w of result.fileWrites) {
+      const abs = ctx.vfs.normalizePath(w.path, ctx.cwd);
+      const prior = w.append ? (ctx.vfs.readFile(abs) ?? '') : '';
+      ctx.vfs.writeFile(abs, prior + w.content, ctx.uid, ctx.gid, 0o022);
+    }
+    if (result.error) return result.error;
+    return result.output.endsWith('\n') ? result.output.slice(0, -1) : result.output;
+  } catch {
+    const legacyVars = new Map<string, string>(Object.entries(assignments));
+    return executeAwk(sources.map(s => s.content).join('\n'), program, fieldSep ?? ' ', legacyVars);
+  }
+}
+
+function decodeAwkArg(s: string): string {
+  return s.replace(/\\(.)/g, (_, c: string) => {
+    switch (c) {
+      case 't': return '\t';
+      case 'n': return '\n';
+      case 'r': return '\r';
+      case '\\': return '\\';
+      default: return '\\' + c;
+    }
+  });
 }
 
 function executeAwk(content: string, program: string, fs: string, vars: Map<string, string>): string {
@@ -759,67 +828,14 @@ function resolveAwkValue(val: string, fields: string[], fs: string, vars: Map<st
  * may be provided via repeated `-e` or by joining with `;`.
  */
 export function cmdSed(ctx: ShellContext, args: string[], stdin?: string): string {
-  let inPlace = false;
-  const scripts: string[] = [];
-  const files: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-i' || a.startsWith('-i')) { inPlace = true; continue; }
-    if (a === '-e' && args[i + 1] !== undefined) { scripts.push(args[++i]); continue; }
-    if (a === '-n' || a === '-E' || a === '-r') continue;
-    if (a.startsWith('-')) continue;
-    if (scripts.length === 0) { scripts.push(a); continue; }
-    files.push(a);
-  }
-
-  const allScripts = scripts.flatMap(s => s.split(';')).map(s => s.trim()).filter(Boolean);
-
-  const applyScripts = (input: string): string => {
-    let text = input;
-    for (const script of allScripts) {
-      const m = /^s(.)(.*)$/s.exec(script);
-      if (!m) continue;
-      const delim = m[1];
-      const rest = m[2];
-      const parts: string[] = [];
-      let cur = '';
-      for (let i = 0; i < rest.length; i++) {
-        const c = rest[i];
-        if (c === '\\' && rest[i + 1] !== undefined) { cur += c + rest[++i]; continue; }
-        if (c === delim) { parts.push(cur); cur = ''; continue; }
-        cur += c;
-      }
-      parts.push(cur);
-      if (parts.length < 2) continue;
-      const pattern = parts[0];
-      const replacement = parts[1].replace(/\\(\d)/g, '$$$1');
-      const flags = parts[2] ?? '';
-      const reFlags = 'm' + (flags.includes('g') ? 'g' : '') + (flags.includes('i') ? 'i' : '');
-      const jsPattern = pattern.replace(/\\\?/g, '?').replace(/\\\+/g, '+');
-      try {
-        text = text.replace(new RegExp(jsPattern, reFlags), replacement);
-      } catch {
-        /* ignore bad pattern */
-      }
-    }
-    return text;
+  const io: SedFileIO = {
+    readFile: (p) => ctx.vfs.readFile(ctx.vfs.normalizePath(p, ctx.cwd)),
+    writeFile: (p, content) => { ctx.vfs.writeFile(ctx.vfs.normalizePath(p, ctx.cwd), content, ctx.uid, ctx.gid, 0o022); },
+    appendFile: (p, content) => {
+      const abs = ctx.vfs.normalizePath(p, ctx.cwd);
+      ctx.vfs.writeFile(abs, (ctx.vfs.readFile(abs) ?? '') + content, ctx.uid, ctx.gid, 0o022);
+    },
   };
-
-  if (files.length === 0) {
-    return applyScripts(stdin ?? '');
-  }
-
-  const outputs: string[] = [];
-  for (const f of files) {
-    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    const content = ctx.vfs.readFile(absPath) ?? '';
-    const next = applyScripts(content);
-    if (inPlace) {
-      ctx.vfs.writeFile(absPath, next, ctx.uid, ctx.gid, 0o022);
-    } else {
-      outputs.push(next);
-    }
-  }
-  return outputs.join('');
+  const r = runSed({ argv: args, stdin: stdin ?? '', io });
+  return r.error ?? r.output;
 }

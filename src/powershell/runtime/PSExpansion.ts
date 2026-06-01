@@ -181,10 +181,19 @@ export function psValueToString(value: PSValue): string {
     return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
   }
   if (Array.isArray(value)) return value.map(psValueToString).join(' ');
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'function') return '';
   if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, PSValue>);
+    const rec = value as Record<string, PSValue>;
+    if (typeof rec.Message === 'string' && 'Exception' in rec && 'CategoryInfo' in rec) {
+      return String(rec.Message);
+    }
+    if (typeof (rec as { toString?: unknown }).toString === 'function'
+        && rec.toString !== Object.prototype.toString) {
+      try { return String((rec as { toString: () => string }).toString()); } catch { /* fall through */ }
+    }
+    const entries = Object.entries(rec).filter(([, v]) => typeof v !== 'function');
     if (entries.length === 0) return '';
-    // Hashtable-style formatting
     return entries.map(([k, v]) => `${k}=${psValueToString(v)}`).join('; ');
   }
   return String(value);

@@ -177,6 +177,59 @@ export class BashLexer {
       return this.scanArithSub(start);
     }
 
+    // $'…' — ANSI-C quoting. Standard escape sequences are decoded
+    // (\n, \t, \r, \\, \', \", \xNN, \0NN, \uNNNN); $-expansion does
+    // NOT happen inside, mirroring real bash.
+    if (next === "'") {
+      this.advance(); // skip '
+      let value = '';
+      while (!this.isAtEnd() && this.peek() !== "'") {
+        const c = this.peek();
+        if (c === '\\' && !this.isAtEnd()) {
+          this.advance();
+          const esc = this.peek();
+          switch (esc) {
+            case 'n': value += '\n'; this.advance(); break;
+            case 't': value += '\t'; this.advance(); break;
+            case 'r': value += '\r'; this.advance(); break;
+            case 'a': value += '\x07'; this.advance(); break;
+            case 'b': value += '\b'; this.advance(); break;
+            case 'f': value += '\f'; this.advance(); break;
+            case 'v': value += '\v'; this.advance(); break;
+            case 'e': value += '\x1b'; this.advance(); break;
+            case '\\': value += '\\'; this.advance(); break;
+            case "'": value += "'"; this.advance(); break;
+            case '"': value += '"'; this.advance(); break;
+            case 'x': {
+              this.advance();
+              let hex = '';
+              for (let i = 0; i < 2 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
+                hex += this.peek(); this.advance();
+              }
+              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
+              break;
+            }
+            case 'u': {
+              this.advance();
+              let hex = '';
+              for (let i = 0; i < 4 && !this.isAtEnd() && /[0-9a-fA-F]/.test(this.peek()); i++) {
+                hex += this.peek(); this.advance();
+              }
+              if (hex) value += String.fromCharCode(Number.parseInt(hex, 16));
+              break;
+            }
+            default:
+              value += '\\' + esc; this.advance(); break;
+          }
+        } else {
+          value += c;
+          this.advance();
+        }
+      }
+      if (!this.isAtEnd()) this.advance(); // skip closing '
+      return { type: TokenType.SINGLE_QUOTED, value, position: start };
+    }
+
     // $(cmd) — command substitution
     if (next === '(') {
       return this.scanCmdSub(start);
@@ -409,11 +462,15 @@ export class BashLexer {
       // Other operator starts
       if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}') break;
 
-      // Escape
+      // Escape — keep both bytes in the raw value so downstream
+      // glob/quote-removal can tell escaped meta-chars (`\*`, `\?`,
+      // `\[`) apart from naturally unquoted ones. Quote removal at
+      // expansion time strips the backslash before the value reaches
+      // the dispatched command.
       if (ch === '\\' && !this.isAtEnd()) {
         this.advance();
         if (!this.isAtEnd()) {
-          value += this.peek();
+          value += '\\' + this.peek();
           this.advance();
         }
         continue;
@@ -430,10 +487,19 @@ export class BashLexer {
       return { type: TokenType.WORD, value: ch, position: start };
     }
 
-    // Detect assignment: VAR=value
+    // Detect assignment. Three accepted forms:
+    //   VAR=value
+    //   VAR+=value
+    //   VAR[subscript]=value        (indexed or associative element)
+    //   VAR[subscript]+=value
     const eqIdx = value.indexOf('=');
-    if (eqIdx > 0 && this.isValidName(value.substring(0, eqIdx))) {
-      return { type: TokenType.ASSIGNMENT_WORD, value, position: start };
+    if (eqIdx > 0) {
+      const nameEnd = value[eqIdx - 1] === '+' ? eqIdx - 1 : eqIdx;
+      const lhs = value.substring(0, nameEnd);
+      const m = lhs.match(/^([A-Za-z_][A-Za-z_0-9]*)(?:\[([^\]]+)\])?$/);
+      if (m) {
+        return { type: TokenType.ASSIGNMENT_WORD, value, position: start };
+      }
     }
 
     return { type: TokenType.WORD, value, position: start };

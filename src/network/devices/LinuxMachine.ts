@@ -1514,6 +1514,31 @@ export abstract class LinuxMachine extends EndHost {
     return promise;
   }
 
+  /**
+   * Open a `tail -f` / `tail -F` follow stream against the given shell
+   * session's cwd. The handle's VFS subscriptions persist after the
+   * session-state restore — once paths are resolved at attach time, the
+   * stream lives on the filesystem listener registry independent of any
+   * executor swap-in. Returns `null` when `commandLine` is not a follow
+   * tail; the caller should then fall back to the normal command path.
+   */
+  startTailFollowInSession(
+    commandLine: string,
+    session: LinuxShellSession,
+    sink: import('./linux/coreutils').TailSink,
+  ): import('./linux/coreutils').TailFollowHandle | null {
+    if (!this.isPoweredOn) return null;
+    if (session.disposed) return null;
+    const exec = this.executor;
+    const baseline = exec.snapshotState();
+    exec.swapInSession(session);
+    try {
+      return exec.startTailFollow(commandLine, sink);
+    } finally {
+      exec.restoreFromSnapshot(baseline);
+    }
+  }
+
   /** Tab completion against a specific shell session's cwd/env. */
   getCompletionsForSession(partial: string, session: LinuxShellSession): string[] {
     if (session.disposed || !this.isPoweredOn) return [];

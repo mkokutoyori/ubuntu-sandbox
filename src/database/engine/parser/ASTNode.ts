@@ -385,7 +385,11 @@ export type AlterTableAction =
   | { action: 'DROP_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string }
   | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' }
   | { action: 'ENCRYPT_COLUMN'; columnName: string; algorithm?: string; salt?: boolean; integrity?: string }
-  | { action: 'DECRYPT_COLUMN'; columnName: string };
+  | { action: 'DECRYPT_COLUMN'; columnName: string }
+  | { action: 'FLASHBACK_ARCHIVE'; archive?: string }
+  | { action: 'NO_FLASHBACK_ARCHIVE' }
+  | { action: 'INMEMORY' }
+  | { action: 'NO_INMEMORY' };
 
 export interface DropTableStatement extends ASTNode {
   type: 'DropTableStatement';
@@ -987,6 +991,78 @@ export interface AuditPolicyStatement extends ASTNode {
   disable?: boolean;
 }
 
+/**
+ * `LOCK TABLE [schema.]table IN <mode> MODE [NOWAIT]` — explicit DML
+ * lock acquisition. Modes follow the six Oracle TM lock modes.
+ */
+export interface LockTableStatement extends ASTNode {
+  type: 'LockTableStatement';
+  schema?: string;
+  table: string;
+  lockMode: 'ROW SHARE' | 'ROW EXCLUSIVE' | 'SHARE UPDATE' | 'SHARE' | 'SHARE ROW EXCLUSIVE' | 'EXCLUSIVE';
+  nowait: boolean;
+}
+
+/** `CREATE FLASHBACK ARCHIVE [DEFAULT] name TABLESPACE ts [QUOTA n M] RETENTION n {DAY|MONTH|YEAR}`. */
+export interface CreateFlashbackArchiveStatement extends ASTNode {
+  type: 'CreateFlashbackArchiveStatement';
+  name: string;
+  isDefault: boolean;
+  tablespace: string;
+  quotaMb: number | null;
+  retentionDays: number;
+}
+
+/** `DROP FLASHBACK ARCHIVE name`. */
+export interface DropFlashbackArchiveStatement extends ASTNode {
+  type: 'DropFlashbackArchiveStatement';
+  name: string;
+}
+
+/** `{CREATE|DROP|ALTER} PLUGGABLE DATABASE name [OPEN [READ {ONLY|WRITE}] | CLOSE | …]`. */
+export interface PluggableDatabaseStatement extends ASTNode {
+  type: 'PluggableDatabaseStatement';
+  operation: 'CREATE' | 'DROP' | 'ALTER';
+  name: string;
+  openMode?: 'READ ONLY' | 'READ WRITE';
+  close?: boolean;
+}
+
+export interface TypeAttribute {
+  name: string;
+  typeName: string;
+  precision?: number;
+  scale?: number;
+}
+
+/**
+ * `CREATE [OR REPLACE] TYPE [schema.]name AS {OBJECT (attrs) | VARRAY(n) OF t | TABLE OF t}`.
+ */
+export interface CreateTypeStatement extends ASTNode {
+  type: 'CreateTypeStatement';
+  schema?: string;
+  name: string;
+  form: 'object' | 'collection';
+  attributes?: TypeAttribute[];
+  finalType?: boolean;
+  collKind?: 'VARRAY' | 'TABLE';
+  upperBound?: number | null;
+  elemType?: string;
+}
+
+/** `ALTER {PROCEDURE|FUNCTION|PACKAGE} [schema.]name COMPILE [BODY]` — recompile (no-op message). */
+export interface AlterCompileStatement extends ASTNode {
+  type: 'AlterCompileStatement';
+  objectKind: 'PROCEDURE' | 'FUNCTION' | 'PACKAGE';
+}
+
+/** `ALTER SESSION SET param = value` (and other ALTER SESSION forms, captured loosely). */
+export interface AlterSessionStatement extends ASTNode {
+  type: 'AlterSessionStatement';
+  param?: string;
+  value?: string;
+}
+
 // ── Top-level statement union ───────────────────────────────────────
 
 export type Statement =
@@ -1024,6 +1100,11 @@ export type Statement =
   | AuditStatement | NoauditStatement
   | CreateAuditPolicyStatement | DropAuditPolicyStatement | AuditPolicyStatement
   | AdministerKeyManagementStatement
+  | LockTableStatement
+  | CreateFlashbackArchiveStatement | DropFlashbackArchiveStatement
+  | PluggableDatabaseStatement
+  | CreateTypeStatement
+  | AlterSessionStatement | AlterCompileStatement
   | CommentStatement
   // PL/SQL
   | PLSQLBlock;

@@ -54,10 +54,14 @@ describe('Group 1: Basic Words', () => {
     expect(values('ls -la --color=auto')).toEqual(['ls', '-la', '--color=auto']);
   });
 
-  it('should handle escaped characters in words', () => {
+  it('should preserve escape sequences in words (quote-removal is deferred to expansion)', () => {
     const toks = lexer.tokenize('hello\\ world');
     const words = toks.filter(t => t.type !== TokenType.EOF);
-    expect(words[0].value).toBe('hello world');
+    // Bash performs quote-removal as part of expansion, not tokenization,
+    // so escape sequences like `\<sp>` round-trip through the lexer and
+    // get stripped later by the runtime — that way `\*` survives long
+    // enough for the glob expander to skip it.
+    expect(words[0].value).toBe('hello\\ world');
   });
 
   it('should return EOF for empty input', () => {

@@ -235,11 +235,9 @@ export class ForEachObjectCmdlet implements ICmdlet {
   readonly aliases = ['foreach', '%'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const input  = toArray(ctx.pipeInput);
-    const script = (ctx.named['process'] ?? ctx.positional[0]) as PSScriptBlock;
-    const begin  = ctx.named['begin']  as PSScriptBlock | undefined;
-    const end    = ctx.named['end']    as PSScriptBlock | undefined;
-
+    const input = toArray(ctx.pipeInput);
+    const memberName = ctx.named['membername'];
+    const firstPos = ctx.positional[0];
     const out: PSValue[] = [];
     const collect = (val: PSValue) => {
       if (val === null || val === undefined) return;
@@ -247,10 +245,36 @@ export class ForEachObjectCmdlet implements ICmdlet {
       else out.push(val);
     };
 
-    // -Begin/-Process/-End (and every -Process iteration) share ONE scope so
-    // accumulators like `-Begin { $s=0 } -Process { $s+=$_ } -End { $s }`
-    // work, as they do in real PowerShell.
-    const scope = ctx.runtime.makeChildScope(ctx.env);
+    const memberNameValue = memberName !== undefined && memberName !== null
+      ? psValueToString(memberName)
+      : (typeof firstPos === 'string' ? firstPos : null);
+    const isScriptBlock = firstPos !== undefined && firstPos !== null
+      && typeof firstPos === 'object' && (firstPos as { type?: string }).type === 'ScriptBlock';
+    const namedProcess = ctx.named['process'];
+
+    if (!namedProcess && !isScriptBlock && memberNameValue) {
+      const memberArgs = toArray(ctx.named['argumentlist'] ?? ctx.positional.slice(1));
+      for (const item of input) {
+        const v = (item as Record<string, PSValue> | null)?.[memberNameValue];
+        if (typeof v === 'function') {
+          try { collect((v as (...a: PSValue[]) => PSValue)(...memberArgs)); }
+          catch { collect(null); }
+        } else if (v !== undefined) {
+          collect(v as PSValue);
+        } else if (typeof item === 'string') {
+          const m = (item as unknown as Record<string, unknown>)[memberNameValue];
+          if (typeof m === 'function') collect((m as (...a: unknown[]) => PSValue)(...memberArgs));
+          else collect(this.callStringMember(item, memberNameValue, memberArgs));
+        }
+      }
+      if (out.length === 0) return null;
+      return out.length === 1 ? out[0] : out;
+    }
+
+    const script = (namedProcess ?? firstPos) as PSScriptBlock;
+    const begin  = ctx.named['begin']  as PSScriptBlock | undefined;
+    const end    = ctx.named['end']    as PSScriptBlock | undefined;
+    const scope  = ctx.runtime.makeChildScope(ctx.env);
     if (begin)  collect(ctx.runtime.invokeBlockInScope(begin,  scope, null));
     if (script) {
       for (const item of input) collect(ctx.runtime.invokeBlockInScope(script, scope, item));
@@ -259,6 +283,27 @@ export class ForEachObjectCmdlet implements ICmdlet {
 
     if (out.length === 0) return null;
     return out.length === 1 ? out[0] : out;
+  }
+
+  private callStringMember(s: string, name: string, args: PSValue[]): PSValue {
+    const lower = name.toLowerCase();
+    switch (lower) {
+      case 'toupper': return s.toUpperCase();
+      case 'tolower': return s.toLowerCase();
+      case 'trim':    return s.trim();
+      case 'length':  return s.length;
+      case 'substring': {
+        const start = Number(args[0] ?? 0);
+        return args[1] !== undefined ? s.substring(start, start + Number(args[1])) : s.substring(start);
+      }
+      case 'split':   return s.split(String(args[0] ?? ''));
+      case 'replace': return s.split(String(args[0] ?? '')).join(String(args[1] ?? ''));
+      case 'startswith': return s.startsWith(String(args[0] ?? ''));
+      case 'endswith':   return s.endsWith(String(args[0] ?? ''));
+      case 'contains':   return s.includes(String(args[0] ?? ''));
+      case 'indexof':    return s.indexOf(String(args[0] ?? ''));
+      default:           return s;
+    }
   }
 }
 
@@ -454,16 +499,26 @@ export class MeasureObjectCmdlet implements ICmdlet {
     );
     const nums = rawValues.map(v => Number(v)).filter(n => !isNaN(n));
 
-    const wantSum = isTruthy(ctx.named['sum']     ?? false);
-    const wantAvg = isTruthy(ctx.named['average'] ?? false);
-    const wantMin = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);
-    const wantMax = isTruthy(ctx.named['maximum'] ?? ctx.named['max'] ?? false);
+    const wantSum  = isTruthy(ctx.named['sum']     ?? false);
+    const wantAvg  = isTruthy(ctx.named['average'] ?? false);
+    const wantMin  = isTruthy(ctx.named['minimum'] ?? ctx.named['min'] ?? false);
+    const wantMax  = isTruthy(ctx.named['maximum'] ?? ctx.named['max'] ?? false);
+    const wantLine = isTruthy(ctx.named['line']      ?? false);
+    const wantWord = isTruthy(ctx.named['word']      ?? false);
+    const wantChar = isTruthy(ctx.named['character'] ?? false);
 
     const result: Record<string, PSValue> = { Count: input.length };
     result['Sum']     = wantSum  ? nums.reduce((a, b) => a + b, 0) : null;
     result['Average'] = wantAvg  ? (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null) : null;
     result['Minimum'] = wantMin  ? (nums.length ? Math.min(...nums) : null) : null;
     result['Maximum'] = wantMax  ? (nums.length ? Math.max(...nums) : null) : null;
+
+    if (wantLine || wantWord || wantChar) {
+      const strs = input.map(v => psValueToString(v));
+      if (wantLine) result['Lines'] = strs.reduce((a, s) => a + s.split(/\r?\n/).length, 0);
+      if (wantWord) result['Words'] = strs.reduce((a, s) => a + s.split(/\s+/).filter(Boolean).length, 0);
+      if (wantChar) result['Characters'] = strs.reduce((a, s) => a + s.length, 0);
+    }
     result['Property'] = props[0] ?? null;
 
     return result;

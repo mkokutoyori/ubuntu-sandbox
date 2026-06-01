@@ -14,6 +14,11 @@ import { OracleStorage } from './OracleStorage';
 import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
+import type { SqlCommandHost } from './SqlCommandHost';
+import type {
+  LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
+  PluggableDatabaseStatement, CreateTypeStatement, AlterSessionStatement,
+} from '../engine/parser/ASTNode';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
@@ -75,7 +80,7 @@ export interface StoredPLSQLUnit {
   status: 'VALID' | 'INVALID';
 }
 
-export class OracleDatabase {
+export class OracleDatabase implements SqlCommandHost {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
   readonly catalog: OracleCatalog;
@@ -341,6 +346,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
   }
@@ -396,6 +402,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
   }
@@ -445,6 +452,7 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     return { sid, executor };
   }
@@ -504,6 +512,55 @@ export class OracleDatabase {
   }
 
   /**
+   * Single entry point that recognises PL/SQL constructs and routes them
+   * to the PL/SQL subsystem. Returns the result when the statement is a
+   * PL/SQL construct, or null when it is plain SQL (so the caller hands
+   * it to the SQL parser). Centralises what used to be a dozen ad-hoc
+   * regex checks scattered through executeSql.
+   */
+  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string): ResultSet | null {
+    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
+      return this.executePLSQL(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
+      return this.createStoredProcedure(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
+      return this.createStoredFunction(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b/i.test(upper)) {
+      return this.createPackageBody(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b/i.test(upper)) {
+      return this.createPackageSpec(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
+      return this.executeCreateTrigger(executor, trimmed);
+    }
+    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
+      return this.executeProcedureCall(executor, trimmed);
+    }
+    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
+    }
+    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
+    }
+    if (/^DROP\s+PACKAGE\s+BODY\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PACKAGE BODY');
+    }
+    if (/^DROP\s+PACKAGE\b/i.test(upper)) {
+      return this.dropPackage(executor, trimmed);
+    }
+    // Standalone procedure call: proc_name(args) or pkg.proc(args).
+    if (/^[A-Za-z_]\w*(?:\.\w+)?\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
+      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
+      if (callResult) return callResult;
+    }
+    return null;
+  }
+
+  /**
    * Parse and execute a SQL statement string.
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
@@ -511,185 +568,19 @@ export class OracleDatabase {
     const trimmed = sql.trim().replace(/;\s*$/, '');
     if (!trimmed) return emptyResult();
 
-    // Check for PL/SQL block
     const upper = trimmed.toUpperCase();
-    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
-      return this.executePLSQL(executor, trimmed);
-    }
 
-    const lockTbl = trimmed.match(/^LOCK\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+IN\s+(ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+ROW\s+EXCLUSIVE|SHARE|EXCLUSIVE|SHARE\s+UPDATE)\s+MODE(\s+NOWAIT)?/i);
-    if (lockTbl) {
-      const ctx = (executor as unknown as { context: ExecutionContext }).context;
-      const owner = (lockTbl[1] ?? ctx.currentSchema).toUpperCase();
-      const table = lockTbl[2].toUpperCase();
-      if (!this.storage.getTableMeta(owner, table)) {
-        return emptyResult(`ORA-00942: table or view does not exist`);
-      }
-      const modeWord = lockTbl[3].toUpperCase().replace(/\s+/g, ' ');
-      const modeMap: Record<string, 2 | 3 | 4 | 5 | 6> = {
-        'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
-        'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
-      };
-      const sess = ctx.session;
-      const sid = sess?.sid ?? 0;
-      try {
-        this.instance.lockManager.lockTable({
-          sessionId: String(sid), sid, schema: owner, table,
-          mode: modeMap[modeWord] ?? 3, nowait: !!lockTbl[4],
-        });
-      } catch (e: unknown) {
-        return emptyResult(e instanceof Error ? e.message : String(e));
-      }
-      return emptyResult('Table(s) Locked.');
-    }
+    // PL/SQL is a distinct language whose unit bodies contain semicolons
+    // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
+    // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
+    // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
+    const plsql = this.routePlsql(executor, trimmed, upper);
+    if (plsql) return plsql;
 
-    const fba = upper.match(/^CREATE\s+FLASHBACK\s+ARCHIVE\s+(?:DEFAULT\s+)?(\w+)\s+TABLESPACE\s+(\w+)(?:\s+QUOTA\s+(\d+)\s*M)?\s+RETENTION\s+(\d+)\s+(?:DAY|YEAR|MONTH)/i);
-    if (fba) {
-      const isDefault = /CREATE\s+FLASHBACK\s+ARCHIVE\s+DEFAULT/i.test(trimmed);
-      const name = fba[1];
-      const ts = fba[2];
-      const quota = fba[3] ? parseInt(fba[3], 10) : null;
-      const days = parseInt(fba[4], 10);
-      this.instance.flashbackArchive.createArchive(new FlashbackArchive({
-        flashbackArchiveName: name, retentionInDays: days, isDefault,
-        tablespaces: [new FlashbackArchiveTablespace(name, ts, quota)],
-      }));
-      return emptyResult('Flashback archive created.');
-    }
-    const dropFba = upper.match(/^DROP\s+FLASHBACK\s+ARCHIVE\s+(\w+)/i);
-    if (dropFba) {
-      this.instance.flashbackArchive.dropArchive(dropFba[1]);
-      return emptyResult('Flashback archive dropped.');
-    }
-    const fbaTab = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+FLASHBACK\s+ARCHIVE(?:\s+(\w+))?/i);
-    if (fbaTab) {
-      const owner = (fbaTab[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      const table = fbaTab[2].toUpperCase();
-      const arch = fbaTab[3] ?? undefined;
-      this.instance.flashbackArchive.enableTable(owner, table, arch);
-      return emptyResult('Table altered.');
-    }
-    const fbaTabOff = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+FLASHBACK\s+ARCHIVE/i);
-    if (fbaTabOff) {
-      const owner = (fbaTabOff[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      this.instance.flashbackArchive.disableTable(owner, fbaTabOff[2]);
-      return emptyResult('Table altered.');
-    }
-    const im = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+INMEMORY/i);
-    if (im) {
-      const owner = (im[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      const table = im[2].toUpperCase();
-      const meta = this.storage.getTableMeta(owner, table);
-      if (meta) {
-        const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
-        this.instance.inMemory.addSegment(new InMemorySegment({
-          owner, segmentName: table, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
-          inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
-        }));
-      }
-      return emptyResult('Table altered.');
-    }
-    const noIm = trimmed.match(/^ALTER\s+TABLE\s+(?:(\w+)\.)?(\w+)\s+NO\s+INMEMORY/i);
-    if (noIm) {
-      const owner = (noIm[1] ?? (executor as unknown as { context: ExecutionContext }).context.currentSchema).toUpperCase();
-      this.instance.inMemory.removeSegment(owner, noIm[2]);
-      return emptyResult('Table altered.');
-    }
-
-    const pdbMatch = upper.match(/^(?:ALTER\s+PLUGGABLE\s+DATABASE|CREATE\s+PLUGGABLE\s+DATABASE|DROP\s+PLUGGABLE\s+DATABASE)\s+(\w+)/);
-    if (pdbMatch) {
-      const name = pdbMatch[1];
-      if (upper.startsWith('CREATE')) {
-        this.instance.multitenant.createPdb(name);
-        return emptyResult('Pluggable database created.');
-      }
-      if (upper.startsWith('DROP')) {
-        this.instance.multitenant.dropPdb(name);
-        return emptyResult('Pluggable database dropped.');
-      }
-      if (upper.includes('OPEN')) {
-        const ro = /READ\s+ONLY/.test(upper);
-        this.instance.multitenant.openPdb(name, ro ? 'READ ONLY' : 'READ WRITE');
-        return emptyResult('Pluggable database altered.');
-      }
-      if (upper.includes('CLOSE')) {
-        this.instance.multitenant.closePdb(name);
-        return emptyResult('Pluggable database altered.');
-      }
-      return emptyResult('Pluggable database altered.');
-    }
-
-    // CREATE [OR REPLACE] TYPE — Oracle object types. Registered into
-    // the simulator's TypeRegistry so DBA_TYPES / DBA_TYPE_ATTRS /
-    // DBA_COLL_TYPES surface them. We accept the form Oracle DBAs use
-    // for object types and collection types.
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?TYPE\b/i.test(upper)) {
-      return this.createObjectType(executor, trimmed);
-    }
-
-    // CREATE TABLE … ORGANIZATION EXTERNAL — register an external table.
+    // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
+    // does not model the external-table clause, so it is registered here.
     if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
       return this.createExternalTable(executor, trimmed);
-    }
-
-    // Check for CREATE OR REPLACE PROCEDURE/FUNCTION
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
-      return this.createStoredProcedure(executor, trimmed);
-    }
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
-      return this.createStoredFunction(executor, trimmed);
-    }
-    // PACKAGE BODY must be checked before PACKAGE
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b/i.test(upper)) {
-      return this.createPackageBody(executor, trimmed);
-    }
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b/i.test(upper)) {
-      return this.createPackageSpec(executor, trimmed);
-    }
-
-    // Check for EXEC[UTE] procedure_name
-    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
-      return this.executeProcedureCall(executor, trimmed);
-    }
-
-    // Check for standalone procedure call: proc_name(args) or pkg.proc(args)
-    if (/^[A-Za-z_]\w*(?:\.\w+)?\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
-      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
-      if (callResult) return callResult;
-    }
-
-    // Check for CREATE [OR REPLACE] TRIGGER (body may contain semicolons)
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
-      return this.executeCreateTrigger(executor, trimmed);
-    }
-
-    // Check for ALTER SESSION (handled specially)
-    if (upper.startsWith('ALTER SESSION')) {
-      return this.executeAlterSession(executor, trimmed);
-    }
-
-    // Check for DROP PROCEDURE/FUNCTION
-    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
-    }
-    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
-    }
-    // DROP PACKAGE BODY must be checked before DROP PACKAGE
-    if (/^DROP\s+PACKAGE\s+BODY\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'PACKAGE BODY');
-    }
-    if (/^DROP\s+PACKAGE\b/i.test(upper)) {
-      return this.dropPackage(executor, trimmed);
-    }
-
-    // ALTER {PROCEDURE | FUNCTION | PACKAGE} <name> COMPILE [BODY]
-    // is a no-op recompile in the simulator — emits the canonical message.
-    const alterCompile = trimmed.match(/^ALTER\s+(PROCEDURE|FUNCTION|PACKAGE)\s+(?:\w+\s*\.\s*)?\w+\s+COMPILE(\s+BODY)?\b/i);
-    if (alterCompile) {
-      const kind = alterCompile[1].toUpperCase();
-      const label = kind === 'PROCEDURE' ? 'Procedure' : kind === 'FUNCTION' ? 'Function' : 'Package';
-      return emptyResult(`${label} altered.`);
     }
 
     const tokens = this.lexer.tokenize(trimmed);
@@ -713,6 +604,58 @@ export class OracleDatabase {
     return result;
   }
 
+  execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
+    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
+    const table = stmt.table.toUpperCase();
+    if (!this.storage.getTableMeta(owner, table)) {
+      return emptyResult('ORA-00942: table or view does not exist');
+    }
+    const modeMap: Record<LockTableStatement['lockMode'], 2 | 3 | 4 | 5 | 6> = {
+      'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
+      'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
+    };
+    const sid = (ctx.session as { sid?: number } | undefined)?.sid ?? 0;
+    try {
+      this.instance.lockManager.lockTable({
+        sessionId: String(sid), sid, schema: owner, table,
+        mode: modeMap[stmt.lockMode], nowait: stmt.nowait,
+      });
+    } catch (e: unknown) {
+      return emptyResult(e instanceof Error ? e.message : String(e));
+    }
+    return emptyResult('Table(s) Locked.');
+  }
+
+  execCreateFlashbackArchive(stmt: CreateFlashbackArchiveStatement, _ctx: ExecutionContext): ResultSet {
+    const name = stmt.name.toUpperCase();
+    const ts = stmt.tablespace.toUpperCase();
+    this.instance.flashbackArchive.createArchive(new FlashbackArchive({
+      flashbackArchiveName: name, retentionInDays: stmt.retentionDays, isDefault: stmt.isDefault,
+      tablespaces: [new FlashbackArchiveTablespace(name, ts, stmt.quotaMb)],
+    }));
+    return emptyResult('Flashback archive created.');
+  }
+
+  execDropFlashbackArchive(stmt: DropFlashbackArchiveStatement, _ctx: ExecutionContext): ResultSet {
+    this.instance.flashbackArchive.dropArchive(stmt.name.toUpperCase());
+    return emptyResult('Flashback archive dropped.');
+  }
+
+  execPluggableDatabase(stmt: PluggableDatabaseStatement, _ctx: ExecutionContext): ResultSet {
+    const name = stmt.name.toUpperCase();
+    if (stmt.operation === 'CREATE') {
+      this.instance.multitenant.createPdb(name);
+      return emptyResult('Pluggable database created.');
+    }
+    if (stmt.operation === 'DROP') {
+      this.instance.multitenant.dropPdb(name);
+      return emptyResult('Pluggable database dropped.');
+    }
+    if (stmt.openMode) this.instance.multitenant.openPdb(name, stmt.openMode);
+    else if (stmt.close) this.instance.multitenant.closePdb(name);
+    return emptyResult('Pluggable database altered.');
+  }
+
   private maybeLockForUpdate(executor: OracleExecutor, stmt: unknown): ResultSet | void {
     const s = stmt as { type?: string; from?: Array<{ type?: string; schema?: string; name?: string }>;
       forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
@@ -732,22 +675,17 @@ export class OracleDatabase {
     }
   }
 
-  private executeAlterSession(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/ALTER\s+SESSION\s+SET\s+(\w+)\s*=\s*(\S+)/i);
-    if (match) {
-      const param = match[1].toUpperCase();
-      const value = match[2].replace(/['"]/g, '').toUpperCase();
-      if (param === 'SERVEROUTPUT') {
-        (executor as { context: ExecutionContext }).context.serverOutput = value === 'ON';
-      } else if (param === 'CURRENT_SCHEMA') {
-        if (!this.catalog.userExists(value)) {
+  execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet {
+    if (stmt.param && stmt.value !== undefined) {
+      if (stmt.param === 'SERVEROUTPUT') {
+        ctx.serverOutput = stmt.value === 'ON';
+      } else if (stmt.param === 'CURRENT_SCHEMA') {
+        if (!this.catalog.userExists(stmt.value)) {
           return emptyResult('ORA-02248: invalid option for ALTER SESSION');
         }
-        executor.updateContext({ currentSchema: value });
-        // Keep the live OracleSession in sync — USERENV reads from it.
-        const ctx = (executor as { context: ExecutionContext }).context;
+        ctx.currentSchema = stmt.value;
         const sess = ctx.session as { setCurrentSchema?: (s: string) => void } | undefined;
-        sess?.setCurrentSchema?.(value);
+        sess?.setCurrentSchema?.(stmt.value);
       }
     }
     return emptyResult('Session altered.');
@@ -1595,42 +1533,46 @@ export class OracleDatabase {
    * DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES; PL/SQL bodies are
    * accepted but ignored (simulator does not run them).
    */
-  private createObjectType(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
-    // VARRAY / NESTED TABLE collection
-    const coll = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+(VARRAY|VARYING\s+ARRAY|TABLE)\s*(?:\(\s*(\d+)\s*\))?\s+OF\s+(\w+)/i);
-    if (coll) {
-      const owner = (coll[1] ?? ctx.currentSchema).toUpperCase();
-      const name = coll[2].toUpperCase();
-      const kind = /TABLE/i.test(coll[3]) ? 'TABLE' as const : 'VARRAY' as const;
-      const upper = coll[4] ? parseInt(coll[4], 10) : null;
-      const elem = coll[5].toUpperCase();
+  execAlterTableStorage(schema: string, table: string, action: import('./SqlCommandHost').AlterTableStorageAction): ResultSet {
+    const owner = schema.toUpperCase();
+    const tbl = table.toUpperCase();
+    switch (action.action) {
+      case 'FLASHBACK_ARCHIVE':
+        this.instance.flashbackArchive.enableTable(owner, tbl, action.archive);
+        break;
+      case 'NO_FLASHBACK_ARCHIVE':
+        this.instance.flashbackArchive.disableTable(owner, tbl);
+        break;
+      case 'INMEMORY': {
+        const meta = this.storage.getTableMeta(owner, tbl);
+        if (meta) {
+          const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
+          this.instance.inMemory.addSegment(new InMemorySegment({
+            owner, segmentName: tbl, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
+            inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
+          }));
+        }
+        break;
+      }
+      case 'NO_INMEMORY':
+        this.instance.inMemory.removeSegment(owner, tbl);
+        break;
+    }
+    return emptyResult('Table altered.');
+  }
+
+  execCreateType(stmt: CreateTypeStatement, ctx: ExecutionContext): ResultSet {
+    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    if (stmt.form === 'collection') {
       this.instance.types.addCollectionType(owner, name, {
-        collType: kind, upperBound: upper, elemTypeName: elem,
+        collType: stmt.collKind === 'TABLE' ? 'TABLE' : 'VARRAY',
+        upperBound: stmt.upperBound ?? null,
+        elemTypeName: (stmt.elemType ?? '').toUpperCase(),
       });
       return emptyResult('Type created.');
     }
-    // OBJECT type with attribute list
-    const obj = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+OBJECT\s*\(([\s\S]+?)\)\s*(?:NOT\s+FINAL|FINAL)?\s*;?\s*$/i);
-    if (obj) {
-      const owner = (obj[1] ?? ctx.currentSchema).toUpperCase();
-      const name = obj[2].toUpperCase();
-      const body = obj[3];
-      const attrs = body.split(',').map(s => s.trim()).filter(s => s && !/^(MEMBER|STATIC|MAP|ORDER|CONSTRUCTOR)\b/i.test(s))
-        .map(line => {
-          const m = line.match(/^(\w+)\s+(\w+)(?:\((\d+)(?:\s*,\s*(\d+))?\))?/);
-          if (!m) return null;
-          return {
-            name: m[1], typeName: m[2],
-            precision: m[3] ? parseInt(m[3], 10) : undefined,
-            scale: m[4] ? parseInt(m[4], 10) : undefined,
-          };
-        })
-        .filter((a): a is { name: string; typeName: string; precision?: number; scale?: number } => a !== null);
-      const finalType = !/NOT\s+FINAL/i.test(sql);
-      this.instance.types.addObjectType(owner, name, attrs, { finalType });
-      return emptyResult('Type created.');
-    }
+    this.instance.types.addObjectType(owner, name, stmt.attributes ?? [], { finalType: stmt.finalType ?? true });
     return emptyResult('Type created.');
   }
 

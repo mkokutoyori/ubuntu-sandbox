@@ -56,6 +56,9 @@ export class OracleExecutor extends BaseExecutor {
   private _activeTxId: number = 0;
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
+  /** Delegate for SQL commands whose effect lives in OracleDatabase
+   *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
+  private commandHost: import('./SqlCommandHost').SqlCommandHost | null = null;
 
   constructor(
     storage: OracleStorage,
@@ -69,6 +72,14 @@ export class OracleExecutor extends BaseExecutor {
 
   /** Bind this executor to a session id for the oracle.session.* / tx events. */
   setSessionId(sessionId: string): void { this._sessionId = sessionId; }
+
+  /** Inject the OracleDatabase delegate for manager-backed SQL commands. */
+  setCommandHost(host: import('./SqlCommandHost').SqlCommandHost): void { this.commandHost = host; }
+
+  private requireCommandHost(): import('./SqlCommandHost').SqlCommandHost {
+    if (!this.commandHost) throw new OracleError(900, 'command host not configured');
+    return this.commandHost;
+  }
 
   private get bus() { return this.instance.getBus(); }
   private get deviceId() { return this.instance.getDeviceId(); }
@@ -545,6 +556,17 @@ export class OracleExecutor extends BaseExecutor {
       case 'DropAuditPolicyStatement': return this.executeDropAuditPolicy(statement);
       case 'AuditPolicyStatement': return this.executeAuditPolicy(statement);
       case 'AdministerKeyManagementStatement': return this.executeAdministerKeyManagement(statement);
+      case 'LockTableStatement': return this.requireCommandHost().execLockTable(statement, this.context);
+      case 'CreateFlashbackArchiveStatement': return this.requireCommandHost().execCreateFlashbackArchive(statement, this.context);
+      case 'DropFlashbackArchiveStatement': return this.requireCommandHost().execDropFlashbackArchive(statement, this.context);
+      case 'PluggableDatabaseStatement': return this.requireCommandHost().execPluggableDatabase(statement, this.context);
+      case 'CreateTypeStatement': return this.requireCommandHost().execCreateType(statement, this.context);
+      case 'AlterSessionStatement': return this.requireCommandHost().execAlterSession(statement, this.context);
+      case 'AlterCompileStatement': {
+        const label = statement.objectKind === 'PROCEDURE' ? 'Procedure'
+          : statement.objectKind === 'FUNCTION' ? 'Function' : 'Package';
+        return emptyResult(`${label} altered.`);
+      }
       case 'CommentStatement': return this.executeComment(statement);
       default:
         throw new OracleError(900, `Unsupported statement type: ${statement.type}`);
@@ -2501,6 +2523,11 @@ export class OracleExecutor extends BaseExecutor {
           case 'FOREIGN_KEY': inst.setSupplementalLog({ min: 'IMPLICIT', fk: true }); break;
           case 'ALL':         inst.setSupplementalLog({ min: 'IMPLICIT', all: true, pk: supp.pk, ui: supp.ui, fk: supp.fk }); break;
         }
+      } else if (
+        action.action === 'FLASHBACK_ARCHIVE' || action.action === 'NO_FLASHBACK_ARCHIVE'
+        || action.action === 'INMEMORY' || action.action === 'NO_INMEMORY'
+      ) {
+        this.requireCommandHost().execAlterTableStorage(schema, tableName, action);
       }
     }
 

@@ -78,8 +78,194 @@ export class OracleParser extends BaseParser {
       case 'AUDIT': return this.parseAudit();
       case 'NOAUDIT': return this.parseNoaudit();
       case 'ADMINISTER': return this.parseAdministerKeyManagement();
+      case 'LOCK': return this.parseLockTable();
     }
     return null;
+  }
+
+  /**
+   * `LOCK TABLE [schema.]table IN <mode> MODE [NOWAIT]`. The mode is a
+   * one-to-three keyword phrase; we normalise it to the canonical
+   * space-separated form so the executor can map it to a TM lock level.
+   */
+  private parseLockTable(): import('../engine/parser/ASTNode').LockTableStatement {
+    const pos = this.current().position;
+    this.expectKeyword('LOCK');
+    this.expectKeyword('TABLE');
+    let schema: string | undefined;
+    let table = this.expectIdentifier();
+    if (this.match(TokenType.DOT)) { schema = table; table = this.expectIdentifier(); }
+    this.expectKeyword('IN');
+    const words: string[] = [];
+    while (!this.checkIdentifierOrKeyword('MODE') && !this.check(TokenType.EOF)) {
+      words.push(this.expectIdentifierOrKeyword().toUpperCase());
+    }
+    this.expectIdentifierOrKeyword(); // MODE
+    const nowait = this.checkIdentifierOrKeyword('NOWAIT');
+    if (nowait) this.advance();
+    const lockMode = this.normalizeLockMode(words.join(' '));
+    return { type: 'LockTableStatement', position: pos, schema, table, lockMode, nowait };
+  }
+
+  /** Match a word that may tokenize as a keyword OR a bare identifier
+   *  (used for clause words the lexer does not reserve: ARCHIVE,
+   *  PLUGGABLE, RETENTION, …). */
+  private matchWord(word: string): boolean {
+    if (this.checkIdentifierOrKeyword(word)) { this.advance(); return true; }
+    return false;
+  }
+
+  private expectWord(word: string): void {
+    if (!this.matchWord(word)) {
+      throw new Error(`Expected '${word}' but found '${this.current().value}'`);
+    }
+  }
+
+  private parseCreateFlashbackArchive(pos: SourcePosition): import('../engine/parser/ASTNode').CreateFlashbackArchiveStatement {
+    this.expectWord('ARCHIVE');
+    const isDefault = this.matchKeyword('DEFAULT');
+    const name = this.expectIdentifier();
+    this.expectKeyword('TABLESPACE');
+    const tablespace = this.expectIdentifier();
+    let quotaMb: number | null = null;
+    if (this.matchKeyword('QUOTA')) {
+      quotaMb = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+      this.matchWord('M');
+    }
+    let retentionDays = 0;
+    if (this.matchWord('RETENTION')) {
+      retentionDays = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+      if (this.matchWord('DAY') || this.matchWord('MONTH') || this.matchWord('YEAR')) { /* unit captured */ }
+    }
+    return { type: 'CreateFlashbackArchiveStatement', position: pos, name, isDefault, tablespace, quotaMb, retentionDays };
+  }
+
+  private parsePluggableDatabase(pos: SourcePosition, operation: 'CREATE' | 'DROP' | 'ALTER'): import('../engine/parser/ASTNode').PluggableDatabaseStatement {
+    this.expectKeyword('DATABASE');
+    const name = this.expectIdentifier();
+    let openMode: 'READ ONLY' | 'READ WRITE' | undefined;
+    let close = false;
+    if (operation === 'ALTER') {
+      if (this.matchWord('OPEN')) {
+        if (this.matchWord('READ')) {
+          if (this.matchWord('ONLY')) openMode = 'READ ONLY';
+          else { this.matchWord('WRITE'); openMode = 'READ WRITE'; }
+        } else {
+          openMode = 'READ WRITE';
+        }
+      } else if (this.matchWord('CLOSE')) {
+        close = true;
+      }
+    }
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'PluggableDatabaseStatement', position: pos, operation, name, openMode, close };
+  }
+
+  private parseCreateType(pos: SourcePosition): import('../engine/parser/ASTNode').CreateTypeStatement {
+    let schema: string | undefined;
+    let name = this.expectIdentifier();
+    if (this.match(TokenType.DOT)) { schema = name; name = this.expectIdentifier(); }
+    if (!this.matchKeyword('AS') && !this.matchKeyword('IS')) this.expectKeyword('AS');
+
+    if (this.matchWord('VARRAY') || this.matchWord('VARYING')) {
+      this.matchWord('ARRAY');
+      let upperBound: number | null = null;
+      if (this.match(TokenType.LPAREN)) {
+        upperBound = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        this.expect(TokenType.RPAREN);
+      }
+      this.expectWord('OF');
+      const elemType = this.expectIdentifierOrKeyword().toUpperCase();
+      this.consumeOptionalTypeSize();
+      return { type: 'CreateTypeStatement', position: pos, schema, name, form: 'collection', collKind: 'VARRAY', upperBound, elemType };
+    }
+    if (this.matchWord('TABLE')) {
+      this.expectWord('OF');
+      const elemType = this.expectIdentifierOrKeyword().toUpperCase();
+      this.consumeOptionalTypeSize();
+      return { type: 'CreateTypeStatement', position: pos, schema, name, form: 'collection', collKind: 'TABLE', upperBound: null, elemType };
+    }
+
+    this.expectWord('OBJECT');
+    const attributes: import('../engine/parser/ASTNode').TypeAttribute[] = [];
+    this.expect(TokenType.LPAREN);
+    do {
+      if (this.isTypeMethodAhead()) { this.skipMember(); continue; }
+      const attrName = this.expectIdentifier().toUpperCase();
+      const typeName = this.expectIdentifierOrKeyword().toUpperCase();
+      let precision: number | undefined;
+      let scale: number | undefined;
+      if (this.match(TokenType.LPAREN)) {
+        precision = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        if (this.match(TokenType.COMMA)) scale = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        this.expect(TokenType.RPAREN);
+      }
+      attributes.push({ name: attrName, typeName, precision, scale });
+    } while (this.match(TokenType.COMMA));
+    this.expect(TokenType.RPAREN);
+    const finalType = !(this.matchWord('NOT') && this.matchWord('FINAL'));
+    if (finalType) this.matchWord('FINAL');
+    return { type: 'CreateTypeStatement', position: pos, schema, name, form: 'object', attributes, finalType };
+  }
+
+  private consumeOptionalTypeSize(): void {
+    if (this.match(TokenType.LPAREN)) {
+      while (!this.check(TokenType.RPAREN) && !this.check(TokenType.EOF)) this.advance();
+      this.match(TokenType.RPAREN);
+    }
+  }
+
+  private isTypeMethodAhead(): boolean {
+    for (const w of ['MEMBER', 'STATIC', 'MAP', 'ORDER', 'CONSTRUCTOR', 'OVERRIDING', 'FINAL', 'NOT']) {
+      if (this.checkIdentifierOrKeyword(w)) return true;
+    }
+    return false;
+  }
+
+  private skipMember(): void {
+    let depth = 0;
+    while (!this.check(TokenType.EOF)) {
+      if (this.check(TokenType.LPAREN)) depth++;
+      else if (this.check(TokenType.RPAREN)) { if (depth === 0) break; depth--; }
+      else if (depth === 0 && this.check(TokenType.COMMA)) break;
+      this.advance();
+    }
+  }
+
+  private parseAlterCompile(pos: SourcePosition): import('../engine/parser/ASTNode').AlterCompileStatement {
+    const objectKind = this.advance().value.toUpperCase() as 'PROCEDURE' | 'FUNCTION' | 'PACKAGE';
+    this.expectIdentifier();
+    if (this.match(TokenType.DOT)) this.expectIdentifier();
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AlterCompileStatement', position: pos, objectKind };
+  }
+
+  private parseAlterSession(pos: SourcePosition): import('../engine/parser/ASTNode').AlterSessionStatement {
+    let param: string | undefined;
+    let value: string | undefined;
+    if (this.matchKeyword('SET')) {
+      param = this.expectIdentifierOrKeyword().toUpperCase();
+      this.match(TokenType.COMPARISON_OP, '=');
+      if (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
+        const raw = this.advance().value;
+        value = raw.replace(/^['"]|['"]$/g, '').toUpperCase();
+      }
+    }
+    while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+    return { type: 'AlterSessionStatement', position: pos, param, value };
+  }
+
+  private normalizeLockMode(phrase: string): import('../engine/parser/ASTNode').LockTableStatement['lockMode'] {
+    const p = phrase.replace(/\s+/g, ' ').trim();
+    switch (p) {
+      case 'ROW SHARE': return 'ROW SHARE';
+      case 'SHARE UPDATE': return 'SHARE UPDATE';
+      case 'ROW EXCLUSIVE': return 'ROW EXCLUSIVE';
+      case 'SHARE': return 'SHARE';
+      case 'SHARE ROW EXCLUSIVE': return 'SHARE ROW EXCLUSIVE';
+      case 'EXCLUSIVE': return 'EXCLUSIVE';
+      default: return 'EXCLUSIVE';
+    }
   }
 
   /**
@@ -287,6 +473,9 @@ export class OracleParser extends BaseParser {
   }
 
   protected override parseDialectCreate(pos: SourcePosition, orReplace: boolean): Statement | null {
+    if (this.matchKeyword('FLASHBACK')) return this.parseCreateFlashbackArchive(pos);
+    if (this.matchWord('PLUGGABLE')) return this.parsePluggableDatabase(pos, 'CREATE');
+    if (this.matchKeyword('TYPE')) return this.parseCreateType(pos);
     if (this.matchKeyword('TABLESPACE')) return this.parseCreateTablespace(pos);
     if (this.matchKeyword('BIGFILE') || this.matchKeyword('SMALLFILE')) {
       // BIGFILE / SMALLFILE are pure metadata hints; treat as a plain
@@ -329,6 +518,11 @@ export class OracleParser extends BaseParser {
   }
 
   protected override parseDialectAlter(pos: SourcePosition): Statement | null {
+    if (this.matchWord('PLUGGABLE')) return this.parsePluggableDatabase(pos, 'ALTER');
+    if (this.matchKeyword('SESSION')) return this.parseAlterSession(pos);
+    if (this.checkIdentifierOrKeyword('PROCEDURE') || this.checkIdentifierOrKeyword('FUNCTION') || this.checkIdentifierOrKeyword('PACKAGE')) {
+      return this.parseAlterCompile(pos);
+    }
     if (this.matchKeyword('SYSTEM')) return this.parseAlterSystem(pos);
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
@@ -555,6 +749,12 @@ export class OracleParser extends BaseParser {
   }
 
   protected override parseDialectDrop(pos: SourcePosition): Statement | null {
+    if (this.matchKeyword('FLASHBACK')) {
+      this.expectWord('ARCHIVE');
+      const name = this.expectIdentifier();
+      return { type: 'DropFlashbackArchiveStatement', position: pos, name } as import('../engine/parser/ASTNode').DropFlashbackArchiveStatement;
+    }
+    if (this.matchWord('PLUGGABLE')) return this.parsePluggableDatabase(pos, 'DROP');
     if (this.matchKeyword('AUDIT')) {
       this.expectKeyword('POLICY');
       const name = this.expectIdentifier().toUpperCase();

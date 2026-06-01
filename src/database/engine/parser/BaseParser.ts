@@ -1187,9 +1187,26 @@ export abstract class BaseParser {
     } else if (this.matchKeyword('FORCE')) {
       this.matchKeyword('LOGGING');
       actions.push({ action: 'SHRINK_SPACE' });
+    } else if (this.matchKeyword('FLASHBACK')) {
+      if (this.checkIdentifierOrKeyword('ARCHIVE')) this.advance();
+      let archive: string | undefined;
+      if (this.check(TokenType.IDENTIFIER)) archive = this.advance().value;
+      actions.push({ action: 'FLASHBACK_ARCHIVE', archive });
+    } else if (this.checkIdentifierOrKeyword('INMEMORY')) {
+      this.advance();
+      this.consumeRestOfStatement();
+      actions.push({ action: 'INMEMORY' });
     } else if (this.matchKeyword('NO')) {
-      this.matchKeyword('FORCE'); this.matchKeyword('LOGGING');
-      actions.push({ action: 'SHRINK_SPACE' });
+      if (this.matchKeyword('FLASHBACK')) {
+        if (this.checkIdentifierOrKeyword('ARCHIVE')) this.advance();
+        actions.push({ action: 'NO_FLASHBACK_ARCHIVE' });
+      } else if (this.checkIdentifierOrKeyword('INMEMORY')) {
+        this.advance();
+        actions.push({ action: 'NO_INMEMORY' });
+      } else {
+        this.matchKeyword('FORCE'); this.matchKeyword('LOGGING');
+        actions.push({ action: 'SHRINK_SPACE' });
+      }
     } else if (this.matchKeyword('PARALLEL') || this.matchKeyword('NOPARALLEL')) {
       // Optional `PARALLEL n` — consume the number.
       if (this.check(TokenType.NUMBER_LITERAL)) this.advance();
