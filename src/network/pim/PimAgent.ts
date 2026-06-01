@@ -3,8 +3,9 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import {
   type PimConfig, type PimInterfaceRuntime, type PimNeighborEntry,
   type PimMode, type PimPacket, type PimHelloOption,
-  createDefaultPimConfig, defaultInterfaceRuntime, makeNeighborKey,
-  compareDrCandidate, getOption,
+  type PimMroutEntry, type PimRpEntry, type PimJoinPruneBody,
+  createDefaultPimConfig, defaultInterfaceRuntime, makeNeighborKey, makeMroutKey,
+  compareDrCandidate, getOption, matchesGroupRange, ipToUint32,
   IP_PROTO_PIM, PIM_ALL_ROUTERS, PIM_ALL_ROUTERS_MAC,
 } from './types';
 import {
@@ -27,6 +28,7 @@ export class PimAgent {
   private config: PimConfig = createDefaultPimConfig();
   private helloTimer: TimerHandle | null = null;
   private expiryTimer: TimerHandle | null = null;
+  private refreshTimer: TimerHandle | null = null;
   private scheduler: IScheduler | null = null;
   private unsubscribers: Array<() => void> = [];
   private running = false;
@@ -101,6 +103,88 @@ export class PimAgent {
       a.iface === b.iface ? a.neighborIp.localeCompare(b.neighborIp) : a.iface.localeCompare(b.iface));
   }
 
+  addStaticRp(rpAddress: string, groupRangeAddress = '224.0.0.0', groupRangeMaskBits = 4): void {
+    const existing = this.config.rps.find((r) =>
+      r.rpAddress === rpAddress &&
+      r.groupRangeAddress === groupRangeAddress &&
+      r.groupRangeMaskBits === groupRangeMaskBits);
+    if (existing) return;
+    this.config.rps.push({
+      rpAddress, groupRangeAddress, groupRangeMaskBits, isStatic: true,
+    });
+    for (const m of this.config.mroutes.values()) {
+      if (m.entryType !== 'star-g') continue;
+      if (!matchesGroupRange(m.groupAddress, groupRangeAddress, groupRangeMaskBits)) continue;
+      m.rpAddress = rpAddress;
+      this.maybeRefreshUpstream(m);
+    }
+  }
+
+  removeStaticRp(rpAddress: string): void {
+    const before = this.config.rps.length;
+    this.config.rps = this.config.rps.filter((r) => r.rpAddress !== rpAddress);
+    if (this.config.rps.length === before) return;
+    for (const m of this.config.mroutes.values()) {
+      if (m.rpAddress === rpAddress) {
+        m.rpAddress = this.resolveRpForGroup(m.groupAddress);
+        this.getBus().publish({
+          topic: 'pim.rp.changed',
+          payload: {
+            deviceId: this.host.id, hostname: this.host.getHostname(),
+            group: m.groupAddress, rpAddress: m.rpAddress,
+          },
+        });
+      }
+    }
+  }
+
+  resolveRpForGroup(group: string): string | null {
+    let best: PimRpEntry | null = null;
+    for (const r of this.config.rps) {
+      if (!matchesGroupRange(group, r.groupRangeAddress, r.groupRangeMaskBits)) continue;
+      if (!best || r.groupRangeMaskBits > best.groupRangeMaskBits) best = r;
+    }
+    return best?.rpAddress ?? null;
+  }
+
+  listMroutes(): PimMroutEntry[] {
+    return Array.from(this.config.mroutes.values()).sort((a, b) =>
+      a.groupAddress === b.groupAddress
+        ? (a.sourceAddress ?? '*').localeCompare(b.sourceAddress ?? '*')
+        : a.groupAddress.localeCompare(b.groupAddress));
+  }
+
+  getMroute(group: string, source: string | null = null): PimMroutEntry | undefined {
+    return this.config.mroutes.get(makeMroutKey(group, source));
+  }
+
+  joinGroup(group: string, outgoingInterface: string): void {
+    const m = this.ensureStarG(group);
+    if (m.outgoingInterfaces.has(outgoingInterface)) return;
+    m.outgoingInterfaces.add(outgoingInterface);
+    this.emitMrout(m, 'oif-added');
+    this.maybeRefreshUpstream(m);
+  }
+
+  leaveGroup(group: string, outgoingInterface: string): void {
+    const m = this.config.mroutes.get(makeMroutKey(group, null));
+    if (!m) return;
+    if (!m.outgoingInterfaces.delete(outgoingInterface)) return;
+    this.emitMrout(m, 'oif-removed');
+    if (m.outgoingInterfaces.size === 0) {
+      this.sendPrune(m);
+      this.config.mroutes.delete(makeMroutKey(group, null));
+      this.emitMrout(m, 'prune');
+    } else {
+      this.maybeRefreshUpstream(m);
+    }
+  }
+
+  setJoinPruneInterval(seconds: number): void {
+    this.config.joinPruneIntervalSec = Math.max(5, seconds);
+    this.config.joinPruneHoldtimeSec = Math.max(15, Math.floor(seconds * 3.5));
+  }
+
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): void {
     if (!this.config.enabled) return;
     if (ipPkt.protocol !== IP_PROTO_PIM) return;
@@ -117,6 +201,11 @@ export class PimAgent {
         iface: inPort, messageType: payload.messageType, fromIp: senderIp,
       },
     });
+
+    if (payload.messageType === 'join-prune') {
+      if (payload.joinPrune) this.onJoinPrune(rt, senderIp, payload.joinPrune);
+      return;
+    }
 
     if (payload.messageType !== 'hello') return;
 
@@ -158,6 +247,185 @@ export class PimAgent {
       this.transmitHello(rt);
     }
     this.recomputeDr(rt);
+  }
+
+  private ensureStarG(group: string): PimMroutEntry {
+    const k = makeMroutKey(group, null);
+    let m = this.config.mroutes.get(k);
+    if (!m) {
+      const rp = this.resolveRpForGroup(group);
+      m = {
+        groupAddress: group, sourceAddress: null, entryType: 'star-g',
+        incomingInterface: null, upstreamNeighborIp: null, rpAddress: rp,
+        outgoingInterfaces: new Set(),
+        joinExpiryMs: 0, uptimeMs: Date.now(), lastJoinSentMs: 0,
+      };
+      this.config.mroutes.set(k, m);
+    }
+    return m;
+  }
+
+  private maybeRefreshUpstream(m: PimMroutEntry): void {
+    if (m.outgoingInterfaces.size === 0) return;
+    const rp = m.rpAddress ?? this.resolveRpForGroup(m.groupAddress);
+    if (!rp) return;
+    m.rpAddress = rp;
+    const upstream = this.findUpstreamForRp(rp);
+    if (!upstream) return;
+    m.incomingInterface = upstream.iface;
+    m.upstreamNeighborIp = upstream.neighborIp;
+    this.sendJoin(m);
+  }
+
+  private findUpstreamForRp(rpIp: string): { iface: string; neighborIp: string } | null {
+    const rpu = ipToUint32(rpIp);
+    let best: { iface: string; neighborIp: string; pfxlen: number } | null = null;
+    for (const port of this.host.getPorts()) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!ip || !mask) continue;
+      const ifaceName = port.getName();
+      const rt = this.config.interfaces.get(ifaceName);
+      if (!rt || !rt.enabled) continue;
+      const local = ipToUint32(ip.toString());
+      const m = ipToUint32(mask.toString());
+      if ((local & m) !== (rpu & m)) continue;
+      const pfxlen = (() => { let n = 0; const v = m >>> 0; for (let i = 0; i < 32; i++) if (((v >>> (31 - i)) & 1) === 1) n++; return n; })();
+      const neigh = this.listNeighbors(ifaceName)[0];
+      if (!neigh) continue;
+      if (!best || pfxlen > best.pfxlen) {
+        best = { iface: ifaceName, neighborIp: neigh.neighborIp, pfxlen };
+      }
+    }
+    if (best) return { iface: best.iface, neighborIp: best.neighborIp };
+    for (const n of this.config.neighbors.values()) {
+      const rt = this.config.interfaces.get(n.iface);
+      if (!rt || !rt.enabled) continue;
+      return { iface: n.iface, neighborIp: n.neighborIp };
+    }
+    return null;
+  }
+
+  private sendJoin(m: PimMroutEntry): void {
+    if (!m.incomingInterface || !m.upstreamNeighborIp) return;
+    const body: PimJoinPruneBody = {
+      upstreamNeighborIp: m.upstreamNeighborIp,
+      holdtimeSec: this.config.joinPruneHoldtimeSec,
+      groups: [{
+        groupAddress: m.groupAddress,
+        joinedSources: [],
+        prunedSources: [],
+        joinStarG: true,
+        pruneStarG: false,
+      }],
+    };
+    this.transmitJoinPrune(m.incomingInterface, body);
+    m.lastJoinSentMs = Date.now();
+    m.joinExpiryMs = Date.now() + this.config.joinPruneHoldtimeSec * 1000;
+    this.emitMrout(m, 'join');
+  }
+
+  private sendPrune(m: PimMroutEntry): void {
+    if (!m.incomingInterface || !m.upstreamNeighborIp) return;
+    const body: PimJoinPruneBody = {
+      upstreamNeighborIp: m.upstreamNeighborIp,
+      holdtimeSec: this.config.joinPruneHoldtimeSec,
+      groups: [{
+        groupAddress: m.groupAddress,
+        joinedSources: [],
+        prunedSources: [],
+        joinStarG: false,
+        pruneStarG: true,
+      }],
+    };
+    this.transmitJoinPrune(m.incomingInterface, body);
+  }
+
+  private transmitJoinPrune(iface: string, body: PimJoinPruneBody): void {
+    const port = this.host.getPort(iface);
+    if (!port || !port.getIsUp() || !port.isConnected()) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    const payload: PimPacket = {
+      type: 'pim', version: 2, messageType: 'join-prune',
+      reserved: 0, checksum: 0, options: [],
+      senderIp: srcIp.toString(),
+      joinPrune: body,
+    };
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0,
+      totalLength: 20 + 32 + body.groups.length * 16,
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 1, protocol: IP_PROTO_PIM, headerChecksum: 0,
+      sourceIP: srcIp, destinationIP: new IPAddress(PIM_ALL_ROUTERS),
+      payload,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const eth: EthernetFrame = {
+      srcMAC: port.getMAC(),
+      dstMAC: new MACAddress(PIM_ALL_ROUTERS_MAC),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    };
+    this.host.sendFrame(iface, eth);
+    this.getBus().publish({
+      topic: 'pim.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        iface, messageType: 'join-prune',
+        destinationIp: PIM_ALL_ROUTERS,
+      },
+    });
+  }
+
+  private onJoinPrune(rt: PimInterfaceRuntime, senderIp: string, body: PimJoinPruneBody): void {
+    const port = this.host.getPort(rt.iface);
+    const myIp = port?.getIPAddress()?.toString();
+    if (!myIp || body.upstreamNeighborIp !== myIp) return;
+    for (const g of body.groups) {
+      const k = makeMroutKey(g.groupAddress, null);
+      if (g.joinStarG) {
+        let m = this.config.mroutes.get(k);
+        if (!m) {
+          m = {
+            groupAddress: g.groupAddress, sourceAddress: null, entryType: 'star-g',
+            incomingInterface: null, upstreamNeighborIp: null,
+            rpAddress: this.resolveRpForGroup(g.groupAddress),
+            outgoingInterfaces: new Set(),
+            joinExpiryMs: 0, uptimeMs: Date.now(), lastJoinSentMs: 0,
+          };
+          this.config.mroutes.set(k, m);
+        }
+        const added = !m.outgoingInterfaces.has(rt.iface);
+        m.outgoingInterfaces.add(rt.iface);
+        m.joinExpiryMs = Date.now() + body.holdtimeSec * 1000;
+        if (added) this.emitMrout(m, 'oif-added');
+        this.maybeRefreshUpstream(m);
+      } else if (g.pruneStarG) {
+        const m = this.config.mroutes.get(k);
+        if (!m) continue;
+        if (m.outgoingInterfaces.delete(rt.iface)) {
+          this.emitMrout(m, 'oif-removed');
+        }
+        if (m.outgoingInterfaces.size === 0) {
+          this.config.mroutes.delete(k);
+          this.emitMrout(m, 'prune');
+        }
+      }
+    }
+  }
+
+  private emitMrout(m: PimMroutEntry, reason: 'join' | 'prune' | 'oif-added' | 'oif-removed' | 'expiry'): void {
+    this.getBus().publish({
+      topic: 'pim.mroute.changed',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        group: m.groupAddress, source: m.sourceAddress,
+        incomingInterface: m.incomingInterface,
+        outgoingInterfaces: Array.from(m.outgoingInterfaces),
+        reason,
+      },
+    });
   }
 
   private recomputeDr(rt: PimInterfaceRuntime): void {
@@ -271,12 +539,24 @@ export class PimAgent {
     if (this.expiryTimer === null) {
       this.expiryTimer = s.setInterval(() => this.expireDue(), 1000);
     }
+    if (this.refreshTimer === null) {
+      this.refreshTimer = s.setInterval(() => {
+        const now = Date.now();
+        for (const m of this.config.mroutes.values()) {
+          if (m.outgoingInterfaces.size === 0) continue;
+          if (now - m.lastJoinSentMs >= this.config.joinPruneIntervalSec * 1000) {
+            this.maybeRefreshUpstream(m);
+          }
+        }
+      }, 1000);
+    }
   }
 
   private stopTimers(): void {
     const s = this.scheduler ?? this.getScheduler();
     if (this.helloTimer !== null) { s.clear(this.helloTimer); this.helloTimer = null; }
     if (this.expiryTimer !== null) { s.clear(this.expiryTimer); this.expiryTimer = null; }
+    if (this.refreshTimer !== null) { s.clear(this.refreshTimer); this.refreshTimer = null; }
   }
 
   private expireDue(): void {
@@ -292,6 +572,13 @@ export class PimAgent {
     for (const iface of touched) {
       const rt = this.config.interfaces.get(iface);
       if (rt) this.recomputeDr(rt);
+    }
+    for (const [k, m] of this.config.mroutes) {
+      if (m.joinExpiryMs === 0) continue;
+      if (now > m.joinExpiryMs && m.outgoingInterfaces.size === 0) {
+        this.config.mroutes.delete(k);
+        this.emitMrout(m, 'expiry');
+      }
     }
   }
 

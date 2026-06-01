@@ -36,9 +36,24 @@ export interface PimDrChangedPayload extends PimDeviceRef {
   newDrIp: string;
 }
 
+export interface PimMroutChangedPayload extends PimDeviceRef {
+  group: string;
+  source: string | null;
+  incomingInterface: string | null;
+  outgoingInterfaces: string[];
+  reason: 'join' | 'prune' | 'oif-added' | 'oif-removed' | 'expiry';
+}
+
+export interface PimRpChangedPayload extends PimDeviceRef {
+  group: string;
+  rpAddress: string | null;
+}
+
 export type PimDomainEvent =
   | { topic: 'pim.packet.sent'; payload: PimPacketSentPayload }
   | { topic: 'pim.packet.received'; payload: PimPacketReceivedPayload }
   | { topic: 'pim.neighbor.added'; payload: PimNeighborAddedPayload }
   | { topic: 'pim.neighbor.lost'; payload: PimNeighborLostPayload }
-  | { topic: 'pim.dr.changed'; payload: PimDrChangedPayload };
+  | { topic: 'pim.dr.changed'; payload: PimDrChangedPayload }
+  | { topic: 'pim.mroute.changed'; payload: PimMroutChangedPayload }
+  | { topic: 'pim.rp.changed'; payload: PimRpChangedPayload };

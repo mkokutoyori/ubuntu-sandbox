@@ -20,6 +20,20 @@ export interface PimHelloOption {
   value: number | string | string[];
 }
 
+export interface PimJoinPruneGroup {
+  groupAddress: string;
+  joinedSources: string[];
+  prunedSources: string[];
+  joinStarG: boolean;
+  pruneStarG: boolean;
+}
+
+export interface PimJoinPruneBody {
+  upstreamNeighborIp: string;
+  holdtimeSec: number;
+  groups: PimJoinPruneGroup[];
+}
+
 export interface PimPacket {
   type: 'pim';
   version: 2;
@@ -28,6 +42,33 @@ export interface PimPacket {
   checksum: number;
   options: PimHelloOption[];
   senderIp: string;
+  joinPrune?: PimJoinPruneBody;
+}
+
+export type PimMroutEntryType = 'star-g' | 's-g';
+
+export interface PimMroutEntry {
+  groupAddress: string;
+  sourceAddress: string | null;
+  entryType: PimMroutEntryType;
+  incomingInterface: string | null;
+  upstreamNeighborIp: string | null;
+  rpAddress: string | null;
+  outgoingInterfaces: Set<string>;
+  joinExpiryMs: number;
+  uptimeMs: number;
+  lastJoinSentMs: number;
+}
+
+export function makeMroutKey(group: string, source: string | null): string {
+  return `${source ?? '*'}|${group}`;
+}
+
+export interface PimRpEntry {
+  rpAddress: string;
+  groupRangeAddress: string;
+  groupRangeMaskBits: number;
+  isStatic: boolean;
 }
 
 export interface PimNeighborEntry {
@@ -58,6 +99,10 @@ export interface PimConfig {
   enabled: boolean;
   interfaces: Map<string, PimInterfaceRuntime>;
   neighbors: Map<string, PimNeighborEntry>;
+  rps: PimRpEntry[];
+  mroutes: Map<string, PimMroutEntry>;
+  joinPruneIntervalSec: number;
+  joinPruneHoldtimeSec: number;
 }
 
 export function makeNeighborKey(iface: string, neighborIp: string): string {
@@ -65,7 +110,26 @@ export function makeNeighborKey(iface: string, neighborIp: string): string {
 }
 
 export function createDefaultPimConfig(): PimConfig {
-  return { enabled: true, interfaces: new Map(), neighbors: new Map() };
+  return {
+    enabled: true,
+    interfaces: new Map(),
+    neighbors: new Map(),
+    rps: [],
+    mroutes: new Map(),
+    joinPruneIntervalSec: 60,
+    joinPruneHoldtimeSec: 210,
+  };
+}
+
+export function ipToUint32(ip: string): number {
+  const p = ip.split('.').map(Number);
+  return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+}
+
+export function matchesGroupRange(group: string, rangeIp: string, maskBits: number): boolean {
+  if (maskBits <= 0) return true;
+  const mask = (0xffffffff << (32 - maskBits)) >>> 0;
+  return (ipToUint32(group) & mask) === (ipToUint32(rangeIp) & mask);
 }
 
 export function defaultInterfaceRuntime(iface: string, mode: PimMode = 'sparse'): PimInterfaceRuntime {
