@@ -27,6 +27,8 @@ import { BfdAgent } from '../bfd/BfdAgent';
 import { UDP_PORT_BFD_CONTROL } from '../bfd/types';
 import { IgmpAgent } from '../igmp/IgmpAgent';
 import { IP_PROTO_IGMP } from '../igmp/types';
+import { PimAgent } from '../pim/PimAgent';
+import { IP_PROTO_PIM, PIM_ALL_ROUTERS_MAC } from '../pim/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -38,6 +40,7 @@ export class HuaweiRouter extends Router {
   private readonly ntpAgent: NtpAgent;
   private readonly bfdAgent: BfdAgent;
   private readonly igmpAgent: IgmpAgent;
+  private readonly pimAgent: PimAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
     const hostBase = {
@@ -53,11 +56,13 @@ export class HuaweiRouter extends Router {
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
     this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
+    this.pimAgent = new PimAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
     this.vrrpAgent.start();
     this.ntpAgent.start();
     this.bfdAgent.start();
     this.igmpAgent.start();
+    this.pimAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -67,11 +72,16 @@ export class HuaweiRouter extends Router {
     if (this.ntpAgent) { this.ntpAgent.stop(); this.ntpAgent.start(); }
     if (this.bfdAgent) { this.bfdAgent.stop(); this.bfdAgent.start(); }
     if (this.igmpAgent) { this.igmpAgent.stop(); this.igmpAgent.start(); }
+    if (this.pimAgent) { this.pimAgent.stop(); this.pimAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
+      return;
+    }
+    if (ipPkt.protocol === IP_PROTO_PIM) {
+      this.pimAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
       return;
     }
     if (ipPkt.protocol === IP_PROTO_UDP) {
@@ -110,6 +120,10 @@ export class HuaweiRouter extends Router {
         this.igmpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
         return;
       }
+      if (ipPkt && ipPkt.protocol === IP_PROTO_PIM && dst === PIM_ALL_ROUTERS_MAC) {
+        this.pimAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
+        return;
+      }
     }
     super.handleFrame(portName, frame);
   }
@@ -120,6 +134,7 @@ export class HuaweiRouter extends Router {
   getNtpAgent(): NtpAgent { return this.ntpAgent; }
   getBfdAgent(): BfdAgent { return this.bfdAgent; }
   getIgmpAgent(): IgmpAgent { return this.igmpAgent; }
+  getPimAgent(): PimAgent { return this.pimAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;
