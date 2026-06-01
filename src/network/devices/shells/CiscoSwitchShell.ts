@@ -149,6 +149,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.registerPortSecurityCommands();
     this.registerVtpCommands();
     this.registerUdldCommands();
+    this.registerIgmpSnoopingCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) {
@@ -777,6 +778,77 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
             lines.push(`Message interval: ${n.helloIntervalSec}`);
           }
         }
+        return lines.join('\n');
+      });
+    }
+  }
+
+  private registerIgmpSnoopingCommands(): void {
+    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config', (args) => {
+      const agent = this.d().getIgmpSnoopingAgent();
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) { agent.setEnabled(true); return ''; }
+      if (a[0] === 'vlan' && a[1]) {
+        const vlan = parseInt(a[1], 10);
+        if (!Number.isNaN(vlan)) {
+          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, true); return ''; }
+          agent.setVlanEnabled(vlan, true);
+        }
+        return '';
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping', (args) => {
+      const agent = this.d().getIgmpSnoopingAgent();
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) { agent.setEnabled(false); return ''; }
+      if (a[0] === 'vlan' && a[1]) {
+        const vlan = parseInt(a[1], 10);
+        if (!Number.isNaN(vlan)) {
+          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, false); return ''; }
+          agent.setVlanEnabled(vlan, false);
+        }
+      }
+      return '';
+    });
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show ip igmp snooping', 'Display IGMP snooping state', (args) => {
+        const agent = this.d().getIgmpSnoopingAgent();
+        const cfg = agent.getConfig();
+        if (args.includes('groups')) {
+          let vlanFilter: number | undefined;
+          const vi = args.indexOf('vlan');
+          if (vi >= 0 && args[vi + 1]) {
+            const n = parseInt(args[vi + 1], 10);
+            if (!Number.isNaN(n)) vlanFilter = n;
+          }
+          const rows = ['Vlan      Group               Type    Version  Port List'];
+          for (const { vlan, group } of agent.listGroups(vlanFilter)) {
+            const ports = Array.from(group.members.keys()).join(', ');
+            rows.push(
+              `${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}igmp    v2       ${ports}`);
+          }
+          return rows.join('\n');
+        }
+        if (args.includes('mrouter')) {
+          const rows = ['Vlan    ports'];
+          for (const v of agent.listVlans()) {
+            rows.push(`${String(v.vlan).padEnd(8)}${Array.from(v.routerPorts).join(', ')}`);
+          }
+          return rows.join('\n');
+        }
+        const lines: string[] = [];
+        lines.push(`Global IGMP Snooping configuration:`);
+        lines.push(`-----------------------------------------`);
+        lines.push(`IGMP snooping              : ${cfg.enabled ? 'Enabled' : 'Disabled'}`);
+        lines.push(`IGMPv3 snooping            : Disabled`);
+        lines.push(`Report suppression         : Enabled`);
+        lines.push(`TCN solicit query          : Disabled`);
+        lines.push(`Robustness variable        : 2`);
+        lines.push(`Last member query count    : 2`);
+        lines.push(`Last member query interval : 1000`);
+        lines.push(``);
+        lines.push(`Vlan ${[...agent.listVlans()].map(v => v.vlan).join(',') || '<none>'}:`);
         return lines.join('\n');
       });
     }

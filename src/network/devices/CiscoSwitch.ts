@@ -29,6 +29,7 @@ import { VtpAgent } from '../vtp/VtpAgent';
 import { ETHERTYPE_VTP } from '../vtp/types';
 import { UdldAgent } from '../udld/UdldAgent';
 import { ETHERTYPE_UDLD } from '../udld/types';
+import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -40,6 +41,7 @@ export class CiscoSwitch extends Switch {
   private readonly lacpAgent: LacpAgent;
   private readonly vtpAgent: VtpAgent;
   private readonly udldAgent: UdldAgent;
+  private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -78,6 +80,11 @@ export class CiscoSwitch extends Switch {
       ...hostBase,
       onUdldErrDisable: (p: string) => this.applyUdldErrDisable(p),
     }, () => this.getBus());
+    this.igmpSnoopingAgent = new IgmpSnoopingAgent({
+      ...hostBase,
+      resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
+      isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
+    }, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.dtpAgent.start();
@@ -85,6 +92,15 @@ export class CiscoSwitch extends Switch {
     this.lacpAgent.start();
     this.vtpAgent.start();
     this.udldAgent.start();
+    this.igmpSnoopingAgent.start();
+  }
+
+  private resolveSnoopingVlan(portName: string): number | undefined {
+    const cfg = this.getSwitchportConfig(portName);
+    if (!cfg) return undefined;
+    if (cfg.mode === 'access') return cfg.accessVlan;
+    if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
+    return undefined;
   }
 
   private applyUdldErrDisable(portName: string): void {
@@ -120,6 +136,7 @@ export class CiscoSwitch extends Switch {
     if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
     if (this.vtpAgent) { this.vtpAgent.stop(); this.vtpAgent.start(); }
     if (this.udldAgent) { this.udldAgent.stop(); this.udldAgent.start(); }
+    if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -151,6 +168,7 @@ export class CiscoSwitch extends Switch {
       this.udldAgent.handleFrame(portName, frame);
       return;
     }
+    this.igmpSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
   }
 
@@ -159,6 +177,7 @@ export class CiscoSwitch extends Switch {
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
   getVtpAgent(): VtpAgent { return this.vtpAgent; }
   getUdldAgent(): UdldAgent { return this.udldAgent; }
+  getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
 
   override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
     const r = super.setSwitchportMode(portName, mode);
