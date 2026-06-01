@@ -33,6 +33,8 @@ import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { UDP_PORT_RADIUS_AUTH } from '../radius/types';
+import { GreAgent } from '../gre/GreAgent';
+import { IP_PROTO_GRE } from '../gre/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -48,6 +50,7 @@ export class HuaweiRouter extends Router {
   private readonly syslogAgent: SyslogAgent;
   private readonly radiusClient: RadiusClientAgent;
   private readonly radiusServer: RadiusServerAgent;
+  private readonly greAgent: GreAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
     const hostBase = {
@@ -67,6 +70,7 @@ export class HuaweiRouter extends Router {
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
+    this.greAgent = new GreAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
     this.vrrpAgent.start();
     this.ntpAgent.start();
@@ -76,6 +80,7 @@ export class HuaweiRouter extends Router {
     this.syslogAgent.start();
     this.radiusClient.start();
     this.radiusServer.start();
+    this.greAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -89,6 +94,7 @@ export class HuaweiRouter extends Router {
     if (this.syslogAgent) { this.syslogAgent.stop(); this.syslogAgent.start(); }
     if (this.radiusClient) { this.radiusClient.stop(); this.radiusClient.start(); }
     if (this.radiusServer) { this.radiusServer.stop(); this.radiusServer.start(); }
+    if (this.greAgent) { this.greAgent.stop(); this.greAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -98,6 +104,11 @@ export class HuaweiRouter extends Router {
     }
     if (ipPkt.protocol === IP_PROTO_PIM) {
       this.pimAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
+      return;
+    }
+    if (ipPkt.protocol === IP_PROTO_GRE) {
+      const inner = this.greAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
+      if (inner) this.processIPv4(inPort, inner);
       return;
     }
     if (ipPkt.protocol === IP_PROTO_UDP) {
@@ -162,6 +173,7 @@ export class HuaweiRouter extends Router {
   getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
   getRadiusClient(): RadiusClientAgent { return this.radiusClient; }
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
+  getGreAgent(): GreAgent { return this.greAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;
