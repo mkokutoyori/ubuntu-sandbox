@@ -37,6 +37,7 @@ import type { VrrpDomainEvent } from '@/network/vrrp/events';
 import type { GlbpDomainEvent } from '@/network/glbp/events';
 import type { BfdDomainEvent } from '@/network/bfd/events';
 import type { UdldDomainEvent } from '@/network/udld/events';
+import type { IgmpDomainEvent } from '@/network/igmp/events';
 import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
@@ -295,6 +296,7 @@ export type DomainEvent =
   | GlbpDomainEvent
   | BfdDomainEvent
   | UdldDomainEvent
+  | IgmpDomainEvent
   | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
