@@ -1,0 +1,230 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { EventBus } from '@/events/EventBus';
+import { MACAddress, IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
+import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { Logger } from '@/network/core/Logger';
+import { UDP_PORT_HSRP, HSRP_MULTICAST_V1, compareSpeaker, hsrpVirtualMac } from '@/network/hsrp/types';
+
+beforeEach(() => {
+  resetCounters();
+  resetDeviceCounters();
+  MACAddress.resetCounter();
+  Logger.reset();
+});
+
+async function configureHsrp(r: CiscoRouter, iface: string, ip: string, mask: string, group: number, vip: string, priority?: number, preempt = false): Promise<void> {
+  r.getPort(iface)!.configureIP(new IPAddress(ip), new SubnetMask(mask));
+  await r.executeCommand('enable');
+  await r.executeCommand('configure terminal');
+  await r.executeCommand(`interface ${iface}`);
+  await r.executeCommand(`standby ${group} ip ${vip}`);
+  if (priority !== undefined) await r.executeCommand(`standby ${group} priority ${priority}`);
+  if (preempt) await r.executeCommand(`standby ${group} preempt`);
+  await r.executeCommand('no shutdown');
+  await r.executeCommand('end');
+}
+
+describe('HSRP — pure helpers', () => {
+  it('compareSpeaker: higher priority wins, tie broken by higher IP', () => {
+    expect(compareSpeaker({ priority: 200, ip: '10.0.0.1' },
+                           { priority: 100, ip: '10.0.0.99' })).toBeLessThan(0);
+    expect(compareSpeaker({ priority: 100, ip: '10.0.0.2' },
+                           { priority: 100, ip: '10.0.0.1' })).toBeLessThan(0);
+    expect(compareSpeaker({ priority: 100, ip: '10.0.0.1' },
+                           { priority: 100, ip: '10.0.0.1' })).toBe(0);
+  });
+
+  it('hsrpVirtualMac formula matches the standard prefix', () => {
+    expect(hsrpVirtualMac(1, 1)).toBe('0000.0c07.ac01');
+    expect(hsrpVirtualMac(42, 1)).toBe('0000.0c07.ac2a');
+    expect(hsrpVirtualMac(1, 2)).toBe('0000.0c9f.f001');
+  });
+});
+
+describe('HSRP — single-speaker election', () => {
+  it('the only configured speaker becomes Active', async () => {
+    const r = new CiscoRouter('R1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    await configureHsrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    const g = r.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    expect(g?.state).toBe('active');
+    expect(g?.activeRouterIp).toBe('10.0.0.1');
+  });
+
+  it('show standby reports State is Active', async () => {
+    const r = new CiscoRouter('R1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    await configureHsrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    const out = await r.executeCommand('show standby');
+    expect(out).toMatch(/State is Active/);
+    expect(out).toMatch(/Active router is local/);
+  });
+});
+
+describe('HSRP — two-speaker election', () => {
+  it('higher priority router becomes Active, the other Standby', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 110, true);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+
+    const g1 = r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    const g2 = r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    expect(g1?.state).toBe('active');
+    expect(g2?.state).toBe('standby');
+  });
+
+  it('on equal priority, higher IP wins the election', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+
+    const g1 = r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    const g2 = r2.getHsrpAgent().getGroup('GigabitEthernet0/0', 1);
+    expect(g2?.state).toBe('active');
+    expect(g1?.state).toBe('standby');
+  });
+});
+
+describe('HSRP — reactive events', () => {
+  it('hsrp.state.changed fires when election runs', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    const changes: Array<{ deviceId: string; newState: string }> = [];
+    bus.subscribe('hsrp.state.changed', (e) => changes.push(e.payload));
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+
+    expect(changes.some(c => c.deviceId === r1.id && c.newState === 'active')).toBe(true);
+    expect(changes.some(c => c.deviceId === r2.id && c.newState === 'standby')).toBe(true);
+  });
+
+  it('hsrp.packet.received fires on peer hello', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    const received: Array<{ deviceId: string; fromIp: string }> = [];
+    bus.subscribe('hsrp.packet.received', (e) => received.push(e.payload));
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 110);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+
+    expect(received.some(r => r.deviceId === r2.id && r.fromIp === '10.0.0.1')).toBe(true);
+  });
+
+  it('hsrp.active.changed fires with the elected active IP', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    const actives: Array<{ deviceId: string; activeIp: string | null }> = [];
+    bus.subscribe('hsrp.active.changed', (e) => actives.push(e.payload));
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+
+    expect(actives.some(a => a.deviceId === r2.id && a.activeIp === '10.0.0.1')).toBe(true);
+  });
+});
+
+describe('HSRP — wire format', () => {
+  it('hello uses UDP/1985 to the all-routers multicast', async () => {
+    const bus = new EventBus();
+    const r = new CiscoRouter('R1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r.setEventBus(bus); sw.setEventBus(bus);
+    const cable = new Cable('c');
+    cable.setEventBus(bus);
+
+    let seen: { srcPort: number; dstPort: number; dstIp: string } | null = null;
+    bus.subscribe('cable.frame.delivered', (e) => {
+      const ipPkt = (e.payload.frame.payload as unknown) as { protocol?: number; payload?: { sourcePort?: number; destinationPort?: number }; destinationIP?: { toString: () => string } } | undefined;
+      if (ipPkt?.protocol === 17 && ipPkt.payload?.destinationPort === UDP_PORT_HSRP) {
+        seen = {
+          srcPort: ipPkt.payload.sourcePort ?? 0,
+          dstPort: ipPkt.payload.destinationPort,
+          dstIp: ipPkt.destinationIP?.toString() ?? '',
+        };
+      }
+    });
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    await configureHsrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254');
+
+    expect(seen).not.toBeNull();
+    expect(seen!.srcPort).toBe(UDP_PORT_HSRP);
+    expect(seen!.dstPort).toBe(UDP_PORT_HSRP);
+    expect(seen!.dstIp).toBe(HSRP_MULTICAST_V1);
+  });
+});
+
+describe('HSRP — link-down behaviour', () => {
+  it('link-down clears the Active election (back to Init)', async () => {
+    const bus = new EventBus();
+    const r = new CiscoRouter('R1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    await configureHsrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
+    expect(r.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
+    r.getPort('GigabitEthernet0/0')!.setUp(false);
+    expect(r.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('init');
+  });
+});
+
+describe('HSRP — show standby reports peer info', () => {
+  it('Active router IP is reported on the standby side', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+    const out = await r2.executeCommand('show standby');
+    expect(out).toMatch(/State is Standby/);
+    expect(out).toMatch(/Active router is 10\.0\.0\.1/);
+  });
+
+  it('show standby brief lists the elected role', async () => {
+    const bus = new EventBus();
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
+    await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
+    const out = await r2.executeCommand('show standby brief');
+    expect(out).toMatch(/Standby/);
+    expect(out).toMatch(/10\.0\.0\.1/);
+  });
+});

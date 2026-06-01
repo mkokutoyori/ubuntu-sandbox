@@ -408,9 +408,23 @@ export class Port {
    */
   private checkPortSecurity(srcMAC: MACAddress): boolean {
     const verdict = this.security.evaluate(srcMAC);
+    if (verdict.learned && verdict.learned.type === 'sticky') {
+      this.getBus().publish({
+        topic: 'port.security.sticky-saved',
+        payload: {
+          ...this.portRef(),
+          mac: verdict.learned.mac,
+          vlan: verdict.learned.vlan,
+        },
+      });
+    }
     if (verdict.shouldShutdown) {
       this.isUp = false;
       this.notifyLinkChange('down');
+      this.getBus().publish({
+        topic: 'port.security.errdisable.set',
+        payload: { ...this.portRef(), mac: srcMAC },
+      });
     }
     if (!verdict.allowed) {
       const action: 'discarded' | 'shutdown' | 'restricted' = verdict.shouldShutdown

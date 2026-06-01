@@ -21,6 +21,7 @@ import type { Switch } from '../Switch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
+import { MACAddress } from '../../core/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -48,6 +49,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
   private ifExtra = new Map<string, string[]>();
   private configAclTrie = new CommandTrie();
   private selectedAcl: string | null = null;
+  private selectedArpAcl: string | null = null;
   private acls = new Map<string, string[]>();
 
   constructor() {
@@ -97,6 +99,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (f === 'selectedInterface') this.selectedInterface = null;
       if (f === 'selectedInterfaceRange') this.selectedInterfaceRange = [];
       if (f === 'selectedVlan') this.selectedVlan = null;
+      if (f === 'selectedAcl') { this.selectedAcl = null; this.selectedArpAcl = null; }
     }
   }
 
@@ -118,7 +121,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // ── Config-vlan mode ──
     this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
       if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
-      return this.d().renameVLAN(this.selectedVlan, args[0]) ? '' : '% VLAN not found';
+      const ok = this.d().renameVLAN(this.selectedVlan, args[0]);
+      if (ok) this.d().getVtpAgent().onLocalVlanChange();
+      return ok ? '' : '% VLAN not found';
     });
 
     // ── Spanning Tree (L2, switch-only) ──
@@ -140,11 +145,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       this.mode = 'config-acl';
       return '';
     });
-    this.configTrie.registerGreedy('ip arp inspection', 'Dynamic ARP Inspection', () => '');
-    this.configIfTrie.registerGreedy('ip arp inspection', 'DAI trust', (args) =>
-      this.applyToSelectedInterfaces(() => { void args; return ''; }));
+    this.registerDaiCommands();
+    this.registerPortSecurityCommands();
+    this.registerVtpCommands();
+    this.registerUdldCommands();
+    this.registerIgmpSnoopingCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
+        if (this.selectedArpAcl) {
+          return this.handleArpAclLine(kw, args);
+        }
         if (this.selectedAcl) {
           this.acls.get(this.selectedAcl)!.push(`${kw} ${args.join(' ')}`.trim());
         }
@@ -177,21 +187,674 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
         return out.join('\n');
       });
       t.registerGreedy('show port-security', 'Display port security', (args) => {
-        if (args[0]?.toLowerCase() === 'interface') {
-          return [`Port Security              : Enabled`,
-            `Port Status                : Secure-up`,
-            `Violation Mode             : Shutdown`,
-            `Maximum MAC Addresses      : 1`,
-            `Total MAC Addresses        : 0`].join('\n');
+        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
+          return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
         }
-        return ['Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
-          '------------------------------------------------------------------------------'].join('\n');
+        if (args[0]?.toLowerCase() === 'address') {
+          return this.showPortSecurityAddress(this.d());
+        }
+        return this.showPortSecurityOverview(this.d());
+      });
+    }
+  }
+
+  private registerDaiCommands(): void {
+    const parseList = (spec: string): number[] => {
+      const out: number[] = [];
+      for (const part of spec.split(',')) {
+        const m = part.match(/^(\d+)-(\d+)$/);
+        if (m) { for (let i = +m[1]; i <= +m[2]; i++) out.push(i); }
+        else { const n = parseInt(part, 10); if (!isNaN(n)) out.push(n); }
+      }
+      return out;
+    };
+
+    // ── Global ── ip arp inspection vlan <list>
+    this.configTrie.registerGreedy('ip arp inspection vlan', 'Enable DAI on VLAN(s)', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const v of parseList(args.join(','))) cfg.vlans.add(v);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip arp inspection vlan', 'Disable DAI on VLAN(s)', (args) => {
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const v of parseList(args.join(','))) cfg.vlans.delete(v);
+      return '';
+    });
+    this.configTrie.registerGreedy('ip arp inspection validate', 'Extra DAI checks', (args) => {
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const tok of args) {
+        const k = tok.toLowerCase();
+        if (k === 'src-mac') cfg.validate.srcMac = true;
+        else if (k === 'dst-mac') cfg.validate.dstMac = true;
+        else if (k === 'ip') cfg.validate.ip = true;
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip arp inspection validate', 'Clear DAI checks', (args) => {
+      const cfg = this.d()._getArpInspectionConfig();
+      if (args.length === 0) {
+        cfg.validate.srcMac = false; cfg.validate.dstMac = false; cfg.validate.ip = false;
+      } else for (const tok of args) {
+        const k = tok.toLowerCase();
+        if (k === 'src-mac') cfg.validate.srcMac = false;
+        else if (k === 'dst-mac') cfg.validate.dstMac = false;
+        else if (k === 'ip') cfg.validate.ip = false;
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('ip arp inspection filter', 'Apply ARP ACL to VLAN(s)', (args) => {
+      // ip arp inspection filter <acl> vlan <list> [static]
+      const aclName = args[0]; const vlanIdx = args.indexOf('vlan');
+      if (!aclName || vlanIdx < 1) return '% Incomplete command.';
+      const list = args[vlanIdx + 1];
+      if (!list) return '% Incomplete command.';
+      const isStatic = args[vlanIdx + 2]?.toLowerCase() === 'static';
+      const cfg = this.d()._getArpInspectionConfig();
+      for (const v of parseList(list)) cfg.vlanAclFilters.set(v, { aclName, staticMode: isStatic });
+      return '';
+    });
+    this.configTrie.registerGreedy('errdisable recovery cause arp-inspection',
+      'Auto-recover DAI err-disabled ports', () => {
+        const cfg = this.d()._getArpInspectionConfig();
+        if (cfg.errDisableRecoverySec <= 0) this.d()._setArpRecoverySec(30);
+        return '';
+      });
+    this.configTrie.registerGreedy('errdisable recovery interval',
+      'Auto-recovery interval (sec)', (args) => {
+        const n = parseInt(args[0] ?? '', 10);
+        if (!isNaN(n) && n > 0) this.d()._setArpRecoverySec(n);
+        return '';
+      });
+
+    // ── arp access-list ──
+    this.configTrie.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
+      const name = args[0]; if (!name) return '% Incomplete command.';
+      const map = this.d()._getArpAccessLists();
+      if (!map.has(name)) map.set(name, { name, entries: [] });
+      this.selectedArpAcl = name;
+      this.selectedAcl = null;
+      this.mode = 'config-acl';
+      return '';
+    });
+
+    // ── Interface ── trust + limit rate
+    this.configIfTrie.register('ip arp inspection trust', 'Trust port for DAI', () => {
+      const cfg = this.d()._getArpInspectionConfig();
+      return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
+    });
+    this.configIfTrie.register('no ip arp inspection trust', 'Untrust port for DAI', () => {
+      const cfg = this.d()._getArpInspectionConfig();
+      return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.delete(p); return ''; });
+    });
+    this.configIfTrie.registerGreedy('ip arp inspection limit rate', 'Per-port pps cap', (args) => {
+      const r = parseInt(args[0] ?? '', 10);
+      if (isNaN(r) || r < 0) return '% Invalid rate value';
+      const cfg = this.d()._getArpInspectionConfig();
+      return this.applyToSelectedInterfaces(p => { cfg.rateLimits.set(p, r); return ''; });
+    });
+
+    // ── Show ──
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show dtp', 'Display DTP information', (args) => {
+        const dtp = this.d().getDtpAgent();
+        const ports = this.d().getPortNames();
+        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
+          const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
+          if (!this.d().getPort(name)) return `% Invalid interface "${args.slice(1).join(' ')}"`;
+          const s = dtp.getPortState(name);
+          return [
+            `DTP information for ${name}:`,
+            `  TOS/TAS/TNS:                            ${s.operationalMode === 'trunk' ? 'TRUNK' : 'ACCESS'}/${this.dtpAdminLabel(s.adminMode)}/NONE`,
+            `  TOT/TAT/TNT:                            ${s.trunkEncapsulation.toUpperCase()}/NEGOTIATE/NONE`,
+            `  Neighbor address 1:                     ${s.peerMac ?? '000000000000'}`,
+            `  Neighbor address 2:                     000000000000`,
+            `  Hello timer expiration (sec/state):     0/RUNNING`,
+            `  Access timer expiration (sec/state):    never/STOPPED`,
+            `  Negotiation timer expiration (sec/st):  never/STOPPED`,
+            `  Multidrop timer expiration (sec/state): never/STOPPED`,
+            `  FSM state:                              S6:TRUNK`,
+          ].join('\n');
+        }
+        const lines = ['Global DTP information', `  Sending DTP Hello packets every ${dtp.getConfig().helloSec} seconds`, '  Dynamic Trunk timeout is 300 seconds', ''];
+        lines.push('Interface       Mode             Status         Negotiation');
+        lines.push('--------------- ---------------- -------------- -----------');
+        for (const p of ports) {
+          const s = dtp.getPortState(p);
+          lines.push(
+            `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
+            `${s.operationalMode.padEnd(15)}${s.adminMode === 'nonegotiate' ? 'off' : 'on'}`,
+          );
+        }
+        return lines.join('\n');
+      });
+
+      t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
+      t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
+        this.showArpInspectionVlan(this.d(), args.join(',')));
+      t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
+        this.showArpInspectionStats(this.d()));
+      t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
+        this.showArpInspectionIfs(this.d()));
+      t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
+    }
+
+    // ── clear / recovery ──
+    this.privilegedTrie.register('clear ip arp inspection statistics',
+      'Reset DAI counters', () => { this.d()._resetArpInspectionStats(); return ''; });
+    this.privilegedTrie.registerGreedy('clear errdisable interface',
+      'Recover an err-disabled port', (args) => {
+        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
+        this.d()._clearArpInspectionErrDisable(portName);
+        return '';
+      });
+  }
+
+  private handleArpAclLine(kw: string, args: string[]): string {
+    if (!this.selectedArpAcl) return '';
+    const map = this.d()._getArpAccessLists();
+    const acl = map.get(this.selectedArpAcl);
+    if (!acl) return '';
+    if (kw === 'no') {
+      const raw = args.join(' ');
+      const idx = acl.entries.findIndex(e => e.raw === raw);
+      if (idx >= 0) acl.entries.splice(idx, 1);
+      return '';
+    }
+    if (kw !== 'permit' && kw !== 'deny') return '';
+    // Syntax: permit ip {host <ip>|any} mac {host <mac>|any}
+    let i = 0;
+    let senderIp: string | null = null;
+    let senderMac: string | null = null;
+    if (args[i]?.toLowerCase() === 'ip') {
+      i++;
+      if (args[i]?.toLowerCase() === 'host') { senderIp = args[i + 1] ?? null; i += 2; }
+      else if (args[i]?.toLowerCase() === 'any') { i++; }
+    }
+    if (args[i]?.toLowerCase() === 'mac') {
+      i++;
+      if (args[i]?.toLowerCase() === 'host') { senderMac = (args[i + 1] ?? '').toLowerCase() || null; i += 2; }
+      else if (args[i]?.toLowerCase() === 'any') { i++; }
+    }
+    acl.entries.push({
+      action: kw, senderIp, senderMac,
+      raw: `${kw} ${args.join(' ')}`.trim(),
+    });
+    return '';
+  }
+
+  private registerPortSecurityCommands(): void {
+    const parseMac = (s: string): MACAddress | null => {
+      try { return new MACAddress(s); } catch { return null; }
+    };
+
+    // ── enable / disable ──
+    this.configIfTrie.register('switchport port-security', 'Enable port-security', () =>
+      this.applyToSelectedInterfaces(p => {
+        const port = this.d().getPort(p); if (port) port.getPortSecurity().enable();
+        return '';
+      }));
+    this.configIfTrie.register('no switchport port-security', 'Disable port-security', () =>
+      this.applyToSelectedInterfaces(p => {
+        const port = this.d().getPort(p); if (port) port.getPortSecurity().disable();
+        return '';
+      }));
+
+    // ── maximum ──
+    this.configIfTrie.registerGreedy('switchport port-security maximum',
+      'Max secure MAC addresses', (args) => {
+        const n = parseInt(args[0] ?? '', 10);
+        if (isNaN(n) || n < 1) return '% Invalid maximum value';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setMaxMACAddresses(n);
+          return '';
+        });
+      });
+
+    // ── violation mode ──
+    this.configIfTrie.registerGreedy('switchport port-security violation',
+      'Violation mode', (args) => {
+        const m = (args[0] ?? '').toLowerCase();
+        if (m !== 'shutdown' && m !== 'restrict' && m !== 'protect') return '% Invalid mode';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p);
+          if (port) port.getPortSecurity().setViolationMode(m as 'shutdown' | 'restrict' | 'protect');
+          return '';
+        });
+      });
+
+    // ── mac-address (static + sticky toggle + sticky <mac>) ──
+    this.configIfTrie.registerGreedy('switchport port-security mac-address',
+      'Configure secure MAC', (args) => {
+        if (args.length === 0) return '% Incomplete command.';
+        if (args[0].toLowerCase() === 'sticky') {
+          if (args.length === 1) {
+            return this.applyToSelectedInterfaces(p => {
+              const port = this.d().getPort(p); if (port) port.getPortSecurity().enableSticky();
+              return '';
+            });
+          }
+          const mac = parseMac(args[1]); if (!mac) return `% Invalid MAC "${args[1]}"`;
+          return this.applyToSelectedInterfaces(p => {
+            const port = this.d().getPort(p); if (port) port.getPortSecurity().addStickyMAC(mac);
+            return '';
+          });
+        }
+        const mac = parseMac(args[0]); if (!mac) return `% Invalid MAC "${args[0]}"`;
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().addStaticMAC(mac);
+          return '';
+        });
+      });
+    this.configIfTrie.registerGreedy('no switchport port-security mac-address',
+      'Remove secure MAC', (args) => {
+        if (args.length === 0) return '% Incomplete command.';
+        if (args[0].toLowerCase() === 'sticky' && args.length === 1) {
+          return this.applyToSelectedInterfaces(p => {
+            const port = this.d().getPort(p); if (port) port.getPortSecurity().disableSticky();
+            return '';
+          });
+        }
+        const target = args[args.length - 1];
+        const mac = parseMac(target); if (!mac) return `% Invalid MAC "${target}"`;
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().removeMAC(mac);
+          return '';
+        });
+      });
+
+    // ── aging ──
+    this.configIfTrie.registerGreedy('switchport port-security aging time',
+      'Aging window (minutes)', (args) => {
+        const n = parseInt(args[0] ?? '', 10);
+        if (isNaN(n) || n < 0) return '% Invalid aging time';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingTimeMin(n);
+          return '';
+        });
+      });
+    this.configIfTrie.registerGreedy('switchport port-security aging type',
+      'Aging strategy', (args) => {
+        const t = (args[0] ?? '').toLowerCase();
+        if (t !== 'absolute' && t !== 'inactivity') return '% Invalid aging type';
+        return this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingType(t as 'absolute' | 'inactivity');
+          return '';
+        });
+      });
+    this.configIfTrie.register('switchport port-security aging static',
+      'Apply aging to static entries', () =>
+        this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(true);
+          return '';
+        }));
+    this.configIfTrie.register('no switchport port-security aging static',
+      'Exempt static entries from aging', () =>
+        this.applyToSelectedInterfaces(p => {
+          const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(false);
+          return '';
+        }));
+
+    // ── errdisable recovery ──
+    this.configTrie.register('errdisable recovery cause psecure-violation',
+      'Auto-recover ports err-disabled by port-security', () => {
+        if (this.d()._getPsecRecoverySec() <= 0) this.d()._setPsecRecoverySec(30);
+        return '';
+      });
+
+    // ── clear ──
+    this.privilegedTrie.registerGreedy('clear port-security',
+      'Clear secure MAC entries', (args) => {
+        const kind = (args[0] ?? '').toLowerCase();
+        if (!['all', 'configured', 'dynamic', 'sticky'].includes(kind)) {
+          return '% Usage: clear port-security {all|configured|dynamic|sticky} [interface <if>]';
+        }
+        const ifIdx = args.findIndex(a => a.toLowerCase() === 'interface');
+        const portFilter = ifIdx >= 0
+          ? this.resolveInterfaceName(args.slice(ifIdx + 1).join(' '))
+          : null;
+        for (const [name, p] of this.d()._getPortsInternal()) {
+          if (portFilter && name !== portFilter) continue;
+          const sec = p.getPortSecurity();
+          if (kind === 'all') sec.clearAll();
+          else if (kind === 'dynamic') sec.clearDynamic();
+          else if (kind === 'sticky') sec.clearSticky();
+          else if (kind === 'configured') { sec.clearSticky(); sec.clearDynamic(); }
+        }
+        return '';
+      });
+    this.privilegedTrie.registerGreedy('clear errdisable interface',
+      'Recover an err-disabled port', (args) => {
+        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
+        const cleared = this.d()._clearArpInspectionErrDisable(portName)
+          || this.d()._clearPsecErrDisable(portName);
+        return cleared ? '' : '';
+      });
+  }
+
+  // ─── Port-Security Display ────────────────────────────────────────
+
+  private renderPortSecurityLines(port: import('../../hardware/Port').Port): string[] {
+    const sec = port.getPortSecurity();
+    if (!sec.isEnabled()) return [];
+    const out: string[] = ['switchport port-security'];
+    if (sec.getMaxMACAddresses() !== 1) {
+      out.push(`switchport port-security maximum ${sec.getMaxMACAddresses()}`);
+    }
+    if (sec.getViolationMode() !== 'shutdown') {
+      out.push(`switchport port-security violation ${sec.getViolationMode()}`);
+    }
+    if (sec.isStickyEnabled()) {
+      out.push('switchport port-security mac-address sticky');
+    }
+    for (const e of sec.getEntries()) {
+      if (e.type === 'sticky') {
+        out.push(`switchport port-security mac-address sticky ${this.formatMacCisco(e.mac)}`);
+      } else if (e.type === 'static') {
+        out.push(`switchport port-security mac-address ${this.formatMacCisco(e.mac)}`);
+      }
+    }
+    if (sec.getAgingTimeMin() > 0) {
+      out.push(`switchport port-security aging time ${sec.getAgingTimeMin()}`);
+      if (sec.getAgingType() !== 'absolute') {
+        out.push(`switchport port-security aging type ${sec.getAgingType()}`);
+      }
+      if (sec.getAgingStatic()) out.push('switchport port-security aging static');
+    }
+    return out;
+  }
+
+  private dtpAdminLabel(m: import('../../dtp/types').DtpAdminMode): string {
+    switch (m) {
+      case 'access': return 'ACCESS';
+      case 'trunk': return 'TRUNK';
+      case 'dynamic-auto': return 'DYN-AUTO';
+      case 'dynamic-desirable': return 'DYN-DESIRABLE';
+      case 'nonegotiate': return 'TRUNK';
+    }
+  }
+
+  private formatMacCisco(mac: MACAddress): string {
+    const hex = mac.toString().replace(/[:-]/g, '');
+    return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+  }
+
+  private showPortSecurityOverview(sw: Switch): string {
+    const lines = [
+      'Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
+      '             (Count)        (Count)      (Count)',
+      '------------------------------------------------------------------------------',
+    ];
+    for (const [name, port] of sw._getPortsInternal()) {
+      const sec = port.getPortSecurity();
+      if (!sec.isEnabled()) continue;
+      lines.push(
+        `${this.abbreviateInterface(name).padEnd(12)} ` +
+        `${String(sec.getMaxMACAddresses()).padEnd(14)} ` +
+        `${String(sec.getEntries().length).padEnd(12)} ` +
+        `${String(sec.getViolationCount()).padEnd(18)} ` +
+        sec.getViolationMode(),
+      );
+    }
+    return lines.join('\n');
+  }
+
+  private showPortSecurityInterface(sw: Switch, ifaceArg: string): string {
+    const name = this.resolveInterfaceName(ifaceArg) ?? ifaceArg;
+    const port = sw.getPort(name);
+    if (!port) return `% Invalid interface "${ifaceArg}"`;
+    const sec = port.getPortSecurity();
+    const errd = sw._getPsecErrDisabledPorts().has(name);
+    const status = !sec.isEnabled() ? 'Disabled' :
+                   errd ? 'Secure-shutdown' :
+                   port.getIsUp() ? 'Secure-up' : 'Secure-down';
+    return [
+      `Port Security              : ${sec.isEnabled() ? 'Enabled' : 'Disabled'}`,
+      `Port Status                : ${status}`,
+      `Violation Mode             : ${sec.getViolationMode().charAt(0).toUpperCase() + sec.getViolationMode().slice(1)}`,
+      `Aging Time                 : ${sec.getAgingTimeMin()} mins`,
+      `Aging Type                 : ${sec.getAgingType().charAt(0).toUpperCase() + sec.getAgingType().slice(1)}`,
+      `SecureStatic Address Aging : ${sec.getAgingStatic() ? 'Enabled' : 'Disabled'}`,
+      `Maximum MAC Addresses      : ${sec.getMaxMACAddresses()}`,
+      `Total MAC Addresses        : ${sec.getEntries().length}`,
+      `Configured MAC Addresses   : ${sec.getEntries().filter(e => e.type === 'static').length}`,
+      `Sticky MAC Addresses       : ${sec.getEntries().filter(e => e.type === 'sticky').length}`,
+      `Last Source Address:Vlan   : ${sec.getEntries().length > 0
+          ? `${this.formatMacCisco(sec.getEntries()[sec.getEntries().length - 1].mac)}:${sec.getEntries()[sec.getEntries().length - 1].vlan}`
+          : '0000.0000.0000:0'}`,
+      `Security Violation Count   : ${sec.getViolationCount()}`,
+    ].join('\n');
+  }
+
+  private showPortSecurityAddress(sw: Switch): string {
+    const lines = [
+      '          Secure Mac Address Table',
+      '------------------------------------------------------------------------',
+      'Vlan    Mac Address       Type                          Ports   Remaining Age',
+      '----    -----------       ----                          -----   -------------',
+    ];
+    let n = 0;
+    for (const [name, port] of sw._getPortsInternal()) {
+      const sec = port.getPortSecurity();
+      if (!sec.isEnabled()) continue;
+      for (const e of sec.getEntries()) {
+        const typeStr = e.type === 'static' ? 'SecureConfigured'
+          : e.type === 'sticky' ? 'SecureSticky' : 'SecureDynamic';
+        lines.push(
+          `${String(e.vlan).padEnd(8)}${this.formatMacCisco(e.mac).padEnd(18)}` +
+          `${typeStr.padEnd(30)}${this.abbreviateInterface(name).padEnd(8)}` +
+          `${sec.getAgingTimeMin() > 0 ? `${sec.getAgingTimeMin()}m` : '-'}`,
+        );
+        n++;
+      }
+    }
+    lines.push('');
+    lines.push(`Total Addresses: ${n}`);
+    return lines.join('\n');
+  }
+
+  private registerVtpCommands(): void {
+    this.configTrie.registerGreedy('vtp domain', 'Set VTP domain', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d().getVtpAgent().setDomain(args[0]);
+      return '';
+    });
+    this.configTrie.registerGreedy('vtp mode', 'Set VTP mode', (args) => {
+      const m = (args[0] ?? '').toLowerCase();
+      if (m !== 'server' && m !== 'client' && m !== 'transparent' && m !== 'off') {
+        return '% Invalid VTP mode';
+      }
+      this.d().getVtpAgent().setMode(m);
+      return '';
+    });
+    this.configTrie.registerGreedy('vtp password', 'Set VTP password', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      this.d().getVtpAgent().setPassword(args[0]);
+      return '';
+    });
+    this.configTrie.registerGreedy('vtp version', 'Set VTP version', (args) => {
+      const v = parseInt(args[0] ?? '', 10);
+      if (v !== 1 && v !== 2 && v !== 3) return '% Invalid VTP version';
+      this.d().getVtpAgent().setVersion(v as 1 | 2 | 3);
+      return '';
+    });
+    this.configTrie.register('vtp pruning', 'Enable VTP pruning', () => {
+      this.d().getVtpAgent().setPruning(true);
+      return '';
+    });
+    this.configTrie.register('no vtp pruning', 'Disable VTP pruning', () => {
+      this.d().getVtpAgent().setPruning(false);
+      return '';
+    });
+
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.register('show vtp status', 'Display VTP status', () => {
+        const cfg = this.d().getVtpAgent().getConfig();
+        const numVlans = this.d().getVLANs().size;
+        return [
+          `VTP Version capable             : 1 to ${cfg.version}`,
+          `VTP version running             : ${cfg.version}`,
+          `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
+          `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
+          `VTP Traps Generation            : Disabled`,
+          `Device ID                       : ${cfg.updaterMac}`,
+          `Configuration last modified by  : ${cfg.updaterMac}`,
+          `Local updater ID is ${cfg.updaterMac}`,
+          ``,
+          `Feature VLAN:`,
+          `--------------`,
+          `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}`,
+          `Maximum VLANs supported locally : 1005`,
+          `Number of existing VLANs        : ${numVlans}`,
+          `Configuration Revision          : ${cfg.revision}`,
+        ].join('\n');
+      });
+      t.register('show vtp counters', 'Display VTP counters', () => {
+        return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
+      });
+    }
+  }
+
+  private registerUdldCommands(): void {
+    this.configTrie.registerGreedy('udld', 'UDLD global configuration', (args) => {
+      const a = (args[0] ?? '').toLowerCase();
+      const agent = this.d().getUdldAgent();
+      if (a === 'enable') { agent.setGlobalMode('normal'); return ''; }
+      if (a === 'aggressive') { agent.setGlobalMode('aggressive'); return ''; }
+      if (a === 'message' && args[1] === 'time') {
+        const n = parseInt(args[2] ?? '', 10);
+        if (!Number.isNaN(n)) {
+          const c = agent.getConfig() as { helloIntervalSec: number };
+          c.helloIntervalSec = n;
+        }
+        return '';
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no udld', 'Disable UDLD globally', () => {
+      this.d().getUdldAgent().setGlobalMode('disabled');
+      return '';
+    });
+    this.configIfTrie.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
+      const ports = this.selectedPortsForConfigIf();
+      const m = (args[0] ?? '').toLowerCase();
+      const mode = m === 'aggressive' ? 'aggressive' : 'normal';
+      for (const p of ports) this.d().getUdldAgent().setPortMode(p, mode);
+      return '';
+    });
+    this.configIfTrie.register('no udld port', 'Disable UDLD on this port', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.d().getUdldAgent().setPortMode(p, 'disabled');
+      return '';
+    });
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show udld', 'Display UDLD state', (args) => {
+        const agent = this.d().getUdldAgent();
+        const target = args[0];
+        const ports = target
+          ? agent.listPorts().filter(p => p.port === target || p.port.endsWith(target))
+          : agent.listPorts();
+        if (ports.length === 0) return '';
+        const lines: string[] = [];
+        for (const rt of ports) {
+          lines.push(`Interface ${rt.port}`);
+          lines.push(`---`);
+          lines.push(`Port enable administrative configuration setting: ${rt.mode === 'disabled' ? 'Disabled' : 'Enabled'}`);
+          lines.push(`Port enable operational state: ${rt.mode === 'disabled' ? 'Disabled' : 'Enabled / in ' + rt.mode + ' mode'}`);
+          lines.push(`Current bidirectional state: ${rt.state === 'bidirectional' ? 'Bidirectional' : rt.state}`);
+          lines.push(`Current operational state: ${rt.state}`);
+          const neighbors = agent.getNeighborsFor(rt.port);
+          lines.push(`Message interval: ${agent.getConfig().helloIntervalSec}`);
+          lines.push(`Time out interval: ${agent.getConfig().messageTimeoutSec}`);
+          for (const n of neighbors) {
+            lines.push(`Entry 1`);
+            lines.push(`Expiration time: ${agent.getConfig().messageTimeoutSec}`);
+            lines.push(`Device ID: ${n.remoteDeviceId}`);
+            lines.push(`Current neighbor state: ${rt.state}`);
+            lines.push(`Device name: ${n.remoteHostname}`);
+            lines.push(`Port ID: ${n.remotePortId}`);
+            lines.push(`Neighbor echo 1 device: ${n.echo[0]?.deviceId ?? 'none'}`);
+            lines.push(`Neighbor echo 1 port: ${n.echo[0]?.portId ?? 'none'}`);
+            lines.push(`Message interval: ${n.helloIntervalSec}`);
+          }
+        }
+        return lines.join('\n');
+      });
+    }
+  }
+
+  private registerIgmpSnoopingCommands(): void {
+    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config', (args) => {
+      const agent = this.d().getIgmpSnoopingAgent();
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) { agent.setEnabled(true); return ''; }
+      if (a[0] === 'vlan' && a[1]) {
+        const vlan = parseInt(a[1], 10);
+        if (!Number.isNaN(vlan)) {
+          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, true); return ''; }
+          agent.setVlanEnabled(vlan, true);
+        }
+        return '';
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping', (args) => {
+      const agent = this.d().getIgmpSnoopingAgent();
+      const a = args.map(s => s.toLowerCase());
+      if (a.length === 0) { agent.setEnabled(false); return ''; }
+      if (a[0] === 'vlan' && a[1]) {
+        const vlan = parseInt(a[1], 10);
+        if (!Number.isNaN(vlan)) {
+          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, false); return ''; }
+          agent.setVlanEnabled(vlan, false);
+        }
+      }
+      return '';
+    });
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show ip igmp snooping', 'Display IGMP snooping state', (args) => {
+        const agent = this.d().getIgmpSnoopingAgent();
+        const cfg = agent.getConfig();
+        if (args.includes('groups')) {
+          let vlanFilter: number | undefined;
+          const vi = args.indexOf('vlan');
+          if (vi >= 0 && args[vi + 1]) {
+            const n = parseInt(args[vi + 1], 10);
+            if (!Number.isNaN(n)) vlanFilter = n;
+          }
+          const rows = ['Vlan      Group               Type    Version  Port List'];
+          for (const { vlan, group } of agent.listGroups(vlanFilter)) {
+            const ports = Array.from(group.members.keys()).join(', ');
+            rows.push(
+              `${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}igmp    v2       ${ports}`);
+          }
+          return rows.join('\n');
+        }
+        if (args.includes('mrouter')) {
+          const rows = ['Vlan    ports'];
+          for (const v of agent.listVlans()) {
+            rows.push(`${String(v.vlan).padEnd(8)}${Array.from(v.routerPorts).join(', ')}`);
+          }
+          return rows.join('\n');
+        }
+        const lines: string[] = [];
+        lines.push(`Global IGMP Snooping configuration:`);
+        lines.push(`-----------------------------------------`);
+        lines.push(`IGMP snooping              : ${cfg.enabled ? 'Enabled' : 'Disabled'}`);
+        lines.push(`IGMPv3 snooping            : Disabled`);
+        lines.push(`Report suppression         : Enabled`);
+        lines.push(`TCN solicit query          : Disabled`);
+        lines.push(`Robustness variable        : 2`);
+        lines.push(`Last member query count    : 2`);
+        lines.push(`Last member query interval : 1000`);
+        lines.push(``);
+        lines.push(`Vlan ${[...agent.listVlans()].map(v => v.vlan).join(',') || '<none>'}:`);
+        return lines.join('\n');
       });
     }
   }
 
   private registerStpCommands(): void {
-    // Global: `spanning-tree mst configuration` → config-mst sub-mode
     this.configTrie.register('spanning-tree mst configuration',
       'Enter MST configuration sub-mode', () => {
         this.mode = 'config-mst';
@@ -201,6 +864,30 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
     this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
       if (args[0]?.toLowerCase() === 'mode' && args[1]) this.stpMode = args[1];
+      if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
+        const knob = args[2].toLowerCase();
+        const n = parseInt(args[3] ?? '', 10);
+        const agent = this.d().getStpAgent();
+        if (knob === 'priority' && !isNaN(n)) agent.setBridgePriority(n);
+        else if (knob === 'hello-time' && !isNaN(n)) agent.setHelloSec(n);
+        else if (knob === 'max-age' && !isNaN(n)) agent.setMaxAgeSec(n);
+        else if (knob === 'forward-time' && !isNaN(n)) agent.setForwardDelaySec(n);
+      }
+      if (args[0]?.toLowerCase() === 'priority') {
+        const n = parseInt(args[1] ?? '', 10);
+        if (!isNaN(n)) this.d().getStpAgent().setBridgePriority(n);
+      }
+      if (args[0]?.toLowerCase() === 'portfast'
+          && args[1]?.toLowerCase() === 'bpduguard'
+          && args[2]?.toLowerCase() === 'default') {
+        this.d().getStpAgent().setBpduGuardGlobal(true);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
+      if (args[0]?.toLowerCase() === 'vlan' && args[1]) {
+        this.d().getStpAgent().setEnabled(false);
+      }
       return '';
     });
 
@@ -208,10 +895,35 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
+      const a = args.map(s => s.toLowerCase());
+      const agent = this.d().getStpAgent();
+      const head = a[0] ?? '';
+      const isGuardRoot = head === 'guard' && a[1] === 'root';
+      const isBpduGuard = head === 'bpduguard';
+      const isPortFast = head === 'portfast';
       for (const i of ifs) {
+        if (isPortFast) {
+          agent.setPortFast(i, a[1] !== 'disable');
+        } else if (isBpduGuard) {
+          agent.setPortBpduGuard(i, a[1] === 'enable');
+        } else if (isGuardRoot) {
+          agent.setPortRootGuard(i, true);
+        }
         const l = this.ifStp.get(i) ?? [];
         l.push(`spanning-tree ${args.join(' ')}`.trim());
         this.ifStp.set(i, l);
+      }
+      return '';
+    });
+    this.configIfTrie.registerGreedy('no spanning-tree', 'Disable interface STP knob', (args) => {
+      const ifs = this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange;
+      const a = args.map(s => s.toLowerCase());
+      const agent = this.d().getStpAgent();
+      for (const i of ifs) {
+        if (a[0] === 'portfast') agent.setPortFast(i, false);
+        else if (a[0] === 'bpduguard') agent.setPortBpduGuard(i, false);
+        else if (a[0] === 'guard') agent.setPortRootGuard(i, false);
       }
       return '';
     });
@@ -326,11 +1038,49 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return rows.join('\n');
     });
 
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', () =>
-      ['Flags:  D - down        P - bundled in port-channel',
-       'Number of channel-groups in use: 0',
-       'Group  Port-channel  Protocol    Ports',
-       '------+-------------+-----------+-----------------------------------------'].join('\n'));
+    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
+      const lacp = this.d().getLacpAgent();
+      const groups = lacp.getAllGroups();
+      if (args[0]?.toLowerCase() === 'summary' || args.length === 0) {
+        const lines = [
+          'Flags:  D - down        P - bundled in port-channel',
+          '        I - stand-alone s - suspended',
+          '        H - Hot-standby (LACP only)',
+          '        s - suspended',
+          `Number of channel-groups in use: ${groups.length}`,
+          'Group  Port-channel  Protocol    Ports',
+          '------+-------------+-----------+-----------------------------------------',
+        ];
+        for (const g of groups) {
+          const protocol = g.members.every(m => m.mode === 'on') ? '-' : 'LACP';
+          const portList = g.members.map(m => {
+            const flag = m.bundled ? 'P' : m.state === 'standalone' ? 'I' : 's';
+            return `${this.abbreviateInterface(m.portName)}(${flag})`;
+          }).join(' ');
+          lines.push(`${String(g.id).padEnd(7)}${g.name.padEnd(14)}${protocol.padEnd(12)}${portList}`);
+        }
+        return lines.join('\n');
+      }
+      if (args[0]?.toLowerCase() === 'detail') {
+        const out: string[] = [];
+        for (const g of groups) {
+          out.push(`Group: ${g.id}`);
+          out.push(`Port-channels in the group: 1`);
+          out.push(`Port-channel: ${g.name}`);
+          out.push(`Number of ports = ${g.members.length}`);
+          for (const m of g.members) {
+            const port = this.d().getPort(m.portName);
+            out.push(`  Port: ${m.portName}`);
+            out.push(`    Status: ${m.bundled ? 'bundled' : m.state}`);
+            out.push(`    Mode: ${m.mode}`);
+            out.push(`    Partner: ${m.partner?.systemId ?? 'none'}`);
+            out.push(`    Link: ${port?.getIsUp() ? 'up' : 'down'}`);
+          }
+        }
+        return out.length > 0 ? out.join('\n') : 'No EtherChannel groups configured';
+      }
+      return 'EtherChannel: no detail';
+    });
 
     // `show interfaces <if> switchport`
     this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
@@ -382,6 +1132,12 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
       for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
       for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
+      const port = this.d().getPort(name);
+      if (port) for (const l of this.renderPortSecurityLines(port)) out.push(` ${l}`);
+      const cdpA = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+      if (cdpA) for (const l of cdpA.runningConfigInterfaceLines(name)) out.push(` ${l}`);
+      const lldpA = (this.d() as unknown as { getLldpAgent?: () => import('../../lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      if (lldpA) for (const l of lldpA.runningConfigInterfaceLines(name)) out.push(` ${l}`);
       out.push('end');
       return out.join('\n');
     });
@@ -451,7 +1207,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
         return '% Invalid VLAN ID';
       }
-      for (const id of ids) if (!this.d().getVLAN(id)) this.d().createVLAN(id);
+      let created = false;
+      for (const id of ids) if (!this.d().getVLAN(id)) { this.d().createVLAN(id); created = true; }
+      if (created) this.d().getVtpAgent().onLocalVlanChange();
       if (ids.length === 1) {
         this.selectedVlan = ids[0];
         this.mode = 'config-vlan';
@@ -464,7 +1222,9 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       const id = parseInt(args[0], 10);
       if (isNaN(id)) return '% Invalid VLAN ID';
       if (id === 1) return '% Default VLAN 1 may not be deleted.';
-      return this.d().deleteVLAN(id) ? '' : `% VLAN ${id} not found.`;
+      const ok = this.d().deleteVLAN(id);
+      if (ok) this.d().getVtpAgent().onLocalVlanChange();
+      return ok ? '' : `% VLAN ${id} not found.`;
     });
 
     this.configTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
@@ -573,6 +1333,34 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       );
     });
 
+    this.configIfTrie.register('switchport mode dynamic auto', 'Negotiate trunk via DTP (passive)', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-auto');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('switchport mode dynamic desirable', 'Negotiate trunk via DTP (active)', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-desirable');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('switchport nonegotiate', 'Force trunk without DTP', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'nonegotiate');
+        return '';
+      });
+    });
+
+    this.configIfTrie.register('no switchport nonegotiate', 'Re-enable DTP negotiation', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getDtpAgent().setAdminMode(portName, 'dynamic-auto');
+        return '';
+      });
+    });
+
     this.configIfTrie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       const vlanId = parseInt(args[0], 10);
@@ -650,14 +1438,37 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       return '';
     };
     for (const sub of [
-      'switchport trunk encapsulation', 'switchport nonegotiate',
-      'switchport voice', 'switchport port-security', 'switchport priority',
-      'channel-group', 'channel-protocol', 'storm-control', 'mls qos',
+      'switchport trunk encapsulation',
+      'switchport voice', 'switchport priority',
+      'channel-protocol', 'storm-control', 'mls qos',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
       this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) =>
         recordIf(`${sub} ${args.join(' ')}`.trim()));
     }
+
+    this.configIfTrie.registerGreedy('channel-group', 'EtherChannel membership', (args) => {
+      if (args.length < 3) return '% Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id) || id < 1 || id > 64) return '% Invalid channel-group id';
+      if (args[1].toLowerCase() !== 'mode') return '% Incomplete command.';
+      const m = args[2].toLowerCase();
+      let mode: 'active' | 'passive' | 'on';
+      if (m === 'active' || m === 'desirable') mode = 'active';
+      else if (m === 'passive' || m === 'auto') mode = 'passive';
+      else if (m === 'on') mode = 'on';
+      else return '% Invalid channel-group mode';
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getLacpAgent().addPortToGroup(portName, id, mode);
+        return '';
+      });
+    });
+    this.configIfTrie.registerGreedy('no channel-group', 'Remove EtherChannel membership', () => {
+      return this.applyToSelectedInterfaces(portName => {
+        this.d().getLacpAgent().removePort(portName);
+        return '';
+      });
+    });
 
     this.configIfTrie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => {
@@ -730,6 +1541,47 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push('!');
     }
 
+    // ── ARP ACLs ──
+    for (const [, acl] of sw._getArpAccessLists()) {
+      lines.push(`arp access-list ${acl.name}`);
+      for (const e of acl.entries) lines.push(` ${e.raw}`);
+      lines.push('!');
+    }
+
+    // ── DAI globals ──
+    const dai = sw._getArpInspectionConfig();
+    if (dai.vlans.size > 0) {
+      const sorted = Array.from(dai.vlans).sort((a, b) => a - b);
+      lines.push(`ip arp inspection vlan ${this.compactVlanList(sorted)}`);
+    }
+    if (dai.validate.srcMac || dai.validate.dstMac || dai.validate.ip) {
+      const toks: string[] = [];
+      if (dai.validate.srcMac) toks.push('src-mac');
+      if (dai.validate.dstMac) toks.push('dst-mac');
+      if (dai.validate.ip) toks.push('ip');
+      lines.push(`ip arp inspection validate ${toks.join(' ')}`);
+    }
+    for (const [vlan, f] of dai.vlanAclFilters) {
+      lines.push(`ip arp inspection filter ${f.aclName} vlan ${vlan}${f.staticMode ? ' static' : ''}`);
+    }
+    if (dai.errDisableRecoverySec > 0) {
+      lines.push('errdisable recovery cause arp-inspection');
+      lines.push(`errdisable recovery interval ${dai.errDisableRecoverySec}`);
+    }
+    if (sw._getPsecRecoverySec() > 0) {
+      lines.push('errdisable recovery cause psecure-violation');
+    }
+
+    const cdpAgent = (sw as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+    if (cdpAgent) for (const l of cdpAgent.runningConfigGlobalLines()) lines.push(l);
+    const lldpAgent = (sw as unknown as { getLldpAgent?: () => import('../../lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+    if (lldpAgent) for (const l of lldpAgent.runningConfigGlobalLines()) lines.push(l);
+    const stpAgent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+    if (stpAgent) for (const l of stpAgent.runningConfigGlobalLines()) lines.push(l);
+    const vtpAgent = (sw as unknown as { getVtpAgent?: () => import('../../vtp/VtpAgent').VtpAgent }).getVtpAgent?.();
+    if (vtpAgent) for (const l of vtpAgent.runningConfigGlobalLines()) lines.push(l);
+    if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
+
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
     const descs = sw._getInterfaceDescriptions();
@@ -740,12 +1592,22 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       lines.push(`interface ${portName}`);
       const desc = descs.get(portName);
       if (desc) lines.push(` description ${desc}`);
+      const dtpAdmin = sw.getDtpAgent().getAdminMode(portName);
+      if (dtpAdmin === 'dynamic-auto') {
+        lines.push(' switchport mode dynamic auto');
+      } else if (dtpAdmin === 'dynamic-desirable') {
+        lines.push(' switchport mode dynamic desirable');
+      } else if (dtpAdmin === 'nonegotiate') {
+        lines.push(' switchport nonegotiate');
+      } else if (dtpAdmin === 'trunk') {
+        lines.push(' switchport mode trunk');
+      } else {
+        lines.push(' switchport mode access');
+      }
       if (cfg.mode === 'trunk') {
-        lines.push(` switchport mode trunk`);
         if (cfg.trunkNativeVlan !== 1) {
           lines.push(` switchport trunk native vlan ${cfg.trunkNativeVlan}`);
         }
-        // Only show allowed VLAN line when not the default (all VLANs)
         if (cfg.trunkAllowedVlans.size < 4094) {
           if (cfg.trunkAllowedVlans.size === 0) {
             lines.push(` switchport trunk allowed vlan none`);
@@ -754,14 +1616,22 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
             lines.push(` switchport trunk allowed vlan ${this.compactVlanList(sorted)}`);
           }
         }
-      } else {
-        lines.push(` switchport mode access`);
-        if (cfg.accessVlan !== 1) {
-          lines.push(` switchport access vlan ${cfg.accessVlan}`);
-        }
+      } else if (cfg.accessVlan !== 1) {
+        lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
+      if (dai.trustedPorts.has(portName)) {
+        lines.push(' ip arp inspection trust');
+      }
+      const daiRate = dai.rateLimits.get(portName);
+      if (daiRate && daiRate > 0) {
+        lines.push(` ip arp inspection limit rate ${daiRate}`);
+      }
+      for (const l of this.renderPortSecurityLines(port)) lines.push(` ${l}`);
+      if (cdpAgent) for (const l of cdpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
+      if (lldpAgent) for (const l of lldpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
+      for (const l of sw.getLacpAgent().runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
@@ -853,26 +1723,40 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   private showSpanningTree(sw: Switch): string {
     const stpStates = sw._getSTPStates();
+    const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+    const root = agent?.getRootBridge();
+    const cost = agent?.getRootPathCost() ?? 0;
+    const rootPort = agent?.getRootPort();
+    const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
+    const rootPrio = root ? root.priority + 1 : 32769;
     const lines = [
       'VLAN0001',
       '  Spanning tree enabled protocol ieee',
-      '  Root ID    Priority    32769',
-      `             Address     ${sw.getPort(sw.getPortNames()[0])?.getMAC() || '0000.0000.0000'}`,
+      `  Root ID    Priority    ${rootPrio}`,
+      `             Address     ${rootMacFmt}`,
+      `             Cost        ${cost}`,
+      rootPort
+        ? `             Port        ${this.abbreviateInterface(rootPort)}`
+        : '             This bridge is the root',
       '',
       'Interface        Role  Sts  Cost      Prio.Nbr  Type',
       '---------------- ----  ---  --------  --------  ----',
     ];
-
     for (const [portName, state] of stpStates) {
       const shortName = this.abbreviateInterface(portName).padEnd(17);
-      const role = 'Desg';
-      const sts = state === 'forwarding' ? 'FWD' :
-                  state === 'blocking'   ? 'BLK' :
-                  state === 'listening'  ? 'LIS' :
-                  state === 'learning'   ? 'LRN' : 'DIS';
+      const stpRole = agent?.getPortRole(portName) ?? 'designated';
+      const role =
+        stpRole === 'root' ? 'Root'
+        : stpRole === 'alternate' ? 'Altn'
+        : stpRole === 'disabled' ? 'Disa'
+        : 'Desg';
+      const sts = state === 'forwarding' ? 'FWD'
+        : state === 'blocking' ? 'BLK'
+        : state === 'listening' ? 'LIS'
+        : state === 'learning' ? 'LRN'
+        : 'DIS';
       lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}19        128.${portName.replace(/\D/g, '').padEnd(6)}P2p`);
     }
-
     return lines.join('\n');
   }
 
@@ -957,6 +1841,108 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       }
     }
 
+    return lines.join('\n');
+  }
+
+  // ─── DAI Display ──────────────────────────────────────────────────
+
+  private showArpInspection(sw: Switch): string {
+    const cfg = sw._getArpInspectionConfig();
+    const lines: string[] = [];
+    const vlans = Array.from(cfg.vlans).sort((a, b) => a - b);
+    lines.push('Source Mac Validation      : ' + (cfg.validate.srcMac ? 'Enabled' : 'Disabled'));
+    lines.push('Destination Mac Validation : ' + (cfg.validate.dstMac ? 'Enabled' : 'Disabled'));
+    lines.push('IP Address Validation      : ' + (cfg.validate.ip ? 'Enabled' : 'Disabled'));
+    lines.push('');
+    lines.push(' Vlan     Configuration    Operation   ACL Match          Static ACL');
+    lines.push(' ----     -------------    ---------   ---------          ----------');
+    if (vlans.length === 0) {
+      lines.push(' (no VLANs enabled for ARP inspection)');
+    } else for (const v of vlans) {
+      const filt = cfg.vlanAclFilters.get(v);
+      const acl = filt ? filt.aclName : '';
+      const stat = filt && filt.staticMode ? 'Yes' : 'No';
+      lines.push(` ${String(v).padEnd(8)} Enabled          Active      ${acl.padEnd(18)} ${stat}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpInspectionVlan(sw: Switch, spec: string): string {
+    const wanted = new Set<number>();
+    for (const part of spec.split(',')) {
+      const m = part.match(/^(\d+)-(\d+)$/);
+      if (m) for (let i = +m[1]; i <= +m[2]; i++) wanted.add(i);
+      else { const n = parseInt(part, 10); if (!isNaN(n)) wanted.add(n); }
+    }
+    const cfg = sw._getArpInspectionConfig();
+    const lines: string[] = [' Vlan     Configuration    Operation   ACL Match          Static ACL',
+                            ' ----     -------------    ---------   ---------          ----------'];
+    for (const v of [...wanted].sort((a, b) => a - b)) {
+      const enabled = cfg.vlans.has(v);
+      const filt = cfg.vlanAclFilters.get(v);
+      const acl = filt ? filt.aclName : '';
+      const stat = filt && filt.staticMode ? 'Yes' : 'No';
+      lines.push(` ${String(v).padEnd(8)} ${(enabled ? 'Enabled' : 'Disabled').padEnd(16)} ` +
+                 `${(enabled ? 'Active' : 'Inactive').padEnd(11)} ${acl.padEnd(18)} ${stat}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpInspectionStats(sw: Switch): string {
+    const stats = sw._getArpInspectionStats();
+    const lines = [
+      ' Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops',
+      ' ----  ---------     -------       ----------    ---------',
+    ];
+    const ports = sw._getPortsInternal();
+    let fwd = 0, drop = 0, bind = 0, acl = 0;
+    for (const [port] of ports) {
+      const s = stats.get(port);
+      if (!s) continue;
+      fwd += s.forwarded; drop += s.dropped;
+      bind += s.droppedBindingMismatch; acl += s.droppedAclDeny;
+    }
+    lines.push(` ${'(all)'.padEnd(5)} ${String(fwd).padEnd(13)} ${String(drop).padEnd(13)} ` +
+               `${String(bind).padEnd(13)} ${acl}`);
+    lines.push('');
+    lines.push(' Interface          Packets Received  Permitted  Dropped');
+    lines.push(' ----------------   ----------------  ---------  -------');
+    for (const [port] of ports) {
+      const s = stats.get(port);
+      if (!s || s.received === 0) continue;
+      lines.push(` ${this.abbreviateInterface(port).padEnd(18)} ` +
+                 `${String(s.received).padEnd(17)} ${String(s.forwarded).padEnd(10)} ${s.dropped}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpInspectionIfs(sw: Switch): string {
+    const cfg = sw._getArpInspectionConfig();
+    const errd = sw._getArpErrDisabledPorts();
+    const lines = [
+      ' Interface          Trust State     Rate (pps)    Burst Interval     ErrDisable',
+      ' ----------------   -------------   ----------    --------------     ----------',
+    ];
+    for (const port of sw.getPortNames()) {
+      const trust = cfg.trustedPorts.has(port) ? 'Trusted' : 'Untrusted';
+      const rate = cfg.rateLimits.get(port);
+      const rateStr = rate && rate > 0 ? String(rate) : 'None';
+      const burst = String(cfg.rateBurstSec);
+      const err = errd.has(port) ? 'Yes' : 'No';
+      lines.push(` ${this.abbreviateInterface(port).padEnd(18)} ${trust.padEnd(15)} ` +
+                 `${rateStr.padEnd(13)} ${burst.padEnd(18)} ${err}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showArpAcls(sw: Switch): string {
+    const map = sw._getArpAccessLists();
+    if (map.size === 0) return '';
+    const lines: string[] = [];
+    for (const [name, acl] of map) {
+      lines.push(`ARP access list ${name}`);
+      for (const e of acl.entries) lines.push(`    ${e.raw}`);
+    }
     return lines.join('\n');
   }
 

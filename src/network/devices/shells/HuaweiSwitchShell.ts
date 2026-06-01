@@ -55,6 +55,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: Switch | null = null;
+
+  private applyToStpAgent(fn: (a: import('@/network/stp/StpAgent').StpAgent) => void): void {
+    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | null)?.getStpAgent?.();
+    if (ag) fn(ag);
+  }
+
+  private applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
+    const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent } | null)?.getLldpAgent?.();
+    if (ag) fn(ag);
+  }
+
+  private applyToLacpAgent(fn: (a: import('@/network/lacp/LacpAgent').LacpAgent) => void): void {
+    const ag = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+    if (ag) fn(ag);
+  }
   private history: string[] = [];
 
   // STP/RSTP/MSTP global config (switch-only, L2). Default: VRP MSTP.
@@ -283,6 +298,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.registerCommonMgmt(this.systemTrie);
     this.registerStpSystemCommands(this.systemTrie);
 
+    this.systemTrie.register('lldp enable', 'Enable LLDP globally', () => {
+      this.applyToLldpAgent(a => a.setEnabled(true));
+      return '';
+    });
+    this.systemTrie.register('undo lldp enable', 'Disable LLDP globally', () => {
+      this.applyToLldpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.systemTrie.registerGreedy('lldp message-transmission interval', 'Hello period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 5 || n > 32768) return 'Error: Wrong parameter found.';
+      this.applyToLldpAgent(a => a.setTimerSec(n));
+      return '';
+    });
+    this.systemTrie.registerGreedy('lldp message-transmission hold-multiplier', 'Hold multiplier', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 2 || n > 10) return 'Error: Wrong parameter found.';
+      this.applyToLldpAgent(a => a.setHoldtimeMultiplier(n));
+      return '';
+    });
+
     // sysname <name>
     this.systemTrie.registerGreedy('sysname', 'Set system hostname', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
@@ -426,6 +462,31 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display commands
     this.registerDisplayCommands(this.interfaceTrie);
     this.registerStpInterfaceCommands(this.interfaceTrie);
+
+    this.interfaceTrie.register('lldp enable', 'Enable LLDP on this interface', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const port = this.selectedInterface;
+      this.applyToLldpAgent(a => { a.setPortTransmit(port, true); a.setPortReceive(port, true); });
+      return '';
+    });
+    this.interfaceTrie.register('undo lldp enable', 'Disable LLDP on this interface', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const port = this.selectedInterface;
+      this.applyToLldpAgent(a => { a.setPortTransmit(port, false); a.setPortReceive(port, false); });
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('lldp admin-status', 'LLDP admin status', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const port = this.selectedInterface;
+      const m = (args[0] ?? '').toLowerCase();
+      this.applyToLldpAgent(a => {
+        if (m === 'tx') { a.setPortTransmit(port, true); a.setPortReceive(port, false); }
+        else if (m === 'rx') { a.setPortTransmit(port, false); a.setPortReceive(port, true); }
+        else if (m === 'txrx') { a.setPortTransmit(port, true); a.setPortReceive(port, true); }
+        else if (m === 'disable') { a.setPortTransmit(port, false); a.setPortReceive(port, false); }
+      });
+      return '';
+    });
     this.registerInterfacePhysicalCommands(this.interfaceTrie);
 
     // shutdown
@@ -558,6 +619,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const list = this.ifCfg.get(this.selectedInterface) ?? [];
       list.push(`eth-trunk ${id}`);
       this.ifCfg.set(this.selectedInterface, list);
+      this.applyToLacpAgent(a => {
+        const lacpMode = t.mode === 'lacp-dynamic' ? 'active'
+          : t.mode === 'lacp-static' ? 'active' : 'on';
+        a.ensureGroup(id, `Eth-Trunk${id}`, t.loadBalance);
+        a.addPortToGroup(this.selectedInterface!, id, lacpMode);
+      });
       return '';
     });
 
@@ -963,8 +1030,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (a.length === 0) return 'Error: Incomplete command.';
 
       switch (a[0]) {
-        case 'enable':  this.stp.enabled = true;  return '';
-        case 'disable': this.stp.enabled = false; return '';
+        case 'enable':
+          this.stp.enabled = true;
+          this.applyToStpAgent(ag => ag.setEnabled(true));
+          return '';
+        case 'disable':
+          this.stp.enabled = false;
+          this.applyToStpAgent(ag => ag.setEnabled(false));
+          return '';
         case 'mode': {
           const m = a[1];
           if (m !== 'stp' && m !== 'rstp' && m !== 'mstp') {
@@ -979,11 +1052,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
             return 'Error: Wrong parameter found at \'^\' position.';
           }
           this.stp.priority = p;
+          this.applyToStpAgent(ag => ag.setBridgePriority(p));
           return '';
         }
         case 'root':
-          if (a[1] === 'primary')   { this.stp.root = 'primary';   this.stp.priority = 0;     return ''; }
-          if (a[1] === 'secondary') { this.stp.root = 'secondary'; this.stp.priority = 4096;  return ''; }
+          if (a[1] === 'primary') {
+            this.stp.root = 'primary'; this.stp.priority = 0;
+            this.applyToStpAgent(ag => ag.setBridgePriority(0));
+            return '';
+          }
+          if (a[1] === 'secondary') {
+            this.stp.root = 'secondary'; this.stp.priority = 4096;
+            this.applyToStpAgent(ag => ag.setBridgePriority(4096));
+            return '';
+          }
           return 'Error: Wrong parameter found at \'^\' position.';
         case 'bpdu-protection':
           this.stp.bpduProtection = true;
@@ -1044,7 +1126,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'loopback-detect', 'port-security', 'storm-control',
       'broadcast-suppression', 'port-isolate', 'port-mirroring',
       'trust', 'qos', 'traffic-policy', 'traffic-filter', 'am',
-      'mac-limit', 'lldp',
+      'mac-limit',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
         record(`${kw} ${args.join(' ')}`.trim()));
@@ -1090,6 +1172,53 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private registerStpDisplay(trie: CommandTrie): void {
     trie.register('display stp', 'Display STP status', () => this.displayStp());
     trie.register('display stp brief', 'Display STP brief', () => this.displayStpBrief());
+    trie.registerGreedy('display lldp neighbor', 'Display LLDP neighbours', (args) => {
+      if (!this.swRef) return '';
+      const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      if (!ag) return '';
+      const ns = ag.getNeighbors();
+      const brief = args.some(a => a.toLowerCase() === 'brief');
+      if (brief) {
+        const lines = ['Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)'];
+        for (const n of ns) {
+          const remain = Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000));
+          lines.push(`${n.localPort.padEnd(25)} ${n.systemName.padEnd(15)} ${n.portId.padEnd(15)} ${remain}`);
+        }
+        lines.push(`Total: ${ns.length}`);
+        return lines.join('\n');
+      }
+      const lines: string[] = [];
+      for (const n of ns) {
+        lines.push(`${n.localPort} has 1 neighbor(s):`);
+        lines.push(`  Neighbor index : 1`);
+        lines.push(`  Chassis type   : MAC address`);
+        lines.push(`  Chassis ID     : ${n.chassisId}`);
+        lines.push(`  Port ID type   : Interface name`);
+        lines.push(`  Port ID        : ${n.portId}`);
+        lines.push(`  Port description: ${n.portDescription}`);
+        lines.push(`  System name    : ${n.systemName}`);
+        lines.push(`  System description:`);
+        lines.push(`  ${n.systemDescription}`);
+        const remain = Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000));
+        lines.push(`  Expired time   : ${remain} s`);
+        lines.push('');
+      }
+      lines.push(`Total: ${ns.length}`);
+      return lines.join('\n');
+    });
+    trie.register('display lldp local', 'Display LLDP local info', () => {
+      if (!this.swRef) return '';
+      const ag = (this.swRef as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+      const cfg = ag?.getConfig();
+      return [
+        'Local LLDP information:',
+        `System name      : ${this.swRef.getHostname()}`,
+        `LLDP status      : ${cfg?.enabled ? 'enabled' : 'disabled'}`,
+        `Message tx interval : ${cfg?.timerSec ?? 30} s`,
+        `Message tx hold-multiplier : ${cfg?.holdtimeMultiplier ?? 4}`,
+        `Reinit delay : ${cfg?.reinitDelaySec ?? 2} s`,
+      ].join('\n');
+    });
     trie.registerGreedy('display stp interface', 'Display STP for an interface', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       return this.displayStpBrief(this.resolveInterfaceName(args.join(' ')) || args.join(' '));
@@ -1114,14 +1243,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayStpBrief(only?: string): string {
     if (!this.swRef) return '';
+    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent }).getStpAgent?.();
     const header = ' MSTID  Port                        Role  STP State     Protection';
     const rows: string[] = [];
     for (const p of this.swRef.getPortNames()) {
       if (only && p !== only) continue;
       const st = this.swRef.getSTPState(p);
       const state = st === 'forwarding' ? 'FORWARDING'
+        : st === 'blocking' ? 'DISCARDING'
         : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
-      rows.push(`     0  ${p.padEnd(27)} DESI  ${state.padEnd(13)} NONE`);
+      const r = ag?.getPortRole(p) ?? 'designated';
+      const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE' : r === 'disabled' ? 'DISA' : 'DESI';
+      rows.push(`     0  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
     }
     if (only && rows.length === 0) {
       return `Error: The port ${only} does not exist.`;

@@ -115,6 +115,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.d() as unknown as ShowStateDevice;
   }
 
+  /** Hand the device's CDP agent (if any) to `fn`. No-op on non-Cisco. */
+  protected applyToCdpAgent(fn: (a: import('@/network/cdp/CdpAgent').CdpAgent) => void): void {
+    const agent = (this.d() as unknown as { getCdpAgent?: () => import('@/network/cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+    if (agent) fn(agent);
+  }
+
+  protected syncSyslogAgent(): void {
+    const agent = (this.d() as unknown as {
+      getSyslogAgent?: () => import('@/network/syslog/SyslogAgent').SyslogAgent;
+    }).getSyslogAgent?.();
+    if (!agent) return;
+    const c = this.logging;
+    agent.setEnabled(c.enabled);
+    type Sev = 'emergency' | 'alert' | 'critical' | 'error' | 'warning' | 'notification' | 'informational' | 'debugging';
+    const mapSev = (s: string): Sev => {
+      const m: Record<string, Sev> = {
+        emergencies: 'emergency', alerts: 'alert', critical: 'critical', errors: 'error',
+        warnings: 'warning', notifications: 'notification',
+        informational: 'informational', debugging: 'debugging',
+      };
+      return m[s] ?? 'informational';
+    };
+    const fac = c.facility as 'local0' | 'local1' | 'local2' | 'local3' | 'local4' | 'local5' | 'local6' | 'local7'
+      | 'kern' | 'user' | 'mail' | 'daemon' | 'auth' | 'syslog' | 'lpr' | 'news' | 'uucp' | 'cron' | 'authpriv' | 'ftp';
+    agent.setDefaultFacility(fac);
+    agent.setDefaultSeverityThreshold(mapSev(c.trapSeverity));
+    agent.setSourceInterface(c.sourceInterface);
+    const desired = new Set(c.hosts);
+    for (const s of agent.listServers()) {
+      if (!desired.has(s.ip)) agent.removeServer(s.ip);
+    }
+    for (const h of c.hosts) {
+      agent.addServer(h, { facility: fac, severityThreshold: mapSev(c.trapSeverity) });
+    }
+  }
+
+  protected applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
+    const agent = (this.d() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
+    if (agent) fn(agent);
+  }
+
+  /**
+   * Resolve the per-interface scope selected in `config-if`. The base
+   * implementation returns the single `selectedInterface`; switch shells
+   * override to spread a range / a multi-port `interface range`.
+   */
+  protected selectedPortsForConfigIf(): string[] {
+    const dev = this as unknown as { getSelectedInterface?: () => string | null; getSelectedInterfaceRange?: () => string[] };
+    const range = dev.getSelectedInterfaceRange?.();
+    if (range && range.length > 0) return range;
+    const single = dev.getSelectedInterface?.();
+    return single ? [single] : [];
+  }
+
   // ─── Initialization ─────────────────────────────────────────────
 
   /**
@@ -300,9 +354,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Generic device-info show family — missing on BOTH the Cisco
     // router and switch, so it lives here in the shared base (DRY).
-    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus());
+    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
     trie.registerGreedy('show ntp', 'Display NTP associations', () =>
-      showNtpAssociations());
+      showNtpAssociations(this.cs()));
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
@@ -583,8 +637,93 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '';
       });
     };
-    flag('cdp', 'cdp run', 'CDP');
-    flag('lldp', 'lldp run', 'LLDP');
+    // cdp/lldp follow the `flag` pattern, but the cdp toggle must also
+    // start / stop the per-device protocol agent so `show cdp neighbors`
+    // reflects real learnt state (and stops learning when disabled).
+    this.configTrie.registerGreedy('cdp run', 'Enable CDP globally', () => {
+      this.configState.set('cdp', true);
+      this.applyToCdpAgent(a => a.setEnabled(true));
+      return '';
+    });
+    this.configTrie.registerGreedy('no cdp run', 'Disable CDP globally', () => {
+      this.configState.set('cdp', false);
+      this.applyToCdpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.configTrie.registerGreedy('cdp timer', 'Advertisement period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 5 || n > 254) return '% Invalid timer value (5-254)';
+      this.applyToCdpAgent(a => a.setTimerSec(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('cdp holdtime', 'Hold-time advertised to peers (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 10 || n > 255) return '% Invalid holdtime value (10-255)';
+      this.applyToCdpAgent(a => a.setHoldtimeSec(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp run', 'Enable LLDP globally', () => {
+      this.configState.set('lldp', true);
+      this.applyToLldpAgent(a => a.setEnabled(true));
+      return '';
+    });
+    this.configTrie.registerGreedy('no lldp run', 'Disable LLDP globally', () => {
+      this.configState.set('lldp', false);
+      this.applyToLldpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp timer', 'Advertisement period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 5 || n > 32768) return '% Invalid timer value (5-32768)';
+      this.applyToLldpAgent(a => a.setTimerSec(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp holdtime-multiplier', 'TTL = timer x multiplier', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 2 || n > 10) return '% Invalid multiplier (2-10)';
+      this.applyToLldpAgent(a => a.setHoldtimeMultiplier(n));
+      return '';
+    });
+    this.configTrie.registerGreedy('lldp reinit', 'Re-init delay (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 1 || n > 10) return '% Invalid reinit delay (1-10)';
+      this.applyToLldpAgent(a => a.setReinitDelaySec(n));
+      return '';
+    });
+
+    // [no] cdp enable — per-interface — needs `selectedInterface` /
+    // `selectedInterfaceRange` from the device-specific shell, but the
+    // applyToSelectedInterfaces helper is implemented per subclass.
+    this.configIfTrie.register('cdp enable', 'Enable CDP on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, true));
+      return '';
+    });
+    this.configIfTrie.register('no cdp enable', 'Disable CDP on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, false));
+      return '';
+    });
+    this.configIfTrie.register('lldp transmit', 'Enable LLDP transmit on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortTransmit(p, true));
+      return '';
+    });
+    this.configIfTrie.register('no lldp transmit', 'Disable LLDP transmit on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortTransmit(p, false));
+      return '';
+    });
+    this.configIfTrie.register('lldp receive', 'Enable LLDP receive on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortReceive(p, true));
+      return '';
+    });
+    this.configIfTrie.register('no lldp receive', 'Disable LLDP receive on this interface', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.applyToLldpAgent(a => a.setPortReceive(p, false));
+      return '';
+    });
     flag('ip cef', 'ip cef', 'CEF');
     flag('ip http server', 'ip http server', 'HTTP server');
     flag('ip http secure-server', 'ip http secure-server', 'HTTPS server');
@@ -629,13 +768,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
       this.logging.apply(args, false);
+      this.syncSyslogAgent();
       return '';
     });
     this.configTrie.registerGreedy('no logging', 'Disable logging', (args) => {
       this.logging.apply(args, true);
+      this.syncSyslogAgent();
       return '';
     });
-    this.configTrie.registerGreedy('ntp', 'NTP configuration', () => '');
+    this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
+      const a = args.map(s => s.toLowerCase());
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      if (!agent) return '';
+      if (a[0] === 'server' && a[1]) {
+        agent.addServer(a[1], a[2] === 'prefer' || a[3] === 'prefer');
+      } else if (a[0] === 'master') {
+        agent.setServerMode(true);
+        if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no ntp', 'Remove NTP config', (args) => {
+      const a = args.map(s => s.toLowerCase());
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      if (!agent) return '';
+      if (a[0] === 'server' && a[1]) agent.removeServer(a[1]);
+      else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
+      return '';
+    });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
 
     // Management commands missing on BOTH switch & router → shared here

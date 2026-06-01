@@ -25,6 +25,27 @@ import type { OspfDomainEvent } from '@/network/ospf/events';
 import type { IpsecDomainEvent } from '@/network/ipsec/events';
 import type { RipDomainEvent } from '@/network/rip/events';
 import type { DhcpDomainEvent } from '@/network/dhcp/events';
+import type { ArpDomainEvent } from '@/network/arp/events';
+import type { CdpDomainEvent } from '@/network/cdp/events';
+import type { LldpDomainEvent } from '@/network/lldp/events';
+import type { DtpDomainEvent } from '@/network/dtp/events';
+import type { StpDomainEvent } from '@/network/stp/events';
+import type { LacpDomainEvent } from '@/network/lacp/events';
+import type { VtpDomainEvent } from '@/network/vtp/events';
+import type { HsrpDomainEvent } from '@/network/hsrp/events';
+import type { VrrpDomainEvent } from '@/network/vrrp/events';
+import type { GlbpDomainEvent } from '@/network/glbp/events';
+import type { BfdDomainEvent } from '@/network/bfd/events';
+import type { UdldDomainEvent } from '@/network/udld/events';
+import type { IgmpDomainEvent } from '@/network/igmp/events';
+import type { IgmpSnoopingDomainEvent } from '@/network/igmp-snooping/events';
+import type { PimDomainEvent } from '@/network/pim/events';
+import type { SyslogDomainEvent } from '@/network/syslog/events';
+import type { RadiusDomainEvent } from '@/network/radius/events';
+import type { Dot1xDomainEvent } from '@/network/dot1x/events';
+import type { GreDomainEvent } from '@/network/gre/events';
+import type { SnmpDomainEvent } from '@/network/snmp/events';
+import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
@@ -160,6 +181,20 @@ export interface PortSecurityViolationPayload extends PortRef {
   action: 'discarded' | 'shutdown' | 'restricted';
 }
 
+export interface PortSecurityErrDisabledPayload extends PortRef {
+  mac: MACAddress;
+}
+export interface PortSecurityRecoveredPayload extends PortRef {}
+export interface PortSecurityStickySavedPayload extends PortRef {
+  mac: MACAddress;
+  vlan: number;
+}
+export interface PortSecurityMacAgedPayload extends PortRef {
+  mac: MACAddress;
+  vlan: number;
+  type: 'static' | 'sticky' | 'dynamic';
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Hardware: Cable (Phase 3)
 // ──────────────────────────────────────────────────────────────────────────
@@ -234,6 +269,10 @@ export type DomainEvent =
   | { topic: 'port.config.speed-changed'; payload: PortSpeedChangedPayload }
   | { topic: 'port.config.duplex-changed'; payload: PortDuplexChangedPayload }
   | { topic: 'port.security.violation'; payload: PortSecurityViolationPayload }
+  | { topic: 'port.security.errdisable.set'; payload: PortSecurityErrDisabledPayload }
+  | { topic: 'port.security.errdisable.cleared'; payload: PortSecurityRecoveredPayload }
+  | { topic: 'port.security.sticky-saved'; payload: PortSecurityStickySavedPayload }
+  | { topic: 'port.security.mac-aged'; payload: PortSecurityMacAgedPayload }
   // Cable
   | { topic: 'cable.connected'; payload: CableConnectedPayload }
   | { topic: 'cable.disconnected'; payload: CableDisconnectedPayload }
@@ -250,6 +289,29 @@ export type DomainEvent =
   | RipDomainEvent
   // DHCP (sub-union, see src/network/dhcp/events.ts)
   | DhcpDomainEvent
+  // ARP / DAI (sub-union, see src/network/arp/events.ts)
+  | ArpDomainEvent
+  // CDP (sub-union, see src/network/cdp/events.ts)
+  | CdpDomainEvent
+  | LldpDomainEvent
+  | DtpDomainEvent
+  | StpDomainEvent
+  | LacpDomainEvent
+  | VtpDomainEvent
+  | HsrpDomainEvent
+  | VrrpDomainEvent
+  | GlbpDomainEvent
+  | BfdDomainEvent
+  | UdldDomainEvent
+  | IgmpDomainEvent
+  | IgmpSnoopingDomainEvent
+  | PimDomainEvent
+  | SyslogDomainEvent
+  | RadiusDomainEvent
+  | Dot1xDomainEvent
+  | GreDomainEvent
+  | SnmpDomainEvent
+  | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
   // Host L3/L4 (sub-union, see src/network/devices/host/events.ts)

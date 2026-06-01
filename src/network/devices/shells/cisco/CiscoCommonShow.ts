@@ -23,6 +23,11 @@ export interface ShowStateDevice {
   getType(): DeviceType;
   getPorts(): Port[];
   getInterfaceDescription?(portName: string): string | undefined;
+  getCdpNeighbors?(): NeighborDTO[];
+  getCdpAgent?(): import('@/network/cdp/CdpAgent').CdpAgent | undefined;
+  getLldpNeighbors?(): NeighborDTO[];
+  getLldpAgent?(): import('@/network/lldp/LldpAgent').LldpAgent | undefined;
+  getNtpAgent?(): import('@/network/ntp/NtpAgent').NtpAgent | undefined;
 }
 
 /** IOS-style short interface name (GigabitEthernet0/0 → Gig 0/0). */
@@ -35,9 +40,33 @@ function shortIf(name: string): string {
   return `${abbr} ${rest}`.trim();
 }
 
-/** Real cabled neighbours via the inspection facade (single source). */
+/** Cable-graph neighbours (LLDP, generic introspection). */
 function neighbours(dev: ShowStateDevice): NeighborDTO[] {
   return new EquipmentStateView(dev).neighbors();
+}
+
+/**
+ * Real CDP neighbours.
+ *
+ * When the device hosts a CdpAgent the protocol-learnt table is the
+ * truthful source — it reflects which peers actually advertised. We
+ * keep a cable-graph fallback for the same reason real Cisco does
+ * with limited info from the link-layer when no CDP TLV is available:
+ * test-time topologies and non-CDP peers (Linux/Windows) still surface.
+ */
+function cdpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
+  const protocolLearnt = dev.getCdpNeighbors?.();
+  if (!protocolLearnt) return new EquipmentStateView(dev).neighbors();
+  const linkPeers = new EquipmentStateView(dev).neighbors();
+  // Merge: protocol entries take precedence; cable-only peers (non-CDP
+  // talkers like Linux hosts) are still listed so the operator can see
+  // every wire that came up — matching the pre-protocol UX while still
+  // showing real protocol attributes (holdtime, capability) for Cisco
+  // peers that actually advertised.
+  const byKey = new Map<string, NeighborDTO>();
+  for (const p of linkPeers) byKey.set(p.localPort, p);
+  for (const p of protocolLearnt) byKey.set(p.localPort, p);
+  return Array.from(byKey.values());
 }
 
 /** `show clock` — IOS format: HH:MM:SS.mmm zone day mon dd yyyy */
@@ -123,18 +152,23 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     return '% CDP is not enabled';
   }
   if (a.includes('interface')) {
+    const agentCfg = dev.getCdpAgent?.()?.getConfig();
+    const timer = agentCfg?.timerSec ?? 60;
+    const hold = agentCfg?.holdtimeSec ?? 180;
+    const disabled = agentCfg?.disabledPorts ?? new Set<string>();
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
+      if (disabled.has(p.getName())) continue;
       lines.push(`${p.getName()} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
         `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
       lines.push('  Encapsulation ARPA');
-      lines.push('  Sending CDP packets every 60 seconds');
-      lines.push('  Holdtime is 180 seconds');
+      lines.push(`  Sending CDP packets every ${timer} seconds`);
+      lines.push(`  Holdtime is ${hold} seconds`);
     }
     return lines.length ? lines.join('\n') : 'CDP is not enabled on any interface';
   }
   if (a.includes('neighbor')) {
-    const ns = neighbours(dev);
+    const ns = cdpNeighbours(dev);
     const detail = a.includes('detail');
     if (detail) {
       if (!ns.length) return 'Total cdp entries displayed : 0';
@@ -160,16 +194,33 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       `${n.remotePlatform.padEnd(9)} ${shortIf(n.remotePort)}`);
     return [...hdr, ...rows, '', `Total cdp entries displayed : ${ns.length}`].join('\n');
   }
+  const cfg = dev.getCdpAgent?.()?.getConfig();
+  const t = cfg?.timerSec ?? 60;
+  const h = cfg?.holdtimeSec ?? 180;
   return [
     'Global CDP information:',
-    '        Sending CDP packets every 60 seconds',
-    '        Sending a holdtime value of 180 seconds',
+    `        Sending CDP packets every ${t} seconds`,
+    `        Sending a holdtime value of ${h} seconds`,
     '        Sending CDPv2 advertisements is  enabled',
   ].join('\n');
 }
 
-/** `show lldp [neighbors [detail]]` — from the REAL cabled topology. */
+function lldpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
+  const learnt = dev.getLldpNeighbors?.();
+  if (!learnt) return new EquipmentStateView(dev).neighbors();
+  const linkPeers = new EquipmentStateView(dev).neighbors();
+  const byKey = new Map<string, NeighborDTO>();
+  for (const p of linkPeers) byKey.set(p.localPort, p);
+  for (const p of learnt) byKey.set(p.localPort, p);
+  return Array.from(byKey.values());
+}
+
 export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string {
+  const cfg = dev.getLldpAgent?.()?.getConfig();
+  const timer = cfg?.timerSec ?? 30;
+  const mul = cfg?.holdtimeMultiplier ?? 4;
+  const ttl = timer * mul;
+  const reinit = cfg?.reinitDelaySec ?? 2;
   if (!enabled) {
     if (arg.toLowerCase().includes('neighbor')) {
       return 'Capability codes:\n' +
@@ -181,7 +232,31 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
     return '% LLDP is not enabled';
   }
   if (arg.toLowerCase().includes('neighbor')) {
-    const ns = neighbours(dev);
+    const ns = lldpNeighbours(dev);
+    const detail = arg.toLowerCase().includes('detail');
+    if (detail) {
+      if (ns.length === 0) return 'Total entries displayed: 0';
+      const agent = dev.getLldpAgent?.();
+      const allRows = agent ? agent.getNeighbors() : [];
+      const blocks = allRows.map(n => [
+        '------------------------------------------------',
+        `Local Intf: ${n.localPort}`,
+        `Chassis id: ${n.chassisId}`,
+        `Port id: ${n.portId}`,
+        `Port Description: ${n.portDescription}`,
+        `System Name: ${n.systemName}`,
+        `System Description:`,
+        n.systemDescription,
+        `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
+        `System Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `Enabled Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `Management Addresses:`,
+        ...(n.managementAddresses.length > 0
+          ? n.managementAddresses.map(a => `    IP: ${a}`)
+          : ['    not advertised']),
+      ].join('\n'));
+      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${allRows.length}`;
+    }
     const hdr = [
       'Capability codes:',
       '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device',
@@ -190,16 +265,30 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
       'Device ID           Local Intf     Hold-time  Capability      Port ID',
     ];
     const rows = ns.map((n) =>
-      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}120        ` +
+      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}${String(ttl).padEnd(11)}` +
       `${n.remoteCapability.padEnd(16)}${n.remotePort}`);
     return [...hdr, ...rows, '', `Total entries displayed: ${ns.length}`].join('\n');
+  }
+  if (arg.toLowerCase().includes('interface')) {
+    const agent = dev.getLldpAgent?.();
+    const lines: string[] = [];
+    for (const p of dev.getPorts()) {
+      const tx = agent?.isPortTransmitEnabled(p.getName()) ?? true;
+      const rx = agent?.isPortReceiveEnabled(p.getName()) ?? true;
+      lines.push(`${p.getName()}:`);
+      lines.push(`    Tx: ${tx ? 'enabled' : 'disabled'}`);
+      lines.push(`    Rx: ${rx ? 'enabled' : 'disabled'}`);
+      lines.push(`    Tx state: ${tx && p.getIsUp() && p.isConnected() ? 'IDLE' : 'INIT'}`);
+      lines.push(`    Rx state: ${rx && p.getIsUp() && p.isConnected() ? 'WAIT FOR FRAME' : 'INIT'}`);
+    }
+    return lines.length ? lines.join('\n') : 'LLDP is not enabled on any interface';
   }
   return [
     'Global LLDP Information:',
     '    Status: ACTIVE',
-    '    LLDP advertisements are sent every 30 seconds',
-    '    LLDP hold time advertised is 120 seconds',
-    '    LLDP interface reinitialisation delay is 2 seconds',
+    `    LLDP advertisements are sent every ${timer} seconds`,
+    `    LLDP hold time advertised is ${ttl} seconds`,
+    `    LLDP interface reinitialisation delay is ${reinit} seconds`,
   ].join('\n');
 }
 
@@ -217,16 +306,38 @@ export function showSnmp(): string {
   ].join('\n');
 }
 
-export function showNtpStatus(): string {
-  return 'Clock is unsynchronized, stratum 16, no reference clock';
+export function showNtpStatus(dev?: ShowStateDevice): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  if (!ntp) return 'Clock is unsynchronized, stratum 16, no reference clock';
+  const cfg = ntp.getConfig();
+  const synced = ntp.isSynced();
+  return [
+    `Clock is ${synced ? 'synchronized' : 'unsynchronized'}, stratum ${cfg.localStratum}, reference is ${cfg.refIdentifier || '.INIT.'}`,
+    `nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18`,
+    `reference time is ${new Date(cfg.lastSyncMs || Date.now()).toISOString()}`,
+    `clock offset is ${cfg.offsetMs.toFixed(2)} msec`,
+  ].join('\n');
 }
 
-export function showNtpAssociations(): string {
-  return [
+export function showNtpAssociations(dev?: ShowStateDevice): string {
+  const ntp = (dev as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent } | undefined)?.getNtpAgent?.();
+  const header = [
     '  address         ref clock     st  when poll reach delay offset disp',
     ' * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured',
-    'No NTP associations configured.',
-  ].join('\n');
+  ];
+  if (!ntp || ntp.getConfig().associations.size === 0) {
+    return [...header, 'No NTP associations configured.'].join('\n');
+  }
+  const rows: string[] = [];
+  for (const [, a] of ntp.getConfig().associations) {
+    const marker = a.preferred ? '*' : a.prefer ? '+' : ' ';
+    const since = a.lastReplyMs ? Math.floor((Date.now() - a.lastReplyMs) / 1000) : 999;
+    rows.push(
+      `${marker}~${a.serverIp.padEnd(15)} ${(a.stratum < 16 ? 'INIT' : '.INIT.').padEnd(13)} ${String(a.stratum).padEnd(3)} ${String(since).padEnd(5)} ${String(a.pollSec).padEnd(4)} ${a.reach.toString(8).padStart(3, '0')} ` +
+      `${a.delayMs.toFixed(1).padStart(5)} ${a.offsetMs.toFixed(1).padStart(6)} ${a.dispersionMs.toFixed(1).padStart(5)}`,
+    );
+  }
+  return [...header, ...rows].join('\n');
 }
 
 /** `show line` — the device's real default line inventory. */
