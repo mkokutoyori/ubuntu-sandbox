@@ -23,6 +23,8 @@ import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP, VRRP_MULTICAST_MAC } from '../vrrp/types';
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
+import { BfdAgent } from '../bfd/BfdAgent';
+import { UDP_PORT_BFD_CONTROL } from '../bfd/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -32,6 +34,7 @@ export class HuaweiRouter extends Router {
   private readonly lldpAgent: LldpAgent;
   private readonly vrrpAgent: VrrpAgent;
   private readonly ntpAgent: NtpAgent;
+  private readonly bfdAgent: BfdAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
     const hostBase = {
@@ -45,9 +48,11 @@ export class HuaweiRouter extends Router {
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
+    this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
     this.vrrpAgent.start();
     this.ntpAgent.start();
+    this.bfdAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -55,6 +60,7 @@ export class HuaweiRouter extends Router {
     if (this.lldpAgent) { this.lldpAgent.stop(); this.lldpAgent.start(); }
     if (this.vrrpAgent) { this.vrrpAgent.stop(); this.vrrpAgent.start(); }
     if (this.ntpAgent) { this.ntpAgent.stop(); this.ntpAgent.start(); }
+    if (this.bfdAgent) { this.bfdAgent.stop(); this.bfdAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -63,6 +69,10 @@ export class HuaweiRouter extends Router {
       if (udp && udp.type === 'udp'
           && (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP)) {
         this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_BFD_CONTROL) {
+        this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
         return;
       }
     }
@@ -89,6 +99,7 @@ export class HuaweiRouter extends Router {
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
   getVrrpAgent(): VrrpAgent { return this.vrrpAgent; }
   getNtpAgent(): NtpAgent { return this.ntpAgent; }
+  getBfdAgent(): BfdAgent { return this.bfdAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;

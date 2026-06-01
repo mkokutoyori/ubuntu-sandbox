@@ -28,6 +28,8 @@ import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { UDP_PORT_GLBP, GLBP_MULTICAST_MAC } from '../glbp/types';
+import { BfdAgent } from '../bfd/BfdAgent';
+import { UDP_PORT_BFD_CONTROL } from '../bfd/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -40,6 +42,7 @@ export class CiscoRouter extends Router {
   private readonly vrrpAgent: VrrpAgent;
   private readonly ntpAgent: NtpAgent;
   private readonly glbpAgent: GlbpAgent;
+  private readonly bfdAgent: BfdAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
@@ -56,12 +59,14 @@ export class CiscoRouter extends Router {
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
     this.glbpAgent = new GlbpAgent(hostBase, () => this.getBus());
+    this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.hsrpAgent.start();
     this.vrrpAgent.start();
     this.ntpAgent.start();
     this.glbpAgent.start();
+    this.bfdAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -72,6 +77,7 @@ export class CiscoRouter extends Router {
     if (this.vrrpAgent) { this.vrrpAgent.stop(); this.vrrpAgent.start(); }
     if (this.ntpAgent) { this.ntpAgent.stop(); this.ntpAgent.start(); }
     if (this.glbpAgent) { this.glbpAgent.stop(); this.glbpAgent.start(); }
+    if (this.bfdAgent) { this.bfdAgent.stop(); this.bfdAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -88,6 +94,10 @@ export class CiscoRouter extends Router {
         }
         if (udp.destinationPort === UDP_PORT_GLBP) {
           this.glbpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.destinationPort === UDP_PORT_BFD_CONTROL) {
+          this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
           return;
         }
       }
@@ -138,6 +148,7 @@ export class CiscoRouter extends Router {
   getVrrpAgent(): VrrpAgent { return this.vrrpAgent; }
   getNtpAgent(): NtpAgent { return this.ntpAgent; }
   getGlbpAgent(): GlbpAgent { return this.glbpAgent; }
+  getBfdAgent(): BfdAgent { return this.bfdAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
