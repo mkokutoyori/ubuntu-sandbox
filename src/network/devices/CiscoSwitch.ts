@@ -27,6 +27,8 @@ import { LacpAgent } from '../lacp/LacpAgent';
 import { ETHERTYPE_LACP } from '../lacp/types';
 import { VtpAgent } from '../vtp/VtpAgent';
 import { ETHERTYPE_VTP } from '../vtp/types';
+import { UdldAgent } from '../udld/UdldAgent';
+import { ETHERTYPE_UDLD } from '../udld/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -37,6 +39,7 @@ export class CiscoSwitch extends Switch {
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
   private readonly vtpAgent: VtpAgent;
+  private readonly udldAgent: UdldAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -71,12 +74,22 @@ export class CiscoSwitch extends Switch {
       vtpApplyVlans: (vs) => this._vtpApplyVlans(vs),
       vtpIsTrunkPort: (n) => this._vtpIsTrunkPort(n),
     }, () => this.getBus(), baseMac);
+    this.udldAgent = new UdldAgent({
+      ...hostBase,
+      onUdldErrDisable: (p: string) => this.applyUdldErrDisable(p),
+    }, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.dtpAgent.start();
     this.stpAgent.start();
     this.lacpAgent.start();
     this.vtpAgent.start();
+    this.udldAgent.start();
+  }
+
+  private applyUdldErrDisable(portName: string): void {
+    const p = this.getPort(portName);
+    if (p) p.setUp(false);
   }
 
   private applyDtpOperationalMode(portName: string, mode: DtpOperationalMode): void {
@@ -106,6 +119,7 @@ export class CiscoSwitch extends Switch {
     if (this.stpAgent) { this.stpAgent.stop(); this.stpAgent.start(); }
     if (this.lacpAgent) { this.lacpAgent.stop(); this.lacpAgent.start(); }
     if (this.vtpAgent) { this.vtpAgent.stop(); this.vtpAgent.start(); }
+    if (this.udldAgent) { this.udldAgent.stop(); this.udldAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -133,6 +147,10 @@ export class CiscoSwitch extends Switch {
       this.vtpAgent.handleFrame(portName, frame);
       return;
     }
+    if (frame.etherType === ETHERTYPE_UDLD) {
+      this.udldAgent.handleFrame(portName, frame);
+      return;
+    }
     super.handleFrame(portName, frame);
   }
 
@@ -140,6 +158,7 @@ export class CiscoSwitch extends Switch {
   getStpAgent(): StpAgent { return this.stpAgent; }
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
   getVtpAgent(): VtpAgent { return this.vtpAgent; }
+  getUdldAgent(): UdldAgent { return this.udldAgent; }
 
   override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
     const r = super.setSwitchportMode(portName, mode);

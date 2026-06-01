@@ -148,6 +148,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     this.registerDaiCommands();
     this.registerPortSecurityCommands();
     this.registerVtpCommands();
+    this.registerUdldCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) {
@@ -709,6 +710,74 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
       });
       t.register('show vtp counters', 'Display VTP counters', () => {
         return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
+      });
+    }
+  }
+
+  private registerUdldCommands(): void {
+    this.configTrie.registerGreedy('udld', 'UDLD global configuration', (args) => {
+      const a = (args[0] ?? '').toLowerCase();
+      const agent = this.d().getUdldAgent();
+      if (a === 'enable') { agent.setGlobalMode('normal'); return ''; }
+      if (a === 'aggressive') { agent.setGlobalMode('aggressive'); return ''; }
+      if (a === 'message' && args[1] === 'time') {
+        const n = parseInt(args[2] ?? '', 10);
+        if (!Number.isNaN(n)) {
+          const c = agent.getConfig() as { helloIntervalSec: number };
+          c.helloIntervalSec = n;
+        }
+        return '';
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('no udld', 'Disable UDLD globally', () => {
+      this.d().getUdldAgent().setGlobalMode('disabled');
+      return '';
+    });
+    this.configIfTrie.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
+      const ports = this.selectedPortsForConfigIf();
+      const m = (args[0] ?? '').toLowerCase();
+      const mode = m === 'aggressive' ? 'aggressive' : 'normal';
+      for (const p of ports) this.d().getUdldAgent().setPortMode(p, mode);
+      return '';
+    });
+    this.configIfTrie.register('no udld port', 'Disable UDLD on this port', () => {
+      const ports = this.selectedPortsForConfigIf();
+      for (const p of ports) this.d().getUdldAgent().setPortMode(p, 'disabled');
+      return '';
+    });
+    for (const t of [this.userTrie, this.privilegedTrie]) {
+      t.registerGreedy('show udld', 'Display UDLD state', (args) => {
+        const agent = this.d().getUdldAgent();
+        const target = args[0];
+        const ports = target
+          ? agent.listPorts().filter(p => p.port === target || p.port.endsWith(target))
+          : agent.listPorts();
+        if (ports.length === 0) return '';
+        const lines: string[] = [];
+        for (const rt of ports) {
+          lines.push(`Interface ${rt.port}`);
+          lines.push(`---`);
+          lines.push(`Port enable administrative configuration setting: ${rt.mode === 'disabled' ? 'Disabled' : 'Enabled'}`);
+          lines.push(`Port enable operational state: ${rt.mode === 'disabled' ? 'Disabled' : 'Enabled / in ' + rt.mode + ' mode'}`);
+          lines.push(`Current bidirectional state: ${rt.state === 'bidirectional' ? 'Bidirectional' : rt.state}`);
+          lines.push(`Current operational state: ${rt.state}`);
+          const neighbors = agent.getNeighborsFor(rt.port);
+          lines.push(`Message interval: ${agent.getConfig().helloIntervalSec}`);
+          lines.push(`Time out interval: ${agent.getConfig().messageTimeoutSec}`);
+          for (const n of neighbors) {
+            lines.push(`Entry 1`);
+            lines.push(`Expiration time: ${agent.getConfig().messageTimeoutSec}`);
+            lines.push(`Device ID: ${n.remoteDeviceId}`);
+            lines.push(`Current neighbor state: ${rt.state}`);
+            lines.push(`Device name: ${n.remoteHostname}`);
+            lines.push(`Port ID: ${n.remotePortId}`);
+            lines.push(`Neighbor echo 1 device: ${n.echo[0]?.deviceId ?? 'none'}`);
+            lines.push(`Neighbor echo 1 port: ${n.echo[0]?.portId ?? 'none'}`);
+            lines.push(`Message interval: ${n.helloIntervalSec}`);
+          }
+        }
+        return lines.join('\n');
       });
     }
   }
