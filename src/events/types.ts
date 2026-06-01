@@ -44,6 +44,7 @@ import type { SyslogDomainEvent } from '@/network/syslog/events';
 import type { RadiusDomainEvent } from '@/network/radius/events';
 import type { Dot1xDomainEvent } from '@/network/dot1x/events';
 import type { GreDomainEvent } from '@/network/gre/events';
+import type { SnmpDomainEvent } from '@/network/snmp/events';
 import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
@@ -309,6 +310,7 @@ export type DomainEvent =
   | RadiusDomainEvent
   | Dot1xDomainEvent
   | GreDomainEvent
+  | SnmpDomainEvent
   | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent

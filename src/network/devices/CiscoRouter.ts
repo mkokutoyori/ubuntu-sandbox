@@ -40,6 +40,8 @@ import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { UDP_PORT_RADIUS_AUTH } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
+import { SnmpAgent } from '../snmp/SnmpAgent';
+import { UDP_PORT_SNMP } from '../snmp/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -59,6 +61,7 @@ export class CiscoRouter extends Router {
   private readonly radiusClient: RadiusClientAgent;
   private readonly radiusServer: RadiusServerAgent;
   private readonly greAgent: GreAgent;
+  private readonly snmpAgent: SnmpAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
@@ -82,6 +85,11 @@ export class CiscoRouter extends Router {
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
     this.greAgent = new GreAgent(hostBase, () => this.getBus());
+    this.snmpAgent = new SnmpAgent({
+      ...hostBase,
+      getSysDescr: () => `Cisco IOS Software, ${this.name}`,
+      getSysObjectId: () => '1.3.6.1.4.1.9.1.222',
+    }, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.hsrpAgent.start();
@@ -95,6 +103,7 @@ export class CiscoRouter extends Router {
     this.radiusClient.start();
     this.radiusServer.start();
     this.greAgent.start();
+    this.snmpAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -112,6 +121,7 @@ export class CiscoRouter extends Router {
     if (this.radiusClient) { this.radiusClient.stop(); this.radiusClient.start(); }
     if (this.radiusServer) { this.radiusServer.stop(); this.radiusServer.start(); }
     if (this.greAgent) { this.greAgent.stop(); this.greAgent.start(); }
+    if (this.snmpAgent) { this.snmpAgent.stop(); this.snmpAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -153,6 +163,10 @@ export class CiscoRouter extends Router {
         }
         if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
           this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP) {
+          this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
           return;
         }
       }
@@ -218,6 +232,7 @@ export class CiscoRouter extends Router {
   getRadiusClient(): RadiusClientAgent { return this.radiusClient; }
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getGreAgent(): GreAgent { return this.greAgent; }
+  getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
