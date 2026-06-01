@@ -30,6 +30,7 @@ import { ETHERTYPE_VTP } from '../vtp/types';
 import { UdldAgent } from '../udld/UdldAgent';
 import { ETHERTYPE_UDLD } from '../udld/types';
 import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
+import { SyslogAgent } from '../syslog/SyslogAgent';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -42,6 +43,7 @@ export class CiscoSwitch extends Switch {
   private readonly vtpAgent: VtpAgent;
   private readonly udldAgent: UdldAgent;
   private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
+  private readonly syslogAgent: SyslogAgent;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -85,6 +87,7 @@ export class CiscoSwitch extends Switch {
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
     }, () => this.getBus());
+    this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.dtpAgent.start();
@@ -93,6 +96,7 @@ export class CiscoSwitch extends Switch {
     this.vtpAgent.start();
     this.udldAgent.start();
     this.igmpSnoopingAgent.start();
+    this.syslogAgent.start();
   }
 
   private resolveSnoopingVlan(portName: string): number | undefined {
@@ -137,6 +141,7 @@ export class CiscoSwitch extends Switch {
     if (this.vtpAgent) { this.vtpAgent.stop(); this.vtpAgent.start(); }
     if (this.udldAgent) { this.udldAgent.stop(); this.udldAgent.start(); }
     if (this.igmpSnoopingAgent) { this.igmpSnoopingAgent.stop(); this.igmpSnoopingAgent.start(); }
+    if (this.syslogAgent) { this.syslogAgent.stop(); this.syslogAgent.start(); }
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -178,6 +183,7 @@ export class CiscoSwitch extends Switch {
   getVtpAgent(): VtpAgent { return this.vtpAgent; }
   getUdldAgent(): UdldAgent { return this.udldAgent; }
   getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
+  getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
 
   override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
     const r = super.setSwitchportMode(portName, mode);

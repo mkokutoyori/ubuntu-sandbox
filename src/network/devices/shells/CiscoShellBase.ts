@@ -121,6 +121,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (agent) fn(agent);
   }
 
+  protected syncSyslogAgent(): void {
+    const agent = (this.d() as unknown as {
+      getSyslogAgent?: () => import('@/network/syslog/SyslogAgent').SyslogAgent;
+    }).getSyslogAgent?.();
+    if (!agent) return;
+    const c = this.logging;
+    agent.setEnabled(c.enabled);
+    type Sev = 'emergency' | 'alert' | 'critical' | 'error' | 'warning' | 'notification' | 'informational' | 'debugging';
+    const mapSev = (s: string): Sev => {
+      const m: Record<string, Sev> = {
+        emergencies: 'emergency', alerts: 'alert', critical: 'critical', errors: 'error',
+        warnings: 'warning', notifications: 'notification',
+        informational: 'informational', debugging: 'debugging',
+      };
+      return m[s] ?? 'informational';
+    };
+    const fac = c.facility as 'local0' | 'local1' | 'local2' | 'local3' | 'local4' | 'local5' | 'local6' | 'local7'
+      | 'kern' | 'user' | 'mail' | 'daemon' | 'auth' | 'syslog' | 'lpr' | 'news' | 'uucp' | 'cron' | 'authpriv' | 'ftp';
+    agent.setDefaultFacility(fac);
+    agent.setDefaultSeverityThreshold(mapSev(c.trapSeverity));
+    agent.setSourceInterface(c.sourceInterface);
+    const desired = new Set(c.hosts);
+    for (const s of agent.listServers()) {
+      if (!desired.has(s.ip)) agent.removeServer(s.ip);
+    }
+    for (const h of c.hosts) {
+      agent.addServer(h, { facility: fac, severityThreshold: mapSev(c.trapSeverity) });
+    }
+  }
+
   protected applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
     const agent = (this.d() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
     if (agent) fn(agent);
@@ -738,10 +768,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
       this.logging.apply(args, false);
+      this.syncSyslogAgent();
       return '';
     });
     this.configTrie.registerGreedy('no logging', 'Disable logging', (args) => {
       this.logging.apply(args, true);
+      this.syncSyslogAgent();
       return '';
     });
     this.configTrie.registerGreedy('ntp', 'NTP configuration', (args) => {
