@@ -43,6 +43,9 @@ import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent } from '../netflow/NetFlowAgent';
+import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
+import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
+import { PORT_TACACS } from '../tacacs/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -64,6 +67,8 @@ export class CiscoRouter extends Router {
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
   private readonly netflowAgent: NetFlowAgent;
+  private readonly tacacsClient: TacacsClientAgent;
+  private readonly tacacsServer: TacacsServerAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
@@ -93,6 +98,8 @@ export class CiscoRouter extends Router {
       getSysObjectId: () => '1.3.6.1.4.1.9.1.222',
     }, () => this.getBus());
     this.netflowAgent = new NetFlowAgent(hostBase, () => this.getBus());
+    this.tacacsClient = new TacacsClientAgent(hostBase, () => this.getBus());
+    this.tacacsServer = new TacacsServerAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.hsrpAgent.start();
@@ -108,6 +115,8 @@ export class CiscoRouter extends Router {
     this.greAgent.start();
     this.snmpAgent.start();
     this.netflowAgent.start();
+    this.tacacsClient.start();
+    this.tacacsServer.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -127,6 +136,8 @@ export class CiscoRouter extends Router {
     if (this.greAgent) { this.greAgent.stop(); this.greAgent.start(); }
     if (this.snmpAgent) { this.snmpAgent.stop(); this.snmpAgent.start(); }
     if (this.netflowAgent) { this.netflowAgent.stop(); this.netflowAgent.start(); }
+    if (this.tacacsClient) { this.tacacsClient.stop(); this.tacacsClient.start(); }
+    if (this.tacacsServer) { this.tacacsServer.stop(); this.tacacsServer.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -172,6 +183,14 @@ export class CiscoRouter extends Router {
         }
         if (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP) {
           this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.destinationPort === PORT_TACACS) {
+          this.tacacsServer.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.sourcePort === PORT_TACACS) {
+          this.tacacsClient.handleUdp(inPort, ipPkt.sourceIP, udp);
           return;
         }
       }
@@ -239,6 +258,8 @@ export class CiscoRouter extends Router {
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
   getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
+  getTacacsClient(): TacacsClientAgent { return this.tacacsClient; }
+  getTacacsServer(): TacacsServerAgent { return this.tacacsServer; }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
