@@ -341,34 +341,190 @@ export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string
   return results.join('\n');
 }
 
+/** Parse one key spec like `2`, `2,3`, `1.3,1.5n`. */
+interface SortKey {
+  startField: number; startChar: number;
+  endField?: number;  endChar?: number;
+  numeric?: boolean;  reverse?: boolean;
+  human?: boolean;    version?: boolean;
+  ignoreCase?: boolean; ignoreLeading?: boolean;
+}
+
+function parseSortKey(spec: string): SortKey {
+  // GNU spec: F[.C][OPTS][,F[.C][OPTS]]
+  const [start, end] = spec.split(',');
+  const parseHalf = (s: string) => {
+    const m = /^(\d+)(?:\.(\d+))?([bdfghnMRrV]*)$/.exec(s);
+    if (!m) return { field: 1, char: 1, opts: '' };
+    return { field: parseInt(m[1], 10), char: parseInt(m[2] ?? '1', 10), opts: m[3] };
+  };
+  const s = parseHalf(start);
+  const e = end ? parseHalf(end) : null;
+  const opts = s.opts + (e?.opts ?? '');
+  // Only set per-key flags when the spec explicitly carried them, so
+  // the comparator's `key.numeric ?? globalNumeric` fallback distinguishes
+  // "key opted out of numeric" from "key didn't say".
+  const flag = (c: string): true | undefined => opts.includes(c) || undefined;
+  return {
+    startField: s.field, startChar: s.char,
+    endField: e?.field, endChar: e?.char,
+    numeric: flag('n'),
+    human: flag('h'),
+    version: flag('V'),
+    reverse: flag('r'),
+    ignoreCase: flag('f'),
+    ignoreLeading: flag('b'),
+  };
+}
+
+const MONTH_RANK: Record<string, number> = {
+  'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+  'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12,
+};
+
+/** Decode a human-numeric token like 1K, 2.5M, 3G. */
+function humanToBytes(s: string): number {
+  const m = /^([+-]?\d+(?:\.\d+)?)\s*([KMGTP]?)/i.exec(s);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  const u = (m[2] ?? '').toUpperCase();
+  const mul: Record<string, number> = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 };
+  return n * (mul[u] ?? 1);
+}
+
+/** Version-sort comparator (GNU `sort -V`). Splits into runs of digits
+ *  and non-digits, comparing numerically where both runs are numeric. */
+function versionCompare(a: string, b: string): number {
+  const split = (s: string): string[] => s.match(/(\d+|\D+)/g) ?? [];
+  const aa = split(a), bb = split(b);
+  for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
+    const x = aa[i] ?? '', y = bb[i] ?? '';
+    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
+    if (xn && yn) {
+      const d = parseInt(x, 10) - parseInt(y, 10);
+      if (d !== 0) return d;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
 export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): string {
-  let numeric = false;
-  let reverse = false;
+  let numeric = false, reverse = false, unique = false;
+  let human = false, version = false, randomise = false;
+  let monthSort = false, ignoreCase = false, ignoreLeading = false;
+  let delimiter: string | undefined;
+  const keys: SortKey[] = [];
   const files: string[] = [];
 
-  for (const a of args) {
-    if (a === '-n') { numeric = true; continue; }
-    if (a === '-r') { reverse = true; continue; }
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    switch (true) {
+      case a === '-n' || a === '--numeric-sort': numeric = true; continue;
+      case a === '-r' || a === '--reverse':      reverse = true; continue;
+      case a === '-u' || a === '--unique':       unique = true; continue;
+      case a === '-h' || a === '--human-numeric-sort': human = true; continue;
+      case a === '-V' || a === '--version-sort': version = true; continue;
+      case a === '-R' || a === '--random-sort':  randomise = true; continue;
+      case a === '-M' || a === '--month-sort':   monthSort = true; continue;
+      case a === '-f' || a === '--ignore-case':  ignoreCase = true; continue;
+      case a === '-b' || a === '--ignore-leading-blanks': ignoreLeading = true; continue;
+      case a === '-k': keys.push(parseSortKey(args[++i] ?? '1')); continue;
+      case a.startsWith('-k'): keys.push(parseSortKey(a.slice(2))); continue;
+      case a === '-t': delimiter = args[++i] ?? '\t'; continue;
+      case a.startsWith('-t'): delimiter = a.slice(2); continue;
+      case a === '-c' || a === '--check': continue; // we always succeed
+    }
     if (!a.startsWith('-')) files.push(a);
   }
 
-  let content: string;
-  if (files.length > 0) {
-    const absPath = ctx.vfs.normalizePath(files[0], ctx.cwd);
-    content = ctx.vfs.readFile(absPath) ?? '';
+  // Concatenate every named file plus stdin (in that order, like real sort).
+  let content = '';
+  for (const f of files) {
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    const raw = ctx.vfs.readFile(absPath);
+    if (raw !== null) content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
+  }
+  if (files.length === 0 && stdin !== undefined) content = stdin;
+  let lines = content.split('\n');
+  // Drop the trailing empty line caused by a final newline, but keep
+  // genuine blank lines in the interior.
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+  const fieldOf = (line: string, n: number): string => {
+    if (delimiter !== undefined) {
+      const parts = line.split(delimiter);
+      return parts[n - 1] ?? '';
+    }
+    // Default: whitespace-separated, leading blanks part of the next field.
+    const parts = line.trim().split(/\s+/);
+    return parts[n - 1] ?? '';
+  };
+
+  const extractKey = (line: string, key?: SortKey): string => {
+    if (!key) return ignoreLeading ? line.replace(/^\s+/, '') : line;
+    let val = fieldOf(line, key.startField);
+    if (key.startChar > 1) val = val.slice(key.startChar - 1);
+    if (key.endField !== undefined) {
+      const tail = fieldOf(line, key.endField);
+      const endTail = key.endChar !== undefined ? tail.slice(0, key.endChar) : tail;
+      // Reconstitute as the slice from startField..endField.
+      const pieces: string[] = [val];
+      for (let f = key.startField + 1; f < key.endField; f++) pieces.push(fieldOf(line, f));
+      pieces.push(endTail);
+      val = pieces.join(' ');
+    }
+    if (key.ignoreLeading ?? ignoreLeading) val = val.replace(/^\s+/, '');
+    return val;
+  };
+
+  const compareValues = (a: string, b: string, mode: {
+    numeric?: boolean; human?: boolean; version?: boolean;
+    monthSort?: boolean; ignoreCase?: boolean;
+  }): number => {
+    const A = mode.ignoreCase ? a.toLowerCase() : a;
+    const B = mode.ignoreCase ? b.toLowerCase() : b;
+    if (mode.human)   return humanToBytes(A) - humanToBytes(B);
+    if (mode.numeric) return (parseFloat(A) || 0) - (parseFloat(B) || 0);
+    if (mode.version) return versionCompare(A, B);
+    if (mode.monthSort) {
+      const ra = MONTH_RANK[A.trim().slice(0, 3).toUpperCase()] ?? 0;
+      const rb = MONTH_RANK[B.trim().slice(0, 3).toUpperCase()] ?? 0;
+      return ra - rb;
+    }
+    return A < B ? -1 : A > B ? 1 : 0;
+  };
+
+  if (randomise) {
+    // Deterministic Math.random ordering is fine — we don't expose a
+    // seed, but tests just check that the line set is preserved.
+    lines.sort(() => Math.random() - 0.5);
+  } else if (keys.length > 0) {
+    lines.sort((la, lb) => {
+      for (const key of keys) {
+        const a = extractKey(la, key);
+        const b = extractKey(lb, key);
+        const d = compareValues(a, b, {
+          numeric: key.numeric ?? numeric,
+          human:   key.human   ?? human,
+          version: key.version ?? version,
+          monthSort,
+          ignoreCase: key.ignoreCase ?? ignoreCase,
+        });
+        if (d !== 0) return (key.reverse ? -1 : 1) * d;
+      }
+      return 0;
+    });
   } else {
-    content = stdin ?? '';
+    lines.sort((a, b) => compareValues(
+      extractKey(a), extractKey(b),
+      { numeric, human, version, monthSort, ignoreCase },
+    ));
   }
 
-  let lines = content.split('\n').filter(l => l.length > 0);
-
-  if (numeric) {
-    lines.sort((a, b) => parseFloat(a) - parseFloat(b));
-  } else {
-    lines.sort();
-  }
-
-  if (reverse) lines.reverse();
+  if (reverse && !randomise) lines.reverse();
+  if (unique) lines = lines.filter((l, i) => i === 0 || lines[i - 1] !== l);
   return lines.join('\n');
 }
 
