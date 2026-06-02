@@ -398,6 +398,92 @@ export class LoggingConfig {
       bus.subscribeWhere('rip.engine.stopped', isOurs, () => {
         this.append('notifications', 'rip', 'RIP routing process stopped');
       }),
+      bus.subscribeWhere('pim.neighbor.added', isOurs, (e) => {
+        const p = e.payload as { iface?: string; neighbor?: string };
+        this.append('notifications', 'pim',
+          `Neighbor ${p.neighbor ?? '?'} discovered on ${p.iface ?? '?'}`);
+      }),
+      bus.subscribeWhere('pim.neighbor.lost', isOurs, (e) => {
+        const p = e.payload as { iface?: string; neighbor?: string };
+        this.append('warnings', 'pim',
+          `Neighbor ${p.neighbor ?? '?'} on ${p.iface ?? '?'} timed out`);
+      }),
+      bus.subscribeWhere('pim.rp.changed', isOurs, (e) => {
+        const p = e.payload as { group?: string; oldRp?: string; newRp?: string };
+        this.append('notifications', 'pim',
+          `RP for ${p.group ?? '*'} changed ${p.oldRp ?? '?'} -> ${p.newRp ?? '?'}`);
+      }),
+      bus.subscribeWhere('dot1x.auth.outcome', isOurs, (e) => {
+        const p = e.payload as { portName?: string; mac?: string; outcome?: string; user?: string };
+        const sev = p.outcome === 'success' ? 'informational' : 'warnings';
+        this.append(sev, 'dot1x',
+          `Authentication ${p.outcome ?? '?'} on ${p.portName ?? '?'} for ${p.user ?? p.mac ?? '?'}`);
+      }),
+      bus.subscribeWhere('dot1x.port.state.changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; oldState?: string; newState?: string };
+        this.append('informational', 'dot1x',
+          `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('udld.err-disable', isOurs, (e) => {
+        const p = e.payload as { portName?: string };
+        this.append('errors', 'udld',
+          `Port ${p.portName ?? '?'} err-disabled by UDLD`);
+      }),
+      bus.subscribeWhere('udld.neighbor.changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; neighborId?: string };
+        this.append('informational', 'udld',
+          `Neighbor change on ${p.portName ?? '?'} (id ${p.neighborId ?? '?'})`);
+      }),
+      bus.subscribeWhere('vtp.domain.changed', isOurs, (e) => {
+        const p = e.payload as { domain?: string };
+        this.append('informational', 'vtp',
+          `VTP domain changed to '${p.domain ?? '?'}'`);
+      }),
+      bus.subscribeWhere('vtp.mode.changed', isOurs, (e) => {
+        const p = e.payload as { mode?: string };
+        this.append('informational', 'vtp',
+          `VTP mode changed to ${p.mode ?? '?'}`);
+      }),
+      bus.subscribeWhere('radius.auth.rejected', isOurs, (e) => {
+        const p = e.payload as { username?: string; sourceIp?: string; reason?: string };
+        this.append('warnings', 'radius',
+          `Authentication rejected for ${p.username ?? '?'} from ${p.sourceIp ?? '?'} (${p.reason ?? '?'})`);
+      }),
+      bus.subscribeWhere('radius.auth.completed', isOurs, (e) => {
+        const p = e.payload as { username?: string; status?: string };
+        this.append('informational', 'radius',
+          `Authentication ${p.status ?? '?'} for ${p.username ?? '?'}`);
+      }),
+      bus.subscribeWhere('tacacs.authen.completed', isOurs, (e) => {
+        const p = e.payload as { username?: string; status?: string };
+        this.append('informational', 'tacacs',
+          `Authentication ${p.status ?? '?'} for ${p.username ?? '?'}`);
+      }),
+      bus.subscribeWhere('tacacs.author.completed', isOurs, (e) => {
+        const p = e.payload as { username?: string; command?: string; status?: string };
+        this.append('informational', 'tacacs',
+          `Authorization ${p.status ?? '?'} for ${p.username ?? '?'} cmd='${p.command ?? '?'}'`);
+      }),
+      bus.subscribeWhere('gre.tunnel.changed', isOurs, (e) => {
+        const p = e.payload as { tunnelName?: string; oldState?: string; newState?: string };
+        this.append('notifications', 'gre',
+          `Tunnel ${p.tunnelName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('port.config.ipv6-added', isOurs, (e) => {
+        const p = e.payload as { portName?: string; ipv6?: string };
+        this.append('informational', 'ifmgr',
+          `Interface ${p.portName ?? '?'}, IPv6 address ${p.ipv6 ?? '?'} assigned`);
+      }),
+      bus.subscribeWhere('port.config.ipv6-removed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; ipv6?: string };
+        this.append('informational', 'ifmgr',
+          `Interface ${p.portName ?? '?'}, IPv6 address ${p.ipv6 ?? '?'} removed`);
+      }),
+      bus.subscribeWhere('port.security.mac-aged', isOurs, (e) => {
+        const p = e.payload as { portName?: string; mac?: string };
+        this.append('debugging', 'port_security',
+          `MAC ${p.mac ?? '?'} aged out on ${p.portName ?? '?'}`);
+      }),
       bus.subscribe('cable.duplex-mismatch', (e) => {
         const p = e.payload as {
           portA?: { deviceId?: string; portName?: string };
