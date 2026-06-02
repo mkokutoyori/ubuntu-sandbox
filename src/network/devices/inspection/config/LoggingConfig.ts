@@ -124,6 +124,48 @@ export class LoggingConfig {
         this.append('debugging', 'nat',
           `Translation: ${p.protocol ?? 'ip'} ${p.insideLocal ?? '?'} -> ${p.insideGlobal ?? '?'}`);
       }),
+      bus.subscribeWhere('port.config.ip-changed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('informational', 'ifmgr',
+          p.ip
+            ? `Interface ${p.portName}, IPv4 address ${p.ip}/${p.mask} assigned`
+            : `Interface ${p.portName}, IPv4 address removed`);
+      }),
+      bus.subscribeWhere('port.config.mtu-changed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('informational', 'ifmgr',
+          `Interface ${p.portName}, MTU changed to ${p.mtu}`);
+      }),
+      bus.subscribeWhere('port.config.speed-changed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('informational', 'ifmgr',
+          `Interface ${p.portName}, speed changed to ${p.speed} Mbps`);
+      }),
+      bus.subscribeWhere('port.config.duplex-changed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('informational', 'ifmgr',
+          `Interface ${p.portName}, duplex changed to ${p.duplex}`);
+      }),
+      bus.subscribeWhere('rip.route.added', isOurs, (e) => {
+        const p = e.payload as { destination?: string; mask?: string; nextHop?: string; metric?: number };
+        this.append('informational', 'rip',
+          `Route added ${p.destination}/${p.mask} via ${p.nextHop} metric ${p.metric}`);
+      }),
+      bus.subscribeWhere('rip.route.timed-out', isOurs, (e) => {
+        const p = e.payload as { destination?: string; mask?: string; nextHop?: string };
+        this.append('warnings', 'rip',
+          `Route timed out ${p.destination}/${p.mask} via ${p.nextHop}`);
+      }),
+      bus.subscribeWhere('ipsec.tunnel.up', isOurs, (e) => {
+        const p = e.payload as { peer?: string; spi?: number };
+        this.append('notifications', 'crypto',
+          `IPSEC-5-SESSION_STATUS: Tunnel to ${p.peer ?? '?'} UP (SPI 0x${(p.spi ?? 0).toString(16)})`);
+      }),
+      bus.subscribeWhere('ipsec.tunnel.down', isOurs, (e) => {
+        const p = e.payload as { peer?: string; reason?: string };
+        this.append('notifications', 'crypto',
+          `IPSEC-5-SESSION_STATUS: Tunnel to ${p.peer ?? '?'} DOWN (${p.reason ?? '?'})`);
+      }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as { source: string; level: string; event: string; message: string };

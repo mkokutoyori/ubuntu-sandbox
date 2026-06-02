@@ -41,7 +41,49 @@ export class PortActivityLogProjection {
       bus.subscribe('linux.process.spawned', (e) => this.onProcessSpawned(e.payload)),
       bus.subscribe('linux.process.exited', (e) => this.onProcessExited(e.payload)),
       bus.subscribe('arp.violation', (e) => this.onArpViolation(e.payload)),
+      bus.subscribe('linux.service.failed', (e) => this.onServiceFailed(e.payload)),
+      bus.subscribe('linux.service.enabled', (e) => this.onServiceEnabled(e.payload)),
+      bus.subscribe('linux.service.disabled', (e) => this.onServiceDisabled(e.payload)),
+      bus.subscribe('port.config.ip-changed', (e) => this.onIpChanged(e.payload)),
+      bus.subscribe('port.config.mtu-changed', (e) => this.onMtuChanged(e.payload)),
     );
+  }
+
+  private onServiceFailed(p: { deviceId: string; name: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logSystemd(p.name,
+      `${p.name}.service: Failed with result '${p.reason ?? 'failure'}'.`);
+  }
+
+  private onServiceEnabled(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Created symlink /etc/systemd/system/multi-user.target.wants/${p.name}.service.`);
+  }
+
+  private onServiceDisabled(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Removed symlink /etc/systemd/system/multi-user.target.wants/${p.name}.service.`);
+  }
+
+  private onIpChanged(p: {
+    deviceId: string; portName: string; ip?: string | null; mask?: string | null;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (p.ip) {
+      this.logManager.logKernel('kernel',
+        `${p.portName}: IPv4 address ${p.ip}/${p.mask ?? ''} assigned`);
+    } else {
+      this.logManager.logKernel('kernel',
+        `${p.portName}: IPv4 address removed`);
+    }
+  }
+
+  private onMtuChanged(p: { deviceId: string; portName: string; mtu?: number }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: MTU changed to ${p.mtu ?? '?'}`);
   }
 
   private onPortSecurityViolation(p: {
