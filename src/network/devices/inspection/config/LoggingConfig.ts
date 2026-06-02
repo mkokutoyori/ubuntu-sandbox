@@ -317,6 +317,41 @@ export class LoggingConfig {
         this.append('informational', 'glbp',
           `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
+      bus.subscribeWhere('router.aaa.account.login.success', isOurs, (e) => {
+        const p = e.payload as { username?: string; sourceIp?: string };
+        this.append('notifications', 'sec_login',
+          `Login Success [user: ${p.username ?? '?'}] [Source: ${p.sourceIp ?? '?'}]`);
+      }),
+      bus.subscribeWhere('router.aaa.account.login.failure', isOurs, (e) => {
+        const p = e.payload as { username?: string; sourceIp?: string; reason?: string };
+        this.append('warnings', 'sec_login',
+          `Login Failed [user: ${p.username ?? '?'}] [Source: ${p.sourceIp ?? '?'}] (${p.reason ?? 'invalid credentials'})`);
+      }),
+      bus.subscribeWhere('router.aaa.account.locked', isOurs, (e) => {
+        const p = e.payload as { username?: string };
+        this.append('critical', 'sec',
+          `Account ${p.username ?? '?'} locked due to repeated failures`);
+      }),
+      bus.subscribeWhere('router.aaa.account.created', isOurs, (e) => {
+        const p = e.payload as { username?: string; privLvl?: number };
+        this.append('informational', 'sys',
+          `User account '${p.username ?? '?'}' created (priv ${p.privLvl ?? 1})`);
+      }),
+      bus.subscribeWhere('router.aaa.account.deleted', isOurs, (e) => {
+        const p = e.payload as { username?: string };
+        this.append('informational', 'sys',
+          `User account '${p.username ?? '?'}' deleted`);
+      }),
+      bus.subscribeWhere('router.ssh.session.opened', isOurs, (e) => {
+        const p = e.payload as { username?: string; sourceIp?: string; vty?: string };
+        this.append('informational', 'ssh',
+          `Session opened for '${p.username ?? '?'}' on ${p.vty ?? 'vty'} from ${p.sourceIp ?? '?'}`);
+      }),
+      bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
+        const p = e.payload as { username?: string; vty?: string };
+        this.append('informational', 'ssh',
+          `Session closed for '${p.username ?? '?'}' on ${p.vty ?? 'vty'}`);
+      }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as { source: string; level: string; event: string; message: string };
