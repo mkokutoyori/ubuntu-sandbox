@@ -57,10 +57,11 @@ export class HostCaptureActor {
       this.bus.subscribe('host.icmp.echo-reply', (e) => this.append('icmp-echo-reply', e.payload)),
       this.bus.subscribe('host.icmp.echo-timeout', (e) => this.append('icmp-echo-timeout', e.payload)),
       this.bus.subscribe('host.icmp.unreachable', (e) => this.append('icmp-unreachable', e.payload)),
-      this.bus.subscribe('host.tcp.listener-started', (e) => this.append('tcp-listener-started', e.payload)),
-      this.bus.subscribe('host.tcp.listener-stopped', (e) => this.append('tcp-listener-stopped', e.payload)),
-      this.bus.subscribe('host.tcp.connection-established', (e) => this.append('tcp-connection-established', e.payload)),
-      this.bus.subscribe('host.tcp.connection-closed', (e) => this.append('tcp-connection-closed', e.payload)),
+      this.bus.subscribe('tcp.listener.changed', (e) => {
+        this.append(e.payload.added ? 'tcp-listener-started' : 'tcp-listener-stopped', e.payload);
+      }),
+      this.bus.subscribe('tcp.connection.opened', (e) => this.append('tcp-connection-established', e.payload)),
+      this.bus.subscribe('tcp.connection.closed', (e) => this.append('tcp-connection-closed', e.payload)),
       this.bus.subscribe('host.l3.packet-tx-requested', (e) => this.append('l3-tx-requested', e.payload)),
     );
   }

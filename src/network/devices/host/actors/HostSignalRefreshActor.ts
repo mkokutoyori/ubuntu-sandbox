@@ -71,19 +71,15 @@ export class HostSignalRefreshActor {
       this.bus.subscribeWhere('host.icmp.echo-reply', isOurs, () => this.host._refreshHostStatsSignal()),
       this.bus.subscribeWhere('host.icmp.echo-timeout', isOurs, () => this.host._refreshHostStatsSignal()),
       // TCP
-      this.bus.subscribeWhere('host.tcp.listener-started', isOurs, () => {
+      this.bus.subscribeWhere('tcp.listener.changed', isOurs, () => {
         this.host._refreshTcpSignal();
         this.host._refreshHostStatsSignal();
       }),
-      this.bus.subscribeWhere('host.tcp.listener-stopped', isOurs, () => {
+      this.bus.subscribeWhere('tcp.connection.opened', isOurs, () => {
         this.host._refreshTcpSignal();
         this.host._refreshHostStatsSignal();
       }),
-      this.bus.subscribeWhere('host.tcp.connection-established', isOurs, () => {
-        this.host._refreshTcpSignal();
-        this.host._refreshHostStatsSignal();
-      }),
-      this.bus.subscribeWhere('host.tcp.connection-closed', isOurs, () => {
+      this.bus.subscribeWhere('tcp.connection.closed', isOurs, () => {
         this.host._refreshTcpSignal();
         this.host._refreshHostStatsSignal();
       }),

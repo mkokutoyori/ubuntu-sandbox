@@ -838,6 +838,15 @@ export abstract class Router extends Equipment {
     }
 
     if (ipPkt.protocol === IP_PROTO_TCP) {
+      const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
+      if (inboundACL !== null) {
+        const verdict = this.aclEngine.evaluateACL(inboundACL, ipPkt);
+        if (verdict === 'deny') {
+          Logger.info(this.id, 'router:acl-deny-in',
+            `${this.name}: ACL denied inbound TCP on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
+          return;
+        }
+      }
       this.tcpv2.handleIp(inPort, ipPkt.sourceIP, ipPkt);
       return;
     }

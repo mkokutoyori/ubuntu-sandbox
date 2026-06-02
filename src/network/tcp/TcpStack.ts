@@ -297,6 +297,7 @@ export class TcpStack {
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');
+    this.sendRst(dstIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
     return true;
   }
 
