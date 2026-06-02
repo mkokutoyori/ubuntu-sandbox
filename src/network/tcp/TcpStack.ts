@@ -18,6 +18,7 @@ export interface TcpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  resolveMac?(nextHopIp: string): MACAddress | null;
 }
 
 export interface TcpAcceptHandler {
@@ -540,9 +541,10 @@ export class TcpStack {
       payload: seg,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const resolvedMac = this.host.resolveMac?.(dstIp.toString()) ?? null;
     const eth: EthernetFrame = {
       srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
+      dstMAC: resolvedMac ?? MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
     this.getBus().publish({

@@ -6,7 +6,7 @@
  * Why this exists: SSH from a Linux / Windows client to a router used to
  * travel through the synchronous bypass bridge ({@link
  * SshExecTarget.runSshCommandSync}) because routers had no TCP server
- * machinery. With {@link TcpServerStack} now wired into {@link Router},
+ * machinery. With the v2 {@link TcpStack} now wired into {@link Router},
  * we can host a real SSH daemon on port 22 and let the same packets
  * traverse the simulated wire as for any Linux box.
  *
