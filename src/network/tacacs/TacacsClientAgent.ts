@@ -179,7 +179,7 @@ export class TacacsClientAgent {
           });
           s.send(packet);
         },
-        onData: (s, data) => {
+        onData: (data) => {
           const pkt = data as TacacsPacket | undefined;
           if (pkt && pkt.type === 'tacacs') {
             received = pkt;
@@ -191,7 +191,7 @@ export class TacacsClientAgent {
                 bodyType: pkt.body.type,
               },
             });
-            s.close();
+            if (socketRef) socketRef.close();
           }
         },
         onClose: () => { settle(); },

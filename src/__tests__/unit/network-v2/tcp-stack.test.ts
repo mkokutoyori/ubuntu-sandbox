@@ -106,7 +106,7 @@ describe('TCP — data exchange', () => {
     const { client, server } = pair();
     const received: unknown[] = [];
     server.getTcpStack().listen(49, {
-      onAccept: (sock) => { sock.onData = (_s, data) => received.push(data); },
+      onAccept: (sock) => { sock.onData((data) => { received.push(data); }); },
     });
     const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
     cs.send({ kind: 'hello', payload: 'world' });
@@ -124,7 +124,7 @@ describe('TCP — data exchange', () => {
       onAccept: (sock) => { sock.send({ greeting: 'welcome' }); },
     });
     const cs = client.getTcpStack().connect('10.0.0.2', 49, {
-      onData: (_s, d) => received.push(d),
+      onData: (d) => received.push(d),
     })!;
     void cs;
     expect(received).toEqual([{ greeting: 'welcome' }]);

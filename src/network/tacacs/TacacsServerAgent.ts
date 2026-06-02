@@ -63,15 +63,15 @@ export class TacacsServerAgent {
     if (this.listenerInstalled) return;
     this.getTcpStack().listen(this.config.port, {
       onAccept: (socket) => {
-        socket.onData = (s, data) => {
-          if (!this.config.enabled) { s.close(); return; }
+        socket.onData((data) => {
+          if (!this.config.enabled) { socket.close(); return; }
           const pkt = data as TacacsPacket | undefined;
-          if (!pkt || pkt.type !== 'tacacs') { s.close(); return; }
+          if (!pkt || pkt.type !== 'tacacs') { socket.close(); return; }
           this.getBus().publish({
             topic: 'tacacs.packet.received',
             payload: {
               deviceId: this.host.id, hostname: this.host.getHostname(),
-              fromIp: s.remoteIp, sessionId: pkt.header.sessionId,
+              fromIp: socket.remoteIp, sessionId: pkt.header.sessionId,
               bodyType: pkt.body.type,
             },
           });
@@ -81,14 +81,14 @@ export class TacacsServerAgent {
               topic: 'tacacs.packet.sent',
               payload: {
                 deviceId: this.host.id, hostname: this.host.getHostname(),
-                destinationIp: s.remoteIp,
+                destinationIp: socket.remoteIp,
                 sessionId: reply.header.sessionId, bodyType: reply.body.type,
               },
             });
-            s.send(reply);
+            socket.send(reply);
           }
-          s.close();
-        };
+          socket.close();
+        });
       },
     });
     this.listenerInstalled = true;

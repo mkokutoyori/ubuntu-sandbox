@@ -25,11 +25,11 @@ export interface TcpAcceptHandler {
 }
 
 export interface TcpDataHandler {
-  (socket: TcpSocket, data: unknown): void;
+  (data: unknown): void;
 }
 
 export interface TcpCloseHandler {
-  (socket: TcpSocket, reason: TcpCloseReason): void;
+  (reason: TcpCloseReason): void;
 }
 
 export interface TcpOpenHandler {
@@ -58,12 +58,13 @@ export class TcpSocket {
   windowSize = TCP_DEFAULT_WINDOW;
   mss = TCP_DEFAULT_MSS;
   passive = false;
-  onOpen: TcpOpenHandler | null = null;
-  onData: TcpDataHandler | null = null;
-  onClose: TcpCloseHandler | null = null;
   closed = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
+
+  private readonly openHandlers: TcpOpenHandler[] = [];
+  private readonly dataHandlers: TcpDataHandler[] = [];
+  private readonly closeHandlers: TcpCloseHandler[] = [];
 
   constructor(
     private readonly stack: TcpStack,
@@ -77,10 +78,56 @@ export class TcpSocket {
   }
 
   send(data: unknown): void { this.stack._sendData(this, data); }
+  write(data: string): void { this.stack._sendData(this, data); }
   close(): void { this.stack._initiateClose(this); }
+
+  onOpen(handler: TcpOpenHandler): () => void {
+    this.openHandlers.push(handler);
+    return () => {
+      const i = this.openHandlers.indexOf(handler);
+      if (i !== -1) this.openHandlers.splice(i, 1);
+    };
+  }
+
+  onData(handler: TcpDataHandler): () => void {
+    this.dataHandlers.push(handler);
+    return () => {
+      const i = this.dataHandlers.indexOf(handler);
+      if (i !== -1) this.dataHandlers.splice(i, 1);
+    };
+  }
+
+  onClose(handler: TcpCloseHandler): () => void {
+    this.closeHandlers.push(handler);
+    return () => {
+      const i = this.closeHandlers.indexOf(handler);
+      if (i !== -1) this.closeHandlers.splice(i, 1);
+    };
+  }
+
+  _fireOpen(): void {
+    for (const h of [...this.openHandlers]) {
+      try { h(this); } catch { /* swallow per-handler */ }
+    }
+  }
+
+  _fireData(data: unknown): void {
+    for (const h of [...this.dataHandlers]) {
+      try { h(data); } catch { /* swallow per-handler */ }
+    }
+  }
+
+  _fireClose(reason: TcpCloseReason): void {
+    for (const h of [...this.closeHandlers]) {
+      try { h(reason); } catch { /* swallow per-handler */ }
+    }
+  }
 
   key(): string { return makeSocketKey(this.localIp, this.localPort, this.remoteIp, this.remotePort); }
 }
+
+export type TcpConnection = TcpSocket;
+export type TcpConnector = (host: string, port: number) => Promise<TcpConnection | null>;
 
 export class TcpListener {
   constructor(
@@ -162,9 +209,9 @@ export class TcpStack {
     const localIp = localIpAddr.toString();
     const localPort = this.nextEphemeral();
     const socket = new TcpSocket(this, localIp, localPort, remoteIp, remotePort);
-    socket.onOpen = opts.onOpen ?? null;
-    socket.onData = opts.onData ?? null;
-    socket.onClose = opts.onClose ?? null;
+    if (opts.onOpen) socket.onOpen(opts.onOpen);
+    if (opts.onData) socket.onData(opts.onData);
+    if (opts.onClose) socket.onClose(opts.onClose);
     socket.passive = false;
     socket.sendNext = nextIsn();
     socket.sendUnacked = socket.sendNext;
@@ -174,6 +221,26 @@ export class TcpStack {
     this.transmit(socket, flags, socket.sendNext, 0, undefined);
     socket.sendNext = (socket.sendNext + 1) >>> 0;
     return socket;
+  }
+
+  private externalPortClaim: ((port: number) => boolean) | null = null;
+  setExternalPortClaim(predicate: ((port: number) => boolean) | null): void {
+    this.externalPortClaim = predicate;
+  }
+
+  hasInterest(ipPkt: IPv4Packet, srcIp: IPAddress): boolean {
+    if (!this.enabled) return false;
+    if (ipPkt.protocol !== IP_PROTO_TCP) return false;
+    const seg = ipPkt.payload as TcpSegment | undefined;
+    if (!seg || seg.type !== 'tcp') return false;
+    const dstIp = ipPkt.destinationIP.toString();
+    const senderIp = srcIp.toString();
+    const socketKey = makeSocketKey(dstIp, seg.destinationPort, senderIp, seg.sourcePort);
+    if (this.sockets.has(socketKey)) return true;
+    if (this.findListener(dstIp, seg.destinationPort)) return true;
+    if (this.externalPortClaim && this.externalPortClaim(seg.destinationPort)) return false;
+    if (seg.flags.syn && !seg.flags.ack) return true;
+    return false;
   }
 
   handleIp(_inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): boolean {
@@ -292,7 +359,7 @@ export class TcpStack {
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
           this.emitOpened(socket);
-          if (socket.onOpen) { try { socket.onOpen(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); } }
+          try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
           this.flushPendingSends(socket);
         } else if (seg.flags.syn && !seg.flags.ack) {
           socket.recvNext = (seg.sequence + 1) >>> 0;
@@ -306,7 +373,7 @@ export class TcpStack {
           socket.sendUnacked = seg.acknowledgement;
           this._transition(socket, 'established');
           this.emitOpened(socket);
-          if (socket.onOpen) { try { socket.onOpen(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); } }
+          try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
           this.flushPendingSends(socket);
           if (payloadSize > 0) this.deliverData(socket, seg);
           if (seg.flags.fin) this.handleIncomingFin(socket);
@@ -369,8 +436,8 @@ export class TcpStack {
 
   private deliverData(socket: TcpSocket, seg: TcpSegment): void {
     socket.recvNext = (seg.sequence + 1) >>> 0;
-    if (socket.onData && seg.payload !== undefined) {
-      try { socket.onData(socket, seg.payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+    if (seg.payload !== undefined) {
+      try { socket._fireData(seg.payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
     }
   }
 
@@ -407,7 +474,7 @@ export class TcpStack {
         reason,
       },
     });
-    if (socket.onClose) { try { socket.onClose(socket, reason); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); } }
+    try { socket._fireClose(reason); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }
   }
 
   _transition(socket: TcpSocket, newState: TcpState): void {
