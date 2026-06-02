@@ -223,6 +223,7 @@ export class WindowsPC extends EndHost {
       bus, new WindowsSecurityAudit(this.eventLog), this.id,
     );
     this.eventLogProjection?.dispose();
+    this.eventLog.attachBus(bus, this.id);
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
