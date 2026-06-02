@@ -330,8 +330,23 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </div>
         )}
 
-        {/* Normal input line */}
-        {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch && (
+        {/* Hidden capture input while a foreground stream (e.g. `tail -f`)
+            holds the tty — the prompt stays invisible but Ctrl+C still
+            reaches the session. */}
+        {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
+          && (session.listAttachedStreams?.().length ?? 0) > 0 && (
+          <input
+            ref={inputRef}
+            type="text"
+            className="opacity-0 absolute w-0 h-0"
+            onKeyDown={handleKeyDown}
+            autoFocus
+          />
+        )}
+
+        {/* Normal input line — hidden while a foreground stream holds the tty. */}
+        {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
+          && (session.listAttachedStreams?.().length ?? 0) === 0 && (
           <div className="flex items-center" style={{ minHeight: sessionType === 'windows' ? '1.25em' : '1.35em' }}>
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
             <input

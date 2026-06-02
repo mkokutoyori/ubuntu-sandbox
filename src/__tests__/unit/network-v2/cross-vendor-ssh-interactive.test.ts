@@ -262,7 +262,8 @@ describe('§1 — Windows → Linux interactive SSH (regression for the reported
     await type(term, 'ssh user@10.0.0.1');
     // Validation succeeded → terminal is in password mode now.
     expect(term.currentInputMode.type).toBe('password');
-    expectContains(term, /user@10\.0\.0\.1's password:/);
+    expect((term.currentInputMode as { promptText?: string }).promptText ?? '')
+      .toMatch(/user@10\.0\.0\.1's password/);
   });
 
   test('wrong password is rejected with the canonical retry / final message', async () => {

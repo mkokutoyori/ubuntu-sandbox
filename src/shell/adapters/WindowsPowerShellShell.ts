@@ -96,6 +96,11 @@ export class WindowsPowerShellShell extends AbstractShell {
     this.banner = banner;
   }
 
+  override setInputHost(host: import('@/shell/input').InputHost): void {
+    super.setInputHost(host);
+    this.subShell.setInputHost?.(host);
+  }
+
   getPrompt(): string {
     return this.subShell.getPrompt();
   }
