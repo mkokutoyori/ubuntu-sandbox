@@ -46,7 +46,42 @@ export class PortActivityLogProjection {
       bus.subscribe('linux.service.disabled', (e) => this.onServiceDisabled(e.payload)),
       bus.subscribe('port.config.ip-changed', (e) => this.onIpChanged(e.payload)),
       bus.subscribe('port.config.mtu-changed', (e) => this.onMtuChanged(e.payload)),
+      bus.subscribe('ntp.synced', (e) => this.onNtpSynced(e.payload)),
+      bus.subscribe('ntp.unsynced', (e) => this.onNtpUnsynced(e.payload)),
+      bus.subscribe('ipsec.ike.sa-installed', (e) => this.onIpsecIkeUp(e.payload)),
+      bus.subscribe('ipsec.ike.sa-deleted', (e) => this.onIpsecIkeDown(e.payload)),
+      bus.subscribe('ipsec.dpd.peer-down', (e) => this.onIpsecDpdDown(e.payload)),
     );
+  }
+
+  private onNtpSynced(p: { deviceId: string; server?: string; stratum?: number; offsetMs?: number }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemd-timesyncd',
+      `Synchronized to time server ${p.server ?? '?'} (stratum ${p.stratum ?? '?'}, offset ${p.offsetMs ?? 0}ms).`);
+  }
+
+  private onNtpUnsynced(p: { deviceId: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemd-timesyncd',
+      `Lost time synchronization (${p.reason ?? 'no reachable server'}).`);
+  }
+
+  private onIpsecIkeUp(p: { deviceId: string; peerIp?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('charon',
+      `IKE_SA established with ${p.peerIp ?? '?'}`);
+  }
+
+  private onIpsecIkeDown(p: { deviceId: string; peerIp?: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('charon',
+      `IKE_SA with ${p.peerIp ?? '?'} deleted (${p.reason ?? 'remote close'})`);
+  }
+
+  private onIpsecDpdDown(p: { deviceId: string; peerIp?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('charon',
+      `DPD: peer ${p.peerIp ?? '?'} not responding, deleting SA`);
   }
 
   private onServiceFailed(p: { deviceId: string; name: string; reason?: string }): void {
