@@ -1,5 +1,4 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type TacacsClientConfig, type TacacsServerConfig, type TacacsPacket,
   type TacacsAuthenStatus, type TacacsAuthorStatus, type TacacsAcctStatus, type TacacsAcctFlag,
@@ -7,63 +6,32 @@ import {
   createDefaultClientConfig, defaultServerEntry,
   PORT_TACACS,
 } from './types';
-import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
-} from '../core/types';
+import type { TcpStack, TcpSocket } from '../tcp/TcpStack';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { Logger } from '../core/Logger';
 
 export interface TacacsClientHost {
   readonly id: string;
   readonly name: string;
   getHostname(): string;
-  getPort(name: string): import('../hardware/Port').Port | undefined;
-  getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
-}
-
-interface PendingSession {
-  sessionId: number;
-  serverIp: string;
-  username: string;
-  resolveAuthen?: (status: TacacsAuthenStatus | 'timeout', privLvl: number | null) => void;
-  resolveAuthor?: (status: TacacsAuthorStatus | 'timeout') => void;
-  resolveAcct?: (status: TacacsAcctStatus | 'timeout') => void;
-  timer: TimerHandle | null;
-  flags?: TacacsAcctFlag[];
-  command?: string;
 }
 
 export class TacacsClientAgent {
   private config: TacacsClientConfig = createDefaultClientConfig();
-  private pending = new Map<number, PendingSession>();
   private nextSessionId = 1;
-  private scheduler: IScheduler | null = null;
   private running = false;
 
   constructor(
     private readonly host: TacacsClientHost,
     private readonly getBus: () => IEventBus,
+    private readonly getTcpStack: () => TcpStack,
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {}
 
   start(): void { if (!this.running) this.running = true; }
-
-  stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    for (const p of this.pending.values()) {
-      if (p.timer !== null) (this.scheduler ?? this.getScheduler()).clear(p.timer);
-      if (p.resolveAuthen) p.resolveAuthen('timeout', null);
-      if (p.resolveAuthor) p.resolveAuthor('timeout');
-      if (p.resolveAcct) p.resolveAcct('timeout');
-    }
-    this.pending.clear();
-  }
+  stop(): void { this.running = false; }
 
   getConfig(): Readonly<TacacsClientConfig> { return this.config; }
-
   setEnabled(on: boolean): void { this.config.enabled = on; }
 
   addServer(ip: string, sharedSecret: string, opts: { port?: number; timeoutMs?: number } = {}): void {
@@ -92,121 +60,176 @@ export class TacacsClientAgent {
     const server = this.selectServer(serverIp);
     if (!server) return Promise.resolve({ status: 'timeout', privLvl: null });
     const sessionId = this.nextSession();
-    return new Promise((resolve) => {
-      const pending: PendingSession = {
-        sessionId, serverIp: server.ip, username, timer: null,
-        resolveAuthen: (status, privLvl) => resolve({ status, privLvl }),
-      };
-      this.pending.set(sessionId, pending);
-      const body: TacacsBody = {
-        type: 'tacacs-authen-start',
-        action: 'login', privLvl: 1, authenType: 'ascii', service: 'login',
-        user: username, port: 'tty0', remoteAddress: '0.0.0.0',
-        data: password,
-      };
-      this.transmit(server, sessionId, 'authen', body);
-      this.armTimeout(server, pending);
-    });
+    const body: TacacsBody = {
+      type: 'tacacs-authen-start',
+      action: 'login', privLvl: 1, authenType: 'ascii', service: 'login',
+      user: username, port: 'tty0', remoteAddress: '0.0.0.0',
+      data: password,
+    };
+    return this.exchange<{ status: TacacsAuthenStatus | 'timeout'; privLvl: number | null }>(
+      server, sessionId, 1, body,
+      (reply) => {
+        if (reply && reply.body.type === 'tacacs-authen-reply') {
+          const status = reply.body.status;
+          this.getBus().publish({
+            topic: 'tacacs.authen.completed',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              serverIp: server.ip, username,
+              status, privLvl: status === 'pass' ? 15 : null,
+            },
+          });
+          Logger.info(this.host.id, 'tacacs:authen',
+            `${this.host.name}: ${username}@${server.ip} → ${status}`);
+          return { status, privLvl: status === 'pass' ? 15 : null };
+        }
+        this.publishTimeout(server.ip, username, 'authen');
+        return { status: 'timeout', privLvl: null };
+      },
+    );
   }
 
   authorize(username: string, command: string, serverIp?: string): Promise<TacacsAuthorStatus | 'timeout'> {
     const server = this.selectServer(serverIp);
     if (!server) return Promise.resolve('timeout');
     const sessionId = this.nextSession();
-    return new Promise((resolve) => {
-      const pending: PendingSession = {
-        sessionId, serverIp: server.ip, username, timer: null,
-        resolveAuthor: (status) => resolve(status),
-        command,
-      };
-      this.pending.set(sessionId, pending);
-      const body: TacacsBody = {
-        type: 'tacacs-author-request',
-        authenMethod: 6, privLvl: 1, authenType: 'ascii', service: 'login',
-        user: username, port: 'tty0', remoteAddress: '0.0.0.0',
-        args: [`service=shell`, `cmd=${command}`],
-      };
-      this.transmit(server, sessionId, 'author', body);
-      this.armTimeout(server, pending);
-    });
+    const body: TacacsBody = {
+      type: 'tacacs-author-request',
+      authenMethod: 6, privLvl: 1, authenType: 'ascii', service: 'login',
+      user: username, port: 'tty0', remoteAddress: '0.0.0.0',
+      args: [`service=shell`, `cmd=${command}`],
+    };
+    return this.exchange<TacacsAuthorStatus | 'timeout'>(
+      server, sessionId, 2, body,
+      (reply) => {
+        if (reply && reply.body.type === 'tacacs-author-reply') {
+          const status = reply.body.status;
+          this.getBus().publish({
+            topic: 'tacacs.author.completed',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              serverIp: server.ip, username, status, command,
+            },
+          });
+          return status;
+        }
+        this.publishTimeout(server.ip, username, 'author');
+        return 'timeout';
+      },
+    );
   }
 
   accountCommand(username: string, command: string, flags: TacacsAcctFlag[], serverIp?: string): Promise<TacacsAcctStatus | 'timeout'> {
     const server = this.selectServer(serverIp);
     if (!server) return Promise.resolve('timeout');
     const sessionId = this.nextSession();
-    return new Promise((resolve) => {
-      const pending: PendingSession = {
-        sessionId, serverIp: server.ip, username, timer: null,
-        resolveAcct: (status) => resolve(status), flags, command,
+    const body: TacacsBody = {
+      type: 'tacacs-acct-request',
+      flags, authenMethod: 6, privLvl: 1, authenType: 'ascii', service: 'login',
+      user: username, port: 'tty0', remoteAddress: '0.0.0.0',
+      args: [`service=shell`, `cmd=${command}`],
+    };
+    return this.exchange<TacacsAcctStatus | 'timeout'>(
+      server, sessionId, 3, body,
+      (reply) => {
+        if (reply && reply.body.type === 'tacacs-acct-reply') {
+          const status = reply.body.status;
+          this.getBus().publish({
+            topic: 'tacacs.acct.completed',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              serverIp: server.ip, username, flags, status,
+            },
+          });
+          return status;
+        }
+        this.publishTimeout(server.ip, username, 'acct');
+        return 'timeout';
+      },
+    );
+  }
+
+  private exchange<T>(server: TacacsServerConfig, sessionId: number, type: number,
+                      body: TacacsBody, finalize: (reply: TacacsPacket | null) => T): Promise<T> {
+    if (!this.config.enabled) return Promise.resolve(finalize(null));
+    const stack = this.getTcpStack();
+    return new Promise<T>((resolve) => {
+      let received: TacacsPacket | null = null;
+      let settled = false;
+      let timer: TimerHandle | null = null;
+      let socketRef: TcpSocket | null = null;
+      const settle = (): void => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) this.getScheduler().clear(timer);
+        resolve(finalize(received));
       };
-      this.pending.set(sessionId, pending);
-      const body: TacacsBody = {
-        type: 'tacacs-acct-request',
-        flags, authenMethod: 6, privLvl: 1, authenType: 'ascii', service: 'login',
-        user: username, port: 'tty0', remoteAddress: '0.0.0.0',
-        args: [`service=shell`, `cmd=${command}`],
-      };
-      this.transmit(server, sessionId, 'acct', body);
-      this.armTimeout(server, pending);
+      socketRef = stack.connect(server.ip, server.port, {
+        onOpen: (s) => {
+          const header: TacacsHeader = {
+            version: 0xc1, type, seqNo: 1, flags: 0, sessionId, length: 64,
+          };
+          const packet: TacacsPacket = { type: 'tacacs', header, body };
+          this.getBus().publish({
+            topic: 'tacacs.packet.sent',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              destinationIp: server.ip, sessionId, bodyType: body.type,
+            },
+          });
+          s.send(packet);
+        },
+        onData: (s, data) => {
+          const pkt = data as TacacsPacket | undefined;
+          if (pkt && pkt.type === 'tacacs') {
+            received = pkt;
+            this.getBus().publish({
+              topic: 'tacacs.packet.received',
+              payload: {
+                deviceId: this.host.id, hostname: this.host.getHostname(),
+                fromIp: server.ip, sessionId: pkt.header.sessionId,
+                bodyType: pkt.body.type,
+              },
+            });
+            s.close();
+          }
+        },
+        onClose: () => { settle(); },
+      });
+      if (!socketRef) { settle(); return; }
+      timer = this.getScheduler().setTimeout(() => {
+        if (settled) return;
+        if (socketRef) socketRef.close();
+        settle();
+      }, server.timeoutMs);
     });
   }
 
-  handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
-    if (!this.config.enabled) return;
-    if (udp.sourcePort !== PORT_TACACS && udp.destinationPort !== PORT_TACACS) return;
-    const payload = udp.payload as TacacsPacket | undefined;
-    if (!payload || payload.type !== 'tacacs') return;
-    const sessionId = payload.header.sessionId;
-    const pending = this.pending.get(sessionId);
-    if (!pending || pending.serverIp !== srcIp.toString()) return;
-    this.getBus().publish({
-      topic: 'tacacs.packet.received',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        fromIp: srcIp.toString(), sessionId, bodyType: payload.body.type,
-      },
-    });
-    if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
-    this.pending.delete(sessionId);
-
-    if (payload.body.type === 'tacacs-authen-reply' && pending.resolveAuthen) {
-      pending.resolveAuthen(payload.body.status, payload.body.status === 'pass' ? 15 : null);
+  private publishTimeout(serverIp: string, username: string, kind: 'authen' | 'author' | 'acct'): void {
+    if (kind === 'authen') {
       this.getBus().publish({
         topic: 'tacacs.authen.completed',
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
-          serverIp: srcIp.toString(), username: pending.username,
-          status: payload.body.status, privLvl: payload.body.status === 'pass' ? 15 : null,
+          serverIp, username, status: 'timeout', privLvl: null,
         },
       });
-      Logger.info(this.host.id, 'tacacs:authen',
-        `${this.host.name}: ${pending.username}@${srcIp} → ${payload.body.status}`);
-      return;
-    }
-    if (payload.body.type === 'tacacs-author-reply' && pending.resolveAuthor) {
-      pending.resolveAuthor(payload.body.status);
+    } else if (kind === 'author') {
       this.getBus().publish({
         topic: 'tacacs.author.completed',
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
-          serverIp: srcIp.toString(), username: pending.username,
-          status: payload.body.status, command: pending.command ?? null,
+          serverIp, username, status: 'timeout', command: null,
         },
       });
-      return;
-    }
-    if (payload.body.type === 'tacacs-acct-reply' && pending.resolveAcct) {
-      pending.resolveAcct(payload.body.status);
+    } else {
       this.getBus().publish({
         topic: 'tacacs.acct.completed',
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
-          serverIp: srcIp.toString(), username: pending.username,
-          flags: pending.flags ?? [], status: payload.body.status,
+          serverIp, username, flags: [], status: 'timeout',
         },
       });
-      return;
     }
   }
 
@@ -222,82 +245,6 @@ export class TacacsClientAgent {
     this.nextSessionId = (this.nextSessionId + 1) & 0x7fffffff;
     return id;
   }
-
-  private armTimeout(server: TacacsServerConfig, pending: PendingSession): void {
-    const s = this.getScheduler();
-    this.scheduler = s;
-    pending.timer = s.setTimeout(() => {
-      if (!this.pending.has(pending.sessionId)) return;
-      this.pending.delete(pending.sessionId);
-      if (pending.resolveAuthen) pending.resolveAuthen('timeout', null);
-      if (pending.resolveAuthor) pending.resolveAuthor('timeout');
-      if (pending.resolveAcct) pending.resolveAcct('timeout');
-    }, server.timeoutMs);
-  }
-
-  private transmit(server: TacacsServerConfig, sessionId: number, kind: 'authen' | 'author' | 'acct', body: TacacsBody): void {
-    const egress = this.resolveEgress(server.ip);
-    if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
-    if (!srcIp) return;
-    const header: TacacsHeader = {
-      version: 0xc1,
-      type: kind === 'authen' ? 1 : kind === 'author' ? 2 : 3,
-      seqNo: 1, flags: 0, sessionId, length: 64,
-    };
-    const payload: TacacsPacket = { type: 'tacacs', header, body };
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49152 + (sessionId & 0x3fff),
-      destinationPort: server.port,
-      length: 8 + 64, checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(server.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(), dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(egress.name, eth);
-    this.getBus().publish({
-      topic: 'tacacs.packet.sent',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        destinationIp: server.ip, sessionId, bodyType: body.type,
-      },
-    });
-  }
-
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    if (this.config.sourceInterface) {
-      const p = this.host.getPort(this.config.sourceInterface);
-      if (p) return { name: this.config.sourceInterface, port: p };
-    }
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }
+
+void PORT_TACACS;

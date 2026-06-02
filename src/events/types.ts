@@ -48,6 +48,7 @@ import type { SnmpDomainEvent } from '@/network/snmp/events';
 import type { NetFlowDomainEvent } from '@/network/netflow/events';
 import type { TacacsDomainEvent } from '@/network/tacacs/events';
 import type { VxlanDomainEvent } from '@/network/vxlan/events';
+import type { TcpDomainEvent } from '@/network/tcp/events';
 import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
@@ -317,6 +318,7 @@ export type DomainEvent =
   | NetFlowDomainEvent
   | TacacsDomainEvent
   | VxlanDomainEvent
+  | TcpDomainEvent
   | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent

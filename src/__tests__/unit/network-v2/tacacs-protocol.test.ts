@@ -147,7 +147,7 @@ describe('TACACS+ — accounting', () => {
 });
 
 describe('TACACS+ — wire format', () => {
-  it('AUTHEN-START rides UDP/49 with a tacacs payload', () => {
+  it('AUTHEN-START rides TCP/49 with a tacacs payload', () => {
     const bus = new EventBus();
     const nas = new CiscoRouter('NAS');
     const aaa = new CiscoRouter('AAA');
@@ -164,11 +164,11 @@ describe('TACACS+ — wire format', () => {
           payload?: { type?: string; body?: { type?: string; user?: string } }
         };
       } | undefined;
-      const udp = ipPkt?.payload;
-      if (udp?.type === 'udp' && udp.destinationPort === PORT_TACACS) {
-        const tac = udp.payload;
+      const tcp = ipPkt?.payload;
+      if (tcp?.type === 'tcp' && tcp.destinationPort === PORT_TACACS) {
+        const tac = tcp.payload;
         if (tac?.type === 'tacacs') {
-          seen = { dport: udp.destinationPort, bodyType: tac.body!.type!, user: tac.body!.user! };
+          seen = { dport: tcp.destinationPort, bodyType: tac.body!.type!, user: tac.body!.user! };
         }
       }
     });
