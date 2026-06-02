@@ -2106,7 +2106,18 @@ export class PowerShellExecutor {
         this.cwd = hkMatch ? `HKEY_CURRENT_USER\\${hkMatch[1]}`.replace(/\\$/, '') : target;
         return '';
       }
-      const result = await this.device.executeCmdCommand('cd ' + target);
+      // Bare drive letter (`Set-Location D:`) is a drive switch in PS,
+      // not a no-op like cmd's `cd D:`. Route through cmd's bare-letter
+      // handler. For absolute paths, use `cd /d` so a path on another
+      // drive (`Set-Location D:\Data`) actually changes the active
+      // drive rather than just remembering the per-drive cwd silently.
+      const driveOnly = /^([a-zA-Z]):\\?$/.exec(target);
+      const cmdLine = driveOnly
+        ? `${driveOnly[1]}:`
+        : /^[a-zA-Z]:[\\/]/.test(target)
+          ? `cd /d ${target}`
+          : `cd ${target}`;
+      const result = await this.device.executeCmdCommand(cmdLine);
       await this.refreshCwd();
       return result || '';
     }

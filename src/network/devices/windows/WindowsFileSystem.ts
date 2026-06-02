@@ -174,6 +174,38 @@ export class WindowsFileSystem {
       }
     }
 
+    // Administrator profile — the built-in account exists in
+    // WindowsUserManager, so its %USERPROFILE% must exist on disk too.
+    // Without this an SSH `Administrator` login (or `runas`) lands in
+    // a phantom directory: `cd .` shows `C:\Users\Administrator` but
+    // `dir` reports "path not found" because nothing was ever seeded.
+    const adminHome = 'C:\\Users\\Administrator';
+    for (const sub of [
+      '', '\\Desktop', '\\Documents', '\\Downloads', '\\Pictures',
+      '\\Videos', '\\Music', '\\AppData', '\\AppData\\Local',
+      '\\AppData\\Local\\Temp', '\\AppData\\Local\\Microsoft',
+      '\\AppData\\Roaming', '\\AppData\\Roaming\\Microsoft',
+      '\\Favorites', '\\Contacts', '\\Saved Games', '\\Links',
+      '\\Searches', '\\OneDrive', '\\OneDrive\\Documents',
+    ]) {
+      this.mkdirp(adminHome + sub);
+    }
+
+    // Secondary data volume. A real Windows box almost always exposes
+    // at least one extra drive (D:) for user data; seeding it keeps
+    // `D:`, `cd /d D:\`, and PS `Set-Location D:` from face-planting
+    // on a phantom drive that exists in the path parser but holds no
+    // entries.
+    for (const dir of [
+      'D:\\',
+      'D:\\Data',
+      'D:\\Backup',
+      'D:\\Projects',
+      'D:\\Shared',
+    ]) {
+      this.mkdirp(dir);
+    }
+
     // The static name table — seeded with this machine's own name so it
     // resolves itself, mirroring the Linux 127.0.1.1 convention.
     const hostsContent = HostsFile.defaultWindows(hostname).serialize();
