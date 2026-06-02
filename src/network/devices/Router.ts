@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
@@ -265,6 +266,11 @@ export abstract class Router extends Equipment {
     this.tcpv2.start();
     this.getCredentialStore();
     this.mountSshDaemon();
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
   }
 
   // ── SSH daemon over real TCP ───────────────────────────────────────

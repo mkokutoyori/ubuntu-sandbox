@@ -31,6 +31,7 @@ export interface HuaweiDisplayState {
   isDhcpEnabled(): boolean;
   isDhcpSnoopingEnabled(): boolean;
   getDhcpSelectGlobal(): Set<string>;
+  renderLogbuffer?(): string;
 }
 
 // ─── Pure Display Functions ──────────────────────────────────────────
@@ -681,7 +682,9 @@ export function registerDisplayCommands(
   trie.register('display elabel', 'Display electronic label', () =>
     commonDisplayElabel(getRouter().getHostname()));
   trie.register('display license', 'Display license information', () => commonDisplayLicense());
-  trie.register('display logbuffer', 'Display log buffer', () => commonDisplayLogbuffer());
+  trie.register('display logbuffer', 'Display log buffer', () =>
+    getState().renderLogbuffer?.() ?? commonDisplayLogbuffer(),
+  );
   trie.register('display trapbuffer', 'Display trap buffer', () => commonDisplayTrapbuffer());
   trie.register('display patch-information', 'Display patch information', () =>
     commonDisplayPatchInformation());

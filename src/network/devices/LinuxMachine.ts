@@ -175,6 +175,11 @@ export abstract class LinuxMachine extends EndHost {
    * `free`, `nproc` and the procfs stay coherent with `getHardware()` — the
    * executor holds its own reference and would otherwise keep the old spec.
    */
+  override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
+    super.setEventBus(bus);
+    this.executor.attachEventBus(this.getBus(), this.id);
+  }
+
   override setHardware(profile: HardwareProfile): void {
     super.setHardware(profile);
     this.executor.setHardware(profile);
@@ -1186,7 +1191,29 @@ export abstract class LinuxMachine extends EndHost {
       iface: portName,
       outIface: outPortName,
     };
-    return this.executor.iptables.filterPacket(pkt);
+    const verdict = this.executor.iptables.filterPacket(pkt);
+    if (verdict !== 'accept') this.logIptablesDrop(pkt, verdict, portName, outPortName);
+    return verdict;
+  }
+
+  private logIptablesDrop(
+    pkt: PacketInfo,
+    verdict: 'drop' | 'reject',
+    inIface: string,
+    outIface?: string,
+  ): void {
+    const proto = pkt.protocol === 6 ? 'TCP'
+                : pkt.protocol === 17 ? 'UDP'
+                : pkt.protocol === 1 ? 'ICMP'
+                : String(pkt.protocol);
+    const portFields = (pkt.srcPort || pkt.dstPort)
+      ? ` SPT=${pkt.srcPort ?? 0} DPT=${pkt.dstPort ?? 0}`
+      : '';
+    const tag = verdict === 'reject' ? '[netfilter REJECT]' : '[netfilter DROP]';
+    this.executor.logMgr.logKernel(
+      'netfilter',
+      `${tag} IN=${inIface} OUT=${outIface ?? ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}${portFields}`,
+    );
   }
 
   protected override evaluateNat(

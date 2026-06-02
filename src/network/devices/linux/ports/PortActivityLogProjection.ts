@@ -30,6 +30,111 @@ export class PortActivityLogProjection {
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListenerChanged(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpConnectionOpened(e.payload)),
       bus.subscribe('tcp.connection.closed', (e) => this.onTcpConnectionClosed(e.payload)),
+      bus.subscribe('tcp.segment.dropped', (e) => this.onTcpSegmentDropped(e.payload)),
+      bus.subscribe('port.link.up', (e) => this.onLinkUp(e.payload)),
+      bus.subscribe('port.link.down', (e) => this.onLinkDown(e.payload)),
+      bus.subscribe('dhcp.lease.granted', (e) => this.onDhcpGranted(e.payload)),
+      bus.subscribe('dhcp.lease.renewing', (e) => this.onDhcpRenewing(e.payload)),
+      bus.subscribe('dhcp.lease.expired', (e) => this.onDhcpExpired(e.payload)),
+      bus.subscribe('port.security.violation', (e) => this.onPortSecurityViolation(e.payload)),
+      bus.subscribe('port.security.errdisable.set', (e) => this.onPortSecurityErrdisable(e.payload)),
+      bus.subscribe('linux.process.spawned', (e) => this.onProcessSpawned(e.payload)),
+      bus.subscribe('linux.process.exited', (e) => this.onProcessExited(e.payload)),
+      bus.subscribe('arp.violation', (e) => this.onArpViolation(e.payload)),
+    );
+  }
+
+  private onPortSecurityViolation(p: {
+    deviceId: string; portName: string; mac: string; mode: string; action: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `port-security: ${p.portName}: violation mac=${p.mac} mode=${p.mode} action=${p.action}`);
+  }
+
+  private onPortSecurityErrdisable(p: {
+    deviceId: string; portName: string; mac: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `port-security: ${p.portName} placed in err-disabled state (offending mac ${p.mac})`);
+  }
+
+  private onProcessSpawned(p: {
+    deviceId: string; pid: number; comm: string; ppid: number; user: string;
+    command: string; serviceName?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (p.serviceName) return;
+    if (p.user === 'root' && p.comm !== 'sudo') return;
+    this.logManager.logDaemon(p.comm,
+      `[${p.pid}] ${p.user}: ${p.command}`);
+  }
+
+  private onProcessExited(p: {
+    deviceId: string; pid: number; comm: string; exitCode: number; signal?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (p.signal) {
+      this.logManager.logDaemon('kernel',
+        `${p.comm}[${p.pid}] terminated by signal ${p.signal}`);
+    }
+  }
+
+  private onArpViolation(p: {
+    deviceId: string; iface?: string; senderIp?: string; senderMac?: string;
+    reason?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `arp-inspection: ${p.iface ?? '?'}: violation ${p.reason ?? 'invalid'} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+  }
+
+  private onLinkUp(p: { deviceId: string; portName: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: Link is Up - 1000 Mbps Full Duplex`);
+  }
+
+  private onLinkDown(p: { deviceId: string; portName: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: Link is Down`);
+  }
+
+  private onDhcpGranted(p: {
+    deviceId: string; iface?: string; ip?: string; leaseTimeSec?: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    const renewIn = p.leaseTimeSec ? Math.floor(p.leaseTimeSec / 2) : 0;
+    this.logManager.logDaemon('dhclient',
+      `bound to ${p.ip ?? '?'} -- renewal in ${renewIn} seconds.`);
+  }
+
+  private onDhcpRenewing(p: {
+    deviceId: string; iface?: string; ip?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `DHCPREQUEST for ${p.ip ?? '?'} on ${p.iface ?? 'unknown'}`);
+  }
+
+  private onDhcpExpired(p: {
+    deviceId: string; iface?: string; ip?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `lease ${p.ip ?? '?'} on ${p.iface ?? 'unknown'} expired`);
+  }
+
+  private onTcpSegmentDropped(p: {
+    deviceId: string; sourceIp: string; destinationIp: string;
+    sourcePort: number; destinationPort: number; reason: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel(
+      'TCP',
+      `${p.reason} SRC=${p.sourceIp} DST=${p.destinationIp} SPT=${p.sourcePort} DPT=${p.destinationPort}`,
     );
   }
 

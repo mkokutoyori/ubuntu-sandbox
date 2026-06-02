@@ -56,6 +56,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Config-driven syslog/logging state, projected by `show logging`. */
   protected readonly logging = new LoggingConfig();
 
+  attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
+    this.logging.attachToBus(bus, deviceId);
+  }
+
   /** Async escape hatch: commands that return a Promise (e.g. ping on routers) */
   protected _pendingAsync: Promise<string> | null = null;
 

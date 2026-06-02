@@ -218,10 +218,13 @@ export class WindowsPC extends EndHost {
     this.userMgr.attachBus(bus, this.id);
     this.svcMgr.attachBus(bus, this.id);
     this.procMgr.attachBus(bus, this.id);
+    this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
       bus, new WindowsSecurityAudit(this.eventLog), this.id,
     );
+    this.eventLogProjection?.dispose();
     this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
+    this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
     // Port-proxy rules announce on the bus; the projection keeps the
     // socket table coherent so `netstat` reflects every active rule.
@@ -1921,6 +1924,11 @@ export class WindowsPC extends EndHost {
     if (drive) s.driveCwd.set(drive, this.cwd);
   }
 
+  override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
+    super.setEventBus(bus);
+    this.wireReactiveProjections();
+  }
+
   private restoreShellState(b: { cwd: string; env: Map<string, string> }): void {
     this.cwd = b.cwd;
     this.env = b.env;
@@ -1953,7 +1961,21 @@ export class WindowsPC extends EndHost {
       const remote = direction === 'in' ? ports.srcPort : ports.dstPort;
       if (!matchPort(rule.localPort, local)) continue;
       if (!matchPort(rule.remotePort, remote)) continue;
-      return rule.action === 'Block' ? 'drop' : 'accept';
+      if (rule.action === 'Block') {
+        this.getBus().publish({
+          topic: 'windows.firewall.drop',
+          payload: {
+            deviceId: this.id, hostname: this.getHostname(),
+            ruleName: rule.name,
+            sourceIp: ipPkt.sourceIP.toString(),
+            destinationIp: ipPkt.destinationIP.toString(),
+            sourcePort: ports.srcPort, destinationPort: ports.dstPort,
+            protocol: proto ?? 'Any', direction: dirMatch,
+          },
+        });
+        return 'drop';
+      }
+      return 'accept';
     }
     return 'accept';
   }
