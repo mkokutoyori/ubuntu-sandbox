@@ -30,6 +30,18 @@ export class PortActivityLogProjection {
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListenerChanged(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpConnectionOpened(e.payload)),
       bus.subscribe('tcp.connection.closed', (e) => this.onTcpConnectionClosed(e.payload)),
+      bus.subscribe('tcp.segment.dropped', (e) => this.onTcpSegmentDropped(e.payload)),
+    );
+  }
+
+  private onTcpSegmentDropped(p: {
+    deviceId: string; sourceIp: string; destinationIp: string;
+    sourcePort: number; destinationPort: number; reason: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel(
+      'TCP',
+      `${p.reason} SRC=${p.sourceIp} DST=${p.destinationIp} SPT=${p.sourcePort} DPT=${p.destinationPort}`,
     );
   }
 

@@ -216,6 +216,18 @@ export class LinuxLogManager {
    * the service-journal projection so `journalctl -u <unit>` shows the
    * "Started / Stopped …" lines systemd writes on every state change.
    */
+  logKernel(tag: string, message: string): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.warning,
+      facility: FACILITY_NAMES.kern,
+      unit: tag,
+      tag,
+      message,
+      pid: 0,
+      hostname: this.hostname,
+    });
+  }
+
   logSystemd(unit: string, message: string): void {
     this.addEntry({
       priority: PRIORITY_NAMES.info,

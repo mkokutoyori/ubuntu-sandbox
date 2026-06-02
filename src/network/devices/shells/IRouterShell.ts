@@ -18,4 +18,6 @@ export interface IRouterShell {
   getHelp(inputBeforeQuestion: string): string;
   /** Get tab completion for the given partial input */
   tabComplete(input: string): string | null;
+  /** Attach the shell's logging config to a bus for event-driven syslog buffering. */
+  attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
 }

@@ -30,6 +30,53 @@ export class LoggingConfig {
   sequenceNumbers = false;
   timestamps = false;
   readonly hosts: string[] = [];
+  private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string }> = [];
+  private nextSeq = 0;
+  private readonly SEVERITY_ORDER: Record<Severity, number> = {
+    emergencies: 0, alerts: 1, critical: 2, errors: 3,
+    warnings: 4, notifications: 5, informational: 6, debugging: 7,
+  };
+
+  /** Append a log message into the buffered/console projection. */
+  append(severity: Severity, tag: string, text: string): void {
+    if (!this.enabled) return;
+    if (this.SEVERITY_ORDER[severity] > this.SEVERITY_ORDER[this.bufferedSeverity]) return;
+    this.messages.push({ ts: Date.now(), severity, tag, text });
+    const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
+    while (this.messages.length > cap) this.messages.shift();
+    this.nextSeq++;
+  }
+
+  attachToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): () => void {
+    const isOurs = (e: { deviceId?: string }) => e.deviceId === deviceId;
+    this.buffered = true;
+    const unsubs = [
+      bus.subscribeWhere('tcp.connection.opened', isOurs, (e) => {
+        const p = e.payload;
+        if (!p.passive) return;
+        this.append('informational', 'sec_login',
+          `Login accepted: connection from ${p.remoteIp}:${p.remotePort} accepted on port ${p.localPort}`);
+      }),
+      bus.subscribeWhere('tcp.connection.closed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('informational', 'sys',
+          `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`);
+      }),
+      bus.subscribeWhere('tcp.segment.dropped', isOurs, (e) => {
+        const p = e.payload;
+        this.append('warnings', 'tcp',
+          `Segment dropped (${p.reason}) from ${p.sourceIp}:${p.sourcePort} to ${p.destinationIp}:${p.destinationPort}`);
+      }),
+      bus.subscribeWhere('tcp.listener.changed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('notifications', 'sys',
+          p.added
+            ? `TCP listener bound to ${p.localIp}:${p.localPort}`
+            : `TCP listener closed on ${p.localIp}:${p.localPort}`);
+      }),
+    ];
+    return () => { for (const u of unsubs) u(); };
+  }
 
   /** Apply `logging …` (negate=false) or `no logging …` (negate=true). */
   apply(args: string[], negate: boolean): void {
@@ -118,6 +165,17 @@ export class LoggingConfig {
       for (const h of this.hosts) lines.push(`    Logging to ${h}`);
     } else {
       lines.push('    No active syslog hosts');
+    }
+    if (this.buffered && this.messages.length > 0) {
+      lines.push('');
+      lines.push('Log Buffer (' + this.bufferedSize + ' bytes):');
+      lines.push('');
+      for (const m of this.messages) {
+        const sevNum = this.SEVERITY_ORDER[m.severity];
+        const date = new Date(m.ts);
+        const stamp = `${date.toISOString().slice(5, 19).replace('T', ' ')}`;
+        lines.push(`${stamp}: %${m.tag.toUpperCase()}-${sevNum}-${m.severity.toUpperCase()}: ${m.text}`);
+      }
     }
     return lines.join('\n');
   }

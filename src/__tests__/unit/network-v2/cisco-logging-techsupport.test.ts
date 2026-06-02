@@ -30,6 +30,26 @@ describe('LoggingConfig (unit)', () => {
     l.apply(['host', '10.0.0.5'], true);
     expect(l.render()).not.toContain('Logging to 10.0.0.5');
   });
+
+  it('appended messages appear in the buffer section of `show logging`', () => {
+    const l = new LoggingConfig();
+    l.apply(['buffered', '8000', 'informational'], false);
+    l.append('informational', 'sec_login', 'Login accepted from 10.0.0.1');
+    l.append('warnings', 'tcp', 'Segment dropped (no-listener) from 10.0.0.9:1234 to 10.0.0.2:9999');
+    const out = l.render();
+    expect(out).toContain('Log Buffer (8000 bytes):');
+    expect(out).toMatch(/%SEC_LOGIN-6-INFORMATIONAL:.+Login accepted/);
+    expect(out).toMatch(/%TCP-4-WARNINGS:.+Segment dropped/);
+  });
+
+  it('drops entries below the buffered severity threshold', () => {
+    const l = new LoggingConfig();
+    l.apply(['buffered', '4000', 'warnings'], false);
+    l.append('debugging', 'sys', 'noise');
+    l.append('warnings', 'sys', 'kept');
+    expect(l.render()).toContain('kept');
+    expect(l.render()).not.toContain('noise');
+  });
 });
 
 describe('Cisco router logging / tech-support — real state', () => {
