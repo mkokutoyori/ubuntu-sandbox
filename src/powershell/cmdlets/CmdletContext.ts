@@ -67,6 +67,7 @@ export interface IRuntimeRef {
   }[];
   /** Enumerate the host's environment variables (for `Get-ChildItem Env:`). */
   listEnvVars(): Array<{ Name: string; Value: string }>;
+  getFunctionSource(name: string): string | null;
 }
 
 export interface CmdletContext {

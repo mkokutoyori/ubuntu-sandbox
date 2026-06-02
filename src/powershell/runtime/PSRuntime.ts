@@ -124,18 +124,13 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
   } as Record<string, PSValue>,
 
   datetime: {
-    // [datetime]::Now
-    now:     new Date() as unknown as PSValue,
-    // [datetime]::UtcNow
-    utcnow:  new Date() as unknown as PSValue,
-    // [datetime]::Today
-    today:   (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })() as unknown as PSValue,
-    // [datetime]::Parse(s) → Date
-    parse:   (s: PSValue) => new Date(String(s)) as unknown as PSValue,
-    // [datetime]::ParseExact(s, fmt, culture) → Date (simplified)
+    get now()    { return new Date() as unknown as PSValue; },
+    get utcnow() { return new Date() as unknown as PSValue; },
+    get today()  { const d = new Date(); d.setHours(0,0,0,0); return d as unknown as PSValue; },
+    parse:      (s: PSValue) => new Date(String(s)) as unknown as PSValue,
     parseexact: (s: PSValue) => new Date(String(s)) as unknown as PSValue,
-    minvalue: new Date(0) as unknown as PSValue,
-    maxvalue: new Date(8640000000000000) as unknown as PSValue,
+    minvalue:   new Date(0) as unknown as PSValue,
+    maxvalue:   new Date(8640000000000000) as unknown as PSValue,
   } as Record<string, PSValue>,
 
   'system.io.path': {
@@ -156,6 +151,87 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
     pathseparator:         ';' as PSValue,
     altdirectoryseparatorchar: '/' as PSValue,
   } as Record<string, PSValue>,
+
+  string: {
+    format:           (...args: PSValue[]) => {
+      const [fmt, ...rest] = args;
+      return String(fmt).replace(/\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g,
+        (_m, idx, pad, _spec) => {
+          const v = rest[Number.parseInt(String(idx), 10)];
+          let body = v === null || v === undefined ? '' : String(v);
+          if (pad !== undefined) {
+            const w = Number.parseInt(String(pad), 10);
+            const need = Math.abs(w) - body.length;
+            if (need > 0) body = w < 0 ? body + ' '.repeat(need) : ' '.repeat(need) + body;
+          }
+          return body;
+        }) as PSValue;
+    },
+    isnullorempty:    (s: PSValue) => (s === null || s === undefined || String(s) === '') as PSValue,
+    isnullorwhitespace: (s: PSValue) => (s === null || s === undefined || String(s).trim() === '') as PSValue,
+    join:             (sep: PSValue, ...parts: PSValue[]) => {
+      const list = parts.length === 1 && Array.isArray(parts[0]) ? parts[0] as PSValue[] : parts;
+      return list.map(String).join(String(sep)) as PSValue;
+    },
+    concat:           (...parts: PSValue[]) => parts.map(String).join('') as PSValue,
+    compare:          (a: PSValue, b: PSValue) => {
+      const sa = String(a), sb = String(b);
+      return (sa < sb ? -1 : sa > sb ? 1 : 0) as PSValue;
+    },
+    empty:            '' as PSValue,
+  } as Record<string, PSValue>,
+
+  int32: {
+    parse:    (s: PSValue) => {
+      const n = Number.parseInt(String(s), 10);
+      if (!Number.isFinite(n)) throw new Error(`Cannot convert '${s}' to int`);
+      return n as PSValue;
+    },
+    tryparse: (s: PSValue) => Number.isFinite(Number.parseInt(String(s), 10)) as PSValue,
+    minvalue: -2147483648 as PSValue,
+    maxvalue:  2147483647 as PSValue,
+  } as Record<string, PSValue>,
+
+  int64: {
+    parse:    (s: PSValue) => {
+      const n = Number(BigInt(String(s)));
+      return n as PSValue;
+    },
+    minvalue: -9223372036854775808 as PSValue,
+    maxvalue:  9223372036854775807 as PSValue,
+  } as Record<string, PSValue>,
+
+  double: {
+    parse:    (s: PSValue) => {
+      const n = Number.parseFloat(String(s));
+      if (!Number.isFinite(n)) throw new Error(`Cannot convert '${s}' to double`);
+      return n as PSValue;
+    },
+    nan:      Number.NaN as PSValue,
+    epsilon:  Number.EPSILON as PSValue,
+    minvalue: -Number.MAX_VALUE as PSValue,
+    maxvalue:  Number.MAX_VALUE as PSValue,
+  } as Record<string, PSValue>,
+
+  convert: {
+    tostring:  (v: PSValue) => String(v ?? '') as PSValue,
+    toint32:   (v: PSValue) => Number.parseInt(String(v), 10) as PSValue,
+    toint64:   (v: PSValue) => Number(BigInt(String(v))) as PSValue,
+    todouble:  (v: PSValue) => Number.parseFloat(String(v)) as PSValue,
+    toboolean: (v: PSValue) => (v !== null && v !== undefined && v !== false && v !== 0 && v !== '') as PSValue,
+    tobase64string: (v: PSValue) => Buffer.from(Array.isArray(v) ? Uint8Array.from(v as number[]) : String(v)).toString('base64') as PSValue,
+    frombase64string: (v: PSValue) => Buffer.from(String(v), 'base64').toString() as PSValue,
+  } as Record<string, PSValue>,
+
+  environment: {
+    machinename:        'WIN-LOCAL' as PSValue,
+    username:           'Administrator' as PSValue,
+    osversion:          { Platform: 'Win32NT', VersionString: 'Microsoft Windows NT 10.0.19041.0' } as unknown as PSValue,
+    currentdirectory:   'C:\\' as PSValue,
+    newline:            '\r\n' as PSValue,
+    tickcount:          () => Date.now() as PSValue,
+    getenvironmentvariable: (name: PSValue) => process.env[String(name)] ?? null as PSValue,
+  } as Record<string, PSValue>,
 } as Record<string, Record<string, PSValue>>;
 STATIC_TYPES['system.math'] = STATIC_TYPES['math'];
 STATIC_TYPES['system.text.regularexpressions.regex'] = STATIC_TYPES['regex'];
@@ -163,6 +239,14 @@ STATIC_TYPES['system.guid'] = STATIC_TYPES['guid'];
 STATIC_TYPES['system.datetime'] = STATIC_TYPES['datetime'];
 STATIC_TYPES['io.path'] = STATIC_TYPES['system.io.path'];
 STATIC_TYPES['path'] = STATIC_TYPES['system.io.path'];
+STATIC_TYPES['system.string'] = STATIC_TYPES['string'];
+STATIC_TYPES['system.int32'] = STATIC_TYPES['int32'];
+STATIC_TYPES['int'] = STATIC_TYPES['int32'];
+STATIC_TYPES['system.int64'] = STATIC_TYPES['int64'];
+STATIC_TYPES['long'] = STATIC_TYPES['int64'];
+STATIC_TYPES['system.double'] = STATIC_TYPES['double'];
+STATIC_TYPES['system.convert'] = STATIC_TYPES['convert'];
+STATIC_TYPES['system.environment'] = STATIC_TYPES['environment'];
 
 // ─── Collection type factories ────────────────────────────────────────────────
 
@@ -295,6 +379,7 @@ export class PSRuntime {
 
   /** User-defined functions survive between execute() calls. */
   private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean }>();
+  private readonly functionSources = new Map<string, string>();
 
   /** User-defined PowerShell classes. */
   private readonly userClasses = new Map<string, PSClassDefinition>();
@@ -389,9 +474,61 @@ export class PSRuntime {
   /** Execute a PowerShell script. Pipeline output is collected and returned as a string. */
   execute(code: string): string {
     this.outputLines = [];
+    this.indexFunctionSources(code);
     const ast = this.parseCached(code);
     this.execTopLevel(ast.body.statements, this.global);
     return this.outputLines.join('\n');
+  }
+
+  private applyDefaultParams(
+    fnName: string,
+    named: Record<string, PSValue>,
+    env: PSEnvironment,
+  ): Record<string, PSValue> {
+    const table = env.get('PSDefaultParameterValues') as Record<string, PSValue> | undefined;
+    if (!table || typeof table !== 'object') return named;
+    const result = { ...named };
+    for (const [key, value] of Object.entries(table)) {
+      const sep = key.indexOf(':');
+      if (sep < 0) continue;
+      const cmdPattern = key.slice(0, sep);
+      const paramName = key.slice(sep + 1).toLowerCase();
+      if (!this.matchCmdPattern(cmdPattern, fnName)) continue;
+      if (result[paramName] === undefined) result[paramName] = value;
+    }
+    return result;
+  }
+
+  private matchCmdPattern(pattern: string, name: string): boolean {
+    const p = pattern.toLowerCase();
+    const n = name.toLowerCase();
+    if (!p.includes('*') && !p.includes('?')) return p === n;
+    const re = new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+    return re.test(n);
+  }
+
+  private indexFunctionSources(code: string): void {
+    const re = /\bfunction\s+([A-Za-z_][\w-]*)\s*(?:\([^)]*\))?\s*\{/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(code)) !== null) {
+      const name = m[1].toLowerCase();
+      const openAt = m.index + m[0].length - 1;
+      let depth = 1, i = openAt + 1, inStr: string | null = null, esc = false;
+      while (i < code.length && depth > 0) {
+        const ch = code[i];
+        if (esc) { esc = false; i++; continue; }
+        if (inStr) {
+          if (ch === '\\') esc = true;
+          else if (ch === inStr) inStr = null;
+        } else if (ch === '"' || ch === "'") { inStr = ch; }
+        else if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+        i++;
+      }
+      if (depth === 0) {
+        this.functionSources.set(name, code.slice(openAt, i));
+      }
+    }
   }
 
   private execTopLevel(statements: PSStatement[], env: PSEnvironment): void {
@@ -425,15 +562,28 @@ export class PSRuntime {
       } catch (e) {
         if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
         const trap = traps[0];
-        // Run trap body in same scope so variable assignments are visible to the caller
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
-          this.execScriptBlock(trap.body, env);
+          this.runTrapBody(trap.body, env);
         } catch (te) {
           if (te instanceof ContinueSignal && !te.label) continue;
           if (te instanceof BreakSignal    && !te.label) return;
           throw te;
         }
+      }
+    }
+  }
+
+  private runTrapBody(block: PSScriptBlock, env: PSEnvironment): void {
+    if (!block.body) return;
+    for (const s of block.body.statements) {
+      const before = this.outputLines.length;
+      const r = this.execStatement(s, env);
+      const emitted = this.outputLines.length > before;
+      if (!emitted && r !== null && r !== undefined
+          && s.type !== 'AssignmentStatement'
+          && s.type !== 'FunctionDefinition') {
+        this.renderValue(r);
       }
     }
   }
@@ -480,7 +630,7 @@ export class PSRuntime {
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
-          this.execScriptBlock(trap.body, env);
+          this.runTrapBody(trap.body, env);
         } catch (te) {
           if (te instanceof ContinueSignal && !te.label) continue;
           if (te instanceof BreakSignal    && !te.label) return;
@@ -535,7 +685,7 @@ export class PSRuntime {
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
-          this.execScriptBlock(trap.body, env);
+          this.runTrapBody(trap.body, env);
           // Trap body finished normally → continue to next statement
         } catch (te) {
           if (te instanceof ContinueSignal && !te.label) continue;
@@ -1146,8 +1296,11 @@ export class PSRuntime {
         return limit !== undefined ? parts.slice(0, limit) : parts;
       }
       case '-join': return (Array.isArray(left) ? left : [left]).map(psValueToString).join(String(right));
-
-      // -is / -isnot / -as handled above the switch (type extraction)
+      case '-f': {
+        const fmt = String(left);
+        const args = Array.isArray(right) ? right : [right];
+        return formatString(fmt, args);
+      }
 
       default:
         throw new PSRuntimeError(`Unknown operator: ${op}`);
@@ -1242,12 +1395,26 @@ export class PSRuntime {
     const obj = this.evalExpr(node.object, env);
     const idx = this.evalExpr(node.index,  env);
     if (Array.isArray(obj)) {
+      if (Array.isArray(idx)) {
+        const out: PSValue[] = [];
+        for (const r of idx) {
+          let i = Number(r);
+          if (i < 0) i = obj.length + i;
+          if (i >= 0 && i < obj.length) out.push(obj[i]);
+        }
+        return out;
+      }
       let i = idx as number;
       if (i < 0) i = obj.length + i;
       return obj[i] ?? null;
     }
-    if (obj !== null && typeof obj === 'object')
-      return (obj as Record<string, PSValue>)[String(idx)] ?? null;
+    if (obj !== null && typeof obj === 'object') {
+      const rec = obj as Record<string, PSValue>;
+      if (Array.isArray(idx)) {
+        return (idx as PSValue[]).map(k => rec[String(k)] ?? null);
+      }
+      return rec[String(idx)] ?? null;
+    }
     return null;
   }
 
@@ -1362,12 +1529,22 @@ export class PSRuntime {
   }
 
   private execSwitch(node: PSSwitchStatement, env: PSEnvironment): PSValue {
-    const subject = this.evalExpr(node.subject, env);
+    let subject = this.evalExpr(node.subject, env);
+    const flags = (node.flags ?? []).map(f => f.toLowerCase());
+    const useRegex = flags.includes('regex');
+    const useWildcard = flags.includes('wildcard');
+    const caseSensitive = flags.includes('casesensitive');
+    const fromFile = flags.includes('file');
+
+    if (fromFile) {
+      const content = typeof subject === 'string' ? (this.io?.readFile?.(subject) ?? '') : '';
+      subject = content.split(/\r?\n/).filter(Boolean);
+    }
+    const subjects: PSValue[] = Array.isArray(subject) ? subject : [subject];
+
     let matched = false;
     const values: PSValue[] = [];
 
-    // Run a clause body collecting all emitted values, even across a `break`.
-    // Returns true when a `break` was encountered (caller should stop iterating).
     const runClause = (body: PSScriptBlock): boolean => {
       const stmtList = body.body ?? { statements: [] as PSStatement[] };
       const before = this.outputLines.length;
@@ -1397,42 +1574,91 @@ export class PSRuntime {
       return false;
     };
 
-    for (const clause of node.clauses) {
-      const test = this.evalExpr(clause.pattern, env);
-      if (this.switchMatch(subject, test)) {
-        matched = true;
-        if (runClause(clause.body)) break;
+    for (const subjVal of subjects) {
+      let anyClauseMatched = false;
+      env.set('_', subjVal);
+      env.set('PSItem', subjVal);
+      for (const clause of node.clauses) {
+        const test = this.evalExpr(clause.pattern, env);
+        if (this.switchMatch(subjVal, test, { useRegex, useWildcard, caseSensitive }, env)) {
+          matched = true;
+          anyClauseMatched = true;
+          if (runClause(clause.body)) return values.length === 1 ? values[0] : values.length === 0 ? null : values;
+        }
       }
-    }
-    if (!matched && node.defaultBody) {
-      runClause(node.defaultBody);
+      if (!anyClauseMatched && node.defaultBody) {
+        runClause(node.defaultBody);
+      }
     }
     if (values.length === 0) return null;
     return values.length === 1 ? values[0] : values;
   }
 
-  private switchMatch(subject: PSValue, test: PSValue): boolean {
-    if (typeof subject === 'string' && typeof test === 'string')
-      return subject.toLowerCase() === test.toLowerCase();
+  private switchMatch(
+    subject: PSValue,
+    test: PSValue,
+    opts: { useRegex: boolean; useWildcard: boolean; caseSensitive: boolean },
+    env: PSEnvironment,
+  ): boolean {
+    if (typeof test === 'function') {
+      try {
+        const r = (test as (...a: PSValue[]) => PSValue)(subject);
+        return this.isTruthy(r);
+      } catch { return false; }
+    }
+    const s = String(subject);
+    const t = String(test);
+    if (opts.useRegex) {
+      try {
+        const re = new RegExp(t, opts.caseSensitive ? '' : 'i');
+        const m = re.exec(s);
+        if (!m) return false;
+        const matches: Record<string, PSValue> = { 0: m[0] };
+        for (let i = 1; i < m.length; i++) matches[i] = m[i];
+        if (m.groups) for (const [k, v] of Object.entries(m.groups)) matches[k] = v ?? '';
+        env.set('matches', matches);
+        return true;
+      } catch { return false; }
+    }
+    if (opts.useWildcard) {
+      const re = new RegExp('^' + t.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+        opts.caseSensitive ? '' : 'i');
+      return re.test(s);
+    }
+    if (typeof subject === 'string' && typeof test === 'string') {
+      return opts.caseSensitive ? subject === test : subject.toLowerCase() === test.toLowerCase();
+    }
     return subject === test;
   }
 
   private execTry(node: PSTryStatement, env: PSEnvironment): PSValue {
+    const renderBody = (body: PSScriptBlock): PSValue => {
+      if (!body.body) return null;
+      let last: PSValue = null;
+      for (const s of body.body.statements) {
+        const before = this.outputLines.length;
+        last = this.execStatement(s, env);
+        const emitted = this.outputLines.length > before;
+        if (!emitted && last !== null && last !== undefined
+            && s.type !== 'AssignmentStatement'
+            && s.type !== 'FunctionDefinition') {
+          this.renderValue(last);
+        }
+      }
+      return last;
+    };
     let result: PSValue = null;
     try {
-      result = this.execScriptBlock(node.tryBody, env);
+      result = renderBody(node.tryBody);
     } catch (e) {
       const errRecord = this.makeErrorRecord(e);
-      // Append to $Error list (PowerShell accumulates all errors)
       const errList = (this.global.get('Error') as PSValue[]) ?? [];
       this.global.set('Error', [errRecord, ...errList]);
 
       if (node.catchClauses.length > 0) {
         env.set('_', errRecord);
-        // Find typed catch clause matching or fall through to untyped
         const matchingClause = node.catchClauses.find(c => {
           if (c.types.length === 0) return false;
-          // Check if the error type matches
           const msg = e instanceof Error ? e.message : String(e);
           return c.types.some(t => {
             const tn = (t as unknown as { typeName?: string; value?: string }).typeName
@@ -1440,14 +1666,14 @@ export class PSRuntime {
             return msg.includes(tn) || tn.includes('Exception') || tn.toLowerCase().includes('argument');
           });
         }) ?? node.catchClauses.find(c => c.types.length === 0) ?? node.catchClauses[0];
-        result = this.execScriptBlock(matchingClause.body, env);
+        result = renderBody(matchingClause.body);
       } else {
+        if (node.finallyBody) renderBody(node.finallyBody);
         throw e;
       }
-    } finally {
-      if (node.finallyBody) this.execScriptBlock(node.finallyBody, env);
     }
-    return result;
+    if (node.finallyBody) renderBody(node.finallyBody);
+    return null;
   }
 
   private makeErrorRecord(e: unknown): Record<string, PSValue> {
@@ -1710,7 +1936,7 @@ export class PSRuntime {
       }
       const tfn = this.functions.get(tname);
       if (tfn) {
-        return this.callUserFunction(tfn, named, positional, env, pipeInput);
+        return this.callUserFunction(tfn, this.applyDefaultParams(tname, named, env), positional, env, pipeInput);
       }
       // `& C:\path\to\script.ps1 args...` — invoke a script file as if it
       // were a function. Param block / pipeline behave like a normal call.
@@ -1737,7 +1963,7 @@ export class PSRuntime {
 
     // User-defined function
     const fn = this.functions.get(lname);
-    if (fn) return this.callUserFunction(fn, named, positional, env, pipeInput);
+    if (fn) return this.callUserFunction(fn, this.applyDefaultParams(lname, named, env), positional, env, pipeInput);
 
     // Script-file invocation: `C:\foo\bar.ps1 -X y` (with or without a leading
     // `&`, since parseCommandName silently consumes the ampersand). Loads the
@@ -1816,16 +2042,13 @@ export class PSRuntime {
       ? (Array.isArray(pipeInput) ? pipeInput : [pipeInput])
       : [];
 
-    // Check param block for ValueFromPipeline / ValueFromPipelineByPropertyName
     let pipeParamName: string | null = null;
-    let pipeByPropertyName: string | null = null;
+    const pipeByPropertyNames: string[] = [];
     if (block.paramBlock) {
       for (const p of block.paramBlock.parameters) {
         const pname = p.name.varName ?? (p.name as { name?: string }).name ?? '';
         for (const attr of p.attributes) {
           if (attr.name.toLowerCase() === 'parameter') {
-            // namedArgs covers [Parameter(ValueFromPipeline=$true)]
-            // positionalArgs covers [Parameter(ValueFromPipeline)] (bareword, no =$true)
             const vfpNamed = attr.namedArgs['ValueFromPipeline'] ?? attr.namedArgs['valuefrompipeline'];
             const vfpPositional = attr.positionalArgs.some(a => {
               const ce = a as { type?: string; name?: string };
@@ -1837,7 +2060,7 @@ export class PSRuntime {
               return ce.type === 'CommandExpression' && ce.name?.toLowerCase() === 'valuefrompipelinebypropertyname';
             });
             if (vfpNamed || vfpPositional) pipeParamName = pname;
-            if (vfbpnNamed || vfbpnPositional) pipeByPropertyName = pname;
+            if (vfbpnNamed || vfbpnPositional) pipeByPropertyNames.push(pname);
           }
         }
       }
@@ -1881,6 +2104,28 @@ export class PSRuntime {
             if (!allowed.some(a => a.toLowerCase() === val.toLowerCase()))
               throw new PSRuntimeError(`Validation error: ${pname} must be one of [${allowed.join(', ')}]`);
           }
+          if (attr.name.toLowerCase() === 'validatepattern' && resolvedNamed[pkey] !== undefined) {
+            const pat = String((attr.positionalArgs[0] as { value?: unknown })?.value ?? '');
+            const val = String(resolvedNamed[pkey]);
+            let re: RegExp | null = null;
+            try { re = new RegExp(pat); } catch { re = null; }
+            if (!re || !re.test(val))
+              throw new PSRuntimeError(`Validation error: ${pname} does not match pattern ${pat}`);
+          }
+          if (attr.name.toLowerCase() === 'validatenotnull' && (resolvedNamed[pkey] === null || resolvedNamed[pkey] === undefined)) {
+            throw new PSRuntimeError(`Validation error: ${pname} cannot be null`);
+          }
+          if (attr.name.toLowerCase() === 'validatenotnullorempty'
+              && (resolvedNamed[pkey] === null || resolvedNamed[pkey] === undefined || resolvedNamed[pkey] === '')) {
+            throw new PSRuntimeError(`Validation error: ${pname} cannot be null or empty`);
+          }
+          if (attr.name.toLowerCase() === 'validatelength' && resolvedNamed[pkey] !== undefined) {
+            const min = Number((attr.positionalArgs[0] as { value?: unknown })?.value ?? 0);
+            const max = Number((attr.positionalArgs[1] as { value?: unknown })?.value ?? Infinity);
+            const len = String(resolvedNamed[pkey]).length;
+            if (len < min || len > max)
+              throw new PSRuntimeError(`Validation error: ${pname} length must be between ${min} and ${max}`);
+          }
         }
       }
     }
@@ -1917,10 +2162,12 @@ export class PSRuntime {
               childEnv.set('_', item);
               childEnv.set('PSItem', item);
               if (pipeParamName) childEnv.set(pipeParamName, item);
-              if (pipeByPropertyName && item && typeof item === 'object' && !Array.isArray(item)) {
+              if (pipeByPropertyNames.length > 0 && item && typeof item === 'object' && !Array.isArray(item)) {
                 const rec = item as Record<string, PSValue>;
-                const key = Object.keys(rec).find(k => k.toLowerCase() === pipeByPropertyName!.toLowerCase()) ?? pipeByPropertyName;
-                childEnv.set(pipeByPropertyName, rec[key] ?? null);
+                for (const pn of pipeByPropertyNames) {
+                  const key = Object.keys(rec).find(k => k.toLowerCase() === pn.toLowerCase()) ?? pn;
+                  childEnv.set(pn, rec[key] ?? null);
+                }
               }
               try { results.push(...this.runBlockCapture(procBlock, childEnv)); }
               catch (e) {
@@ -2108,6 +2355,7 @@ export class PSRuntime {
           description: c.description,
         })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
+      getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
     };
 
     return {
@@ -2281,7 +2529,9 @@ export class PSRuntime {
       case 'bool': case 'boolean':       return typeof val === 'boolean';
       case 'array':                      return Array.isArray(val);
       case 'null':                       return val === null;
-      case 'hashtable': case 'object':   return val !== null && typeof val === 'object' && !Array.isArray(val);
+      case 'datetime': case 'system.datetime': return val instanceof Date;
+      case 'hashtable':                  return val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date);
+      case 'object':                     return val !== null && typeof val === 'object';
       default:                           return false;
     }
   }
@@ -2471,20 +2721,38 @@ export class PSRuntime {
       case 'length':     return s.length;
       case 'toupper':    return () => s.toUpperCase();
       case 'tolower':    return () => s.toLowerCase();
-      case 'trim':       return () => s.trim();
-      case 'trimstart':  return () => s.trimStart();
-      case 'trimend':    return () => s.trimEnd();
+      case 'trim':       return (chars?: PSValue) => chars !== undefined
+        ? trimChars(s, String(chars), true, true) : s.trim();
+      case 'trimstart':  return (chars?: PSValue) => chars !== undefined
+        ? trimChars(s, String(chars), true, false) : s.trimStart();
+      case 'trimend':    return (chars?: PSValue) => chars !== undefined
+        ? trimChars(s, String(chars), false, true) : s.trimEnd();
       case 'contains':   return (sub: PSValue) => s.toLowerCase().includes(String(sub).toLowerCase());
       case 'startswith': return (pfx: PSValue) => s.toLowerCase().startsWith(String(pfx).toLowerCase());
       case 'endswith':   return (sfx: PSValue) => s.toLowerCase().endsWith(String(sfx).toLowerCase());
       case 'replace':    return (o: PSValue, n: PSValue) => s.split(String(o)).join(String(n));
-      case 'split':      return (sep: PSValue) => s.split(String(sep));
-      case 'indexof':    return (sub: PSValue) => s.indexOf(String(sub));
+      case 'split':      return (sep: PSValue, limit?: PSValue) => {
+        const sepStr = String(sep ?? '');
+        return limit !== undefined ? s.split(sepStr, Number(limit)) : s.split(sepStr);
+      };
+      case 'indexof':    return (sub: PSValue, start?: PSValue) =>
+        start !== undefined ? s.indexOf(String(sub), Number(start)) : s.indexOf(String(sub));
+      case 'lastindexof': return (sub: PSValue) => s.lastIndexOf(String(sub));
       case 'substring':  return (start: PSValue, len?: PSValue) =>
         len !== undefined ? s.substr(Number(start), Number(len)) : s.substr(Number(start));
-      case 'padleft':    return (w: PSValue) => s.padStart(Number(w));
-      case 'padright':   return (w: PSValue) => s.padEnd(Number(w));
+      case 'padleft':    return (w: PSValue, ch?: PSValue) =>
+        s.padStart(Number(w), ch !== undefined ? String(ch) : ' ');
+      case 'padright':   return (w: PSValue, ch?: PSValue) =>
+        s.padEnd(Number(w), ch !== undefined ? String(ch) : ' ');
       case 'chars':      return Array.from(s);
+      case 'insert':     return (i: PSValue, v: PSValue) =>
+        s.slice(0, Number(i)) + String(v) + s.slice(Number(i));
+      case 'remove':     return (start: PSValue, len?: PSValue) => {
+        const a = Number(start);
+        return len !== undefined ? s.slice(0, a) + s.slice(a + Number(len)) : s.slice(0, a);
+      };
+      case 'tochararray': return Array.from(s);
+      case 'getenumerator': return Array.from(s);
       default:           return null;
     }
   }
@@ -2592,4 +2860,58 @@ export class PSRuntime {
       default: return false;
     }
   }
+}
+
+function formatString(fmt: string, args: PSValue[]): string {
+  return fmt.replace(/\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g,
+    (_m: string, idxStr: string, padStr: string | undefined, spec: string | undefined): string => {
+      const idx = Number.parseInt(idxStr, 10);
+      const value = args[idx];
+      let body = spec !== undefined ? applyFormatSpec(value, spec) : psValueToString(value);
+      if (padStr !== undefined) {
+        const width = Number.parseInt(padStr, 10);
+        const pad = Math.abs(width) - body.length;
+        if (pad > 0) {
+          body = width < 0 ? body + ' '.repeat(pad) : ' '.repeat(pad) + body;
+        }
+      }
+      return body;
+    });
+}
+
+function applyFormatSpec(value: PSValue, spec: string): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(n) && /[NDFXEPC]/i.test(spec[0] ?? '')) return psValueToString(value);
+  const code = spec[0].toUpperCase();
+  const digits = spec.length > 1 ? Number.parseInt(spec.slice(1), 10) : NaN;
+  switch (code) {
+    case 'N': {
+      const p = Number.isFinite(digits) ? digits : 2;
+      const fixed = n.toFixed(p);
+      const [intPart, decPart] = fixed.split('.');
+      const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return decPart !== undefined ? `${withCommas}.${decPart}` : withCommas;
+    }
+    case 'D': return Number.isFinite(digits) ? String(Math.trunc(n)).padStart(digits, '0') : String(Math.trunc(n));
+    case 'F': return n.toFixed(Number.isFinite(digits) ? digits : 2);
+    case 'X': {
+      const hex = Math.trunc(n).toString(16);
+      return Number.isFinite(digits) ? hex.padStart(digits, '0') : hex;
+    }
+    case 'E': return n.toExponential(Number.isFinite(digits) ? digits : 6);
+    case 'P': {
+      const p = Number.isFinite(digits) ? digits : 2;
+      return (n * 100).toFixed(p) + '%';
+    }
+    case 'C': return '$' + n.toFixed(Number.isFinite(digits) ? digits : 2);
+    default: return psValueToString(value);
+  }
+}
+
+function trimChars(s: string, chars: string, start: boolean, end: boolean): string {
+  const set = new Set(chars);
+  let a = 0, b = s.length;
+  if (start) while (a < b && set.has(s[a])) a++;
+  if (end)   while (b > a && set.has(s[b - 1])) b--;
+  return s.slice(a, b);
 }

@@ -77,7 +77,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/ast/types').Command>,
 ): ScriptResult {
@@ -99,6 +99,7 @@ export function runScriptContent(
       io,
       pid: identity?.pid,
       ppid: identity?.ppid,
+      initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
     });
@@ -246,6 +247,19 @@ function buildIOContext(ctx: ShellContext): IOContext {
       const inode = ctx.vfs.resolveInode(absPath);
       if (!inode) return null;
       return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
+    },
+    globExpand(pattern: string, cwd: string) {
+      const hits = ctx.vfs.globExpand(pattern, cwd);
+      if (hits.length === 0) return null;
+      if (!pattern.startsWith('/')) {
+        const prefix = cwd === '/' ? '/' : cwd + '/';
+        return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
+      }
+      return hits;
+    },
+    homeFor(user: string) {
+      const u = ctx.userMgr.getUser(user);
+      return u ? u.home : null;
     },
   };
 }

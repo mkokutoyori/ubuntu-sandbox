@@ -350,6 +350,22 @@ export class SQLPlusSession {
       return this.handleDdlCommand(trimmed);
     }
 
+    // USERACT — inspect the user-activity ledger maintained by
+    // UserActivityTracker. Forms:
+    //   USERACT                  → ledger summary for every user
+    //   USERACT <username>       → ledger for one user
+    if (upper === 'USERACT' || upper === 'USERACT;' || upper.startsWith('USERACT ')) {
+      return this.handleUserAct(trimmed);
+    }
+
+    // PMON — trigger PMON-style sweeps. Currently:
+    //   PMON SWEEP               → IdleSessionMonitor.sweep()
+    if (upper === 'PMON SWEEP' || upper === 'PMON SWEEP;') {
+      const n = this.db.idleMonitor.sweep();
+      return { output: [`PMON sweep complete — ${n.length} session(s) sniped.`],
+               exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+
     // SECDEMO — simulator-specific entry point that drives the
     // FraudScenarioSimulator. `SECDEMO RUN` runs every canonical
     // scenario; `SECDEMO SCAN SOD` and `SECDEMO SCAN DORMANT` run only
@@ -477,22 +493,16 @@ export class SQLPlusSession {
 
   private updatePLSQLDepth(line: string): void {
     const upper = line.toUpperCase();
-    // Count block openers
-    const openers = /\b(BEGIN|LOOP|CASE)\b/gi;
+    const withoutClosers = upper.replace(/\bEND(\s+\w+)?\s*;/g, ' ; ');
+
     let m;
-    while ((m = openers.exec(upper)) !== null) this.plsqlDepth++;
+    const openers = /\b(BEGIN|LOOP|CASE)\b/gi;
+    while ((m = openers.exec(withoutClosers)) !== null) this.plsqlDepth++;
 
-    // DECLARE doesn't need its own END but starts a block with BEGIN
-    if (/\bIF\b/.test(upper) && /\bTHEN\b/.test(upper)) this.plsqlDepth++;
+    if (/\bIF\b/.test(withoutClosers) && /\bTHEN\b/.test(withoutClosers)) this.plsqlDepth++;
 
-    // Count block closers
     const closers = /\bEND(\s+(IF|LOOP|CASE|\w+))?\s*;/gi;
     while ((m = closers.exec(upper)) !== null) this.plsqlDepth--;
-
-    // Standalone END;
-    if (/^\s*END\s*;\s*$/i.test(line) && !/\bEND\s+(IF|LOOP|CASE)/i.test(upper)) {
-      // Already counted above
-    }
   }
 
   private executePLSQLBuffer(): SQLPlusResult {
@@ -965,6 +975,8 @@ export class SQLPlusSession {
 
   private handleConnect(args: string): SQLPlusResult {
     // CONNECT user/pass  or  CONNECT user/pass AS SYSDBA  or  CONNECT / AS SYSDBA
+    // Tolerate the trailing `;` real SQL*Plus also strips before parsing.
+    args = args.replace(/;\s*$/, '').trim();
     let username = '';
     let password = '';
     let sysdba = false;
@@ -1058,6 +1070,27 @@ export class SQLPlusSession {
       return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
     return { output: ['Statement processed.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  // ── USERACT (UserActivityTracker inspector) ──────────────────────
+
+  private handleUserAct(line: string): SQLPlusResult {
+    const arg = line.replace(/;\s*$/, '').replace(/^USERACT\s*/i, '').trim().toUpperCase();
+    const all = this.db.userActivity.getAllStats();
+    const rows = arg ? all.filter(s => s.username === arg) : all;
+    if (rows.length === 0) {
+      return { output: [arg ? `No activity recorded for ${arg}.` : 'No user activity recorded yet.'],
+               exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    const out: string[] = ['USER       LOGONS  FAILED  PWD_CHG  LOCKS  LAST_LOGON               LAST_LOGOFF             TOTAL_SECS'];
+    out.push('---------- ------- ------- -------- ------ ------------------------ ------------------------ ----------');
+    for (const s of rows) {
+      const fmt = (d: Date | null) => d ? d.toISOString().slice(0, 19).replace('T', ' ') : '                   ';
+      out.push(
+        `${s.username.padEnd(10)} ${String(s.logonCount).padStart(7)} ${String(s.failedLogonCount).padStart(7)} ${String(s.passwordChangeCount).padStart(8)} ${String(s.lockEvents).padStart(6)} ${fmt(s.lastLogonAt).padEnd(24)} ${fmt(s.lastLogoffAt).padEnd(24)} ${String(s.totalSessionSeconds).padStart(10)}`,
+      );
+    }
+    return { output: out, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   // ── DDL (DBMS_METADATA.GET_DDL shortcut) ─────────────────────────

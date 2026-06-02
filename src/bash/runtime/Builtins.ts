@@ -32,8 +32,8 @@ const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
   'local', 'read', 'true', 'false',
   'exit', 'return', 'break', 'continue',
-  'shift', 'type', 'source', '.', 'declare', 'readonly', 'let',
-  'eval', 'alias', 'unalias',
+  'shift', 'source', '.', 'declare', 'readonly', 'let',
+  'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
 ]);
 
 export function isBuiltin(name: string): boolean {
@@ -71,6 +71,10 @@ export function executeBuiltin(
     case 'declare': return builtinDeclare(args, env, false);
     case 'readonly': return builtinDeclare(args, env, true);
     case 'let': return builtinLet(args, env);
+    case 'getopts': return builtinGetopts(args, env);
+    case 'trap': return builtinTrap(args, env);
+    case 'mapfile':
+    case 'readarray': return builtinMapfile(args, env, io, pipeInput);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
     case 'alias': return builtinAlias(args, aliases);
     case 'unalias': return builtinUnalias(args, aliases);
@@ -516,6 +520,23 @@ function builtinUnset(args: string[], env: Environment): BuiltinResult {
   for (const arg of args) {
     if (arg === '-v' || arg === '-f') continue; // flags: -v (var), -f (func)
     if (arg.startsWith('-')) continue;
+    // `unset name[key]` — drop a single array / assoc element.
+    const sub = arg.match(/^([A-Za-z_][A-Za-z_0-9]*)\[([^\]]+)\]$/);
+    if (sub) {
+      const [, name, keyRaw] = sub;
+      const key = keyRaw.replace(/\$\{?([A-Za-z_][A-Za-z_0-9]*)\}?/g, (_, n) => env.get(n) ?? '');
+      if (env.isAssoc(name)) { env.unsetAssocElement(name, key); continue; }
+      const arr = env.getArray(name);
+      if (arr) {
+        const idx = Number.parseInt(key, 10);
+        if (Number.isFinite(idx) && idx >= 0 && idx < arr.length) {
+          const next = [...arr];
+          next.splice(idx, 1);
+          env.setArray(name, next);
+        }
+      }
+      continue;
+    }
     if (env.isReadonly(arg)) {
       output += `bash: unset: ${arg}: cannot unset: readonly variable\n`;
       exitCode = 1;
@@ -605,6 +626,7 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
         value = args[i + 1];
         i++;
       }
+      env.declareLocal(name);
       try {
         env.set(name, value);
       } catch (e) {
@@ -612,6 +634,7 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
         exitCode = 1;
       }
     } else {
+      env.declareLocal(arg);
       if (!env.isSet(arg)) {
         try { env.set(arg, ''); } catch { /* readonly */ }
       }
@@ -626,24 +649,52 @@ function builtinLocal(args: string[], env: Environment): BuiltinResult {
 function builtinRead(args: string[], env: Environment, pipeInput?: string): BuiltinResult {
   let prompt = '';
   let raw = false;
+  let arrayName: string | null = null;
+  let delim = '\n';
   const varNames: string[] = [];
   let output = '';
 
-  // Parse flags
+  // Parse flags, including the new -a (read into array) and -d DELIM
+  // (custom line terminator, "" means NUL / read to EOF).
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '-r') {
-      raw = true;
-    } else if (arg === '-p' && i + 1 < args.length) {
-      prompt = args[++i];
-    } else if (arg === '-s' || arg === '-n' || arg === '-t' || arg === '-d') {
-      // -s (silent), -n N, -t timeout, -d delim: skip value arg
-      if ((arg === '-n' || arg === '-t' || arg === '-d') && i + 1 < args.length) i++;
-    } else if (arg.startsWith('-') && arg.length > 1) {
-      // Unknown flag — skip
-    } else {
-      varNames.push(arg);
+    if (arg === '-r') { raw = true; continue; }
+    if (arg === '-p' && i + 1 < args.length) { prompt = args[++i]; continue; }
+    if (arg === '-a' && i + 1 < args.length) { arrayName = args[++i]; continue; }
+    if (arg === '-d') { delim = args[++i] ?? '\n'; if (delim === '') delim = '\0'; continue; }
+    if (arg === '-s' || arg === '-n' || arg === '-t') {
+      if ((arg === '-n' || arg === '-t') && i + 1 < args.length) i++;
+      continue;
     }
+    if (arg.startsWith('-') && arg.length > 1) {
+      // Clustered short flags like `-ra`, `-rd`, `-ra arr`.
+      let j = 1;
+      while (j < arg.length) {
+        const f = arg[j];
+        if (f === 'r') { raw = true; j++; continue; }
+        if (f === 'a') {
+          const next = arg.slice(j + 1);
+          if (next) { arrayName = next; }
+          else if (i + 1 < args.length) { arrayName = args[++i]; }
+          break;
+        }
+        if (f === 'd') {
+          const next = arg.slice(j + 1);
+          if (next) { delim = next === '' ? '\0' : next; }
+          else if (i + 1 < args.length) { delim = args[++i] || '\0'; }
+          break;
+        }
+        if (f === 'p') {
+          const next = arg.slice(j + 1);
+          if (next) { prompt = next; }
+          else if (i + 1 < args.length) { prompt = args[++i]; }
+          break;
+        }
+        j++;
+      }
+      continue;
+    }
+    varNames.push(arg);
   }
 
   // Display prompt
@@ -662,13 +713,27 @@ function builtinRead(args: string[], env: Environment, pipeInput?: string): Buil
     return { output, exitCode: 1 };
   }
 
-  // Read first line from pipe input
-  const lineEnd = pipeInput.indexOf('\n');
+  // Read the first record from the pipe input. `delim` defaults to
+  // newline but a `-d ""` form reads until NUL (effectively to EOF).
+  const lineEnd = pipeInput.indexOf(delim);
   let line = lineEnd >= 0 ? pipeInput.substring(0, lineEnd) : pipeInput;
+  // Trim a trailing newline that came from a heredoc-style source so
+  // `read foo <<< value` doesn't capture an extra `\n` (matches bash).
+  if (delim === '\n' && pipeInput.endsWith('\n') && lineEnd < 0) {
+    line = pipeInput.slice(0, -1);
+  }
 
   // Process backslash escapes unless -r
   if (!raw) {
     line = line.replace(/\\(.)/g, '$1');
+  }
+
+  // `-a NAME` binds every IFS-split token to elements of NAME.
+  if (arrayName) {
+    const ifs = env.get('IFS') ?? ' \t\n';
+    const split = line.split(new RegExp(`[${ifs.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&')}]+`)).filter(Boolean);
+    try { env.setArray(arrayName, split); } catch { /* readonly */ }
+    return { output, exitCode: 0 };
   }
 
   if (varNames.length === 0) {
@@ -788,6 +853,8 @@ function builtinDeclare(args: string[], env: Environment, forceReadonly = false)
   const cmdName = forceReadonly ? 'readonly' : 'declare';
   let isReadonly = forceReadonly;
   let isExport = false;
+  let isAssoc = false;
+  let isIndexed = false;
   let printMode = false;
   const varArgs: string[] = [];
 
@@ -796,13 +863,17 @@ function builtinDeclare(args: string[], env: Environment, forceReadonly = false)
     const arg = args[i];
     if (arg === '-r') { isReadonly = true; }
     else if (arg === '-x') { isExport = true; }
-    else if (arg === '-i' || arg === '-a' || arg === '-A') { /* integer/array: accept but ignore */ }
+    else if (arg === '-A') { isAssoc = true; }
+    else if (arg === '-a') { isIndexed = true; }
+    else if (arg === '-i') { /* integer: accept but ignore */ }
     else if (arg === '-p') { printMode = true; }
     else if (arg.startsWith('-') && arg.length > 1) {
-      // Combined flags like -rx
+      // Combined flags like -rx, -rA, -Ag, etc.
       for (let j = 1; j < arg.length; j++) {
         if (arg[j] === 'r') isReadonly = true;
         else if (arg[j] === 'x') isExport = true;
+        else if (arg[j] === 'A') isAssoc = true;
+        else if (arg[j] === 'a') isIndexed = true;
         else if (arg[j] === 'p') printMode = true;
       }
     } else {
@@ -832,6 +903,10 @@ function builtinDeclare(args: string[], env: Environment, forceReadonly = false)
       exitCode = 1;
       continue;
     }
+
+    // `declare -A name` (or -A with no value) creates an empty assoc map.
+    if (isAssoc && eqIdx < 0) env.declareAssoc(name);
+    if (isIndexed && eqIdx < 0 && !env.getArray(name)) env.setArray(name, []);
 
     if (eqIdx >= 0) {
       const value = arg.substring(eqIdx + 1);
@@ -904,4 +979,204 @@ function builtinLet(args: string[], env: Environment): BuiltinResult {
   }
   // let returns 1 if last expression is 0, else 0
   return { output: '', exitCode: result === 0 ? 1 : 0 };
+}
+
+// ─── getopts ────────────────────────────────────────────────────
+
+/**
+ * POSIX `getopts` builtin — one call per option, driven by `$OPTIND`
+ * (1-based positional pointer). The spec normally reads from the
+ * caller's positional args; we honour that by inspecting
+ * `env.getPositionalArgs()`. Args after `--` or the first non-flag
+ * stop the loop with exit 1, exactly like the spec.
+ *
+ *   optstring leading `:` ⇒ silent mode: invalid options return
+ *                          `?` in `$name` with `OPTARG` set to the bad
+ *                          char, and missing args return `:` in `$name`.
+ *   trailing `:` after a flag char ⇒ that flag requires an argument.
+ *
+ * `OPTIND` is advanced after a successful read; the caller's
+ * `while getopts … opt; do …; done` loop terminates when we return
+ * exit 1 (end of options).
+ */
+function builtinGetopts(args: string[], env: Environment): BuiltinResult {
+  if (args.length < 2) {
+    return { output: 'getopts: usage: getopts optstring name [args]\n', exitCode: 2 };
+  }
+  const optstring = args[0];
+  const name = args[1];
+  const explicitArgs = args.slice(2);
+  const positional = explicitArgs.length > 0 ? explicitArgs : env.getPositionalArgs();
+  const silent = optstring.startsWith(':');
+  const spec = silent ? optstring.slice(1) : optstring;
+
+  let optind = Number.parseInt(env.get('OPTIND') ?? '1', 10);
+  if (!Number.isFinite(optind) || optind < 1) optind = 1;
+  const idx = optind - 1;
+  const cur = positional[idx];
+
+  // Reached end / first non-option → stop.
+  if (cur === undefined || cur === '--' || !cur.startsWith('-') || cur === '-') {
+    if (cur === '--') env.set('OPTIND', String(optind + 1));
+    env.set(name, '?');
+    env.unset('OPTARG');
+    return { output: '', exitCode: 1 };
+  }
+  // Clustered short flags: `-vh` ⇒ read the next char each call.
+  // OPTIND points to the operand position; we track the in-cluster
+  // offset via `__OPTSUB`.
+  let sub = Number.parseInt(env.get('__OPTSUB') ?? '1', 10);
+  if (!Number.isFinite(sub) || sub < 1) sub = 1;
+  const flag = cur[sub];
+  if (!flag) {
+    env.set('OPTIND', String(optind + 1));
+    env.unset('__OPTSUB');
+    return builtinGetopts(args, env);                  // tail-call into next arg
+  }
+  const specPos = spec.indexOf(flag);
+  if (specPos < 0) {
+    // Invalid option.
+    env.set(name, '?');
+    if (silent) env.set('OPTARG', flag);
+    else env.set('OPTARG', '');
+    if (sub + 1 < cur.length) env.set('__OPTSUB', String(sub + 1));
+    else { env.set('OPTIND', String(optind + 1)); env.unset('__OPTSUB'); }
+    return { output: silent ? '' : `bash: illegal option -- ${flag}\n`, exitCode: 0 };
+  }
+  const needsArg = spec[specPos + 1] === ':';
+  if (!needsArg) {
+    env.set(name, flag);
+    env.unset('OPTARG');
+    if (sub + 1 < cur.length) env.set('__OPTSUB', String(sub + 1));
+    else { env.set('OPTIND', String(optind + 1)); env.unset('__OPTSUB'); }
+    return { output: '', exitCode: 0 };
+  }
+  // Flag requires an argument.
+  let optarg: string | undefined;
+  if (sub + 1 < cur.length) {                          // `-fconf.yaml`
+    optarg = cur.slice(sub + 1);
+    env.set('OPTIND', String(optind + 1));
+    env.unset('__OPTSUB');
+  } else {
+    optarg = positional[idx + 1];
+    if (optarg === undefined) {
+      // Missing required argument.
+      env.set(name, silent ? ':' : '?');
+      env.set('OPTARG', silent ? flag : '');
+      env.set('OPTIND', String(optind + 1));
+      env.unset('__OPTSUB');
+      return { output: silent ? '' : `bash: option requires an argument -- ${flag}\n`, exitCode: 0 };
+    }
+    env.set('OPTIND', String(optind + 2));
+    env.unset('__OPTSUB');
+  }
+  env.set(name, flag);
+  env.set('OPTARG', optarg);
+  return { output: '', exitCode: 0 };
+}
+
+
+// ─── trap ───────────────────────────────────────────────────────
+
+/**
+ * `trap [-l] [[ACTION] SIGNAL …]` — register a shell-level handler.
+ *
+ *   trap            → list every active handler
+ *   trap -l         → list known signal names
+ *   trap - SIG …    → clear handlers for SIG…
+ *   trap '' SIG …   → ignore SIG (handler does nothing)
+ *   trap ACTION SIG → install ACTION for each SIG (re-parsed by the
+ *                     interpreter at firing time, exactly like real
+ *                     bash)
+ *
+ * EXIT is the synchronous pseudo-signal real bash fires at the end of
+ * the script / function / sourced file. The interpreter calls
+ * `Environment.fireTrap('EXIT')` from `execute()` after the main
+ * command list has finished (or been short-circuited by `exit`).
+ */
+function builtinTrap(args: string[], env: Environment): BuiltinResult {
+  if (args.length === 0) {
+    const out: string[] = [];
+    for (const [sig, body] of env.listTraps()) {
+      out.push(`trap -- '${body.replace(/'/g, `'\\''`)}' ${sig}`);
+    }
+    return { output: out.join('\n') + (out.length ? '\n' : ''), exitCode: 0 };
+  }
+  if (args[0] === '-l') {
+    return {
+      output: 'EXIT HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM\n',
+      exitCode: 0,
+    };
+  }
+  // Clear form: `trap - SIG …` removes the handlers.
+  if (args[0] === '-') {
+    for (const sig of args.slice(1)) env.clearTrap(normalizeSig(sig));
+    return { output: '', exitCode: 0 };
+  }
+  const action = args[0];
+  const signals = args.slice(1);
+  if (signals.length === 0) {
+    return { output: 'trap: usage: trap [-lp] [[arg] signal_spec …]\n', exitCode: 2 };
+  }
+  for (const sig of signals) {
+    env.setTrap(normalizeSig(sig), action);
+  }
+  return { output: '', exitCode: 0 };
+}
+
+function normalizeSig(sig: string): string {
+  const s = sig.toUpperCase();
+  if (s === '0') return 'EXIT';
+  return s.startsWith('SIG') ? s.slice(3) : s;
+}
+
+// ─── mapfile / readarray ────────────────────────────────────────
+
+/**
+ * `mapfile [-t] [-n COUNT] [-O ORIGIN] [-s SKIP] NAME` — bind each
+ * input line to an element of indexed array NAME. The input arrives
+ * via the standard `< file` redirection (pipeInput) or a `<<<`
+ * herestring.
+ *
+ *   -t          strip the trailing newline from each line
+ *   -n COUNT    stop after COUNT lines
+ *   -O ORIGIN   start storing at index ORIGIN (default 0)
+ *   -s SKIP     skip the first SKIP lines
+ *   -d DELIM    line delimiter (default `\n`)
+ *
+ * Default array name when no NAME is supplied is `MAPFILE`.
+ */
+function builtinMapfile(
+  args: string[],
+  env: Environment,
+  _io: BuiltinIO | undefined,
+  pipeInput?: string,
+): BuiltinResult {
+  let trim = false;
+  let count = Number.POSITIVE_INFINITY;
+  let origin = 0;
+  let skip = 0;
+  let delim = '\n';
+  let name = 'MAPFILE';
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-t') { trim = true; continue; }
+    if (a === '-n') { count = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
+    if (a === '-O') { origin = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
+    if (a === '-s') { skip = Number.parseInt(args[++i] ?? '0', 10) || 0; continue; }
+    if (a === '-d') { delim = args[++i] ?? '\n'; if (delim === '') delim = '\0'; continue; }
+    if (a === '-u' || a === '-c' || a === '-C') { i++; continue; } // accepted, ignored
+    if (a.startsWith('-')) continue;
+    name = a;
+  }
+  const source = pipeInput ?? '';
+  const lines = source.length === 0 ? [] : source.split(delim);
+  if (source.endsWith(delim)) lines.pop();
+  const sliced = lines.slice(skip, count === Number.POSITIVE_INFINITY ? undefined : skip + count);
+  const values = sliced.map(l => trim ? l : l + delim);
+  // Pad with empty slots when origin > 0 so the new elements land at
+  // the requested offset (matches bash semantics).
+  const final = new Array<string>(Math.max(0, origin)).fill('').concat(values);
+  env.setArray(name, final);
+  return { output: '', exitCode: 0 };
 }

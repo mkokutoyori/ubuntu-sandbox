@@ -97,19 +97,37 @@ describe('Environment — Scope Chain', () => {
     expect(child.get('X')).toBe('1');
   });
 
-  it('child variables shadow parent', () => {
+  it('non-local write from a child propagates to the parent owner (dynamic scope)', () => {
     const parent = new Environment({ variables: { X: '1' } });
     const child = parent.createChild();
+    child.set('X', '2');
+    expect(child.get('X')).toBe('2');
+    expect(parent.get('X')).toBe('2');
+  });
+
+  it('declareLocal confines a write to the child scope (the `local` keyword)', () => {
+    const parent = new Environment({ variables: { X: '1' } });
+    const child = parent.createChild();
+    child.declareLocal('X');
     child.set('X', '2');
     expect(child.get('X')).toBe('2');
     expect(parent.get('X')).toBe('1');
   });
 
-  it('child can set new variables without affecting parent', () => {
+  it('a brand-new name set in a child lands in the root (global) scope', () => {
     const parent = new Environment();
     const child = parent.createChild();
     child.set('NEW', 'val');
-    expect(child.get('NEW')).toBe('val');
+    expect(parent.get('NEW')).toBe('val');
+  });
+
+  it('subshell snapshots are detached — writes never leak back', () => {
+    const parent = new Environment({ variables: { X: '1' } });
+    const sub = parent.createSubshell();
+    sub.set('X', '2');
+    sub.set('NEW', 'val');
+    expect(sub.get('X')).toBe('2');
+    expect(parent.get('X')).toBe('1');
     expect(parent.get('NEW')).toBeUndefined();
   });
 });

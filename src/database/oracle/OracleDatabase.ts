@@ -14,6 +14,11 @@ import { OracleStorage } from './OracleStorage';
 import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
+import type { SqlCommandHost } from './SqlCommandHost';
+import type {
+  LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
+  PluggableDatabaseStatement, CreateTypeStatement, AlterSessionStatement,
+} from '../engine/parser/ASTNode';
 import { OracleExecutor } from './OracleExecutor';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
@@ -29,6 +34,18 @@ import { SodEvaluator } from './security/audit/SodEvaluator';
 import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
 import { MetadataExtractor } from './metadata/MetadataExtractor';
+import { builtinPackageRegistry } from './packages';
+import { SystemTrigger } from './triggers/SystemTrigger';
+import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
+import { PlanGenerator } from './plan/PlanGenerator';
+import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
+import { runAnonymousBlock } from './plsql';
+import type { PlsqlHost, StoredUnitLike, Scalar } from './plsql';
+import { SchedulerManager } from './scheduler/SchedulerManager';
+import { FlashbackArchive, FlashbackArchiveTablespace } from './flashback/FlashbackArchive';
+import { InMemorySegment } from './resultcache/InMemoryManager';
+import type { UserActivityTracker } from './security/audit/UserActivityTracker';
+import { IdleSessionMonitor } from './security/audit/IdleSessionMonitor';
 import { isOffHours } from './security/audit/SecurityPolicyConfig';
 import type { OracleConnectionTracedPayload } from './events';
 
@@ -63,7 +80,7 @@ export interface StoredPLSQLUnit {
   status: 'VALID' | 'INVALID';
 }
 
-export class OracleDatabase {
+export class OracleDatabase implements SqlCommandHost {
   readonly instance: OracleInstance;
   readonly storage: OracleStorage;
   readonly catalog: OracleCatalog;
@@ -117,6 +134,19 @@ export class OracleDatabase {
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
       instance: this.buildInstanceIdentity(),
     });
+    // Hidden injections so built-in package routines can reach the
+    // shared per-instance managers without importing the world.
+    const inj = session as unknown as {
+      _awrManager: typeof this.instance.awrManager;
+      _resourceManager: typeof this.instance.resourceManager;
+      _statisticsManager: typeof this.instance.statistics;
+      _statisticsManagerStorage: typeof this.storage;
+    };
+    inj._awrManager = this.instance.awrManager;
+    inj._resourceManager = this.instance.resourceManager;
+    inj._statisticsManager = this.instance.statistics;
+    inj._statisticsManagerStorage = this.storage;
+    (session as unknown as { _schedulerManager: SchedulerManager })._schedulerManager = this.scheduler;
     this.sessions.set(args.sid, session);
     return session;
   }
@@ -140,6 +170,17 @@ export class OracleDatabase {
   readonly dormantAnalyzer: DormantAccountAnalyzer;
   readonly fraudSimulator: FraudScenarioSimulator;
   readonly metadata: MetadataExtractor;
+  readonly idleMonitor: IdleSessionMonitor;
+  /** Resource Manager — consumer-group switcher driven by the bus. */
+  readonly consumerGroupSwitcher: ConsumerGroupSwitcher;
+  readonly planGenerator: PlanGenerator;
+  readonly scheduler: SchedulerManager;
+  /** Reactive user-activity ledger. The instance owns the tracker so
+   *  that setDeviceId triggers a rebind; expose it as a getter so the
+   *  current tracker is always returned. */
+  get userActivity(): UserActivityTracker {
+    return this.instance.getUserActivityTracker()!;
+  }
 
   constructor(config?: Partial<OracleDatabaseConfig>) {
     this.instance = new OracleInstance(config);
@@ -165,6 +206,26 @@ export class OracleDatabase {
     this.metadata = new MetadataExtractor(this.storage, this.catalog);
     // Index usage monitor — must attach now that storage exists.
     this.instance.attachIndexUsageMonitor(this.storage);
+    // Live-session provider — feeds V$SESSION_CONTEXT user-defined
+    // contexts and any future view that needs the real OracleSession.
+    this.instance.setLiveSessionProvider(() => [...this.sessions.values()]);
+    // Resource Manager — active consumer-group switcher reacting to
+    // session connect + SQL execution events.
+    this.consumerGroupSwitcher = new ConsumerGroupSwitcher(
+      this.instance.getBus(), this.instance.getDeviceId(),
+      this.securityEngine, this.instance.resourceManager);
+    this.consumerGroupSwitcher.start();
+    // Statistics + plan generator — both need storage.
+    this.instance.attachStatistics(this.storage);
+    this.planGenerator = new PlanGenerator(this.storage, this.instance);
+    this.scheduler = new SchedulerManager(this);
+    this.instance.attachScheduler(this.scheduler);
+    // User-activity ledger lives on the instance (rebinds on setDeviceId);
+    // the getter `userActivity` returns the current tracker on demand.
+    // Idle-session PMON sweep (IDLE_TIME enforcement).
+    this.idleMonitor = new IdleSessionMonitor(
+      this.instance.getBus(), this.instance.getDeviceId(),
+      this.instance.config.sid, this.securityEngine, this.catalog);
 
     // Reactive: re-scan SoD whenever a GRANT/REVOKE/CREATE USER crosses
     // the audit bus. The executor publishes `oracle.audit.recorded` for
@@ -285,6 +346,8 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -339,6 +402,8 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -387,6 +452,8 @@ export class OracleDatabase {
     };
 
     const executor = new OracleExecutor(this.storage, this.catalog, this.instance, context);
+    executor.setCommandHost(this);
+    executor.setDatabaseRef(this);
     return { sid, executor };
   }
 
@@ -445,6 +512,55 @@ export class OracleDatabase {
   }
 
   /**
+   * Single entry point that recognises PL/SQL constructs and routes them
+   * to the PL/SQL subsystem. Returns the result when the statement is a
+   * PL/SQL construct, or null when it is plain SQL (so the caller hands
+   * it to the SQL parser). Centralises what used to be a dozen ad-hoc
+   * regex checks scattered through executeSql.
+   */
+  private routePlsql(executor: OracleExecutor, trimmed: string, upper: string): ResultSet | null {
+    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
+      return this.executePLSQL(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
+      return this.createStoredProcedure(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
+      return this.createStoredFunction(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b/i.test(upper)) {
+      return this.createPackageBody(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b/i.test(upper)) {
+      return this.createPackageSpec(executor, trimmed);
+    }
+    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
+      return this.executeCreateTrigger(executor, trimmed);
+    }
+    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
+      return this.executeProcedureCall(executor, trimmed);
+    }
+    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
+    }
+    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
+    }
+    if (/^DROP\s+PACKAGE\s+BODY\b/i.test(upper)) {
+      return this.dropStoredUnit(executor, trimmed, 'PACKAGE BODY');
+    }
+    if (/^DROP\s+PACKAGE\b/i.test(upper)) {
+      return this.dropPackage(executor, trimmed);
+    }
+    // Standalone procedure call: proc_name(args) or pkg.proc(args).
+    if (/^[A-Za-z_]\w*(?:\.\w+)?\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
+      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
+      if (callResult) return callResult;
+    }
+    return null;
+  }
+
+  /**
    * Parse and execute a SQL statement string.
    * Handles both regular SQL and PL/SQL anonymous blocks.
    */
@@ -452,83 +568,19 @@ export class OracleDatabase {
     const trimmed = sql.trim().replace(/;\s*$/, '');
     if (!trimmed) return emptyResult();
 
-    // Check for PL/SQL block
     const upper = trimmed.toUpperCase();
-    if (upper.startsWith('BEGIN') || upper.startsWith('DECLARE')) {
-      return this.executePLSQL(executor, trimmed);
-    }
 
-    // CREATE [OR REPLACE] TYPE — Oracle object types. Registered into
-    // the simulator's TypeRegistry so DBA_TYPES / DBA_TYPE_ATTRS /
-    // DBA_COLL_TYPES surface them. We accept the form Oracle DBAs use
-    // for object types and collection types.
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?TYPE\b/i.test(upper)) {
-      return this.createObjectType(executor, trimmed);
-    }
+    // PL/SQL is a distinct language whose unit bodies contain semicolons
+    // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
+    // (anonymous blocks, stored-unit DDL, triggers, EXEC, standalone
+    // calls) are routed to the PL/SQL subsystem here, before SQL parsing.
+    const plsql = this.routePlsql(executor, trimmed, upper);
+    if (plsql) return plsql;
 
-    // CREATE TABLE … ORGANIZATION EXTERNAL — register an external table.
+    // CREATE TABLE … ORGANIZATION EXTERNAL — the base CREATE TABLE parser
+    // does not model the external-table clause, so it is registered here.
     if (/^CREATE\s+TABLE\b.*ORGANIZATION\s+EXTERNAL/is.test(upper)) {
       return this.createExternalTable(executor, trimmed);
-    }
-
-    // Check for CREATE OR REPLACE PROCEDURE/FUNCTION
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b/i.test(upper)) {
-      return this.createStoredProcedure(executor, trimmed);
-    }
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i.test(upper)) {
-      return this.createStoredFunction(executor, trimmed);
-    }
-    // PACKAGE BODY must be checked before PACKAGE
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\b/i.test(upper)) {
-      return this.createPackageBody(executor, trimmed);
-    }
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b/i.test(upper)) {
-      return this.createPackageSpec(executor, trimmed);
-    }
-
-    // Check for EXEC[UTE] procedure_name
-    if (/^EXEC(?:UTE)?\s+/i.test(upper)) {
-      return this.executeProcedureCall(executor, trimmed);
-    }
-
-    // Check for standalone procedure call: proc_name(args) or pkg.proc(args)
-    if (/^[A-Za-z_]\w*(?:\.\w+)?\s*\(/.test(trimmed) && !upper.startsWith('SELECT') && !upper.startsWith('INSERT')) {
-      const callResult = this.tryExecuteProcedureCall(executor, trimmed);
-      if (callResult) return callResult;
-    }
-
-    // Check for CREATE [OR REPLACE] TRIGGER (body may contain semicolons)
-    if (/^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\b/i.test(upper)) {
-      return this.executeCreateTrigger(executor, trimmed);
-    }
-
-    // Check for ALTER SESSION (handled specially)
-    if (upper.startsWith('ALTER SESSION')) {
-      return this.executeAlterSession(executor, trimmed);
-    }
-
-    // Check for DROP PROCEDURE/FUNCTION
-    if (/^DROP\s+PROCEDURE\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'PROCEDURE');
-    }
-    if (/^DROP\s+FUNCTION\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'FUNCTION');
-    }
-    // DROP PACKAGE BODY must be checked before DROP PACKAGE
-    if (/^DROP\s+PACKAGE\s+BODY\b/i.test(upper)) {
-      return this.dropStoredUnit(executor, trimmed, 'PACKAGE BODY');
-    }
-    if (/^DROP\s+PACKAGE\b/i.test(upper)) {
-      return this.dropPackage(executor, trimmed);
-    }
-
-    // ALTER {PROCEDURE | FUNCTION | PACKAGE} <name> COMPILE [BODY]
-    // is a no-op recompile in the simulator — emits the canonical message.
-    const alterCompile = trimmed.match(/^ALTER\s+(PROCEDURE|FUNCTION|PACKAGE)\s+(?:\w+\s*\.\s*)?\w+\s+COMPILE(\s+BODY)?\b/i);
-    if (alterCompile) {
-      const kind = alterCompile[1].toUpperCase();
-      const label = kind === 'PROCEDURE' ? 'Procedure' : kind === 'FUNCTION' ? 'Function' : 'Package';
-      return emptyResult(`${label} altered.`);
     }
 
     const tokens = this.lexer.tokenize(trimmed);
@@ -543,26 +595,97 @@ export class OracleDatabase {
       // user text — the AST type alone is useless to a DBA.
       (stmt as unknown as { sourceText?: string }).sourceText = trimmed;
       result = executor.execute(stmt);
+      try {
+        this.maybeLockForUpdate(executor, stmt);
+      } catch (e: unknown) {
+        return emptyResult(e instanceof Error ? e.message : String(e));
+      }
     }
     return result;
   }
 
-  private executeAlterSession(executor: OracleExecutor, sql: string): ResultSet {
-    const match = sql.match(/ALTER\s+SESSION\s+SET\s+(\w+)\s*=\s*(\S+)/i);
-    if (match) {
-      const param = match[1].toUpperCase();
-      const value = match[2].replace(/['"]/g, '').toUpperCase();
-      if (param === 'SERVEROUTPUT') {
-        (executor as { context: ExecutionContext }).context.serverOutput = value === 'ON';
-      } else if (param === 'CURRENT_SCHEMA') {
-        if (!this.catalog.userExists(value)) {
+  execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
+    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
+    const table = stmt.table.toUpperCase();
+    if (!this.storage.getTableMeta(owner, table)) {
+      return emptyResult('ORA-00942: table or view does not exist');
+    }
+    const modeMap: Record<LockTableStatement['lockMode'], 2 | 3 | 4 | 5 | 6> = {
+      'ROW SHARE': 2, 'SHARE UPDATE': 2, 'ROW EXCLUSIVE': 3,
+      'SHARE': 4, 'SHARE ROW EXCLUSIVE': 5, 'EXCLUSIVE': 6,
+    };
+    const sid = (ctx.session as { sid?: number } | undefined)?.sid ?? 0;
+    try {
+      this.instance.lockManager.lockTable({
+        sessionId: String(sid), sid, schema: owner, table,
+        mode: modeMap[stmt.lockMode], nowait: stmt.nowait,
+      });
+    } catch (e: unknown) {
+      return emptyResult(e instanceof Error ? e.message : String(e));
+    }
+    return emptyResult('Table(s) Locked.');
+  }
+
+  execCreateFlashbackArchive(stmt: CreateFlashbackArchiveStatement, _ctx: ExecutionContext): ResultSet {
+    const name = stmt.name.toUpperCase();
+    const ts = stmt.tablespace.toUpperCase();
+    this.instance.flashbackArchive.createArchive(new FlashbackArchive({
+      flashbackArchiveName: name, retentionInDays: stmt.retentionDays, isDefault: stmt.isDefault,
+      tablespaces: [new FlashbackArchiveTablespace(name, ts, stmt.quotaMb)],
+    }));
+    return emptyResult('Flashback archive created.');
+  }
+
+  execDropFlashbackArchive(stmt: DropFlashbackArchiveStatement, _ctx: ExecutionContext): ResultSet {
+    this.instance.flashbackArchive.dropArchive(stmt.name.toUpperCase());
+    return emptyResult('Flashback archive dropped.');
+  }
+
+  execPluggableDatabase(stmt: PluggableDatabaseStatement, _ctx: ExecutionContext): ResultSet {
+    const name = stmt.name.toUpperCase();
+    if (stmt.operation === 'CREATE') {
+      this.instance.multitenant.createPdb(name);
+      return emptyResult('Pluggable database created.');
+    }
+    if (stmt.operation === 'DROP') {
+      this.instance.multitenant.dropPdb(name);
+      return emptyResult('Pluggable database dropped.');
+    }
+    if (stmt.openMode) this.instance.multitenant.openPdb(name, stmt.openMode);
+    else if (stmt.close) this.instance.multitenant.closePdb(name);
+    return emptyResult('Pluggable database altered.');
+  }
+
+  private maybeLockForUpdate(executor: OracleExecutor, stmt: unknown): ResultSet | void {
+    const s = stmt as { type?: string; from?: Array<{ type?: string; schema?: string; name?: string }>;
+      forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
+    if (s.type !== 'SelectStatement' || !s.forUpdate || !s.from) return;
+    const ctx = (executor as unknown as { context: ExecutionContext }).context;
+    const sess = ctx.session;
+    const sid = sess?.sid ?? 0;
+    const nowait = s.forUpdate.wait === 'NOWAIT';
+    for (const f of s.from) {
+      if (f.type !== 'TableRef' || !f.name) continue;
+      const owner = (f.schema ?? ctx.currentSchema).toUpperCase();
+      const table = f.name.toUpperCase();
+      if (!this.storage.getTableMeta(owner, table)) continue;
+      this.instance.lockManager.lockRowsForUpdate({
+        sessionId: String(sid), sid, schema: owner, table, txId: sid, nowait,
+      });
+    }
+  }
+
+  execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet {
+    if (stmt.param && stmt.value !== undefined) {
+      if (stmt.param === 'SERVEROUTPUT') {
+        ctx.serverOutput = stmt.value === 'ON';
+      } else if (stmt.param === 'CURRENT_SCHEMA') {
+        if (!this.catalog.userExists(stmt.value)) {
           return emptyResult('ORA-02248: invalid option for ALTER SESSION');
         }
-        executor.updateContext({ currentSchema: value });
-        // Keep the live OracleSession in sync — USERENV reads from it.
-        const ctx = (executor as { context: ExecutionContext }).context;
+        ctx.currentSchema = stmt.value;
         const sess = ctx.session as { setCurrentSchema?: (s: string) => void } | undefined;
-        sess?.setCurrentSchema?.(value);
+        sess?.setCurrentSchema?.(stmt.value);
       }
     }
     return emptyResult('Session altered.');
@@ -582,6 +705,89 @@ export class OracleDatabase {
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
   private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
+    const ctx = (executor as { context: ExecutionContext }).context;
+    const output: string[] = [];
+    let putBuffer = '';
+
+    const host: PlsqlHost = {
+      runSql: (s: string) => {
+        const r = this.executeSql(executor, s);
+        if (!r.isQuery && r.message && /^\s*(ORA-|PLS-|SP2-)\d/.test(r.message)) {
+          throw new Error(r.message);
+        }
+        return {
+          rows: r.rows as Scalar[][],
+          columns: r.columns.map(c => (c.alias ?? c.name)),
+          isQuery: r.isQuery,
+          affectedRows: r.affectedRows,
+          message: r.message,
+        };
+      },
+      putLine: (t: string) => { output.push(putBuffer + t); putBuffer = ''; },
+      put: (t: string) => { putBuffer += t; },
+      isServerOutput: () => !!ctx.serverOutput,
+      currentSchema: () => ctx.currentSchema ?? 'SYS',
+      lookupUnit: (name: string) => this.lookupUnitForPlsql(executor, name),
+      callBuiltin: (name: string, rawArgs: string) =>
+        this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
+    };
+
+    const outcome = runAnonymousBlock(sql, host);
+    if (!outcome.parseError) {
+      if (putBuffer) { output.push(putBuffer); putBuffer = ''; }
+      if (!outcome.ok && outcome.error) {
+        return emptyResult(`${outcome.error.message}\nORA-06512: at line 1`);
+      }
+      if (ctx.serverOutput && output.length > 0) {
+        return emptyResult(output.join('\n') + '\n\nPL/SQL procedure successfully completed.');
+      }
+      return emptyResult('PL/SQL procedure successfully completed.');
+    }
+
+    return this.executePLSQLLegacy(executor, sql);
+  }
+
+  private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {
+    const schema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const up = name.toUpperCase();
+    const unit = this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`);
+    if (!unit) return undefined;
+    return unit as StoredUnitLike;
+  }
+
+  private routeBuiltinPackageCall(executor: OracleExecutor, call: string, output: string[]): boolean {
+    const upper = call.toUpperCase();
+    const noVars = new Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>();
+    if (
+      upper.startsWith('DBMS_SESSION.')
+      || upper.startsWith('DBMS_APPLICATION_INFO.')
+      || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
+      || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+      || upper.startsWith('DBMS_STATS.')
+      || upper.startsWith('DBMS_SCHEDULER.')
+    ) {
+      this.invokeBuiltinPackage(executor, call, noVars, output);
+      return true;
+    }
+    if (upper.startsWith('DBMS_RLS.')) { this.executeDbmsRlsCall(executor, call); return true; }
+    if (upper.startsWith('DBMS_FGA.')) { this.executeDbmsFgaCall(executor, call); return true; }
+    if (upper.startsWith('DBMS_MACADM.')) { this.executeDbmsMacadmCall(call); return true; }
+    if (
+      upper.startsWith('DBMS_AUDIT_MGMT.')
+      || upper.startsWith('DBMS_METADATA.')
+      || upper.startsWith('UTL_FILE.')
+      || upper.startsWith('DBMS_LOB.')
+      || upper.startsWith('DBMS_FLASHBACK.')
+      || upper.startsWith('DBMS_SPACE.')
+      || upper.startsWith('DBMS_LOCK.')
+      || upper.startsWith('DBMS_UTILITY.')
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private executePLSQLLegacy(executor: OracleExecutor, sql: string): ResultSet {
     const output: string[] = [];
     const variables = new Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>();
 
@@ -627,9 +833,11 @@ export class OracleDatabase {
       }
 
       if (!handled) {
-        if ((executor as { context: ExecutionContext }).context.serverOutput) {
-          output.push(errMsg);
-        }
+        // Unhandled PL/SQL exception: surface the ORA-xxxx message
+        // exactly the way real Oracle does. RAISE_APPLICATION_ERROR
+        // and predefined exceptions both flow through here.
+        const ora6512 = `ORA-06512: at line 1`;
+        return emptyResult(`${errMsg}\n${ora6512}`);
       }
     }
 
@@ -827,6 +1035,47 @@ export class OracleDatabase {
 
     const upper = trimmed.toUpperCase();
 
+    // RAISE_APPLICATION_ERROR(-20xxx, 'message') — DBMS_STANDARD.
+    const raise = trimmed.match(/^RAISE_APPLICATION_ERROR\s*\(\s*(-?\d+)\s*,\s*'([\s\S]*?)'\s*\)/i);
+    if (raise) {
+      const code = parseInt(raise[1], 10);
+      const message = raise[2];
+      throw new PlsqlException('USER_DEFINED', code,
+        `ORA${code < 0 ? code : '-' + code.toString().padStart(5, '0')}: ${message}`, true);
+    }
+
+    // EXECUTE IMMEDIATE 'sql' [USING ...] [INTO var]
+    if (upper.startsWith('EXECUTE IMMEDIATE ')) {
+      const m = trimmed.match(/^EXECUTE\s+IMMEDIATE\s+'([\s\S]*?)'\s*(?:INTO\s+([\w,\s]+))?\s*;?$/i);
+      if (m) {
+        const dynamicSql = m[1];
+        const intoVars = m[2] ? m[2].split(',').map(v => v.trim().toUpperCase()) : [];
+        const result = this.executeSql(executor, dynamicSql);
+        // SELECT INTO bind: copy first-row values into the named variables.
+        if (intoVars.length > 0 && result.isQuery && result.rows.length > 0) {
+          const row = result.rows[0];
+          intoVars.forEach((v, i) => {
+            const slot = variables.get(v);
+            if (slot) slot.value = row[i] ?? null;
+          });
+        }
+      }
+      return;
+    }
+
+    // RAISE <named-exception>
+    const rais = trimmed.match(/^RAISE\s+(\w+)\s*;?$/i);
+    if (rais) {
+      const def = findPredefinedException(rais[1]);
+      if (def) {
+        throw new PlsqlException(def.name, def.errorCode, def.defaultMessage, false);
+      }
+      // Unknown name → user-defined PL/SQL exception (PLS-00201 if undeclared
+      // in real Oracle, but we surface a generic raised marker).
+      throw new PlsqlException(rais[1].toUpperCase(), -20999,
+        `ORA-06510: PL/SQL: unhandled user-defined exception (${rais[1].toUpperCase()})`, true);
+    }
+
     // DBMS_OUTPUT.PUT_LINE
     if (upper.startsWith('DBMS_OUTPUT.PUT_LINE')) {
       const match = trimmed.match(/DBMS_OUTPUT\.PUT_LINE\s*\(\s*(.*)\s*\)/is);
@@ -869,15 +1118,19 @@ export class OracleDatabase {
       return;
     }
 
-    // DBMS_STATS.GATHER_TABLE_STATS / GATHER_SCHEMA_STATS
-    if (upper.startsWith('DBMS_STATS.')) {
-      // Simulated — no actual stats gathering
+    // Built-in PL/SQL packages → route through the registry. Any
+    // DBMS_* call whose prefix is registered hits the concrete
+    // strategy class for the routine.
+    if (
+      upper.startsWith('DBMS_SESSION.')
+      || upper.startsWith('DBMS_APPLICATION_INFO.')
+      || upper.startsWith('DBMS_WORKLOAD_REPOSITORY.')
+      || upper.startsWith('DBMS_RESOURCE_MANAGER.')
+      || upper.startsWith('DBMS_STATS.')
+      || upper.startsWith('DBMS_SCHEDULER.')
+    ) {
+      this.invokeBuiltinPackage(executor, trimmed, variables, output);
       return;
-    }
-
-    // DBMS_SESSION.SET_ROLE / SET_NLS
-    if (upper.startsWith('DBMS_SESSION.')) {
-      return; // No-op in simulator
     }
 
     // DBMS_RLS.{ADD_POLICY,ADD_GROUPED_POLICY,ENABLE_POLICY,DISABLE_POLICY,DROP_POLICY,DROP_GROUPED_POLICY}
@@ -1280,42 +1533,46 @@ export class OracleDatabase {
    * DBA_TYPES / DBA_TYPE_ATTRS / DBA_COLL_TYPES; PL/SQL bodies are
    * accepted but ignored (simulator does not run them).
    */
-  private createObjectType(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
-    // VARRAY / NESTED TABLE collection
-    const coll = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+(VARRAY|VARYING\s+ARRAY|TABLE)\s*(?:\(\s*(\d+)\s*\))?\s+OF\s+(\w+)/i);
-    if (coll) {
-      const owner = (coll[1] ?? ctx.currentSchema).toUpperCase();
-      const name = coll[2].toUpperCase();
-      const kind = /TABLE/i.test(coll[3]) ? 'TABLE' as const : 'VARRAY' as const;
-      const upper = coll[4] ? parseInt(coll[4], 10) : null;
-      const elem = coll[5].toUpperCase();
+  execAlterTableStorage(schema: string, table: string, action: import('./SqlCommandHost').AlterTableStorageAction): ResultSet {
+    const owner = schema.toUpperCase();
+    const tbl = table.toUpperCase();
+    switch (action.action) {
+      case 'FLASHBACK_ARCHIVE':
+        this.instance.flashbackArchive.enableTable(owner, tbl, action.archive);
+        break;
+      case 'NO_FLASHBACK_ARCHIVE':
+        this.instance.flashbackArchive.disableTable(owner, tbl);
+        break;
+      case 'INMEMORY': {
+        const meta = this.storage.getTableMeta(owner, tbl);
+        if (meta) {
+          const sz = Math.max(8388608, (meta.rowCount || 100) * 200);
+          this.instance.inMemory.addSegment(new InMemorySegment({
+            owner, segmentName: tbl, tablespaceName: meta.tablespace ?? 'USERS', inmemorySize: sz,
+            inmemoryPriority: 'MEDIUM', inmemoryCompression: 'MEMCOMPRESS FOR QUERY LOW',
+          }));
+        }
+        break;
+      }
+      case 'NO_INMEMORY':
+        this.instance.inMemory.removeSegment(owner, tbl);
+        break;
+    }
+    return emptyResult('Table altered.');
+  }
+
+  execCreateType(stmt: CreateTypeStatement, ctx: ExecutionContext): ResultSet {
+    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
+    const name = stmt.name.toUpperCase();
+    if (stmt.form === 'collection') {
       this.instance.types.addCollectionType(owner, name, {
-        collType: kind, upperBound: upper, elemTypeName: elem,
+        collType: stmt.collKind === 'TABLE' ? 'TABLE' : 'VARRAY',
+        upperBound: stmt.upperBound ?? null,
+        elemTypeName: (stmt.elemType ?? '').toUpperCase(),
       });
       return emptyResult('Type created.');
     }
-    // OBJECT type with attribute list
-    const obj = sql.match(/^CREATE\s+(?:OR\s+REPLACE\s+)?TYPE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+OBJECT\s*\(([\s\S]+?)\)\s*(?:NOT\s+FINAL|FINAL)?\s*;?\s*$/i);
-    if (obj) {
-      const owner = (obj[1] ?? ctx.currentSchema).toUpperCase();
-      const name = obj[2].toUpperCase();
-      const body = obj[3];
-      const attrs = body.split(',').map(s => s.trim()).filter(s => s && !/^(MEMBER|STATIC|MAP|ORDER|CONSTRUCTOR)\b/i.test(s))
-        .map(line => {
-          const m = line.match(/^(\w+)\s+(\w+)(?:\((\d+)(?:\s*,\s*(\d+))?\))?/);
-          if (!m) return null;
-          return {
-            name: m[1], typeName: m[2],
-            precision: m[3] ? parseInt(m[3], 10) : undefined,
-            scale: m[4] ? parseInt(m[4], 10) : undefined,
-          };
-        })
-        .filter((a): a is { name: string; typeName: string; precision?: number; scale?: number } => a !== null);
-      const finalType = !/NOT\s+FINAL/i.test(sql);
-      this.instance.types.addObjectType(owner, name, attrs, { finalType });
-      return emptyResult('Type created.');
-    }
+    this.instance.types.addObjectType(owner, name, stmt.attributes ?? [], { finalType: stmt.finalType ?? true });
     return emptyResult('Type created.');
   }
 
@@ -1708,6 +1965,24 @@ export class OracleDatabase {
 
   /** Parse and execute CREATE [OR REPLACE] TRIGGER using regex (body may contain semicolons) */
   private executeCreateTrigger(executor: OracleExecutor, sql: string): ResultSet {
+    // System-level event triggers come first so the DML-trigger regex
+    // does not steal them.
+    const sys = sql.match(
+      /^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER)\s+(STARTUP|SHUTDOWN|LOGON|LOGOFF|SERVERERROR|CREATE|ALTER|DROP)\s+ON\s+(DATABASE|SCHEMA|(\w+)\.SCHEMA)\s+([\s\S]*)$/i,
+    );
+    if (sys) {
+      const owner = (sys[1] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const name = sys[2].toUpperCase();
+      const timing = sys[3].toUpperCase() as 'BEFORE' | 'AFTER';
+      const event = sys[4].toUpperCase() as import('./triggers/SystemTrigger').TriggerEvent;
+      const scope = sys[5].toUpperCase() === 'DATABASE' ? 'DATABASE' : 'SCHEMA';
+      const scopeSchema = scope === 'SCHEMA' ? (sys[6] ?? owner).toUpperCase() : null;
+      const body = (sys[7] || '').trim();
+      this.instance.systemTriggers.register(new SystemTrigger({
+        owner, name, timing, event, scope, scopeSchema, body, enabled: true,
+      }));
+      return emptyResult('Trigger created.');
+    }
     const match = sql.match(
       /^CREATE\s+(OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:(\w+)\.)?(\w+)(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
     );
@@ -1782,6 +2057,62 @@ export class OracleDatabase {
       return trimmed.slice(1, -1);
     }
     return trimmed;
+  }
+
+  /**
+   * Dispatch a `package.routine(args)` call to the concrete
+   * IPackageRoutine registered for it. The caller has already
+   * verified the prefix; this method extracts the routine name and
+   * positional argument list, then forwards.
+   */
+  private invokeBuiltinPackage(
+    executor: OracleExecutor,
+    call: string,
+    _variables: Map<string, { type: string; value: import('../engine/storage/BaseStorage').CellValue }>,
+    output: string[],
+  ): void {
+    const m = call.match(/^([A-Z_][A-Z0-9_]*\.[A-Z_][A-Z0-9_]*)\s*(?:\(([\s\S]*)\))?/i);
+    if (!m) return;
+    const fullName = m[1].toUpperCase();
+    const argString = m[2] ?? '';
+    const routine = builtinPackageRegistry.resolve(fullName);
+    if (!routine) return;                  // unknown routine → swallow
+
+    const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
+    const session = (executor as { context: { session?: import('./security/OracleSession').OracleSession } }).context.session;
+    if (!session) return;
+    const result = routine.invoke(args, { session, rawCall: call });
+    if (result !== null) output.push(result);
+  }
+
+  /** Split "a, 'b,c', d(e,f)" on top-level commas. */
+  private splitTopLevelArgs(s: string): string[] {
+    const out: string[] = [];
+    let depth = 0, quote: string | null = null, buf = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (quote) {
+        buf += c;
+        if (c === quote && s[i - 1] !== '\\') quote = null;
+        continue;
+      }
+      if (c === "'" || c === '"') { quote = c; buf += c; continue; }
+      if (c === '(') { depth++; buf += c; continue; }
+      if (c === ')') { depth--; buf += c; continue; }
+      if (c === ',' && depth === 0) { out.push(buf.trim()); buf = ''; continue; }
+      buf += c;
+    }
+    if (buf.trim()) out.push(buf.trim());
+    return out;
+  }
+
+  /** Strip the outer quotes of a literal arg; preserve bare identifiers. */
+  private unquoteLiteral(s: string): string {
+    const t = s.trim();
+    if (t.length >= 2 && t.startsWith("'") && t.endsWith("'")) {
+      return t.slice(1, -1).replace(/''/g, "'");
+    }
+    return t;
   }
 
   private executeDbmsRlsCall(_executor: OracleExecutor, call: string): void {

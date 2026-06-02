@@ -14,6 +14,7 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
+import { parseReadInvocation, performInteractiveRead } from '../input';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
@@ -166,6 +167,9 @@ export class LinuxBashShell extends AbstractShell {
   ]);
 
   protected async dispatch(line: string): Promise<ShellLineResult> {
+    const readIntercept = await this.tryInteractiveRead(line);
+    if (readIntercept) return readIntercept;
+
     // Sub-shell launch intercept: a real Linux box would exec the
     // binary and hand the tty to it. Here we push the registered Shell
     // adapter for that interpreter pointed at the same device, so the
@@ -209,6 +213,11 @@ export class LinuxBashShell extends AbstractShell {
           || sshAttempt.kind === 'exec') {
         return sshAttempt.result;
       }
+      const brokerResult = await this.runSshAuthViaBroker(
+        sshAttempt.pendingAuth,
+        parseSshExecCommand(line),
+      );
+      if (brokerResult) return brokerResult;
       this.pendingSshAuth = sshAttempt.pendingAuth;
       this.pendingExecCommand = parseSshExecCommand(line);
       return sshAttempt.result;
@@ -258,6 +267,48 @@ export class LinuxBashShell extends AbstractShell {
   private splitOutput(s: string): string[] {
     if (!s) return [];
     return s.replace(/\n+$/, '').split('\n');
+  }
+
+  private async runSshAuthViaBroker(
+    auth: PendingSshAuth,
+    execCmd: string | null,
+  ): Promise<ShellLineResult | null> {
+    if (!this.input.capabilities().interactive) return null;
+    const promptText = `${auth.user}@${auth.host}'s password: `;
+    for (;;) {
+      const pw = await this.input.password(promptText);
+      if (pw === null) return { output: [] };
+      const finalised = finalisePendingAuth(auth, pw);
+      if (finalised) {
+        if (execCmd !== null) {
+          const lines = await runSshExec(auth, execCmd);
+          finalised.shell.dispose();
+          return { output: [...finalised.banner, ...lines] };
+        }
+        return { output: [...finalised.banner], childShell: finalised.shell };
+      }
+      if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+        return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
+      }
+      this.input.emit('Permission denied, please try again.');
+    }
+  }
+
+  private async tryInteractiveRead(line: string): Promise<ShellLineResult | null> {
+    if (!this.input.capabilities().interactive) return null;
+    const trimmed = line.trim();
+    if (!/^read\b/.test(trimmed)) return null;
+    if (/[|<>]/.test(trimmed)) return null;
+    const parsed = parseReadInvocation(trimmed);
+    if (!parsed) return null;
+    const ifs = this.session?.env.get('IFS') ?? ' \t\n';
+    const outcome = await performInteractiveRead(this.input, parsed, { ifs });
+    if (!outcome.handled) return null;
+    if (!this.session) return { output: [] };
+    if (outcome.cancelled) { this.session.env.set('?', '130'); return { output: [] }; }
+    for (const b of outcome.bindings ?? []) this.session.env.set(b.name, b.value);
+    this.session.env.set('?', '0');
+    return { output: [] };
   }
 
   /**

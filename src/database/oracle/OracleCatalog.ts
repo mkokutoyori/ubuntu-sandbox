@@ -1399,6 +1399,16 @@ export class OracleCatalog extends BaseCatalog {
   private queryUSER(viewName: string, currentUser: string): ResultSet | null {
     const upper = currentUser.toUpperCase();
 
+    // Registry overrides — when a USER_* view has its own definition
+    // (e.g. USER_TAB_PRIVS_MADE has a smaller shape than the generic
+    // USER_→DBA_ derivation produces), honour it first.
+    const fromRegistry = queryView(viewName, {
+      instance: this.instance, storage: this.storage,
+      runtime: this.instance.getRuntimeState(), catalog: this,
+      currentUser,
+    });
+    if (fromRegistry) return fromRegistry;
+
     // USER_VIEWS — views owned by the current user. Note: USER_VIEWS
     // does NOT include the OWNER column (real Oracle drops it).
     if (viewName === 'USER_VIEWS') {

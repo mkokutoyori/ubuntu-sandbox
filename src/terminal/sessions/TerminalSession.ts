@@ -25,7 +25,9 @@
  */
 
 import { Equipment } from '@/network';
+import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
 
@@ -204,6 +206,8 @@ export abstract class TerminalSession {
   protected _passwordBuf: string = '';
   protected _inputBuf: string = '';
 
+  protected readonly inputHostImpl: import('./SessionInputHost').SessionInputHost;
+
   /** Maximum number of output lines before oldest lines are trimmed. */
   protected maxScrollback: number = MAX_SCROLLBACK_LINES;
 
@@ -224,6 +228,23 @@ export abstract class TerminalSession {
   constructor(id: string, device: Equipment) {
     this.id = id;
     this.device = device;
+    this.inputHostImpl = new SessionInputHostCtor({
+      setInputMode: (kind, promptText) => {
+        this.inputMode = kind === 'password'
+          ? { type: 'password', promptText }
+          : { type: 'interactive-text', promptText };
+      },
+      clearInputMode: () => { this.inputMode = { type: 'normal' }; },
+      emit: (line) => this.addLine(line),
+      notify: () => this.notify(),
+      isDisposed: () => this.disposed,
+    });
+  }
+
+  getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
+
+  listAttachedStreams(): readonly import('@/shell/input').StreamAttachment[] {
+    return this.inputHostImpl.listStreams();
   }
 
   // ── React subscription API ──────────────────────────────────────
@@ -619,6 +640,14 @@ export abstract class TerminalSession {
       return this.handleReverseSearchKey(e);
     }
 
+    // Broker-driven input takes priority over the legacy mode-key handlers
+    // so unified prompts (bash `read`, Read-Host, confirmations, choice
+    // menus, multi-line capture) get a uniform Enter / Ctrl+C contract.
+    if (this.inputHostImpl.hasPendingRequest()) {
+      const brokerHandled = this.handleBrokerKey(e);
+      if (brokerHandled) return true;
+    }
+
     // Delegate to mode-specific handler first
     const handled = this.handleModeKey(e);
     if (handled) return true;
@@ -633,6 +662,34 @@ export abstract class TerminalSession {
 
   /** Override to handle keys specific to the current input mode. */
   protected abstract handleModeKey(e: KeyEvent): boolean;
+
+  protected handleBrokerKey(e: KeyEvent): boolean {
+    if (e.key === 'Enter') {
+      const isPassword = this.inputMode.type === 'password';
+      const value = isPassword ? this._passwordBuf : this._inputBuf;
+      const promptText = (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')
+        ? this.inputMode.promptText : '';
+      this.addEchoLine(promptText, isPassword ? '*'.repeat(value.length) : value);
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      this.inputHostImpl.submitPending(value);
+      return true;
+    }
+    if (e.key === 'c' && e.ctrlKey) {
+      this.addLine('^C');
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      this.inputHostImpl.cancelPending();
+      return true;
+    }
+    if (e.key === 'd' && e.ctrlKey) {
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      this.inputHostImpl.cancelPending();
+      return true;
+    }
+    return false;
+  }
 
   /**
    * Shared normal-mode keyboard handling.
@@ -817,16 +874,36 @@ export abstract class TerminalSession {
       onClearScreen: () => this.clear(),
     };
 
+    this._passwordBuf = '';
+    this._inputBuf = '';
+
+    if (this.inputHostImpl.capabilities().interactive) {
+      this.runFlowViaBroker(steps, ctx);
+      return;
+    }
+
     this.flowEngine = new InteractiveFlowEngine(
       steps,
       ctx,
       this.getFlowFormatter(),
       this.getPrompt(),
     );
+    this.advanceFlow();
+  }
+
+  protected async runFlowViaBroker(steps: InteractiveStep[], ctx: FlowContext): Promise<void> {
+    const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
+    const result = await runFlowOnBrokerFn(steps, broker, ctx, {
+      emit: (text, lineType) => this.addLine(text, lineType ?? 'normal'),
+      clearScreen: () => this.clear(),
+    });
     this._passwordBuf = '';
     this._inputBuf = '';
-
-    this.advanceFlow();
+    this.inputMode = { type: 'normal' };
+    if (result.status === 'ok') {
+      this.onFlowComplete(result.ctx);
+    }
+    this.notify();
   }
 
   /**

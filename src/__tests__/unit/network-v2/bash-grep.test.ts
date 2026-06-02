@@ -3,9 +3,15 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { cmdGrep } from '@/network/devices/linux/LinuxTextCommands';
+import { cmdGrep as cmdGrepImpl } from '@/network/devices/linux/LinuxTextCommands';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
+
+// cmdGrep now returns { output, exitCode }; these tests assert on the
+// textual output, so unwrap it to the output string here.
+function cmdGrep(ctx: ShellContext, args: string[], stdin?: string): string {
+  return cmdGrepImpl(ctx, args, stdin).output;
+}
 
 let vfs: VirtualFileSystem;
 let ctx: ShellContext;

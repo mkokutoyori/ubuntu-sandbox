@@ -1,28 +1,29 @@
 /**
- * DBA_RSRC_PLANS — Resource Manager plans.
+ * DBA_RSRC_PLANS — Resource Manager plans. Backed by ResourceManager.
  */
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
 
-const PLANS = [
-  'DEFAULT_PLAN', 'DEFAULT_MAINTENANCE_PLAN', 'INTERNAL_PLAN',
-  'INTERNAL_QUIESCE',
-];
-
 registerView({
   name: 'DBA_RSRC_PLANS',
   comment: 'Resource Manager plans',
-  query() {
+  query({ instance }) {
     return queryResult(
       [
         col.str('PLAN', 30),
         col.str('CPU_METHOD', 12),
         col.str('STATUS', 16),
         col.str('COMMENTS', 240),
+        col.str('MANDATORY', 3),
+        col.str('SUB_PLAN', 3),
       ],
-      PLANS.map(p => [p, 'EMPHASIS', 'ACTIVE', `${p} plan`])
+      instance.resourceManager.getPlans().map(p => [
+        p.name, p.cpuMethod, p.status, p.comment,
+        p.mandatory ? 'YES' : 'NO',
+        p.subPlan ? 'YES' : 'NO',
+      ]),
     );
   },
 });

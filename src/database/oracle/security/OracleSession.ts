@@ -300,6 +300,39 @@ export class OracleSession {
   setClientInfo(info: string | null): void { this.clientInfo = info; }
   setClientIdentifier(id: string | null): void { this.clientIdentifier = id; }
 
+  // ── User-defined contexts (DBMS_SESSION.SET_CONTEXT) ─────────────
+
+  /** namespace → attribute → value. */
+  private contexts = new Map<string, Map<string, string>>();
+
+  setContext(namespace: string, attribute: string, value: string | null): void {
+    const ns = namespace.toUpperCase();
+    const attr = attribute.toUpperCase();
+    let bucket = this.contexts.get(ns);
+    if (!bucket) { bucket = new Map(); this.contexts.set(ns, bucket); }
+    if (value === null) bucket.delete(attr);
+    else bucket.set(attr, value);
+  }
+
+  clearContext(namespace: string, attribute?: string): void {
+    const ns = namespace.toUpperCase();
+    if (!attribute) { this.contexts.delete(ns); return; }
+    this.contexts.get(ns)?.delete(attribute.toUpperCase());
+  }
+
+  getContextValue(namespace: string, attribute: string): string | null {
+    return this.contexts.get(namespace.toUpperCase())?.get(attribute.toUpperCase()) ?? null;
+  }
+
+  /** Flattened rows for V$SESSION_CONTEXT. */
+  listContextEntries(): Array<{ namespace: string; attribute: string; value: string }> {
+    const out: Array<{ namespace: string; attribute: string; value: string }> = [];
+    for (const [ns, bucket] of this.contexts) {
+      for (const [a, v] of bucket) out.push({ namespace: ns, attribute: a, value: v });
+    }
+    return out;
+  }
+
   setCurrentSchema(schema: string): void {
     this.currentSchema = schema.toUpperCase();
   }

@@ -10,9 +10,18 @@ import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdTail, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
-import { cmdFind, cmdLocate, cmdWhich, cmdWhereis, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
-import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdTest, cmdMkfifo } from './LinuxPermCommands';
+import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
+import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
+import {
+  SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
+  type ShellIntrospection, type FileLocation, type WhereisSelector,
+} from './resolve';
+import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import {
+  runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
+  runTail,
+  type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
+} from './coreutils';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
@@ -87,6 +96,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs',
+  'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -281,6 +291,9 @@ export class LinuxCommandExecutor {
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
     this.userMgr = new LinuxUserManager(this.vfs);
+    // Project the lastlog registry onto the canonical /var/log/lastlog file
+    // so the filesystem view stays coherent with the in-memory registry.
+    this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
     this.iptables = new LinuxIptablesManager(this.vfs);
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
@@ -1303,7 +1316,7 @@ export class LinuxCommandExecutor {
       (argv, env) => this.dispatchFromInterpreter(argv, env),
       initialVars,
       io,
-      { pid: this.shellPid, ppid: this.shellPpid },
+      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
       this.aliases,
       this.functions,
     );
@@ -1486,8 +1499,10 @@ export class LinuxCommandExecutor {
       if (lastArg?.includes('\n')) {
         stdin = lastArg;
         actualArgs.pop();
-      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ')) {
-        // For text processing commands, multi-word content without newlines is also stdin
+      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ') && actualArgs.length > 1) {
+        // For text processing commands, multi-word content without newlines is also stdin —
+        // but only when a separate program/option arg precedes it, so a single-arg program
+        // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
         stdin = lastArg;
         actualArgs.pop();
       }
@@ -1542,6 +1557,20 @@ export class LinuxCommandExecutor {
         const inode = this.vfs.resolveInode(absPath);
         if (!inode) return null;
         return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
+      },
+      globExpand: (pattern: string, cwd: string) => {
+        const hits = this.vfs.globExpand(pattern, cwd);
+        if (hits.length === 0) return null;
+        // Mirror bash conventions: relative patterns yield relative results.
+        if (!pattern.startsWith('/')) {
+          const prefix = cwd === '/' ? '/' : cwd + '/';
+          return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
+        }
+        return hits;
+      },
+      homeFor: (user: string) => {
+        const u = this.userMgr.getUser(user);
+        return u ? u.home : null;
       },
     };
   }
@@ -1667,9 +1696,19 @@ export class LinuxCommandExecutor {
       }
 
       // Text commands
-      case 'grep': return { output: cmdGrep(c, args, stdin), exitCode: 0 };
+      case 'grep': return cmdGrep(c, args, stdin);
+      case 'egrep': return cmdGrep(c, args, stdin, 'egrep');
+      case 'fgrep': return cmdGrep(c, args, stdin, 'fgrep');
+      case 'rgrep': return cmdGrep(c, ['-r', ...args], stdin);
       case 'head': return { output: cmdHead(c, args, stdin), exitCode: 0 };
-      case 'tail': return { output: cmdTail(c, args, stdin), exitCode: 0 };
+      case 'tail': {
+        const r = runTail(this.tailFs(), this.cwd, args, stdin);
+        if (r.kind === 'snapshot') return { output: r.output, exitCode: r.exitCode };
+        // Follow mode reached the dispatcher (no interactive sink available):
+        // emit the snapshot and exit 0 so non-streaming callers degrade
+        // gracefully. Interactive callers should use `startTailFollow()`.
+        return { output: r.preflight().output, exitCode: 0 };
+      }
       case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
       case 'sort': return { output: cmdSort(c, args, stdin), exitCode: 0 };
       case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
@@ -1681,8 +1720,9 @@ export class LinuxCommandExecutor {
       // Search commands
       case 'find': return { output: cmdFind(c, args), exitCode: 0 };
       case 'locate': return { output: cmdLocate(c, args), exitCode: 0 };
-      case 'which': return { output: cmdWhich(c, args), exitCode: 0 };
-      case 'whereis': return { output: cmdWhereis(c, args), exitCode: 0 };
+      case 'which': return this.handleWhich(args);
+      case 'whereis': return this.handleWhereis(args);
+      case 'type': return this.handleType(args);
       case 'command': return cmdCommand(c, args, KNOWN_LINUX_COMMAND_SET);
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
@@ -1697,12 +1737,8 @@ export class LinuxCommandExecutor {
         return { output: result.output, exitCode: 0 };
       }
       case 'test':
-      case '[': {
-        // Handle [ ... ] syntax
-        const testArgs = cmd === '[' ? args.filter(a => a !== ']') : args;
-        const result = cmdTest(c, testArgs);
-        return { output: '', exitCode: result.success ? 0 : 1 };
-      }
+      case '[': return this.handleTest(cmd, args);
+      case 'expr': return this.handleExpr(args);
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
@@ -1867,19 +1903,8 @@ export class LinuxCommandExecutor {
       }
 
       // time — run a command and report its elapsed wall/user/sys time
-      case 'time': {
-        if (args.length === 0) {
-          return { output: '\nreal\t0m0.000s\nuser\t0m0.000s\nsys\t0m0.000s', exitCode: 0 };
-        }
-        const started = Date.now();
-        const inner = this.dispatchFromInterpreter(args, this._cmdEnv);
-        const elapsed = ((Date.now() - started) / 1000).toFixed(3);
-        const body = inner.output ? inner.output.replace(/\n$/, '') + '\n' : '';
-        return {
-          output: `${body}\nreal\t0m${elapsed}s\nuser\t0m0.001s\nsys\t0m0.001s`,
-          exitCode: inner.exitCode,
-        };
-      }
+      case 'time': return this.handleTime(args);
+      case 'watch': return this.handleWatch(args);
 
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
@@ -2011,8 +2036,12 @@ export class LinuxCommandExecutor {
       case 'clear': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
       case 'reset': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
 
-      // Sleep — non-blocking simulator no-op
-      case 'sleep': return { output: '', exitCode: 0 };
+      // Sleep — parses the duration (incl. multi-arg sums and suffixes)
+      // but never blocks; the simulator advances time logically.
+      case 'sleep': {
+        const r = runSleep(args);
+        return { output: r.output, exitCode: r.exitCode };
+      }
       // `timeout <N> <cmd ...>` — run the inner command. In real life
       // the cmd is killed with SIGTERM after N seconds; the simulator
       // is synchronous so we just delegate (the inner cmd runs to
@@ -2231,7 +2260,6 @@ export class LinuxCommandExecutor {
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
       case 'tput':
-      case 'type':
       case 'set':
       case 'unset':
       case 'declare':
@@ -2262,11 +2290,8 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
       case 'seq': {
-        const nums = args.filter(a => !a.startsWith('-')).map(Number);
-        if (nums.length === 1) return { output: Array.from({length: nums[0]}, (_, i) => i + 1).join('\n'), exitCode: 0 };
-        if (nums.length === 2) return { output: Array.from({length: nums[1] - nums[0] + 1}, (_, i) => nums[0] + i).join('\n'), exitCode: 0 };
-        if (nums.length === 3) { const r: number[] = []; for (let i = nums[0]; i <= nums[2]; i += nums[1]) r.push(i); return { output: r.join('\n'), exitCode: 0 }; }
-        return { output: 'seq: missing operand', exitCode: 1 };
+        const r = runSeq(args);
+        return { output: r.output, exitCode: r.exitCode };
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
       case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
@@ -2965,6 +2990,31 @@ export class LinuxCommandExecutor {
       return '';
     }
 
+    // Resolve -u into a row predicate. lastlog(8) accepts a login name,
+    // a numeric UID, or an inclusive UID range "LO-HI" (either bound may
+    // be omitted for an open range). A name/UID that matches no account
+    // is an error; a range that matches nothing is simply empty.
+    let userFilter: ((u: UserEntry) => boolean) | null = null;
+    if (filterUser !== null) {
+      const range = /^(\d*)-(\d*)$/.exec(filterUser);
+      if (range && (range[1] !== '' || range[2] !== '')) {
+        const lo = range[1] === '' ? 0 : Number(range[1]);
+        const hi = range[2] === '' ? Number.MAX_SAFE_INTEGER : Number(range[2]);
+        userFilter = (u) => u.uid >= lo && u.uid <= hi;
+      } else if (/^\d+$/.test(filterUser)) {
+        const uid = Number(filterUser);
+        if (!this.userMgr.getAllUsers().some(u => u.uid === uid)) {
+          return `lastlog: Unknown user or range: ${filterUser}`;
+        }
+        userFilter = (u) => u.uid === uid;
+      } else {
+        if (!this.userMgr.getAllUsers().some(u => u.username === filterUser)) {
+          return `lastlog: Unknown user or range: ${filterUser}`;
+        }
+        userFilter = (u) => u.username === filterUser;
+      }
+    }
+
     const header = 'Username         Port     From             Latest';
     const rows: string[] = [header];
     const now = Date.now();
@@ -2981,7 +3031,7 @@ export class LinuxCommandExecutor {
     const pad2 = (n: number) => String(n).padStart(2, '0');
 
     for (const u of this.userMgr.getAllUsers()) {
-      if (filterUser && u.username !== filterUser) continue;
+      if (userFilter && !userFilter(u)) continue;
       const entry = this.lastlog.getCurrent(u.username);
       if (!entry) {
         rows.push(`${u.username.padEnd(16)} ${''.padEnd(8)} ${''.padEnd(16)} **Never logged in**`);
@@ -2998,6 +3048,247 @@ export class LinuxCommandExecutor {
       );
     }
     return rows.join('\n');
+  }
+
+  /**
+   * Build the filesystem facade required by `tail`. Resolves paths
+   * against the executor's current cwd and forwards writes to the VFS
+   * subscription registry installed in step 1.
+   */
+  private tailFs(): TailFs {
+    return {
+      readFile: (p) => this.vfs.readFile(p),
+      exists: (p) => this.vfs.exists(p),
+      normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+      onWrite: (p, listener) => this.vfs.onWrite(p, listener),
+    };
+  }
+
+  /**
+   * Inspect a command line and, if it is a `tail -f` / `tail -F`
+   * invocation, return a `TailRunResult.follow` descriptor the terminal
+   * layer can attach a sink to. Returns `null` for non-streaming tails
+   * (snapshot mode) and for any other command — the caller should then
+   * fall back to {@link execute}. Inputs go through the same
+   * whitespace-tolerant tokeniser as the executor's main path so quoting
+   * and `--lines=+5` style work consistently.
+   */
+  tryStartTailFollow(commandLine: string): Extract<TailRunResult, { kind: 'follow' }> | null {
+    const trimmed = commandLine.trim();
+    if (!/^tail\b/.test(trimmed)) return null;
+    const tokens = simpleTokenize(trimmed);
+    if (tokens.length === 0 || tokens[0] !== 'tail') return null;
+    const r = runTail(this.tailFs(), this.cwd, tokens.slice(1));
+    return r.kind === 'follow' ? r : null;
+  }
+
+  /**
+   * Convenience: open a follow stream end-to-end for the given line and
+   * attach `sink`. Returns `null` if `commandLine` is not a follow tail.
+   */
+  startTailFollow(commandLine: string, sink: TailSink): TailFollowHandle | null {
+    const follow = this.tryStartTailFollow(commandLine);
+    return follow ? follow.attach(sink) : null;
+  }
+
+  /** Build the shell-state view consumed by which / type / command. */
+  private shellIntrospection(): ShellIntrospection {
+    const pathDirs = (this.env.get('PATH') ?? '').split(':').filter(Boolean);
+    const vfs = this.vfs;
+    const cwd = this.cwd;
+    const known = KNOWN_LINUX_COMMAND_SET;
+    const toLocation = (path: string): FileLocation => {
+      const inode = vfs.resolveInode(path);
+      const slash = path.lastIndexOf('/');
+      return {
+        path,
+        directory: slash > 0 ? path.slice(0, slash) : '/',
+        basename: path.slice(slash + 1),
+        executable: inode ? (inode.permissions & 0o111) !== 0 : true,
+        synthetic: !inode,
+      };
+    };
+    return {
+      pathDirs,
+      aliasValue: (n) => this.aliases.get(n)?.value,
+      isFunction: (n) => this.functions.has(n),
+      keywordDescription: (n) => SHELL_CATALOG.keyword(n)?.description,
+      builtinInfo: (n) => {
+        const b = SHELL_CATALOG.builtin(n);
+        return b ? { description: b.description, special: b.special } : undefined;
+      },
+      fileMatches: (n) => {
+        const out: FileLocation[] = [];
+        if (n.includes('/')) {
+          const abs = vfs.normalizePath(n, cwd);
+          if (vfs.exists(abs) && vfs.getType(abs) !== 'directory') out.push(toLocation(abs));
+          return out;
+        }
+        for (const dir of pathDirs) {
+          const p = `${dir}/${n}`;
+          if (vfs.exists(p) && vfs.getType(p) !== 'directory') out.push(toLocation(p));
+        }
+        // Simulator-provided command with no seeded binary: report its
+        // conventional location so which/type stay useful.
+        if (out.length === 0 && known.has(n)) {
+          out.push({ path: `/usr/bin/${n}`, directory: '/usr/bin', basename: n, executable: true, synthetic: true });
+        }
+        return out;
+      },
+    };
+  }
+
+  private handleWhich(args: string[]): { output: string; exitCode: number } {
+    let all = false;
+    const names: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
+      if (a === '-a' || a === '--all') { all = true; continue; }
+      if (a === '--version') return { output: 'GNU which v2.21', exitCode: 0 };
+      if (a.startsWith('-') && a.length > 1) { for (const f of a.slice(1)) if (f === 'a') all = true; continue; }
+      names.push(a);
+    }
+    if (names.length === 0) return { output: '', exitCode: 0 };
+
+    const resolver = new CommandResolver(this.shellIntrospection());
+    const out: string[] = [];
+    let allFound = true;
+    for (const name of names) {
+      const files = resolver.resolveAll(name, { forcePath: true }).filter(r => r.kind === 'file');
+      if (files.length === 0) { allFound = false; continue; }
+      if (all) for (const f of files) out.push(f.path!);
+      else out.push(files[0].path!);
+    }
+    return { output: out.join('\n'), exitCode: allFound ? 0 : 1 };
+  }
+
+  private handleWhereis(args: string[]): { output: string; exitCode: number } {
+    let b = false, m = false, s = false, listDirs = false;
+    const names: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
+      if (a === '-b') { b = true; continue; }
+      if (a === '-m') { m = true; continue; }
+      if (a === '-s') { s = true; continue; }
+      if (a === '-l') { listDirs = true; continue; }
+      if (a === '-B' || a === '-M' || a === '-S') { while (i + 1 < args.length && args[i + 1] !== '-f') i++; continue; }
+      if (a === '-f') continue;
+      if (a.startsWith('-')) continue;
+      names.push(a);
+    }
+    const known = KNOWN_LINUX_COMMAND_SET;
+    const resolver = new WhereisResolver({
+      exists: (p) => this.vfs.exists(p),
+      list: (dir) => {
+        const entries = this.vfs.listDirectory(this.vfs.normalizePath(dir, '/'));
+        return entries ? entries.filter(e => e.name !== '.' && e.name !== '..').map(e => e.name) : null;
+      },
+    });
+    if (listDirs) return { output: resolver.allDirectories().join('\n'), exitCode: 0 };
+
+    const sel: WhereisSelector = (b || m || s) ? { binary: b, manual: m, source: s } : ALL_CATEGORIES;
+    const lines: string[] = [];
+    for (const name of names) {
+      const result = resolver.locate(name, sel);
+      if (sel.binary && result.binaries.length === 0 && known.has(name)) result.binaries.push(`/usr/bin/${name}`);
+      lines.push(WhereisResolver.format(result, sel));
+    }
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private handleType(args: string[]): { output: string; exitCode: number } {
+    let typeOnly = false, pathOnly = false, all = false, forcePath = false;
+    const names: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
+      if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
+        for (const f of a.slice(1)) {
+          if (f === 't') typeOnly = true;
+          else if (f === 'p') pathOnly = true;
+          else if (f === 'a') all = true;
+          else if (f === 'P') { forcePath = true; pathOnly = true; }
+          else if (f === 'f') { /* suppress function lookup — accepted */ }
+        }
+        continue;
+      }
+      names.push(a);
+    }
+
+    const resolver = new CommandResolver(this.shellIntrospection());
+    const out: string[] = [];
+    let exitCode = 0;
+    for (const name of names) {
+      const resolutions = resolver.resolveAll(name, { forcePath });
+      const found = resolutions[0].kind !== 'not-found';
+      if (!found) {
+        exitCode = 1;
+        if (!typeOnly && !pathOnly) out.push(`bash: type: ${name}: not found`);
+        continue;
+      }
+      if (typeOnly) {
+        const words = (all ? resolutions : [resolutions[0]]).map(r => r.typeWord).filter(Boolean);
+        out.push(...words);
+      } else if (pathOnly) {
+        const files = resolutions.filter(r => r.kind === 'file');
+        if (all) out.push(...files.map(f => f.path!));
+        else if (files.length > 0 && (forcePath || resolutions[0].kind === 'file')) out.push(files[0].path!);
+      } else {
+        const shown = all ? resolutions : [resolutions[0]];
+        out.push(...shown.map(r => r.describe()));
+      }
+    }
+    return { output: out.join('\n'), exitCode };
+  }
+
+  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number } {
+    const fs: TestFs = {
+      exists: (p) => this.vfs.exists(p),
+      resolveInode: (p) => this.vfs.resolveInode(p),
+      getType: (p, follow) => this.vfs.getType(p, follow),
+      normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+    };
+    const env: TestEnv = {
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      cwd: this.cwd,
+      isatty: (fd) => fd === 0 || fd === 1 || fd === 2
+        ? this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1'
+        : false,
+    };
+    const r = runTest(fs, env, args, cmd === '[');
+    return { output: r.stderr, exitCode: r.exitCode };
+  }
+
+  private handleExpr(args: string[]): { output: string; exitCode: number } {
+    const r = runExpr(args);
+    return { output: r.output, exitCode: r.exitCode };
+  }
+
+  private handleTime(args: string[]): { output: string; exitCode: number } {
+    const fmt = chooseTimeFormat(this._cmdEnv ?? Object.fromEntries(this.env));
+    if (args.length === 0) {
+      return { output: formatTimes({ realMs: 0, userMs: 0, sysMs: 0 }, fmt), exitCode: 0 };
+    }
+    const { result, timing } = measure(() => this.dispatchFromInterpreter(args, this._cmdEnv));
+    const body = result.output ? result.output.replace(/\n$/, '') + '\n' : '';
+    return { output: body + formatTimes(timing, fmt), exitCode: result.exitCode };
+  }
+
+  private handleWatch(args: string[]): { output: string; exitCode: number } {
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const r = runWatch(args, {
+      hostname,
+      now: () => {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      },
+      run: (cmdline) => this.dispatchFromInterpreter(cmdline, this._cmdEnv),
+    });
+    return { output: r.output, exitCode: r.exitCode };
   }
 
   private handleDeluser(args: string[]): { output: string; exitCode: number } {
