@@ -18,6 +18,28 @@ beforeEach(() => {
   Logger.reset();
 });
 
+describe('Logging — SyslogAgent forwards buffer entries to remote servers', () => {
+  it('Cisco buffer event also lands on a remote syslog listener via UDP/514', () => {
+    const bus = new EventBus();
+    const r = new CiscoRouter('R');
+    r.setEventBus(bus);
+    r.getSyslogAgent().setEnabled(true);
+    r.getSyslogAgent().addServer('10.99.99.99', { severityThreshold: 'debugging' });
+
+    let drops = 0;
+    bus.subscribeWhere('syslog.packet.dropped',
+      (p) => (p as { deviceId?: string }).deviceId === r.id,
+      () => { drops++; });
+
+    bus.publish({
+      topic: 'tcp.listener.changed',
+      payload: { deviceId: r.id, hostname: 'R', localIp: '0.0.0.0', localPort: 8080, added: true },
+    });
+
+    expect(drops).toBeGreaterThan(0);
+  });
+});
+
 describe('Logging — Linux interface link events land in kern.log', () => {
   it('toggling a port link writes Up/Down lines to /var/log/kern.log', async () => {
     const bus = new EventBus();

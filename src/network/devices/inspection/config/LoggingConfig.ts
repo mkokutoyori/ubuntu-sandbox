@@ -34,6 +34,8 @@ export class LoggingConfig {
   readonly hosts: string[] = [];
   private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string }> = [];
   private nextSeq = 0;
+  private attachedBus: import('@/events/EventBus').IEventBus | null = null;
+  private attachedDeviceId: string | null = null;
   private readonly SEVERITY_ORDER: Record<Severity, number> = {
     emergencies: 0, alerts: 1, critical: 2, errors: 3,
     warnings: 4, notifications: 5, informational: 6, debugging: 7,
@@ -47,11 +49,23 @@ export class LoggingConfig {
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     this.nextSeq++;
+    if (this.attachedBus && this.attachedDeviceId) {
+      this.attachedBus.publish({
+        topic: 'device.syslog.entry',
+        payload: {
+          deviceId: this.attachedDeviceId,
+          severity, severityNum: this.SEVERITY_ORDER[severity],
+          tag, message: text, ts: Date.now(),
+        },
+      });
+    }
   }
 
   attachToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): () => void {
     const isOurs = (e: { deviceId?: string }) => e.deviceId === deviceId;
     this.buffered = true;
+    this.attachedBus = bus;
+    this.attachedDeviceId = deviceId;
     const unsubs = [
       bus.subscribeWhere('tcp.connection.opened', isOurs, (e) => {
         const p = e.payload;
@@ -270,6 +284,38 @@ export class LoggingConfig {
         const p = e.payload as { iface?: string; ip?: string };
         this.append('warnings', 'dhcp',
           `Lease on ${p.iface ?? '?'} expired (${p.ip ?? '?'})`);
+      }),
+      bus.subscribeWhere('cdp.neighbor.discovered', isOurs, (e) => {
+        const p = e.payload as { localPort?: string; deviceId?: string; remoteDeviceId?: string; remotePortId?: string };
+        const remote = (p as { remoteDeviceId?: string; deviceIdRemote?: string }).remoteDeviceId
+          ?? (p as { deviceIdRemote?: string }).deviceIdRemote ?? '?';
+        this.append('informational', 'cdp',
+          `Neighbor ${remote} (${p.remotePortId ?? '?'}) discovered on ${p.localPort ?? '?'}`);
+      }),
+      bus.subscribeWhere('cdp.neighbor.expired', isOurs, (e) => {
+        const p = e.payload as { localPort?: string; remoteDeviceId?: string };
+        this.append('notifications', 'cdp',
+          `Neighbor ${p.remoteDeviceId ?? '?'} expired on ${p.localPort ?? '?'}`);
+      }),
+      bus.subscribeWhere('vrrp.state.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; vrid?: number; oldState?: string; newState?: string };
+        this.append('notifications', 'vrrp',
+          `${p.iface ?? '?'} VRID ${p.vrid ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('vrrp.master.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; vrid?: number; masterIp?: string };
+        this.append('notifications', 'vrrp',
+          `${p.iface ?? '?'} VRID ${p.vrid ?? 0} new master ${p.masterIp ?? '?'}`);
+      }),
+      bus.subscribeWhere('glbp.avg.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; group?: number; avgIp?: string };
+        this.append('notifications', 'glbp',
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} AVG is ${p.avgIp ?? '?'}`);
+      }),
+      bus.subscribeWhere('glbp.avf.state.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; group?: number; forwarder?: number; oldState?: string; newState?: string };
+        this.append('informational', 'glbp',
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
