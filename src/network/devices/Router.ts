@@ -44,6 +44,7 @@ import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpServerStack, type TcpRoute } from './tcp/TcpServerStack';
+import { TcpStack } from '../tcp/TcpStack';
 import type { TcpConnection } from '@/network/core/TcpConnection';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
@@ -255,9 +256,16 @@ export abstract class Router extends Equipment {
     this.createPorts();
     this._setupPortMonitoring();
     this.tcpStack = this.buildTcpServerStack();
-    // Eagerly materialise the credential store so the standard cast
-    // (alice/alice, bob/bob, …) is visible to `show running-config` /
-    // `display current-configuration` without a prior `username` command.
+    const tcpHost = {
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.tcpv2 = new TcpStack(tcpHost, () => this.getBus());
+    this.tcpv2.setExternalPortClaim((port) => this.tcpStack.hasListener(port));
+    this.tcpv2.start();
     this.getCredentialStore();
     this.mountSshDaemon();
   }
@@ -269,9 +277,11 @@ export abstract class Router extends Equipment {
   private mountSshDaemon(): void {
     if (this._sshHandlerMounted) return;
     this._sshHandlerMounted = true;
-    this.listenTcp(22, (conn) => {
-      const handler = this.buildRouterSshServerHandler();
-      handler.register(conn, conn.remoteIp);
+    this.tcpv2.listen(22, {
+      onAccept: (socket) => {
+        const handler = this.buildRouterSshServerHandler();
+        handler.register(socket, socket.remoteIp);
+      },
     });
   }
 
@@ -299,6 +309,8 @@ export abstract class Router extends Equipment {
   // ── TCP server plane (so SSH/SFTP can travel through the wire) ─────
 
   protected readonly tcpStack: TcpServerStack;
+  protected readonly tcpv2: TcpStack;
+  public getTcpStack(): TcpStack { return this.tcpv2; }
 
   private buildTcpServerStack(): TcpServerStack {
     return new TcpServerStack({
@@ -891,6 +903,10 @@ export abstract class Router extends Equipment {
     }
 
     if (ipPkt.protocol === IP_PROTO_TCP) {
+      if (this.tcpv2.hasInterest(ipPkt, ipPkt.sourceIP)) {
+        this.tcpv2.handleIp(inPort, ipPkt.sourceIP, ipPkt);
+        return;
+      }
       this.tcpStack.handleSegment(inPort, ipPkt);
       return;
     }
