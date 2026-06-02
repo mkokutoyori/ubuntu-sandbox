@@ -595,7 +595,6 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!pending) return;
     const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
     const promptText = `${pending.user}@${pending.host}'s password: `;
-    this.addLine(`${pending.user}@${pending.host}'s password:`, 'prompt');
     for (;;) {
       const pw = await broker.password(promptText);
       if (pw === null) {

@@ -103,4 +103,15 @@ describe('PromiseInputBroker reuses across PS sub-shell prompts', () => {
     expect(a.output.join('')).toBe('one');
     expect(b.output.join('')).toBe('two');
   });
+
+  it('read-host (lowercase) is recognised — PowerShell verbs are case-insensitive', async () => {
+    const { subShell, h } = setup();
+    const p = subShell.processLine('$x = read-host -Prompt "lc"');
+    await new Promise(r => setTimeout(r, 5));
+    h.pump('answer');
+    const r = await p;
+    expect(r.output.join('\n')).not.toMatch(/not recognized/i);
+    const x = await subShell.processLine('$x');
+    expect(x.output.join('')).toBe('answer');
+  });
 });

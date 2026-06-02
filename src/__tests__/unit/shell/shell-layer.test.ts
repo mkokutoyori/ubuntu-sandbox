@@ -261,7 +261,8 @@ describe('§D — Reported bugs that the new shell layer fixes', () => {
     term.handleKey(key('Enter'));
     await flush();
     expect(term.currentInputMode.type).toBe('password');
-    expect(term.lines.some(l => /user@10\.0\.0\.1's password/.test(l.text))).toBe(true);
+    expect((term.currentInputMode as { promptText?: string }).promptText ?? '')
+      .toMatch(/user@10\.0\.0\.1's password/);
   });
 
   test('PowerShell launched over SSH (Windows → Windows) actually enters PS', async () => {
