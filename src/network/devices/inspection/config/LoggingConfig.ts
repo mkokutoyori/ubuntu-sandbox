@@ -133,6 +133,21 @@ export class LoggingConfig {
         this.append('warnings', 'icmp',
           `Echo to ${p.target ?? '?'} failed: ${p.reason ?? 'no response'}`);
       }),
+      bus.subscribeWhere('lacp.port.bundled', isOurs, (e) => {
+        const p = e.payload as { portName?: string; bundle?: string };
+        this.append('notifications', 'etherchannel',
+          `Interface ${p.portName ?? '?'} is bundled in ${p.bundle ?? 'Port-channel'}`);
+      }),
+      bus.subscribeWhere('lacp.port.unbundled', isOurs, (e) => {
+        const p = e.payload as { portName?: string; bundle?: string };
+        this.append('notifications', 'etherchannel',
+          `Interface ${p.portName ?? '?'} unbundled from ${p.bundle ?? 'Port-channel'}`);
+      }),
+      bus.subscribeWhere('lacp.port.state-changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; oldState?: string; newState?: string };
+        this.append('informational', 'lacp',
+          `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
       bus.subscribeWhere('port.security.violation', isOurs, (e) => {
         const p = e.payload;
         this.append('critical', 'port_security',
