@@ -37,26 +37,11 @@ describe('EndHost — TcpStack v2', () => {
     expect(accepted!.state).toBe('established');
   });
 
-  it('legacy listenTcp on port 22 is not stolen by v2 cohabitation', () => {
+  it('SSH on port 22 is now owned by the v2 stack', () => {
     const bus = new EventBus();
     const srv = new LinuxPC('SRV');
     srv.setEventBus(bus);
     srv.powerOn();
-    expect(srv.getTcpStack().hasInterest(
-      {
-        type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 40,
-        identification: 0, flags: 0, fragmentOffset: 0,
-        ttl: 64, protocol: 6, headerChecksum: 0,
-        sourceIP: new IPAddress('10.0.0.1'),
-        destinationIP: new IPAddress('10.0.0.2'),
-        payload: {
-          type: 'tcp', sourcePort: 49152, destinationPort: 22,
-          sequence: 0, acknowledgement: 0, dataOffset: 5,
-          flags: { fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false },
-          window: 65535, checksum: 0, urgentPointer: 0, options: [], payload: undefined,
-        },
-      },
-      new IPAddress('10.0.0.1'),
-    )).toBe(false);
+    expect(srv.getTcpStack().listListeners().some(l => l.localPort === 22)).toBe(true);
   });
 });

@@ -244,8 +244,10 @@ export class WindowsPC extends EndHost {
     this.getSshServerContext();
 
     // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
-    this.listenTcp(22, (conn) => {
-      this.getSshServerHandler().register(conn, '0.0.0.0');
+    this.getTcpStack().listen(22, {
+      onAccept: (socket) => {
+        this.getSshServerHandler().register(socket, socket.remoteIp);
+      },
     });
   }
 

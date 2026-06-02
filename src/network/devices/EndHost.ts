@@ -1410,7 +1410,14 @@ export abstract class EndHost extends Equipment {
    *   4. await the handshake Promise (one microtask — already resolved).
    *   5. Return TcpConnection ready for write()/onData().
    */
-  public async tcpConnect(dstIp: string, dstPort: number): Promise<TcpConnection | null> {
+  public async tcpConnect(dstIp: string, dstPort: number): Promise<import('../tcp/TcpStack').TcpSocket | null> {
+    const socket = this.tcpv2.connect(dstIp, dstPort);
+    if (!socket) return null;
+    if (socket.state !== 'established') return null;
+    return socket;
+  }
+
+  public async tcpConnectLegacy(dstIp: string, dstPort: number): Promise<TcpConnection | null> {
     let dstIPObj: IPAddress;
     try { dstIPObj = new IPAddress(dstIp); } catch { return null; }
 
