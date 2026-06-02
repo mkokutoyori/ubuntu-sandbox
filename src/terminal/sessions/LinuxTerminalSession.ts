@@ -19,6 +19,11 @@ import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShell
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { completeInput } from '@/terminal/core/TabCompletionHelper';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import {
+  parseReadInvocation as parseReadInvocationLib,
+  performInteractiveRead as performInteractiveReadLib,
+  PromiseInputBroker as PromiseInputBrokerLib,
+} from '@/shell/input';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
@@ -220,9 +225,8 @@ export class LinuxTerminalSession extends TerminalSession {
    * sub-shell history) keep working unchanged.
    */
   private pushIShellAsSubShell(child: import('@/shell').IShell): void {
+    if (typeof child.setInputHost === 'function') child.setInputHost(this.getInputHost());
     const adapter = new ShellSubShellAdapter(child);
-    // The active sub-shell, if any, is preserved on the iShellSubStack;
-    // popping the child returns to it before the bash root resumes.
     if (this.activeSubShell) this.iShellSubStack.push(this.activeSubShell);
     this.activeSubShell = adapter;
     for (const line of child.getActivationBanner()) this.addLine(line);
@@ -712,7 +716,34 @@ export class LinuxTerminalSession extends TerminalSession {
     });
     if (!handle) return false;
     this.activeTailStream = handle;
+    this.activeTailAttachment = this.getInputHost().attachStream({
+      description: commandLine,
+      sink: { write: () => {/* writes already flow through emitTailChunk */} },
+      onCancel: () => { handle.cancel(); this.activeTailStream = null; },
+    });
     this.notify();
+    return true;
+  }
+
+  private activeTailAttachment: import('@/shell/input').StreamAttachment | null = null;
+
+  private async tryInteractiveRead(line: string): Promise<boolean> {
+    if (!/^\s*read\b/.test(line)) return false;
+    if (/[|<>]/.test(line)) return false;
+    const parsed = parseReadInvocationLib(line.trim());
+    if (!parsed) return false;
+    if (!this.shell) return false;
+    const broker = new PromiseInputBrokerLib(this.getInputHost());
+    if (!broker.capabilities().interactive) return false;
+    const ifs = this.shell.env.get('IFS') ?? ' \t\n';
+    const outcome = await performInteractiveReadLib(broker, parsed, { ifs });
+    if (!outcome.handled) return false;
+    if (outcome.cancelled) {
+      this.shell.lastExitCode = 130;
+      return true;
+    }
+    for (const b of outcome.bindings ?? []) this.shell.env.set(b.name, b.value);
+    this.shell.lastExitCode = 0;
     return true;
   }
 
@@ -735,10 +766,11 @@ export class LinuxTerminalSession extends TerminalSession {
    * defer to the base behaviour (clear input + echo prompt^C).
    */
   protected override onCtrlC(): void {
-    if (this.activeTailStream) {
-      this.activeTailStream.cancel();
+    if (this.activeTailStream || this.activeTailAttachment) {
+      this.activeTailStream?.cancel();
       this.activeTailStream = null;
-      // Flush any trailing partial line then mark the interruption.
+      this.activeTailAttachment?.cancel();
+      this.activeTailAttachment = null;
       if (this._tailCarry !== '') { this.addLine(this._tailCarry); this._tailCarry = ''; }
       this.addLine('^C');
       this.notify();
@@ -794,6 +826,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // cancels. The handle is parked on `activeTailStream`; subsequent
     // input is ignored by `onEnter` until the stream is torn down.
     if (this.tryStartTailStream(trimmed)) return;
+    if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
     // (`mkdir foo && nano foo/x`). The chain is parsed up to the first

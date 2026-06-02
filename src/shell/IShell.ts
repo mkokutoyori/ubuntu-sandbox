@@ -150,4 +150,13 @@ export interface IShell extends IShellBase {
 
   /** Release any held resources (file handles, sessions, …). */
   dispose(): void;
+
+  /**
+   * Bind the shell's input broker to a host (the terminal/session). Optional
+   * because the default {@link AbstractShell} already provides a broker
+   * bound to the NULL host until the session calls this. Sessions that
+   * embed a shell MUST call this so interactive prompts (bash read,
+   * Read-Host, confirmation, …) reach the user.
+   */
+  setInputHost?(host: import('./input').InputHost): void;
 }

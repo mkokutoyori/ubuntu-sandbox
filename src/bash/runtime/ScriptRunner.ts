@@ -77,7 +77,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/ast/types').Command>,
 ): ScriptResult {
@@ -99,6 +99,7 @@ export function runScriptContent(
       io,
       pid: identity?.pid,
       ppid: identity?.ppid,
+      initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
     });

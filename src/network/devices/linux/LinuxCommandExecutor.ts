@@ -1316,7 +1316,7 @@ export class LinuxCommandExecutor {
       (argv, env) => this.dispatchFromInterpreter(argv, env),
       initialVars,
       io,
-      { pid: this.shellPid, ppid: this.shellPpid },
+      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
       this.aliases,
       this.functions,
     );
