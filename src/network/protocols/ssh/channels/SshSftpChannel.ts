@@ -8,7 +8,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 7.
  */
 
-import type { TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
 import { AbstractSshChannel } from './AbstractSshChannel';
 import type {
   ISshSftpChannel,

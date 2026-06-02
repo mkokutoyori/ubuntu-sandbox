@@ -14,7 +14,7 @@
  * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 P6.
  */
 
-import type { TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { SshSession } from './session/SshSession';
 import { isOk } from './Result';

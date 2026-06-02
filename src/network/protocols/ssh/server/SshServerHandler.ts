@@ -7,7 +7,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
-import type { TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
 import type { ChannelType } from '../channels/ISshChannel';
 import { isErr, isOk } from '../Result';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';

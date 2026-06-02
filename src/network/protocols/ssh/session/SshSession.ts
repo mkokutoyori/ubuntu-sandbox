@@ -10,7 +10,7 @@
 
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type {
-  TcpConnection,
+  TcpStream as TcpConnection,
   TcpConnector,
 } from '@/network/core/TcpConnection';
 import { AuthChain, createAuthMethods } from '../auth/AuthChain';
