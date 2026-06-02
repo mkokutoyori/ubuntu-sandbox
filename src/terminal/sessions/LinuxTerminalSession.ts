@@ -2697,7 +2697,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (forwards.length === 0) return [];
     const localDevice = this.getLocalDevice() as unknown as
       import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
     const out: SshLocalForwarder[] = [];
@@ -2730,7 +2730,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (forwards.length === 0) return [];
     const localDevice = this.getLocalDevice() as unknown as
       import('@/network/devices/EndHost').EndHost;
-    if (typeof (localDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+    if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
     const out: SshDynamicForwarder[] = [];
@@ -2765,7 +2765,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (forwards.length === 0) return [];
     const remoteDevice = remoteDeviceRaw as unknown as
       import('@/network/devices/EndHost').EndHost;
-    if (typeof (remoteDevice as { listenTcp?: unknown }).listenTcp !== 'function') {
+    if (typeof (remoteDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
     const out: SshRemoteForwarder[] = [];

@@ -7,7 +7,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
-import type { TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
 import type { ChannelType } from '../channels/ISshChannel';
 import { isErr, isOk } from '../Result';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
@@ -79,6 +79,18 @@ export class SshServerHandler {
   private handleConnection(conn: TcpConnection, clientIp: string): void {
     const channels = new Map<number, OpenChannelInfo>();
     let userCtx: SshUserContext | null = null;
+
+    conn.onClose?.((reason) => {
+      channels.clear();
+      this.eventBus.emit({
+        kind: 'client_disconnected',
+        user: userCtx?.username ?? '',
+        ip: clientIp,
+        reason: reason === 'rst' ? 'reset' : 'closed',
+        timestamp: Date.now(),
+      });
+      userCtx = null;
+    });
 
     conn.onData((data) => {
       let parsed: Record<string, unknown>;

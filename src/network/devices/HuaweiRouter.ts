@@ -37,8 +37,14 @@ import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { UDP_PORT_SNMP } from '../snmp/types';
+import { NetFlowAgent } from '../netflow/NetFlowAgent';
+import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
+import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
+import { VxlanAgent } from '../vxlan/VxlanAgent';
+import { UDP_PORT_VXLAN } from '../vxlan/types';
+import { TcpStack } from '../tcp/TcpStack';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
-import { IP_PROTO_UDP } from '../core/types';
+import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 
@@ -54,6 +60,10 @@ export class HuaweiRouter extends Router {
   private readonly radiusServer: RadiusServerAgent;
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
+  private readonly netflowAgent: NetFlowAgent;
+  private readonly tacacsClient: TacacsClientAgent;
+  private readonly tacacsServer: TacacsServerAgent;
+  private readonly vxlanAgent: VxlanAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
     const hostBase = {
@@ -79,6 +89,10 @@ export class HuaweiRouter extends Router {
       getSysDescr: () => `Huawei VRP, ${this.name}`,
       getSysObjectId: () => '1.3.6.1.4.1.2011.2.27',
     }, () => this.getBus());
+    this.netflowAgent = new NetFlowAgent(hostBase, () => this.getBus());
+    this.tacacsClient = new TacacsClientAgent(hostBase, () => this.getBus(), () => this.tcpv2);
+    this.tacacsServer = new TacacsServerAgent(hostBase, () => this.getBus(), () => this.tcpv2);
+    this.vxlanAgent = new VxlanAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
     this.vrrpAgent.start();
     this.ntpAgent.start();
@@ -90,6 +104,10 @@ export class HuaweiRouter extends Router {
     this.radiusServer.start();
     this.greAgent.start();
     this.snmpAgent.start();
+    this.netflowAgent.start();
+    this.tacacsClient.start();
+    this.tacacsServer.start();
+    this.vxlanAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -105,6 +123,10 @@ export class HuaweiRouter extends Router {
     if (this.radiusServer) { this.radiusServer.stop(); this.radiusServer.start(); }
     if (this.greAgent) { this.greAgent.stop(); this.greAgent.start(); }
     if (this.snmpAgent) { this.snmpAgent.stop(); this.snmpAgent.start(); }
+    if (this.netflowAgent) { this.netflowAgent.stop(); this.netflowAgent.start(); }
+    if (this.vxlanAgent) { this.vxlanAgent.stop(); this.vxlanAgent.start(); }
+    if (this.tacacsClient) { this.tacacsClient.stop(); this.tacacsClient.start(); }
+    if (this.tacacsServer) { this.tacacsServer.stop(); this.tacacsServer.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -143,6 +165,10 @@ export class HuaweiRouter extends Router {
       if (udp && udp.type === 'udp'
           && (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP)) {
         this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_VXLAN) {
+        this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
         return;
       }
     }
@@ -190,6 +216,10 @@ export class HuaweiRouter extends Router {
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
+  getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
+  getTacacsClient(): TacacsClientAgent { return this.tacacsClient; }
+  getTacacsServer(): TacacsServerAgent { return this.tacacsServer; }
+  getVxlanAgent(): VxlanAgent { return this.vxlanAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;

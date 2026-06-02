@@ -70,10 +70,10 @@ describe('Router TCP/SSH daemon — packets traverse the simulated wire', () => 
   beforeEach(async () => { lan = await buildLan(); });
 
   it('every router exposes a TCP listener on port 22', () => {
-    const ciscoStack = (lan.cisco as unknown as { tcpStack: { hasListener: (p: number) => boolean } }).tcpStack;
-    const hwStack    = (lan.huawei as unknown as { tcpStack: { hasListener: (p: number) => boolean } }).tcpStack;
-    expect(ciscoStack.hasListener(22)).toBe(true);
-    expect(hwStack.hasListener(22)).toBe(true);
+    const ciscoStack = (lan.cisco as unknown as { getTcpStack: () => { listListeners: () => Array<{ localPort: number }> } }).getTcpStack();
+    const hwStack    = (lan.huawei as unknown as { getTcpStack: () => { listListeners: () => Array<{ localPort: number }> } }).getTcpStack();
+    expect(ciscoStack.listListeners().some(l => l.localPort === 22)).toBe(true);
+    expect(hwStack.listListeners().some(l => l.localPort === 22)).toBe(true);
   });
 
   it('a Linux client completes a TCP 3-way handshake with the Cisco router on port 22', async () => {

@@ -27,7 +27,56 @@ export class PortActivityLogProjection {
     this.subscriptions.push(
       bus.subscribe('linux.port.bound', (e) => this.onBound(e.payload)),
       bus.subscribe('linux.port.released', (e) => this.onReleased(e.payload)),
+      bus.subscribe('tcp.listener.changed', (e) => this.onTcpListenerChanged(e.payload)),
+      bus.subscribe('tcp.connection.opened', (e) => this.onTcpConnectionOpened(e.payload)),
+      bus.subscribe('tcp.connection.closed', (e) => this.onTcpConnectionClosed(e.payload)),
     );
+  }
+
+  private onTcpListenerChanged(p: {
+    deviceId: string; localIp: string; localPort: number; added: boolean;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    const tag = this.tagForPort(p.localPort);
+    this.logManager.logDaemon(
+      tag,
+      p.added
+        ? `Server listening on ${p.localIp} port ${p.localPort}.`
+        : `Closed TCP listening socket ${p.localIp}:${p.localPort}`,
+    );
+  }
+
+  private onTcpConnectionOpened(p: {
+    deviceId: string; remoteIp: string; remotePort: number;
+    localIp: string; localPort: number; passive: boolean;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!p.passive) return;
+    const tag = this.tagForPort(p.localPort);
+    this.logManager.logDaemon(
+      tag,
+      `Accepted connection from ${p.remoteIp}:${p.remotePort} on ${p.localIp}:${p.localPort}`,
+    );
+  }
+
+  private onTcpConnectionClosed(p: {
+    deviceId: string; remoteIp: string; remotePort: number;
+    localIp: string; localPort: number; reason: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    const tag = this.tagForPort(p.localPort);
+    this.logManager.logDaemon(
+      tag,
+      `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`,
+    );
+  }
+
+  private tagForPort(port: number): string {
+    if (port === 22) return 'sshd';
+    if (port === 80 || port === 443) return 'httpd';
+    if (port === 25) return 'smtp';
+    if (port === 21) return 'ftpd';
+    return `tcp-${port}`;
   }
 
   /** Detach every subscription — call before discarding the projection. */

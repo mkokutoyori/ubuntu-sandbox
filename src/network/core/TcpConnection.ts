@@ -16,8 +16,18 @@
 
 import type { TCPPacket } from './types';
 
-/** Callback type that creates a TcpConnection to a remote host:port. */
-export type TcpConnector = (host: string, port: number) => Promise<TcpConnection | null>;
+export interface TcpStream {
+  readonly localIp: string;
+  readonly localPort: number;
+  readonly remoteIp: string;
+  readonly remotePort: number;
+  write(data: string): void;
+  close(): void;
+  onData(handler: (data: string) => void): () => void;
+  onClose?(handler: (reason: string) => void): () => void;
+}
+
+export type TcpConnector = (host: string, port: number) => Promise<TcpStream | null>;
 
 export class TcpConnection {
   private readonly dataHandlers: Array<(data: string) => void> = [];

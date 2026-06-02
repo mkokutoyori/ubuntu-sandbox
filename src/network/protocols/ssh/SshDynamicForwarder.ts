@@ -17,7 +17,7 @@
  *            SSH-IMPLEMENTATION-ANALYSIS.md §5 P6 (suite).
  */
 
-import type { TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { SshSession } from './session/SshSession';
 import { isOk } from './Result';
@@ -61,9 +61,9 @@ export class SshDynamicForwarder {
   /** Idempotent — registering twice is a no-op. */
   register(): void {
     if (this.registered) return;
-    this.localDevice.listenTcp(this.spec.socksPort, (conn) =>
-      this.handleAccept(conn),
-    );
+    this.localDevice.getTcpStack().listen(this.spec.socksPort, {
+      onAccept: (socket) => this.handleAccept(socket),
+    });
     this.registered = true;
   }
 
@@ -73,10 +73,7 @@ export class SshDynamicForwarder {
    */
   dispose(): void {
     if (!this.registered) return;
-    const listeners = (this.localDevice as unknown as {
-      tcpListeners: Map<number, unknown>;
-    }).tcpListeners;
-    listeners.delete(this.spec.socksPort);
+    this.localDevice.getTcpStack().closeListener(this.spec.socksPort);
     this.registered = false;
   }
 
