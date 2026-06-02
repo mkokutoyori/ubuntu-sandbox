@@ -397,15 +397,27 @@ export class PSRegistryProvider {
 
   // ─── Get-PSDrive ──────────────────────────────────────────────────
 
-  getPSDrive(): string {
+  /**
+   * Caller passes the filesystem-mounted drive letters (sorted A→Z) so
+   * the PSDrive listing stays coherent with `vol`, `Get-Volume`, and
+   * the bare `D:`/`E:` cmd drive-switch handler. Hardcoding a fixed
+   * C/D table here caused Get-PSDrive to advertise drives the FS never
+   * created — and to silently omit drives the FS did create.
+   */
+  getPSDrive(fsDriveLetters: readonly string[] = ['C']): string {
+    const fsLines = fsDriveLetters.map((letter) => {
+      const L = letter.toUpperCase();
+      const used = L === 'C' ? '         42.30' : '              ';
+      const free = L === 'C' ? '       157.70' : '             ';
+      return `${L.padEnd(15)}${used}${free} FileSystem    ${L}:\\`;
+    });
     const lines: string[] = [
       '',
       'Name           Used (GB)     Free (GB) Provider      Root',
       '----           ---------     --------- --------      ----',
       'Alias                                  Alias',
-      'C                  42.30        157.70 FileSystem    C:\\',
+      ...fsLines,
       'Cert                                   Certificate   \\',
-      'D                                      FileSystem    D:\\',
       'Env                                    Environment',
       'Function                               Function',
       'HKCU                                   Registry      HKEY_CURRENT_USER',

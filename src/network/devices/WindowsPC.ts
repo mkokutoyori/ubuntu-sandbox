@@ -1564,7 +1564,9 @@ export class WindowsPC extends EndHost {
     if (args.length === 0) return 'wmic:root\\cli>';
     const joined = args.join(' ').toLowerCase();
     if (joined.includes('logicaldisk') && joined.includes('get name')) {
-      return 'Name  \nC:    ';
+      // Mirror real wmic — list every mounted drive, not just C:.
+      const drives = this.fs.listDrives();
+      return ['Name  ', ...drives.map(d => d.padEnd(6))].join('\n');
     }
     if (joined.includes('os get caption')) {
       return 'Caption                              \nMicrosoft Windows 10 Enterprise      ';

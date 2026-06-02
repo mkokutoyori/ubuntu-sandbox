@@ -824,6 +824,20 @@ export class WindowsFileSystem {
   }
 
   /**
+   * Enumerate every drive letter currently mounted on this filesystem,
+   * sorted A→Z. Single source of truth for the volume listings produced
+   * by `vol`, `Get-Volume`, `Get-PSDrive`, `wmic logicaldisk`, and the
+   * future `Get-Disk` table — so a drive seeded via {@link mkdirp} (e.g.
+   * `D:\Data` in init or a runtime mount) appears uniformly everywhere
+   * rather than diverging from a hardcoded vendor table.
+   */
+  listDrives(): string[] {
+    return [...this.drives.keys()]
+      .map((d) => d.replace(/:.*$/, ':').toUpperCase())
+      .sort();
+  }
+
+  /**
    * Volume serial — single source of truth for both `dir` and `vol`.
    * Deterministic per (hostname, drive): realistic (unique per machine)
    * yet stable across runs, and identical no matter which command asks.

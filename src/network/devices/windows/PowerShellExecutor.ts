@@ -2185,9 +2185,11 @@ export class PowerShellExecutor {
       return this.handleRemoveItemProperty(args);
     }
 
-    // Get-PSDrive / gdr
+    // Get-PSDrive / gdr — feed the registry helper the live FS drive
+    // letters so its FileSystem-provider rows match `vol`, Get-Volume,
+    // and the bare cmd drive-switch handler.
     if (cmdLower === 'get-psdrive' || cmdLower === 'gdr') {
-      return this.registry.getPSDrive();
+      return this.registry.getPSDrive(this.device.getFileSystem().listDrives().map(d => d.charAt(0)));
     }
 
     // ─── Event Log Cmdlets ────────────────────────────────────────
@@ -4719,10 +4721,25 @@ export class PowerShellExecutor {
     const params = this.parsePSArgs(args);
     const driveLetter = (params.get('driveletter') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toUpperCase();
 
-    const volumes = [
-      { DriveLetter: 'C', FriendlyName: 'Windows', FileSystem: 'NTFS', DriveType: 'Fixed', HealthStatus: 'Healthy', OperationalStatus: 'OK', SizeRemaining: '15.2 GB', Size: '50.0 GB' },
-      { DriveLetter: 'D', FriendlyName: 'Data',    FileSystem: 'NTFS', DriveType: 'Fixed', HealthStatus: 'Healthy', OperationalStatus: 'OK', SizeRemaining: '45.0 GB', Size: '50.0 GB' },
-    ];
+    // Derive the volume table from the filesystem's actual drives so a
+    // newly-seeded mount (e.g. `mkdirp('E:\\Media')`) shows up here in
+    // addition to `vol` / `dir` / Get-PSDrive. Hardcoded vendor labels
+    // are kept only for the well-known system + data drives; everything
+    // else gets a generic "Local Disk" friendly name like real Windows
+    // displays for an unlabeled volume.
+    const labels: Record<string, string> = { C: 'Windows', D: 'Data' };
+    const volumes = this.device.getFileSystem().listDrives()
+      .map((d) => d.charAt(0))
+      .map((letter) => ({
+        DriveLetter: letter,
+        FriendlyName: labels[letter] ?? 'Local Disk',
+        FileSystem: 'NTFS',
+        DriveType: 'Fixed',
+        HealthStatus: 'Healthy',
+        OperationalStatus: 'OK',
+        SizeRemaining: letter === 'C' ? '15.2 GB' : '45.0 GB',
+        Size: '50.0 GB',
+      }));
 
     let filtered = driveLetter ? volumes.filter(v => v.DriveLetter === driveLetter) : volumes;
     if (driveLetter && filtered.length === 0) return `Get-Volume : No MSFT_Volume objects found with DriveLetter = ${driveLetter}.`;

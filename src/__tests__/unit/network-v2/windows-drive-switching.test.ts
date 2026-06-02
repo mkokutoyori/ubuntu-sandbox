@@ -186,6 +186,155 @@ describe('SSH login as Administrator lands in a directory that exists', () => {
   });
 });
 
+// ─── Volume listings are FS-derived (single source of truth) ────────
+
+describe('Get-Volume / Get-PSDrive / wmic logicaldisk derive from the FS', () => {
+  it('Get-Volume lists exactly the FS-mounted drives, sorted', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const ps = new PowerShellExecutor(pc as any);
+    const out = await ps.execute('Get-Volume');
+    // Both drives the FS seeds at init must appear.
+    expect(out).toMatch(/^C\s/m);
+    expect(out).toMatch(/^D\s/m);
+  });
+
+  it('seeding a new drive via mkdirp makes it visible in Get-Volume', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.getFileSystem().mkdirp('E:\\Media');
+    const ps = new PowerShellExecutor(pc as any);
+    const out = await ps.execute('Get-Volume');
+    expect(out).toMatch(/^E\s/m);
+    // No phantom drive that the FS never created.
+    expect(out).not.toMatch(/^Q\s/m);
+  });
+
+  it('Get-PSDrive FileSystem rows match Get-Volume rows', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.getFileSystem().mkdirp('E:\\');
+    const ps = new PowerShellExecutor(pc as any);
+    const psd = await ps.execute('Get-PSDrive');
+    const vol = await ps.execute('Get-Volume');
+    for (const letter of ['C', 'D', 'E']) {
+      // Volume table — letter as the first padded field on its own row.
+      expect(vol).toMatch(new RegExp(`^${letter}\\s`, 'm'));
+      // PSDrive — letter followed by the FileSystem provider + root.
+      expect(psd).toMatch(new RegExp(`^${letter}\\b.*FileSystem\\s+${letter}:\\\\`, 'm'));
+    }
+  });
+
+  it('wmic logicaldisk get name lists every mounted drive', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.getFileSystem().mkdirp('Z:\\Archive');
+    const out = await pc.executeCommand('wmic logicaldisk get name');
+    for (const letter of ['C:', 'D:', 'Z:']) {
+      expect(out).toContain(letter);
+    }
+  });
+
+  it('listDrives() is the single source of truth (sorted A→Z)', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.getFileSystem().mkdirp('F:\\one');
+    pc.getFileSystem().mkdirp('B:\\two');
+    expect(pc.getFileSystem().listDrives()).toEqual(['B:', 'C:', 'D:', 'F:']);
+  });
+});
+
+// ─── su over SSH (regression lock) ────────────────────────────────────
+
+describe('su over SSH prompts for password and switches user', () => {
+  it('end-to-end: ssh user@host, then su admin → root', async () => {
+    const { LinuxPC: LPC } = await import('@/network/devices/LinuxPC');
+    const { GenericSwitch } = await import('@/network/devices/GenericSwitch');
+    const { Cable } = await import('@/network/hardware/Cable');
+    const { LinuxTerminalSession } = await import('@/terminal/sessions/LinuxTerminalSession');
+    const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
+
+    EquipmentRegistry.resetInstance();
+    const a = new LPC('linux-pc', 'PC1', 0, 0);
+    const b = new LPC('linux-pc', 'PC2', 100, 0);
+    const sw = new GenericSwitch('switch-generic', 'SW1', 8, 50, 50);
+    new Cable('c1').connect(a.getPort('eth0')!, sw.getPort('eth0')!);
+    new Cable('c2').connect(b.getPort('eth0')!, sw.getPort('eth1')!);
+    await a.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+    await b.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+    await a.executeCommand('ping -c 1 10.0.0.2');
+
+    const term = new LinuxTerminalSession('t1', a);
+    const k = (key: string) => ({ key, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
+    const flush = async (n = 8) => { for (let i = 0; i < n; i++) { await Promise.resolve(); await new Promise(r => setTimeout(r, 0)); } };
+    const waitFor = async (p: () => boolean, t = 2000) => {
+      const start = Date.now();
+      while (!p()) { if (Date.now() - start > t) throw new Error('timeout'); await new Promise(r => setTimeout(r, 5)); }
+    };
+
+    term.setInput('ssh user@10.0.0.2'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.currentInputMode.type === 'password');
+    term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.isInsideSshSession);
+
+    // `su` must immediately enter password mode — the prompt is rendered
+    // on the input row (broker path) so the regression check looks at
+    // currentInputMode, not at scrollback.
+    term.setInput('su'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.currentInputMode.type === 'password');
+    expect(term.currentInputMode.type).toBe('password');
+
+    term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.currentInputMode.type === 'normal');
+
+    term.setInput('whoami'); term.handleKey(k('Enter')); await flush(20);
+    const last = term.lines.slice(-6).map(l => l.text);
+    expect(last.some(l => /root/.test(l))).toBe(true);
+  });
+
+  it('end-to-end: wrong su password is rejected', async () => {
+    const { LinuxPC: LPC } = await import('@/network/devices/LinuxPC');
+    const { GenericSwitch } = await import('@/network/devices/GenericSwitch');
+    const { Cable } = await import('@/network/hardware/Cable');
+    const { LinuxTerminalSession } = await import('@/terminal/sessions/LinuxTerminalSession');
+    const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
+
+    EquipmentRegistry.resetInstance();
+    const a = new LPC('linux-pc', 'PC1', 0, 0);
+    const b = new LPC('linux-pc', 'PC2', 100, 0);
+    const sw = new GenericSwitch('switch-generic', 'SW1', 8, 50, 50);
+    new Cable('c1').connect(a.getPort('eth0')!, sw.getPort('eth0')!);
+    new Cable('c2').connect(b.getPort('eth0')!, sw.getPort('eth1')!);
+    await a.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+    await b.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+    await a.executeCommand('ping -c 1 10.0.0.2');
+
+    const term = new LinuxTerminalSession('t1', a);
+    const k = (key: string) => ({ key, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
+    const flush = async (n = 8) => { for (let i = 0; i < n; i++) { await Promise.resolve(); await new Promise(r => setTimeout(r, 0)); } };
+    const waitFor = async (p: () => boolean, t = 2000) => {
+      const start = Date.now();
+      while (!p()) { if (Date.now() - start > t) throw new Error('timeout'); await new Promise(r => setTimeout(r, 5)); }
+    };
+
+    term.setInput('ssh user@10.0.0.2'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.currentInputMode.type === 'password');
+    term.setPasswordBuf('admin'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.isInsideSshSession);
+
+    term.setInput('su'); term.handleKey(k('Enter')); await flush();
+    await waitFor(() => term.currentInputMode.type === 'password');
+    // Feed wrong password — the validation step re-prompts up to
+    // MAX_SU_ATTEMPTS (3) times before giving up.
+    for (let i = 0; i < 4; i++) {
+      if (term.currentInputMode.type !== 'password') break;
+      term.setPasswordBuf('definitely-wrong'); term.handleKey(k('Enter')); await flush();
+    }
+    await waitFor(() => term.currentInputMode.type === 'normal', 3000);
+
+    term.setInput('whoami'); term.handleKey(k('Enter')); await flush(20);
+    // Identity unchanged — still the SSH'd `user`, not root.
+    const last = term.lines.slice(-6).map(l => l.text);
+    expect(last.some(l => /^user$/.test(l))).toBe(true);
+    expect(last.some(l => /^root$/.test(l))).toBe(false);
+  });
+});
+
 // ─── Linux sanity check — `cd` semantics are unchanged ───────────────
 
 describe('LinuxPC cd / pwd remain coherent after the Windows fixes', () => {
