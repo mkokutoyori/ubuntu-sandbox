@@ -148,6 +148,61 @@ export class LoggingConfig {
         this.append('informational', 'lacp',
           `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
+      bus.subscribeWhere('igmp.snooping.member.joined', isOurs, (e) => {
+        const p = e.payload as { vlan?: number; group?: string; portName?: string };
+        this.append('informational', 'igmp_snoop',
+          `Group ${p.group ?? '?'} VLAN ${p.vlan ?? 1} member joined on ${p.portName ?? '?'}`);
+      }),
+      bus.subscribeWhere('igmp.snooping.member.left', isOurs, (e) => {
+        const p = e.payload as { vlan?: number; group?: string; portName?: string };
+        this.append('informational', 'igmp_snoop',
+          `Group ${p.group ?? '?'} VLAN ${p.vlan ?? 1} member left on ${p.portName ?? '?'}`);
+      }),
+      bus.subscribeWhere('igmp.querier.changed', isOurs, (e) => {
+        const p = e.payload as { vlan?: number; newQuerier?: string };
+        this.append('notifications', 'igmp_snoop',
+          `VLAN ${p.vlan ?? 1} querier elected: ${p.newQuerier ?? '?'}`);
+      }),
+      bus.subscribeWhere('vxlan.mac.learned', isOurs, (e) => {
+        const p = e.payload as { vni?: number; mac?: string; vtepIp?: string };
+        this.append('debugging', 'vxlan',
+          `MAC ${p.mac ?? '?'} learned on VNI ${p.vni ?? 0} via VTEP ${p.vtepIp ?? '?'}`);
+      }),
+      bus.subscribeWhere('vtp.db.synced', isOurs, (e) => {
+        const p = e.payload as { domain?: string; revision?: number };
+        this.append('notifications', 'vtp',
+          `Database synced for domain '${p.domain ?? '?'}' (revision ${p.revision ?? 0})`);
+      }),
+      bus.subscribeWhere('udld.state.changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; oldState?: string; newState?: string };
+        this.append('informational', 'udld',
+          `Port ${p.portName ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('tacacs.acct.completed', isOurs, (e) => {
+        const p = e.payload as { username?: string; status?: string; flags?: string };
+        this.append('informational', 'tacacs',
+          `Accounting ${p.flags ?? ''} ${p.status ?? '?'} for ${p.username ?? '?'}`);
+      }),
+      bus.subscribeWhere('glbp.avf.assigned', isOurs, (e) => {
+        const p = e.payload as { iface?: string; group?: number; forwarder?: number; mac?: string };
+        this.append('informational', 'glbp',
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} Fwd ${p.forwarder ?? 0} assigned MAC ${p.mac ?? '?'}`);
+      }),
+      bus.subscribeWhere('pim.mroute.changed', isOurs, (e) => {
+        const p = e.payload as { group?: string; source?: string; iif?: string };
+        this.append('debugging', 'pim',
+          `(${p.source ?? '*'}, ${p.group ?? '*'}) iif ${p.iif ?? '?'}`);
+      }),
+      bus.subscribeWhere('cdp.neighbor.refreshed', isOurs, (e) => {
+        const p = e.payload as { localPort?: string; remoteDeviceId?: string };
+        this.append('debugging', 'cdp',
+          `Neighbor ${p.remoteDeviceId ?? '?'} on ${p.localPort ?? '?'} refreshed`);
+      }),
+      bus.subscribeWhere('lldp.neighbor.refreshed', isOurs, (e) => {
+        const p = e.payload as { localPort?: string; remoteSystemName?: string };
+        this.append('debugging', 'lldp',
+          `Neighbor ${p.remoteSystemName ?? '?'} on ${p.localPort ?? '?'} refreshed`);
+      }),
       bus.subscribeWhere('port.security.violation', isOurs, (e) => {
         const p = e.payload;
         this.append('critical', 'port_security',

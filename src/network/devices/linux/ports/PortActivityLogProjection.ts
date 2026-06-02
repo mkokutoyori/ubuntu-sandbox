@@ -63,7 +63,40 @@ export class PortActivityLogProjection {
       bus.subscribe('host.icmp.echo-failed', (e) => this.onIcmpEchoFailed(e.payload)),
       bus.subscribe('host.lifecycle.transitioned', (e) => this.onLifecycleChanged(e.payload)),
       bus.subscribe('host.identity.changed', (e) => this.onHostnameChanged(e.payload)),
+      bus.subscribe('linux.service.masked', (e) => this.onServiceMasked(e.payload)),
+      bus.subscribe('linux.service.unmasked', (e) => this.onServiceUnmasked(e.payload)),
+      bus.subscribe('linux.process.signalled', (e) => this.onProcessSignalled(e.payload)),
+      bus.subscribe('linux.process.reaped', (e) => this.onProcessReaped(e.payload)),
     );
+  }
+
+  private onServiceMasked(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Created symlink /etc/systemd/system/${p.name}.service → /dev/null.`);
+  }
+
+  private onServiceUnmasked(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Removed /etc/systemd/system/${p.name}.service.`);
+  }
+
+  private onProcessSignalled(p: {
+    deviceId: string; pid: number; comm: string; signal: string; sender?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.comm}[${p.pid}] received signal ${p.signal} from ${p.sender ?? 'unknown'}`);
+  }
+
+  private onProcessReaped(p: {
+    deviceId: string; pid: number; comm: string; exitCode: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (p.exitCode === 0) return;
+    this.logManager.logDaemon('systemd',
+      `${p.comm}[${p.pid}] exited with code ${p.exitCode}`);
   }
 
   private onIcmpEchoFailed(p: { deviceId: string; target?: string; reason?: string }): void {
