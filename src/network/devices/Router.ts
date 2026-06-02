@@ -264,7 +264,6 @@ export abstract class Router extends Equipment {
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus());
-    this.tcpv2.setExternalPortClaim((port) => this.tcpStack.hasListener(port));
     this.tcpv2.start();
     this.getCredentialStore();
     this.mountSshDaemon();
@@ -903,11 +902,7 @@ export abstract class Router extends Equipment {
     }
 
     if (ipPkt.protocol === IP_PROTO_TCP) {
-      if (this.tcpv2.hasInterest(ipPkt, ipPkt.sourceIP)) {
-        this.tcpv2.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-        return;
-      }
-      this.tcpStack.handleSegment(inPort, ipPkt);
+      this.tcpv2.handleIp(inPort, ipPkt.sourceIP, ipPkt);
       return;
     }
 

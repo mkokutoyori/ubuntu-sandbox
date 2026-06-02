@@ -491,7 +491,6 @@ export abstract class EndHost extends Equipment {
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
-    this.tcpv2.setExternalPortClaim((port) => this.tcpListeners.has(port));
     this.tcpv2.start();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
@@ -1088,11 +1087,7 @@ export abstract class EndHost extends Equipment {
       if (ipPkt.protocol === IP_PROTO_ICMP) {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
-        if (this.tcpv2.hasInterest(ipPkt, ipPkt.sourceIP)) {
-          this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
-        } else {
-          this.handleTCP(portName, ipPkt);
-        }
+        this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       }
       return;
     }
