@@ -99,6 +99,31 @@ export class LoggingConfig {
         this.append('informational', 'hsrp',
           `${p.iface ?? 'iface'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
+      bus.subscribeWhere('port.security.violation', isOurs, (e) => {
+        const p = e.payload;
+        this.append('critical', 'port_security',
+          `Security violation occurred, caused by MAC address ${p.mac} on port ${p.portName}.`);
+      }),
+      bus.subscribeWhere('port.security.errdisable.set', isOurs, (e) => {
+        const p = e.payload;
+        this.append('critical', 'pm',
+          `Interface ${p.portName} is err-disabled: psecure-violation`);
+      }),
+      bus.subscribeWhere('bfd.session.changed', isOurs, (e) => {
+        const p = e.payload as { neighbor?: string; iface?: string; oldState?: string; newState?: string };
+        this.append('notifications', 'bfd',
+          `Session to neighbor ${p.neighbor ?? '?'} on ${p.iface ?? '?'} changed state from ${p.oldState ?? '?'} to ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('arp.violation', isOurs, (e) => {
+        const p = e.payload as { iface?: string; senderIp?: string; senderMac?: string; reason?: string };
+        this.append('warnings', 'dai',
+          `DAI: ${p.iface ?? '?'}: Invalid ARP ${p.reason ?? ''} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+      }),
+      bus.subscribeWhere('nat.translation.applied', isOurs, (e) => {
+        const p = e.payload as { protocol?: string; insideLocal?: string; insideGlobal?: string };
+        this.append('debugging', 'nat',
+          `Translation: ${p.protocol ?? 'ip'} ${p.insideLocal ?? '?'} -> ${p.insideGlobal ?? '?'}`);
+      }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as { source: string; level: string; event: string; message: string };

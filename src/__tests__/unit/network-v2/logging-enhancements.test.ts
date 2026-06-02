@@ -36,6 +36,34 @@ describe('Logging — Linux interface link events land in kern.log', () => {
   });
 });
 
+describe('Logging — Cisco port security violation goes to show logging', () => {
+  it('a port-security violation lands as %PORT_SECURITY-2-CRITICAL', async () => {
+    const bus = new EventBus();
+    const r = new CiscoRouter('R');
+    r.setEventBus(bus);
+    await Promise.resolve(r.executeCommand('enable'));
+    await Promise.resolve(r.executeCommand('configure terminal'));
+    await Promise.resolve(r.executeCommand('logging buffered 8000 debugging'));
+    await Promise.resolve(r.executeCommand('end'));
+
+    bus.publish({
+      topic: 'port.security.violation',
+      payload: {
+        deviceId: r.id, portName: 'GigabitEthernet0/0',
+        mac: '00:11:22:33:44:55', mode: 'shutdown', action: 'shutdown',
+      },
+    });
+    bus.publish({
+      topic: 'port.security.errdisable.set',
+      payload: { deviceId: r.id, portName: 'GigabitEthernet0/0', mac: '00:11:22:33:44:55' },
+    });
+
+    const out = await Promise.resolve(r.executeCommand('show logging'));
+    expect(out).toMatch(/%PORT_SECURITY-2-CRITICAL:.+MAC address 00:11:22:33:44:55/);
+    expect(out).toMatch(/%PM-2-CRITICAL:.+err-disabled/);
+  });
+});
+
 describe('Logging — Linux iptables drops appear in /var/log/kern.log', () => {
   it('a dropped INPUT packet writes a netfilter line to kern.log', async () => {
     const bus = new EventBus();
