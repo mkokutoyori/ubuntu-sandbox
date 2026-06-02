@@ -52,9 +52,9 @@ export class SshLocalForwarder {
   /** Idempotent — registering twice is a no-op. */
   register(): void {
     if (this.registered) return;
-    this.localDevice.listenTcp(this.spec.localPort, (conn) =>
-      this.handleAccept(conn),
-    );
+    this.localDevice.getTcpStack().listen(this.spec.localPort, {
+      onAccept: (socket) => this.handleAccept(socket),
+    });
     this.registered = true;
   }
 
@@ -64,12 +64,7 @@ export class SshLocalForwarder {
    */
   dispose(): void {
     if (!this.registered) return;
-    // EndHost.tcpListeners is private but the only mutation API is
-    // listenTcp(...). Reach into it to delete; we own the slot.
-    const listeners = (this.localDevice as unknown as {
-      tcpListeners: Map<number, unknown>;
-    }).tcpListeners;
-    listeners.delete(this.listenerKey);
+    this.localDevice.getTcpStack().closeListener(this.spec.localPort);
     this.registered = false;
   }
 

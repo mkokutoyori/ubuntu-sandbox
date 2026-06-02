@@ -130,7 +130,7 @@ describe('SSH LAN — remote port forwarding (`ssh -R`)', () => {
 });
 
 function isPortListening(device: unknown, port: number): boolean {
-  const listeners = (device as { tcpListeners?: Map<number, unknown> })
-    .tcpListeners;
-  return listeners?.has(port) ?? false;
+  const stack = (device as { getTcpStack?: () => { listListeners: () => Array<{ localPort: number }> } }).getTcpStack?.();
+  if (!stack) return false;
+  return stack.listListeners().some(l => l.localPort === port);
 }

@@ -46,9 +46,9 @@ export class SshRemoteForwarder {
   /** Idempotent — registering twice is a no-op. */
   register(): void {
     if (this.registered) return;
-    this.remoteDevice.listenTcp(this.spec.remotePort, (conn) =>
-      this.handleAccept(conn),
-    );
+    this.remoteDevice.getTcpStack().listen(this.spec.remotePort, {
+      onAccept: (socket) => this.handleAccept(socket),
+    });
     this.registered = true;
   }
 
@@ -58,10 +58,7 @@ export class SshRemoteForwarder {
    */
   dispose(): void {
     if (!this.registered) return;
-    const listeners = (this.remoteDevice as unknown as {
-      tcpListeners: Map<number, unknown>;
-    }).tcpListeners;
-    listeners.delete(this.spec.remotePort);
+    this.remoteDevice.getTcpStack().closeListener(this.spec.remotePort);
     this.registered = false;
   }
 
