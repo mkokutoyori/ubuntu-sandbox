@@ -31,7 +31,49 @@ export class PortActivityLogProjection {
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpConnectionOpened(e.payload)),
       bus.subscribe('tcp.connection.closed', (e) => this.onTcpConnectionClosed(e.payload)),
       bus.subscribe('tcp.segment.dropped', (e) => this.onTcpSegmentDropped(e.payload)),
+      bus.subscribe('port.link.up', (e) => this.onLinkUp(e.payload)),
+      bus.subscribe('port.link.down', (e) => this.onLinkDown(e.payload)),
+      bus.subscribe('dhcp.lease.granted', (e) => this.onDhcpGranted(e.payload)),
+      bus.subscribe('dhcp.lease.renewing', (e) => this.onDhcpRenewing(e.payload)),
+      bus.subscribe('dhcp.lease.expired', (e) => this.onDhcpExpired(e.payload)),
     );
+  }
+
+  private onLinkUp(p: { deviceId: string; portName: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: Link is Up - 1000 Mbps Full Duplex`);
+  }
+
+  private onLinkDown(p: { deviceId: string; portName: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: Link is Down`);
+  }
+
+  private onDhcpGranted(p: {
+    deviceId: string; iface?: string; ip?: string; leaseTimeSec?: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    const renewIn = p.leaseTimeSec ? Math.floor(p.leaseTimeSec / 2) : 0;
+    this.logManager.logDaemon('dhclient',
+      `bound to ${p.ip ?? '?'} -- renewal in ${renewIn} seconds.`);
+  }
+
+  private onDhcpRenewing(p: {
+    deviceId: string; iface?: string; ip?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `DHCPREQUEST for ${p.ip ?? '?'} on ${p.iface ?? 'unknown'}`);
+  }
+
+  private onDhcpExpired(p: {
+    deviceId: string; iface?: string; ip?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `lease ${p.ip ?? '?'} on ${p.iface ?? 'unknown'} expired`);
   }
 
   private onTcpSegmentDropped(p: {

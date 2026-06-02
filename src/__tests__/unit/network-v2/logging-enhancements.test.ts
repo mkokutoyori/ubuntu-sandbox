@@ -18,6 +18,24 @@ beforeEach(() => {
   Logger.reset();
 });
 
+describe('Logging — Linux interface link events land in kern.log', () => {
+  it('toggling a port link writes Up/Down lines to /var/log/kern.log', async () => {
+    const bus = new EventBus();
+    const srv = new LinuxServer('linux-server', 'SRV');
+    srv.setEventBus(bus);
+    srv.powerOn();
+
+    const port = srv.getPort('eth0')!;
+    port.setUp(false);
+    port.setUp(true);
+    port.setUp(false);
+
+    const kern = await srv.executeCommand('cat /var/log/kern.log');
+    expect(kern).toMatch(/kernel.+eth0: Link is Up/);
+    expect(kern).toMatch(/kernel.+eth0: Link is Down/);
+  });
+});
+
 describe('Logging — Linux iptables drops appear in /var/log/kern.log', () => {
   it('a dropped INPUT packet writes a netfilter line to kern.log', async () => {
     const bus = new EventBus();
@@ -128,6 +146,25 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('display logbuffer'));
     expect(out).toMatch(/%01SSH\/5\/NOTIFICATIONS:.+AUTHENTICATION.+from 10\.0\.0\.1/);
+  });
+
+  it('Cisco show logging captures interface link up/down as %LINK-3', async () => {
+    const bus = new EventBus();
+    const r = new CiscoRouter('R');
+    r.setEventBus(bus);
+    await Promise.resolve(r.executeCommand('enable'));
+    await Promise.resolve(r.executeCommand('configure terminal'));
+    await Promise.resolve(r.executeCommand('logging buffered 8000 debugging'));
+    await Promise.resolve(r.executeCommand('end'));
+
+    const port = r.getPort('GigabitEthernet0/0')!;
+    port.setUp(false);
+    port.setUp(true);
+    port.setUp(false);
+
+    const out = await Promise.resolve(r.executeCommand('show logging'));
+    expect(out).toMatch(/%LINK-3-ERRORS:.+GigabitEthernet0\/0.+state to up/);
+    expect(out).toMatch(/%LINK-3-ERRORS:.+GigabitEthernet0\/0.+state to down/);
   });
 
   it('a TCP segment dropped for no-listener lands as a warning', async () => {

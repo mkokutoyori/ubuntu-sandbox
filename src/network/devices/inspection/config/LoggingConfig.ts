@@ -79,6 +79,26 @@ export class LoggingConfig {
             ? `TCP listener bound to ${p.localIp}:${p.localPort}`
             : `TCP listener closed on ${p.localIp}:${p.localPort}`);
       }),
+      bus.subscribeWhere('port.link.up', isOurs, (e) => {
+        const p = e.payload;
+        this.append('errors', 'link',
+          `Interface ${p.portName}, changed state to up`);
+      }),
+      bus.subscribeWhere('port.link.down', isOurs, (e) => {
+        const p = e.payload;
+        this.append('errors', 'link',
+          `Interface ${p.portName}, changed state to down`);
+      }),
+      bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
+        const p = e.payload;
+        this.append('notifications', 'ospf',
+          `Process ${p.processId}, Nbr ${p.neighborId} on ${p.iface} from ${p.oldState} to ${p.newState}, ${p.event}`);
+      }),
+      bus.subscribeWhere('hsrp.active.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; group?: number; oldState?: string; newState?: string };
+        this.append('informational', 'hsrp',
+          `${p.iface ?? 'iface'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as { source: string; level: string; event: string; message: string };

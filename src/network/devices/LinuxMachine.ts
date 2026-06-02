@@ -175,6 +175,11 @@ export abstract class LinuxMachine extends EndHost {
    * `free`, `nproc` and the procfs stay coherent with `getHardware()` — the
    * executor holds its own reference and would otherwise keep the old spec.
    */
+  override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
+    super.setEventBus(bus);
+    this.executor.attachEventBus(this.getBus(), this.id);
+  }
+
   override setHardware(profile: HardwareProfile): void {
     super.setHardware(profile);
     this.executor.setHardware(profile);
