@@ -246,6 +246,31 @@ export class LoggingConfig {
         this.append('warnings', 'dai',
           `ARP rate-limit exceeded on ${p.portName ?? '?'} (${p.rate ?? 0} pkts/s)`);
       }),
+      bus.subscribeWhere('dhcp.pool.lease-allocated', isOurs, (e) => {
+        const p = e.payload as { ip?: string; mac?: string; pool?: string };
+        this.append('informational', 'dhcpd',
+          `Assigned ${p.ip ?? '?'} to ${p.mac ?? '?'} from pool ${p.pool ?? '?'}`);
+      }),
+      bus.subscribeWhere('dhcp.pool.lease-released', isOurs, (e) => {
+        const p = e.payload as { ip?: string; mac?: string };
+        this.append('informational', 'dhcpd',
+          `Released ${p.ip ?? '?'} from ${p.mac ?? '?'}`);
+      }),
+      bus.subscribeWhere('dhcp.address-conflict', isOurs, (e) => {
+        const p = e.payload as { ip?: string };
+        this.append('warnings', 'dhcp',
+          `Address conflict detected for ${p.ip ?? '?'} — sending DECLINE`);
+      }),
+      bus.subscribeWhere('dhcp.nak.received', isOurs, (e) => {
+        const p = e.payload as { serverIp?: string };
+        this.append('warnings', 'dhcp',
+          `DHCPNAK received from ${p.serverIp ?? '?'}`);
+      }),
+      bus.subscribeWhere('dhcp.lease.expired', isOurs, (e) => {
+        const p = e.payload as { iface?: string; ip?: string };
+        this.append('warnings', 'dhcp',
+          `Lease on ${p.iface ?? '?'} expired (${p.ip ?? '?'})`);
+      }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as { source: string; level: string; event: string; message: string };

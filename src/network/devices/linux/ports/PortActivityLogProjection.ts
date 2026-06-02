@@ -51,7 +51,39 @@ export class PortActivityLogProjection {
       bus.subscribe('ipsec.ike.sa-installed', (e) => this.onIpsecIkeUp(e.payload)),
       bus.subscribe('ipsec.ike.sa-deleted', (e) => this.onIpsecIkeDown(e.payload)),
       bus.subscribe('ipsec.dpd.peer-down', (e) => this.onIpsecDpdDown(e.payload)),
+      bus.subscribe('dhcp.pool.lease-allocated', (e) => this.onDhcpdAllocated(e.payload)),
+      bus.subscribe('dhcp.pool.lease-released', (e) => this.onDhcpdReleased(e.payload)),
+      bus.subscribe('dhcp.address-conflict', (e) => this.onDhcpConflict(e.payload)),
+      bus.subscribe('dhcp.nak.received', (e) => this.onDhcpNak(e.payload)),
     );
+  }
+
+  private onDhcpdAllocated(p: {
+    deviceId: string; ip?: string; mac?: string; pool?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhcpd',
+      `DHCPACK on ${p.ip ?? '?'} to ${p.mac ?? '?'} via pool ${p.pool ?? '?'}`);
+  }
+
+  private onDhcpdReleased(p: {
+    deviceId: string; ip?: string; mac?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhcpd',
+      `DHCPRELEASE of ${p.ip ?? '?'} from ${p.mac ?? '?'}`);
+  }
+
+  private onDhcpConflict(p: { deviceId: string; ip?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `Address ${p.ip ?? '?'} already in use — declining lease`);
+  }
+
+  private onDhcpNak(p: { deviceId: string; serverIp?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `DHCPNAK from ${p.serverIp ?? '?'} — restarting discovery`);
   }
 
   private onNtpSynced(p: { deviceId: string; server?: string; stratum?: number; offsetMs?: number }): void {
