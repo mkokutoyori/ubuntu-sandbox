@@ -43,9 +43,7 @@ import { CommandAliasTable } from './router/cli/CommandAliasTable';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
-import { TcpServerStack, type TcpRoute } from './tcp/TcpServerStack';
 import { TcpStack } from '../tcp/TcpStack';
-import type { TcpConnection } from '@/network/core/TcpConnection';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
@@ -255,7 +253,6 @@ export abstract class Router extends Equipment {
     });
     this.createPorts();
     this._setupPortMonitoring();
-    this.tcpStack = this.buildTcpServerStack();
     const tcpHost = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
@@ -305,69 +302,8 @@ export abstract class Router extends Equipment {
     return new SshServerHandler(ctx);
   }
 
-  // ── TCP server plane (so SSH/SFTP can travel through the wire) ─────
-
-  protected readonly tcpStack: TcpServerStack;
   protected readonly tcpv2: TcpStack;
   public getTcpStack(): TcpStack { return this.tcpv2; }
-
-  private buildTcpServerStack(): TcpServerStack {
-    return new TcpServerStack({
-      getPortIp: (portName: string) => this.ports.get(portName)?.getIPAddress() ?? null,
-      resolveRoute: (dst: IPAddress): TcpRoute | null => {
-        // Replies travel back the way they came: the inbound port is
-        // implicitly known to the caller of TcpServerStack.handleSegment.
-        // Synthesize a route by scanning every port whose subnet contains
-        // the destination — the LAN case the cross-vendor SSH suite uses.
-        for (const [name, port] of this.ports) {
-          const ip = port.getIPAddress();
-          const mask = port.getSubnetMask();
-          if (!ip || !mask) continue;
-          if ((dst.toUint32() & mask.toUint32()) === (ip.toUint32() & mask.toUint32())) {
-            return { iface: name, nextHopIP: dst, port };
-          }
-        }
-        // Fallback: the first up port with an IP.
-        for (const [name, port] of this.ports) {
-          const ip = port.getIPAddress();
-          if (ip && port.getIsUp()) return { iface: name, nextHopIP: dst, port };
-        }
-        return null;
-      },
-      sendTcpFrame: (srcIp: IPAddress, dstIp: IPAddress, route: TcpRoute, seg: TCPPacket) => {
-        const tcpPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_TCP, this.defaultTTL, seg, 40);
-        const targetMac = this.arpTable.get(dstIp.toString());
-        const port = this.ports.get(route.iface);
-        if (!port) return;
-        if (!targetMac) {
-          // No ARP entry — the cross-vendor SSH suite pings first, so
-          // this only fires when the remote disappeared between SYN and
-          // reply; drop silently rather than throw mid-handshake.
-          return;
-        }
-        this.sendFrame(route.iface, {
-          srcMAC: port.getMAC(),
-          dstMAC: targetMac.mac,
-          etherType: ETHERTYPE_IPV4,
-          payload: tcpPkt,
-        });
-      },
-    });
-  }
-
-  /**
-   * Register a passive TCP listener (cross-vendor SSHd, future Telnet /
-   * REST API / NETCONF, …). The handler is invoked synchronously after
-   * the SYN-ACK is sent so it can register `onData()` before the
-   * client's first segment arrives.
-   */
-  public listenTcp(port: number, handler: (conn: TcpConnection) => void): void {
-    this.tcpStack.listen(port, handler);
-  }
-
-  public unlistenTcp(port: number): boolean {
-    return this.tcpStack.unlisten(port);
-  }
 
   private createPorts(): void {
     const portCount = 4;
