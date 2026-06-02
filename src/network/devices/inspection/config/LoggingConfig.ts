@@ -352,6 +352,32 @@ export class LoggingConfig {
         this.append('informational', 'ssh',
           `Session closed for '${p.username ?? '?'}' on ${p.vty ?? 'vty'}`);
       }),
+      bus.subscribeWhere('dtp.mode.changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; oldMode?: string; newMode?: string };
+        this.append('informational', 'dtp',
+          `${p.portName ?? '?'}: trunk negotiation mode ${p.oldMode ?? '?'} -> ${p.newMode ?? '?'}`);
+      }),
+      bus.subscribeWhere('stp.state.changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; vlan?: number; oldState?: string; newState?: string };
+        this.append('informational', 'spantree',
+          `Port ${p.portName ?? '?'} VLAN ${p.vlan ?? 1} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
+        const p = e.payload as { portName?: string; blocked?: boolean };
+        this.append('warnings', 'spantree',
+          `Root-guard ${p.blocked ? 'blocked' : 'unblocked'} on ${p.portName ?? '?'}`);
+      }),
+      bus.subscribe('cable.duplex-mismatch', (e) => {
+        const p = e.payload as {
+          portA?: { deviceId?: string; portName?: string };
+          portB?: { deviceId?: string; portName?: string };
+        };
+        const sideA = p.portA?.deviceId === deviceId ? p.portA?.portName : null;
+        const sideB = p.portB?.deviceId === deviceId ? p.portB?.portName : null;
+        const ours = sideA ?? sideB;
+        if (!ours) return;
+        this.append('warnings', 'cdp', `Duplex mismatch detected on ${ours}`);
+      }),
     ];
     const logHandler = (e: { payload: unknown }): void => {
       const p = e.payload as { source: string; level: string; event: string; message: string };
