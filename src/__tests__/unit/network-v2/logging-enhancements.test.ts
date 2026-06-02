@@ -3,6 +3,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
@@ -57,7 +58,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
     expect(out).toContain('Log Buffer');
-    expect(out).toMatch(/%SEC_LOGIN-6.+connection from 10\.0\.0\.1:\d+ accepted on port 22/);
+    expect(out).toMatch(/%SSH-5-NOTIFICATIONS:.+AUTHENTICATION.+from 10\.0\.0\.1:\d+ accepted on port 22/);
   });
 
   it('an inbound ACL deny on TCP lands in the show-logging buffer', async () => {
@@ -111,6 +112,22 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
       e.message.includes('Filter: Block-22') &&
       e.message.includes('10.0.0.2:22'),
     )).toBe(true);
+  });
+
+  it('Huawei `display logbuffer` renders SSH/AUTHENTICATION dynamically', async () => {
+    const bus = new EventBus();
+    const cli = new HuaweiRouter('CLI');
+    const srv = new HuaweiRouter('SRV');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
+    new Cable('a').connect(cli.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('b').connect(srv.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    cli.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    srv.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+
+    cli.getTcpStack().connect('10.0.0.2', 22);
+    const out = await Promise.resolve(srv.executeCommand('display logbuffer'));
+    expect(out).toMatch(/%01SSH\/5\/NOTIFICATIONS:.+AUTHENTICATION.+from 10\.0\.0\.1/);
   });
 
   it('a TCP segment dropped for no-listener lands as a warning', async () => {

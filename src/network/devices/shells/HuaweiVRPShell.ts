@@ -20,6 +20,7 @@
 
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
+import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
@@ -72,6 +73,10 @@ import {
 } from './huawei/HuaweiNATCommands';
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext {
+  readonly logging = new LoggingConfig();
+  attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
+    this.logging.attachToBus(bus, deviceId);
+  }
   private mode: HuaweiShellMode | string = 'user';
   private selectedInterface: string | null = null;
   private selectedPool: string | null = null;
@@ -250,6 +255,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   isDhcpEnabled(): boolean { return this.dhcpEnabled; }
   isDhcpSnoopingEnabled(): boolean { return this.dhcpSnoopingEnabled; }
+  renderLogbuffer(): string { return this.logging.renderHuawei(); }
 
   // ─── Prompt Generation ─────────────────────────────────────────────
 

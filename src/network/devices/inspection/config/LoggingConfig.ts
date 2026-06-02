@@ -56,8 +56,11 @@ export class LoggingConfig {
       bus.subscribeWhere('tcp.connection.opened', isOurs, (e) => {
         const p = e.payload;
         if (!p.passive) return;
-        this.append('informational', 'sec_login',
-          `Login accepted: connection from ${p.remoteIp}:${p.remotePort} accepted on port ${p.localPort}`);
+        const tag = p.localPort === 22 ? 'ssh' : 'sec_login';
+        const msg = p.localPort === 22
+          ? `AUTHENTICATION: SSH connection from ${p.remoteIp}:${p.remotePort} accepted on port 22 (stelnet)`
+          : `Login accepted: connection from ${p.remoteIp}:${p.remotePort} accepted on port ${p.localPort}`;
+        this.append('notifications', tag, msg);
       }),
       bus.subscribeWhere('tcp.connection.closed', isOurs, (e) => {
         const p = e.payload;
@@ -188,6 +191,28 @@ export class LoggingConfig {
         const stamp = `${date.toISOString().slice(5, 19).replace('T', ' ')}`;
         lines.push(`${stamp}: %${m.tag.toUpperCase()}-${sevNum}-${m.severity.toUpperCase()}: ${m.text}`);
       }
+    }
+    return lines.join('\n');
+  }
+
+  renderHuawei(): string {
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const lines = [
+      `Logging buffer configuration and contents: ${this.enabled ? 'enabled' : 'disabled'}`,
+      `Allowed max buffer size : ${this.bufferedSize}`,
+      `Actual buffer size : ${this.bufferedSize}`,
+      'Channel number : 4 , Channel name : logbuffer',
+      'Dropped messages : 0',
+      'Overwritten messages : 0',
+      `Current messages : ${this.messages.length}`,
+    ];
+    for (const m of this.messages) {
+      const d = new Date(m.ts);
+      const stamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+        `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+      const sevNum = this.SEVERITY_ORDER[m.severity];
+      const tag = m.tag.toUpperCase();
+      lines.push(`${stamp} %01${tag}/${sevNum}/${m.severity.toUpperCase()}: ${m.text}`);
     }
     return lines.join('\n');
   }
