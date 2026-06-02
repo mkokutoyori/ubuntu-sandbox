@@ -60,7 +60,32 @@ export class PortActivityLogProjection {
       bus.subscribe('cable.disconnected', (e) => this.onCableDisconnected(e.payload)),
       bus.subscribe('cable.connected', (e) => this.onCableConnected(e.payload)),
       bus.subscribe('dhcp.client.state-changed', (e) => this.onDhcpClientState(e.payload)),
+      bus.subscribe('host.icmp.echo-failed', (e) => this.onIcmpEchoFailed(e.payload)),
+      bus.subscribe('host.lifecycle.transitioned', (e) => this.onLifecycleChanged(e.payload)),
+      bus.subscribe('host.identity.changed', (e) => this.onHostnameChanged(e.payload)),
     );
+  }
+
+  private onIcmpEchoFailed(p: { deviceId: string; target?: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `ICMP echo to ${p.target ?? '?'} failed (${p.reason ?? 'no response'})`);
+  }
+
+  private onLifecycleChanged(p: {
+    deviceId: string; oldState?: string; newState?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logSystemd('systemd',
+      `Reached lifecycle state ${p.newState ?? '?'} (was ${p.oldState ?? '?'}).`);
+  }
+
+  private onHostnameChanged(p: {
+    deviceId: string; oldHostname?: string; newHostname?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemd-hostnamed',
+      `Hostname set to <${p.newHostname ?? '?'}> (was <${p.oldHostname ?? '?'}>)`);
   }
 
   private onIpv6Added(p: { deviceId: string; portName: string; ipv6?: string }): void {

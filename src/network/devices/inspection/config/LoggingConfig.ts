@@ -113,6 +113,26 @@ export class LoggingConfig {
         this.append('informational', 'hsrp',
           `${p.iface ?? 'iface'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
       }),
+      bus.subscribeWhere('hsrp.state.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; group?: number; oldState?: string; newState?: string };
+        this.append('notifications', 'hsrp',
+          `${p.iface ?? '?'} Grp ${p.group ?? 0} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('lldp.config.changed', isOurs, (e) => {
+        const p = e.payload as { enabled?: boolean };
+        this.append('informational', 'lldp',
+          `LLDP ${p.enabled ? 'enabled' : 'disabled'}`);
+      }),
+      bus.subscribeWhere('cdp.config.changed', isOurs, (e) => {
+        const p = e.payload as { enabled?: boolean };
+        this.append('informational', 'cdp',
+          `CDP ${p.enabled ? 'enabled' : 'disabled'}`);
+      }),
+      bus.subscribeWhere('host.icmp.echo-failed', isOurs, (e) => {
+        const p = e.payload as { target?: string; reason?: string };
+        this.append('warnings', 'icmp',
+          `Echo to ${p.target ?? '?'} failed: ${p.reason ?? 'no response'}`);
+      }),
       bus.subscribeWhere('port.security.violation', isOurs, (e) => {
         const p = e.payload;
         this.append('critical', 'port_security',
