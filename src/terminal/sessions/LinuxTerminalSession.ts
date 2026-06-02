@@ -455,6 +455,10 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    if (this.inputHostImpl.hasPendingRequest()
+        && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
+      return this.inputMode;
+    }
     // Reactive SSH IO takes priority: the SSH layer is waiting for user input
     // (password or host-key confirmation). inputMode is set by the IO adapter's
     // beginPrompt(), so just returning it is enough — but we gate here first so

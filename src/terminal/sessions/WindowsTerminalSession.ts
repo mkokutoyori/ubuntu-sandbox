@@ -176,6 +176,10 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   override get currentInputMode(): InputMode {
+    if (this.inputHostImpl.hasPendingRequest()
+        && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
+      return this.inputMode;
+    }
     // A sub-shell that asked for a password challenge takes priority over
     // the normal interactive-text input — the host must mask keystrokes.
     if (this.activeSubShell && this.subShellPendingInput) {
@@ -205,6 +209,10 @@ export class WindowsTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.inputHostImpl.hasPendingRequest()) {
+      if (this.handleBrokerKey(e)) return true;
+    }
 
     // SSH password challenge — when an `ssh user@host` push is waiting
     // for the password, every keystroke routes through the password
@@ -783,6 +791,7 @@ export class WindowsTerminalSession extends TerminalSession {
       cwd: this.shell?.cwd,
       extras: { windowsSession: this.shell },
     });
+    shell.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(shell);
 
     if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
@@ -809,6 +818,7 @@ export class WindowsTerminalSession extends TerminalSession {
       cwd: this.shell?.cwd,
       extras: { windowsSession: this.shell },
     });
+    shell.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(shell);
 
     if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
@@ -855,6 +865,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   private pushChildShell(child: IShell): void {
+    child.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(child);
     if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
     this.activeSubShell = adapter;

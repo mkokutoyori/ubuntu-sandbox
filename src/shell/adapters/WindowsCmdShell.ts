@@ -145,6 +145,11 @@ export class WindowsCmdShell extends AbstractShell {
           || sshAttempt.kind === 'exec') {
         return sshAttempt.result;
       }
+      const brokerResult = await this.runSshAuthViaBroker(
+        sshAttempt.pendingAuth,
+        parseSshExecCommandCmd(line),
+      );
+      if (brokerResult) return brokerResult;
       this.pendingSshAuth = sshAttempt.pendingAuth;
       this.pendingExecCommand = parseSshExecCommandCmd(line);
       return sshAttempt.result;
@@ -179,6 +184,31 @@ export class WindowsCmdShell extends AbstractShell {
   private splitOutput(s: string): string[] {
     if (s === '' || s == null) return [];
     return s.replace(/\n+$/, '').split('\n');
+  }
+
+  private async runSshAuthViaBroker(
+    auth: PendingSshAuth,
+    execCmd: string | null,
+  ): Promise<ShellLineResult | null> {
+    if (!this.input.capabilities().interactive) return null;
+    const promptText = `${auth.user}@${auth.host}'s password: `;
+    for (;;) {
+      const pw = await this.input.password(promptText);
+      if (pw === null) return { output: [] };
+      const finalised = finalisePendingAuth(auth, pw);
+      if (finalised) {
+        if (execCmd !== null) {
+          const lines = await runSshExec(auth, execCmd);
+          finalised.shell.dispose();
+          return { output: [...finalised.banner, ...lines] };
+        }
+        return { output: [...finalised.banner], childShell: finalised.shell };
+      }
+      if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+        return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
+      }
+      this.input.emit('Permission denied, please try again.');
+    }
   }
 
   async handleInput(value: string): Promise<ShellLineResult> {
