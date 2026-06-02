@@ -55,7 +55,54 @@ export class PortActivityLogProjection {
       bus.subscribe('dhcp.pool.lease-released', (e) => this.onDhcpdReleased(e.payload)),
       bus.subscribe('dhcp.address-conflict', (e) => this.onDhcpConflict(e.payload)),
       bus.subscribe('dhcp.nak.received', (e) => this.onDhcpNak(e.payload)),
+      bus.subscribe('port.config.ipv6-added', (e) => this.onIpv6Added(e.payload)),
+      bus.subscribe('port.config.ipv6-removed', (e) => this.onIpv6Removed(e.payload)),
+      bus.subscribe('cable.disconnected', (e) => this.onCableDisconnected(e.payload)),
+      bus.subscribe('cable.connected', (e) => this.onCableConnected(e.payload)),
+      bus.subscribe('dhcp.client.state-changed', (e) => this.onDhcpClientState(e.payload)),
     );
+  }
+
+  private onIpv6Added(p: { deviceId: string; portName: string; ipv6?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: IPv6 address ${p.ipv6 ?? '?'} assigned`);
+  }
+
+  private onIpv6Removed(p: { deviceId: string; portName: string; ipv6?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: IPv6 address ${p.ipv6 ?? '?'} removed`);
+  }
+
+  private onCableConnected(p: {
+    portA?: { deviceId?: string; portName?: string };
+    portB?: { deviceId?: string; portName?: string };
+  }): void {
+    const ours = p.portA?.deviceId === this.deviceId ? p.portA?.portName
+               : p.portB?.deviceId === this.deviceId ? p.portB?.portName
+               : null;
+    if (!ours) return;
+    this.logManager.logKernel('kernel', `${ours}: cable connected`);
+  }
+
+  private onCableDisconnected(p: {
+    portA?: { deviceId?: string; portName?: string };
+    portB?: { deviceId?: string; portName?: string };
+  }): void {
+    const ours = p.portA?.deviceId === this.deviceId ? p.portA?.portName
+               : p.portB?.deviceId === this.deviceId ? p.portB?.portName
+               : null;
+    if (!ours) return;
+    this.logManager.logKernel('kernel', `${ours}: cable disconnected`);
+  }
+
+  private onDhcpClientState(p: {
+    deviceId: string; iface?: string; oldState?: string; newState?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `${p.iface ?? '?'}: state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
   }
 
   private onDhcpdAllocated(p: {

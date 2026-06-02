@@ -484,6 +484,59 @@ export class LoggingConfig {
         this.append('debugging', 'port_security',
           `MAC ${p.mac ?? '?'} aged out on ${p.portName ?? '?'}`);
       }),
+      bus.subscribeWhere('port.security.errdisable.cleared', isOurs, (e) => {
+        const p = e.payload as { portName?: string };
+        this.append('informational', 'pm',
+          `Interface ${p.portName ?? '?'} recovered from err-disabled state`);
+      }),
+      bus.subscribeWhere('port.security.sticky-saved', isOurs, (e) => {
+        const p = e.payload as { portName?: string; count?: number };
+        this.append('informational', 'port_security',
+          `Sticky MAC addresses saved on ${p.portName ?? '?'} (${p.count ?? 0} entries)`);
+      }),
+      bus.subscribeWhere('arp.errdisable.set', isOurs, (e) => {
+        const p = e.payload as { portName?: string; reason?: string };
+        this.append('errors', 'dai',
+          `Port ${p.portName ?? '?'} err-disabled (${p.reason ?? 'DAI violation'})`);
+      }),
+      bus.subscribeWhere('arp.errdisable.cleared', isOurs, (e) => {
+        const p = e.payload as { portName?: string };
+        this.append('informational', 'dai',
+          `Port ${p.portName ?? '?'} cleared from err-disabled`);
+      }),
+      bus.subscribeWhere('pim.dr.changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; newDr?: string };
+        this.append('notifications', 'pim',
+          `Designated Router on ${p.iface ?? '?'} is now ${p.newDr ?? '?'}`);
+      }),
+      bus.subscribeWhere('gre.packet.dropped', isOurs, (e) => {
+        const p = e.payload as { tunnelName?: string; reason?: string };
+        this.append('warnings', 'gre',
+          `Dropped packet on tunnel ${p.tunnelName ?? '?'} (${p.reason ?? '?'})`);
+      }),
+      bus.subscribeWhere('dhcp.client.state-changed', isOurs, (e) => {
+        const p = e.payload as { iface?: string; oldState?: string; newState?: string };
+        this.append('debugging', 'dhcp',
+          `Client ${p.iface ?? '?'} state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('dhcp.reservation.added', isOurs, (e) => {
+        const p = e.payload as { ip?: string; mac?: string; pool?: string };
+        this.append('informational', 'dhcpd',
+          `Reservation added: ${p.ip ?? '?'} for ${p.mac ?? '?'} (pool ${p.pool ?? '?'})`);
+      }),
+      bus.subscribeWhere('cable.connected', () => undefined),
+      bus.subscribe('cable.disconnected', (e) => {
+        const p = e.payload as {
+          portA?: { deviceId?: string; portName?: string };
+          portB?: { deviceId?: string; portName?: string };
+        };
+        const sideA = p.portA?.deviceId === deviceId ? p.portA?.portName : null;
+        const sideB = p.portB?.deviceId === deviceId ? p.portB?.portName : null;
+        const ours = sideA ?? sideB;
+        if (!ours) return;
+        this.append('errors', 'link',
+          `Cable disconnected from ${ours}`);
+      }),
       bus.subscribe('cable.duplex-mismatch', (e) => {
         const p = e.payload as {
           portA?: { deviceId?: string; portName?: string };
