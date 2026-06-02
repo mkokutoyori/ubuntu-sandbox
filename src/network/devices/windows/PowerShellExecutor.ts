@@ -2186,10 +2186,21 @@ export class PowerShellExecutor {
     }
 
     // Get-PSDrive / gdr — feed the registry helper the live FS drive
-    // letters so its FileSystem-provider rows match `vol`, Get-Volume,
-    // and the bare cmd drive-switch handler.
+    // letters + actual used/free sizes so its FileSystem-provider rows
+    // match `vol`, Get-Volume, `dir`'s "bytes free" line, and the bare
+    // cmd drive-switch handler.
     if (cmdLower === 'get-psdrive' || cmdLower === 'gdr') {
-      return this.registry.getPSDrive(this.device.getFileSystem().listDrives().map(d => d.charAt(0)));
+      const fs = this.device.getFileSystem();
+      const bytesToGB = (n: number) => n / 1_073_741_824;
+      const drives = fs.listDrives().map(d => {
+        const letter = d.charAt(0);
+        return {
+          letter,
+          usedGB: bytesToGB(fs.getUsedSpace(letter)),
+          freeGB: bytesToGB(fs.getFreeDiskSpace(letter)),
+        };
+      });
+      return this.registry.getPSDrive(drives);
     }
 
     // ─── Event Log Cmdlets ────────────────────────────────────────
@@ -4656,9 +4667,34 @@ export class PowerShellExecutor {
     return '';
   }
 
-  private readonly DISKS = [
-    { Number: 0, FriendlyName: 'Microsoft Virtual Disk', UniqueId: '{00000000-0000-0000-0000-000000000001}', SerialNumber: '', OperationalStatus: 'Online', TotalSize: '50 GB', PartitionStyle: 'MBR', IsBoot: true, IsSystem: true },
-  ];
+  /**
+   * Disk table. Disk 0 carries the system partition C:; one disk per
+   * additional drive letter — mirroring the common "one logical volume
+   * per physical disk" layout. Derived from {@link WindowsFileSystem#listDrives}
+   * so a runtime-mounted drive shows up in Get-Disk too, with its
+   * capacity sourced from the FS rather than a frozen "50 GB" string.
+   */
+  private getDisks() {
+    const fs = this.device.getFileSystem();
+    const fmtGB = (b: number) => `${Math.round(b / 1_073_741_824)} GB`;
+    return fs.listDrives().map((d, i) => {
+      const letter = d.charAt(0);
+      const isC = letter === 'C';
+      return {
+        Number: i,
+        FriendlyName: isC
+          ? 'Microsoft Virtual Disk'
+          : `Virtual HD ${letter}:`,
+        UniqueId: `{00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}}`,
+        SerialNumber: fs.getVolumeSerialNumber(letter).replace('-', ''),
+        OperationalStatus: 'Online',
+        TotalSize: fmtGB(fs.getDriveCapacity(letter)),
+        PartitionStyle: 'MBR',
+        IsBoot: isC,
+        IsSystem: isC,
+      };
+    });
+  }
 
   private handleGetDisk(args: string[]): string {
     const params = this.parsePSArgs(args);
@@ -4667,7 +4703,7 @@ export class PowerShellExecutor {
     const uniqueId = (params.get('uniqueid') ?? '').replace(/^["']|["']$/g, '');
     const serialNumber = (params.get('serialnumber') ?? '').replace(/^["']|["']$/g, '');
 
-    let disks = [...this.DISKS];
+    let disks = this.getDisks();
 
     if (numberFilter !== undefined) {
       const num = parseInt(numberFilter, 10);
@@ -4726,9 +4762,12 @@ export class PowerShellExecutor {
     // addition to `vol` / `dir` / Get-PSDrive. Hardcoded vendor labels
     // are kept only for the well-known system + data drives; everything
     // else gets a generic "Local Disk" friendly name like real Windows
-    // displays for an unlabeled volume.
+    // displays for an unlabeled volume. Size + SizeRemaining come from
+    // the FS so they actually shrink as files land on the drive.
     const labels: Record<string, string> = { C: 'Windows', D: 'Data' };
-    const volumes = this.device.getFileSystem().listDrives()
+    const fs = this.device.getFileSystem();
+    const fmtGB = (bytes: number) => `${(bytes / 1_073_741_824).toFixed(2)} GB`;
+    const volumes = fs.listDrives()
       .map((d) => d.charAt(0))
       .map((letter) => ({
         DriveLetter: letter,
@@ -4737,8 +4776,8 @@ export class PowerShellExecutor {
         DriveType: 'Fixed',
         HealthStatus: 'Healthy',
         OperationalStatus: 'OK',
-        SizeRemaining: letter === 'C' ? '15.2 GB' : '45.0 GB',
-        Size: '50.0 GB',
+        SizeRemaining: fmtGB(fs.getFreeDiskSpace(letter)),
+        Size: fmtGB(fs.getDriveCapacity(letter)),
       }));
 
     let filtered = driveLetter ? volumes.filter(v => v.DriveLetter === driveLetter) : volumes;

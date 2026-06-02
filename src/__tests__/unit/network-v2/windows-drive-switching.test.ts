@@ -239,6 +239,117 @@ describe('Get-Volume / Get-PSDrive / wmic logicaldisk derive from the FS', () =>
   });
 });
 
+// ─── Storage figures are real (capacity − used = free) ─────────────
+
+describe('Storage stats are FS-derived, not frozen constants', () => {
+  it('getFreeDiskSpace shrinks as files are added', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    const before = fs.getFreeDiskSpace('C');
+    fs.createFile('C:\\big.bin', 'x'.repeat(10_000_000));
+    const after = fs.getFreeDiskSpace('C');
+    expect(before - after).toBe(10_000_000);
+  });
+
+  it('capacity − used = free for each drive', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    fs.createFile('C:\\a.dat', 'x'.repeat(1_234_567));
+    fs.createFile('D:\\b.dat', 'x'.repeat(7_654_321));
+    for (const letter of ['C', 'D']) {
+      expect(fs.getDriveCapacity(letter) - fs.getUsedSpace(letter))
+        .toBe(fs.getFreeDiskSpace(letter));
+    }
+  });
+
+  it('drives have differentiated capacities (C: 100 GB, D: 50 GB)', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    expect(fs.getDriveCapacity('C')).toBe(107_374_182_400);
+    expect(fs.getDriveCapacity('D')).toBe(53_687_091_200);
+  });
+
+  it('setDriveCapacity overrides the default', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    fs.setDriveCapacity('D', 10_000_000_000);
+    expect(fs.getDriveCapacity('D')).toBe(10_000_000_000);
+    expect(fs.getFreeDiskSpace('D')).toBeLessThanOrEqual(10_000_000_000);
+  });
+
+  it('an unknown drive reports 0 used / 0 free, never the C: number', () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    expect(pc.getFileSystem().getUsedSpace('Q')).toBe(0);
+    expect(pc.getFileSystem().getFreeDiskSpace('Q')).toBe(0);
+  });
+
+  it('dir D:\\ shows D:’s serial number, not C:’s', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    const dSerial = fs.getVolumeSerialNumber('D');
+    const cSerial = fs.getVolumeSerialNumber('C');
+    expect(dSerial).not.toBe(cSerial);
+    const out = await pc.executeCommand('dir D:\\');
+    expect(out).toContain(dSerial);
+    expect(out).not.toContain(cSerial);
+  });
+
+  it('dir D:\\ shows D:’s free-byte count, not C:’s', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    // Make the drives' free-byte counts differ — different default
+    // capacities AND a sizeable file on C: guarantee distinct numbers.
+    fs.createFile('C:\\bulk.bin', 'x'.repeat(20_000_000));
+    const out = await pc.executeCommand('dir D:\\');
+    expect(out).toContain(fs.getFreeDiskSpace('D').toLocaleString('en-US'));
+    expect(out).not.toContain(fs.getFreeDiskSpace('C').toLocaleString('en-US'));
+  });
+
+  it('Get-Volume Size + SizeRemaining reflect real FS state', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.getFileSystem().setDriveCapacity('C', 200_000_000_000);
+    const ps = new PowerShellExecutor(pc as any);
+    const out = await ps.execute('Get-Volume -DriveLetter C');
+    // 200 GB capacity → "186.26 GB" in the GiB display we use.
+    expect(out).toMatch(/186\.\d{2} GB/);
+  });
+
+  it('Get-PSDrive Used/Free columns track FS usage', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const fs = pc.getFileSystem();
+    // Stamp the size directly to fake a 5 GB file without allocating the
+    // bytes — keeps the test fast and side-steps V8's string ceiling.
+    fs.createFile('C:\\hog.bin', '');
+    const entry = (fs as any).resolve('C:\\hog.bin');
+    entry.size = 5_368_709_120; // 5 GB
+    const ps = new PowerShellExecutor(pc as any);
+    const out = await ps.execute('Get-PSDrive');
+    const cLine = out.split('\n').find(l => /^C\s/.test(l)) ?? '';
+    // 5 GB hog dominates the system seeds — Used reads "5.xx".
+    expect(cLine).toMatch(/\b5\.\d{2}\b/);
+    // Free has shrunk from the ~100 GB capacity.
+    expect(cLine).toMatch(/\b9[4-5]\.\d{2}\b/);
+  });
+
+  it('Get-Disk emits one row per FS-mounted drive', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.getFileSystem().mkdirp('E:\\');
+    const ps = new PowerShellExecutor(pc as any);
+    const out = await ps.execute('Get-Disk');
+    // Number column shows 0/1/2 for the three drives.
+    const rows = out.split('\n').filter(l => /^\d\s+Virtual|^\d\s+Microsoft/.test(l));
+    expect(rows.length).toBe(3);
+  });
+
+  it('Get-Disk for C: is the boot/system disk', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const ps = new PowerShellExecutor(pc as any);
+    const out = await ps.execute('Get-Disk -Number 0');
+    expect(out).toMatch(/IsBoot\s+:\s+true/);
+    expect(out).toMatch(/IsSystem\s+:\s+true/);
+  });
+});
+
 // ─── su over SSH (regression lock) ────────────────────────────────────
 
 describe('su over SSH prompts for password and switches user', () => {

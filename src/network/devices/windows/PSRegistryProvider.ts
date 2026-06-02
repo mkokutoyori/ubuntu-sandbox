@@ -398,17 +398,22 @@ export class PSRegistryProvider {
   // ─── Get-PSDrive ──────────────────────────────────────────────────
 
   /**
-   * Caller passes the filesystem-mounted drive letters (sorted A→Z) so
-   * the PSDrive listing stays coherent with `vol`, `Get-Volume`, and
-   * the bare `D:`/`E:` cmd drive-switch handler. Hardcoding a fixed
-   * C/D table here caused Get-PSDrive to advertise drives the FS never
-   * created — and to silently omit drives the FS did create.
+   * Caller passes the filesystem-mounted drives — each with its live
+   * Used/Free byte counts — so the PSDrive listing stays coherent with
+   * `vol`, `Get-Volume`, `dir`'s "bytes free" line, and the bare
+   * `D:`/`E:` cmd drive-switch handler. Hardcoding a fixed C/D table
+   * caused Get-PSDrive to advertise drives the FS never created — and
+   * to silently omit drives the FS did create — while pinning the used
+   * column at "42.30" no matter how full the volume actually was.
    */
-  getPSDrive(fsDriveLetters: readonly string[] = ['C']): string {
-    const fsLines = fsDriveLetters.map((letter) => {
+  getPSDrive(fsDrives: ReadonlyArray<{ letter: string; usedGB: number; freeGB: number }> = []): string {
+    const fmtCol = (n: number, width: number): string =>
+      n.toFixed(2).padStart(width);
+    const fsLines = fsDrives.map(({ letter, usedGB, freeGB }) => {
       const L = letter.toUpperCase();
-      const used = L === 'C' ? '         42.30' : '              ';
-      const free = L === 'C' ? '       157.70' : '             ';
+      // Match real PS column widths: Used (GB) and Free (GB) right-aligned.
+      const used = fmtCol(usedGB, 14);
+      const free = fmtCol(freeGB, 14);
       return `${L.padEnd(15)}${used}${free} FileSystem    ${L}:\\`;
     });
     const lines: string[] = [

@@ -65,6 +65,22 @@ export class WindowsFileSystem {
    *  volume serial so `vol` and `dir` agree and two machines differ. */
   private readonly hostname: string;
 
+  /**
+   * Per-drive capacity in bytes. Each drive gets a deterministic but
+   * differentiated default — C: is the system partition (the largest,
+   * 100 GB), D: is the data partition (50 GB), anything else gets a
+   * 50 GB default. Tests / callers can override via {@link setDriveCapacity}.
+   * The map is consulted lazily so drives mounted at runtime via
+   * {@link mkdirp} pick up the default sized capacity without needing
+   * extra setup.
+   */
+  private driveCapacityBytes: Map<string, number> = new Map();
+
+  /** Default capacity for a drive that hasn't been configured. */
+  private readonly DEFAULT_DRIVE_CAPACITY = 53_687_091_200; // 50 GB
+  /** Capacity for the system drive (C:) — 100 GB. */
+  private readonly SYSTEM_DRIVE_CAPACITY = 107_374_182_400;
+
   constructor(hostname: string = 'DESKTOP') {
     this.hostname = hostname;
     this.initializeDefaultFS(hostname);
@@ -818,9 +834,55 @@ export class WindowsFileSystem {
     return total;
   }
 
-  getFreeDiskSpace(): number {
-    // Simulated: 50GB free
-    return 53_687_091_200;
+  /**
+   * Total capacity of a drive in bytes. C: defaults to 100 GB (system
+   * partition), every other drive to 50 GB; callers can override either
+   * default via {@link setDriveCapacity}.
+   */
+  getDriveCapacity(drive: string = 'C'): number {
+    const letter = this.normaliseDriveLetter(drive);
+    const cached = this.driveCapacityBytes.get(letter);
+    if (cached !== undefined) return cached;
+    return letter === 'C'
+      ? this.SYSTEM_DRIVE_CAPACITY
+      : this.DEFAULT_DRIVE_CAPACITY;
+  }
+
+  /** Override a drive's capacity — useful for fixtures simulating a
+   *  smaller D:/Backup volume than the default. */
+  setDriveCapacity(drive: string, bytes: number): void {
+    if (bytes <= 0) throw new Error('drive capacity must be positive');
+    this.driveCapacityBytes.set(this.normaliseDriveLetter(drive), bytes);
+  }
+
+  /**
+   * Bytes currently consumed by the tree rooted at `<drive>:\`. Walks
+   * the simulated FS — file `size` fields are authoritative because
+   * createFile/writeFile keep them in sync. Unknown drive → 0.
+   */
+  getUsedSpace(drive: string = 'C'): number {
+    const letter = this.normaliseDriveLetter(drive);
+    if (!this.drives.has(`${letter}:`)) return 0;
+    return this.getTotalSize(`${letter}:\\`);
+  }
+
+  /**
+   * Free bytes on a given drive. With no argument, defaults to the
+   * legacy single-drive behaviour (C:) so existing callers (notably
+   * `dir`'s "bytes free" tail) keep working without churn — but the
+   * value is now derived from the actual capacity − used calculation
+   * rather than a frozen 50 GB constant.
+   */
+  getFreeDiskSpace(drive: string = 'C'): number {
+    const letter = this.normaliseDriveLetter(drive);
+    if (!this.drives.has(`${letter}:`)) return 0;
+    return Math.max(0, this.getDriveCapacity(letter) - this.getUsedSpace(letter));
+  }
+
+  /** Internal: 'd', 'D:', 'd:\\Path' → 'D'. */
+  private normaliseDriveLetter(drive: string): string {
+    const raw = (drive || 'C').toUpperCase().replace(/[:\\].*$/, '');
+    return raw.charAt(0) || 'C';
   }
 
   /**
