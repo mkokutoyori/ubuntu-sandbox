@@ -367,6 +367,37 @@ export class LoggingConfig {
         this.append('warnings', 'spantree',
           `Root-guard ${p.blocked ? 'blocked' : 'unblocked'} on ${p.portName ?? '?'}`);
       }),
+      bus.subscribeWhere('netflow.collector.changed', isOurs, (e) => {
+        const p = e.payload as { collectorIp?: string; added?: boolean };
+        this.append('informational', 'netflow',
+          p.added
+            ? `Collector ${p.collectorIp ?? '?'} added`
+            : `Collector ${p.collectorIp ?? '?'} removed`);
+      }),
+      bus.subscribeWhere('vxlan.vtep.changed', isOurs, (e) => {
+        const p = e.payload as { vni?: number; vtepIp?: string; added?: boolean };
+        this.append('informational', 'vxlan',
+          p.added
+            ? `VTEP ${p.vtepIp ?? '?'} added to VNI ${p.vni ?? 0}`
+            : `VTEP ${p.vtepIp ?? '?'} removed from VNI ${p.vni ?? 0}`);
+      }),
+      bus.subscribeWhere('vxlan.packet.dropped', isOurs, (e) => {
+        const p = e.payload as { vni?: number; reason?: string };
+        this.append('warnings', 'vxlan',
+          `Dropped VXLAN packet on VNI ${p.vni ?? 0} (${p.reason ?? '?'})`);
+      }),
+      bus.subscribeWhere('ipsec.engine.started', isOurs, () => {
+        this.append('notifications', 'crypto', 'IPSec engine started');
+      }),
+      bus.subscribeWhere('ipsec.engine.stopped', isOurs, () => {
+        this.append('notifications', 'crypto', 'IPSec engine stopped');
+      }),
+      bus.subscribeWhere('rip.engine.started', isOurs, () => {
+        this.append('notifications', 'rip', 'RIP routing process started');
+      }),
+      bus.subscribeWhere('rip.engine.stopped', isOurs, () => {
+        this.append('notifications', 'rip', 'RIP routing process stopped');
+      }),
       bus.subscribe('cable.duplex-mismatch', (e) => {
         const p = e.payload as {
           portA?: { deviceId?: string; portName?: string };
