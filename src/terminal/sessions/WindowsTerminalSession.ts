@@ -32,6 +32,7 @@ import {
 } from '@/terminal/subshells/RemoteDeviceSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
+import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
@@ -176,6 +177,10 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   override get currentInputMode(): InputMode {
+    if (this.inputHostImpl.hasPendingRequest()
+        && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
+      return this.inputMode;
+    }
     // A sub-shell that asked for a password challenge takes priority over
     // the normal interactive-text input — the host must mask keystrokes.
     if (this.activeSubShell && this.subShellPendingInput) {
@@ -205,6 +210,10 @@ export class WindowsTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.inputHostImpl.hasPendingRequest()) {
+      if (this.handleBrokerKey(e)) return true;
+    }
 
     // SSH password challenge — when an `ssh user@host` push is waiting
     // for the password, every keystroke routes through the password
@@ -571,10 +580,51 @@ export class WindowsTerminalSession extends TerminalSession {
       sourceHostname: dev.getHostname(),
       quiet: parsed.quiet,
     };
+    if (this.inputHostImpl.capabilities().interactive) {
+      await this.runTopLevelSshAuthViaBroker();
+      return true;
+    }
     this.inputMode = { type: 'password', promptText: `${user}@${host}'s password: ` };
     this.addLine(`${user}@${host}'s password:`, 'prompt');
     this.notify();
     return true;
+  }
+
+  private async runTopLevelSshAuthViaBroker(): Promise<void> {
+    const pending = this.pendingSshPush;
+    if (!pending) return;
+    const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
+    const promptText = `${pending.user}@${pending.host}'s password: `;
+    this.addLine(`${pending.user}@${pending.host}'s password:`, 'prompt');
+    for (;;) {
+      const pw = await broker.password(promptText);
+      if (pw === null) {
+        this.pendingSshPush = null;
+        this.sshPasswordAttempts = 0;
+        this.inputMode = { type: 'normal' };
+        this.notify();
+        return;
+      }
+      const ok = this.verifyRemoteCredentials(pending.device, pending.user, pw);
+      const remote = pending.device as unknown as {
+        recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
+      };
+      if (ok) {
+        this.submitSshPassword(pw);
+        return;
+      }
+      this.sshPasswordAttempts++;
+      remote.recordSshLogin?.(pending.user, pending.sourceIp, pending.sourceHostname, false);
+      if (this.sshPasswordAttempts >= WindowsTerminalSession.SSH_MAX_ATTEMPTS) {
+        this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
+        this.pendingSshPush = null;
+        this.sshPasswordAttempts = 0;
+        this.inputMode = { type: 'normal' };
+        this.notify();
+        return;
+      }
+      this.addLine('Permission denied, please try again.');
+    }
   }
 
   /**
@@ -783,6 +833,7 @@ export class WindowsTerminalSession extends TerminalSession {
       cwd: this.shell?.cwd,
       extras: { windowsSession: this.shell },
     });
+    shell.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(shell);
 
     if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
@@ -809,6 +860,7 @@ export class WindowsTerminalSession extends TerminalSession {
       cwd: this.shell?.cwd,
       extras: { windowsSession: this.shell },
     });
+    shell.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(shell);
 
     if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
@@ -855,6 +907,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   private pushChildShell(child: IShell): void {
+    child.setInputHost?.(this.getInputHost());
     const adapter = new ShellSubShellAdapter(child);
     if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
     this.activeSubShell = adapter;

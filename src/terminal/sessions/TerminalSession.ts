@@ -27,6 +27,7 @@
 import { Equipment } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
 
@@ -873,16 +874,36 @@ export abstract class TerminalSession {
       onClearScreen: () => this.clear(),
     };
 
+    this._passwordBuf = '';
+    this._inputBuf = '';
+
+    if (this.inputHostImpl.capabilities().interactive) {
+      this.runFlowViaBroker(steps, ctx);
+      return;
+    }
+
     this.flowEngine = new InteractiveFlowEngine(
       steps,
       ctx,
       this.getFlowFormatter(),
       this.getPrompt(),
     );
+    this.advanceFlow();
+  }
+
+  protected async runFlowViaBroker(steps: InteractiveStep[], ctx: FlowContext): Promise<void> {
+    const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
+    const result = await runFlowOnBrokerFn(steps, broker, ctx, {
+      emit: (text, lineType) => this.addLine(text, lineType ?? 'normal'),
+      clearScreen: () => this.clear(),
+    });
     this._passwordBuf = '';
     this._inputBuf = '';
-
-    this.advanceFlow();
+    this.inputMode = { type: 'normal' };
+    if (result.status === 'ok') {
+      this.onFlowComplete(result.ctx);
+    }
+    this.notify();
   }
 
   /**

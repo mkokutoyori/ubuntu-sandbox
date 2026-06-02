@@ -87,11 +87,10 @@ test.describe('Unified input broker — foreground tail -f', () => {
 
     await page.evaluate((deviceId) => {
       const store = (window as Record<string, unknown>).__networkStore as {
-        getState(): { devices: Array<{ id: string; equipment: { executor?: { vfs?: { writeFile(p: string, c: string, u: number, g: number, m: number, a?: boolean): boolean } } } }> };
+        getState(): { getDevice(id: string): { executor?: { vfs?: { writeFile(p: string, c: string, u: number, g: number, m: number, a?: boolean): boolean } } } | undefined };
       };
-      const dev = store.getState().devices.find(d => d.id === deviceId);
-      const exec = (dev?.equipment as unknown as { executor?: { vfs?: { writeFile(p: string, c: string, u: number, g: number, m: number, a?: boolean): boolean } } } | undefined)?.executor;
-      exec?.vfs?.writeFile('/var/log/syslog', 'live-line\n', 0, 0, 0o022, true);
+      const dev = store.getState().getDevice(deviceId);
+      dev?.executor?.vfs?.writeFile('/var/log/syslog', 'live-line\n', 0, 0, 0o022, true);
     }, id);
     await expect(page.locator('[data-testid="terminal-modal"]')).toContainText('live-line');
 
