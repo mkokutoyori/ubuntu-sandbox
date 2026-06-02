@@ -22,6 +22,7 @@ import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpConnection } from '../core/TcpConnection';
+import { TcpStack } from '../tcp/TcpStack';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
@@ -197,6 +198,7 @@ export abstract class EndHost extends Equipment {
   private readonly tcpConnections = new Map<string, TcpConnection>();
   /** TCP server listeners: port → handler callback */
   private readonly tcpListeners = new Map<number, (conn: TcpConnection) => void>();
+  protected readonly tcpv2: TcpStack;
   /** Pending TCP handshakes: "remoteIp:remotePort:localPort" → resolve callback */
   private readonly pendingTcpHandshakes = new Map<string, () => void>();
 
@@ -481,6 +483,16 @@ export abstract class EndHost extends Equipment {
 
   constructor(type: any, name: string, x: number, y: number) {
     super(type, name, x, y);
+    const hostBase = {
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
+    this.tcpv2.setExternalPortClaim((port) => this.tcpListeners.has(port));
+    this.tcpv2.start();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
     );
@@ -1076,7 +1088,11 @@ export abstract class EndHost extends Equipment {
       if (ipPkt.protocol === IP_PROTO_ICMP) {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
-        this.handleTCP(portName, ipPkt);
+        if (this.tcpv2.hasInterest(ipPkt, ipPkt.sourceIP)) {
+          this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
+        } else {
+          this.handleTCP(portName, ipPkt);
+        }
       }
       return;
     }
@@ -1366,6 +1382,8 @@ export abstract class EndHost extends Equipment {
    * The handler is called synchronously (within the SYN handler) with the
    * new server-side TcpConnection so it can set up onData() before data arrives.
    */
+  public getTcpStack(): TcpStack { return this.tcpv2; }
+
   public listenTcp(port: number, handler: (conn: TcpConnection) => void): void {
     this.tcpListeners.set(port, handler);
     this.emitTcpListenerStarted('0.0.0.0', port);
