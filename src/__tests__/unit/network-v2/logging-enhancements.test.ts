@@ -77,6 +77,55 @@ describe('Logging — Linux interface link events land in kern.log', () => {
   });
 });
 
+describe('Logging — unified device.syslog.entry across all device types', () => {
+  it('one bus subscription captures Cisco, Huawei, Linux and Windows entries', () => {
+    const bus = new EventBus();
+    const cisco = new CiscoRouter('CSCO');
+    const huawei = new HuaweiRouter('HUWI');
+    const lnx = new LinuxServer('linux-server', 'LNX');
+    const win = new WindowsPC('WIN', 0, 0);
+    cisco.setEventBus(bus); huawei.setEventBus(bus);
+    lnx.setEventBus(bus); win.setEventBus(bus);
+    lnx.powerOn(); win.powerOn();
+
+    const entries: Array<{ deviceId: string; tag: string; message: string }> = [];
+    bus.subscribe('device.syslog.entry', (e) => {
+      const p = e.payload as { deviceId: string; tag: string; message: string };
+      entries.push({ deviceId: p.deviceId, tag: p.tag, message: p.message });
+    });
+
+    bus.publish({
+      topic: 'tcp.listener.changed',
+      payload: { deviceId: cisco.id, hostname: 'CSCO', localIp: '0.0.0.0', localPort: 9000, added: true },
+    });
+    bus.publish({
+      topic: 'tcp.listener.changed',
+      payload: { deviceId: huawei.id, hostname: 'HUWI', localIp: '0.0.0.0', localPort: 9001, added: true },
+    });
+    lnx.getPort('eth0')!.setUp(false);
+    win.dynamicFirewallRules.set('Block-9999', {
+      name: 'Block-9999', displayName: 'Block', enabled: true,
+      action: 'Block', direction: 'Inbound', protocol: 'TCP',
+      localPort: '9999', remotePort: 'Any', description: 'test',
+    });
+    bus.publish({
+      topic: 'windows.firewall.drop',
+      payload: {
+        deviceId: win.id, hostname: 'WIN', ruleName: 'Block-9999',
+        sourceIp: '10.0.0.1', destinationIp: '10.0.0.2',
+        sourcePort: 49152, destinationPort: 9999,
+        protocol: 'TCP', direction: 'Inbound',
+      },
+    });
+
+    const byDevice = new Set(entries.map(e => e.deviceId));
+    expect(byDevice.has(cisco.id)).toBe(true);
+    expect(byDevice.has(huawei.id)).toBe(true);
+    expect(byDevice.has(lnx.id)).toBe(true);
+    expect(byDevice.has(win.id)).toBe(true);
+  });
+});
+
 describe('Logging — Cisco port security violation goes to show logging', () => {
   it('a port-security violation lands as %PORT_SECURITY-2-CRITICAL', async () => {
     const bus = new EventBus();
