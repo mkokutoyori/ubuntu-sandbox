@@ -27,4 +27,6 @@ export interface InputBroker {
 
   capabilities(): InputCapabilities;
   cancelPending(): void;
+
+  emit(line: string): void;
 }

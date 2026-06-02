@@ -215,6 +215,7 @@ export class LinuxTerminalSession extends TerminalSession {
       preexistingSession: this.shell,
       ownsSession: false,
     });
+    this.rootBash.setInputHost(this.getInputHost());
     this.rootBash.activate();
     return this.rootBash;
   }
@@ -489,6 +490,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.inputHostImpl.hasPendingRequest()) {
+      if (this.handleBrokerKey(e)) return true;
+    }
 
     // Reactive SSH IO: the SSH layer is awaiting user input (password or
     // host-key confirmation). Handle Enter/Ctrl+C here; everything else

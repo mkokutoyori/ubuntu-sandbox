@@ -109,6 +109,8 @@ export class PromiseInputBroker implements InputBroker {
 
   listStreams(): readonly StreamAttachment[] { return []; }
 
+  emit(line: string): void { this.host.emit(line); }
+
   private runSingle(req: InputRequest): Promise<InputResult> {
     return new Promise(resolve => {
       let attempts = 0;
