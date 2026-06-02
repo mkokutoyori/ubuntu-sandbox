@@ -16,7 +16,7 @@
 
 import { EndHost, PingResult } from './EndHost';
 import { Port } from '../hardware/Port';
-import { IPAddress, SubnetMask, DeviceType } from '../core/types';
+import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
@@ -1925,5 +1925,36 @@ export class WindowsPC extends EndHost {
     this.cwd = b.cwd;
     this.env = b.env;
     this._activeShellSession = null;
+  }
+
+  protected override firewallFilter(
+    _portName: string,
+    ipPkt: IPv4Packet,
+    direction: 'in' | 'out' | 'forward',
+    _outPortName?: string,
+  ): 'accept' | 'drop' | 'reject' {
+    if (this.dynamicFirewallRules.size === 0) return 'accept';
+    const ports = this.extractPorts(ipPkt);
+    const dirMatch = direction === 'in' ? 'Inbound'
+                   : direction === 'out' ? 'Outbound' : null;
+    if (!dirMatch) return 'accept';
+    const proto = ipPkt.protocol === IP_PROTO_TCP ? 'TCP'
+                : ipPkt.protocol === IP_PROTO_UDP ? 'UDP'
+                : ipPkt.protocol === IP_PROTO_ICMP ? 'ICMPv4' : null;
+    const matchPort = (rulePort: string, actualPort: number): boolean => {
+      if (!rulePort || rulePort === 'Any') return true;
+      return rulePort.split(',').some((p) => p.trim() === String(actualPort));
+    };
+    for (const rule of this.dynamicFirewallRules.values()) {
+      if (!rule.enabled) continue;
+      if (rule.direction !== dirMatch) continue;
+      if (rule.protocol !== 'Any' && proto && rule.protocol !== proto) continue;
+      const local = direction === 'in' ? ports.dstPort : ports.srcPort;
+      const remote = direction === 'in' ? ports.srcPort : ports.dstPort;
+      if (!matchPort(rule.localPort, local)) continue;
+      if (!matchPort(rule.remotePort, remote)) continue;
+      return rule.action === 'Block' ? 'drop' : 'accept';
+    }
+    return 'accept';
   }
 }

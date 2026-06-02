@@ -54,6 +54,7 @@ function setupNasAndAaa(): { bus: EventBus; nas: CiscoRouter; aaa: CiscoRouter; 
   new Cable('b').connect(aaa.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
   nas.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
   aaa.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+  aaa.getTacacsServer().setEnabled(true);
   return { bus, nas, aaa, sw };
 }
 
@@ -177,6 +178,7 @@ describe('TACACS+ — wire format', () => {
     nas.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     aaa.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
+    aaa.getTacacsServer().setEnabled(true);
     aaa.getTacacsServer().addUser('alice', 'wonderland');
     nas.getTacacsClient().addServer('10.0.0.2', 'shared', { timeoutMs: 200 });
     nas.getTacacsClient().authenticate('alice', 'wonderland');
@@ -200,6 +202,7 @@ describe('TACACS+ — Cisco↔Huawei interop', () => {
     nas.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     aaa.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
+    aaa.getTacacsServer().setEnabled(true);
     aaa.getTacacsServer().addUser('alice', 'wonderland', 15);
     nas.getTacacsClient().addServer('10.0.0.2', 'shared', { timeoutMs: 200 });
     const out = await nas.getTacacsClient().authenticate('alice', 'wonderland');

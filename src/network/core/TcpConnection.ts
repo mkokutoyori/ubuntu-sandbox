@@ -24,6 +24,7 @@ export interface TcpStream {
   write(data: string): void;
   close(): void;
   onData(handler: (data: string) => void): () => void;
+  onClose?(handler: (reason: string) => void): () => void;
 }
 
 export type TcpConnector = (host: string, port: number) => Promise<TcpStream | null>;

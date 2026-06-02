@@ -171,7 +171,7 @@ export function createDefaultClientConfig(): TacacsClientConfig {
 
 export function createDefaultServerConfig(secret = 'shared'): TacacsServerAgentConfig {
   return {
-    enabled: true, port: PORT_TACACS, sharedSecret: secret,
+    enabled: false, port: PORT_TACACS, sharedSecret: secret,
     users: new Map(), acctLog: [],
   };
 }

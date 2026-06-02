@@ -80,6 +80,18 @@ export class SshServerHandler {
     const channels = new Map<number, OpenChannelInfo>();
     let userCtx: SshUserContext | null = null;
 
+    conn.onClose?.((reason) => {
+      channels.clear();
+      this.eventBus.emit({
+        kind: 'client_disconnected',
+        user: userCtx?.username ?? '',
+        ip: clientIp,
+        reason: reason === 'rst' ? 'reset' : 'closed',
+        timestamp: Date.now(),
+      });
+      userCtx = null;
+    });
+
     conn.onData((data) => {
       let parsed: Record<string, unknown>;
       try {

@@ -29,7 +29,7 @@ export class TacacsServerAgent {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.installListener();
+    if (this.config.enabled) this.installListener();
   }
 
   stop(): void {
@@ -42,7 +42,15 @@ export class TacacsServerAgent {
   }
 
   getConfig(): Readonly<TacacsServerAgentConfig> { return this.config; }
-  setEnabled(on: boolean): void { this.config.enabled = on; }
+  setEnabled(on: boolean): void {
+    this.config.enabled = on;
+    if (!this.running) return;
+    if (on) this.installListener();
+    else if (this.listenerInstalled) {
+      this.getTcpStack().closeListener(this.config.port);
+      this.listenerInstalled = false;
+    }
+  }
   setSharedSecret(secret: string): void { this.config.sharedSecret = secret; }
 
   addUser(username: string, password: string, privLvl = 1, permittedCommands: string[] = []): void {

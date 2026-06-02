@@ -168,6 +168,9 @@ export class TcpStack {
 
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
     const listener = new TcpListener(localIp, localPort, opts.onAccept);
+    if (this.listeners.has(listener.key())) {
+      throw new Error(`TCP listener already bound on ${localIp}:${localPort} (EADDRINUSE)`);
+    }
     this.listeners.set(listener.key(), listener);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
