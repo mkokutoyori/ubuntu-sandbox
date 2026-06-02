@@ -84,6 +84,8 @@ export interface InterpreterOptions {
   pid?: number;
   /** Parent PID ($PPID). */
   ppid?: number;
+  /** Initial `$?` carried from the previous command. */
+  initialExitCode?: number;
   /**
    * Shared alias table. When provided, the interpreter mutates it in
    * place so `alias` / `unalias` definitions persist across commands.
@@ -112,6 +114,7 @@ export class BashInterpreter {
       positionalArgs: options.positionalArgs,
       pid: options.pid,
       ppid: options.ppid,
+      initialExitCode: options.initialExitCode,
     });
   }
 

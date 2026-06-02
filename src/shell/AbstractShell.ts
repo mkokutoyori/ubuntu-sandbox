@@ -29,6 +29,10 @@ import { ShellContext } from './ShellContext';
 import { nextLineId } from '@/terminal/sessions/TerminalSession';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { RichOutputLine, LineType } from '@/terminal/core/types';
+import {
+  PromiseInputBroker, NULL_INPUT_HOST,
+  type InputBroker, type InputHost,
+} from './input';
 
 export interface AbstractShellOptions {
   readonly device: Equipment;
@@ -70,6 +74,8 @@ export abstract class AbstractShell implements IShell {
   /** True between `activate()` and `deactivate()`. */
   private _active = false;
 
+  private _broker: PromiseInputBroker = new PromiseInputBroker(NULL_INPUT_HOST);
+
   constructor(opts: AbstractShellOptions) {
     this.device = opts.device;
     this.user = opts.user;
@@ -77,6 +83,12 @@ export abstract class AbstractShell implements IShell {
     this.parent = opts.parent ?? null;
     this.connection = opts.connection ?? 'console';
   }
+
+  setInputHost(host: InputHost): void {
+    this._broker.rebindHost(host);
+  }
+
+  get input(): InputBroker { return this._broker; }
 
   // ─── Required hooks ────────────────────────────────────────────────
 

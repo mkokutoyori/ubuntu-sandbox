@@ -12,6 +12,7 @@
 import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
+import { PromiseInputBroker as PromiseInputBrokerPS } from '@/shell/input';
 import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
@@ -124,13 +125,20 @@ export class PowerShellSubShell implements ISubShell {
     return false;
   }
 
+  setInputHost(host: import('@/shell/input').InputHost): void {
+    this._broker = new PromiseInputBrokerPS(host);
+  }
+  private _broker: import('@/shell/input').InputBroker | null = null;
+
   async processLine(line: string): Promise<SubShellResult> {
     const trimmed = line.trim();
 
-    // "exit" → leave PowerShell, return to parent cmd
     if (trimmed.toLowerCase() === 'exit') {
       return { output: [], exit: true, prompt: this.getPrompt() };
     }
+
+    const readHostHit = await this.tryReadHostIntercept(trimmed);
+    if (readHostHit) return readHostHit;
 
     // Track history for Get-History
     if (trimmed) {
@@ -385,4 +393,65 @@ export class PowerShellSubShell implements ISubShell {
   dispose(): void {
     // No resources to clean up
   }
+
+  private async tryReadHostIntercept(line: string): Promise<SubShellResult | null> {
+    if (!this._broker) return null;
+    if (!this._broker.capabilities().interactive) return null;
+    const parsed = parseReadHost(line);
+    if (!parsed) return null;
+    const prompt = parsed.prompt ?? '';
+    const value = parsed.secure
+      ? await this._broker.password(prompt)
+      : await this._broker.ask(prompt);
+    if (parsed.bindTo) {
+      this.interp.setVariable(parsed.bindTo, value ?? '');
+      return { output: [], exit: false, prompt: this.getPrompt() };
+    }
+    return {
+      output: value === null ? [] : [value],
+      exit: false,
+      prompt: this.getPrompt(),
+    };
+  }
+}
+
+interface ParsedReadHost {
+  bindTo: string | null;
+  prompt: string | null;
+  secure: boolean;
+}
+
+function parseReadHost(line: string): ParsedReadHost | null {
+  const m = line.match(/^\s*(?:\$([A-Za-z_][A-Za-z_0-9]*)\s*=\s*)?Read-Host\b(.*)$/i);
+  if (!m) return null;
+  const tail = m[2].trim();
+  let secure = false;
+  let prompt: string | null = null;
+  const tokens = tokenizePS(tail);
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^-AsSecureString$/i.test(t)) { secure = true; continue; }
+    if (/^-MaskInput$/i.test(t))      { secure = true; continue; }
+    if (/^-Prompt$/i.test(t) && i + 1 < tokens.length) { prompt = tokens[++i]; continue; }
+    if (i === 0 && !t.startsWith('-')) { prompt = t; continue; }
+  }
+  return { bindTo: m[1] ?? null, prompt, secure };
+}
+
+function tokenizePS(line: string): string[] {
+  const out: string[] = [];
+  let buf = '';
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) { quote = null; continue; }
+      buf += c; continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === ' ' || c === '\t') { if (buf) { out.push(buf); buf = ''; } continue; }
+    buf += c;
+  }
+  if (buf) out.push(buf);
+  return out;
 }

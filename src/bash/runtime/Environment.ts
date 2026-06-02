@@ -15,6 +15,8 @@ export interface EnvironmentOptions {
   scriptName?: string;
   /** Positional arguments ($1, $2, ...). */
   positionalArgs?: string[];
+  /** Initial value of `$?` carried over from the previous command. */
+  initialExitCode?: number;
   /** Shell PID ($$). Defaults to a stable random value when omitted. */
   pid?: number;
   /** Parent PID ($PPID). */
@@ -54,6 +56,9 @@ export class Environment {
   constructor(options: EnvironmentOptions = {}) {
     this.pid = options.pid ?? Math.floor(Math.random() * 30000) + 1000;
     this.ppid = options.ppid;
+    if (options.initialExitCode !== undefined) {
+      this._lastExitCode = options.initialExitCode;
+    }
 
     if (options.variables) {
       for (const [k, v] of Object.entries(options.variables)) {
