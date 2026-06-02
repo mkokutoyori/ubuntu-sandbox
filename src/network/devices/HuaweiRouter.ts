@@ -41,6 +41,8 @@ import { NetFlowAgent } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
 import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { PORT_TACACS } from '../tacacs/types';
+import { VxlanAgent } from '../vxlan/VxlanAgent';
+import { UDP_PORT_VXLAN } from '../vxlan/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -61,6 +63,7 @@ export class HuaweiRouter extends Router {
   private readonly netflowAgent: NetFlowAgent;
   private readonly tacacsClient: TacacsClientAgent;
   private readonly tacacsServer: TacacsServerAgent;
+  private readonly vxlanAgent: VxlanAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
     const hostBase = {
@@ -89,6 +92,7 @@ export class HuaweiRouter extends Router {
     this.netflowAgent = new NetFlowAgent(hostBase, () => this.getBus());
     this.tacacsClient = new TacacsClientAgent(hostBase, () => this.getBus());
     this.tacacsServer = new TacacsServerAgent(hostBase, () => this.getBus());
+    this.vxlanAgent = new VxlanAgent(hostBase, () => this.getBus());
     this.lldpAgent.start();
     this.vrrpAgent.start();
     this.ntpAgent.start();
@@ -103,6 +107,7 @@ export class HuaweiRouter extends Router {
     this.netflowAgent.start();
     this.tacacsClient.start();
     this.tacacsServer.start();
+    this.vxlanAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -121,6 +126,7 @@ export class HuaweiRouter extends Router {
     if (this.netflowAgent) { this.netflowAgent.stop(); this.netflowAgent.start(); }
     if (this.tacacsClient) { this.tacacsClient.stop(); this.tacacsClient.start(); }
     if (this.tacacsServer) { this.tacacsServer.stop(); this.tacacsServer.start(); }
+    if (this.vxlanAgent) { this.vxlanAgent.stop(); this.vxlanAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -167,6 +173,10 @@ export class HuaweiRouter extends Router {
       }
       if (udp && udp.type === 'udp' && udp.sourcePort === PORT_TACACS) {
         this.tacacsClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_VXLAN) {
+        this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
         return;
       }
     }
@@ -217,6 +227,7 @@ export class HuaweiRouter extends Router {
   getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
   getTacacsClient(): TacacsClientAgent { return this.tacacsClient; }
   getTacacsServer(): TacacsServerAgent { return this.tacacsServer; }
+  getVxlanAgent(): VxlanAgent { return this.vxlanAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GE0/0/${index}`;

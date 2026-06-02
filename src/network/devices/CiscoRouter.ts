@@ -46,6 +46,8 @@ import { NetFlowAgent } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
 import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { PORT_TACACS } from '../tacacs/types';
+import { VxlanAgent } from '../vxlan/VxlanAgent';
+import { UDP_PORT_VXLAN } from '../vxlan/types';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import { IP_PROTO_UDP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
@@ -69,6 +71,7 @@ export class CiscoRouter extends Router {
   private readonly netflowAgent: NetFlowAgent;
   private readonly tacacsClient: TacacsClientAgent;
   private readonly tacacsServer: TacacsServerAgent;
+  private readonly vxlanAgent: VxlanAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
@@ -100,6 +103,7 @@ export class CiscoRouter extends Router {
     this.netflowAgent = new NetFlowAgent(hostBase, () => this.getBus());
     this.tacacsClient = new TacacsClientAgent(hostBase, () => this.getBus());
     this.tacacsServer = new TacacsServerAgent(hostBase, () => this.getBus());
+    this.vxlanAgent = new VxlanAgent(hostBase, () => this.getBus());
     this.cdpAgent.start();
     this.lldpAgent.start();
     this.hsrpAgent.start();
@@ -117,6 +121,7 @@ export class CiscoRouter extends Router {
     this.netflowAgent.start();
     this.tacacsClient.start();
     this.tacacsServer.start();
+    this.vxlanAgent.start();
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -138,6 +143,7 @@ export class CiscoRouter extends Router {
     if (this.netflowAgent) { this.netflowAgent.stop(); this.netflowAgent.start(); }
     if (this.tacacsClient) { this.tacacsClient.stop(); this.tacacsClient.start(); }
     if (this.tacacsServer) { this.tacacsServer.stop(); this.tacacsServer.start(); }
+    if (this.vxlanAgent) { this.vxlanAgent.stop(); this.vxlanAgent.start(); }
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -191,6 +197,10 @@ export class CiscoRouter extends Router {
         }
         if (udp.sourcePort === PORT_TACACS) {
           this.tacacsClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.destinationPort === UDP_PORT_VXLAN) {
+          this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
           return;
         }
       }
@@ -260,6 +270,7 @@ export class CiscoRouter extends Router {
   getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
   getTacacsClient(): TacacsClientAgent { return this.tacacsClient; }
   getTacacsServer(): TacacsServerAgent { return this.tacacsServer; }
+  getVxlanAgent(): VxlanAgent { return this.vxlanAgent; }
 
   protected getVendorPortName(index: number): string {
     return `GigabitEthernet0/${index}`;
