@@ -169,6 +169,45 @@ describe('TCP — connection close', () => {
   });
 });
 
+describe('TCP — segmentation and reassembly (RFC 793)', () => {
+  it('a payload larger than MSS is split into MSS-sized segments and reassembled', () => {
+    const { bus, client, server } = pair();
+    const received: string[] = [];
+    server.getTcpStack().listen(49, {
+      onAccept: (sock) => { sock.onData((data) => { received.push(data as string); }); },
+    });
+    const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
+    const segmentsSent: number[] = [];
+    bus.subscribe('tcp.segment.sent', (e) => {
+      if (e.payload.deviceId === client.id && e.payload.payloadSize > 0) {
+        segmentsSent.push(e.payload.payloadSize);
+      }
+    });
+    const big = 'x'.repeat(1460 * 2 + 200);
+    cs.send(big);
+    expect(segmentsSent.length).toBe(3);
+    expect(segmentsSent[0]).toBe(1460);
+    expect(segmentsSent[1]).toBe(1460);
+    expect(segmentsSent[2]).toBe(200);
+    expect(received).toEqual([big]);
+  });
+
+  it('object payloads stay as a single segment (no segmentation)', () => {
+    const { bus, client, server } = pair();
+    server.getTcpStack().listen(49, { onAccept: () => undefined });
+    const cs = client.getTcpStack().connect('10.0.0.2', 49)!;
+    const segments: Array<{ payloadSize: number; flagsText: string }> = [];
+    bus.subscribe('tcp.segment.sent', (e) => {
+      if (e.payload.deviceId === client.id && e.payload.payloadSize > 0) {
+        segments.push(e.payload);
+      }
+    });
+    cs.send({ kind: 'opaque', body: 'irrelevant' });
+    expect(segments.length).toBe(1);
+    expect(segments[0].flagsText).toBe('ACK|PSH');
+  });
+});
+
 describe('TCP — multiple concurrent connections', () => {
   it('the listener accepts multiple clients on the same port and keeps them isolated', () => {
     const bus = new EventBus();

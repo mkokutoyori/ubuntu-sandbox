@@ -62,6 +62,7 @@ export class TcpSocket {
   closed = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
+  recvBuffer = '';
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -255,7 +256,7 @@ export class TcpStack {
     const senderIp = srcIp.toString();
     const dstIp = ipPkt.destinationIP.toString();
 
-    const payloadSize = seg.payload === undefined ? 0 : 1;
+    const payloadSize = seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1);
     this.getBus().publish({
       topic: 'tcp.segment.received',
       payload: {
@@ -309,9 +310,21 @@ export class TcpStack {
       return;
     }
     if (socket.state !== 'established' && socket.state !== 'close-wait') return;
+    if (typeof data === 'string' && data.length > socket.mss) {
+      let offset = 0;
+      while (offset < data.length) {
+        const chunk = data.slice(offset, offset + socket.mss);
+        offset += chunk.length;
+        const isLast = offset >= data.length;
+        const flags = noFlags(); flags.ack = true; if (isLast) flags.psh = true;
+        this.transmit(socket, flags, socket.sendNext, socket.recvNext, chunk);
+        socket.sendNext = (socket.sendNext + chunk.length) >>> 0;
+      }
+      return;
+    }
     const flags = noFlags(); flags.ack = true; flags.psh = true;
     this.transmit(socket, flags, socket.sendNext, socket.recvNext, data);
-    socket.sendNext = (socket.sendNext + 1) >>> 0;
+    socket.sendNext = (socket.sendNext + (typeof data === 'string' ? data.length : 1)) >>> 0;
   }
 
   private flushPendingSends(socket: TcpSocket): void {
@@ -440,10 +453,18 @@ export class TcpStack {
   }
 
   private deliverData(socket: TcpSocket, seg: TcpSegment): void {
-    socket.recvNext = (seg.sequence + 1) >>> 0;
-    if (seg.payload !== undefined) {
-      try { socket._fireData(seg.payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+    const chunkLen = typeof seg.payload === 'string' ? seg.payload.length : 1;
+    socket.recvNext = (seg.sequence + chunkLen) >>> 0;
+    if (seg.payload === undefined) return;
+    if (typeof seg.payload === 'string') {
+      socket.recvBuffer += seg.payload;
+      if (!seg.flags.psh) return;
+      const full = socket.recvBuffer;
+      socket.recvBuffer = '';
+      try { socket._fireData(full); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+      return;
     }
+    try { socket._fireData(seg.payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
   }
 
   private handleIncomingFin(socket: TcpSocket): void {
@@ -555,7 +576,7 @@ export class TcpStack {
         sourcePort: seg.sourcePort, destinationPort: seg.destinationPort,
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
-        payloadSize: seg.payload === undefined ? 0 : 1,
+        payloadSize: seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1),
       },
     });
     this.host.sendFrame(egress.name, eth);
