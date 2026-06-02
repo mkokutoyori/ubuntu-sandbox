@@ -18,6 +18,25 @@ beforeEach(() => {
   Logger.reset();
 });
 
+describe('Logging — every LinuxLogManager write produces a device.syslog.entry', () => {
+  it('a logKernel call on Linux fires device.syslog.entry with deviceId + severity', () => {
+    const bus = new EventBus();
+    const srv = new LinuxServer('linux-server', 'SRV');
+    srv.setEventBus(bus);
+    srv.powerOn();
+
+    const entries: Array<{ tag: string; message: string; severity: string }> = [];
+    bus.subscribeWhere('device.syslog.entry',
+      (p) => (p as { deviceId?: string }).deviceId === srv.id,
+      (e) => entries.push(e.payload as { tag: string; message: string; severity: string }));
+
+    const port = srv.getPort('eth0')!;
+    port.setUp(false);
+
+    expect(entries.some(e => e.tag === 'kernel' && e.message.includes('Link is Down'))).toBe(true);
+  });
+});
+
 describe('Logging — SyslogAgent forwards buffer entries to remote servers', () => {
   it('Cisco buffer event also lands on a remote syslog listener via UDP/514', () => {
     const bus = new EventBus();

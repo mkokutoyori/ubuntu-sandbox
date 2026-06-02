@@ -447,7 +447,7 @@ export class LinuxCommandExecutor {
     this.supervisor?.dispose();
     this.supervisor = new LinuxServiceSupervisor(bus, this.serviceMgr, deviceId);
     // The syslog daemon's lifecycle drives /var/log/* file coherence.
-    this.logMgr.attachBus(bus);
+    this.logMgr.attachBus(bus, deviceId);
     // Record systemd "Started/Stopped <unit>" lines in the journal.
     this.serviceJournal?.dispose();
     this.serviceJournal = new LinuxServiceJournalProjection(bus, this.logMgr, deviceId);
