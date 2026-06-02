@@ -105,4 +105,17 @@ export type WindowsDomainEvent =
   | { topic: 'windows.process.started'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.process.stopped'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
-  | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload };
+  | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload }
+  | { topic: 'windows.firewall.drop'; payload: WindowsFirewallDropPayload };
+
+export interface WindowsFirewallDropPayload {
+  deviceId: string;
+  hostname: string;
+  ruleName: string;
+  sourceIp: string;
+  destinationIp: string;
+  sourcePort: number;
+  destinationPort: number;
+  protocol: string;
+  direction: 'Inbound' | 'Outbound';
+}

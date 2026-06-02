@@ -1,3 +1,5 @@
+import { getDefaultEventBus } from '@/events/EventBus';
+
 /**
  * LoggingConfig — config-driven syslog/logging state (Lot C).
  *
@@ -75,6 +77,16 @@ export class LoggingConfig {
             : `TCP listener closed on ${p.localIp}:${p.localPort}`);
       }),
     ];
+    const logHandler = (e: { payload: unknown }): void => {
+      const p = e.payload as { source: string; level: string; event: string; message: string };
+      if (p.source !== deviceId) return;
+      if (p.event.startsWith('router:acl-deny')) {
+        this.append('warnings', 'sec', p.message);
+      }
+    };
+    unsubs.push(bus.subscribe('log', logHandler));
+    const defaultBus = getDefaultEventBus();
+    if (defaultBus !== bus) unsubs.push(defaultBus.subscribe('log', logHandler));
     return () => { for (const u of unsubs) u(); };
   }
 

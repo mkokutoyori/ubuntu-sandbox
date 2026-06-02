@@ -14,6 +14,12 @@ import type { WindowsServiceEventPayload } from './events';
 
 /** SCM event ID for a service state transition (System log). */
 const SCM_STATE_CHANGE = 7036;
+/** Windows Filtering Platform — packet blocked (Security log). */
+const WFP_PACKET_BLOCKED = 5152;
+/** TCP listener started (System log). */
+const TCP_LISTENER_OPENED = 5158;
+/** Inbound connection allowed (Security log). */
+const WFP_CONNECTION_ALLOWED = 5156;
 
 /** The slice of the event-log provider this projection writes through. */
 export interface WindowsEventLogSink {
@@ -35,6 +41,51 @@ export class WindowsEventLogProjection {
     this.subscriptions.push(
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
+      bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
+      bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
+      bus.subscribe('windows.firewall.drop', (e) => this.onFirewallDrop(e.payload)),
+    );
+  }
+
+  private onTcpListener(p: {
+    deviceId: string; localIp: string; localPort: number; added: boolean;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!p.added) return;
+    this.sink.writeEventLog(
+      'System', 'Tcpip', TCP_LISTENER_OPENED, 'Information',
+      `TCP listener opened on ${p.localIp}:${p.localPort}.`,
+    );
+  }
+
+  private onTcpAccepted(p: {
+    deviceId: string; remoteIp: string; remotePort: number;
+    localIp: string; localPort: number; passive: boolean;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!p.passive) return;
+    this.sink.writeEventLog(
+      'Security', 'Microsoft-Windows-Security-Auditing',
+      WFP_CONNECTION_ALLOWED, 'SuccessAudit',
+      `The Windows Filtering Platform has permitted a connection. ` +
+      `Source: ${p.remoteIp}:${p.remotePort}, Destination: ${p.localIp}:${p.localPort}.`,
+    );
+  }
+
+  private onFirewallDrop(p: {
+    deviceId: string; ruleName: string;
+    sourceIp: string; sourcePort: number;
+    destinationIp: string; destinationPort: number;
+    protocol: string; direction: 'Inbound' | 'Outbound';
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'Security', 'Microsoft-Windows-Security-Auditing',
+      WFP_PACKET_BLOCKED, 'FailureAudit',
+      `The Windows Filtering Platform has blocked a packet. ` +
+      `Direction: ${p.direction}, Protocol: ${p.protocol}, ` +
+      `Source: ${p.sourceIp}:${p.sourcePort}, Destination: ${p.destinationIp}:${p.destinationPort}, ` +
+      `Filter: ${p.ruleName}.`,
     );
   }
 
