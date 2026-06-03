@@ -111,6 +111,40 @@ describe('DBMS_STATS', () => {
     expect(out).toMatch(/EMPLOYEES|DEPARTMENTS/);
     sh.dispose();
   });
+
+  it('GATHER_INDEX_STATS refreshes a single index entry without re-touching peers', () => {
+    const sh = newSession('stats-gi');
+    sh.processLine('CREATE TABLE GI_T (id NUMBER, cat VARCHAR2(2));');
+    for (let i = 1; i <= 20; i++) {
+      sh.processLine(`INSERT INTO GI_T VALUES (${i}, '${i % 4}');`);
+    }
+    sh.processLine('CREATE INDEX GI_T_CAT ON GI_T(cat);');
+    sh.processLine("BEGIN DBMS_STATS.GATHER_INDEX_STATS('SYS', 'GI_T_CAT'); END;");
+    const out = run(sh, "SELECT DISTINCT_KEYS FROM DBA_IND_STATISTICS WHERE INDEX_NAME='GI_T_CAT';");
+    expect(out).toMatch(/\s4\s/);
+    sh.processLine("BEGIN DBMS_STATS.DELETE_INDEX_STATS('SYS', 'GI_T_CAT'); END;");
+    sh.processLine('/');
+    const out2 = run(sh, "SELECT DISTINCT_KEYS, STALE_STATS FROM DBA_IND_STATISTICS WHERE INDEX_NAME='GI_T_CAT';");
+    expect(out2).toMatch(/\s0\s+YES/);
+    sh.dispose();
+  });
+
+  it('GATHER_TABLE_STATS computes BLEVEL and CLUSTERING_FACTOR for an index', () => {
+    const sh = newSession('stats-idx');
+    sh.processLine('CREATE TABLE IDX_T (id NUMBER, cat VARCHAR2(2));');
+    for (let i = 1; i <= 50; i++) {
+      sh.processLine(`INSERT INTO IDX_T VALUES (${i}, '${i % 4}');`);
+    }
+    sh.processLine('CREATE UNIQUE INDEX IDX_T_PK ON IDX_T(id);');
+    sh.processLine('CREATE INDEX IDX_T_CAT ON IDX_T(cat);');
+    sh.processLine("BEGIN DBMS_STATS.GATHER_TABLE_STATS('SYS', 'IDX_T'); END;");
+    const out = run(sh, "SELECT INDEX_NAME, BLEVEL, LEAF_BLOCKS, DISTINCT_KEYS, CLUSTERING_FACTOR FROM DBA_IND_STATISTICS WHERE TABLE_NAME='IDX_T' ORDER BY INDEX_NAME;");
+    // Unique index over 50 distinct ids → distinct_keys = 50.
+    expect(out).toMatch(/IDX_T_PK\s+\d+\s+\d+\s+50\s+\d+/);
+    // Non-unique index over 4 distinct categories → distinct_keys = 4.
+    expect(out).toMatch(/IDX_T_CAT\s+\d+\s+\d+\s+4\s+\d+/);
+    sh.dispose();
+  });
 });
 
 describe('PL/SQL exceptions + EXECUTE IMMEDIATE', () => {

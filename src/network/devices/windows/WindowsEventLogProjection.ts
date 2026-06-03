@@ -44,6 +44,58 @@ export class WindowsEventLogProjection {
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
       bus.subscribe('windows.firewall.drop', (e) => this.onFirewallDrop(e.payload)),
+      bus.subscribe('windows.portproxy.added', (e) => this.onPortProxyAdded(e.payload)),
+      bus.subscribe('windows.portproxy.removed', (e) => this.onPortProxyRemoved(e.payload)),
+      bus.subscribe('dhcp.lease.granted', (e) => this.onDhcpGranted(e.payload)),
+      bus.subscribe('port.link.up', (e) => this.onLinkUp(e.payload)),
+      bus.subscribe('port.link.down', (e) => this.onLinkDown(e.payload)),
+    );
+  }
+
+  private onPortProxyAdded(p: {
+    deviceId: string; listenAddress: string; listenPort: number;
+    connectAddress: string; connectPort: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'Tcpip', 5159, 'Information',
+      `Port proxy added: ${p.listenAddress}:${p.listenPort} → ${p.connectAddress}:${p.connectPort}.`,
+    );
+  }
+
+  private onPortProxyRemoved(p: {
+    deviceId: string; listenAddress: string; listenPort: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'Tcpip', 5160, 'Information',
+      `Port proxy removed: ${p.listenAddress}:${p.listenPort}.`,
+    );
+  }
+
+  private onDhcpGranted(p: {
+    deviceId: string; iface?: string; ip?: string; leaseTimeSec?: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'Dhcp-Client', 50036, 'Information',
+      `Your computer was successfully assigned an address from the DHCP server, and the address is ${p.ip ?? '?'}. Lease time: ${p.leaseTimeSec ?? 0}s.`,
+    );
+  }
+
+  private onLinkUp(p: { deviceId: string; portName: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'NDIS', 4201, 'Information',
+      `Network adapter ${p.portName} has been connected.`,
+    );
+  }
+
+  private onLinkDown(p: { deviceId: string; portName: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System', 'NDIS', 4202, 'Warning',
+      `Network adapter ${p.portName} has been disconnected.`,
     );
   }
 

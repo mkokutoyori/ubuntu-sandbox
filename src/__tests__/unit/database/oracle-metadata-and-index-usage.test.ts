@@ -131,4 +131,18 @@ describe('ALTER INDEX … MONITORING USAGE + DBA_OBJECT_USAGE', () => {
     expect(out).toMatch(/YES/);
     sh.dispose();
   });
+
+  it('a SELECT whose plan uses the index flips USED=YES even without DML', () => {
+    const sh = newSession('mon-plan');
+    sh.processLine('CREATE TABLE T_PLAN (ID NUMBER);');
+    sh.processLine('CREATE INDEX T_PLAN_IDX ON T_PLAN (ID);');
+    sh.processLine('ALTER INDEX T_PLAN_IDX MONITORING USAGE;');
+    // The plan generator picks an INDEX path for equality predicates
+    // on the indexed column.
+    sh.processLine('SELECT * FROM T_PLAN WHERE ID = 7;');
+    const out = run(sh, "SELECT INDEX_NAME, USED FROM DBA_OBJECT_USAGE WHERE INDEX_NAME='T_PLAN_IDX';");
+    expect(out).toMatch(/T_PLAN_IDX/);
+    expect(out).toMatch(/YES/);
+    sh.dispose();
+  });
 });

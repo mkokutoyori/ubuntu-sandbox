@@ -111,6 +111,12 @@ export interface EvtxFilesystem {
 }
 
 export class PSEventLogProvider {
+  private bus: import('@/events/EventBus').IEventBus | null = null;
+  private deviceId: string | null = null;
+  attachBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
   private logs: Map<string, EventLogMetadata>;
   /** Per-instance RecordId counter (see RECORD_ID_BASE note above). */
   private recordId = RECORD_ID_BASE;
@@ -247,9 +253,10 @@ export class PSEventLogProvider {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
+    const ts = new Date();
     meta.entries.push({
       index: this.nextIndex(),
-      timeGenerated: new Date(),
+      timeGenerated: ts,
       entryType,
       source,
       eventId,
@@ -257,6 +264,25 @@ export class PSEventLogProvider {
       message,
     });
     this.materialize();
+    if (this.bus && this.deviceId) {
+      const sevMap: Record<EntryType, { name: 'informational' | 'warnings' | 'errors' | 'critical' | 'notifications'; num: number }> = {
+        Information: { name: 'informational', num: 6 },
+        Warning: { name: 'warnings', num: 4 },
+        Error: { name: 'errors', num: 3 },
+        SuccessAudit: { name: 'notifications', num: 5 },
+        FailureAudit: { name: 'warnings', num: 4 },
+      };
+      const sev = sevMap[entryType];
+      this.bus.publish({
+        topic: 'device.syslog.entry',
+        payload: {
+          deviceId: this.deviceId,
+          severity: sev.name, severityNum: sev.num,
+          tag: source, message,
+          ts: ts.getTime(),
+        },
+      });
+    }
     return '';
   }
 

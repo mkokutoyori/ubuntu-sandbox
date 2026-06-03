@@ -100,6 +100,12 @@ export class LinuxLogManager {
   private syslogDaemonActive = true;
   private journaldActive = true;
   private busUnsub: Unsubscribe[] = [];
+  private attachedBus: IEventBus | null = null;
+  private attachedDeviceId: string | null = null;
+  private readonly SEVERITY_NAME = [
+    'emergencies', 'alerts', 'critical', 'errors',
+    'warnings', 'notifications', 'informational', 'debugging',
+  ] as const;
 
   constructor(private vfs: VirtualFileSystem) {
     this.bootTime = new Date();
@@ -112,8 +118,10 @@ export class LinuxLogManager {
    * file-logging coherence: stopping `rsyslog` freezes `/var/log/*`,
    * starting it resumes them.
    */
-  attachBus(bus: IEventBus): void {
+  attachBus(bus: IEventBus, deviceId?: string): void {
     for (const off of this.busUnsub) off();
+    this.attachedBus = bus;
+    if (deviceId) this.attachedDeviceId = deviceId;
     const isSyslog = (p: { name: string }): boolean =>
       p.name === 'rsyslog' || p.name === 'syslog' || p.name === 'systemd-journald';
     this.busUnsub = [
@@ -447,6 +455,18 @@ export class LinuxLogManager {
     const specificFile = FACILITY_LOG_FILES[facilityName];
     if (specificFile) {
       this.appendToLogFile(specificFile, logLine);
+    }
+
+    if (this.attachedBus && this.attachedDeviceId) {
+      const sevName = this.SEVERITY_NAME[opts.priority] ?? 'informational';
+      this.attachedBus.publish({
+        topic: 'device.syslog.entry',
+        payload: {
+          deviceId: this.attachedDeviceId,
+          severity: sevName, severityNum: opts.priority,
+          tag: opts.tag, message: opts.message, ts: entry.timestamp.getTime(),
+        },
+      });
     }
   }
 

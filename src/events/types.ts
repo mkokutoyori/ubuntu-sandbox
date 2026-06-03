@@ -79,6 +79,16 @@ export interface BusHandlerErrorPayload {
 // Device lifecycle (consumed by Phase 2)
 // ──────────────────────────────────────────────────────────────────────────
 
+export interface DeviceSyslogEntryPayload {
+  deviceId: string;
+  severity: 'emergencies' | 'alerts' | 'critical' | 'errors'
+          | 'warnings' | 'notifications' | 'informational' | 'debugging';
+  severityNum: number;
+  tag: string;
+  message: string;
+  ts: number;
+}
+
 export interface DeviceRegisteredPayload {
   id: string;
   type: string;
@@ -250,6 +260,7 @@ export type DomainEvent =
   // Cross-cutting
   | { topic: 'log'; payload: LogEventPayload }
   | { topic: 'bus.handler-error'; payload: BusHandlerErrorPayload }
+  | { topic: 'device.syslog.entry'; payload: DeviceSyslogEntryPayload }
   // Device lifecycle
   | { topic: 'device.registered'; payload: DeviceRegisteredPayload }
   | { topic: 'device.deregistered'; payload: DeviceDeregisteredPayload }

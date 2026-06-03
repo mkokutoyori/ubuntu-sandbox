@@ -1192,7 +1192,23 @@ export abstract class LinuxMachine extends EndHost {
       outIface: outPortName,
     };
     const verdict = this.executor.iptables.filterPacket(pkt);
-    if (verdict !== 'accept') this.logIptablesDrop(pkt, verdict, portName, outPortName);
+    if (verdict !== 'accept') {
+      this.logIptablesDrop(pkt, verdict, portName, outPortName);
+      this.getBus().publish({
+        topic: 'linux.firewall.drop',
+        payload: {
+          deviceId: this.id, hostname: this.hostname,
+          inIface: portName, outIface: outPortName,
+          sourceIp: pkt.srcIP, destinationIp: pkt.dstIP,
+          sourcePort: pkt.srcPort, destinationPort: pkt.dstPort,
+          protocol: pkt.protocol === 6 ? 'TCP'
+                  : pkt.protocol === 17 ? 'UDP'
+                  : pkt.protocol === 1 ? 'ICMP' : String(pkt.protocol),
+          verdict, chain: pkt.direction === 'in' ? 'INPUT'
+                       : pkt.direction === 'out' ? 'OUTPUT' : 'FORWARD',
+        },
+      });
+    }
     return verdict;
   }
 

@@ -130,6 +130,29 @@ export class SyslogAgent {
     };
     subscribeOn(localBus);
     if (localBus !== defaultBus) subscribeOn(defaultBus);
+    const subscribeEntryOn = (bus: IEventBus): void => {
+      this.unsubscribers.push(bus.subscribeWhere(
+        'device.syslog.entry',
+        (p) => p.deviceId === this.host.id,
+        (e) => this.onLoggingEntry(e.payload),
+      ));
+    };
+    subscribeEntryOn(localBus);
+    if (localBus !== defaultBus) subscribeEntryOn(defaultBus);
+  }
+
+  private onLoggingEntry(p: {
+    deviceId: string; severity: SyslogSeverityName; tag: string; message: string;
+  }): void {
+    if (!this.config.enabled) return;
+    if (this.config.servers.size === 0) return;
+    for (const s of this.config.servers.values()) {
+      if (!shouldForward(s.severityThreshold, p.severity)) {
+        this.dropped(s.ip, 'threshold');
+        continue;
+      }
+      this.deliver(s, p.severity, p.tag.toUpperCase(), p.message);
+    }
   }
 
   private onLog(level: 'debug' | 'info' | 'warn' | 'error', event: string, message: string): void {

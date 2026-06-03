@@ -41,7 +41,221 @@ export class PortActivityLogProjection {
       bus.subscribe('linux.process.spawned', (e) => this.onProcessSpawned(e.payload)),
       bus.subscribe('linux.process.exited', (e) => this.onProcessExited(e.payload)),
       bus.subscribe('arp.violation', (e) => this.onArpViolation(e.payload)),
+      bus.subscribe('linux.service.failed', (e) => this.onServiceFailed(e.payload)),
+      bus.subscribe('linux.service.enabled', (e) => this.onServiceEnabled(e.payload)),
+      bus.subscribe('linux.service.disabled', (e) => this.onServiceDisabled(e.payload)),
+      bus.subscribe('port.config.ip-changed', (e) => this.onIpChanged(e.payload)),
+      bus.subscribe('port.config.mtu-changed', (e) => this.onMtuChanged(e.payload)),
+      bus.subscribe('ntp.synced', (e) => this.onNtpSynced(e.payload)),
+      bus.subscribe('ntp.unsynced', (e) => this.onNtpUnsynced(e.payload)),
+      bus.subscribe('ipsec.ike.sa-installed', (e) => this.onIpsecIkeUp(e.payload)),
+      bus.subscribe('ipsec.ike.sa-deleted', (e) => this.onIpsecIkeDown(e.payload)),
+      bus.subscribe('ipsec.dpd.peer-down', (e) => this.onIpsecDpdDown(e.payload)),
+      bus.subscribe('dhcp.pool.lease-allocated', (e) => this.onDhcpdAllocated(e.payload)),
+      bus.subscribe('dhcp.pool.lease-released', (e) => this.onDhcpdReleased(e.payload)),
+      bus.subscribe('dhcp.address-conflict', (e) => this.onDhcpConflict(e.payload)),
+      bus.subscribe('dhcp.nak.received', (e) => this.onDhcpNak(e.payload)),
+      bus.subscribe('port.config.ipv6-added', (e) => this.onIpv6Added(e.payload)),
+      bus.subscribe('port.config.ipv6-removed', (e) => this.onIpv6Removed(e.payload)),
+      bus.subscribe('cable.disconnected', (e) => this.onCableDisconnected(e.payload)),
+      bus.subscribe('cable.connected', (e) => this.onCableConnected(e.payload)),
+      bus.subscribe('dhcp.client.state-changed', (e) => this.onDhcpClientState(e.payload)),
+      bus.subscribe('host.icmp.echo-failed', (e) => this.onIcmpEchoFailed(e.payload)),
+      bus.subscribe('host.lifecycle.transitioned', (e) => this.onLifecycleChanged(e.payload)),
+      bus.subscribe('host.identity.changed', (e) => this.onHostnameChanged(e.payload)),
+      bus.subscribe('linux.service.masked', (e) => this.onServiceMasked(e.payload)),
+      bus.subscribe('linux.service.unmasked', (e) => this.onServiceUnmasked(e.payload)),
+      bus.subscribe('linux.process.signalled', (e) => this.onProcessSignalled(e.payload)),
+      bus.subscribe('linux.process.reaped', (e) => this.onProcessReaped(e.payload)),
     );
+  }
+
+  private onServiceMasked(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Created symlink /etc/systemd/system/${p.name}.service → /dev/null.`);
+  }
+
+  private onServiceUnmasked(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Removed /etc/systemd/system/${p.name}.service.`);
+  }
+
+  private onProcessSignalled(p: {
+    deviceId: string; pid: number; comm: string; signal: string; sender?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.comm}[${p.pid}] received signal ${p.signal} from ${p.sender ?? 'unknown'}`);
+  }
+
+  private onProcessReaped(p: {
+    deviceId: string; pid: number; comm: string; exitCode: number;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (p.exitCode === 0) return;
+    this.logManager.logDaemon('systemd',
+      `${p.comm}[${p.pid}] exited with code ${p.exitCode}`);
+  }
+
+  private onIcmpEchoFailed(p: { deviceId: string; target?: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `ICMP echo to ${p.target ?? '?'} failed (${p.reason ?? 'no response'})`);
+  }
+
+  private onLifecycleChanged(p: {
+    deviceId: string; oldState?: string; newState?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logSystemd('systemd',
+      `Reached lifecycle state ${p.newState ?? '?'} (was ${p.oldState ?? '?'}).`);
+  }
+
+  private onHostnameChanged(p: {
+    deviceId: string; oldHostname?: string; newHostname?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemd-hostnamed',
+      `Hostname set to <${p.newHostname ?? '?'}> (was <${p.oldHostname ?? '?'}>)`);
+  }
+
+  private onIpv6Added(p: { deviceId: string; portName: string; ipv6?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: IPv6 address ${p.ipv6 ?? '?'} assigned`);
+  }
+
+  private onIpv6Removed(p: { deviceId: string; portName: string; ipv6?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: IPv6 address ${p.ipv6 ?? '?'} removed`);
+  }
+
+  private onCableConnected(p: {
+    portA?: { deviceId?: string; portName?: string };
+    portB?: { deviceId?: string; portName?: string };
+  }): void {
+    const ours = p.portA?.deviceId === this.deviceId ? p.portA?.portName
+               : p.portB?.deviceId === this.deviceId ? p.portB?.portName
+               : null;
+    if (!ours) return;
+    this.logManager.logKernel('kernel', `${ours}: cable connected`);
+  }
+
+  private onCableDisconnected(p: {
+    portA?: { deviceId?: string; portName?: string };
+    portB?: { deviceId?: string; portName?: string };
+  }): void {
+    const ours = p.portA?.deviceId === this.deviceId ? p.portA?.portName
+               : p.portB?.deviceId === this.deviceId ? p.portB?.portName
+               : null;
+    if (!ours) return;
+    this.logManager.logKernel('kernel', `${ours}: cable disconnected`);
+  }
+
+  private onDhcpClientState(p: {
+    deviceId: string; iface?: string; oldState?: string; newState?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `${p.iface ?? '?'}: state ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+  }
+
+  private onDhcpdAllocated(p: {
+    deviceId: string; ip?: string; mac?: string; pool?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhcpd',
+      `DHCPACK on ${p.ip ?? '?'} to ${p.mac ?? '?'} via pool ${p.pool ?? '?'}`);
+  }
+
+  private onDhcpdReleased(p: {
+    deviceId: string; ip?: string; mac?: string;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhcpd',
+      `DHCPRELEASE of ${p.ip ?? '?'} from ${p.mac ?? '?'}`);
+  }
+
+  private onDhcpConflict(p: { deviceId: string; ip?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `Address ${p.ip ?? '?'} already in use — declining lease`);
+  }
+
+  private onDhcpNak(p: { deviceId: string; serverIp?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('dhclient',
+      `DHCPNAK from ${p.serverIp ?? '?'} — restarting discovery`);
+  }
+
+  private onNtpSynced(p: { deviceId: string; server?: string; stratum?: number; offsetMs?: number }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemd-timesyncd',
+      `Synchronized to time server ${p.server ?? '?'} (stratum ${p.stratum ?? '?'}, offset ${p.offsetMs ?? 0}ms).`);
+  }
+
+  private onNtpUnsynced(p: { deviceId: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemd-timesyncd',
+      `Lost time synchronization (${p.reason ?? 'no reachable server'}).`);
+  }
+
+  private onIpsecIkeUp(p: { deviceId: string; peerIp?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('charon',
+      `IKE_SA established with ${p.peerIp ?? '?'}`);
+  }
+
+  private onIpsecIkeDown(p: { deviceId: string; peerIp?: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('charon',
+      `IKE_SA with ${p.peerIp ?? '?'} deleted (${p.reason ?? 'remote close'})`);
+  }
+
+  private onIpsecDpdDown(p: { deviceId: string; peerIp?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('charon',
+      `DPD: peer ${p.peerIp ?? '?'} not responding, deleting SA`);
+  }
+
+  private onServiceFailed(p: { deviceId: string; name: string; reason?: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logSystemd(p.name,
+      `${p.name}.service: Failed with result '${p.reason ?? 'failure'}'.`);
+  }
+
+  private onServiceEnabled(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Created symlink /etc/systemd/system/multi-user.target.wants/${p.name}.service.`);
+  }
+
+  private onServiceDisabled(p: { deviceId: string; name: string }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logDaemon('systemctl',
+      `Removed symlink /etc/systemd/system/multi-user.target.wants/${p.name}.service.`);
+  }
+
+  private onIpChanged(p: {
+    deviceId: string; portName: string; ip?: string | null; mask?: string | null;
+  }): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (p.ip) {
+      this.logManager.logKernel('kernel',
+        `${p.portName}: IPv4 address ${p.ip}/${p.mask ?? ''} assigned`);
+    } else {
+      this.logManager.logKernel('kernel',
+        `${p.portName}: IPv4 address removed`);
+    }
+  }
+
+  private onMtuChanged(p: { deviceId: string; portName: string; mtu?: number }): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `${p.portName}: MTU changed to ${p.mtu ?? '?'}`);
   }
 
   private onPortSecurityViolation(p: {

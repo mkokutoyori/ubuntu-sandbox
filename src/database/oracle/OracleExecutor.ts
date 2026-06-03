@@ -206,6 +206,10 @@ export class OracleExecutor extends BaseExecutor {
       try {
         const plan = db.planGenerator.generate(statement, sqlId, text, this.context.currentSchema);
         this.instance.planCache.put(plan);
+        const monitor = (this.instance as unknown as {
+          getIndexUsageMonitor?: () => { notePlanUsage: (nodes: ReadonlyArray<{ operation: string; objectName: string | null }>) => void } | null;
+        }).getIndexUsageMonitor?.();
+        monitor?.notePlanUsage(plan.nodes);
       } catch {
         // PlanGenerator is best-effort. Don't break the actual statement.
       }
@@ -435,6 +439,34 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeStatement(statement: Statement): ResultSet {
+    const out = this.dispatchStatement(statement);
+    this.invalidateResultCacheForStatement(statement);
+    return out;
+  }
+
+  private invalidateResultCacheForStatement(stmt: Statement): void {
+    const mgr = this.getResultCache();
+    if (!mgr) return;
+    const t = stmt.type;
+    const target = (stmt as unknown as {
+      table?: { name?: string; schema?: string } | string;
+      tableName?: string; schema?: string;
+    });
+    let name: string | undefined;
+    let schema: string | undefined;
+    if (typeof target.table === 'string') name = target.table;
+    else if (target.table) { name = target.table.name; schema = target.table.schema; }
+    name = name ?? target.tableName;
+    schema = schema ?? target.schema ?? this.context.currentSchema;
+    if (!name) return;
+    if (t === 'InsertStatement' || t === 'UpdateStatement' || t === 'DeleteStatement'
+        || t === 'TruncateTableStatement' || t === 'AlterTableStatement'
+        || t === 'DropTableStatement') {
+      mgr.invalidateByObject(schema, name);
+    }
+  }
+
+  private dispatchStatement(statement: Statement): ResultSet {
     switch (statement.type) {
       case 'SelectStatement': return this.executeSelect(statement);
       case 'InsertStatement': return this.executeInsert(statement);
@@ -697,6 +729,14 @@ export class OracleExecutor extends BaseExecutor {
   // ── SELECT ────────────────────────────────────────────────────────
 
   private executeSelect(stmt: SelectStatement): ResultSet {
+    const cached = this.tryResultCacheHit(stmt);
+    if (cached) return cached;
+    const result = this.executeSelectInner(stmt);
+    this.maybeStoreInResultCache(stmt, result);
+    return result;
+  }
+
+  private executeSelectInner(stmt: SelectStatement): ResultSet {
     // Handle WITH (CTE) clause — materialize CTEs as temporary tables, execute inner SELECT, then clean up
     if (stmt.withClause) {
       return this.executeWithCTE(stmt);
@@ -724,6 +764,113 @@ export class OracleExecutor extends BaseExecutor {
     // `loadTable` materialises catalog views as virtual row sources so
     // `SELECT COUNT(*) FROM v$log` etc. evaluate correctly.
     return this.executeSelectFromTable(stmt);
+  }
+
+  /** Detect /*+ RESULT_CACHE *​/ hint in the original source SQL. */
+  private hasResultCacheHint(stmt: SelectStatement): boolean {
+    const src = (stmt as unknown as { sourceText?: string }).sourceText ?? '';
+    return /\/\*\+[^*]*\bRESULT_CACHE\b/i.test(src);
+  }
+
+  /** Hash a SELECT source text + current user into a stable cache key. */
+  private resultCacheKey(stmt: SelectStatement): string {
+    const src = (stmt as unknown as { sourceText?: string }).sourceText ?? '';
+    return `${this.context.currentUser}|${src.replace(/\s+/g, ' ').trim()}`;
+  }
+
+  private getResultCache(): import('./resultcache/ResultCache').ResultCacheManager | null {
+    return (this.instance as unknown as {
+      resultCache?: import('./resultcache/ResultCache').ResultCacheManager;
+    }).resultCache ?? null;
+  }
+
+  private tryResultCacheHit(stmt: SelectStatement): ResultSet | null {
+    if (!this.hasResultCacheHint(stmt)) return null;
+    const mgr = this.getResultCache();
+    if (!mgr || !mgr.enabled) return null;
+    const hit = mgr.lookup(this.resultCacheKey(stmt));
+    if (!hit) return null;
+    const payload = hit.payload as ResultSet;
+    return { ...payload, rows: payload.rows.map((r) => r.slice()) };
+  }
+
+  private maybeStoreInResultCache(stmt: SelectStatement, result: ResultSet): void {
+    if (!this.hasResultCacheHint(stmt)) return;
+    const mgr = this.getResultCache();
+    if (!mgr || !mgr.enabled) return;
+    const key = this.resultCacheKey(stmt);
+    const deps = this.collectFromTableDeps(stmt);
+    const name = ((stmt as unknown as { sourceText?: string }).sourceText ?? 'cached')
+      .replace(/\s+/g, ' ').trim().slice(0, 120);
+    mgr.store(key, result, name, deps, {
+      rowCount: result.rows.length,
+      columnCount: result.columns.length,
+      rowSize: 80, creator: this.context.currentUser,
+    });
+  }
+
+  private collectFromTableDeps(stmt: SelectStatement): Array<{ owner: string; name: string; type: string }> {
+    const out: Array<{ owner: string; name: string; type: string }> = [];
+    const visit = (s: SelectStatement): void => {
+      for (const f of s.from ?? []) {
+        if (f.type === 'TableRef') {
+          const owner = (f.schema ?? this.context.currentSchema).toUpperCase();
+          const name = f.name.toUpperCase();
+          if (name !== 'DUAL') out.push({ owner, name, type: 'TABLE' });
+        } else if (f.type === 'SubqueryTableRef') {
+          visit(f.query);
+        }
+      }
+      for (const j of s.joins ?? []) {
+        if (j.table.type === 'TableRef') {
+          const owner = (j.table.schema ?? this.context.currentSchema).toUpperCase();
+          const name = j.table.name.toUpperCase();
+          if (name !== 'DUAL') out.push({ owner, name, type: 'TABLE' });
+        }
+      }
+    };
+    visit(stmt);
+    return out;
+  }
+
+  /** Invalidate all cached results whose dependencies touch (schema, table). */
+  invalidateResultCacheFor(schema: string, table: string): void {
+    const mgr = this.getResultCache();
+    mgr?.invalidateByObject(schema, table);
+  }
+
+  /**
+   * Apply DBMS_REDACT policies at row-source level when loading a table.
+   * Bypassed for SYS / SYSTEM and any user whose name appears in the
+   * policy expression's `SESSION_USER NOT IN (…)` exclusion list.
+   */
+  private maybeRedactRows(
+    schema: string, tableName: string,
+    cols: StorageColMeta[], rows: StorageRow[],
+  ): StorageRow[] {
+    if (!rows.length) return rows;
+    const user = (this.context.currentUser ?? '').toUpperCase();
+    if (user === 'SYS' || user === 'SYSTEM') return rows;
+    const redact = (this.instance as unknown as {
+      redaction?: import('./security/DataRedactionManager').DataRedactionManager;
+    }).redaction;
+    if (!redact) return rows;
+    const map = redact.findActiveRedactions(schema, tableName, user);
+    if (map.size === 0) return rows;
+    const indexed: Array<{ i: number; action: import('./security/DataRedactionManager').RedactionColumn } | null> =
+      cols.map((c, i) => {
+        const a = map.get(c.name.toUpperCase());
+        return a ? { i, action: a } : null;
+      });
+    if (!indexed.some(Boolean)) return rows;
+    return rows.map((row) => {
+      const next = row.slice();
+      for (const e of indexed) {
+        if (!e) continue;
+        next[e.i] = redact.applyRedaction(next[e.i], e.action) as StorageRow[number];
+      }
+      return next;
+    });
   }
 
   // ── WITH / CTE ──────────────────────────────────────────────────
@@ -1023,7 +1170,8 @@ export class OracleExecutor extends BaseExecutor {
     this.requireObjectAccess(schema, tableName, 'SELECT');
 
     const meta = this.storage.getTableMeta(schema, tableName)!;
-    const rows = this.storage.getRows(schema, tableName);
+    const storageRows = this.storage.getRows(schema, tableName);
+    const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
     const prefix = alias || tableName;

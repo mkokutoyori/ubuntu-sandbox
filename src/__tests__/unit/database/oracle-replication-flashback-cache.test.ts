@@ -114,6 +114,44 @@ describe('Result Cache', () => {
     expect(out).toMatch(/INVALID/);
     sh.dispose();
   });
+
+  it('/*+ RESULT_CACHE */ hint actually serves the second execution from cache', () => {
+    const { sh, deviceId } = newSession('rc-3');
+    const db = getOracleDatabase(deviceId);
+    db.instance.resultCache.enabled = true;
+    run(sh, 'CREATE TABLE HR.RC_T (id NUMBER, v VARCHAR2(20));');
+    run(sh, "INSERT INTO HR.RC_T VALUES (1, 'alice');");
+    run(sh, 'COMMIT;');
+    run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_T;');
+    const after = db.instance.resultCache.getEntries()
+      .filter((e) => e.status === 'PUBLISHED');
+    expect(after.length).toBeGreaterThan(0);
+    const beforeScan = after[after.length - 1].scanCount;
+    run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_T;');
+    const afterScan = db.instance.resultCache.getEntries()
+      .find((e) => e.id === after[after.length - 1].id)!.scanCount;
+    expect(afterScan).toBe(beforeScan + 1);
+    sh.dispose();
+  });
+
+  it('DML on a tracked table auto-invalidates cached results', () => {
+    const { sh, deviceId } = newSession('rc-4');
+    const db = getOracleDatabase(deviceId);
+    db.instance.resultCache.enabled = true;
+    run(sh, 'CREATE TABLE HR.RC_INV (id NUMBER);');
+    run(sh, 'INSERT INTO HR.RC_INV VALUES (1);');
+    run(sh, 'COMMIT;');
+    run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_INV;');
+    const before = db.instance.resultCache.getEntries()
+      .filter((e) => e.status === 'PUBLISHED').length;
+    expect(before).toBeGreaterThan(0);
+    run(sh, 'INSERT INTO HR.RC_INV VALUES (2);');
+    run(sh, 'COMMIT;');
+    const after = db.instance.resultCache.getEntries()
+      .filter((e) => e.status === 'PUBLISHED' && e.cacheKey.includes('RC_INV')).length;
+    expect(after).toBe(0);
+    sh.dispose();
+  });
 });
 
 describe('In-Memory column store', () => {

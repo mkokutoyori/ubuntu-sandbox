@@ -92,10 +92,29 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     for (const [ip, cfg] of this.config.neighbors) {
       const { state, peerEng } = this.sessionState(ip, peers);
       keep.add(ip);
+      const prev = this.neighbors.view().find((n) => n.id === ip);
       this.neighbors.upsert(ip, ip, peerEng ? 'session' : 'unresolved',
         state, cfg.remoteAs !== undefined ? `AS${cfg.remoteAs}` : undefined);
+      if (prev?.state !== state) {
+        this.publishNeighborState(ip, prev?.state, state, cfg.remoteAs);
+      }
     }
     this.neighbors.retainOnly(keep);
+  }
+
+  private publishNeighborState(
+    ip: string, oldState: string | undefined, newState: string, remoteAs?: number,
+  ): void {
+    this.bus?.publish({
+      topic: 'bgp.neighbor.state-changed',
+      payload: {
+        deviceId: this.deviceId,
+        neighborIp: ip,
+        oldState: oldState ?? 'Idle',
+        newState,
+        remoteAs: remoteAs ?? null,
+      },
+    } as never);
   }
 
   protected computeRoutes(peers: RoutingPeer[]): RibRoute[] {

@@ -70,6 +70,17 @@ describe('DBMS_SCHEDULER', () => {
     expect(out).toMatch(/FAILED/);
     sh.dispose();
   });
+
+  it('background sweeper auto-runs a due job without explicit RUN_JOB', async () => {
+    const { sh, deviceId } = newSession('sch-sweep');
+    run(sh, 'CREATE TABLE SWEPT_T (id NUMBER);');
+    sh.processLine("BEGIN DBMS_SCHEDULER.CREATE_JOB('SWEEP_JOB', 'PLSQL_BLOCK', 'INSERT INTO SWEPT_T VALUES (42)', '', '', '', 'TRUE'); END;");
+    const db = (await import('@/terminal/commands/database')).getRegisteredOracleDatabase(deviceId)!;
+    db.instance.scheduler!.sweep();
+    const out = run(sh, 'SELECT COUNT(*) FROM SWEPT_T;');
+    expect(out).toMatch(/\s1\s/);
+    sh.dispose();
+  });
 });
 
 describe('Multitenant (CDB / PDB)', () => {

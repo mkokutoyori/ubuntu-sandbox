@@ -160,4 +160,96 @@ export class DataRedactionManager {
 
   getPolicies(): readonly RedactionPolicy[] { return this.policies; }
   getColumns(): readonly RedactionColumn[] { return this.columns; }
+
+  /**
+   * Return the per-column redaction action active for the given object.
+   * Map key is the upper-cased column name. Empty map if no policy
+   * is enabled on the object — callers should skip redaction work then.
+   */
+  findActiveRedactions(
+    objectOwner: string, objectName: string, currentUser?: string,
+  ): Map<string, RedactionColumn> {
+    const owner = objectOwner.toUpperCase();
+    const name = objectName.toUpperCase();
+    const policy = this.policies.find((p) =>
+      p.objectOwner.toUpperCase() === owner &&
+      p.objectName.toUpperCase() === name &&
+      p.enabled);
+    if (!policy) return new Map();
+    if (currentUser && this.expressionExemptsUser(policy.expression, currentUser)) {
+      return new Map();
+    }
+    const out = new Map<string, RedactionColumn>();
+    for (const c of this.columns) {
+      if (c.objectOwner.toUpperCase() !== owner) continue;
+      if (c.objectName.toUpperCase() !== name) continue;
+      if (c.functionType === 'NONE') continue;
+      out.set(c.columnName.toUpperCase(), c);
+    }
+    return out;
+  }
+
+  /**
+   * Parse the common DBMS_REDACT.ADD_POLICY expression idiom
+   * `SYS_CONTEXT('USERENV','SESSION_USER') NOT IN ('A','B')` and return
+   * true when the current user appears in the exclusion list.
+   */
+  private expressionExemptsUser(expression: string, currentUser: string): boolean {
+    const expr = expression.toUpperCase();
+    const user = currentUser.toUpperCase();
+    const match = /SESSION_USER'\)\s*NOT\s+IN\s*\(([^)]+)\)/.exec(expr);
+    if (!match) return false;
+    const names = match[1].split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
+    return names.includes(user);
+  }
+
+  /**
+   * Apply a redaction column's action to a single value. Returns the
+   * masked value. Mirrors DBMS_REDACT defaults — see REDACTION_FULL_VALUES.
+   */
+  applyRedaction(value: unknown, col: RedactionColumn): unknown {
+    if (value === null || value === undefined) return value;
+    switch (col.functionType) {
+      case 'FULL': {
+        if (typeof value === 'number') return 0;
+        if (value instanceof Date) return new Date('1970-01-01');
+        return ' ';
+      }
+      case 'NULLIFY':
+        return null;
+      case 'RANDOM': {
+        if (typeof value === 'number') return Math.floor(Math.random() * 1_000_000);
+        if (value instanceof Date) {
+          return new Date(Date.now() - Math.floor(Math.random() * 31536000000));
+        }
+        const s = String(value);
+        return Array.from(s, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
+      }
+      case 'PARTIAL': {
+        const s = String(value);
+        const params = (col.functionParameters ?? '').split(',').map((x) => x.trim());
+        const [mask = '*', startStr = '1', lengthStr = String(s.length)] = params;
+        const start = Math.max(1, parseInt(startStr, 10) || 1) - 1;
+        const length = Math.max(0, parseInt(lengthStr, 10) || 0);
+        if (start >= s.length) return s;
+        const before = s.slice(0, start);
+        const middle = mask.repeat(length);
+        const after = s.slice(start + length);
+        return before + middle + after;
+      }
+      case 'REGEXP': {
+        const s = String(value);
+        if (!col.regexpPattern) return s;
+        try {
+          const flags = col.regexpMatchParameter ?? 'g';
+          const re = new RegExp(col.regexpPattern, flags.includes('g') ? flags : flags + 'g');
+          return s.replace(re, col.regexpReplaceString ?? '*');
+        } catch {
+          return s;
+        }
+      }
+      default:
+        return value;
+    }
+  }
 }

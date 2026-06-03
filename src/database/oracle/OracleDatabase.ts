@@ -91,6 +91,10 @@ export class OracleDatabase implements SqlCommandHost {
   private sidCounter: number = 5;
   /** Stored PL/SQL units (procedures, functions, packages) */
   private storedUnits: Map<string, StoredPLSQLUnit> = new Map();
+  /** Per-block partial line buffer for DBMS_OUTPUT.PUT (no implicit
+   *  newline until PUT_LINE / NEW_LINE / DISABLE). Keyed by the
+   *  `output: string[]` array the PL/SQL executor passes through. */
+  private dbmsOutputBuffers: WeakMap<string[], string> = new WeakMap();
 
   /** Live OracleSession objects keyed by SID — the dictionary feeds
    *  V$SESSION, SYS_CONTEXT('USERENV', …) and DBMS_SESSION. */
@@ -1076,28 +1080,60 @@ export class OracleDatabase implements SqlCommandHost {
         `ORA-06510: PL/SQL: unhandled user-defined exception (${rais[1].toUpperCase()})`, true);
     }
 
-    // DBMS_OUTPUT.PUT_LINE
+    // DBMS_OUTPUT.PUT_LINE — flush any partial PUT buffer, then push the
+    // new line as a complete entry.
     if (upper.startsWith('DBMS_OUTPUT.PUT_LINE')) {
       const match = trimmed.match(/DBMS_OUTPUT\.PUT_LINE\s*\(\s*(.*)\s*\)/is);
       if (match) {
         const exprStr = match[1];
         const value = this.evaluatePLSQLExpressionWithVars(exprStr, variables, executor);
-        output.push(String(value ?? 'NULL'));
+        const partial = this.dbmsOutputBuffers.get(output);
+        if (partial !== undefined) {
+          output.push(partial + String(value ?? 'NULL'));
+          this.dbmsOutputBuffers.delete(output);
+        } else {
+          output.push(String(value ?? 'NULL'));
+        }
       }
       return;
     }
 
-    // DBMS_OUTPUT.PUT / DBMS_OUTPUT.NEW_LINE / DBMS_OUTPUT.ENABLE / DBMS_OUTPUT.DISABLE
+    // DBMS_OUTPUT.PUT — accumulate into the partial-line buffer. Real
+    // Oracle flushes PUT bytes only on NEW_LINE / PUT_LINE / GET_LINE.
     if (upper.startsWith('DBMS_OUTPUT.PUT(')) {
       const match = trimmed.match(/DBMS_OUTPUT\.PUT\s*\(\s*(.*)\s*\)/is);
       if (match) {
         const value = this.evaluatePLSQLExpressionWithVars(match[1], variables, executor);
-        output.push(String(value ?? ''));
+        const prev = this.dbmsOutputBuffers.get(output) ?? '';
+        this.dbmsOutputBuffers.set(output, prev + String(value ?? ''));
       }
       return;
     }
-    if (upper.startsWith('DBMS_OUTPUT.ENABLE') || upper.startsWith('DBMS_OUTPUT.DISABLE') || upper.startsWith('DBMS_OUTPUT.NEW_LINE')) {
-      return; // No-op in simulator
+
+    // DBMS_OUTPUT.NEW_LINE — finalize the partial line, even if empty.
+    if (upper.startsWith('DBMS_OUTPUT.NEW_LINE')) {
+      const partial = this.dbmsOutputBuffers.get(output);
+      if (partial !== undefined) {
+        output.push(partial);
+        this.dbmsOutputBuffers.delete(output);
+      } else {
+        output.push('');
+      }
+      return;
+    }
+
+    // DBMS_OUTPUT.ENABLE — turn server output on at the session level.
+    if (upper.startsWith('DBMS_OUTPUT.ENABLE')) {
+      executor.updateContext({ serverOutput: true });
+      return;
+    }
+
+    // DBMS_OUTPUT.DISABLE — turn server output off; also clears any
+    // buffered partial line per Oracle semantics.
+    if (upper.startsWith('DBMS_OUTPUT.DISABLE')) {
+      executor.updateContext({ serverOutput: false });
+      this.dbmsOutputBuffers.delete(output);
+      return;
     }
 
     // DBMS_LOCK.SLEEP
