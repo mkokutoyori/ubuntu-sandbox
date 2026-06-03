@@ -16,7 +16,7 @@
 
 import {
   OSPFConfig, OSPFInterface, OSPFNeighbor, OSPFNeighborState, OSPFNeighborEvent,
-  OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType,
+  OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType, OSPFPacketStats,
   LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ASBRSummaryLSA,
   ExternalLSA, NSSAExternalLSA,
   RouterLSALink, RouterLinkType,
@@ -138,6 +138,30 @@ export class OSPFEngine implements IProtocolEngine {
 
   /** Total number of neighbor state changes logged */
   private neighborChangeCount = 0;
+
+  private packetStats: OSPFPacketStats = {
+    rxHello: 0, txHello: 0,
+    rxDBD: 0, txDBD: 0,
+    rxLSR: 0, txLSR: 0,
+    rxLSU: 0, txLSU: 0,
+    rxLSAck: 0, txLSAck: 0,
+    rxChecksumErrors: 0,
+    lastReset: Date.now(),
+  };
+
+  getPacketStats(): Readonly<OSPFPacketStats> { return { ...this.packetStats }; }
+
+  resetPacketStats(): void {
+    this.packetStats = {
+      rxHello: 0, txHello: 0,
+      rxDBD: 0, txDBD: 0,
+      rxLSR: 0, txLSR: 0,
+      rxLSU: 0, txLSU: 0,
+      rxLSAck: 0, txLSAck: 0,
+      rxChecksumErrors: 0,
+      lastReset: Date.now(),
+    };
+  }
 
   /** Whether to log adjacency changes */
   logAdjacencyChanges = false;
@@ -469,11 +493,23 @@ export class OSPFEngine implements IProtocolEngine {
     packet: OSPFPacket,
     destIp: string,
   ): void {
+    this.incrementStat(packet.packetType, 'tx');
     this.getBus().publish({
       topic: 'ospf.packet.outgoing',
       payload: { ...this.routerRef(), iface, destIp, packet },
     });
     this.sendCallback?.(iface, packet, destIp);
+  }
+
+  private incrementStat(packetType: number, direction: 'rx' | 'tx'): void {
+    const key = direction === 'rx' ? 'rx' : 'tx';
+    switch (packetType) {
+      case 1: (this.packetStats as Record<string, number>)[`${key}Hello`]++; break;
+      case 2: (this.packetStats as Record<string, number>)[`${key}DBD`]++; break;
+      case 3: (this.packetStats as Record<string, number>)[`${key}LSR`]++; break;
+      case 4: (this.packetStats as Record<string, number>)[`${key}LSU`]++; break;
+      case 5: (this.packetStats as Record<string, number>)[`${key}LSAck`]++; break;
+    }
   }
 
   /**
@@ -486,6 +522,7 @@ export class OSPFEngine implements IProtocolEngine {
     packet: OSPFPacket,
     srcIp: string,
   ): void {
+    this.incrementStat(packet.packetType, 'rx');
     this.getBus().publish({
       topic: 'ospf.packet.received',
       payload: { ...this.routerRef(), iface, srcIp, packet },

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-06-03T19:29:34.611Z
+Generated: 2026-06-03T19:44:57.394Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -744,7 +744,14 @@ Total steps: 388
 
 [179/388] r1 R1# show aaa servers
   RADIUS: id 1, priority 1, host 10.0.0.2, auth-port 1812, acct-port 1813
+      State: current UP, duration 0s, previous duration 0s
+      Authen: request 0, timeouts 0, retransmission 0
+              Response: accept 0, reject 0, challenge 0
+      Account: request 0, timeouts 0, retransmission 0
+              Response: 0
   TACACS+: id 2, host 10.0.0.3, port 49
+      Socket opens: 0, closes: 0, aborts: 0, errors: 0
+      Authen: request 0, success 0, fail 0
 
 [180/388] r1 R1# show aaa sessions
   Total sessions since last reload: 0
@@ -758,6 +765,7 @@ Total steps: 388
 [182/388] r1 R1# show tacacs
   Tacacs+ Server : 10.0.0.3/49
   Socket opens: 0, closes: 0
+  Authen: request 0, success 0, fail 0
 
 
 --- [183] § SSH / device hardening ---
@@ -773,12 +781,12 @@ Total steps: 388
 [186/388] r1 R1(config)# crypto key generate rsa modulus 2048
   The key modulus size is 2048 bits
   % Generating 2048 bit RSA keys, keys will be non-exportable...
-  [OK] (elapsed time was 1 seconds)
+  [OK] (elapsed time was 2 seconds)
 
 [187/388] r1 R1(config)# crypto key generate rsa general-keys modulus 4096 label SSH-KEY
   The key modulus size is 4096 bits
   % Generating 4096 bit RSA keys, keys will be non-exportable...
-  [OK] (elapsed time was 1 seconds)
+  [OK] (elapsed time was 4 seconds)
 
 [188/388] r1 R1(config)# ip ssh version 2
 <empty>
@@ -866,29 +874,54 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
+  % Key pair was generated at: 2026-06-03 19:44:57
   Key name: default
    Storage Device: not specified
-   Usage: General Purpose Key
+   Usage: Signature Key
    Key is not exportable.
    Key Data:
-    0000000000000000000000000000000000000000000000000000000000000000
+   FE583A85C94A7BE973AB4657B8791B17E1B55414A85EA964B28AAF1015ED3EE0
+    9226FA853A2452F925801F938EE1707B9D4EC9544B77B86C0B69B49CD0C2C3F4
+    9C7348058030C87165FCE95F4418C1E7073207149E9F279CF5193F98B0836DD0
+    04856305ABDF49D13D66AD9BACEFF2DB9ED4F7547F01402491BA1A04A635B304
+    4882F5853E114FE9FE112C678A582767ECCE90346649574413D0C6208EA2BC90
+    AC6B17A5B731571965B3FDC3B1D76CCBC4F7B394516D164C3E344FCCCAA5B1A4
+    58A9DF4578EECD31377057AF18D0D1575DCCB7748C52647C3492F6E869A765E0
+    14F98C658314F2718C5D440BF65265AB19F585D4615B2E845E7DF1B41E0EB334
   
+  % Key pair was generated at: 2026-06-03 19:44:57
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-    0000000000000000000000000000000000000000000000000000000000000000
+   0EBE912BAC954987C22DBE59DD0A981951EF263A3A58B1822ABEBEDEE7A74E9E
+    E124786BEAB630870C8DC85D8485E1054910103AD64B420A7280D49280C4A70A
+    66DD422BF2E3CE8F465351D1453BB1192321A1BAEE9B3A5A41C9D4D6C2E5C2AE
+    C734AE6BCC3DE8AF6F8D50D5640E49A5D6C1F0BA82E3D152C75DBF8A4024934A
+    FBAEBD2BF1C56847707FC569D9ABFA29E5E4335A05C26C22F8C956EE1F48EC0E
+    C73EC68B893A04070002878DC7BEAAD561ED8B7AC82C92CA6A2CB0C2C371031A
+    B18ACA6BC0F79A8F96EC612194A79569C2D9A31A8982203A50D18D2693BE87BE
+    AE5088CBE5C241AF721E48451FC96EF54E78903AFB2FAB923F0DEBFA01152F7A
+    0327956B7CCE7447049CB879C6021E796AD4003A43F0F0C29B1442BEFE737B7E
+    C5CA502BCA73F04799827DFD8DA4D065668B0DBA9CBB0E4AA5EC63F2F06314EA
+    11B08D6B070B534F24CC62F1B033F979D4DF62BA1474439A86460FB6D6A6E18E
+    F81E0D2BCBA503AFA3015D7599038005F367153A1ED421D2B45D45EAEB2B366A
+    F68ECF6BE402174772DD6D89C81AB5C972EBC79AF32676E230C84D4E99DB312E
+    F689B50B651DDD0721FB242D9E923875004A3FFA9CC2164ABA26C722A9F5253A
+    79B86CAB00B9448F24FA994128C6B8094904C75AE28DADFA897713868C61DBDE
+    FAD5074BBBA086EFEDF374E57F1F18953E64D4BA48515C52DA176ADA1017115A
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
   Quiet-Mode access list MGMT
   Block-for: 120 sec, attempts 3, within 60 sec
+  Router NOT enabled to watch for login attacks
 
 [218/388] r1 R1# show login failures
   Information about login failure's with the device
   
-  No failures recorded
+  *** No failures recorded ***
 
 
 --- [219] § control-plane / CoPP / uRPF ---
@@ -974,18 +1007,19 @@ Total steps: 388
 
 [245/388] r1 R1# show ip traffic
   IP statistics:
-    Rcvd:  0 total, 0 local destination
+    Rcvd:  2 total, 2 local destination
            0 format errors, 0 checksum errors, 0 bad hop count
            0 unknown protocol, 0 not a gateway, 0 security failures
-           0 bad options, 0 with options
+           0 bad options, 0 with options, 0 dropped
     Frags: 0 reassembled, 0 timeouts, 0 couldn't reassemble
     Bcast: 0 received, 0 sent
     Mcast: 0 received, 0 sent
-    Sent:  0 generated, 0 forwarded
+    Sent:  3 generated, 3 forwarded, 0 errors, 0 dropped
 
 [246/388] r1 R1# show ip cef
   Prefix              Next Hop             Interface
-  0.0.0.0/0           drop                 Null0
+  192.168.1.0/24      attached             GigabitEthernet0/0
+  10.0.0.0/30         attached             GigabitEthernet0/1
 
 
 --- [247] § zone-based firewall ---
@@ -1670,7 +1704,7 @@ Total steps: 388
 [316/388] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAFF1E.A9374BC6 (19:29:34.661 UTC Wed Jun 3 2026)
+  reference time is EDCB02B9.6DD2F1A9 (19:44:57.429 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1(config)# show ntp associations
@@ -1679,7 +1713,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1(config)# show clock
-  *19:29:34.000 UTC Wed Jun 3 2026
+  *19:44:57.000 UTC Wed Jun 3 2026
 
 [319/388] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1749,7 +1783,8 @@ Total steps: 388
 
 [326/388] r1 R1(config)# show ip cef
   Prefix              Next Hop             Interface
-  0.0.0.0/0           drop                 Null0
+  192.168.1.0/24      attached             GigabitEthernet0/0
+  10.0.0.0/30         attached             GigabitEthernet0/1
 
 [327/388] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

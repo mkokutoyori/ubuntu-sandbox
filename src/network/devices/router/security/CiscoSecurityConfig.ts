@@ -13,6 +13,30 @@ export interface AaaMethodEntry {
   methods: string[];
 }
 
+export interface RadiusServerStats {
+  upSinceMs: number;
+  authRequests: number;
+  authAccepts: number;
+  authRejects: number;
+  authTimeouts: number;
+  authRetransmits: number;
+  acctRequests: number;
+  acctResponses: number;
+  acctTimeouts: number;
+  acctRetransmits: number;
+}
+
+export interface TacacsServerStats {
+  upSinceMs: number;
+  socketOpens: number;
+  socketCloses: number;
+  socketAborts: number;
+  socketErrors: number;
+  authRequests: number;
+  authAccepts: number;
+  authRejects: number;
+}
+
 export interface RadiusServer {
   name: string;
   address?: string;
@@ -21,6 +45,7 @@ export interface RadiusServer {
   key?: string;
   retransmit: number;
   timeoutSec: number;
+  stats: RadiusServerStats;
 }
 
 export interface TacacsServer {
@@ -30,6 +55,25 @@ export interface TacacsServer {
   port: number;
   timeoutSec: number;
   singleConnection: boolean;
+  stats: TacacsServerStats;
+}
+
+export function newRadiusServerStats(): RadiusServerStats {
+  return {
+    upSinceMs: Date.now(),
+    authRequests: 0, authAccepts: 0, authRejects: 0,
+    authTimeouts: 0, authRetransmits: 0,
+    acctRequests: 0, acctResponses: 0,
+    acctTimeouts: 0, acctRetransmits: 0,
+  };
+}
+
+export function newTacacsServerStats(): TacacsServerStats {
+  return {
+    upSinceMs: Date.now(),
+    socketOpens: 0, socketCloses: 0, socketAborts: 0, socketErrors: 0,
+    authRequests: 0, authAccepts: 0, authRejects: 0,
+  };
 }
 
 export interface AaaServerGroup {
@@ -68,6 +112,7 @@ export interface CryptoRsaKey {
   label: string;
   modulus: number;
   general: boolean;
+  generatedAtMs: number;
 }
 
 export interface PasswordPolicy {
@@ -161,6 +206,19 @@ export interface TimeRange {
   periodic: TimeRangePeriodic[];
 }
 
+export interface ParameterMapInspect {
+  name: string;
+  auditTrail?: boolean;
+  alert?: boolean;
+  maxIncompleteLow?: number;
+  maxIncompleteHigh?: number;
+  tcpIdleTimeSec?: number;
+  udpIdleTimeSec?: number;
+  dnsTimeoutSec?: number;
+  oneMinuteLow?: number;
+  oneMinuteHigh?: number;
+}
+
 export class CiscoSecurityConfig {
   aaaNewModel = false;
   aaaSessionId?: string;
@@ -191,6 +249,16 @@ export class CiscoSecurityConfig {
   interfaceFlags: Map<string, InterfaceSecurityFlags> = new Map();
 
   timeRanges: Map<string, TimeRange> = new Map();
+  parameterMapsInspect: Map<string, ParameterMapInspect> = new Map();
+
+  ensureParameterMapInspect(name: string): ParameterMapInspect {
+    let pm = this.parameterMapsInspect.get(name);
+    if (!pm) {
+      pm = { name };
+      this.parameterMapsInspect.set(name, pm);
+    }
+    return pm;
+  }
 
   ifaceFlags(ifName: string): InterfaceSecurityFlags {
     let f = this.interfaceFlags.get(ifName);

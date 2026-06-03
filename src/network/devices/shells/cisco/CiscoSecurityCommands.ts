@@ -2,6 +2,8 @@ import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import {
   CiscoSecurityConfig,
+  newRadiusServerStats,
+  newTacacsServerStats,
   type AaaServiceKind,
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
@@ -64,6 +66,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       const name = args[1];
       const s = sec().radiusServers.get(name) ?? {
         name, authPort: 1645, acctPort: 1646, retransmit: 3, timeoutSec: 5,
+        stats: newRadiusServerStats(),
       };
       sec().radiusServers.set(name, s);
       ctx.setRadiusServer?.(name);
@@ -78,6 +81,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       const name = args[1];
       const s = sec().tacacsServers.get(name) ?? {
         name, port: 49, timeoutSec: 5, singleConnection: false,
+        stats: newTacacsServerStats(),
       };
       sec().tacacsServers.set(name, s);
       ctx.setTacacsServer?.(name);
@@ -229,8 +233,10 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       if (args[i] === 'label' && args[i + 1]) label = args[i + 1];
       if (args[i] === 'general-keys') general = true;
     }
-    sec().cryptoKeys.push({ label, modulus, general });
-    return `The key modulus size is ${modulus} bits\n% Generating ${modulus} bit RSA keys, keys will be non-exportable...\n[OK] (elapsed time was 1 seconds)`;
+    const generatedAtMs = Date.now();
+    sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
+    const elapsedSec = Math.max(1, Math.round(modulus / 1024));
+    return `The key modulus size is ${modulus} bits\n% Generating ${modulus} bit RSA keys, keys will be non-exportable...\n[OK] (elapsed time was ${elapsedSec} seconds)`;
   });
 
   trie.registerGreedy('ip ssh', 'SSH config', (args) => {
@@ -291,6 +297,12 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   trie.register('control-plane', 'Enter control-plane', () => {
     ctx.setControlPlane?.(true);
     ctx.setMode('config-cp' as CiscoShellMode);
+    return '';
+  });
+
+  trie.registerGreedy('parameter-map type inspect', 'Define parameter-map', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    sec().ensureParameterMapInspect(args[0]);
     return '';
   });
 
@@ -580,24 +592,47 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   trie.register('show aaa servers', 'Display AAA servers', () => {
     const s = sec();
     const lines: string[] = [];
+    let idx = 1;
     for (const r of s.radiusServers.values()) {
-      lines.push(`RADIUS: id ${lines.length + 1}, priority 1, host ${r.address ?? '<no address>'}, auth-port ${r.authPort}, acct-port ${r.acctPort}`);
+      const st = r.stats;
+      lines.push(`RADIUS: id ${idx++}, priority 1, host ${r.address ?? '<no address>'}, auth-port ${r.authPort}, acct-port ${r.acctPort}`);
+      lines.push(`    State: current UP, duration ${secondsSince(st.upSinceMs)}s, previous duration 0s`);
+      lines.push(`    Authen: request ${st.authRequests}, timeouts ${st.authTimeouts}, retransmission ${st.authRetransmits}`);
+      lines.push(`            Response: accept ${st.authAccepts}, reject ${st.authRejects}, challenge 0`);
+      lines.push(`    Account: request ${st.acctRequests}, timeouts ${st.acctTimeouts}, retransmission ${st.acctRetransmits}`);
+      lines.push(`            Response: ${st.acctResponses}`);
     }
     for (const t of s.tacacsServers.values()) {
-      lines.push(`TACACS+: id ${lines.length + 1}, host ${t.address ?? '<no address>'}, port ${t.port}`);
+      const st = t.stats;
+      lines.push(`TACACS+: id ${idx++}, host ${t.address ?? '<no address>'}, port ${t.port}`);
+      lines.push(`    Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}, aborts: ${st.socketAborts}, errors: ${st.socketErrors}`);
+      lines.push(`    Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
     }
     return lines.length ? lines.join('\n') : 'No AAA servers configured';
   });
 
-  trie.register('show aaa sessions', 'Display AAA sessions', () => 'Total sessions since last reload: 0');
+  trie.register('show aaa sessions', 'Display AAA sessions', () => {
+    const reg = (getRouter() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { id: string; user: string; fromIp: string; line: string; loginAt: number }[]; history: () => readonly { id: string }[] } }).getSshSessionRegistry?.();
+    if (!reg) return 'Total sessions since last reload: 0';
+    const active = reg.list();
+    const past = reg.history();
+    const lines = [`Total sessions since last reload: ${active.length + past.length}`];
+    if (active.length > 0) {
+      lines.push('Session-Id Unique Id User       IP Address    Session Type');
+      for (const s of active) lines.push(`${s.id.padEnd(11)}1          ${s.user.padEnd(11)}${s.fromIp.padEnd(14)}${s.line}`);
+    }
+    return lines.join('\n');
+  });
 
   trie.register('show radius statistics', 'Display Radius stats', () => {
     const s = sec();
+    if (s.radiusServers.size === 0) return 'No RADIUS servers configured';
     const lines = ['  Radius Statistics:'];
     for (const r of s.radiusServers.values()) {
+      const st = r.stats;
       lines.push(`  Server: ${r.name} (${r.address ?? 'unconfigured'})`);
-      lines.push('    Auth requests: 0, retransmits: 0, accepts: 0, rejects: 0');
-      lines.push('    Acct requests: 0, retransmits: 0, responses: 0');
+      lines.push(`    Auth requests: ${st.authRequests}, retransmits: ${st.authRetransmits}, accepts: ${st.authAccepts}, rejects: ${st.authRejects}`);
+      lines.push(`    Acct requests: ${st.acctRequests}, retransmits: ${st.acctRetransmits}, responses: ${st.acctResponses}`);
     }
     return lines.join('\n');
   });
@@ -606,35 +641,78 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     const s = sec();
     const lines: string[] = [];
     for (const t of s.tacacsServers.values()) {
+      const st = t.stats;
       lines.push(`Tacacs+ Server : ${t.address ?? t.name}/${t.port}`);
-      lines.push('Socket opens: 0, closes: 0');
+      lines.push(`Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}`);
+      lines.push(`Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
     }
     return lines.length ? lines.join('\n') : 'No TACACS+ servers configured';
   });
 
   trie.register('show login', 'Display login config', () => {
     const s = sec();
-    const lines = ['A login delay of ' + (s.login.delay ?? 0) + ' seconds is applied.'];
+    const r = getRouter() as unknown as { getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null };
+    const blocker = r.getLoginBlocker?.();
+    const lines = [`A login delay of ${s.login.delay ?? 0} seconds is applied.`];
     if (s.login.blockFor) {
       lines.push(`Quiet-Mode access list ${s.login.quietModeAcl ?? 'None'}`);
       lines.push(`Block-for: ${s.login.blockFor.seconds} sec, attempts ${s.login.blockFor.attempts}, within ${s.login.blockFor.withinSeconds} sec`);
+      lines.push(`Router ${blocker ? 'NOT' : 'NOT'} enabled to watch for login attacks`);
     } else {
       lines.push('No login failure tracking');
     }
     return lines.join('\n');
   });
 
-  trie.register('show login failures', 'Display login failures', () => 'Information about login failure\'s with the device\n\nNo failures recorded');
+  trie.register('show login failures', 'Display login failures', () => {
+    const r = getRouter() as unknown as { getSecurityAuditLog?: () => { entries: () => readonly { mnemonic: string; message: string; at: number }[] } | null };
+    const audit = r.getSecurityAuditLog?.();
+    if (!audit) return "Information about login failure's with the device\n\n*** No failures recorded ***";
+    const failures = audit.entries().filter(e => e.mnemonic === 'LOGIN_FAILED');
+    if (failures.length === 0) return "Information about login failure's with the device\n\n*** No failures recorded ***";
+    const lines = ["Information about login failure's with the device", '', 'Username   SourceIPAddr  lPort Count  TimeStamp'];
+    const groups = new Map<string, { count: number; last: number; ip: string }>();
+    for (const e of failures) {
+      const ip = /\[Source: ([^\]]+)\]/.exec(e.message)?.[1] ?? 'unknown';
+      const user = /\[user: ([^\]]+)\]/.exec(e.message)?.[1] ?? 'unknown';
+      const key = `${user}@${ip}`;
+      const g = groups.get(key) ?? { count: 0, last: 0, ip };
+      g.count++;
+      g.last = e.at;
+      groups.set(key, g);
+    }
+    for (const [k, g] of groups) {
+      const user = k.split('@')[0];
+      lines.push(`${user.padEnd(11)}${g.ip.padEnd(14)}22    ${String(g.count).padEnd(7)}${new Date(g.last).toISOString().replace('T', ' ').slice(0, 19)}`);
+    }
+    return lines.join('\n');
+  });
 
   trie.register('show crypto key mypubkey rsa', 'Show RSA keys', () => {
     const s = sec();
     if (s.cryptoKeys.length === 0) return '% No RSA key generated.';
-    return s.cryptoKeys.map(k =>
-      `Key name: ${k.label}\n Storage Device: not specified\n Usage: General Purpose Key\n Key is not exportable.\n Key Data:\n  ${'0'.repeat(64)}`
-    ).join('\n\n');
+    return s.cryptoKeys.map(k => [
+      `% Key pair was generated at: ${new Date(k.generatedAtMs).toISOString().replace('T', ' ').slice(0, 19)}`,
+      `Key name: ${k.label}`,
+      ` Storage Device: not specified`,
+      ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
+      ` Key is not exportable.`,
+      ` Key Data:`,
+      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
+    ].join('\n')).join('\n\n');
   });
 
-  trie.register('show ssh', 'Display SSH connections', () => 'No SSHv2 server connections running.');
+  trie.register('show ssh', 'Display SSH connections', () => {
+    const reg = (getRouter() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { line: string; lineIndex: number; user: string; fromIp: string; loginAt: number; idleSeconds: number }[] } | null }).getSshSessionRegistry?.();
+    if (!reg) return 'No SSHv2 server connections running.';
+    const active = reg.list();
+    if (active.length === 0) return 'No SSHv2 server connections running.';
+    const header = 'Connection Version Mode Encryption           Hmac      State                 Username';
+    const rows = active.map(s =>
+      `${String(s.lineIndex).padEnd(11)}2.0     IN   aes256-ctr           sha256    Session started       ${s.user}`
+    );
+    return [header, ...rows].join('\n');
+  });
 
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();
@@ -643,7 +721,27 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return `Control Plane\n\n  Service-policy input: ${pm}`;
   });
 
-  trie.registerGreedy('show parameter-map type inspect', 'Show parameter-map', () => 'parameter-map type inspect default\n  audit-trail off\n  alert on\n  max-incomplete low unlimited\n  max-incomplete high unlimited');
+  trie.registerGreedy('show parameter-map type inspect', 'Show parameter-map', (args) => {
+    const s = sec();
+    const all = [...s.parameterMapsInspect.values()];
+    const target = args[0];
+    const list = target ? all.filter(p => p.name === target) : all;
+    if (list.length === 0) {
+      return 'parameter-map type inspect default\n  audit-trail off\n  alert on\n  max-incomplete low unlimited\n  max-incomplete high unlimited';
+    }
+    return list.map(pm => [
+      `parameter-map type inspect ${pm.name}`,
+      `  audit-trail ${pm.auditTrail ? 'on' : 'off'}`,
+      `  alert ${pm.alert !== false ? 'on' : 'off'}`,
+      `  max-incomplete low ${pm.maxIncompleteLow ?? 'unlimited'}`,
+      `  max-incomplete high ${pm.maxIncompleteHigh ?? 'unlimited'}`,
+      `  one-minute low ${pm.oneMinuteLow ?? 'unlimited'}`,
+      `  one-minute high ${pm.oneMinuteHigh ?? 'unlimited'}`,
+      `  tcp idle-time ${pm.tcpIdleTimeSec ?? 3600}`,
+      `  udp idle-time ${pm.udpIdleTimeSec ?? 30}`,
+      `  dns-timeout ${pm.dnsTimeoutSec ?? 5}`,
+    ].join('\n')).join('\n');
+  });
 
   trie.register('show zone security', 'Display zones', () => {
     const s = sec();
@@ -662,23 +760,44 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return [...s.zonePairs.values()].map(zp => `policy exists on zp ${zp.name}`).join('\n');
   });
 
-  trie.register('show ip traffic', 'IP traffic statistics', () =>
-    [
+  trie.register('show ip traffic', 'IP traffic statistics', () => {
+    const ports = getRouter()._getPortsInternal();
+    let rxFrames = 0, txFrames = 0, errsIn = 0, errsOut = 0, dropsIn = 0, dropsOut = 0;
+    for (const p of ports.values()) {
+      const c = p.getCounters();
+      rxFrames += c.framesIn;
+      txFrames += c.framesOut;
+      errsIn += c.errorsIn;
+      errsOut += c.errorsOut;
+      dropsIn += c.dropsIn;
+      dropsOut += c.dropsOut;
+    }
+    return [
       'IP statistics:',
-      '  Rcvd:  0 total, 0 local destination',
-      '         0 format errors, 0 checksum errors, 0 bad hop count',
+      `  Rcvd:  ${rxFrames} total, ${rxFrames} local destination`,
+      `         ${errsIn} format errors, 0 checksum errors, 0 bad hop count`,
       '         0 unknown protocol, 0 not a gateway, 0 security failures',
-      '         0 bad options, 0 with options',
+      `         0 bad options, 0 with options, ${dropsIn} dropped`,
       '  Frags: 0 reassembled, 0 timeouts, 0 couldn\'t reassemble',
       '  Bcast: 0 received, 0 sent',
       '  Mcast: 0 received, 0 sent',
-      '  Sent:  0 generated, 0 forwarded',
-    ].join('\n')
-  );
+      `  Sent:  ${txFrames} generated, ${txFrames} forwarded, ${errsOut} errors, ${dropsOut} dropped`,
+    ].join('\n');
+  });
 
   trie.registerGreedy('show ip cef', 'Display CEF table', () => {
     if (!sec().ipCef) return 'IP CEF is not enabled';
-    return 'Prefix              Next Hop             Interface\n0.0.0.0/0           drop                 Null0';
+    const router = getRouter();
+    const table = router._getRoutingTableInternal();
+    const lines = ['Prefix              Next Hop             Interface'];
+    for (const r of table) {
+      const cidr = r.mask.toString().split('.').reduce((acc, oct) => acc + ((parseInt(oct, 10) >>> 0).toString(2).match(/1/g)?.length ?? 0), 0);
+      const dst = `${r.network}/${cidr}`;
+      const next = r.nextHop ? r.nextHop.toString() : 'attached';
+      const iface = r.iface ?? '';
+      lines.push(`${dst.padEnd(20)}${next.padEnd(21)}${iface}`);
+    }
+    return lines.join('\n');
   });
 
   trie.registerGreedy('show policy-map interface', 'Show policy-map applied on interfaces', () => {
@@ -734,3 +853,32 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 }
 
 function pad2(n: number): string { return n < 10 ? '0' + n : '' + n; }
+
+function secondsSince(ms: number): number {
+  return Math.max(0, Math.floor((Date.now() - ms) / 1000));
+}
+
+function rsaPublicKeyMaterial(label: string, modulus: number, generatedAtMs: number): string {
+  let h1 = 2166136261 >>> 0;
+  let h2 = 0x811C9DC5 >>> 0;
+  const seed = `${label}|${modulus}|${generatedAtMs}`;
+  for (let i = 0; i < seed.length; i++) {
+    h1 ^= seed.charCodeAt(i);
+    h1 = Math.imul(h1, 16777619) >>> 0;
+    h2 = Math.imul(h2 ^ seed.charCodeAt(i), 0x01000193) >>> 0;
+  }
+  const blocks = Math.max(4, Math.floor(modulus / 64));
+  const out: string[] = [];
+  for (let i = 0; i < blocks; i++) {
+    h1 = Math.imul(h1 ^ (i + 1), 0x9E3779B1) >>> 0;
+    h2 = Math.imul(h2 ^ (i + 1), 0xBB67AE85) >>> 0;
+    out.push(h1.toString(16).padStart(8, '0').toUpperCase());
+    out.push(h2.toString(16).padStart(8, '0').toUpperCase());
+  }
+  const hex = out.join('');
+  const lines: string[] = [];
+  for (let i = 0; i < hex.length; i += 64) {
+    lines.push(hex.slice(i, i + 64));
+  }
+  return lines.join('\n  ');
+}

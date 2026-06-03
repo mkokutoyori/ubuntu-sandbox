@@ -67,6 +67,16 @@ export interface OSPFAreaRange {
   advertise: boolean;
 }
 
+export interface OSPFPacketStats {
+  rxHello: number; txHello: number;
+  rxDBD: number; txDBD: number;
+  rxLSR: number; txLSR: number;
+  rxLSU: number; txLSU: number;
+  rxLSAck: number; txLSAck: number;
+  rxChecksumErrors: number;
+  lastReset: number;
+}
+
 export interface OSPFArea {
   /** Area ID (e.g., "0.0.0.0" for backbone) */
   areaId: string;
