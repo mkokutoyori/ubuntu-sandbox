@@ -84,6 +84,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-radius-server':      '{host}(config-radius-server)#',
   'config-tacacs-server':      '{host}(config-tacacs-server)#',
   'config-aaa-group':          '{host}(config-sg-radius)#',
+  'config-ca-trustpoint':      '{host}(ca-trustpoint)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

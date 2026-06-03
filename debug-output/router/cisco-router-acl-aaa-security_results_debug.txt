@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-06-03T19:59:30.706Z
+Generated: 2026-06-03T20:24:17.308Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -874,43 +874,43 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-06-03 19:59:30
+  % Key pair was generated at: 2026-06-03 20:24:17
   Key name: default
    Storage Device: not specified
    Usage: Signature Key
    Key is not exportable.
    Key Data:
-   81F48B7821E4D8D8B337195AA4FED54254329789357DF8C5B5E76D7D7A2C6A45
-    BC8867F8290AB340EF08F49EDB92B75E7BAC6EC993A6BF3DEC08CC71B0EA5C89
-    588216F8EC210E80F8C83F52CC9459B23283DD895A7D5B1DEE7305F545DCDDD5
-    93A15878747011382AB7EF9608A5A50E614AF9C9329C6785508D50091D9C1669
-    81B7B8982BA53C5857E5D16A4B989E7214E705A995F73665870C4CAD62E716B5
-    3B4C03386DCF8120FFF0F0CE855AD50E840C17090516B3FD75E9FBC1BB341BF9
-    8A3838588424BB60F5A417A22A985262AC69D7E93AE016DDD7E41D65088A0045
-    7B6E17F8A755FDB876D43C06B1DD9B3ED0845E498CD90625D2B3E799C1DA8699
+   CDAEFB4AE4B0BB125738C4C8E2660F50B4E1035BC8D5601FC5943BAFC20A4807
+    69369A8A3B16C50A29E106CC3896873C1068A55B37DB5BA78D538963D5B093EB
+    247B1C4A9F2E706AFB38C8409A21A1E0DB0AEEDBBE13D9179FA3C1A750BD2507
+    4E48408AB6770A329ACEFF44A6F1192C02E5F5DB486CD92FCAC8E45B098EAFBB
+    E0B2D12ACDECCF52638E1FB813A52C4059F8B83BEF55711F581E8F7FEEA634B7
+    9AB0424A774D742A4CFF5D9C38622B2CD2A3601B821F8FA755FBCD1368F2803B
+    B0287DEABCC1ADAA1E1582F0267CDC70223D977BB4BC3D97E2465D37238D7337
+    A4B5440AA0A960D286CD85D48DDDF1FC60F3745BB20BF4EF0ACEAC0B54E3E18B
   
-  % Key pair was generated at: 2026-06-03 19:59:30
+  % Key pair was generated at: 2026-06-03 20:24:17
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   16A4F3BABC9D6C428BC67A384B1CBD4020AD65CBA586DDCF2E7B3B1F2F7E3477
-    20B926FAD414BB3A0B95103C6F2C0E2C5D691BCBCFD1965794B05CD35150B15B
-    A8A93CBA556FDB9A448225B0F148F1D066FE794B376580C75D856917DFF2E377
-    5880F4FA13E31A625D5CB0B43666221CBECB944B44DD9DDF2D6D95EB1BAEAE8B
-    B95DDBDADA6362022EBE7D4826B8D2507381AEEB46E3C6CF2329854FA09C29C7
-    2212BD3ACF0C761A36D2976C4C897C3CE6A0DF0B941FBC5725BF3723FF43870B
-    23C5991A0221685AFFEFC90081F6A94029A4CEABC8DED6470BF86B8789143747
-    DBB42F7AF855EDC2F8770824D3D41B4C3BDD93CBD7299C1FF09A587BF329FEBB
-    D5CFA03ACDD3F2022C610898C88E8AA0D6646C4B7FE8000F80886FBF9DF25057
-    612AF37A656F473A8C7CBE9C6568F98C7C93424B6608EFD71976B173EA5D017B
-    5B3A293A67356B9A430EF410D1C292705173BFCB952CE347D35CDDB7ABF1E097
-    B009017A043E2CA218E69F14A6E84CBCD863FACBCAE0B25FB4AE2A8BFFAD25AB
-    3893749A23793502902F1028466F41F00EF3E5AB1CF4B44F1552E9EFD44A5DE7
-    B8B1B9BAFBE57A1AF8A875CC22F660DCCF2A358B476D14173305BBC3B34C6E6B
-    AB8621DA62AF0C9A84E04BE033E64F2058FBF56B0D48730704DBC0279AB2F7A7
-    8B521BFA203B4F021200D684C3CEF22C643FDA4BA9B1ADDF2091F49BED4A459B
+   04A968102817B950C32F76726A47039A93134D21B0E5DC7D38C1D3953AF4C8DD
+    2EF25690989728382EB4C3B67ED40C360480F661B72AA375D030FF993A90E5F1
+    E29BC290985E09D827C2567A6D05D61AA8802D21275EC4D590A4811D9456C2BD
+    5D2DCC10EE36C57070964EBE7C623E7609251161EB2FB2DD552678214ACA3A81
+    80B7C9300ECE4CD00F7122828167BCCA11B66F413B8F9ABDDB0526C539B937CD
+    949825D02116D338F896B3E645E6FAE6820652A151872D35D737A2E9480A0E61
+    3B0B17F0BD571458A03F22CAEA90624A1C02DB81B96D2215CC820C8DC773CCAD
+    70CABF903F18F7709C3A8F2EA7675026B3B229E11B226B9D8A621771E6276F31
+    6D06EE50BF6993503EFCBED2CCEF163AC6C6EDA1204A78FD936115F5872346BD
+    D91F64D09E76FCF87A4714161B024356B8371EE13F7AD7B516D849F9E889BA91
+    421E58D0F47F119878BFAEDA88A92D7A69FEDDA1634899155F39D37D35CB589D
+    F20BEA5067BCB3702124AF1EFBC513D622B249E1AD259E5D1C0FD281E31464A1
+    C555DBB07BE21ED06A0B36E29065A76A6390AF81745D6F3DAFF9092535A1CDAD
+    32E7D41096F51FF8CDB9A4464ED98A060E5B1B2137A919753D2B8D4947077B01
+    6406BA70782B14180899C72AA5BE91AAE410ABC11F492E55AA2C7EED5DCF7A8D
+    4F63FDD0AEFE5D70994A0F8E51F37D869AA68261CB630F1DF3B891D11C533151
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1179,10 +1179,10 @@ Total steps: 388
    ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
@@ -1376,7 +1376,7 @@ Total steps: 388
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1384,7 +1384,7 @@ Total steps: 388
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1704,7 +1704,7 @@ Total steps: 388
 [316/388] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0622.BEF9DB22 (19:59:30.746 UTC Wed Jun 3 2026)
+  reference time is EDCB0BF1.5916872B (20:24:17.348 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1(config)# show ntp associations
@@ -1713,7 +1713,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1(config)# show clock
-  *19:59:30.000 UTC Wed Jun 3 2026
+  *20:24:17.000 UTC Wed Jun 3 2026
 
 [319/388] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1742,8 +1742,8 @@ Total steps: 388
 
 [322/388] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [323/388] r1 R1(config)# show flash
   Directory of flash:/
@@ -1882,10 +1882,10 @@ Total steps: 388
    ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
@@ -2082,7 +2082,7 @@ Total steps: 388
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2090,7 +2090,7 @@ Total steps: 388
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2191,9 +2191,9 @@ Total steps: 388
    zone-member security OUTSIDE
    ipv6 traffic-filter V6-FILTER in
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   ip ssh source-interface Loopback0
 
 [344/388] r1 R1(config)# show running-config | begin line
@@ -2295,9 +2295,9 @@ Total steps: 388
    zone-member security OUTSIDE
    ipv6 traffic-filter V6-FILTER in
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   access-list 10 permit 192.168.1.0 0.0.0.255
   access-list 10 permit 192.168.2.0 0.0.0.255
   access-list 10 permit 192.168.3.0 0.0.0.255
@@ -2605,6 +2605,7 @@ Total steps: 388
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [385/388] r1 R1(config)# no ?

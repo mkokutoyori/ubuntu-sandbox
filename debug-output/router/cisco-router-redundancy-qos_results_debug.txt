@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-06-03T19:59:26.589Z
+Generated: 2026-06-03T20:24:14.013Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1472,10 +1472,10 @@ Total steps: 413
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   ip access-list extended VOICE
    permit udp any any range 16384 32767
@@ -1543,7 +1543,7 @@ Total steps: 413
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1551,7 +1551,7 @@ Total steps: 413
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1749,7 +1749,7 @@ Total steps: 413
 [341/413] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB061E.A147AE14 (19:59:26.630 UTC Wed Jun 3 2026)
+  reference time is EDCB0BEE.0E978D4F (20:24:14.057 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1(config)# show ntp associations
@@ -1758,7 +1758,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1(config)# show clock
-  *19:59:26.000 UTC Wed Jun 3 2026
+  *20:24:14.000 UTC Wed Jun 3 2026
 
 [344/413] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1787,8 +1787,8 @@ Total steps: 413
 
 [347/413] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [348/413] r1 R1(config)# show flash
   Directory of flash:/
@@ -1916,10 +1916,10 @@ Total steps: 413
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   ip access-list extended VOICE
    permit udp any any range 16384 32767
@@ -1991,7 +1991,7 @@ Total steps: 413
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1999,7 +1999,7 @@ Total steps: 413
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2009,7 +2009,16 @@ Total steps: 413
     ARP type: ARPA, ARP Timeout 04:00:00
   
   ------------------ show ip protocols ------------------
-  No routing protocol is configured.
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 192.168.1.2
+    Number of areas in this router is 0
+    Reference bandwidth unit is 100 mbps
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -2091,9 +2100,9 @@ Total steps: 413
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
 
 [369/413] r1 R1(config)# show running-config | begin line
 <empty>
@@ -2111,9 +2120,9 @@ Total steps: 413
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   ip access-list extended VOICE
    permit udp any any range 16384 32767
   ip access-list extended VIDEO
@@ -2297,6 +2306,7 @@ Total steps: 413
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [410/413] r1 R1(config)# no ?

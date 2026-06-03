@@ -361,7 +361,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
-      showMemoryStatistics());
+      showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));

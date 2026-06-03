@@ -874,6 +874,68 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     extra.pendingIfConfig.set(ifName, pending);
     return '';
   });
+  configIfTrie.registerGreedy('tunnel mode', 'Set tunnel encapsulation mode', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    const joined = args.join(' ').toLowerCase();
+    if (joined === 'ipsec ipv4' || joined === 'ipsec ipv6') (pending as any).tunnelMode = joined;
+    else if (joined === 'gre ip' || joined === 'gre ipv6') (pending as any).tunnelMode = joined;
+    else if (joined === 'gre multipoint') (pending as any).tunnelMode = 'gre multipoint';
+    else if (joined === 'ipip' || joined === 'auto-tunnel') (pending as any).tunnelMode = joined;
+    else (pending as any).tunnelMode = joined;
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel key', 'Set tunnel key', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelKey = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel vrf', 'Set tunnel VRF', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelVrf = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel path-mtu-discovery', 'Tunnel PMTUD', () => '');
+
+  configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig() as Record<string, unknown> & { nhrp?: Map<string, Record<string, unknown>> };
+    if (!extra.nhrp) extra.nhrp = new Map();
+    if (!extra.nhrp.has(ifName)) extra.nhrp.set(ifName, {});
+    const cfg = extra.nhrp.get(ifName)!;
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'authentication' && args[1]) cfg.authentication = args[1];
+    else if (sub === 'network-id' && args[1]) cfg.networkId = parseInt(args[1], 10);
+    else if (sub === 'holdtime' && args[1]) cfg.holdtime = parseInt(args[1], 10);
+    else if (sub === 'map') {
+      if (!cfg.maps) cfg.maps = [];
+      (cfg.maps as Array<{ target: string; nbma: string }>).push({ target: args[1] ?? '', nbma: args[2] ?? '' });
+    }
+    else if (sub === 'map' && args[1] === 'multicast' && args[2]) {
+      if (!cfg.multicastMaps) cfg.multicastMaps = [];
+      (cfg.multicastMaps as string[]).push(args[2]);
+    }
+    else if (sub === 'nhs' && args[1]) {
+      if (!cfg.nhsList) cfg.nhsList = [];
+      (cfg.nhsList as string[]).push(args[1]);
+    }
+    else if (sub === 'shortcut') cfg.shortcut = true;
+    else if (sub === 'redirect') cfg.redirect = true;
+    return '';
+  });
 }
 
 // ─── Show Commands ───────────────────────────────────────────────────

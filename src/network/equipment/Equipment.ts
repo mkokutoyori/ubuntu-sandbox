@@ -40,6 +40,10 @@ export abstract class Equipment {
   protected y: number;
   protected isPoweredOn: boolean = true;
   protected ports: Map<string, Port> = new Map();
+  protected readonly bootedAtMs: number = Date.now();
+
+  getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }
+  getBootedAtMs(): number { return this.bootedAtMs; }
 
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;

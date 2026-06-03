@@ -91,16 +91,54 @@ export function showUsers(): string {
 
 export type CiscoChassisProfile = 'router-isr2911' | 'switch-c2960';
 
-const CHASSIS_INVENTORY: Record<CiscoChassisProfile, { descr: string; pid: string; sn: string }> = {
-  'router-isr2911': { descr: 'Cisco ISR 2911 Integrated Services Router', pid: 'CISCO2911/K9', sn: 'FTX1234567A' },
-  'switch-c2960':   { descr: 'Cisco Catalyst Switch', pid: 'WS-C2960-24TT-L', sn: 'FOC1234X56Y' },
+export interface CiscoHardwareProfile {
+  pid: string;
+  description: string;
+  serialNumber: string;
+  dramKB: number;
+  ioMemoryKB: number;
+  nvramKB: number;
+  flashImage: string;
+  flashImageSize: number;
+  flashTotalBytes: number;
+  flashFreeBytes: number;
+  extraFlashFiles: Array<{ index: number; name: string; size: number }>;
+}
+
+export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareProfile> = {
+  'router-isr2911': {
+    pid: 'CISCO2911/K9',
+    description: 'Cisco ISR 2911 Integrated Services Router',
+    serialNumber: 'FTX1234567A',
+    dramKB: 524288,
+    ioMemoryKB: 65536,
+    nvramKB: 256,
+    flashImage: 'c2900-universalk9-mz.SPA.157-3.M5.bin',
+    flashImageSize: 86234112,
+    flashTotalBytes: 256016384,
+    flashFreeBytes: 169782272,
+    extraFlashFiles: [{ index: 2, name: 'cpconfig-29xx.cfg', size: 2048 }],
+  },
+  'switch-c2960': {
+    pid: 'WS-C2960-24TT-L',
+    description: 'Cisco Catalyst Switch',
+    serialNumber: 'FOC1234X56Y',
+    dramKB: 131072,
+    ioMemoryKB: 32768,
+    nvramKB: 64,
+    flashImage: 'c2960-lanbasek9-mz.150-2.SE.bin',
+    flashImageSize: 17825792,
+    flashTotalBytes: 64016384,
+    flashFreeBytes: 46188544,
+    extraFlashFiles: [{ index: 2, name: 'vlan.dat', size: 3096 }],
+  },
 };
 
 export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c2960'): string {
-  const c = CHASSIS_INVENTORY[profile];
+  const c = CISCO_HARDWARE_PROFILES[profile];
   return [
-    `NAME: "${hostname}", DESCR: "${c.descr}"`,
-    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.sn}`,
+    `NAME: "${hostname}", DESCR: "${c.description}"`,
+    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.serialNumber}`,
   ].join('\n');
 }
 
@@ -115,35 +153,30 @@ export function showProcessesCpu(): string {
 }
 
 /** `show memory statistics` — head/total/used/free. */
-export function showMemoryStatistics(): string {
+export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c2960'): string {
+  const hw = CISCO_HARDWARE_PROFILES[profile];
+  const dramBytes = hw.dramKB * 1024;
+  const ioBytes = hw.ioMemoryKB * 1024;
+  const procUsed = Math.floor(dramBytes * 0.3);
+  const procFree = dramBytes - procUsed;
+  const ioUsed = Math.floor(ioBytes * 0.25);
+  const ioFree = ioBytes - ioUsed;
   return [
     '                Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)',
-    'Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000',
-    'I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000',
+    `Processor    1A2B3C4    ${dramBytes}    ${procUsed}    ${procFree}    ${Math.floor(procFree * 0.95)}    ${Math.floor(procFree * 0.97)}`,
+    `I/O          5D6E7F8     ${ioBytes}     ${ioUsed}    ${ioFree}    ${Math.floor(ioFree * 0.95)}    ${Math.floor(ioFree * 0.97)}`,
   ].join('\n');
 }
 
-const CHASSIS_FLASH: Record<CiscoChassisProfile, string[]> = {
-  'router-isr2911': [
-    'Directory of flash:/',
-    '',
-    '    1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin',
-    '    2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg',
-    '',
-    '256016384 bytes total (169782272 bytes free)',
-  ],
-  'switch-c2960': [
-    'Directory of flash:/',
-    '',
-    '    1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin',
-    '    2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat',
-    '',
-    '64016384 bytes total (46188544 bytes free)',
-  ],
-};
-
 export function showFlash(profile: CiscoChassisProfile = 'switch-c2960'): string {
-  return CHASSIS_FLASH[profile].join('\n');
+  const hw = CISCO_HARDWARE_PROFILES[profile];
+  const lines = ['Directory of flash:/', ''];
+  lines.push(`    1  -rwx     ${String(hw.flashImageSize).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${hw.flashImage}`);
+  for (const f of hw.extraFlashFiles) {
+    lines.push(`    ${f.index}  -rwx     ${String(f.size).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${f.name}`);
+  }
+  lines.push('', `${hw.flashTotalBytes} bytes total (${hw.flashFreeBytes} bytes free)`);
+  return lines.join('\n');
 }
 
 /** `show privilege` — current EXEC level. */

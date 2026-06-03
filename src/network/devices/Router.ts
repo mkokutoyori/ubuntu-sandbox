@@ -1485,6 +1485,7 @@ export abstract class Router extends Equipment {
   _getPortsInternal(): Map<string, Port> { return this.ports; }
   /** @internal Used by CLI shells */
   _getHostnameInternal(): string { return this.hostname; }
+  _getUptimeMs(): number { return this.getUptimeMs(); }
   /** @internal Used by CLI shells and OSPF */
   _getIPv6RoutingTableInternal() { return this.ipv6Engine.getRoutingTableInternal(); }
   /** @internal Used by CLI shells */

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-03T19:59:35.873Z
+Generated: 2026-06-03T20:24:13.847Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -631,14 +631,10 @@ Total steps: 343
 <empty>
 
 [152/343] r1 R1(config-if)# tunnel mode gre ip
-  % Invalid input detected at '^' marker.
-  tunnel mode gre ip
-         ^
+<empty>
 
 [153/343] r1 R1(config-if)# tunnel key 1234
-  % Invalid input detected at '^' marker.
-  tunnel key 1234
-         ^
+<empty>
 
 [154/343] r1 R1(config-if)# keepalive 5 3
   % Invalid input detected at '^' marker.
@@ -661,9 +657,7 @@ Total steps: 343
 <empty>
 
 [160/343] r1 R1(config-if)# tunnel mode ipip
-  % Invalid input detected at '^' marker.
-  tunnel mode ipip
-         ^
+<empty>
 
 [161/343] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF
 <empty>
@@ -678,9 +672,7 @@ Total steps: 343
 <empty>
 
 [165/343] r1 R1(config-if)# tunnel mode ipv6ip
-  % Invalid input detected at '^' marker.
-  tunnel mode ipv6ip
-         ^
+<empty>
 
 [166/343] r1 R1(config-if)# exit
 <empty>
@@ -852,7 +844,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -860,7 +852,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1240,10 +1232,10 @@ Total steps: 343
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback1
    description LOOP-1
@@ -1298,7 +1290,7 @@ Total steps: 343
    no shutdown
   !
   interface Tunnel2
-   shutdown
+   no shutdown
   !
   end
 
@@ -1343,7 +1335,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1351,7 +1343,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1543,7 +1535,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0627.E9BA5E35 (19:59:35.913 UTC Wed Jun 3 2026)
+  reference time is EDCB0BED.E10624DD (20:24:13.879 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1552,7 +1544,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *19:59:35.000 UTC Wed Jun 3 2026
+  *20:24:13.000 UTC Wed Jun 3 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1581,8 +1573,8 @@ Total steps: 343
 
 [277/343] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [278/343] r1 R1# show flash
   Directory of flash:/
@@ -1764,10 +1756,10 @@ Total steps: 343
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback1
    description LOOP-1
@@ -1822,7 +1814,7 @@ Total steps: 343
    no shutdown
   !
   interface Tunnel2
-   shutdown
+   no shutdown
   !
   end
   
@@ -1881,7 +1873,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1889,7 +1881,7 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2026,9 +2018,9 @@ Total steps: 343
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
@@ -2071,7 +2063,7 @@ Total steps: 343
    ip address 172.16.0.5 255.255.255.252
    no shutdown
   interface Tunnel2
-   shutdown
+   no shutdown
 
 [299/343] r1 R1# show running-config | begin line
 <empty>
@@ -2095,9 +2087,9 @@ Total steps: 343
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
@@ -2140,7 +2132,7 @@ Total steps: 343
    ip address 172.16.0.5 255.255.255.252
    no shutdown
   interface Tunnel2
-   shutdown
+   no shutdown
   end
 
 [301/343] r1 R1# show ip route | include via
@@ -2315,6 +2307,7 @@ Total steps: 343
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [340/343] r1 R1(config)# no ?

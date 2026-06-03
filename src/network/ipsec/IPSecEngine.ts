@@ -3534,7 +3534,7 @@ export class IPSecEngine implements IProtocolEngine {
     const lines: string[] = [];
     for (const [, ts] of this.transformSets) {
       lines.push(`Transform set ${ts.name}: { ${ts.transforms.join(' ')} }`);
-      lines.push(`   will negotiate = { ${ts.mode === 'transport' ? 'Transport' : 'Tunnel'}, },`);
+      lines.push(`   will negotiate = { ${ts.mode === 'transport' ? 'Transport' : 'Tunnel'} },`);
     }
     return lines.join('\n');
   }
@@ -3938,6 +3938,84 @@ export class IPSecEngine implements IProtocolEngine {
     if (mapName) lines.push(` crypto map ${mapName}`);
     const tp = this.tunnelProtection.get(ifName);
     if (tp) lines.push(` tunnel protection ipsec profile ${tp.profileName}${tp.shared ? ' shared' : ''}`);
+    return lines;
+  }
+
+  asRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    for (const [, p] of [...this.isakmpPolicies].sort((a, b) => a[0] - b[0])) {
+      lines.push(`crypto isakmp policy ${p.priority}`);
+      if (p.encryption) lines.push(` encryption ${p.encryption}`);
+      if (p.hash) lines.push(` hash ${p.hash}`);
+      if (p.auth) lines.push(` authentication ${p.auth}`);
+      if (p.group) lines.push(` group ${p.group}`);
+      if (p.lifetime !== 86400) lines.push(` lifetime ${p.lifetime}`);
+    }
+    for (const [peer, key] of this.preSharedKeys) {
+      lines.push(`crypto isakmp key ${key} address ${peer}`);
+    }
+    if (this.natKeepaliveInterval > 0) {
+      lines.push(`crypto isakmp keepalive ${this.natKeepaliveInterval} ${this.dpdConfig?.retryInterval ?? 3}`);
+    }
+    for (const [, ts] of this.transformSets) {
+      lines.push(`crypto ipsec transform-set ${ts.name} ${ts.transforms.join(' ')}`);
+      if (ts.mode !== 'tunnel') lines.push(` mode ${ts.mode}`);
+    }
+    for (const [, prof] of this.ipsecProfiles) {
+      lines.push(`crypto ipsec profile ${prof.name}`);
+      if (prof.transformSetName) lines.push(` set transform-set ${prof.transformSetName}`);
+      if (prof.saLifetimeSeconds) lines.push(` set security-association lifetime seconds ${prof.saLifetimeSeconds}`);
+    }
+    for (const [, cmap] of this.cryptoMaps) {
+      for (const [, entry] of [...cmap.staticEntries].sort((a, b) => a[0] - b[0])) {
+        lines.push(`crypto map ${cmap.name} ${entry.seq} ${entry.type}`);
+        for (const peer of entry.peers) lines.push(` set peer ${peer}`);
+        for (const t of entry.transformSets) lines.push(` set transform-set ${t}`);
+        if (entry.aclName) lines.push(` match address ${entry.aclName}`);
+        if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
+        if (entry.saLifetimeSeconds) lines.push(` set security-association lifetime seconds ${entry.saLifetimeSeconds}`);
+        if (entry.ikev2ProfileName) lines.push(` set ikev2-profile ${entry.ikev2ProfileName}`);
+      }
+      for (const [seq, dynName] of [...cmap.dynamicEntries].sort((a, b) => a[0] - b[0])) {
+        lines.push(`crypto map ${cmap.name} ${seq} ipsec-isakmp dynamic ${dynName}`);
+      }
+    }
+    for (const [, dyn] of this.dynamicCryptoMaps) {
+      for (const [, entry] of [...dyn.entries].sort((a, b) => a[0] - b[0])) {
+        lines.push(`crypto dynamic-map ${dyn.name} ${entry.seq}`);
+        for (const t of entry.transformSets) lines.push(` set transform-set ${t}`);
+        if (entry.aclName) lines.push(` match address ${entry.aclName}`);
+        if (entry.pfsGroup) lines.push(` set pfs ${entry.pfsGroup}`);
+      }
+    }
+    for (const [, prop] of this.ikev2Proposals) {
+      lines.push(`crypto ikev2 proposal ${prop.name}`);
+      if (prop.encryption.length) lines.push(` encryption ${prop.encryption.join(' ')}`);
+      if (prop.integrity.length) lines.push(` integrity ${prop.integrity.join(' ')}`);
+      if (prop.dhGroup.length) lines.push(` group ${prop.dhGroup.join(' ')}`);
+    }
+    for (const [, pol] of this.ikev2Policies) {
+      lines.push(`crypto ikev2 policy ${pol.priority}`);
+      for (const n of pol.proposalNames) lines.push(` proposal ${n}`);
+      if (pol.matchAddressLocal) lines.push(` match address local ${pol.matchAddressLocal}`);
+    }
+    for (const [, kr] of this.ikev2Keyrings) {
+      lines.push(`crypto ikev2 keyring ${kr.name}`);
+      for (const [, peer] of kr.peers) {
+        lines.push(` peer ${peer.name}`);
+        if (peer.address) lines.push(`  address ${peer.address}`);
+        if (peer.preSharedKey) lines.push(`  pre-shared-key ${peer.preSharedKey}`);
+      }
+    }
+    for (const [, prof] of this.ikev2Profiles) {
+      lines.push(`crypto ikev2 profile ${prof.name}`);
+      if (prof.matchIdentityRemoteAddress) lines.push(` match identity remote address ${prof.matchIdentityRemoteAddress}`);
+      if (prof.matchIdentityRemoteAny) lines.push(` match identity remote any`);
+      if (prof.authLocal) lines.push(` authentication local ${prof.authLocal}`);
+      if (prof.authRemote) lines.push(` authentication remote ${prof.authRemote}`);
+      if (prof.keyringName) lines.push(` keyring ${prof.keyringName}`);
+      if (prof.keyringLocalName) lines.push(` keyring local ${prof.keyringLocalName}`);
+    }
     return lines;
   }
 }
