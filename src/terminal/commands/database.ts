@@ -132,6 +132,10 @@ export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.delete(deviceId);
   oracleSystemdSyncs.get(deviceId)?.stop();
   oracleSystemdSyncs.delete(deviceId);
+  const db = oracleInstances.get(deviceId);
+  if (db) {
+    try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
+  }
   oracleInstances.delete(deviceId);
   // Tear down the RMAN device-scoped catalog + config so a subsequent
   // getOracleDatabase(deviceId) starts fresh.
@@ -149,6 +153,9 @@ export function resetAllOracleInstances(): void {
   oracleFsSyncs.clear();
   for (const sync of oracleSystemdSyncs.values()) sync.stop();
   oracleSystemdSyncs.clear();
+  for (const db of oracleInstances.values()) {
+    try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
+  }
   oracleInstances.clear();
   oracleFilesystemInitialized.clear();
   DeviceCatalogRegistry._reset();

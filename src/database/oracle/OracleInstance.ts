@@ -17,6 +17,7 @@ import {
 import { OracleSignalRefreshActor } from './actors/OracleSignalRefreshActor';
 import { OracleRuntimeState } from './views/OracleRuntimeState';
 import { OracleRuntimeStateActor } from './actors/OracleRuntimeStateActor';
+import { SchedulerSweepActor } from './actors/SchedulerSweepActor';
 import { AsmManager } from './asm/AsmManager';
 import { AuditJournal } from './security/audit/AuditJournal';
 import { SecurityAuditActor } from './security/audit/SecurityAuditActor';
@@ -127,8 +128,12 @@ export class OracleInstance {
   private _lockActor: LockActor | null = null;
   statistics: StatisticsManager | null = null;
   scheduler: import('./scheduler/SchedulerManager').SchedulerManager | null = null;
+  private _schedulerSweepActor: SchedulerSweepActor | null = null;
   attachScheduler(s: import('./scheduler/SchedulerManager').SchedulerManager): void {
     this.scheduler = s;
+    this._schedulerSweepActor?.stop();
+    this._schedulerSweepActor = new SchedulerSweepActor(s);
+    this._schedulerSweepActor.start();
   }
   attachStatistics(storage: OracleStorage): StatisticsManager {
     if (!this.statistics) this.statistics = new StatisticsManager(storage);
@@ -225,6 +230,10 @@ export class OracleInstance {
     if (this._lockActor) {
       this._lockActor.stop();
       this._lockActor = null;
+    }
+    if (this._schedulerSweepActor) {
+      this._schedulerSweepActor.stop();
+      this._schedulerSweepActor = null;
     }
     this._refreshActor = new OracleSignalRefreshActor(this.getBus(), this._deviceId, this._signalStore);
     this._refreshActor.start();
@@ -397,6 +406,11 @@ export class OracleInstance {
     this._startupTime = null;
     this._backgroundProcesses = [];
     for (const rg of this._redoLogGroups) rg.status = 'UNUSED';
+
+    if (this._schedulerSweepActor) {
+      this._schedulerSweepActor.stop();
+      this._schedulerSweepActor = null;
+    }
 
     return output;
   }
