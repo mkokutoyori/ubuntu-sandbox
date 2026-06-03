@@ -136,6 +136,10 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return cmdIpRoute(ctx.r(), args);
   });
 
+  trie.registerGreedy('no ip route', 'Remove static route', (args) => {
+    return cmdNoIpRoute(ctx.r(), args);
+  });
+
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
     if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP();
     ctx.setSelectedRoutingProto({ proto: 'rip' });
@@ -298,6 +302,21 @@ export function cmdIpRoute(router: Router, args: string[]): string {
       return router.setDefaultRoute(nextHop) ? '' : '% Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop) ? '' : '% Next-hop is not reachable';
+  } catch (e: any) {
+    return `% Invalid input: ${e.message}`;
+  }
+}
+
+export function cmdNoIpRoute(router: Router, args: string[]): string {
+  if (args.length < 2) return '% Incomplete command.';
+  try {
+    const network = new IPAddress(args[0]);
+    const mask = new SubnetMask(args[1]);
+    const nextHop = args[2] ? new IPAddress(args[2]) : undefined;
+    if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
+      return router.removeDefaultRoute() ? '' : '% Route not found';
+    }
+    return router.removeStaticRoute(network, mask, nextHop) ? '' : '% Route not found';
   } catch (e: any) {
     return `% Invalid input: ${e.message}`;
   }

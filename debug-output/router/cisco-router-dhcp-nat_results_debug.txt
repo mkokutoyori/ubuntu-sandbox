@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-03T19:45:01.867Z
+Generated: 2026-06-03T19:59:29.001Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1336,7 +1336,7 @@ Total steps: 369
   ip nat inside source static 192.168.1.150 10.0.0.150
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 1 pool POOL1
-  ip nat inside source list 2 interface (outside) overload
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
   ip nat translation icmp-timeout 30
@@ -1664,7 +1664,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB02BD.E6666666 (19:45:01.900 UTC Wed Jun 3 2026)
+  reference time is EDCB0621.07AE147A (19:59:29.030 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1673,7 +1673,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *19:45:01.000 UTC Wed Jun 3 2026
+  *19:59:29.000 UTC Wed Jun 3 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1922,7 +1922,7 @@ Total steps: 369
   ip nat inside source static 192.168.1.150 10.0.0.150
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 1 pool POOL1
-  ip nat inside source list 2 interface (outside) overload
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
   ip nat translation icmp-timeout 30
@@ -2075,7 +2075,7 @@ Total steps: 369
    shutdown
   interface GigabitEthernet0/3
    shutdown
-  ip nat inside source list 2 interface (outside) overload
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
 
 [325/369] r1 R1(config)# show running-config | begin line
 <empty>
@@ -2171,7 +2171,7 @@ Total steps: 369
   ip nat inside source static 192.168.1.150 10.0.0.150
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 1 pool POOL1
-  ip nat inside source list 2 interface (outside) overload
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
   ip nat translation icmp-timeout 30

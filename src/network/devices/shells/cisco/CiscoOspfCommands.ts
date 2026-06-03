@@ -1912,12 +1912,28 @@ function showIpOspfDatabaseSelfOriginate(router: Router): string {
   return lines.join('\n');
 }
 
+function bestRoutesPerPrefix(routes: any[]): any[] {
+  const protoAd: Record<string, number> = {
+    connected: 0, static: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20, default: 1,
+  };
+  const best = new Map<string, any>();
+  const order: string[] = [];
+  for (const r of routes) {
+    const key = `${r.network?.toString?.() ?? r.network}/${r.mask?.toString?.() ?? r.mask}`;
+    const ad = r.ad ?? protoAd[r.type] ?? 255;
+    const existing = best.get(key);
+    if (!existing) { best.set(key, r); order.push(key); continue; }
+    const existingAd = existing.ad ?? protoAd[existing.type] ?? 255;
+    if (ad < existingAd) { best.set(key, r); continue; }
+    if (ad === existingAd && (r.metric ?? 0) < (existing.metric ?? 0)) { best.set(key, r); }
+  }
+  return order.map(k => best.get(k));
+}
+
 function showIpRouteAll(router: Router): string {
   router._ospfAutoConverge();
-  // Recompute live EIGRP/BGP adjacencies from the real topology so
-  // learned routes are reflected (config-driven, never fabricated).
   router.convergeDynamicRouting();
-  const rt = (router as any).routingTable as any[];
+  const rt = bestRoutesPerPrefix((router as any).routingTable as any[]);
   const lines: string[] = ['Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area',
     '       O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP',
     ''];

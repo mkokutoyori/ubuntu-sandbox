@@ -75,7 +75,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       const ifName = ctx.resolveInterfaceName(args[2]) ?? args[2];
       const isOverload = args[3]?.toLowerCase() === 'overload';
       if (!isOverload) return '% Missing "overload" keyword.';
-      engine.addDynamicRule({ aclId, type: 'overload' });
+      engine.addDynamicRule({ aclId, type: 'overload', interfaceName: ifName });
     } else if (keyword === 'pool') {
       const poolName = args[2];
       engine.addDynamicRule({ aclId, type: 'pool', poolName });
@@ -274,7 +274,8 @@ export function runningConfigNAT(router: Router): string[] {
   // Dynamic rules
   for (const r of engine.getDynamicRules()) {
     if (r.type === 'overload') {
-      lines.push(`ip nat inside source list ${r.aclId} interface (outside) overload`);
+      const iface = r.interfaceName ?? [...engine.getOutsideInterfaces()][0] ?? 'GigabitEthernet0/1';
+      lines.push(`ip nat inside source list ${r.aclId} interface ${iface} overload`);
     } else if (r.type === 'pool' && r.poolName) {
       lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}`);
     }
