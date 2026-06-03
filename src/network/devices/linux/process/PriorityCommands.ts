@@ -92,10 +92,26 @@ export function cmdRenice(args: string[], ctx: ProcessCmdContext): CmdResult {
     return USAGE('renice', "usage: renice [-n] priority [-p|--pid] pid...");
   }
 
+  // POSIX: only root (uid=0) may set a negative nice value, OR re-prioritise
+  // a process owned by another user. Non-root callers raising the priority
+  // (decreasing nice) is also rejected (EPERM).
+  const callerIsRoot = ctx.currentUid === 0;
+  if (!callerIsRoot && prio < 0) {
+    return {
+      output: `renice: failed to set priority: Permission denied`,
+      exitCode: 1,
+    };
+  }
+
   const lines: string[] = [];
   let exitCode = 0;
   if (mode === 'user') {
     for (const user of targets) {
+      if (!callerIsRoot && user !== ctx.currentUser) {
+        lines.push(`renice: failed to set priority for user ${user}: Permission denied`);
+        exitCode = 1;
+        continue;
+      }
       const procs = ctx.pm.list({ user });
       for (const p of procs) {
         const old = p.nice;
@@ -108,6 +124,11 @@ export function cmdRenice(args: string[], ctx: ProcessCmdContext): CmdResult {
       const p = ctx.pm.get(pid);
       if (!p) {
         lines.push(`renice: failed to set priority for ${pid} (process ID): No such process`);
+        exitCode = 1;
+        continue;
+      }
+      if (!callerIsRoot && p.user !== ctx.currentUser) {
+        lines.push(`renice: failed to set priority for ${pid} (process ID): Permission denied`);
         exitCode = 1;
         continue;
       }

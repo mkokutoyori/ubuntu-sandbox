@@ -112,7 +112,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
   'pkill', 'pgrep', 'pidof', 'killall',
@@ -1026,6 +1026,7 @@ export class LinuxCommandExecutor {
       tty: 'pts/0',
       shellPid: this.shellPid,
       jobs: this.jobTable,
+      uptimeSeconds: this.lifecycle.uptimeSeconds(),
     };
   }
 
@@ -1067,6 +1068,10 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    // `$!` — PID of the most-recently backgrounded process. Bash exposes
+    // this through the special parameter table; we propagate it via the
+    // environment so `echo $!` / `kill -15 $!` resolve correctly.
+    this.env.set('!', String(proc.pid));
     // Actually carry out the work: the only thing "background" skips is
     // blocking the foreground shell. Side effects — an SSH connection's
     // auth.log line and session-table entry, file writes, … — must still
@@ -1735,6 +1740,41 @@ export class LinuxCommandExecutor {
         const result = cmdUmask(c, args);
         if (result.newUmask !== undefined) this.umask = result.newUmask;
         return { output: result.output, exitCode: 0 };
+      }
+      case 'ulimit': {
+        const flag = args[0] ?? '-f';
+        const table: Record<string, [string, string]> = {
+          '-a': ['', ''],
+          '-c': ['core file size          (blocks, -c)', 'unlimited'],
+          '-d': ['data seg size           (kbytes, -d)', 'unlimited'],
+          '-e': ['scheduling priority             (-e)', '0'],
+          '-f': ['file size               (blocks, -f)', 'unlimited'],
+          '-i': ['pending signals                 (-i)', '15730'],
+          '-l': ['max locked memory       (kbytes, -l)', '67108864'],
+          '-m': ['max memory size         (kbytes, -m)', 'unlimited'],
+          '-n': ['open files                      (-n)', '1024'],
+          '-p': ['pipe size            (512 bytes, -p)', '8'],
+          '-q': ['POSIX message queues     (bytes, -q)', '819200'],
+          '-r': ['real-time priority              (-r)', '0'],
+          '-s': ['stack size              (kbytes, -s)', '8192'],
+          '-t': ['cpu time               (seconds, -t)', 'unlimited'],
+          '-u': ['max user processes              (-u)', '15730'],
+          '-v': ['virtual memory          (kbytes, -v)', 'unlimited'],
+          '-x': ['file locks                      (-x)', 'unlimited'],
+        };
+        if (flag === '-a' || flag === '-aH' || flag === '-aS') {
+          const lines: string[] = [];
+          for (const [k, [label, val]] of Object.entries(table)) {
+            if (k === '-a') continue;
+            lines.push(`${label} ${val}`);
+          }
+          return { output: lines.join('\n'), exitCode: 0 };
+        }
+        const entry = table[flag];
+        if (!entry) {
+          return { output: `bash: ulimit: ${flag}: invalid option`, exitCode: 2 };
+        }
+        return { output: entry[1], exitCode: 0 };
       }
       case 'test':
       case '[': return this.handleTest(cmd, args);

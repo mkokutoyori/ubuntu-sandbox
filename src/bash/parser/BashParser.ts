@@ -98,6 +98,10 @@ export class BashParser {
     while (this.matchSeparator()) {
       this.skipNewlines();
       if (this.isAtEnd() || this.isCompoundEnd()) break;
+      if (this.check(TokenType.SEMI) || this.check(TokenType.AMP)) {
+        const t = this.peek();
+        throw new Error(`bash: syntax error near unexpected token '${t.value}'`);
+      }
       commands.push(this.parseAndOrList());
     }
 

@@ -44,6 +44,15 @@ function getDefaultServices(isServer: boolean): ServiceState[] {
   return base;
 }
 
+/** Parse `--key=value` or `--key value` from a CLI arg vector. */
+function parseEqArg(args: string[], key: string): string | null {
+  const eq = args.find((a) => a.startsWith(`${key}=`));
+  if (eq) return eq.slice(key.length + 1).toLowerCase();
+  const idx = args.indexOf(key);
+  if (idx >= 0 && idx + 1 < args.length) return args[idx + 1].toLowerCase();
+  return null;
+}
+
 export function cmdSystemctl(args: string[], isServer: boolean): string {
   const services = getDefaultServices(isServer);
   const sub = (args[0] || '').toLowerCase();
@@ -114,18 +123,64 @@ export function cmdSystemctl(args: string[], isServer: boolean): string {
     }
 
     case 'list-units': {
-      const filtered = args.includes('--failed')
-        ? services.filter(s => !s.active)
-        : services;
+      const typeArg = parseEqArg(args, '--type');
+      const stateArg = parseEqArg(args, '--state');
+      const wantsTarget = typeArg === 'target';
+      const wantsService = !typeArg || typeArg === 'service';
+
       const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
-      for (const s of filtered) {
-        const active = s.active ? 'active' : 'inactive';
-        const sub2 = s.active ? 'running' : 'dead';
-        const load = 'loaded';
-        lines.push(`  ${(s.name + '.service').padEnd(30)} ${load.padEnd(6)} ${active.padEnd(8)} ${sub2.padEnd(8)} ${s.description}`);
+      let count = 0;
+
+      if (wantsService) {
+        let filtered = args.includes('--failed') ? services.filter(s => !s.active) : services;
+        if (stateArg) {
+          filtered = filtered.filter(s => {
+            const active = s.active ? 'active' : 'inactive';
+            const sub2 = s.active ? 'running' : 'dead';
+            return active === stateArg || sub2 === stateArg;
+          });
+        }
+        for (const s of filtered) {
+          const active = s.active ? 'active' : 'inactive';
+          const sub2 = s.active ? 'running' : 'dead';
+          lines.push(`  ${(s.name + '.service').padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${s.description}`);
+          count++;
+        }
+      }
+
+      if (wantsTarget) {
+        const targets = [
+          { name: 'basic.target',         desc: 'Basic System' },
+          { name: 'multi-user.target',    desc: 'Multi-User System' },
+          { name: 'network.target',       desc: 'Network' },
+          { name: 'network-online.target', desc: 'Network is Online' },
+          { name: 'sysinit.target',       desc: 'System Initialization' },
+          { name: 'timers.target',        desc: 'Timer Units' },
+        ];
+        const t = stateArg ? targets.filter(() => stateArg === 'active') : targets;
+        for (const tg of t) {
+          lines.push(`  ${tg.name.padEnd(30)} loaded active   active   ${tg.desc}`);
+          count++;
+        }
+      }
+
+      lines.push('');
+      lines.push(`${count} loaded units listed.`);
+      return lines.join('\n');
+    }
+
+    case 'list-unit-files': {
+      const stateArg = parseEqArg(args, '--state');
+      const lines = ['UNIT FILE                                STATE     VENDOR PRESET'];
+      let count = 0;
+      for (const s of services) {
+        const state = s.enabled ? 'enabled' : 'disabled';
+        if (stateArg && state !== stateArg) continue;
+        lines.push(`${(s.name + '.service').padEnd(40)} ${state.padEnd(9)} enabled`);
+        count++;
       }
       lines.push('');
-      lines.push(`${filtered.length} loaded units listed.`);
+      lines.push(`${count} unit files listed.`);
       return lines.join('\n');
     }
 
