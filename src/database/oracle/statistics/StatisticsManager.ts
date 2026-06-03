@@ -138,14 +138,35 @@ export class StatisticsManager {
       });
     }
 
-    // Per-index stats.
+    // Per-index stats — real cost-model heuristics rather than constants.
     for (const idx of this.storage.getIndexes(owner)) {
       if (idx.tableName.toUpperCase() !== tableName) continue;
-      const distinctKeys = Math.max(1, Math.ceil(rows.length / 2));
+      const colIndices = idx.columns.map((cn) =>
+        meta.columns.findIndex((c) => c.name.toUpperCase() === cn.toUpperCase()));
+      const keyTuples = rows.map((r) => colIndices.map((ci) => ci >= 0 ? String(r[ci] ?? '') : '').join('\x00'));
+      const distinctKeys = idx.unique
+        ? rows.length
+        : Math.max(1, new Set(keyTuples).size);
       const leafBlocks = Math.max(1, Math.ceil(rows.length / 100));
+      // BLEVEL ~= ceil(log_branching(leafBlocks)) with branching ≈ 320,
+      // matching Oracle's B-tree default. Bounded at 0 for leaf-only trees.
+      const bLevel = leafBlocks <= 1 ? 0 : Math.ceil(Math.log(leafBlocks) / Math.log(320));
+      const avgLeafBlocksPerKey = Math.max(1, Math.round(leafBlocks / distinctKeys));
+      const avgDataBlocksPerKey = Math.max(1, Math.round(blocks / distinctKeys));
+      // CLUSTERING_FACTOR: count adjacent rows (in index order) that
+      // would land in a different data block. Best-case = blocks, worst
+      // case = numRows.
+      const indexed = keyTuples
+        .map((k, i) => ({ k, block: Math.floor(i / 8) }))
+        .sort((a, b) => a.k.localeCompare(b.k));
+      let clusterFactor = indexed.length > 0 ? 1 : 0;
+      for (let i = 1; i < indexed.length; i++) {
+        if (indexed[i].block !== indexed[i - 1].block) clusterFactor++;
+      }
       this.indexStats.set(`${owner}.${idx.name}`, new IndexStatistics(
-        owner, idx.name, tableName, 1, leafBlocks, distinctKeys, 1, 1,
-        Math.max(1, Math.floor(rows.length * 0.8)), rows.length,
+        owner, idx.name, tableName, bLevel, leafBlocks,
+        distinctKeys, avgLeafBlocksPerKey, avgDataBlocksPerKey,
+        clusterFactor, rows.length,
         Math.max(1, Math.floor(rows.length * sampleRatio)), now,
       ));
     }

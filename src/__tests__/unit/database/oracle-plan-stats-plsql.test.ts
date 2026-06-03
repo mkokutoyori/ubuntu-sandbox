@@ -111,6 +111,23 @@ describe('DBMS_STATS', () => {
     expect(out).toMatch(/EMPLOYEES|DEPARTMENTS/);
     sh.dispose();
   });
+
+  it('GATHER_TABLE_STATS computes BLEVEL and CLUSTERING_FACTOR for an index', () => {
+    const sh = newSession('stats-idx');
+    sh.processLine('CREATE TABLE IDX_T (id NUMBER, cat VARCHAR2(2));');
+    for (let i = 1; i <= 50; i++) {
+      sh.processLine(`INSERT INTO IDX_T VALUES (${i}, '${i % 4}');`);
+    }
+    sh.processLine('CREATE UNIQUE INDEX IDX_T_PK ON IDX_T(id);');
+    sh.processLine('CREATE INDEX IDX_T_CAT ON IDX_T(cat);');
+    sh.processLine("BEGIN DBMS_STATS.GATHER_TABLE_STATS('SYS', 'IDX_T'); END;");
+    const out = run(sh, "SELECT INDEX_NAME, BLEVEL, LEAF_BLOCKS, DISTINCT_KEYS, CLUSTERING_FACTOR FROM DBA_IND_STATISTICS WHERE TABLE_NAME='IDX_T' ORDER BY INDEX_NAME;");
+    // Unique index over 50 distinct ids → distinct_keys = 50.
+    expect(out).toMatch(/IDX_T_PK\s+\d+\s+\d+\s+50\s+\d+/);
+    // Non-unique index over 4 distinct categories → distinct_keys = 4.
+    expect(out).toMatch(/IDX_T_CAT\s+\d+\s+\d+\s+4\s+\d+/);
+    sh.dispose();
+  });
 });
 
 describe('PL/SQL exceptions + EXECUTE IMMEDIATE', () => {
