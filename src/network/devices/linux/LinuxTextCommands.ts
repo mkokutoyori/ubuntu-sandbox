@@ -528,40 +528,101 @@ export function cmdSort(ctx: ShellContext, args: string[], stdin?: string): stri
   return lines.join('\n');
 }
 
+/**
+ * Parse a cut/comm RANGE list: "1", "1,3", "1-3", "1,3-5,7", "-3" (1..3),
+ * "5-" (5..end). Returns the 1-based indices, sorted & deduped.
+ * `max` caps open-ended high ends.
+ */
+function parseCutRanges(spec: string, max = 1024): number[] {
+  const out = new Set<number>();
+  for (const part of spec.split(',')) {
+    const m = /^(\d*)-(\d*)$/.exec(part);
+    if (m) {
+      const start = m[1] ? parseInt(m[1], 10) : 1;
+      const end = m[2] ? parseInt(m[2], 10) : max;
+      for (let i = start; i <= end; i++) out.add(i);
+    } else {
+      const n = parseInt(part, 10);
+      if (!isNaN(n)) out.add(n);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
 export function cmdCut(ctx: ShellContext, args: string[], stdin?: string): string {
   let delimiter = '\t';
-  let fields: number[] = [];
+  let mode: 'field' | 'char' | 'byte' = 'field';
+  let rangeSpec = '';
+  let onlyDelimited = false;
+  let outputDelimiter: string | undefined;
+  let complement = false;
   const files: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a.startsWith('-d')) {
-      delimiter = a.length > 2 ? a.slice(2) : args[++i] || '\t';
-      continue;
-    }
-    if (a.startsWith('-f')) {
-      const fStr = a.length > 2 ? a.slice(2) : args[++i] || '';
-      fields = fStr.split(',').map(f => parseInt(f, 10));
-      continue;
-    }
+    const argval = (long: string, short: string): string | null => {
+      if (a === short || a === long) return args[++i] ?? '';
+      // Empty short prefix would match every arg — guard explicitly.
+      if (short && a.startsWith(short) && a.length > short.length) return a.slice(short.length);
+      if (a.startsWith(long + '=')) return a.slice(long.length + 1);
+      return null;
+    };
+    const d = argval('--delimiter', '-d');
+    if (d !== null) { delimiter = d || '\t'; continue; }
+    const f = argval('--fields', '-f');
+    if (f !== null) { mode = 'field'; rangeSpec = f; continue; }
+    const c = argval('--characters', '-c');
+    if (c !== null) { mode = 'char'; rangeSpec = c; continue; }
+    const b = argval('--bytes', '-b');
+    if (b !== null) { mode = 'byte'; rangeSpec = b; continue; }
+    const od = argval('--output-delimiter', '');
+    if (od !== null) { outputDelimiter = od; continue; }
+    if (a === '-s' || a === '--only-delimited') { onlyDelimited = true; continue; }
+    if (a === '--complement') { complement = true; continue; }
     if (!a.startsWith('-')) files.push(a);
   }
+  const ranges = parseCutRanges(rangeSpec);
+  const outDelim = outputDelimiter ?? delimiter;
 
-  let content: string;
-  if (files.length > 0) {
-    const absPath = ctx.vfs.normalizePath(files[0], ctx.cwd);
-    content = ctx.vfs.readFile(absPath) ?? '';
-  } else {
-    content = stdin ?? '';
+  // Concatenate files; fall back to stdin.
+  let content = '';
+  for (const f of files) {
+    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
+    const raw = ctx.vfs.readFile(absPath);
+    if (raw !== null) content += (content && !content.endsWith('\n') ? '\n' : '') + raw;
   }
+  if (files.length === 0) content = stdin ?? '';
 
   const lines = content.split('\n');
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
   const result: string[] = [];
   for (const line of lines) {
-    if (!line) continue;
-    const parts = line.split(delimiter);
-    const selected = fields.map(f => parts[f - 1] || '').join(delimiter);
-    result.push(selected);
+    if (mode === 'field') {
+      if (!line.includes(delimiter)) {
+        if (onlyDelimited) continue;
+        result.push(line);
+        continue;
+      }
+      const parts = line.split(delimiter);
+      let keep: number[];
+      if (complement) {
+        const drop = new Set(ranges);
+        keep = parts.map((_, i) => i + 1).filter(n => !drop.has(n));
+      } else {
+        // Trim the requested range to the actual field count so an
+        // open-ended `-f2-` doesn't tack thousands of empty trailing
+        // delimiters onto every line.
+        keep = ranges.filter(n => n <= parts.length);
+      }
+      result.push(keep.map(n => parts[n - 1] ?? '').join(outDelim));
+    } else {
+      // -c and -b are functionally identical on a UTF-16 codepoint string.
+      const indices = complement
+        ? Array.from({ length: line.length }, (_, i) => i + 1).filter(n => !ranges.includes(n))
+        : ranges;
+      result.push(indices.map(n => line.charAt(n - 1) ?? '').join(''));
+    }
   }
   return result.join('\n');
 }
