@@ -940,7 +940,13 @@ export class SQLPlusSession {
       } catch { /* fall through to ORA-04043 */ }
     }
 
-    // 3. Dictionary view (DBA_*/ALL_*/USER_*/V$*/UNIFIED_AUDIT_TRAIL …).
+    // 3. Stored PL/SQL unit — procedure, function, or package spec.
+    const unit = this.db.getStoredUnit(schema, name) ?? this.db.getStoredUnit('SYS', name);
+    if (unit) {
+      return this.formatStoredUnitDescribe(unit);
+    }
+
+    // 4. Dictionary view (DBA_*/ALL_*/USER_*/V$*/UNIFIED_AUDIT_TRAIL …).
     //    These live in the catalog rather than storage; resolve them
     //    via the catalog so DESC ALL_VIEWS et al. work out of the box.
     const dictCols = this.db.catalog.describeCatalogView(name, this.executor.getContext().currentSchema);
@@ -952,6 +958,29 @@ export class SQLPlusSession {
       output: [`ERROR:`, `${ORACLE_ERRORS.ORA_04043}: ${upper}`],
       exit: false, needsMoreInput: false, prompt: this.getPrompt(),
     };
+  }
+
+  /** Render the procedure/function/package spec in SQL*Plus DESC format. */
+  private formatStoredUnitDescribe(unit: import('../OracleDatabase').StoredPLSQLUnit): SQLPlusResult {
+    const output: string[] = [];
+    if (unit.type === 'FUNCTION') {
+      output.push(`FUNCTION ${unit.name} RETURNS ${unit.returnType ?? 'VARCHAR2'}`);
+    } else if (unit.type === 'PROCEDURE') {
+      output.push(`PROCEDURE ${unit.name}`);
+    } else if (unit.type === 'PACKAGE') {
+      output.push(`PACKAGE ${unit.name}`);
+    } else {
+      output.push(`${unit.type} ${unit.name}`);
+    }
+    if (unit.parameters.length > 0) {
+      output.push(` Argument Name                  Type                    In/Out Default?`);
+      output.push(` ------------------------------ ----------------------- ------ --------`);
+      for (const p of unit.parameters) {
+        const dflt = p.defaultValue ? 'DEFAULT' : '';
+        output.push(` ${p.name.padEnd(31)}${p.dataType.padEnd(24)}${p.mode.padEnd(7)}${dflt}`);
+      }
+    }
+    return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
   /** Render a column list in classic SQL*Plus DESCRIBE format. */

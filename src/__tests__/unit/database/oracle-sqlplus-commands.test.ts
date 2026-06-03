@@ -355,6 +355,25 @@ describe('DESC table_name / DESCRIBE table_name', () => {
     const result = cmd('DESC NONEXISTENT_TABLE');
     expect(result.output.some(l => l.includes('ORA-04043'))).toBe(true);
   });
+
+  test('DESC describes a stored function and its parameters', () => {
+    cmd('CREATE OR REPLACE FUNCTION fn_double(p NUMBER) RETURN NUMBER IS BEGIN RETURN p*2; END;');
+    cmd('/');
+    const r = cmd('DESC fn_double');
+    const out = r.output.join('\n');
+    expect(out).toMatch(/FUNCTION FN_DOUBLE RETURNS NUMBER/);
+    expect(out).toMatch(/P\s+NUMBER\s+IN/);
+  });
+
+  test('DESC describes a stored procedure', () => {
+    cmd('CREATE OR REPLACE PROCEDURE pr_log(msg VARCHAR2, level NUMBER) IS BEGIN NULL; END;');
+    cmd('/');
+    const r = cmd('DESC pr_log');
+    const out = r.output.join('\n');
+    expect(out).toMatch(/PROCEDURE PR_LOG/);
+    expect(out).toMatch(/MSG\s+VARCHAR2\s+IN/);
+    expect(out).toMatch(/LEVEL\s+NUMBER\s+IN/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
