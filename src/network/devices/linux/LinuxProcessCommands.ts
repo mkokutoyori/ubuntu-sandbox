@@ -25,6 +25,8 @@ export interface ProcessCmdContext {
   shellPid?: number;
   /** Optional per-shell job table — needed for `kill %N` jobspec resolution. */
   jobs?: LinuxJobTable;
+  /** Seconds since boot, for `top`'s header. Same source as `uptime`. */
+  uptimeSeconds?: number;
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────
@@ -56,7 +58,14 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const zombie = procs.filter(p => p.state === 'Z').length;
 
   const lines: string[] = [];
-  lines.push(`top - ${timeStr} up  0:05,  1 user,  load average: 0.08, 0.03, 0.01`);
+  const upSec = ctx.uptimeSeconds ?? 0;
+  const upDays = Math.floor(upSec / 86_400);
+  const upH = Math.floor((upSec % 86_400) / 3600);
+  const upM = Math.floor((upSec % 3600) / 60);
+  const upClause = upDays > 0
+    ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
+    : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
+  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: 0.08, 0.03, 0.01`);
   lines.push(
     `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
   );

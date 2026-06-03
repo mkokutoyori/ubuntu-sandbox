@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-05-31T19:01:34.281Z
+Generated: 2026-06-03T16:08:01.531Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -173,58 +173,99 @@ Total steps: 300
            Destinations : 42        Routes : 42
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  172.17.1.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.3.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.4.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.5.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.6.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.7.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.8.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.9.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.10.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.11.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.12.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.13.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.14.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.15.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.16.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.17.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.18.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.19.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.20.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.21.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.22.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.23.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.24.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.25.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.26.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.27.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.28.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.29.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.30.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.31.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.32.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.33.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.34.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.35.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.36.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.37.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.38.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.39.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.40.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [54/300] r1 <R1> display ip routing-table protocol static
-  % Invalid input detected at '^' marker.
-  display ip routing-table protocol static
-                                    ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Public routing table : STATIC
+           Destinations : 40        Routes : 40
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [55/300] r1 <R1> display ip routing-table 172.16.1.0
-  % Invalid input detected at '^' marker.
-  display ip routing-table 172.16.1.0
-                           ^
+  Route does not exist.
 
 [56/300] r1 <R1> display ip routing-table statistics
   Proto     route
@@ -246,25 +287,25 @@ Total steps: 300
 <empty>
 
 [60/300] r1 [R1] ip route-static 0.0.0.0 0.0.0.0 GigabitEthernet0/0/1
-  Error: Invalid IP address: GigabitEthernet0/0/1
+<empty>
 
 [61/300] r1 [R1] ip route-static 192.168.50.0 24 10.0.0.2 description BRANCH-A
-  Error: Invalid subnet mask: 24
+<empty>
 
 [62/300] r1 [R1] ip route-static 192.168.51.0 24 10.0.0.2 preference 250 tag 100
-  Error: Invalid subnet mask: 24
+<empty>
 
 [63/300] r1 [R1] ip route-static 192.168.52.0 24 NULL0
-  Error: Invalid subnet mask: 24
+<empty>
 
 [64/300] r1 [R1] ip route-static 192.168.53.0 24 10.0.0.2 track nqa admin test1
-  Error: Invalid subnet mask: 24
+<empty>
 
 [65/300] r1 [R1] ip route-static vpn-instance VRF1 192.168.60.0 24 10.0.0.2
-  Error: Invalid IP address: vpn-instance
+<empty>
 
 [66/300] r1 [R1] ip route-static 192.168.99.0 24 10.0.0.2 permanent
-  Error: Invalid subnet mask: 24
+<empty>
 
 [67/300] r1 [R1] return
 <empty>
@@ -273,57 +314,67 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 43        Routes : 43
+           Destinations : 49        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  172.17.1.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.3.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.4.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.5.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.6.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.7.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.8.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.9.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.10.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.11.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.12.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.13.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.14.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.15.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.16.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.17.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.18.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.19.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.20.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.21.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.22.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.23.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.24.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.25.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.26.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.27.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.28.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.29.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.30.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.31.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.32.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.33.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.34.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.35.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.36.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.37.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.38.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.39.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.40.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0.0.0.0     Static  60   200   RD    10.0.0.6        
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
+  192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
+  192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
+  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [69/300] r1 <R1> display ip routing-table 0.0.0.0
-  % Invalid input detected at '^' marker.
-  display ip routing-table 0.0.0.0
-                           ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Table : Public
+  Summary Count : 1
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
 
 
 --- [70] § IPv6 static ---
@@ -340,22 +391,101 @@ Total steps: 300
 <empty>
 
 [74/300] r1 [R1] ipv6 route-static 2001:db8:3:: 64 GigabitEthernet0/0/1
-  Error: Invalid IPv6 address: expected 8 groups, got 1 in GigabitEthernet0/0/1
+<empty>
 
 [75/300] r1 [R1] ipv6 route-static 2001:db8:5:: 64 NULL0 preference 250
-  Error: Invalid IPv6 address: expected 8 groups, got 1 in NULL0
+<empty>
 
 [76/300] r1 [R1] return
 <empty>
 
 [77/300] r1 <R1> display ipv6 routing-table
-  IPv6 Routing Table
-  No IPv6 routes configured.
+  Routing Table : Public
+           Destinations : 4        Routes : 4
+  
+  Destination  : 2001:db8:2::/64
+  NextHop      : 2001:db8:1::2
+  Preference   : 60
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : -
+  Flags        : RD
+  
+  Destination  : ::/0
+  NextHop      : 2001:db8:1::2
+  Preference   : 60
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : -
+  Flags        : RD
+  
+  Destination  : 2001:db8:3::/64
+  NextHop      : ::
+  Preference   : 60
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : GE0/0/1
+  Flags        : RD
+  
+  Destination  : 2001:db8:5::/64
+  NextHop      : ::
+  Preference   : 250
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : NULL0
+  Flags        : RD
 
 [78/300] r1 <R1> display ipv6 routing-table protocol static
-  % Invalid input detected at '^' marker.
-  display ipv6 routing-table protocol static
-                             ^
+  Public Routing Table : STATIC
+           Destinations : 4        Routes : 4
+  
+  Destination  : 2001:db8:2::/64
+  NextHop      : 2001:db8:1::2
+  Preference   : 60
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : -
+  Flags        : RD
+  
+  Destination  : ::/0
+  NextHop      : 2001:db8:1::2
+  Preference   : 60
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : -
+  Flags        : RD
+  
+  Destination  : 2001:db8:3::/64
+  NextHop      : ::
+  Preference   : 60
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : GE0/0/1
+  Flags        : RD
+  
+  Destination  : 2001:db8:5::/64
+  NextHop      : ::
+  Preference   : 250
+  Cost         : 0
+  Protocol     : Static
+  RelayNextHop : ::
+  TunnelID     : 0x0
+  Interface    : NULL0
+  Flags        : RD
 
 
 --- [79] § ip-prefix lists ---
@@ -363,117 +493,104 @@ Total steps: 300
   Enter system view, return user view with return command.
 
 [80/300] r1 [R1] ip ip-prefix PL-IN index 10 permit 10.1.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 10 permit 10.1.0.0 16 less-equal 24
-     ^
+<empty>
 
 [81/300] r1 [R1] ip ip-prefix PL-IN index 20 permit 10.2.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 20 permit 10.2.0.0 16 less-equal 24
-     ^
+<empty>
 
 [82/300] r1 [R1] ip ip-prefix PL-IN index 30 permit 10.3.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 30 permit 10.3.0.0 16 less-equal 24
-     ^
+<empty>
 
 [83/300] r1 [R1] ip ip-prefix PL-IN index 40 permit 10.4.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 40 permit 10.4.0.0 16 less-equal 24
-     ^
+<empty>
 
 [84/300] r1 [R1] ip ip-prefix PL-IN index 50 permit 10.5.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 50 permit 10.5.0.0 16 less-equal 24
-     ^
+<empty>
 
 [85/300] r1 [R1] ip ip-prefix PL-IN index 60 permit 10.6.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 60 permit 10.6.0.0 16 less-equal 24
-     ^
+<empty>
 
 [86/300] r1 [R1] ip ip-prefix PL-IN index 70 permit 10.7.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 70 permit 10.7.0.0 16 less-equal 24
-     ^
+<empty>
 
 [87/300] r1 [R1] ip ip-prefix PL-IN index 80 permit 10.8.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 80 permit 10.8.0.0 16 less-equal 24
-     ^
+<empty>
 
 [88/300] r1 [R1] ip ip-prefix PL-IN index 90 permit 10.9.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 90 permit 10.9.0.0 16 less-equal 24
-     ^
+<empty>
 
 [89/300] r1 [R1] ip ip-prefix PL-IN index 100 permit 10.10.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 100 permit 10.10.0.0 16 less-equal 24
-     ^
+<empty>
 
 [90/300] r1 [R1] ip ip-prefix PL-IN index 110 permit 10.11.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 110 permit 10.11.0.0 16 less-equal 24
-     ^
+<empty>
 
 [91/300] r1 [R1] ip ip-prefix PL-IN index 120 permit 10.12.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 120 permit 10.12.0.0 16 less-equal 24
-     ^
+<empty>
 
 [92/300] r1 [R1] ip ip-prefix PL-IN index 130 permit 10.13.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 130 permit 10.13.0.0 16 less-equal 24
-     ^
+<empty>
 
 [93/300] r1 [R1] ip ip-prefix PL-IN index 140 permit 10.14.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 140 permit 10.14.0.0 16 less-equal 24
-     ^
+<empty>
 
 [94/300] r1 [R1] ip ip-prefix PL-IN index 150 permit 10.15.0.0 16 less-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 150 permit 10.15.0.0 16 less-equal 24
-     ^
+<empty>
 
 [95/300] r1 [R1] ip ip-prefix PL-IN index 200 deny 0.0.0.0 0
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-IN index 200 deny 0.0.0.0 0
-     ^
+<empty>
 
 [96/300] r1 [R1] ip ip-prefix PL-OUT permit 192.168.0.0 16 greater-equal 24
-  % Invalid input detected at '^' marker.
-  ip ip-prefix PL-OUT permit 192.168.0.0 16 greater-equal 24
-     ^
+<empty>
 
 [97/300] r1 [R1] ip ipv6-prefix V6PL index 10 permit 2001:db8:: 32 less-equal 64
-  % Invalid input detected at '^' marker.
-  ip ipv6-prefix V6PL index 10 permit 2001:db8:: 32 less-equal 64
-     ^
+<empty>
 
 [98/300] r1 [R1] undo ip ip-prefix PL-IN index 10
-  % Invalid input detected at '^' marker.
-  undo ip ip-prefix PL-IN index 10
-          ^
+<empty>
 
 [99/300] r1 [R1] return
 <empty>
 
 [100/300] r1 <R1> display ip ip-prefix
-  % Invalid input detected at '^' marker.
-  display ip ip-prefix
-             ^
+  ip ip-prefix PL-IN index 20 permit 10.2.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 30 permit 10.3.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 40 permit 10.4.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 50 permit 10.5.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 60 permit 10.6.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 70 permit 10.7.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 80 permit 10.8.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 90 permit 10.9.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 100 permit 10.10.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 110 permit 10.11.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 120 permit 10.12.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 130 permit 10.13.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 140 permit 10.14.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 150 permit 10.15.0.0 16 less-equal 24
+  ip ip-prefix PL-IN index 200 deny 0.0.0.0 0
+  ip ip-prefix PL-OUT index 10 permit 192.168.0.0 16 greater-equal 24
 
 [101/300] r1 <R1> display ip ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  display ip ip-prefix PL-IN
-             ^
+  Prefix-list PL-IN
+    Description: -
+    index 20 permit 10.2.0.0/16 less-equal 24
+    index 30 permit 10.3.0.0/16 less-equal 24
+    index 40 permit 10.4.0.0/16 less-equal 24
+    index 50 permit 10.5.0.0/16 less-equal 24
+    index 60 permit 10.6.0.0/16 less-equal 24
+    index 70 permit 10.7.0.0/16 less-equal 24
+    index 80 permit 10.8.0.0/16 less-equal 24
+    index 90 permit 10.9.0.0/16 less-equal 24
+    index 100 permit 10.10.0.0/16 less-equal 24
+    index 110 permit 10.11.0.0/16 less-equal 24
+    index 120 permit 10.12.0.0/16 less-equal 24
+    index 130 permit 10.13.0.0/16 less-equal 24
+    index 140 permit 10.14.0.0/16 less-equal 24
+    index 150 permit 10.15.0.0/16 less-equal 24
+    index 200 deny 0.0.0.0/0
 
 [102/300] r1 <R1> display ip ipv6-prefix
-  % Invalid input detected at '^' marker.
-  display ip ipv6-prefix
-             ^
+  ip ipv6-prefix V6PL index 10 permit 2001:db8:: 32 less-equal 64
 
 
 --- [103] § route-policy ---
@@ -481,266 +598,256 @@ Total steps: 300
   Enter system view, return user view with return command.
 
 [104/300] r1 [R1] route-policy RP permit node 10
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 10
-  ^
-
-[105/300] r1 [R1] if-match ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  if-match ip-prefix PL-IN
-  ^
-
-[106/300] r1 [R1] if-match acl 2000
-  % Invalid input detected at '^' marker.
-  if-match acl 2000
-  ^
-
-[107/300] r1 [R1] if-match interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  if-match interface GigabitEthernet0/0/0
-  ^
-
-[108/300] r1 [R1] apply ip-address next-hop 10.0.0.2
-  % Invalid input detected at '^' marker.
-  apply ip-address next-hop 10.0.0.2
-  ^
-
-[109/300] r1 [R1] apply cost 10
-  % Invalid input detected at '^' marker.
-  apply cost 10
-  ^
-
-[110/300] r1 [R1] apply preference 100
-  % Invalid input detected at '^' marker.
-  apply preference 100
-  ^
-
-[111/300] r1 [R1] quit
 <empty>
 
-[112/300] r1 <R1> route-policy RP permit node 20
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 20
-  ^
-
-[113/300] r1 <R1> if-match ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  if-match ip-prefix PL-IN
-  ^
-
-[114/300] r1 <R1> if-match acl 2000
-  % Invalid input detected at '^' marker.
-  if-match acl 2000
-  ^
-
-[115/300] r1 <R1> if-match interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  if-match interface GigabitEthernet0/0/0
-  ^
-
-[116/300] r1 <R1> apply ip-address next-hop 10.0.0.3
-  % Invalid input detected at '^' marker.
-  apply ip-address next-hop 10.0.0.3
-  ^
-
-[117/300] r1 <R1> apply cost 20
-  % Invalid input detected at '^' marker.
-  apply cost 20
-  ^
-
-[118/300] r1 <R1> apply tag 200
-  % Invalid input detected at '^' marker.
-  apply tag 200
-  ^
-
-[119/300] r1 <R1> quit
+[105/300] r1 [R1-route-policy-RP-10] if-match ip-prefix PL-IN
 <empty>
 
-[120/300] r1 <R1> route-policy RP permit node 30
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 30
-  ^
-
-[121/300] r1 <R1> if-match ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  if-match ip-prefix PL-IN
-  ^
-
-[122/300] r1 <R1> if-match acl 2000
-  % Invalid input detected at '^' marker.
-  if-match acl 2000
-  ^
-
-[123/300] r1 <R1> if-match interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  if-match interface GigabitEthernet0/0/0
-  ^
-
-[124/300] r1 <R1> apply ip-address next-hop 10.0.0.4
-  % Invalid input detected at '^' marker.
-  apply ip-address next-hop 10.0.0.4
-  ^
-
-[125/300] r1 <R1> apply cost 30
-  % Invalid input detected at '^' marker.
-  apply cost 30
-  ^
-
-[126/300] r1 <R1> apply tag 200
-  % Invalid input detected at '^' marker.
-  apply tag 200
-  ^
-
-[127/300] r1 <R1> quit
+[106/300] r1 [R1-route-policy-RP-10] if-match acl 2000
 <empty>
 
-[128/300] r1 <R1> route-policy RP permit node 40
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 40
-  ^
-
-[129/300] r1 <R1> if-match ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  if-match ip-prefix PL-IN
-  ^
-
-[130/300] r1 <R1> if-match acl 2000
-  % Invalid input detected at '^' marker.
-  if-match acl 2000
-  ^
-
-[131/300] r1 <R1> if-match interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  if-match interface GigabitEthernet0/0/0
-  ^
-
-[132/300] r1 <R1> apply ip-address next-hop 10.0.0.5
-  % Invalid input detected at '^' marker.
-  apply ip-address next-hop 10.0.0.5
-  ^
-
-[133/300] r1 <R1> apply cost 40
-  % Invalid input detected at '^' marker.
-  apply cost 40
-  ^
-
-[134/300] r1 <R1> apply tag 200
-  % Invalid input detected at '^' marker.
-  apply tag 200
-  ^
-
-[135/300] r1 <R1> quit
+[107/300] r1 [R1-route-policy-RP-10] if-match interface GigabitEthernet0/0/0
 <empty>
 
-[136/300] r1 <R1> route-policy RP permit node 50
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 50
-  ^
-
-[137/300] r1 <R1> if-match ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  if-match ip-prefix PL-IN
-  ^
-
-[138/300] r1 <R1> if-match acl 2000
-  % Invalid input detected at '^' marker.
-  if-match acl 2000
-  ^
-
-[139/300] r1 <R1> if-match interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  if-match interface GigabitEthernet0/0/0
-  ^
-
-[140/300] r1 <R1> apply ip-address next-hop 10.0.0.6
-  % Invalid input detected at '^' marker.
-  apply ip-address next-hop 10.0.0.6
-  ^
-
-[141/300] r1 <R1> apply cost 50
-  % Invalid input detected at '^' marker.
-  apply cost 50
-  ^
-
-[142/300] r1 <R1> apply tag 200
-  % Invalid input detected at '^' marker.
-  apply tag 200
-  ^
-
-[143/300] r1 <R1> quit
+[108/300] r1 [R1-route-policy-RP-10] apply ip-address next-hop 10.0.0.2
 <empty>
 
-[144/300] r1 <R1> route-policy RP permit node 60
-  % Invalid input detected at '^' marker.
-  route-policy RP permit node 60
-  ^
-
-[145/300] r1 <R1> if-match ip-prefix PL-IN
-  % Invalid input detected at '^' marker.
-  if-match ip-prefix PL-IN
-  ^
-
-[146/300] r1 <R1> if-match acl 2000
-  % Invalid input detected at '^' marker.
-  if-match acl 2000
-  ^
-
-[147/300] r1 <R1> if-match interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  if-match interface GigabitEthernet0/0/0
-  ^
-
-[148/300] r1 <R1> apply ip-address next-hop 10.0.0.7
-  % Invalid input detected at '^' marker.
-  apply ip-address next-hop 10.0.0.7
-  ^
-
-[149/300] r1 <R1> apply cost 60
-  % Invalid input detected at '^' marker.
-  apply cost 60
-  ^
-
-[150/300] r1 <R1> apply tag 200
-  % Invalid input detected at '^' marker.
-  apply tag 200
-  ^
-
-[151/300] r1 <R1> quit
+[109/300] r1 [R1-route-policy-RP-10] apply cost 10
 <empty>
 
-[152/300] r1 <R1> route-policy RP deny node 100
-  % Invalid input detected at '^' marker.
-  route-policy RP deny node 100
-  ^
-
-[153/300] r1 <R1> quit
+[110/300] r1 [R1-route-policy-RP-10] apply preference 100
 <empty>
 
-[154/300] r1 <R1> acl 2000
-  % Invalid input detected at '^' marker.
-  acl 2000
-  ^
-
-[155/300] r1 <R1> rule 5 permit source 192.168.1.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  rule 5 permit source 192.168.1.0 0.0.0.255
-  ^
-
-[156/300] r1 <R1> quit
+[111/300] r1 [R1-route-policy-RP-10] quit
 <empty>
 
-[157/300] r1 <R1> return
+[112/300] r1 [R1] route-policy RP permit node 20
+<empty>
+
+[113/300] r1 [R1-route-policy-RP-20] if-match ip-prefix PL-IN
+<empty>
+
+[114/300] r1 [R1-route-policy-RP-20] if-match acl 2000
+<empty>
+
+[115/300] r1 [R1-route-policy-RP-20] if-match interface GigabitEthernet0/0/0
+<empty>
+
+[116/300] r1 [R1-route-policy-RP-20] apply ip-address next-hop 10.0.0.3
+<empty>
+
+[117/300] r1 [R1-route-policy-RP-20] apply cost 20
+<empty>
+
+[118/300] r1 [R1-route-policy-RP-20] apply tag 200
+<empty>
+
+[119/300] r1 [R1-route-policy-RP-20] quit
+<empty>
+
+[120/300] r1 [R1] route-policy RP permit node 30
+<empty>
+
+[121/300] r1 [R1-route-policy-RP-30] if-match ip-prefix PL-IN
+<empty>
+
+[122/300] r1 [R1-route-policy-RP-30] if-match acl 2000
+<empty>
+
+[123/300] r1 [R1-route-policy-RP-30] if-match interface GigabitEthernet0/0/0
+<empty>
+
+[124/300] r1 [R1-route-policy-RP-30] apply ip-address next-hop 10.0.0.4
+<empty>
+
+[125/300] r1 [R1-route-policy-RP-30] apply cost 30
+<empty>
+
+[126/300] r1 [R1-route-policy-RP-30] apply tag 200
+<empty>
+
+[127/300] r1 [R1-route-policy-RP-30] quit
+<empty>
+
+[128/300] r1 [R1] route-policy RP permit node 40
+<empty>
+
+[129/300] r1 [R1-route-policy-RP-40] if-match ip-prefix PL-IN
+<empty>
+
+[130/300] r1 [R1-route-policy-RP-40] if-match acl 2000
+<empty>
+
+[131/300] r1 [R1-route-policy-RP-40] if-match interface GigabitEthernet0/0/0
+<empty>
+
+[132/300] r1 [R1-route-policy-RP-40] apply ip-address next-hop 10.0.0.5
+<empty>
+
+[133/300] r1 [R1-route-policy-RP-40] apply cost 40
+<empty>
+
+[134/300] r1 [R1-route-policy-RP-40] apply tag 200
+<empty>
+
+[135/300] r1 [R1-route-policy-RP-40] quit
+<empty>
+
+[136/300] r1 [R1] route-policy RP permit node 50
+<empty>
+
+[137/300] r1 [R1-route-policy-RP-50] if-match ip-prefix PL-IN
+<empty>
+
+[138/300] r1 [R1-route-policy-RP-50] if-match acl 2000
+<empty>
+
+[139/300] r1 [R1-route-policy-RP-50] if-match interface GigabitEthernet0/0/0
+<empty>
+
+[140/300] r1 [R1-route-policy-RP-50] apply ip-address next-hop 10.0.0.6
+<empty>
+
+[141/300] r1 [R1-route-policy-RP-50] apply cost 50
+<empty>
+
+[142/300] r1 [R1-route-policy-RP-50] apply tag 200
+<empty>
+
+[143/300] r1 [R1-route-policy-RP-50] quit
+<empty>
+
+[144/300] r1 [R1] route-policy RP permit node 60
+<empty>
+
+[145/300] r1 [R1-route-policy-RP-60] if-match ip-prefix PL-IN
+<empty>
+
+[146/300] r1 [R1-route-policy-RP-60] if-match acl 2000
+<empty>
+
+[147/300] r1 [R1-route-policy-RP-60] if-match interface GigabitEthernet0/0/0
+<empty>
+
+[148/300] r1 [R1-route-policy-RP-60] apply ip-address next-hop 10.0.0.7
+<empty>
+
+[149/300] r1 [R1-route-policy-RP-60] apply cost 60
+<empty>
+
+[150/300] r1 [R1-route-policy-RP-60] apply tag 200
+<empty>
+
+[151/300] r1 [R1-route-policy-RP-60] quit
+<empty>
+
+[152/300] r1 [R1] route-policy RP deny node 100
+<empty>
+
+[153/300] r1 [R1-route-policy-RP-100] quit
+<empty>
+
+[154/300] r1 [R1] acl 2000
+<empty>
+
+[155/300] r1 [R1-acl-basic-2000] rule 5 permit source 192.168.1.0 0.0.0.255
+  Error: Expected permit or deny.
+
+[156/300] r1 [R1-acl-basic-2000] quit
+<empty>
+
+[157/300] r1 [R1] return
 <empty>
 
 [158/300] r1 <R1> display route-policy
-  % Invalid input detected at '^' marker.
-  display route-policy
-          ^
+  route-policy RP permit node 10
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.2
+   apply cost 10
+   apply preference 100
+  route-policy RP permit node 20
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.3
+   apply cost 20
+   apply tag 200
+  route-policy RP permit node 30
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.4
+   apply cost 30
+   apply tag 200
+  route-policy RP permit node 40
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.5
+   apply cost 40
+   apply tag 200
+  route-policy RP permit node 50
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.6
+   apply cost 50
+   apply tag 200
+  route-policy RP permit node 60
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.7
+   apply cost 60
+   apply tag 200
+  route-policy RP deny node 100
 
 [159/300] r1 <R1> display route-policy RP
-  % Invalid input detected at '^' marker.
-  display route-policy RP
-          ^
+  route-policy RP permit node 10
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.2
+   apply cost 10
+   apply preference 100
+  route-policy RP permit node 20
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.3
+   apply cost 20
+   apply tag 200
+  route-policy RP permit node 30
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.4
+   apply cost 30
+   apply tag 200
+  route-policy RP permit node 40
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.5
+   apply cost 40
+   apply tag 200
+  route-policy RP permit node 50
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.6
+   apply cost 50
+   apply tag 200
+  route-policy RP permit node 60
+   if-match ip-prefix PL-IN
+   if-match acl 2000
+   if-match interface GigabitEthernet0/0/0
+   apply ip-address next-hop 10.0.0.7
+   apply cost 60
+   apply tag 200
+  route-policy RP deny node 100
 
 
 --- [160] § policy-based routing ---
@@ -757,69 +864,57 @@ Total steps: 300
 <empty>
 
 [164/300] r1 [R1] traffic classifier C1
-  % Invalid input detected at '^' marker.
-  traffic classifier C1
-  ^
-
-[165/300] r1 [R1] if-match acl 3000
-  % Invalid input detected at '^' marker.
-  if-match acl 3000
-  ^
-
-[166/300] r1 [R1] quit
 <empty>
 
-[167/300] r1 <R1> traffic behavior B1
-  % Invalid input detected at '^' marker.
-  traffic behavior B1
-  ^
-
-[168/300] r1 <R1> redirect ip-nexthop 10.0.0.2
-  % Invalid input detected at '^' marker.
-  redirect ip-nexthop 10.0.0.2
-  ^
-
-[169/300] r1 <R1> quit
+[165/300] r1 [R1-classifier-C1] if-match acl 3000
 <empty>
 
-[170/300] r1 <R1> traffic policy TP1
-  % Invalid input detected at '^' marker.
-  traffic policy TP1
-  ^
-
-[171/300] r1 <R1> classifier C1 behavior B1
-  % Invalid input detected at '^' marker.
-  classifier C1 behavior B1
-  ^
-
-[172/300] r1 <R1> quit
+[166/300] r1 [R1-classifier-C1] quit
 <empty>
 
-[173/300] r1 <R1> interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0
-  ^
-
-[174/300] r1 <R1> traffic-policy TP1 inbound
-  % Invalid input detected at '^' marker.
-  traffic-policy TP1 inbound
-  ^
-
-[175/300] r1 <R1> quit
+[167/300] r1 [R1] traffic behavior B1
 <empty>
 
-[176/300] r1 <R1> return
+[168/300] r1 [R1-behavior-B1] redirect ip-nexthop 10.0.0.2
+<empty>
+
+[169/300] r1 [R1-behavior-B1] quit
+<empty>
+
+[170/300] r1 [R1] traffic policy TP1
+<empty>
+
+[171/300] r1 [R1-trafficpolicy-TP1] classifier C1 behavior B1
+<empty>
+
+[172/300] r1 [R1-trafficpolicy-TP1] quit
+<empty>
+
+[173/300] r1 [R1] interface GigabitEthernet0/0/0
+<empty>
+
+[174/300] r1 [R1-GE0/0/0] traffic-policy TP1 inbound
+<empty>
+
+[175/300] r1 [R1-GE0/0/0] quit
+<empty>
+
+[176/300] r1 [R1] return
 <empty>
 
 [177/300] r1 <R1> display traffic policy user-defined
-  % Invalid input detected at '^' marker.
-  display traffic policy user-defined
-          ^
+  traffic classifier C1 operator or
+   if-match acl 3000
+  #
+  traffic behavior B1
+   redirect ip-nexthop 10.0.0.2
+  #
+  traffic policy TP1
+   classifier C1 behavior B1
+  #
 
 [178/300] r1 <R1> display traffic-policy applied-record
-  % Invalid input detected at '^' marker.
-  display traffic-policy applied-record
-          ^
+  traffic-policy TP1 inbound on GE0/0/0
 
 
 --- [179] § NQA ---
@@ -827,126 +922,284 @@ Total steps: 300
   Enter system view, return user view with return command.
 
 [180/300] r1 [R1] nqa test-instance admin test1
-  % Invalid input detected at '^' marker.
-  nqa test-instance admin test1
-  ^
-
-[181/300] r1 [R1] test-type icmp
-  % Invalid input detected at '^' marker.
-  test-type icmp
-  ^
-
-[182/300] r1 [R1] destination-address ipv4 10.0.0.2
-  % Invalid input detected at '^' marker.
-  destination-address ipv4 10.0.0.2
-  ^
-
-[183/300] r1 [R1] frequency 10
-  % Invalid input detected at '^' marker.
-  frequency 10
-  ^
-
-[184/300] r1 [R1] probe-count 3
-  % Invalid input detected at '^' marker.
-  probe-count 3
-  ^
-
-[185/300] r1 [R1] start now
-  % Invalid input detected at '^' marker.
-  start now
-  ^
-
-[186/300] r1 [R1] quit
 <empty>
 
-[187/300] r1 <R1> return
+[181/300] r1 [R1-nqa-admin-test1] test-type icmp
+<empty>
+
+[182/300] r1 [R1-nqa-admin-test1] destination-address ipv4 10.0.0.2
+<empty>
+
+[183/300] r1 [R1-nqa-admin-test1] frequency 10
+<empty>
+
+[184/300] r1 [R1-nqa-admin-test1] probe-count 3
+<empty>
+
+[185/300] r1 [R1-nqa-admin-test1] start now
+<empty>
+
+[186/300] r1 [R1-nqa-admin-test1] quit
+<empty>
+
+[187/300] r1 [R1] return
 <empty>
 
 [188/300] r1 <R1> display nqa results test-instance admin test1
-  % Invalid input detected at '^' marker.
-  display nqa results test-instance admin test1
-          ^
+  NQA entry(admin, test1) :
+    Send operation times: 0             Receive response times: 0
+    Completion: active                  RTD OverThresholds number: 0
+    Attempts number: 0    Drop operation number: 0
+    Disconnect operation number: 0              Operation timeout number: 0
+    System busy operation number: 0             Connection fail number: 0
+    Operation sequence errors number: 0         RTT Stats errors number: 0
+    Destination ip address: 10.0.0.2
+    Min/Max/Avg RTT: 0/0/0 ms
+    Packet loss: 0.0%
 
 [189/300] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 43        Routes : 43
+           Destinations : 49        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  172.17.1.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.3.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.4.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.5.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.6.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.7.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.8.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.9.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.10.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.11.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.12.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.13.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.14.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.15.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.16.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.17.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.18.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.19.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.20.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.21.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.22.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.23.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.24.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.25.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.26.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.27.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.28.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.29.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.30.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.31.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.32.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.33.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.34.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.35.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.36.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.37.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.38.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.39.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.40.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0.0.0.0     Static  60   200   RD    10.0.0.6        
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
+  192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
+  192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
+  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [190/300] r1 <R1> display ip routing-table protocol static
-  % Invalid input detected at '^' marker.
-  display ip routing-table protocol static
-                                    ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Public routing table : STATIC
+           Destinations : 47        Routes : 47
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
+  192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
+  192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
+  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [191/300] r1 <R1> display ip routing-table protocol direct
-  % Invalid input detected at '^' marker.
-  display ip routing-table protocol direct
-                                    ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Public routing table : DIRECT
+           Destinations : 2        Routes : 2
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [192/300] r1 <R1> display ip routing-table verbose
-  % Invalid input detected at '^' marker.
-  display ip routing-table verbose
-                           ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 49        Routes : 49
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
+  192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
+  192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
+  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [193/300] r1 <R1> display fib
-  % Invalid input detected at '^' marker.
-  display fib
-          ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 49        Routes : 49
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
+  192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
+  192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
+  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [194/300] r1 <R1> display ip routing-table limit
-  % Invalid input detected at '^' marker.
-  display ip routing-table limit
-                           ^
+  Routing Table Limit:
+    Configured : unlimited
+    Current    : 49
 
 [195/300] r1 <R1> display router id
-  % Invalid input detected at '^' marker.
-  display router id
-          ^
+  Router ID: 192.168.1.1
 
 
 --- [196] § regression: display family ---
@@ -1024,34 +1277,95 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
+  ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
   #
 
 [199/300] r1 [R1] display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route-static 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route-static 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route-static 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route-static 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route-static 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route-static 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route-static 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route-static 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route-static 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route-static 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route-static 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route-static 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route-static 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route-static 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route-static 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route-static 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route-static 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route-static 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route-static 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route-static 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route-static 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route-static 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route-static 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route-static 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route-static 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route-static 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route-static 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route-static 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route-static 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route-static 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route-static 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route-static 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route-static 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route-static 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
+  #
 
 [200/300] r1 [R1] display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
 
 [201/300] r1 [R1] display interface
   GE0/0/0 current state : UP
@@ -1083,69 +1397,74 @@ Total steps: 300
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 43        Routes : 43
+           Destinations : 49        Routes : 49
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  172.17.1.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.2.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.3.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.4.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.5.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.6.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.7.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.8.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.9.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.10.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.11.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.12.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.13.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.14.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.15.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.16.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.17.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.18.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.19.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.20.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.21.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.22.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.23.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.24.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.25.25.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.26.26.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.27.27.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.28.28.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.29.29.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.30.30.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.31.31.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.16.32.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.17.33.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.18.34.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.19.35.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.20.36.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.21.37.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.22.38.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.23.39.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  172.24.40.0/255.255.255.0Static  60   60    RD    10.0.0.2        GE0/0/1
-  0.0.0.0/0.0.0.0     Static  60   200   RD    10.0.0.6        
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  172.17.1.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.2.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.3.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.4.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.5.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.6.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.7.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.8.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.9.0/24       Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.10.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.11.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.12.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.13.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.14.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.15.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.16.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.17.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.18.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.19.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.20.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.21.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.22.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.23.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.24.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.25.25.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.26.26.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.27.27.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.28.28.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.29.29.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.30.30.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.31.31.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.16.32.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.17.33.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.18.34.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.19.35.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.20.36.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.21.37.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.22.38.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.23.39.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  172.24.40.0/24      Static  60   0     RD    10.0.0.2        GE0/0/1
+  0.0.0.0/0           Static  60   0     RD    0.0.0.0         GE0/0/1
+  192.168.50.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.51.0/24     Static  250  0     RD    10.0.0.2        GE0/0/1
+  192.168.52.0/24     Static  60   0     RD    0.0.0.0         NULL0
+  192.168.53.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.60.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
+  192.168.99.0/24     Static  60   0     RD    10.0.0.2        GE0/0/1
 
 [203/300] r1 [R1] display ip routing-table statistics
   Proto     route
   --------------------
   Direct    2
-  Static    41
+  Static    47
   --------------------
-  Total     43
+  Total     49
 
 [204/300] r1 [R1] display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
 [205/300] r1 [R1] display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [206/300] r1 [R1] display ospf peer
   Error: OSPF is not configured.
@@ -1154,9 +1473,7 @@ Total steps: 300
   Error: OSPF is not configured.
 
 [208/300] r1 [R1] display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [209/300] r1 [R1] display ospf lsdb
   Error: OSPF is not configured.
@@ -1168,29 +1485,19 @@ Total steps: 300
   Info: RIP is not enabled.
 
 [212/300] r1 [R1] display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  Info: RIP is not enabled.
 
 [213/300] r1 [R1] display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [214/300] r1 [R1] display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [215/300] r1 [R1] display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [216/300] r1 [R1] display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [217/300] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -1199,19 +1506,21 @@ Total steps: 300
   Total 0 ACL(s)
 
 [219/300] r1 [R1] display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [220/300] r1 [R1] display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [221/300] r1 [R1] display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [222/300] r1 [R1] display ike sa
   Info: No IPSec configuration.
@@ -1255,30 +1564,26 @@ Total steps: 300
    clock offset: 0.0000 ms
 
 [231/300] r1 [R1] display clock
-  2026-05-31 19:01:34
-  Sunday
+  2026-06-03 16:08:01
+  Wednesday
   Time Zone(UTC) : UTC
 
 [232/300] r1 [R1] display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [233/300] r1 [R1] display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [234/300] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:34
+  CPU Usage Stat. Time : 2026-06-03 16:08:01
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:34
+  Memory utilization statistics at 2026-06-03 16:08:01
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1288,7 +1593,10 @@ Total steps: 300
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [237/300] r1 [R1] display users
@@ -1298,19 +1606,16 @@ Total steps: 300
   Wait     : Wait for the user to press ENTER.
 
 [238/300] r1 [R1] display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [239/300] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:34 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [240/300] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1321,14 +1626,19 @@ Total steps: 300
   Current messages : 0
 
 [241/300] r1 [R1] display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [242/300] r1 [R1] display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [243/300] r1 [R1] display patch-information
   Info: No patch exists.
@@ -1339,10 +1649,10 @@ Total steps: 300
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -1360,9 +1670,17 @@ Total steps: 300
   GE0/0/3                     down    down      0%    0%       0          0
 
 [247/300] r1 [R1] display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/24
+  Broadcast address : 192.168.1.1
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [248/300] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1373,9 +1691,69 @@ Total steps: 300
   Output: 0 packets, 0 bytes
 
 [249/300] r1 [R1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
+  ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
+  ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
+  ip route-static 172.20.4.0 255.255.255.0 10.0.0.2
+  ip route-static 172.21.5.0 255.255.255.0 10.0.0.2
+  ip route-static 172.22.6.0 255.255.255.0 10.0.0.2
+  ip route-static 172.23.7.0 255.255.255.0 10.0.0.2
+  ip route-static 172.24.8.0 255.255.255.0 10.0.0.2
+  ip route-static 172.25.9.0 255.255.255.0 10.0.0.2
+  ip route-static 172.26.10.0 255.255.255.0 10.0.0.2
+  ip route-static 172.27.11.0 255.255.255.0 10.0.0.2
+  ip route-static 172.28.12.0 255.255.255.0 10.0.0.2
+  ip route-static 172.29.13.0 255.255.255.0 10.0.0.2
+  ip route-static 172.30.14.0 255.255.255.0 10.0.0.2
+  ip route-static 172.31.15.0 255.255.255.0 10.0.0.2
+  ip route-static 172.16.16.0 255.255.255.0 10.0.0.2
+  ip route-static 172.17.17.0 255.255.255.0 10.0.0.2
+  ip route-static 172.18.18.0 255.255.255.0 10.0.0.2
+  ip route-static 172.19.19.0 255.255.255.0 10.0.0.2
+  ip route-static 172.20.20.0 255.255.255.0 10.0.0.2
+  ip route-static 172.21.21.0 255.255.255.0 10.0.0.2
+  ip route-static 172.22.22.0 255.255.255.0 10.0.0.2
+  ip route-static 172.23.23.0 255.255.255.0 10.0.0.2
+  ip route-static 172.24.24.0 255.255.255.0 10.0.0.2
+  ip route-static 172.25.25.0 255.255.255.0 10.0.0.2
+  ip route-static 172.26.26.0 255.255.255.0 10.0.0.2
+  ip route-static 172.27.27.0 255.255.255.0 10.0.0.2
+  ip route-static 172.28.28.0 255.255.255.0 10.0.0.2
+  ip route-static 172.29.29.0 255.255.255.0 10.0.0.2
+  ip route-static 172.30.30.0 255.255.255.0 10.0.0.2
+  ip route-static 172.31.31.0 255.255.255.0 10.0.0.2
+  ip route-static 172.16.32.0 255.255.255.0 10.0.0.2
+  ip route-static 172.17.33.0 255.255.255.0 10.0.0.2
+  ip route-static 172.18.34.0 255.255.255.0 10.0.0.2
+  ip route-static 172.19.35.0 255.255.255.0 10.0.0.2
+  ip route-static 172.20.36.0 255.255.255.0 10.0.0.2
+  ip route-static 172.21.37.0 255.255.255.0 10.0.0.2
+  ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
+  ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
+  ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
+  ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
+  #
 
 [250/300] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1383,14 +1761,17 @@ Total steps: 300
   Info: Diagnostic information collected.
 
 [251/300] r1 [R1] display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [252/300] r1 [R1] display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [253/300] r1 [R1] display ssh server status
   SSH version                     : 2.0
@@ -1409,9 +1790,13 @@ Total steps: 300
   STELNET server                  : Enable
 
 [255/300] r1 [R1] display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [256/300] r1 [R1] display port-security
   Port-security is enabled on the following interfaces:
@@ -1475,21 +1860,13 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
+  ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
   #
 
 [259/300] r1 [R1] display current-configuration | exclude #
@@ -1542,28 +1919,23 @@ Total steps: 300
   ip route-static 172.22.38.0 255.255.255.0 10.0.0.2
   ip route-static 172.23.39.0 255.255.255.0 10.0.0.2
   ip route-static 172.24.40.0 255.255.255.0 10.0.0.2
-  ip route-static 0.0.0.0 0.0.0.0 10.0.0.6
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
+  ip route-static 0.0.0.0 0.0.0.0 0.0.0.0
+  ip route-static 192.168.50.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.51.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.52.0 255.255.255.0 0.0.0.0
+  ip route-static 192.168.53.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.60.0 255.255.255.0 10.0.0.2
+  ip route-static 192.168.99.0 255.255.255.0 10.0.0.2
 
 [260/300] r1 [R1] display ip routing-table | include Direct
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [261/300] r1 [R1] display ip interface brief | include up
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
 
 
 --- [262] § regression: view nav + undo ---
@@ -1571,14 +1943,10 @@ Total steps: 300
   Enter system view, return user view with return command.
 
 [263/300] r1 [R1] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [264/300] r1 [R1] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [265/300] r1 [R1] dhcp enable
 <empty>
@@ -1590,107 +1958,109 @@ Total steps: 300
 <empty>
 
 [268/300] r1 [R1] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [269/300] r1 [R1] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [270/300] r1 [R1] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [271/300] r1 [R1] telnet server enable
 <empty>
 
 [272/300] r1 [R1] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [273/300] r1 [R1] info-center enable
 <empty>
 
 [274/300] r1 [R1] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [275/300] r1 [R1] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [276/300] r1 [R1] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [277/300] r1 [R1] ntp-service enable
 <empty>
 
 [278/300] r1 [R1] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [279/300] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [280/300] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [281/300] r1 [R1] sysname TEST
 <empty>
 
 [282/300] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[283/300] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[284/300] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[285/300] r1 [TEST-GE0/0/0] shutdown
+[283/300] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[286/300] r1 [TEST-GE0/0/0] undo shutdown
+[284/300] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+
+[285/300] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[287/300] r1 [TEST-GE0/0/0] quit
+[286/300] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[288/300] r1 [TEST] ospf 1
+[287/300] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[289/300] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[290/300] r1 [TEST-ospf-1] quit
+[288/300] r1 [Huawei] ospf 1
 <empty>
 
-[291/300] r1 [TEST] user-interface vty 0 4
+[289/300] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+   router-id 192.168.1.1
+  #
+
+[290/300] r1 [Huawei-ospf-1] quit
 <empty>
 
-[292/300] r1 [TEST-ui-vty0 4] quit
+[291/300] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[293/300] r1 [TEST] return
+[292/300] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[293/300] r1 [Huawei] return
 <empty>
 
 
 --- [294] § regression: context help ---
-[294/300] r1 <TEST> system-view
+[294/300] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[295/300] r1 [TEST] interface ?
+[295/300] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[296/300] r1 [TEST] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
+[296/300] r1 [Huawei] ip ?
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
-[297/300] r1 [TEST] undo ?
+[297/300] r1 [Huawei] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length
@@ -1702,16 +2072,19 @@ Total steps: 300
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[298/300] r1 [TEST] acl ?
+[298/300] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[299/300] r1 [TEST] return
+[299/300] r1 [Huawei] return
 <empty>
 
-[300/300] r1 <TEST> save
+[300/300] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.

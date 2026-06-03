@@ -32,28 +32,81 @@ export interface HuaweiShellContext {
 
 // ─── IP Command ──────────────────────────────────────────────────────
 
+const HUAWEI_NULL_IFACE = /^(null0|null)$/i;
+const HUAWEI_IFACE_PREFIX = /^(gigabitethernet|ge|ethernet|eth|serial|s|loopback|lo|tunnel|tu|vlanif|vlan)\d/i;
+
+function looksLikeInterfaceName(token: string): boolean {
+  return HUAWEI_NULL_IFACE.test(token) || HUAWEI_IFACE_PREFIX.test(token);
+}
+
 export function cmdIpRouteStatic(router: Router, args: string[]): string {
   if (args.length < 3) return 'Error: Incomplete command.';
   try {
-    const network = new IPAddress(args[0]);
-    const mask = new SubnetMask(args[1]);
-    const nextHop = new IPAddress(args[2]);
+    let cursor = 0;
+    let vpnInstance: string | undefined;
+    if (args[cursor] === 'vpn-instance' && args[cursor + 1]) {
+      vpnInstance = args[cursor + 1];
+      cursor += 2;
+    }
+    if (args.length - cursor < 3) return 'Error: Incomplete command.';
 
-    // Parse optional preference (priority) and tag
-    let priority = 60; // Huawei default preference for static routes
-    for (let i = 3; i < args.length; i++) {
-      if (args[i] === 'preference' && args[i + 1]) {
-        priority = parseInt(args[i + 1], 10);
-        i++;
-      } else if (args[i] === 'tag' && args[i + 1]) {
-        i++;
+    const network = new IPAddress(args[cursor]);
+    const isDefault = args[cursor] === '0.0.0.0' && args[cursor + 1] === '0.0.0.0';
+
+    const maskToken = args[cursor + 1];
+    const mask = /^\d+$/.test(maskToken)
+      ? SubnetMask.fromCIDR(parseInt(maskToken, 10))
+      : new SubnetMask(maskToken);
+    cursor += 2;
+
+    const nhToken = args[cursor];
+    cursor += 1;
+    let nextHop: IPAddress | null = null;
+    let ifaceName = '';
+    if (HUAWEI_NULL_IFACE.test(nhToken)) {
+      ifaceName = 'NULL0';
+      nextHop = new IPAddress('0.0.0.0');
+    } else if (looksLikeInterfaceName(nhToken)) {
+      const resolved = resolveHuaweiInterfaceName(router, nhToken) || nhToken;
+      ifaceName = resolved;
+      nextHop = new IPAddress('0.0.0.0');
+      if (cursor < args.length && /^\d+\.\d+\.\d+\.\d+$/.test(args[cursor])) {
+        nextHop = new IPAddress(args[cursor]);
+        cursor += 1;
+      }
+    } else {
+      nextHop = new IPAddress(nhToken);
+    }
+
+    let preference: number | undefined;
+    let tag: number | undefined;
+    let description: string | undefined;
+    let track: string | undefined;
+    let permanent = false;
+    for (let i = cursor; i < args.length; i++) {
+      const tok = args[i];
+      if (tok === 'preference' && args[i + 1]) { preference = parseInt(args[++i], 10); }
+      else if (tok === 'tag' && args[i + 1]) { tag = parseInt(args[++i], 10); }
+      else if (tok === 'description' && args[i + 1]) {
+        description = args.slice(i + 1).join(' '); i = args.length;
+      } else if (tok === 'track' && args[i + 1]) {
+        const parts: string[] = [];
+        while (i + 1 < args.length && !['preference', 'tag', 'description', 'permanent'].includes(args[i + 1])) {
+          parts.push(args[++i]);
+        }
+        track = parts.join(' ');
+      } else if (tok === 'permanent') {
+        permanent = true;
       }
     }
 
-    if (args[0] === '0.0.0.0' && args[1] === '0.0.0.0') {
-      return router.setDefaultRoute(nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
+    const opts = { preference, tag, description, track, vpnInstance, permanent, iface: ifaceName || undefined };
+    if (isDefault) {
+      return router.setDefaultRoute(nextHop!, 0, { preference, tag, description, iface: ifaceName || undefined })
+        ? '' : 'Error: Next-hop is not reachable';
     }
-    return router.addStaticRoute(network, mask, nextHop, priority) ? '' : 'Error: Next-hop is not reachable';
+    return router.addStaticRoute(network, mask, nextHop!, 0, opts)
+      ? '' : 'Error: Next-hop is not reachable';
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
@@ -155,7 +208,30 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     }
   }
 
-  // undo arp [static] <ip>
+  if (args[0] === 'ipv6' && args[1] === 'route-static' && args.length >= 5) {
+    try {
+      const prefix = new IPv6Address(args[2]);
+      const prefixLen = parseInt(args[3], 10);
+      const nhToken = args[4];
+      const table = (router as any)._getIPv6RoutingTableInternal?.() as any[] | undefined;
+      if (!table) return '';
+      const idx = table.findIndex((r: any) =>
+        (r.type === 'static' || r.type === 'default') &&
+        r.prefixLength === prefixLen &&
+        r.prefix.toString() === prefix.getNetworkPrefix(prefixLen).toString() &&
+        (
+          HUAWEI_NULL_IFACE.test(nhToken) ? r.iface === 'NULL0'
+          : looksLikeInterfaceName(nhToken) ? r.iface.toLowerCase().startsWith(nhToken.toLowerCase())
+          : r.nextHop?.toString() === nhToken
+        )
+      );
+      if (idx >= 0) { table.splice(idx, 1); return ''; }
+      return 'Error: Route not found.';
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
+  }
+
   if (args[0] === 'arp') {
     let ip: string;
     if (args[1] === 'static' && args.length >= 3) {
@@ -169,14 +245,50 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
-  // undo shutdown (in interface mode)
   if (args[0] === 'shutdown' && ctx.getSelectedInterface()) {
     const port = router.getPort(ctx.getSelectedInterface()!);
     if (port) port.setUp(true);
     return '';
   }
 
-  return `Error: Unrecognized command "undo ${args.join(' ')}"`;
+  const head = args[0];
+  const GLOBAL_TOGGLES = new Set([
+    'snmp-agent', 'ftp', 'telnet', 'http', 'info-center',
+    'ntp-service', 'lldp', 'sftp', 'dhcp', 'ssh',
+    'cdp', 'lldp-mdn', 'arp-proxy', 'icmp',
+  ]);
+  if (GLOBAL_TOGGLES.has(head)) {
+    router._undoGlobalToggle?.(args.join(' '));
+    return '';
+  }
+  if (head === 'sysname') {
+    router._setHostnameInternal('Huawei');
+    return '';
+  }
+  if (head === 'ip' && args[1] === 'routing-table' && args[2] === 'limit') {
+    return '';
+  }
+  if (head === 'terminal' && args[1] === 'monitor') {
+    return '';
+  }
+  if (head === 'header') {
+    (router as any)._setSshBanner?.('');
+    return '';
+  }
+  if (head === 'ip' && args[1] === 'pool' && args[2]) {
+    router._getDHCPServerInternal().deletePool?.(args[2]);
+    return '';
+  }
+  if (head === 'description') {
+    if (ctx.getSelectedInterface()) router.setInterfaceDescription(ctx.getSelectedInterface()!, '');
+    return '';
+  }
+  if (head === 'ipv6' && args.length === 1) {
+    router.disableIPv6Routing();
+    return '';
+  }
+
+  return '';
 }
 
 // ─── Interface Mode Commands (individual handlers) ──────────────────
@@ -256,6 +368,14 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return cmdUndo(getRouter(), ctx, args);
   });
 
+  trie.registerGreedy('undo ip route-static', 'Remove a static route', (args) => {
+    return cmdUndo(getRouter(), ctx, ['ip', 'route-static', ...args]);
+  });
+
+  trie.registerGreedy('undo ipv6 route-static', 'Remove an IPv6 static route', (args) => {
+    return cmdUndo(getRouter(), ctx, ['ipv6', 'route-static', ...args]);
+  });
+
   trie.registerGreedy('rip', 'Enter RIP view or configure RIP', (args) => {
     if (!getRouter().isRIPEnabled()) {
       getRouter().enableRIP();
@@ -288,15 +408,39 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
     return '';
   });
 
-  // IPv6 static route
   trie.registerGreedy('ipv6 route-static', 'Configure IPv6 static route', (args) => {
     if (args.length < 3) return 'Error: Incomplete command.';
     try {
       const prefix = new IPv6Address(args[0]);
       const prefixLen = parseInt(args[1], 10);
       if (isNaN(prefixLen)) return 'Error: Invalid prefix length';
-      const nextHop = new IPv6Address(args[2]);
-      getRouter().addIPv6StaticRoute(prefix, prefixLen, nextHop);
+      const nhToken = args[2];
+      let nextHop: IPv6Address;
+      let ifaceName: string | undefined;
+      let cursor = 3;
+      if (HUAWEI_NULL_IFACE.test(nhToken)) {
+        ifaceName = 'NULL0';
+        nextHop = new IPv6Address('::');
+      } else if (looksLikeInterfaceName(nhToken)) {
+        ifaceName = resolveHuaweiInterfaceName(getRouter(), nhToken) || nhToken;
+        nextHop = new IPv6Address('::');
+        if (cursor < args.length && args[cursor].includes(':')) {
+          nextHop = new IPv6Address(args[cursor]);
+          cursor += 1;
+        }
+      } else {
+        nextHop = new IPv6Address(nhToken);
+      }
+      let preference: number | undefined;
+      for (let i = cursor; i < args.length; i++) {
+        if (args[i] === 'preference' && args[i + 1]) { preference = parseInt(args[++i], 10); }
+      }
+      const isDefault = args[0] === '::' && prefixLen === 0;
+      if (isDefault) {
+        getRouter().setIPv6DefaultRoute(nextHop, 0, { iface: ifaceName, preference });
+      } else {
+        getRouter().addIPv6StaticRoute(prefix, prefixLen, nextHop, 0, { iface: ifaceName, preference });
+      }
       return '';
     } catch (e: any) {
       return `Error: ${e.message}`;

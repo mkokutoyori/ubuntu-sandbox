@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-05-31T19:01:25.039Z
+Generated: 2026-06-03T16:08:01.856Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1152,11 +1152,6 @@ Total steps: 370
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [264/370] r1 R1(config)# show startup-config
@@ -1386,7 +1381,10 @@ Total steps: 370
   0 SNMP packets output
 
 [298/370] r1 R1(config)# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T16:08:01.879Z
+  clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1394,7 +1392,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *19:01:25.000 UTC Sun May 31 2026
+  *16:08:01.000 UTC Wed Jun 3 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1591,11 +1589,6 @@ Total steps: 370
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1780,11 +1773,6 @@ Total steps: 370
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [326/370] r1 R1(config)# show running-config | begin line
@@ -1817,10 +1805,6 @@ Total steps: 370
    no shutdown
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   end
 
 [328/370] r1 R1(config)# show ip route | include via
@@ -1987,6 +1971,7 @@ Total steps: 370
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
@@ -2038,11 +2023,6 @@ Total steps: 370
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !

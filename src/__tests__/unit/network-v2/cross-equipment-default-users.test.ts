@@ -128,14 +128,30 @@ describe('§1 — Every vendor exposes the default cast (alice/bob/carl/dave)', 
       expect(out.toLowerCase()).toContain(u);
     });
 
-    test(`Cisco router: ${u} is listed by show running-config`, async () => {
+    test(`Cisco router: ${u} is hidden from show running-config as a factory default`, async () => {
       const out = await cast.cisco.executeCommand('show running-config | include username');
-      expect(out.toLowerCase()).toContain(`username ${u}`);
+      expect(out.toLowerCase()).not.toContain(`username ${u}`);
     });
 
-    test(`Huawei router: ${u} is in display current-configuration`, async () => {
+    test(`Cisco router: ${u} is still SSH-authenticatable despite being a factory default`, async () => {
+      const store = (cast.cisco as unknown as { getCredentialStore: () => { get: (n: string) => unknown } }).getCredentialStore();
+      const acc = store.get(u) as { name: string; secret: string; factoryDefault: boolean } | undefined;
+      expect(acc).toBeDefined();
+      expect(acc!.factoryDefault).toBe(true);
+      expect(acc!.secret).toBe(u);
+    });
+
+    test(`Huawei router: ${u} is hidden from display current-configuration as a factory default`, async () => {
       const out = await cast.huawei.executeCommand('display current-configuration | include local-user');
-      expect(out.toLowerCase()).toContain(`local-user ${u}`);
+      expect(out.toLowerCase()).not.toContain(`local-user ${u}`);
+    });
+
+    test(`Huawei router: ${u} is still SSH-authenticatable despite being a factory default`, async () => {
+      const store = (cast.huawei as unknown as { getCredentialStore: () => { get: (n: string) => unknown } }).getCredentialStore();
+      const acc = store.get(u) as { name: string; secret: string; factoryDefault: boolean } | undefined;
+      expect(acc).toBeDefined();
+      expect(acc!.factoryDefault).toBe(true);
+      expect(acc!.secret).toBe(u);
     });
   }
 });

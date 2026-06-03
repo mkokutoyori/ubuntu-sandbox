@@ -83,9 +83,9 @@ const COLUMN_REGISTRY: Record<string, Column> = {
   sid: { header: 'SID', align: 'r', width: 5, value: p => String(p.sid) },
   uid: { header: 'UID', align: 'r', width: 5, value: p => String(p.uid), num: p => p.uid },
   gid: { header: 'GID', align: 'r', width: 5, value: p => String(p.gid) },
-  user: { header: 'USER', align: 'l', width: 8, value: p => p.user },
-  fuid: { header: 'UID', align: 'l', width: 8, value: p => p.user },
-  ruser: { header: 'RUSER', align: 'l', width: 8, value: p => p.user },
+  user: { header: 'USER', align: 'l', width: 8, value: p => p.user.length > 8 ? p.user.slice(0, 7) + '+' : p.user },
+  fuid: { header: 'UID', align: 'l', width: 8, value: p => p.user.length > 8 ? p.user.slice(0, 7) + '+' : p.user },
+  ruser: { header: 'RUSER', align: 'l', width: 8, value: p => p.user.length > 8 ? p.user.slice(0, 7) + '+' : p.user },
   comm: { header: 'COMMAND', align: 'l', width: 0, value: p => p.comm },
   ucmd: { header: 'CMD', align: 'l', width: 0, value: p => p.comm },
   cmd: { header: 'CMD', align: 'l', width: 0, value: p => p.command },
@@ -270,8 +270,40 @@ function commMatches(p: ProcessInfo, name: string): boolean {
   return p.comm === name || p.comm.replace(/^-/, '') === name;
 }
 
+/** Build a transient `ps` entry mirroring what real Linux shows when ps
+ *  enumerates itself: max(pids)+1, ppid = shell, comm 'ps', state 'R',
+ *  tty inherited from the shell. The simulator's process manager is
+ *  not mutated. */
+function transientPsProcess(ctx: PsContext): ProcessInfo {
+  const peers = ctx.pm.list();
+  const maxPid = peers.reduce((m, p) => Math.max(m, p.pid), 1);
+  const now = new Date();
+  return {
+    pid: maxPid + 1,
+    ppid: ctx.shellPid ?? 1,
+    pgid: ctx.shellPid ?? 1,
+    sid: ctx.shellPid ?? 1,
+    uid: ctx.currentUid,
+    gid: ctx.currentUid,
+    user: ctx.currentUser,
+    command: 'ps',
+    comm: 'ps',
+    args: ['ps'],
+    state: 'R',
+    startTime: now,
+    cpuTime: 0,
+    vsize: 12 * 1024,
+    rss: 3 * 1024,
+    tty: ctx.tty,
+    nice: 0,
+    priority: 20,
+    cwd: '/',
+    exe: '/usr/bin/ps',
+  };
+}
+
 function selectProcesses(q: PsQuery, ctx: PsContext): ProcessInfo[] {
-  let list = ctx.pm.list();
+  let list = [...ctx.pm.list(), transientPsProcess(ctx)];
   const hasSelector = q.pids || q.ppids || q.comms || q.users;
 
   if (q.pids) list = list.filter(p => q.pids!.includes(p.pid));
@@ -310,6 +342,34 @@ function depthOf(p: ProcessInfo, byPid: Map<number, ProcessInfo>): number {
     d++;
   }
   return d;
+}
+
+/** Re-order a flat process list into DFS tree-order so `ps -e f` renders
+ *  the actual parent → children → next-sibling sequence. Falls back to
+ *  PID order at each depth (matching real procps). Orphans (ppid not in
+ *  list, e.g. ppid=0 or 1 when init isn't shown) are seeded as roots. */
+function forestOrder(list: ProcessInfo[]): ProcessInfo[] {
+  const byPid = new Map(list.map((p) => [p.pid, p]));
+  const childrenOf = new Map<number, ProcessInfo[]>();
+  const roots: ProcessInfo[] = [];
+  for (const p of list) {
+    if (p.ppid && byPid.has(p.ppid)) {
+      const arr = childrenOf.get(p.ppid) ?? [];
+      arr.push(p);
+      childrenOf.set(p.ppid, arr);
+    } else {
+      roots.push(p);
+    }
+  }
+  const ordered: ProcessInfo[] = [];
+  const visit = (p: ProcessInfo): void => {
+    ordered.push(p);
+    const kids = (childrenOf.get(p.pid) ?? []).sort((a, b) => a.pid - b.pid);
+    for (const k of kids) visit(k);
+  };
+  roots.sort((a, b) => a.pid - b.pid);
+  for (const r of roots) visit(r);
+  return ordered;
 }
 
 function renderTable(list: ProcessInfo[], q: PsQuery): string {
@@ -361,8 +421,13 @@ export function runPs(args: string[], ctx: PsContext): string {
   if (q.terminal !== undefined) return q.terminal;
 
   let list = selectProcesses(q, ctx);
-  if (q.sort && q.sort.length > 0) list = applySort(list, q.sort);
-  else list = [...list].sort((a, b) => a.pid - b.pid);
+  if (q.forest) {
+    list = forestOrder(list);
+  } else if (q.sort && q.sort.length > 0) {
+    list = applySort(list, q.sort);
+  } else {
+    list = [...list].sort((a, b) => a.pid - b.pid);
+  }
 
   return renderTable(list, q);
 }

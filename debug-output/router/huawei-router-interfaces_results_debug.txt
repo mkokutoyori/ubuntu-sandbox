@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-05-31T19:01:22.689Z
+Generated: 2026-06-03T16:08:09.810Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -63,7 +63,7 @@ Total steps: 286
   ^
 
 [15/286] r1 [R1-GE0/0/0] undo negotiation auto
-  Error: Unrecognized command "undo negotiation auto"
+<empty>
 
 [16/286] r1 [R1-GE0/0/0] flow-control
   % Invalid input detected at '^' marker.
@@ -76,7 +76,7 @@ Total steps: 286
   ^
 
 [18/286] r1 [R1-GE0/0/0] undo loopback
-  Error: Unrecognized command "undo loopback"
+<empty>
 
 [19/286] r1 [R1-GE0/0/0] arp expire-time 600
   % Invalid input detected at '^' marker.
@@ -89,7 +89,7 @@ Total steps: 286
   ^
 
 [21/286] r1 [R1-GE0/0/0] undo arp-proxy enable
-  Error: Unrecognized command "undo arp-proxy enable"
+<empty>
 
 [22/286] r1 [R1-GE0/0/0] mac-address 00e0-fc12-3456
   % Invalid input detected at '^' marker.
@@ -97,9 +97,7 @@ Total steps: 286
   ^
 
 [23/286] r1 [R1-GE0/0/0] traffic-policy P1 inbound
-  % Invalid input detected at '^' marker.
-  traffic-policy P1 inbound
-  ^
+<empty>
 
 [24/286] r1 [R1-GE0/0/0] qos queue 0 shaping 50
   % Invalid input detected at '^' marker.
@@ -231,19 +229,28 @@ Total steps: 286
 <empty>
 
 [65/286] r1 <R1> display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack1                         10.255.255.1/255.255.255.255down       down
-  LoopBack2                         10.255.255.2/255.255.255.255down       down
-  LoopBack3                         10.255.255.3/255.255.255.255down       down
-  LoopBack4                         10.255.255.4/255.255.255.255down       down
-  LoopBack5                         10.255.255.5/255.255.255.255down       down
-  LoopBack6                         10.255.255.6/255.255.255.255down       down
-  LoopBack7                         10.255.255.7/255.255.255.255down       down
-  LoopBack8                         10.255.255.8/255.255.255.255down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack1                         10.255.255.1/32      DOWN       DOWN
+  LoopBack2                         10.255.255.2/32      DOWN       DOWN
+  LoopBack3                         10.255.255.3/32      DOWN       DOWN
+  LoopBack4                         10.255.255.4/32      DOWN       DOWN
+  LoopBack5                         10.255.255.5/32      DOWN       DOWN
+  LoopBack6                         10.255.255.6/32      DOWN       DOWN
+  LoopBack7                         10.255.255.7/32      DOWN       DOWN
+  LoopBack8                         10.255.255.8/32      DOWN       DOWN
 
 
 --- [66] § dot1q sub-interfaces ---
@@ -482,19 +489,28 @@ Total steps: 286
 <empty>
 
 [118/286] r1 <R1> display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack1                         10.255.255.1/255.255.255.255down       down
-  LoopBack2                         10.255.255.2/255.255.255.255down       down
-  LoopBack3                         10.255.255.3/255.255.255.255down       down
-  LoopBack4                         10.255.255.4/255.255.255.255down       down
-  LoopBack5                         10.255.255.5/255.255.255.255down       down
-  LoopBack6                         10.255.255.6/255.255.255.255down       down
-  LoopBack7                         10.255.255.7/255.255.255.255down       down
-  LoopBack8                         10.255.255.8/255.255.255.255down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack1                         10.255.255.1/32      DOWN       DOWN
+  LoopBack2                         10.255.255.2/32      DOWN       DOWN
+  LoopBack3                         10.255.255.3/32      DOWN       DOWN
+  LoopBack4                         10.255.255.4/32      DOWN       DOWN
+  LoopBack5                         10.255.255.5/32      DOWN       DOWN
+  LoopBack6                         10.255.255.6/32      DOWN       DOWN
+  LoopBack7                         10.255.255.7/32      DOWN       DOWN
+  LoopBack8                         10.255.255.8/32      DOWN       DOWN
 
 [119/286] r1 <R1> display interface GigabitEthernet0/0/0.10
   Error: Wrong parameter found at '^' position.
@@ -605,7 +621,7 @@ Total steps: 286
        ^
 
 [145/286] r1 [R1-GE0/0/0] undo ipv6 nd ra halt
-  Error: Unrecognized command "undo ipv6 nd ra halt"
+<empty>
 
 [146/286] r1 [R1-GE0/0/0] ipv6 mtu 1280
   % Invalid input detected at '^' marker.
@@ -650,9 +666,12 @@ Total steps: 286
 <empty>
 
 [154/286] r1 [R1-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  interface GigabitEthernet0/0/0
+   description ## LAN to L1 ##
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
 
 [155/286] r1 [R1-GE0/0/0] undo shutdown
 <empty>
@@ -667,9 +686,10 @@ Total steps: 286
 <empty>
 
 [159/286] r1 [R1-GE0/0/1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
 
 [160/286] r1 [R1-GE0/0/1] undo shutdown
 <empty>
@@ -790,9 +810,17 @@ Total steps: 286
   Output: 0 packets, 0 bytes
 
 [168/286] r1 [R1] display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/24
+  Broadcast address : 192.168.1.1
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [169/286] r1 [R1] display interface GigabitEthernet0/0/0 | include line protocol
   Line protocol current state : UP
@@ -806,9 +834,17 @@ Total steps: 286
   Output: 0 packets, 0 bytes
 
 [171/286] r1 [R1] display ip interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/1
-                       ^
+  GE0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is unassigned
+  Broadcast address : 0.0.0.0
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [172/286] r1 [R1] display interface GigabitEthernet0/0/1 | include line protocol
   Line protocol current state : UP
@@ -817,9 +853,7 @@ Total steps: 286
   Error: Wrong parameter found at '^' position.
 
 [174/286] r1 [R1] display ip interface LoopBack0
-  % Invalid input detected at '^' marker.
-  display ip interface LoopBack0
-                       ^
+  Error: Wrong parameter found at '^' position.
 
 [175/286] r1 [R1] display interface LoopBack0 | include line protocol
   Error: Wrong parameter found at '^' position.
@@ -828,9 +862,7 @@ Total steps: 286
   Error: Wrong parameter found at '^' position.
 
 [177/286] r1 [R1] display ip interface Tunnel0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface Tunnel0/0/0
-                       ^
+  Error: Wrong parameter found at '^' position.
 
 [178/286] r1 [R1] display interface Tunnel0/0/0 | include line protocol
   Error: Wrong parameter found at '^' position.
@@ -867,19 +899,28 @@ Total steps: 286
   LoopBack8                     down    down     LOOP-8
 
 [181/286] r1 [R1] display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack1                         10.255.255.1/255.255.255.255down       down
-  LoopBack2                         10.255.255.2/255.255.255.255down       down
-  LoopBack3                         10.255.255.3/255.255.255.255down       down
-  LoopBack4                         10.255.255.4/255.255.255.255down       down
-  LoopBack5                         10.255.255.5/255.255.255.255down       down
-  LoopBack6                         10.255.255.6/255.255.255.255down       down
-  LoopBack7                         10.255.255.7/255.255.255.255down       down
-  LoopBack8                         10.255.255.8/255.255.255.255down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack1                         10.255.255.1/32      DOWN       DOWN
+  LoopBack2                         10.255.255.2/32      DOWN       DOWN
+  LoopBack3                         10.255.255.3/32      DOWN       DOWN
+  LoopBack4                         10.255.255.4/32      DOWN       DOWN
+  LoopBack5                         10.255.255.5/32      DOWN       DOWN
+  LoopBack6                         10.255.255.6/32      DOWN       DOWN
+  LoopBack7                         10.255.255.7/32      DOWN       DOWN
+  LoopBack8                         10.255.255.8/32      DOWN       DOWN
 
 
 --- [182] § regression: display family ---
@@ -951,41 +992,83 @@ Total steps: 286
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [185/286] r1 [R1] display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   description ## LAN to L1 ##
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack1
+   description LOOP-1
+   ip address 10.255.255.1 255.255.255.255
+  #
+  interface LoopBack2
+   description LOOP-2
+   ip address 10.255.255.2 255.255.255.255
+  #
+  interface LoopBack3
+   description LOOP-3
+   ip address 10.255.255.3 255.255.255.255
+  #
+  interface LoopBack4
+   description LOOP-4
+   ip address 10.255.255.4 255.255.255.255
+  #
+  interface LoopBack5
+   description LOOP-5
+   ip address 10.255.255.5 255.255.255.255
+  #
+  interface LoopBack6
+   description LOOP-6
+   ip address 10.255.255.6 255.255.255.255
+  #
+  interface LoopBack7
+   description LOOP-7
+   ip address 10.255.255.7 255.255.255.255
+  #
+  interface LoopBack8
+   description LOOP-8
+   ip address 10.255.255.8 255.255.255.255
+  #
+  #
 
 [186/286] r1 [R1] display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack1                         10.255.255.1/255.255.255.255down       down
-  LoopBack2                         10.255.255.2/255.255.255.255down       down
-  LoopBack3                         10.255.255.3/255.255.255.255down       down
-  LoopBack4                         10.255.255.4/255.255.255.255down       down
-  LoopBack5                         10.255.255.5/255.255.255.255down       down
-  LoopBack6                         10.255.255.6/255.255.255.255down       down
-  LoopBack7                         10.255.255.7/255.255.255.255down       down
-  LoopBack8                         10.255.255.8/255.255.255.255down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack1                         10.255.255.1/32      DOWN       DOWN
+  LoopBack2                         10.255.255.2/32      DOWN       DOWN
+  LoopBack3                         10.255.255.3/32      DOWN       DOWN
+  LoopBack4                         10.255.255.4/32      DOWN       DOWN
+  LoopBack5                         10.255.255.5/32      DOWN       DOWN
+  LoopBack6                         10.255.255.6/32      DOWN       DOWN
+  LoopBack7                         10.255.255.7/32      DOWN       DOWN
+  LoopBack8                         10.255.255.8/32      DOWN       DOWN
 
 [187/286] r1 [R1] display interface
   GE0/0/0 current state : UP
@@ -1077,15 +1160,15 @@ Total steps: 286
            Destinations : 9        Routes : 9
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.255.255.1/255.255.255.255Direct  0    0     D     10.255.255.1    LoopBack1
-  10.255.255.2/255.255.255.255Direct  0    0     D     10.255.255.2    LoopBack2
-  10.255.255.3/255.255.255.255Direct  0    0     D     10.255.255.3    LoopBack3
-  10.255.255.4/255.255.255.255Direct  0    0     D     10.255.255.4    LoopBack4
-  10.255.255.5/255.255.255.255Direct  0    0     D     10.255.255.5    LoopBack5
-  10.255.255.6/255.255.255.255Direct  0    0     D     10.255.255.6    LoopBack6
-  10.255.255.7/255.255.255.255Direct  0    0     D     10.255.255.7    LoopBack7
-  10.255.255.8/255.255.255.255Direct  0    0     D     10.255.255.8    LoopBack8
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.255.255.1/32     Direct  0    0     D     10.255.255.1    LoopBack1
+  10.255.255.2/32     Direct  0    0     D     10.255.255.2    LoopBack2
+  10.255.255.3/32     Direct  0    0     D     10.255.255.3    LoopBack3
+  10.255.255.4/32     Direct  0    0     D     10.255.255.4    LoopBack4
+  10.255.255.5/32     Direct  0    0     D     10.255.255.5    LoopBack5
+  10.255.255.6/32     Direct  0    0     D     10.255.255.6    LoopBack6
+  10.255.255.7/32     Direct  0    0     D     10.255.255.7    LoopBack7
+  10.255.255.8/32     Direct  0    0     D     10.255.255.8    LoopBack8
 
 [189/286] r1 [R1] display ip routing-table statistics
   Proto     route
@@ -1099,9 +1182,8 @@ Total steps: 286
   No ARP entries found.
 
 [191/286] r1 [R1] display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [192/286] r1 [R1] display ospf peer
   Error: OSPF is not configured.
@@ -1110,9 +1192,7 @@ Total steps: 286
   Error: OSPF is not configured.
 
 [194/286] r1 [R1] display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [195/286] r1 [R1] display ospf lsdb
   Error: OSPF is not configured.
@@ -1124,29 +1204,19 @@ Total steps: 286
   Info: RIP is not enabled.
 
 [198/286] r1 [R1] display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  Info: RIP is not enabled.
 
 [199/286] r1 [R1] display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [200/286] r1 [R1] display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [201/286] r1 [R1] display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [202/286] r1 [R1] display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [203/286] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -1155,19 +1225,21 @@ Total steps: 286
   Total 0 ACL(s)
 
 [205/286] r1 [R1] display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [206/286] r1 [R1] display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [207/286] r1 [R1] display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [208/286] r1 [R1] display ike sa
   Info: No IPSec configuration.
@@ -1211,30 +1283,26 @@ Total steps: 286
    clock offset: 0.0000 ms
 
 [217/286] r1 [R1] display clock
-  2026-05-31 19:01:22
-  Sunday
+  2026-06-03 16:08:09
+  Wednesday
   Time Zone(UTC) : UTC
 
 [218/286] r1 [R1] display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [219/286] r1 [R1] display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [220/286] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:22
+  CPU Usage Stat. Time : 2026-06-03 16:08:09
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:22
+  Memory utilization statistics at 2026-06-03 16:08:09
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1244,7 +1312,10 @@ Total steps: 286
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [223/286] r1 [R1] display users
@@ -1254,19 +1325,16 @@ Total steps: 286
   Wait     : Wait for the user to press ENTER.
 
 [224/286] r1 [R1] display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [225/286] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:22 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [226/286] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1277,14 +1345,19 @@ Total steps: 286
   Current messages : 0
 
 [227/286] r1 [R1] display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [228/286] r1 [R1] display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [229/286] r1 [R1] display patch-information
   Info: No patch exists.
@@ -1295,10 +1368,10 @@ Total steps: 286
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -1324,9 +1397,17 @@ Total steps: 286
   LoopBack8                   down    down      0%    0%       0          0
 
 [233/286] r1 [R1] display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/24
+  Broadcast address : 192.168.1.1
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [234/286] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1338,9 +1419,56 @@ Total steps: 286
   Output: 0 packets, 0 bytes
 
 [235/286] r1 [R1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   description ## LAN to L1 ##
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack1
+   description LOOP-1
+   ip address 10.255.255.1 255.255.255.255
+  #
+  interface LoopBack2
+   description LOOP-2
+   ip address 10.255.255.2 255.255.255.255
+  #
+  interface LoopBack3
+   description LOOP-3
+   ip address 10.255.255.3 255.255.255.255
+  #
+  interface LoopBack4
+   description LOOP-4
+   ip address 10.255.255.4 255.255.255.255
+  #
+  interface LoopBack5
+   description LOOP-5
+   ip address 10.255.255.5 255.255.255.255
+  #
+  interface LoopBack6
+   description LOOP-6
+   ip address 10.255.255.6 255.255.255.255
+  #
+  interface LoopBack7
+   description LOOP-7
+   ip address 10.255.255.7 255.255.255.255
+  #
+  interface LoopBack8
+   description LOOP-8
+   ip address 10.255.255.8 255.255.255.255
+  #
+  #
 
 [236/286] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1348,14 +1476,17 @@ Total steps: 286
   Info: Diagnostic information collected.
 
 [237/286] r1 [R1] display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [238/286] r1 [R1] display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [239/286] r1 [R1] display ssh server status
   SSH version                     : 2.0
@@ -1374,9 +1505,13 @@ Total steps: 286
   STELNET server                  : Enable
 
 [241/286] r1 [R1] display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [242/286] r1 [R1] display port-security
   Port-security is enabled on the following interfaces:
@@ -1434,20 +1569,6 @@ Total steps: 286
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [245/286] r1 [R1] display current-configuration | exclude #
@@ -1485,34 +1606,23 @@ Total steps: 286
   interface LoopBack8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
 [246/286] r1 [R1] display ip routing-table | include Direct
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.255.255.1/255.255.255.255Direct  0    0     D     10.255.255.1    LoopBack1
-  10.255.255.2/255.255.255.255Direct  0    0     D     10.255.255.2    LoopBack2
-  10.255.255.3/255.255.255.255Direct  0    0     D     10.255.255.3    LoopBack3
-  10.255.255.4/255.255.255.255Direct  0    0     D     10.255.255.4    LoopBack4
-  10.255.255.5/255.255.255.255Direct  0    0     D     10.255.255.5    LoopBack5
-  10.255.255.6/255.255.255.255Direct  0    0     D     10.255.255.6    LoopBack6
-  10.255.255.7/255.255.255.255Direct  0    0     D     10.255.255.7    LoopBack7
-  10.255.255.8/255.255.255.255Direct  0    0     D     10.255.255.8    LoopBack8
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.255.255.1/32     Direct  0    0     D     10.255.255.1    LoopBack1
+  10.255.255.2/32     Direct  0    0     D     10.255.255.2    LoopBack2
+  10.255.255.3/32     Direct  0    0     D     10.255.255.3    LoopBack3
+  10.255.255.4/32     Direct  0    0     D     10.255.255.4    LoopBack4
+  10.255.255.5/32     Direct  0    0     D     10.255.255.5    LoopBack5
+  10.255.255.6/32     Direct  0    0     D     10.255.255.6    LoopBack6
+  10.255.255.7/32     Direct  0    0     D     10.255.255.7    LoopBack7
+  10.255.255.8/32     Direct  0    0     D     10.255.255.8    LoopBack8
 
 [247/286] r1 [R1] display ip interface brief | include up
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           unassigned           up         up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           unassigned           UP         UP
 
 
 --- [248] § regression: view nav + undo ---
@@ -1520,14 +1630,10 @@ Total steps: 286
   Enter system view, return user view with return command.
 
 [249/286] r1 [R1] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [250/286] r1 [R1] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [251/286] r1 [R1] dhcp enable
 <empty>
@@ -1539,107 +1645,111 @@ Total steps: 286
 <empty>
 
 [254/286] r1 [R1] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [255/286] r1 [R1] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [256/286] r1 [R1] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [257/286] r1 [R1] telnet server enable
 <empty>
 
 [258/286] r1 [R1] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [259/286] r1 [R1] info-center enable
 <empty>
 
 [260/286] r1 [R1] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [261/286] r1 [R1] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [262/286] r1 [R1] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [263/286] r1 [R1] ntp-service enable
 <empty>
 
 [264/286] r1 [R1] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [265/286] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [266/286] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [267/286] r1 [R1] sysname TEST
 <empty>
 
 [268/286] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[269/286] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[270/286] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[271/286] r1 [TEST-GE0/0/0] shutdown
+[269/286] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[272/286] r1 [TEST-GE0/0/0] undo shutdown
+[270/286] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   description ## LAN to L1 ##
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select global
+  #
+
+[271/286] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[273/286] r1 [TEST-GE0/0/0] quit
+[272/286] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[274/286] r1 [TEST] ospf 1
+[273/286] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[275/286] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[276/286] r1 [TEST-ospf-1] quit
+[274/286] r1 [Huawei] ospf 1
 <empty>
 
-[277/286] r1 [TEST] user-interface vty 0 4
+[275/286] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+   router-id 192.168.1.1
+  #
+
+[276/286] r1 [Huawei-ospf-1] quit
 <empty>
 
-[278/286] r1 [TEST-ui-vty0 4] quit
+[277/286] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[279/286] r1 [TEST] return
+[278/286] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[279/286] r1 [Huawei] return
 <empty>
 
 
 --- [280] § regression: context help ---
-[280/286] r1 <TEST> system-view
+[280/286] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[281/286] r1 [TEST] interface ?
+[281/286] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[282/286] r1 [TEST] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
+[282/286] r1 [Huawei] ip ?
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
-[283/286] r1 [TEST] undo ?
+[283/286] r1 [Huawei] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length
@@ -1651,16 +1761,19 @@ Total steps: 286
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[284/286] r1 [TEST] acl ?
+[284/286] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[285/286] r1 [TEST] return
+[285/286] r1 [Huawei] return
 <empty>
 
-[286/286] r1 <TEST> save
+[286/286] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.

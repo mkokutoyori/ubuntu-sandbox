@@ -47,6 +47,11 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   let dirOnly = false;
   let classify = false;   // -F: append indicator (/ @ * |)
   let onePerLine = false;  // -1: force single column
+  // GNU `ls` defaults to `--color=auto` only when stdout is a TTY. The
+  // simulator captures output for tests and dumps where stdout is not a
+  // TTY, so we default to plain text and only colorize on explicit
+  // `--color=always`. `--color=never` is also honored.
+  let useColor = false;
   const paths: string[] = [];
 
   for (const arg of args) {
@@ -66,7 +71,9 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
         }
       }
     } else if (arg.startsWith('--')) {
-      // ignore --color=auto etc
+      if (arg === '--color' || arg === '--color=always' || arg === '--color=yes') useColor = true;
+      else if (arg === '--color=never' || arg === '--color=no' || arg === '--color=none') useColor = false;
+      // --color=auto: keep default (off) — no TTY in capture mode.
     } else {
       paths.push(arg);
     }
@@ -91,11 +98,11 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
 
       if (inode.type !== 'directory' || dirOnly) {
         // Show single file/dir entry
-        const opts: LsOpts = { longFormat, showInode, classify, onePerLine };
+        const opts: LsOpts = { longFormat, showInode, classify, onePerLine, useColor };
         allOutput.push(formatEntry(ctx, p, inode, absPath, opts));
       } else {
         const result = listDir(ctx, absPath, p, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine);
+          sortBySize, sortByTime, recursive, classify, onePerLine, useColor);
         allOutput.push(result);
       }
     }
@@ -109,12 +116,13 @@ interface LsOpts {
   showInode: boolean;
   classify: boolean;
   onePerLine: boolean;
+  useColor?: boolean;
 }
 
 function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   longFormat: boolean, showAll: boolean, showInode: boolean,
   sortBySize: boolean, sortByTime: boolean, recursive: boolean,
-  classify: boolean = false, onePerLine: boolean = false): string {
+  classify: boolean = false, onePerLine: boolean = false, useColor: boolean = false): string {
   const entries = ctx.vfs.listDirectory(absPath);
   if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
 
@@ -129,7 +137,7 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
     filtered.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  const opts: LsOpts = { longFormat, showInode, classify, onePerLine };
+  const opts: LsOpts = { longFormat, showInode, classify, onePerLine, useColor };
   const lines: string[] = [];
 
   if (recursive) {
@@ -171,7 +179,7 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
     const rawLens: number[] = []; // lengths without ANSI codes for column calc
     for (const entry of filtered) {
       if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      let displayName = colorName(entry.name, entry.inode);
+      let displayName = colorName(entry.name, entry.inode, useColor);
       let rawName = entry.name;
       if (classify) {
         const suffix = classifySuffix(entry.inode);
@@ -201,7 +209,7 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
         const childDisplay = displayPath === '.' ? entry.name : displayPath + '/' + entry.name;
         lines.push('');
         lines.push(listDir(ctx, childPath, childDisplay, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine));
+          sortBySize, sortByTime, recursive, classify, onePerLine, useColor));
       }
     }
   }
@@ -266,7 +274,8 @@ function classifySuffix(inode: INode): string {
 }
 
 /** Colorize a filename based on its inode type, matching GNU ls --color=auto */
-function colorName(name: string, inode: INode): string {
+function colorName(name: string, inode: INode, useColor = true): string {
+  if (!useColor) return name;
   switch (inode.type) {
     case 'directory': {
       const sticky = (inode.permissions >> 9) & 1;
@@ -321,7 +330,7 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
   const group = ctx.userMgr.gidToName(inode.gid);
   const dateStr = formatLsDate(inode.mtime);
 
-  const coloredName = colorName(name, inode);
+  const coloredName = colorName(name, inode, opts.useColor ?? false);
   line += `${perms} ${String(inode.linkCount).padStart(maxLinks)} ${owner.padEnd(maxOwner)} ${group.padEnd(maxGroup)} ${String(inode.size).padStart(maxSize)} ${dateStr} ${coloredName}`;
 
   // Symlink target
@@ -342,7 +351,7 @@ function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: str
   if (opts.showInode) {
     line += `${inode.id} `;
   }
-  line += colorName(name, inode);
+  line += colorName(name, inode, opts.useColor ?? false);
   if (opts.classify) {
     line += classifySuffix(inode);
   }

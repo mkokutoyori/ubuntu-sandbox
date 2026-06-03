@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-05-31T19:01:19.864Z
+Generated: 2026-06-03T16:08:11.540Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -258,24 +258,21 @@ Total steps: 257
 <empty>
 
 [56/257] r1 <R1> display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [57/257] r1 <R1> display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [58/257] r1 <R1> display vrrp interface GigabitEthernet0/0/0
   % Invalid input detected at '^' marker.
   display vrrp interface GigabitEthernet0/0/0
-          ^
+               ^
 
 [59/257] r1 <R1> display vrrp statistics
   % Invalid input detected at '^' marker.
   display vrrp statistics
-          ^
+               ^
 
 
 --- [60] § BFD for VRRP ---
@@ -367,181 +364,135 @@ Total steps: 257
 <empty>
 
 [81/257] r1 [R1] traffic classifier VOICE operator or
-  % Invalid input detected at '^' marker.
-  traffic classifier VOICE operator or
-  ^
-
-[82/257] r1 [R1] if-match dscp ef
-  % Invalid input detected at '^' marker.
-  if-match dscp ef
-  ^
-
-[83/257] r1 [R1] if-match acl 3000
-  % Invalid input detected at '^' marker.
-  if-match acl 3000
-  ^
-
-[84/257] r1 [R1] if-match protocol rtp
-  % Invalid input detected at '^' marker.
-  if-match protocol rtp
-  ^
-
-[85/257] r1 [R1] if-match 8021p 5
-  % Invalid input detected at '^' marker.
-  if-match 8021p 5
-  ^
-
-[86/257] r1 [R1] quit
 <empty>
 
-[87/257] r1 <R1> traffic classifier VIDEO operator and
-  % Invalid input detected at '^' marker.
-  traffic classifier VIDEO operator and
-  ^
-
-[88/257] r1 <R1> if-match dscp af41
-  % Invalid input detected at '^' marker.
-  if-match dscp af41
-  ^
-
-[89/257] r1 <R1> quit
+[82/257] r1 [R1-classifier-VOICE] if-match dscp ef
 <empty>
 
-[90/257] r1 <R1> traffic classifier CRITICAL
-  % Invalid input detected at '^' marker.
-  traffic classifier CRITICAL
-  ^
-
-[91/257] r1 <R1> if-match protocol ospf
-  % Invalid input detected at '^' marker.
-  if-match protocol ospf
-  ^
-
-[92/257] r1 <R1> if-match ip-precedence 6
-  % Invalid input detected at '^' marker.
-  if-match ip-precedence 6
-  ^
-
-[93/257] r1 <R1> quit
+[83/257] r1 [R1-classifier-VOICE] if-match acl 3000
 <empty>
 
-[94/257] r1 <R1> traffic behavior B-VOICE
-  % Invalid input detected at '^' marker.
-  traffic behavior B-VOICE
-  ^
+[84/257] r1 [R1-classifier-VOICE] if-match protocol rtp
+<empty>
 
-[95/257] r1 <R1> remark dscp ef
-  % Invalid input detected at '^' marker.
-  remark dscp ef
-  ^
+[85/257] r1 [R1-classifier-VOICE] if-match 8021p 5
+<empty>
 
-[96/257] r1 <R1> queue ef bandwidth 2000
+[86/257] r1 [R1-classifier-VOICE] quit
+<empty>
+
+[87/257] r1 [R1] traffic classifier VIDEO operator and
+<empty>
+
+[88/257] r1 [R1-classifier-VIDEO] if-match dscp af41
+<empty>
+
+[89/257] r1 [R1-classifier-VIDEO] quit
+<empty>
+
+[90/257] r1 [R1] traffic classifier CRITICAL
+<empty>
+
+[91/257] r1 [R1-classifier-CRITICAL] if-match protocol ospf
+<empty>
+
+[92/257] r1 [R1-classifier-CRITICAL] if-match ip-precedence 6
+<empty>
+
+[93/257] r1 [R1-classifier-CRITICAL] quit
+<empty>
+
+[94/257] r1 [R1] traffic behavior B-VOICE
+<empty>
+
+[95/257] r1 [R1-behavior-B-VOICE] remark dscp ef
+<empty>
+
+[96/257] r1 [R1-behavior-B-VOICE] queue ef bandwidth 2000
   % Invalid input detected at '^' marker.
   queue ef bandwidth 2000
   ^
 
-[97/257] r1 <R1> car cir 2000 pir 4000 cbs 50000 pbs 100000
-  % Invalid input detected at '^' marker.
-  car cir 2000 pir 4000 cbs 50000 pbs 100000
-  ^
+[97/257] r1 [R1-behavior-B-VOICE] car cir 2000 pir 4000 cbs 50000 pbs 100000
+<empty>
 
-[98/257] r1 <R1> statistics enable
+[98/257] r1 [R1-behavior-B-VOICE] statistics enable
   % Invalid input detected at '^' marker.
   statistics enable
   ^
 
-[99/257] r1 <R1> quit
+[99/257] r1 [R1-behavior-B-VOICE] quit
 <empty>
 
-[100/257] r1 <R1> traffic behavior B-VIDEO
-  % Invalid input detected at '^' marker.
-  traffic behavior B-VIDEO
-  ^
+[100/257] r1 [R1] traffic behavior B-VIDEO
+<empty>
 
-[101/257] r1 <R1> remark dscp af41
-  % Invalid input detected at '^' marker.
-  remark dscp af41
-  ^
+[101/257] r1 [R1-behavior-B-VIDEO] remark dscp af41
+<empty>
 
-[102/257] r1 <R1> queue af bandwidth pct 25
+[102/257] r1 [R1-behavior-B-VIDEO] queue af bandwidth pct 25
   % Invalid input detected at '^' marker.
   queue af bandwidth pct 25
   ^
 
-[103/257] r1 <R1> quit
+[103/257] r1 [R1-behavior-B-VIDEO] quit
 <empty>
 
-[104/257] r1 <R1> traffic behavior B-CRIT
-  % Invalid input detected at '^' marker.
-  traffic behavior B-CRIT
-  ^
+[104/257] r1 [R1] traffic behavior B-CRIT
+<empty>
 
-[105/257] r1 <R1> remark 8021p 6
-  % Invalid input detected at '^' marker.
-  remark 8021p 6
-  ^
+[105/257] r1 [R1-behavior-B-CRIT] remark 8021p 6
+<empty>
 
-[106/257] r1 <R1> queue af bandwidth pct 15
+[106/257] r1 [R1-behavior-B-CRIT] queue af bandwidth pct 15
   % Invalid input detected at '^' marker.
   queue af bandwidth pct 15
   ^
 
-[107/257] r1 <R1> quit
+[107/257] r1 [R1-behavior-B-CRIT] quit
 <empty>
 
-[108/257] r1 <R1> traffic behavior B-DROP
-  % Invalid input detected at '^' marker.
-  traffic behavior B-DROP
-  ^
-
-[109/257] r1 <R1> deny
-  % Invalid input detected at '^' marker.
-  deny
-  ^
-
-[110/257] r1 <R1> quit
+[108/257] r1 [R1] traffic behavior B-DROP
 <empty>
 
-[111/257] r1 <R1> traffic policy WAN-OUT
-  % Invalid input detected at '^' marker.
-  traffic policy WAN-OUT
-  ^
-
-[112/257] r1 <R1> classifier VOICE behavior B-VOICE
-  % Invalid input detected at '^' marker.
-  classifier VOICE behavior B-VOICE
-  ^
-
-[113/257] r1 <R1> classifier VIDEO behavior B-VIDEO
-  % Invalid input detected at '^' marker.
-  classifier VIDEO behavior B-VIDEO
-  ^
-
-[114/257] r1 <R1> classifier CRITICAL behavior B-CRIT
-  % Invalid input detected at '^' marker.
-  classifier CRITICAL behavior B-CRIT
-  ^
-
-[115/257] r1 <R1> quit
+[109/257] r1 [R1-behavior-B-DROP] deny
 <empty>
 
-[116/257] r1 <R1> return
+[110/257] r1 [R1-behavior-B-DROP] quit
+<empty>
+
+[111/257] r1 [R1] traffic policy WAN-OUT
+<empty>
+
+[112/257] r1 [R1-trafficpolicy-WAN-OUT] classifier VOICE behavior B-VOICE
+<empty>
+
+[113/257] r1 [R1-trafficpolicy-WAN-OUT] classifier VIDEO behavior B-VIDEO
+<empty>
+
+[114/257] r1 [R1-trafficpolicy-WAN-OUT] classifier CRITICAL behavior B-CRIT
+<empty>
+
+[115/257] r1 [R1-trafficpolicy-WAN-OUT] quit
+<empty>
+
+[116/257] r1 [R1] return
 <empty>
 
 [117/257] r1 <R1> display traffic classifier user-defined
   % Invalid input detected at '^' marker.
   display traffic classifier user-defined
-          ^
+                  ^
 
 [118/257] r1 <R1> display traffic behavior user-defined
   % Invalid input detected at '^' marker.
   display traffic behavior user-defined
-          ^
+                  ^
 
 [119/257] r1 <R1> display traffic policy user-defined WAN-OUT
   % Invalid input detected at '^' marker.
   display traffic policy user-defined WAN-OUT
-          ^
+                                      ^
 
 
 --- [120] § QoS apply / shaping ---
@@ -552,9 +503,7 @@ Total steps: 257
 <empty>
 
 [122/257] r1 [R1-GE0/0/1] traffic-policy WAN-OUT outbound
-  % Invalid input detected at '^' marker.
-  traffic-policy WAN-OUT outbound
-  ^
+<empty>
 
 [123/257] r1 [R1-GE0/0/1] qos lr outbound cir 100000 cbs 1875000
   % Invalid input detected at '^' marker.
@@ -616,9 +565,7 @@ Total steps: 257
 <empty>
 
 [136/257] r1 <R1> display traffic-policy applied-record
-  % Invalid input detected at '^' marker.
-  display traffic-policy applied-record
-          ^
+  traffic-policy WAN-OUT outbound on GE0/0/1
 
 [137/257] r1 <R1> display qos configuration interface GigabitEthernet0/0/1
   % Invalid input detected at '^' marker.
@@ -669,7 +616,7 @@ Total steps: 257
   ^
 
 [147/257] r1 [R1-GE0/0/1] undo qos pq
-  Error: Unrecognized command "undo qos pq"
+<empty>
 
 [148/257] r1 [R1-GE0/0/1] quit
 <empty>
@@ -728,33 +675,41 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [156/257] r1 [R1] display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  #
 
 [157/257] r1 [R1] display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.2/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
+  GE0/0/0                           192.168.1.2/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
 
 [158/257] r1 [R1] display interface
   GE0/0/0 current state : UP
@@ -789,8 +744,8 @@ Total steps: 257
            Destinations : 2        Routes : 2
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [160/257] r1 [R1] display ip routing-table statistics
   Proto     route
@@ -804,9 +759,8 @@ Total steps: 257
   No ARP entries found.
 
 [162/257] r1 [R1] display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [163/257] r1 [R1] display ospf peer
   Error: OSPF is not configured.
@@ -815,9 +769,7 @@ Total steps: 257
   Error: OSPF is not configured.
 
 [165/257] r1 [R1] display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [166/257] r1 [R1] display ospf lsdb
   Error: OSPF is not configured.
@@ -829,29 +781,19 @@ Total steps: 257
   Info: RIP is not enabled.
 
 [169/257] r1 [R1] display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  Info: RIP is not enabled.
 
 [170/257] r1 [R1] display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [171/257] r1 [R1] display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [172/257] r1 [R1] display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [173/257] r1 [R1] display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [174/257] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -860,19 +802,21 @@ Total steps: 257
   Total 0 ACL(s)
 
 [176/257] r1 [R1] display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [177/257] r1 [R1] display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [178/257] r1 [R1] display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [179/257] r1 [R1] display ike sa
   Info: No IPSec configuration.
@@ -916,30 +860,26 @@ Total steps: 257
    clock offset: 0.0000 ms
 
 [188/257] r1 [R1] display clock
-  2026-05-31 19:01:19
-  Sunday
+  2026-06-03 16:08:11
+  Wednesday
   Time Zone(UTC) : UTC
 
 [189/257] r1 [R1] display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [190/257] r1 [R1] display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:19
+  CPU Usage Stat. Time : 2026-06-03 16:08:11
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:19
+  Memory utilization statistics at 2026-06-03 16:08:11
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -949,7 +889,10 @@ Total steps: 257
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [194/257] r1 [R1] display users
@@ -959,19 +902,16 @@ Total steps: 257
   Wait     : Wait for the user to press ENTER.
 
 [195/257] r1 [R1] display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [196/257] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:19 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [197/257] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -982,14 +922,19 @@ Total steps: 257
   Current messages : 0
 
 [198/257] r1 [R1] display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [199/257] r1 [R1] display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [200/257] r1 [R1] display patch-information
   Info: No patch exists.
@@ -1000,10 +945,10 @@ Total steps: 257
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -1021,9 +966,17 @@ Total steps: 257
   GE0/0/3                     down    down      0%    0%       0          0
 
 [204/257] r1 [R1] display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.2/24
+  Broadcast address : 192.168.1.2
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [205/257] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1034,9 +987,22 @@ Total steps: 257
   Output: 0 packets, 0 bytes
 
 [206/257] r1 [R1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  #
 
 [207/257] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1044,14 +1010,17 @@ Total steps: 257
   Info: Diagnostic information collected.
 
 [208/257] r1 [R1] display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [209/257] r1 [R1] display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [210/257] r1 [R1] display ssh server status
   SSH version                     : 2.0
@@ -1070,9 +1039,13 @@ Total steps: 257
   STELNET server                  : Enable
 
 [212/257] r1 [R1] display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [213/257] r1 [R1] display port-security
   Port-security is enabled on the following interfaces:
@@ -1096,20 +1069,6 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [216/257] r1 [R1] display current-configuration | exclude #
@@ -1122,27 +1081,16 @@ Total steps: 257
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
 [217/257] r1 [R1] display ip routing-table | include Direct
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
+  192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [218/257] r1 [R1] display ip interface brief | include up
-  GE0/0/0                           192.168.1.2/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           192.168.1.2/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
 
 
 --- [219] § regression: view nav + undo ---
@@ -1150,14 +1098,10 @@ Total steps: 257
   Enter system view, return user view with return command.
 
 [220/257] r1 [R1] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [221/257] r1 [R1] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [222/257] r1 [R1] dhcp enable
 <empty>
@@ -1169,107 +1113,109 @@ Total steps: 257
 <empty>
 
 [225/257] r1 [R1] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [226/257] r1 [R1] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [227/257] r1 [R1] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [228/257] r1 [R1] telnet server enable
 <empty>
 
 [229/257] r1 [R1] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [230/257] r1 [R1] info-center enable
 <empty>
 
 [231/257] r1 [R1] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [232/257] r1 [R1] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [233/257] r1 [R1] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [234/257] r1 [R1] ntp-service enable
 <empty>
 
 [235/257] r1 [R1] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [236/257] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [237/257] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [238/257] r1 [R1] sysname TEST
 <empty>
 
 [239/257] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[240/257] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[241/257] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[242/257] r1 [TEST-GE0/0/0] shutdown
+[240/257] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[243/257] r1 [TEST-GE0/0/0] undo shutdown
+[241/257] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  #
+
+[242/257] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[244/257] r1 [TEST-GE0/0/0] quit
+[243/257] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[245/257] r1 [TEST] ospf 1
+[244/257] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[246/257] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[247/257] r1 [TEST-ospf-1] quit
+[245/257] r1 [Huawei] ospf 1
 <empty>
 
-[248/257] r1 [TEST] user-interface vty 0 4
+[246/257] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+   router-id 192.168.1.2
+  #
+
+[247/257] r1 [Huawei-ospf-1] quit
 <empty>
 
-[249/257] r1 [TEST-ui-vty0 4] quit
+[248/257] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[250/257] r1 [TEST] return
+[249/257] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[250/257] r1 [Huawei] return
 <empty>
 
 
 --- [251] § regression: context help ---
-[251/257] r1 <TEST> system-view
+[251/257] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[252/257] r1 [TEST] interface ?
+[252/257] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[253/257] r1 [TEST] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
+[253/257] r1 [Huawei] ip ?
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
-[254/257] r1 [TEST] undo ?
+[254/257] r1 [Huawei] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length
@@ -1281,16 +1227,19 @@ Total steps: 257
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[255/257] r1 [TEST] acl ?
+[255/257] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[256/257] r1 [TEST] return
+[256/257] r1 [Huawei] return
 <empty>
 
-[257/257] r1 <TEST> save
+[257/257] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.

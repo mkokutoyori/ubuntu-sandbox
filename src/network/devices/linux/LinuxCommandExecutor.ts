@@ -112,7 +112,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'true', 'false',
+  'crontab', 'at', 'atq', 'atrm', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'df', 'du', 'mount', 'umount',
   'pkill', 'pgrep', 'pidof', 'killall',
@@ -170,6 +170,20 @@ const LASTLOG_HELP = [
   '',
   'For more details see lastlog(8).',
 ].join('\n');
+
+/** Map the short process state code to the long name procfs prints in
+ *  /proc/<pid>/status (State: R (running) etc.). */
+function stateLabel(s: string): string {
+  switch (s) {
+    case 'R': return 'running';
+    case 'S': return 'sleeping';
+    case 'D': return 'disk sleep';
+    case 'T': return 'stopped';
+    case 'Z': return 'zombie';
+    case 'X': return 'dead';
+    default:  return 'unknown';
+  }
+}
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -409,6 +423,75 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
   }
+
+  /** Tracked set of PIDs currently materialized under /proc as per-pid dirs. */
+  private materializedProcPids: Set<number> = new Set();
+
+
+
+  /** Materialize /proc/<pid>/ for every live process, drop entries for dead
+   *  PIDs. Each entry exposes generated `status`, `cmdline`, `comm`, `stat`
+   *  files driven live from the process manager. */
+  private syncProcPids(): void {
+    const live = new Set(this.processMgr.list().map((p) => p.pid));
+    // Remove gone.
+    for (const pid of [...this.materializedProcPids]) {
+      if (!live.has(pid)) {
+        try {
+          for (const f of ['status', 'cmdline', 'comm', 'stat']) {
+            this.vfs.deleteFile(`/proc/${pid}/${f}`);
+          }
+          this.vfs.rmdir(`/proc/${pid}`);
+        } catch { /* ignore */ }
+        this.materializedProcPids.delete(pid);
+      }
+    }
+    // Add new.
+    for (const pid of live) {
+      if (this.materializedProcPids.has(pid)) continue;
+      this.vfs.mkdirp(`/proc/${pid}`, 0o555, 0, 0);
+      this.vfs.registerGeneratedFile(`/proc/${pid}/comm`, () => {
+        const p = this.processMgr.get(pid);
+        return p ? `${p.comm}\n` : '';
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/cmdline`, () => {
+        const p = this.processMgr.get(pid);
+        // Real /proc/<pid>/cmdline NUL-separates args, then a trailing NUL.
+        return p ? p.args.join('\0') + '\0' : '';
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/status`, () => {
+        const p = this.processMgr.get(pid);
+        if (!p) return '';
+        return [
+          `Name:\t${p.comm}`,
+          `State:\t${p.state} (${stateLabel(p.state)})`,
+          `Tgid:\t${p.pid}`,
+          `Pid:\t${p.pid}`,
+          `PPid:\t${p.ppid}`,
+          `Uid:\t${p.uid}\t${p.uid}\t${p.uid}\t${p.uid}`,
+          `Gid:\t${p.gid}\t${p.gid}\t${p.gid}\t${p.gid}`,
+          `VmSize:\t${p.vsize} kB`,
+          `VmRSS:\t${p.rss} kB`,
+          '',
+        ].join('\n');
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/stat`, () => {
+        const p = this.processMgr.get(pid);
+        if (!p) return '';
+        return [
+          p.pid, `(${p.comm})`, p.state, p.ppid, p.pgid, p.sid, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
+          p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
+        ].join(' ') + '\n';
+      });
+      this.materializedProcPids.add(pid);
+    }
+    // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
+    if (this.shellPid && !this.vfs.exists('/proc/self')) {
+      this.vfs.createSymlink('/proc/self', String(this.shellPid), 0, 0);
+    }
+  }
+
+
 
   /**
    * Register `/proc/cpuinfo`, `/proc/meminfo` and `/proc/uptime` as generated
@@ -1026,6 +1109,7 @@ export class LinuxCommandExecutor {
       tty: 'pts/0',
       shellPid: this.shellPid,
       jobs: this.jobTable,
+      uptimeSeconds: this.lifecycle.uptimeSeconds(),
     };
   }
 
@@ -1067,12 +1151,29 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
+    // `$!` — PID of the most-recently backgrounded process. Bash exposes
+    // this through the special parameter table; we propagate it via the
+    // environment so `echo $!` / `kill -15 $!` resolve correctly.
+    this.env.set('!', String(proc.pid));
     // Actually carry out the work: the only thing "background" skips is
     // blocking the foreground shell. Side effects — an SSH connection's
     // auth.log line and session-table entry, file writes, … — must still
     // happen so `jobs`, `who`, `w` and the logs stay coherent. The
     // command's own stdout is detached from the terminal.
-    try { this.execute(cmdLine); } catch { /* background failures are silent */ }
+    let captured = '';
+    let exitCode = 0;
+    try {
+      captured = this.execute(cmdLine);
+      exitCode = this.lastExitCode;
+    } catch { /* background failures are silent */ }
+    // The sync simulator executes the work eagerly. We still want
+    // `jobs` to report the job as Running until the user explicitly
+    // brings it forward with `fg`/`wait`/`bg`, mirroring how a real
+    // bash shows `sleep 60 &` for the duration of the sleep. The
+    // captured output and exit code are stashed on the job for cmdFg
+    // to drain when the user actually waits on it.
+    job.capturedOutput = captured;
+    job.exitCode = exitCode;
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${job.id}] ${proc.pid}`);
@@ -1103,7 +1204,9 @@ export class LinuxCommandExecutor {
             return `Connection closed by ${host}`;
           }
         }
-        return cmdFg(args, ctx).output;
+        const r = cmdFg(args, ctx);
+        this.lastExitCode = r.exitCode;
+        return r.output;
       }
       case 'bg':     return cmdBg(args, ctx).output;
       case 'wait':   return cmdWait(args, ctx).output;
@@ -1293,6 +1396,11 @@ export class LinuxCommandExecutor {
   execute(input: string): string {
     const trimmed = input.trim();
     if (!trimmed) { this.lastExitCode = 0; return ''; }
+
+    // Keep /proc/<pid>/ tree in sync with the live process table before any
+    // command runs (cheap diff). Real Linux exposes per-process subdirs via
+    // procfs; the simulator emulates this lazily here.
+    this.syncProcPids();
 
     // Track command in history (store the raw input, like bash)
     this.commandHistory.push(trimmed);
@@ -1735,6 +1843,41 @@ export class LinuxCommandExecutor {
         const result = cmdUmask(c, args);
         if (result.newUmask !== undefined) this.umask = result.newUmask;
         return { output: result.output, exitCode: 0 };
+      }
+      case 'ulimit': {
+        const flag = args[0] ?? '-f';
+        const table: Record<string, [string, string]> = {
+          '-a': ['', ''],
+          '-c': ['core file size          (blocks, -c)', 'unlimited'],
+          '-d': ['data seg size           (kbytes, -d)', 'unlimited'],
+          '-e': ['scheduling priority             (-e)', '0'],
+          '-f': ['file size               (blocks, -f)', 'unlimited'],
+          '-i': ['pending signals                 (-i)', '15730'],
+          '-l': ['max locked memory       (kbytes, -l)', '67108864'],
+          '-m': ['max memory size         (kbytes, -m)', 'unlimited'],
+          '-n': ['open files                      (-n)', '1024'],
+          '-p': ['pipe size            (512 bytes, -p)', '8'],
+          '-q': ['POSIX message queues     (bytes, -q)', '819200'],
+          '-r': ['real-time priority              (-r)', '0'],
+          '-s': ['stack size              (kbytes, -s)', '8192'],
+          '-t': ['cpu time               (seconds, -t)', 'unlimited'],
+          '-u': ['max user processes              (-u)', '15730'],
+          '-v': ['virtual memory          (kbytes, -v)', 'unlimited'],
+          '-x': ['file locks                      (-x)', 'unlimited'],
+        };
+        if (flag === '-a' || flag === '-aH' || flag === '-aS') {
+          const lines: string[] = [];
+          for (const [k, [label, val]] of Object.entries(table)) {
+            if (k === '-a') continue;
+            lines.push(`${label} ${val}`);
+          }
+          return { output: lines.join('\n'), exitCode: 0 };
+        }
+        const entry = table[flag];
+        if (!entry) {
+          return { output: `bash: ulimit: ${flag}: invalid option`, exitCode: 2 };
+        }
+        return { output: entry[1], exitCode: 0 };
       }
       case 'test':
       case '[': return this.handleTest(cmd, args);
@@ -2188,7 +2331,7 @@ export class LinuxCommandExecutor {
       }
       case 'lscpu': return { output: this.hardware.cpu.toLscpu(), exitCode: 0 };
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
-      case 'lsof': return { output: 'COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\nsystemd     1   root  cwd    DIR    8,1     4096    2 /\nsshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)', exitCode: 0 };
+      case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
         const target = args.filter(a => !a.startsWith('-'))[0];
         if (!target) return { output: 'Usage: file [-options] file...', exitCode: 1 };
@@ -3501,6 +3644,75 @@ export class LinuxCommandExecutor {
 
     // Complete file/directory paths
     return this.getPathCompletions(word);
+  }
+
+  /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
+  private cmdLsof(args: string[]): string {
+    const filterPid = ((): number | null => {
+      const i = args.indexOf('-p');
+      return i >= 0 && args[i + 1] ? parseInt(args[i + 1], 10) || null : null;
+    })();
+    const filterUser = ((): string | null => {
+      const i = args.indexOf('-u');
+      return i >= 0 ? args[i + 1] ?? null : null;
+    })();
+    const filterInet = ((): { proto?: string; port?: number } | null => {
+      const i = args.indexOf('-i');
+      if (i < 0) return null;
+      const spec = args[i + 1] ?? '';
+      // -i :22  |  -i tcp:22  |  -i tcp
+      const portMatch = spec.match(/:(\d+)$/);
+      const protoMatch = spec.match(/^(tcp|udp)/i);
+      return {
+        proto: protoMatch ? protoMatch[1].toLowerCase() : undefined,
+        port: portMatch ? parseInt(portMatch[1], 10) : undefined,
+      };
+    })();
+
+    const lines = ['COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME'];
+    const procs = this.processMgr.list();
+    let nodeSeq = 10_000;
+
+    for (const p of procs) {
+      if (filterPid !== null && p.pid !== filterPid) continue;
+      if (filterUser !== null && p.user !== filterUser) continue;
+      if (filterInet === null) {
+        // cwd entry — the canonical first row real lsof prints.
+        lines.push(`${p.comm.padEnd(10)} ${String(p.pid).padStart(5)}  ${p.user.padEnd(6)} cwd    DIR    8,1     4096    2 ${p.cwd ?? '/'}`);
+      }
+    }
+
+    if (this.socketTable) {
+      for (const s of this.socketTable.getAll()) {
+        if (filterPid !== null && s.pid !== filterPid) continue;
+        if (filterUser !== null) {
+          const proc = s.pid ? this.processMgr.get(s.pid) : null;
+          if (!proc || proc.user !== filterUser) continue;
+        }
+        if (filterInet) {
+          if (filterInet.proto && s.protocol !== filterInet.proto) continue;
+          if (filterInet.port !== undefined && s.localPort !== filterInet.port) continue;
+        }
+        const ipv = s.localAddress.includes(':') ? 'IPv6' : 'IPv4';
+        const peer = s.state === 'LISTEN' || s.state === 'CLOSED'
+          ? '*:*'
+          : `${s.remoteAddress}:${s.remotePort}`;
+        const target = s.state === 'LISTEN'
+          ? `*:${s.localPort} (LISTEN)`
+          : `${s.localAddress}:${s.localPort}->${peer} (${s.state})`;
+        const comm = (s.processName ?? 'unknown').slice(0, 10);
+        const pid = String(s.pid ?? 0).padStart(5);
+        const proc = s.pid ? this.processMgr.get(s.pid) : null;
+        const user = (proc?.user ?? 'root').padEnd(6);
+        lines.push(`${comm.padEnd(10)} ${pid}  ${user} ${String(s.id + 3).padStart(3)}u  ${ipv} ${String(nodeSeq++).padStart(5)}      0t0  ${s.protocol.toUpperCase()} ${target}`);
+      }
+    }
+
+    if (lines.length === 1) {
+      if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
+      return '';
+    }
+    return lines.join('\n');
   }
 
   private getEnvVarNames(prefix: string): string[] {

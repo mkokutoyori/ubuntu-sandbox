@@ -58,6 +58,11 @@ export class LinuxJob {
   exitCode?: number;
   /** Signal that suspended (`Stopped`) or terminated (`Killed`) the job. */
   signal?: string;
+  /** Stdout produced by the backgrounded command, captured when the
+   *  simulator executed it synchronously. `fg %N` re-emits this so the
+   *  user sees what the job printed, matching the behaviour of bringing
+   *  a still-running job back to the foreground in real bash. */
+  capturedOutput?: string;
 
   // ─── controlling terminal / session ────────────────────────────────
   controllingTty: string;

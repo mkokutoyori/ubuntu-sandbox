@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-05-31T19:01:03.585Z
+Generated: 2026-06-03T16:07:58.801Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [4/482] r1 R1> show calendar
-  19:01:03 UTC Sun May 31 2026
+  16:07:58 UTC Wed Jun 3 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -112,11 +112,6 @@ Total steps: 482
   interface GigabitEthernet0/3
    shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -365,7 +360,10 @@ Total steps: 482
   0 SNMP packets output
 
 [43/482] r1 R1> show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T16:07:58.814Z
+  clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -536,11 +534,6 @@ Total steps: 482
    shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -655,6 +648,7 @@ Total steps: 482
     standby         Display HSRP state
     vrrp            Display VRRP state
     glbp            Display GLBP state
+    bfd             bfd
     track           Display tracked objects
     ipv6            ipv6
     route-map       Display route-maps
@@ -713,10 +707,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [81/482] r1 R1# show calendar
-  19:01:03 UTC Sun May 31 2026
+  16:07:58 UTC Wed Jun 3 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -796,11 +790,6 @@ Total steps: 482
   interface GigabitEthernet0/3
    shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1049,7 +1038,10 @@ Total steps: 482
   0 SNMP packets output
 
 [120/482] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T16:07:58.817Z
+  clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1220,11 +1212,6 @@ Total steps: 482
    shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1343,7 +1330,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1352,7 +1339,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1361,7 +1348,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1370,7 +1357,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1379,7 +1366,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1388,7 +1375,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1397,7 +1384,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1406,7 +1393,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1415,7 +1402,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1424,7 +1411,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1433,7 +1420,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1442,7 +1429,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1451,7 +1438,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1460,7 +1447,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1471,7 +1458,7 @@ Total steps: 482
   ^
 
 [199/482] r1 R1(config)# do show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [200/482] r1 R1(config)# exit
 <empty>
@@ -1763,6 +1750,7 @@ Total steps: 482
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
@@ -2005,10 +1993,6 @@ Total steps: 482
    shutdown
   router rip
    version 2
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   end
 
@@ -2035,11 +2019,6 @@ Total steps: 482
   !
   router rip
    version 2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !
@@ -2078,11 +2057,6 @@ Total steps: 482
   !
   router rip
    version 2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !
@@ -2121,11 +2095,6 @@ Total steps: 482
   !
   router rip
    version 2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !
@@ -2191,11 +2160,6 @@ Total steps: 482
   !
   router rip
    version 2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !
@@ -2234,11 +2198,6 @@ Total steps: 482
   !
   router rip
    version 2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !
@@ -2277,11 +2236,6 @@ Total steps: 482
   !
   router rip
    version 2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !
@@ -2427,10 +2381,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -2532,10 +2482,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -2617,10 +2563,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -2665,10 +2607,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -2876,7 +2814,10 @@ Total steps: 482
   0 SNMP packets output
 
 [410/482] r1 R1-EDGE# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T16:07:58.836Z
+  clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -2884,7 +2825,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *19:01:03.000 UTC Sun May 31 2026
+  *16:07:58.000 UTC Wed Jun 3 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3065,10 +3006,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -3254,10 +3191,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -3299,10 +3232,6 @@ Total steps: 482
   router rip
    version 2
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0
@@ -3484,6 +3413,7 @@ Total steps: 482
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
@@ -3532,10 +3462,6 @@ Total steps: 482
    version 2
   !
   username admin privilege 15 secret 5 admin123
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   username operator privilege 5 secret 5 oper
   line vty 0 4
    exec-timeout 5 0

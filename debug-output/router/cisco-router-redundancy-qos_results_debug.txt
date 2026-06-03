@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-05-31T19:01:20.997Z
+Generated: 2026-06-03T16:07:52.012Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -539,6 +539,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 1
     State is Master
     Virtual IP address is 192.168.1.201
+    Master Router is local
     Advertisement interval 1 sec
     Preemption enabled
     Priority is 120
@@ -546,6 +547,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 2
     State is Master
     Virtual IP address is 192.168.1.202
+    Master Router is local
     Advertisement interval 1 sec
     Preemption enabled
     Priority is 130
@@ -553,6 +555,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 3
     State is Master
     Virtual IP address is 192.168.1.203
+    Master Router is local
     Advertisement interval 1 sec
     Preemption enabled
     Priority is 140
@@ -568,6 +571,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 1
     State is Master
     Virtual IP address is 192.168.1.201
+    Master Router is local
     Advertisement interval 1 sec
     Preemption enabled
     Priority is 120
@@ -575,6 +579,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 2
     State is Master
     Virtual IP address is 192.168.1.202
+    Master Router is local
     Advertisement interval 1 sec
     Preemption enabled
     Priority is 130
@@ -582,6 +587,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 3
     State is Master
     Virtual IP address is 192.168.1.203
+    Master Router is local
     Advertisement interval 1 sec
     Preemption enabled
     Priority is 140
@@ -641,13 +647,21 @@ Total steps: 413
   GigabitEthernet0/0 - Group 1
     State is Active
     Virtual IP address is 192.168.1.250
-    Hello time 3 sec, hold time 10 sec
+    Hello time 600 sec, hold time 7200 sec
     Preemption enabled
     Active is local
     Priority 150 (configured)
     Weighting 100 (configured 100)
     Load balancing: round-robin
     Group name is "GLBP-GRP-1"
+    Forwarder 1
+      State is Active
+      MAC address is 00:07:b4:00:01:01 (configured)
+      Owner ID is 192.168.1.2
+      Redirection enabled
+      Preemption disabled
+      Priority 100 (default)
+      Weighting 100 (default 100)
 
 [124/413] r1 R1# show glbp brief
   Interface   Grp  Fwd Pri State    Address         Active router   Standby router
@@ -1003,7 +1017,7 @@ Total steps: 413
 [199/413] r1 R1(config-if)# no bfd echo
   % Invalid input detected at '^' marker.
   no bfd echo
-     ^
+         ^
 
 [200/413] r1 R1(config-if)# exit
 <empty>
@@ -1024,19 +1038,15 @@ Total steps: 413
 <empty>
 
 [206/413] r1 R1# show bfd neighbors
-  % Invalid input detected at '^' marker.
-  show bfd neighbors
-       ^
+  NeighAddr        LD/RD     RH/RS   Holdown(mult) State     Int
 
 [207/413] r1 R1# show bfd neighbors details
-  % Invalid input detected at '^' marker.
-  show bfd neighbors details
-       ^
+<empty>
 
 [208/413] r1 R1# show bfd summary
   % Invalid input detected at '^' marker.
   show bfd summary
-       ^
+           ^
 
 
 --- [209] § QoS — MQC class/policy ---
@@ -1517,11 +1527,6 @@ Total steps: 413
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [307/413] r1 R1# show startup-config
@@ -1749,7 +1754,10 @@ Total steps: 413
   0 SNMP packets output
 
 [341/413] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T16:07:52.048Z
+  clock offset is 0.00 msec
 
 [342/413] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1757,7 +1765,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1# show clock
-  *19:01:21.000 UTC Sun May 31 2026
+  *16:07:52.000 UTC Wed Jun 3 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1931,11 +1939,6 @@ Total steps: 413
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2093,11 +2096,6 @@ Total steps: 413
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [369/413] r1 R1(config)# show running-config | begin line
@@ -2124,10 +2122,6 @@ Total steps: 413
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   end
 
 [371/413] r1 R1(config)# show ip route | include via
@@ -2288,6 +2282,7 @@ Total steps: 413
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
@@ -2330,11 +2325,6 @@ Total steps: 413
    permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !

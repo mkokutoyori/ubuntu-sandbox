@@ -81,9 +81,18 @@ export function cmdFg(args: string[], ctx: JobCmdContext): JobResult {
     if (args.length === 0) return { output: 'bash: fg: current: no such job', exitCode: 1 };
     return NO_SUCH_JOB('fg', spec);
   }
-  ctx.jobs.remove(j.id);
+  const lines: string[] = [];
   // bash echoes the command line being resumed.
-  return { output: j.command.replace(/\s*&\s*$/, ''), exitCode: 0 };
+  lines.push(j.command.replace(/\s*&\s*$/, ''));
+  // The simulator runs background jobs eagerly during `cmd &`, so by the
+  // time fg picks them up the captured stdout is already buffered on the
+  // job. Re-emit it so the user sees what the resumed command produced
+  // (matches the bytes that would have hit the terminal had the command
+  // been started in the foreground).
+  if (j.capturedOutput) lines.push(j.capturedOutput.replace(/\n$/, ''));
+  const exit = j.exitCode ?? 0;
+  ctx.jobs.remove(j.id);
+  return { output: lines.join('\n'), exitCode: exit };
 }
 
 // ─── bg ───────────────────────────────────────────────────────────────

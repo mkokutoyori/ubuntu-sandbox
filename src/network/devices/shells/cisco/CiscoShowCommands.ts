@@ -236,10 +236,10 @@ export function showRunningConfig(router: Router): string {
 
   // Local AAA users (`username NAME privilege N secret …`).
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string }>;
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; factoryDefault?: boolean }>;
   })._listLocalUsers;
   if (listUsers) {
-    const users = listUsers.call(router);
+    const users = listUsers.call(router).filter(u => !u.factoryDefault);
     if (users.length > 0) {
       lines.push('!');
       for (const u of users) {

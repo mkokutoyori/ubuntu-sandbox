@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-05-31T19:01:13.452Z
+Generated: 2026-06-03T16:07:49.173Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -476,6 +476,8 @@ Total steps: 325
 
 [90/325] r1 R1# show ipv6 route
   IPv6 Routing Table
+  S  2001:db8:2::/64 [1/0], via 2001:db8:1::2
+  S  ::/0 [1/0], via 2001:db8:1::2
 
 [91/325] r1 R1# show ipv6 route static
   % Route to static
@@ -1293,11 +1295,6 @@ Total steps: 325
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [219/325] r1 R1(config)# show startup-config
@@ -1527,7 +1524,10 @@ Total steps: 325
   0 SNMP packets output
 
 [253/325] r1 R1(config)# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T16:07:49.202Z
+  clock offset is 0.00 msec
 
 [254/325] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1535,7 +1535,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1(config)# show clock
-  *19:01:13.000 UTC Sun May 31 2026
+  *16:07:49.000 UTC Wed Jun 3 2026
 
 [256/325] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1795,11 +1795,6 @@ Total steps: 325
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2043,11 +2038,6 @@ Total steps: 325
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [281/325] r1 R1(config)# show running-config | begin line
@@ -2116,10 +2106,6 @@ Total steps: 325
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   end
 
 [283/325] r1 R1(config)# show ip route | include via
@@ -2324,6 +2310,7 @@ Total steps: 325
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
@@ -2408,11 +2395,6 @@ Total steps: 325
   ip route 192.168.51.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !

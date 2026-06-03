@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-05-31T19:01:35.840Z
+Generated: 2026-06-03T16:08:13.798Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -819,34 +819,105 @@ Total steps: 279
    proposal TP1
   #
   ipsec profile PROF1
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [178/279] r1 [R1] display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   ipsec policy MAP1
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+  ike proposal 1
+   encryption-algorithm aes-128
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 2
+   encryption-algorithm aes-192
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 3
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 4
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike peer PEER1
+   remote-address 10.0.0.2
+   pre-shared-key simple MyKey@12345
+  #
+  ike peer PEER2
+   remote-address 10.0.0.6
+   pre-shared-key simple Key2@12345
+  #
+  ipsec proposal TP1
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP2
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP3
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec policy MAP1 10 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy MAP1 20 isakmp
+   proposal TP2
+  #
+  ipsec policy PROF1 0 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec profile PROF1
+  #
 
 [179/279] r1 [R1] display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack0                         1.1.1.1/255.255.255.255down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack0                         1.1.1.1/32           DOWN       DOWN
 
 [180/279] r1 [R1] display interface
   GE0/0/0 current state : UP
@@ -887,9 +958,9 @@ Total steps: 279
            Destinations : 3        Routes : 3
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
 
 [182/279] r1 [R1] display ip routing-table statistics
   Proto     route
@@ -903,9 +974,8 @@ Total steps: 279
   No ARP entries found.
 
 [184/279] r1 [R1] display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [185/279] r1 [R1] display ospf peer
   Error: OSPF is not configured.
@@ -914,9 +984,7 @@ Total steps: 279
   Error: OSPF is not configured.
 
 [187/279] r1 [R1] display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [188/279] r1 [R1] display ospf lsdb
   Error: OSPF is not configured.
@@ -928,29 +996,19 @@ Total steps: 279
   Info: RIP is not enabled.
 
 [191/279] r1 [R1] display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  Info: RIP is not enabled.
 
 [192/279] r1 [R1] display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [193/279] r1 [R1] display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [194/279] r1 [R1] display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [195/279] r1 [R1] display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [196/279] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -959,19 +1017,21 @@ Total steps: 279
   Total 0 ACL(s)
 
 [198/279] r1 [R1] display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [199/279] r1 [R1] display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [200/279] r1 [R1] display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [201/279] r1 [R1] display ike sa
   IPv4 Crypto ISAKMP SA
@@ -1091,30 +1151,26 @@ Total steps: 279
    clock offset: 0.0000 ms
 
 [210/279] r1 [R1] display clock
-  2026-05-31 19:01:35
-  Sunday
+  2026-06-03 16:08:13
+  Wednesday
   Time Zone(UTC) : UTC
 
 [211/279] r1 [R1] display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [212/279] r1 [R1] display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:35
+  CPU Usage Stat. Time : 2026-06-03 16:08:13
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:35
+  Memory utilization statistics at 2026-06-03 16:08:13
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1124,7 +1180,10 @@ Total steps: 279
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [216/279] r1 [R1] display users
@@ -1134,19 +1193,16 @@ Total steps: 279
   Wait     : Wait for the user to press ENTER.
 
 [217/279] r1 [R1] display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [218/279] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:35 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [219/279] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1157,14 +1213,19 @@ Total steps: 279
   Current messages : 0
 
 [220/279] r1 [R1] display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [221/279] r1 [R1] display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [222/279] r1 [R1] display patch-information
   Info: No patch exists.
@@ -1175,10 +1236,10 @@ Total steps: 279
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -1197,9 +1258,17 @@ Total steps: 279
   LoopBack0                   down    down      0%    0%       0          0
 
 [226/279] r1 [R1] display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/24
+  Broadcast address : 192.168.1.1
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [227/279] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1210,9 +1279,85 @@ Total steps: 279
   Output: 0 packets, 0 bytes
 
 [228/279] r1 [R1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   ipsec policy MAP1
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+  ike proposal 1
+   encryption-algorithm aes-128
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 2
+   encryption-algorithm aes-192
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 3
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 4
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike peer PEER1
+   remote-address 10.0.0.2
+   pre-shared-key simple MyKey@12345
+  #
+  ike peer PEER2
+   remote-address 10.0.0.6
+   pre-shared-key simple Key2@12345
+  #
+  ipsec proposal TP1
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP2
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP3
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec policy MAP1 10 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy MAP1 20 isakmp
+   proposal TP2
+  #
+  ipsec policy PROF1 0 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec profile PROF1
+  #
 
 [229/279] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1220,14 +1365,17 @@ Total steps: 279
   Info: Diagnostic information collected.
 
 [230/279] r1 [R1] display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [231/279] r1 [R1] display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [232/279] r1 [R1] display ssh server status
   SSH version                     : 2.0
@@ -1246,9 +1394,13 @@ Total steps: 279
   STELNET server                  : Enable
 
 [234/279] r1 [R1] display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [235/279] r1 [R1] display port-security
   Port-security is enabled on the following interfaces:
@@ -1335,20 +1487,6 @@ Total steps: 279
    proposal TP1
   #
   ipsec profile PROF1
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [238/279] r1 [R1] display current-configuration | exclude #
@@ -1410,28 +1548,17 @@ Total steps: 279
    ike-peer PEER1
    proposal TP1
   ipsec profile PROF1
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
 [239/279] r1 [R1] display ip routing-table | include Direct
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
 
 [240/279] r1 [R1] display ip interface brief | include up
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
 
 
 --- [241] § regression: view nav + undo ---
@@ -1439,14 +1566,10 @@ Total steps: 279
   Enter system view, return user view with return command.
 
 [242/279] r1 [R1] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [243/279] r1 [R1] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [244/279] r1 [R1] dhcp enable
 <empty>
@@ -1458,107 +1581,109 @@ Total steps: 279
 <empty>
 
 [247/279] r1 [R1] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [248/279] r1 [R1] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [249/279] r1 [R1] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [250/279] r1 [R1] telnet server enable
 <empty>
 
 [251/279] r1 [R1] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [252/279] r1 [R1] info-center enable
 <empty>
 
 [253/279] r1 [R1] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [254/279] r1 [R1] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [255/279] r1 [R1] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [256/279] r1 [R1] ntp-service enable
 <empty>
 
 [257/279] r1 [R1] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [258/279] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [259/279] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [260/279] r1 [R1] sysname TEST
 <empty>
 
 [261/279] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[262/279] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[263/279] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[264/279] r1 [TEST-GE0/0/0] shutdown
+[262/279] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[265/279] r1 [TEST-GE0/0/0] undo shutdown
+[263/279] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+
+[264/279] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[266/279] r1 [TEST-GE0/0/0] quit
+[265/279] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[267/279] r1 [TEST] ospf 1
+[266/279] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[268/279] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[269/279] r1 [TEST-ospf-1] quit
+[267/279] r1 [Huawei] ospf 1
 <empty>
 
-[270/279] r1 [TEST] user-interface vty 0 4
+[268/279] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+   router-id 192.168.1.1
+  #
+
+[269/279] r1 [Huawei-ospf-1] quit
 <empty>
 
-[271/279] r1 [TEST-ui-vty0 4] quit
+[270/279] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[272/279] r1 [TEST] return
+[271/279] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[272/279] r1 [Huawei] return
 <empty>
 
 
 --- [273] § regression: context help ---
-[273/279] r1 <TEST> system-view
+[273/279] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[274/279] r1 [TEST] interface ?
+[274/279] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[275/279] r1 [TEST] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
+[275/279] r1 [Huawei] ip ?
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
-[276/279] r1 [TEST] undo ?
+[276/279] r1 [Huawei] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length
@@ -1570,16 +1695,19 @@ Total steps: 279
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[277/279] r1 [TEST] acl ?
+[277/279] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[278/279] r1 [TEST] return
+[278/279] r1 [Huawei] return
 <empty>
 
-[279/279] r1 <TEST> save
+[279/279] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.

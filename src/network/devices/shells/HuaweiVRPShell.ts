@@ -34,7 +34,7 @@ import { IPAddress } from '../../core/types';
 // Extracted command modules
 import {
   type HuaweiDisplayState,
-  registerDisplayCommands,
+  registerDisplayCommands, displayCurrentConfig,
 } from './huawei/HuaweiDisplayCommands';
 import {
   type HuaweiShellMode, type HuaweiShellContext,
@@ -71,8 +71,14 @@ import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATDisplayCommands,
 } from './huawei/HuaweiNATCommands';
+import {
+  type HuaweiPolicyShellCtx,
+  registerHuaweiPolicySystemCommands, registerHuaweiPolicyDisplayCommands,
+  buildRoutePolicyView, buildTrafficClassifierView, buildTrafficBehaviorView,
+  buildTrafficPolicyView, buildNqaTestView,
+} from './huawei/HuaweiPolicyCommands';
 
-export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext {
+export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext, HuaweiPolicyShellCtx {
   readonly logging = new LoggingConfig();
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
@@ -98,6 +104,37 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private selectedACLNumber: number | null = null;
   private selectedACLMode: HuaweiACLMode | null = null;
   private selectedACLName: string | null = null;
+
+  private selectedPrefixList: string | null = null;
+  private selectedRoutePolicy: string | null = null;
+  private selectedRoutePolicyNode: number | null = null;
+  private selectedClassifier: string | null = null;
+  private selectedBehavior: string | null = null;
+  private selectedTrafficPolicy: string | null = null;
+  private selectedNqa: { admin: string; name: string } | null = null;
+
+  private routePolicyTrie = new CommandTrie();
+  private trafficClassifierTrie = new CommandTrie();
+  private trafficBehaviorTrie = new CommandTrie();
+  private trafficPolicyTrie = new CommandTrie();
+  private nqaTestTrie = new CommandTrie();
+
+  setSelectedPrefixList(n: string | null): void { this.selectedPrefixList = n; }
+  getSelectedPrefixList(): string | null { return this.selectedPrefixList; }
+  setSelectedRoutePolicy(n: string | null): void { this.selectedRoutePolicy = n; }
+  getSelectedRoutePolicy(): string | null { return this.selectedRoutePolicy; }
+  setSelectedRoutePolicyNode(n: number | null): void { this.selectedRoutePolicyNode = n; }
+  getSelectedRoutePolicyNode(): number | null { return this.selectedRoutePolicyNode; }
+  setSelectedClassifier(n: string | null): void { this.selectedClassifier = n; }
+  getSelectedClassifier(): string | null { return this.selectedClassifier; }
+  setSelectedBehavior(n: string | null): void { this.selectedBehavior = n; }
+  getSelectedBehavior(): string | null { return this.selectedBehavior; }
+  setSelectedTrafficPolicy(n: string | null): void { this.selectedTrafficPolicy = n; }
+  getSelectedTrafficPolicy(): string | null { return this.selectedTrafficPolicy; }
+  setSelectedNqa(admin: string | null, name: string | null): void {
+    this.selectedNqa = admin && name ? { admin, name } : null;
+  }
+  getSelectedNqa(): { admin: string; name: string } | null { return this.selectedNqa; }
 
   /** Temporary reference set during execute() */
   private routerRef: Router | null = null;
@@ -156,6 +193,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildACLSubViewCommands();
     this.buildUserInterfaceCommands();
     this.buildRIPViewCommands();
+    buildRoutePolicyView(this.routePolicyTrie, this);
+    buildTrafficClassifierView(this.trafficClassifierTrie, this);
+    buildTrafficBehaviorView(this.trafficBehaviorTrie, this);
+    buildTrafficPolicyView(this.trafficPolicyTrie, this);
+    buildNqaTestView(this.nqaTestTrie, this);
+    for (const t of [
+      this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
+      this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ripTrie,
+      this.ikeProposalTrie, this.ikePeerTrie, this.ipsecProposalTrie, this.ipsecPolicyTrie,
+      this.uiTrie, this.aclBasicTrie, this.aclAdvancedTrie,
+      this.ikev2ProposalTrie, this.ikev2PolicyTrie, this.ikev2KeyringTrie,
+      this.ikev2KeyringPeerTrie, this.ikev2ProfileTrie,
+      this.routePolicyTrie, this.trafficClassifierTrie, this.trafficBehaviorTrie,
+      this.trafficPolicyTrie, this.nqaTestTrie,
+    ]) {
+      this.registerDisplayThis(t);
+    }
   }
 
   getOSType(): string { return 'huawei-vrp'; }
@@ -282,6 +336,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ikev2-keyring':  return `[${host}-ikev2-keyring-${this.selectedIKEPeer}]`;
       case 'ikev2-keyring-peer': return `[${host}-ikev2-keyring-peer-${this.selectedIPSecProposal}]`;
       case 'ikev2-profile':  return `[${host}-ikev2-profile-${this.selectedIPSecProposal}]`;
+      case 'route-policy': return `[${host}-route-policy-${this.selectedRoutePolicy}-${this.selectedRoutePolicyNode}]`;
+      case 'traffic-classifier': return `[${host}-classifier-${this.selectedClassifier}]`;
+      case 'traffic-behavior': return `[${host}-behavior-${this.selectedBehavior}]`;
+      case 'traffic-policy': return `[${host}-trafficpolicy-${this.selectedTrafficPolicy}]`;
+      case 'nqa-test': return `[${host}-nqa-${this.selectedNqa?.admin}-${this.selectedNqa?.name}]`;
       default:           return `<${host}>`;
     }
   }
@@ -317,6 +376,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.selectedACLNumber = null;
       this.selectedACLMode = null;
       this.selectedACLName = null;
+      this.selectedRoutePolicy = null;
+      this.selectedRoutePolicyNode = null;
+      this.selectedClassifier = null;
+      this.selectedBehavior = null;
+      this.selectedTrafficPolicy = null;
+      this.selectedNqa = null;
       return '';
     }
     if (nav === 'quit') return this.cmdQuit();
@@ -485,6 +550,27 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'ikev2-keyring';
         this.selectedIPSecProposal = null;
         return '';
+      case 'route-policy':
+        this.mode = 'system';
+        this.selectedRoutePolicy = null;
+        this.selectedRoutePolicyNode = null;
+        return '';
+      case 'traffic-classifier':
+        this.mode = 'system';
+        this.selectedClassifier = null;
+        return '';
+      case 'traffic-behavior':
+        this.mode = 'system';
+        this.selectedBehavior = null;
+        return '';
+      case 'traffic-policy':
+        this.mode = 'system';
+        this.selectedTrafficPolicy = null;
+        return '';
+      case 'nqa-test':
+        this.mode = 'system';
+        this.selectedNqa = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -536,6 +622,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ikev2-keyring': return this.ikev2KeyringTrie;
       case 'ikev2-keyring-peer': return this.ikev2KeyringPeerTrie;
       case 'ikev2-profile': return this.ikev2ProfileTrie;
+      case 'route-policy': return this.routePolicyTrie;
+      case 'traffic-classifier': return this.trafficClassifierTrie;
+      case 'traffic-behavior': return this.trafficBehaviorTrie;
+      case 'traffic-policy': return this.trafficPolicyTrie;
+      case 'nqa-test': return this.nqaTestTrie;
       default: return this.userTrie;
     }
   }
@@ -586,7 +677,80 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
   }
 
-  /** Read accessor used by CLITerminalSession to size the pager. */
+  private renderDisplayThis(): string {
+    const router = this.r();
+    const config = displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+    const lines = config.split('\n');
+    const selIface = this.selectedInterface;
+    const renderName = (n: string) => n.startsWith('GE') ? n.replace(/^GE/, 'GigabitEthernet') : n;
+    switch (this.mode) {
+      case 'interface': {
+        if (!selIface) return '#';
+        const target = `interface ${renderName(selIface)}`;
+        const out: string[] = ['#', target];
+        let inside = false;
+        for (const l of lines) {
+          if (l === target) { inside = true; continue; }
+          if (inside) {
+            if (l.startsWith('#')) break;
+            if (l.startsWith('interface ')) break;
+            out.push(l);
+          }
+        }
+        out.push('#');
+        return out.join('\n');
+      }
+      case 'ospf':
+      case 'ospf-area': {
+        const out: string[] = ['#'];
+        let inside = false;
+        for (const l of lines) {
+          if (/^ospf \d/.test(l)) { inside = true; out.push(l); continue; }
+          if (inside) {
+            if (l.startsWith('#')) break;
+            out.push(l);
+          }
+        }
+        out.push('#');
+        return out.join('\n');
+      }
+      case 'rip': {
+        const out: string[] = ['#'];
+        let inside = false;
+        for (const l of lines) {
+          if (/^rip \d/.test(l)) { inside = true; out.push(l); continue; }
+          if (inside) {
+            if (l.startsWith('#')) break;
+            out.push(l);
+          }
+        }
+        out.push('#');
+        return out.join('\n');
+      }
+      case 'dhcp-pool': {
+        if (!this.selectedPool) return '#';
+        const target = `ip pool ${this.selectedPool}`;
+        const out: string[] = ['#', target];
+        let inside = false;
+        for (const l of lines) {
+          if (l === target) { inside = true; continue; }
+          if (inside) {
+            if (l.startsWith('#')) break;
+            out.push(l);
+          }
+        }
+        out.push('#');
+        return out.join('\n');
+      }
+      default:
+        return config;
+    }
+  }
+
+  private registerDisplayThis(t: CommandTrie): void {
+    t.register('display this', 'Display current view configuration', () => this.renderDisplayThis());
+  }
+
   getScreenLength(): number { return this.screenLength; }
   /** Symmetric with getScreenLength — column hint. */
   getScreenWidth(): number { return this.screenWidth; }
@@ -749,11 +913,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
     });
 
-    // DHCP display commands
     registerDhcpDisplayCommands(t, getRouter);
-
-    // DHCP debug/clear commands
     registerDhcpDebugCommands(t, getRouter);
+    registerHuaweiPolicyDisplayCommands(t, getRouter);
   }
 
   // ─── System View ([hostname]) ────────────────────────────────────
@@ -940,9 +1102,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // DHCP debug/clear commands
     registerDhcpDebugCommands(t, () => this.r());
 
-    // save — persist configuration
     t.register('save', 'Save current configuration', () => {
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
+
+    registerHuaweiPolicySystemCommands(t, this);
+    registerHuaweiPolicyDisplayCommands(t, () => this.r());
+
+    for (const kw of ['ftp server enable', 'snmp-agent', 'info-center enable',
+      'ntp-service enable', 'telnet server enable', 'http server',
+      'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
+      t.register(kw, `Toggle: ${kw}`, () => {
+        this.r()._setGlobalToggle?.(kw.replace(/\s+enable\s*$/, ''), true);
+        return '';
+      });
+    }
+    t.registerGreedy('ip routing-table limit', 'Configure IPv4 routing-table limit', () => '');
+    t.registerGreedy('undo ip routing-table limit', 'Remove routing-table limit', () => '');
+    t.registerGreedy('ftp', 'FTP server config', (args) => {
+      if (args[0] === 'server' && (args[1] === 'enable' || !args[1])) {
+        this.r()._setGlobalToggle?.('ftp', true);
+      }
+      return '';
     });
   }
 
@@ -971,8 +1152,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // ACL interface commands
     registerHuaweiACLInterfaceCommands(t, this);
 
-    // NAT interface commands
     registerHuaweiNATInterfaceCommands(t, this);
+
+    t.registerGreedy('traffic-policy', 'Apply traffic policy on interface', (args) => {
+      const name = args[0]; const dir = (args[1] || 'inbound').toLowerCase();
+      if (!name || !this.selectedInterface) return '';
+      const d = dir === 'outbound' ? 'outbound' : 'inbound';
+      this.r().getTrafficPolicyStore().apply(this.selectedInterface, name, d);
+      return '';
+    });
+    t.registerGreedy('undo traffic-policy', 'Remove traffic policy from interface', (args) => {
+      const dir = (args[0] || 'inbound').toLowerCase();
+      if (!this.selectedInterface) return '';
+      const d = dir === 'outbound' ? 'outbound' : 'inbound';
+      this.r().getTrafficPolicyStore().removeApplication(this.selectedInterface, d);
+      return '';
+    });
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
