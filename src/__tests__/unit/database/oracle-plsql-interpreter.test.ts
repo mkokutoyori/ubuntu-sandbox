@@ -589,3 +589,43 @@ describe('PL/SQL dynamic SQL and built-ins', () => {
     sh.dispose();
   });
 });
+
+describe('DBMS_OUTPUT — PUT / NEW_LINE / ENABLE / DISABLE buffering', () => {
+  it('PUT accumulates into a partial line that NEW_LINE finalizes', () => {
+    const sh = session(server('out-1'));
+    sh.processLine('BEGIN');
+    sh.processLine("DBMS_OUTPUT.PUT('a');");
+    sh.processLine("DBMS_OUTPUT.PUT('b');");
+    sh.processLine("DBMS_OUTPUT.PUT('c');");
+    sh.processLine('DBMS_OUTPUT.NEW_LINE;');
+    sh.processLine("DBMS_OUTPUT.PUT_LINE('next');");
+    sh.processLine('END;');
+    const out = sh.processLine('/').output.join('\n');
+    expect(out).toContain('abc');
+    expect(out).toContain('next');
+    sh.dispose();
+  });
+
+  it('PUT_LINE flushes a pending partial buffer in front of the new line', () => {
+    const sh = session(server('out-2'));
+    sh.processLine('BEGIN');
+    sh.processLine("DBMS_OUTPUT.PUT('prefix=');");
+    sh.processLine("DBMS_OUTPUT.PUT_LINE('VALUE');");
+    sh.processLine('END;');
+    const out = sh.processLine('/').output.join('\n');
+    expect(out).toContain('prefix=VALUE');
+    sh.dispose();
+  });
+
+  it('PUT followed by PUT joins on the same line even without NEW_LINE', () => {
+    const sh = session(server('out-3'));
+    sh.processLine('BEGIN');
+    sh.processLine("DBMS_OUTPUT.PUT('first');");
+    sh.processLine("DBMS_OUTPUT.PUT('-second');");
+    sh.processLine("DBMS_OUTPUT.PUT_LINE('-third');");
+    sh.processLine('END;');
+    const out = sh.processLine('/').output.join('\n');
+    expect(out).toContain('first-second-third');
+    sh.dispose();
+  });
+});
