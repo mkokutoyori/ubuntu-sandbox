@@ -76,12 +76,11 @@ export interface OSPFArea {
   interfaces: string[];
   /** Is this the backbone area? */
   isBackbone: boolean;
-  /** Area ranges for route summarization at this ABR (Cisco: `area X range`) */
   ranges?: OSPFAreaRange[];
-  /** NSSA no-summary: block Type-3 into this NSSA and inject a Type-3 default */
   nssaNoSummary?: boolean;
-  /** NSSA default-information-originate: inject a Type-7 default into this NSSA */
   nssaDefaultInfoOriginate?: boolean;
+  defaultCost?: number;
+  authentication?: 'simple' | 'message-digest' | 'null';
 }
 
 export const OSPF_BACKBONE_AREA = '0.0.0.0';
@@ -199,6 +198,7 @@ export interface OSPFInterface {
   bdr: string;
   /** OSPF cost (metric) */
   cost: number;
+  costExplicit?: boolean;
   /** Hello timer handle */
   helloTimer: symbol | null;
   /** Wait timer handle (for DR election) */
@@ -557,6 +557,7 @@ export interface OSPFConfig {
   redistributeStatic: boolean;
   /** Passive interfaces (no hellos sent) */
   passiveInterfaces: Set<string>;
+  passiveInterfaceDefault?: boolean;
   /** Log adjacency changes */
   logAdjacencyChanges: boolean;
   /** Auto-cost reference bandwidth (Kbps for Cisco) */

@@ -37,6 +37,9 @@ export interface OSPFExtraConfig {
   redistributeConnected?: { subnets: boolean };
   areaRanges: Map<string, Array<{ network: string; mask: string }>>;
   virtualLinks: Map<string, string>;
+  areaDefaultCost: Map<string, number>;
+  areaAuthentication: Map<string, 'simple' | 'message-digest' | 'null'>;
+  shamLinks?: Map<string, { areaId: string; source: string; destination: string }>;
   distributeList?: { aclId: string; direction: 'in' | 'out' };
   defaultInfoMetricType?: number;
   pendingIfConfig: Map<string, {
@@ -96,6 +99,8 @@ export class RouterOSPFIntegration {
   private extraConfig: OSPFExtraConfig = {
     areaRanges: new Map(),
     virtualLinks: new Map(),
+    areaDefaultCost: new Map(),
+    areaAuthentication: new Map(),
     pendingIfConfig: new Map(),
     pendingV3IfConfig: new Map(),
     v3AreaRanges: new Map(),

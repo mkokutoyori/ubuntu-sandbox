@@ -576,6 +576,18 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   setAreaType(areaId: string, type: OSPFAreaType): void {
+    this.ensureArea(areaId).type = type;
+  }
+
+  setAreaDefaultCost(areaId: string, cost: number): void {
+    this.ensureArea(areaId).defaultCost = cost;
+  }
+
+  setAreaAuthentication(areaId: string, mode: 'simple' | 'message-digest' | 'null'): void {
+    this.ensureArea(areaId).authentication = mode;
+  }
+
+  private ensureArea(areaId: string): OSPFArea {
     let area = this.config.areas.get(areaId);
     if (!area) {
       area = {
@@ -589,7 +601,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.lsdb.areas.set(areaId, new Map());
       }
     }
-    area.type = type;
+    return area;
   }
 
   // ─── Virtual Link Configuration (RFC 2328 §15) ─────────────────
@@ -737,6 +749,25 @@ export class OSPFEngine implements IProtocolEngine {
   setReferenceBandwidth(mbps: number): void {
     this.config.autoCostReferenceBandwidth = mbps;
     this.config.referenceBandwidth = mbps * 1_000_000;
+    for (const iface of this.interfaces.values()) {
+      if (iface.costExplicit) continue;
+      const bw = OSPFEngine.inferInterfaceBandwidthBps(iface.name);
+      iface.cost = bw > 0 ? Math.max(1, Math.floor(this.config.referenceBandwidth / bw)) : 1;
+    }
+  }
+
+  static inferInterfaceBandwidthBps(name: string): number {
+    const lower = name.toLowerCase();
+    if (lower.startsWith('hu') || lower.startsWith('hundredgig')) return 100_000_000_000;
+    if (lower.startsWith('fo') || lower.startsWith('fortygig')) return 40_000_000_000;
+    if (lower.startsWith('te') || lower.startsWith('tengig') || lower.startsWith('tenge')) return 10_000_000_000;
+    if (lower.startsWith('gi') || lower.startsWith('ge') || lower.startsWith('gigabit')) return 1_000_000_000;
+    if (lower.startsWith('fa') || lower.startsWith('fastethernet')) return 100_000_000;
+    if (lower.startsWith('et') || lower.startsWith('ethernet')) return 10_000_000;
+    if (lower.startsWith('se') || lower.startsWith('serial')) return 1_544_000;
+    if (lower.startsWith('lo') || lower.startsWith('loopback')) return 8_000_000_000;
+    if (lower.startsWith('tu') || lower.startsWith('tunnel')) return 100_000;
+    return 1_000_000_000;
   }
 
   setDefaultInformationOriginate(enable: boolean): void {
@@ -764,10 +795,14 @@ export class OSPFEngine implements IProtocolEngine {
       mtu?: number;
       /** One-way propagation delay in ms (default 0 = synchronous) */
       propagationDelayMs?: number;
+      /** Interface bandwidth in bps (overrides the heuristic derived from the name) */
+      bandwidthBps?: number;
     }
   ): OSPFInterface {
-    const bandwidth = 1_000_000_000; // 1 Gbps default (GigabitEthernet)
-    const defaultCost = Math.max(1, Math.floor(this.config.referenceBandwidth / (bandwidth / 1_000_000)));
+    const bandwidth = options?.bandwidthBps ?? OSPFEngine.inferInterfaceBandwidthBps(name);
+    const defaultCost = bandwidth > 0
+      ? Math.max(1, Math.floor(this.config.referenceBandwidth / bandwidth))
+      : 1;
 
     const iface: OSPFInterface = {
       name,
@@ -784,6 +819,7 @@ export class OSPFEngine implements IProtocolEngine {
       dr: '0.0.0.0',
       bdr: '0.0.0.0',
       cost: options?.cost ?? defaultCost,
+      costExplicit: options?.cost !== undefined,
       helloTimer: null,
       waitTimer: null,
       neighbors: new Map(),
@@ -847,6 +883,7 @@ export class OSPFEngine implements IProtocolEngine {
     const iface = this.interfaces.get(ifName);
     if (iface) {
       iface.cost = cost;
+      iface.costExplicit = true;
       this.originateRouterLSA(iface.areaId);
       this.scheduleSPF();
     }

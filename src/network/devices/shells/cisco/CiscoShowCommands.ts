@@ -65,8 +65,23 @@ export function showIpIntBrief(router: Router): string {
   const lines = ['Interface                  IP-Address      OK? Method Status                Protocol'];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress()?.toString() || 'unassigned';
-    const status = port.isConnected() ? 'up' : 'administratively down';
-    const proto = port.isConnected() ? 'up' : 'down';
+    const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(name);
+    const adminUp = port.getIsUp();
+    let status: string;
+    let proto: string;
+    if (!adminUp) {
+      status = 'administratively down';
+      proto = 'down';
+    } else if (isVirtual) {
+      status = 'up';
+      proto = 'up';
+    } else if (port.isConnected()) {
+      status = 'up';
+      proto = 'up';
+    } else {
+      status = 'down';
+      proto = 'down';
+    }
     lines.push(`${name.padEnd(27)}${ip.padEnd(16)}YES manual ${status.padEnd(22)}${proto}`);
   }
   return lines.join('\n');

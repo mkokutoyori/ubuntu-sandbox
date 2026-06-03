@@ -303,10 +303,25 @@ export class OSPFv3Engine implements IProtocolEngine {
     }
   }
 
-  removePassiveInterface(ifName: string): void {
+  unsetPassiveInterface(ifName: string): void {
     this.config.passiveInterfaces.delete(ifName);
     const iface = this.interfaces.get(ifName);
     if (iface) iface.passive = false;
+  }
+
+  setPassiveInterfaceDefault(enabled: boolean): void {
+    this.config.passiveInterfaceDefault = enabled;
+    for (const iface of this.interfaces.values()) {
+      if (enabled && !this.config.passiveInterfaces.has(iface.name)) {
+        iface.passive = true;
+      } else if (!enabled && !this.config.passiveInterfaces.has(iface.name)) {
+        iface.passive = false;
+      }
+    }
+  }
+
+  removePassiveInterface(ifName: string): void {
+    this.unsetPassiveInterface(ifName);
   }
 
   isPassiveInterface(ifName: string): boolean {
