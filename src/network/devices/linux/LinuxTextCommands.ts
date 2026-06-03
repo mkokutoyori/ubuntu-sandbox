@@ -567,8 +567,25 @@ export function cmdCut(ctx: ShellContext, args: string[], stdin?: string): strin
 }
 
 export function cmdUniq(ctx: ShellContext, args: string[], stdin?: string): string {
+  // GNU flags. -f / -s take a value that may be glued or separate.
+  let countMode = false;
+  let onlyDup = false;
+  let onlyUniq = false;
+  let ignoreCase = false;
+  let skipFields = 0;
+  let skipChars = 0;
   const files: string[] = [];
-  for (const a of args) {
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-c' || a === '--count')         { countMode = true; continue; }
+    if (a === '-d' || a === '--repeated')      { onlyDup = true; continue; }
+    if (a === '-u' || a === '--unique')        { onlyUniq = true; continue; }
+    if (a === '-i' || a === '--ignore-case')   { ignoreCase = true; continue; }
+    if (a === '-f') { skipFields = parseInt(args[++i] ?? '0', 10); continue; }
+    if (a.startsWith('-f') && /^-f\d+$/.test(a)) { skipFields = parseInt(a.slice(2), 10); continue; }
+    if (a === '-s') { skipChars  = parseInt(args[++i] ?? '0', 10); continue; }
+    if (a.startsWith('-s') && /^-s\d+$/.test(a)) { skipChars = parseInt(a.slice(2), 10); continue; }
     if (!a.startsWith('-')) files.push(a);
   }
 
@@ -581,34 +598,163 @@ export function cmdUniq(ctx: ShellContext, args: string[], stdin?: string): stri
   }
 
   const lines = content.split('\n');
-  const result: string[] = [];
-  let prevLine: string | null = null;
-  for (const line of lines) {
-    if (line !== prevLine) {
-      result.push(line);
-      prevLine = line;
+  // Drop the trailing empty line caused by a final newline; real uniq
+  // does the same when the input ends with \n.
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+  const keyOf = (line: string): string => {
+    let s = line;
+    if (skipFields > 0) {
+      // Skip N whitespace-separated fields.
+      let i = 0;
+      let fieldsLeft = skipFields;
+      while (i < s.length && fieldsLeft > 0) {
+        while (i < s.length && /\s/.test(s[i])) i++;
+        while (i < s.length && !/\s/.test(s[i])) i++;
+        fieldsLeft--;
+      }
+      s = s.slice(i);
     }
+    if (skipChars > 0) s = s.slice(skipChars);
+    return ignoreCase ? s.toLowerCase() : s;
+  };
+
+  // Group adjacent equal-keyed runs and emit per flag selection.
+  interface Run { line: string; count: number }
+  const runs: Run[] = [];
+  let lastKey: string | null = null;
+  for (const line of lines) {
+    const k = keyOf(line);
+    if (k === lastKey && runs.length > 0) runs[runs.length - 1].count++;
+    else { runs.push({ line, count: 1 }); lastKey = k; }
   }
-  // Remove trailing empty line
-  while (result.length > 0 && result[result.length - 1] === '') result.pop();
-  return result.join('\n');
+
+  const out: string[] = [];
+  for (const r of runs) {
+    if (onlyDup && r.count < 2) continue;
+    if (onlyUniq && r.count > 1) continue;
+    out.push(countMode ? `${String(r.count).padStart(7)} ${r.line}` : r.line);
+  }
+  return out.join('\n');
 }
 
-export function cmdTr(ctx: ShellContext, args: string[], stdin?: string): string {
-  if (args.length < 2 || !stdin) return stdin ?? '';
+/** POSIX `[:class:]` resolution for tr. Lazy — only what tr ever needs. */
+function expandTrClass(name: string): string {
+  const lower = 'abcdefghijklmnopqrstuvwxyz';
+  const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const digit = '0123456789';
+  switch (name) {
+    case 'alpha':   return lower + upper;
+    case 'lower':   return lower;
+    case 'upper':   return upper;
+    case 'digit':   return digit;
+    case 'alnum':   return lower + upper + digit;
+    case 'xdigit':  return digit + 'abcdef' + 'ABCDEF';
+    case 'space':   return ' \t\n\r\v\f';
+    case 'blank':   return ' \t';
+    case 'punct':   return '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+    case 'print':   return digit + lower + upper + ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+    case 'cntrl':   return '\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f';
+    case 'graph':   return digit + lower + upper + '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+    default: return '';
+  }
+}
 
-  const set1 = expandCharSet(args[0]);
-  const set2 = expandCharSet(args[1]);
+/** Replace POSIX classes + C escapes inside a tr SET argument. */
+function decodeTrSet(raw: string): string {
+  // Classes first — replace `[:name:]` before character expansion runs.
+  let s = raw.replace(/\[:(\w+):\]/g, (_m, name) => expandTrClass(name));
+  // C escapes.
+  s = s
+    .replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r')
+    .replace(/\\\\/g, '\\').replace(/\\0/g, '\0')
+    .replace(/\\(\d{1,3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
+  return expandCharSet(s);
+}
+
+export function cmdTr(_ctx: ShellContext, args: string[], stdin?: string): string {
+  // Real tr operates on stdin only. With no stdin there's nothing to do.
+  let deleteMode = false;
+  let squeezeMode = false;
+  let complement = false;
+  // Real tr accepts combined short options like `-cd`, `-cs`, `-cds`.
+  // Split before scanning so the loop sees them one at a time.
+  const expanded = args.flatMap((a) => {
+    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2 || /^-\d/.test(a)) return [a];
+    return a.slice(1).split('').map(c => `-${c}`);
+  });
+  const sets: string[] = [];
+  for (const a of expanded) {
+    if (a === '-d' || a === '--delete')   { deleteMode = true; continue; }
+    if (a === '-s' || a === '--squeeze-repeats') { squeezeMode = true; continue; }
+    if (a === '-c' || a === '-C' || a === '--complement') { complement = true; continue; }
+    if (a === '-t' || a === '--truncate-set1') continue;
+    if (!a.startsWith('-') || /^-\d/.test(a)) sets.push(a);
+  }
+  if (!stdin || sets.length === 0) return stdin ?? '';
+
+  const set1Raw = decodeTrSet(sets[0]);
+  const set2Raw = sets[1] !== undefined ? decodeTrSet(sets[1]) : '';
+
+  // Build a fast membership tester — complement flips it.
+  const inSet1 = (ch: string): boolean => {
+    const present = set1Raw.includes(ch);
+    return complement ? !present : present;
+  };
 
   let result = '';
-  for (const c of stdin) {
-    const idx = set1.indexOf(c);
-    if (idx !== -1 && idx < set2.length) {
-      result += set2[idx];
+  if (deleteMode) {
+    for (const ch of stdin) if (!inSet1(ch)) result += ch;
+    if (squeezeMode && set2Raw) {
+      let squeezed = '';
+      let prev = '';
+      for (const ch of result) {
+        if (set2Raw.includes(ch) && ch === prev) continue;
+        squeezed += ch;
+        prev = ch;
+      }
+      result = squeezed;
+    }
+    return result;
+  }
+
+  // Translation (or squeeze of set1) form.
+  // Pad set2 with its last character so set1.length translations are defined.
+  const padded = set2Raw.length === 0
+    ? ''
+    : set2Raw + set2Raw[set2Raw.length - 1].repeat(Math.max(0, set1Raw.length - set2Raw.length));
+
+  for (const ch of stdin) {
+    if (inSet1(ch)) {
+      // Complement-translate maps every non-SET1 char to last(SET2).
+      if (complement) {
+        result += ch;
+      } else if (padded.length > 0) {
+        const idx = set1Raw.indexOf(ch);
+        result += padded[idx] ?? ch;
+      } else {
+        result += ch;
+      }
+    } else if (complement && padded.length > 0) {
+      // GNU semantics — complement+translate replaces non-SET1 with last(SET2).
+      result += padded[padded.length - 1];
     } else {
-      result += c;
+      result += ch;
     }
   }
+
+  if (squeezeMode) {
+    const squeezeAgainst = set2Raw || set1Raw;
+    let squeezed = '';
+    let prev = '';
+    for (const ch of result) {
+      if (squeezeAgainst.includes(ch) && ch === prev) continue;
+      squeezed += ch;
+      prev = ch;
+    }
+    result = squeezed;
+  }
+
   return result;
 }
 
