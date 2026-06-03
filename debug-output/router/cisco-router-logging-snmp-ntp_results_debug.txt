@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-03T15:53:14.842Z
+Generated: 2026-06-03T16:03:21.449Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -564,7 +564,7 @@ Total steps: 322
 [124/322] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T15:53:14.855Z
+  reference time is 2026-06-03T16:03:21.463Z
   clock offset is 0.00 msec
 
 [125/322] r1 R1> show ntp associations
@@ -578,7 +578,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *15:53:14.000 UTC Wed Jun 3 2026
+  *16:03:21.000 UTC Wed Jun 3 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -586,7 +586,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  15:53:14 UTC Wed Jun 3 2026
+  16:03:21 UTC Wed Jun 3 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1029,11 +1029,6 @@ Total steps: 322
    no shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [209/322] r1 R1> show running-config | section snmp
@@ -1063,11 +1058,6 @@ Total steps: 322
    no shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [210/322] r1 R1> show running-config | section ntp
@@ -1096,11 +1086,6 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1162,11 +1147,6 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1347,7 +1327,7 @@ Total steps: 322
 [250/322] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T15:53:14.862Z
+  reference time is 2026-06-03T16:03:21.471Z
   clock offset is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
@@ -1356,7 +1336,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *15:53:14.000 UTC Wed Jun 3 2026
+  *16:03:21.000 UTC Wed Jun 3 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1529,11 +1509,6 @@ Total steps: 322
    no shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1696,11 +1671,6 @@ Total steps: 322
    no shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [278/322] r1 R1(config)# show running-config | begin line
@@ -1724,10 +1694,6 @@ Total steps: 322
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   end
 
 [280/322] r1 R1(config)# show ip route | include via
@@ -1929,11 +1895,6 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-03T15:52:56.222Z
+Generated: 2026-06-03T16:03:32.743Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -609,11 +609,6 @@ Total steps: 369
   interface GigabitEthernet0/3
    shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   !
   end
 
@@ -1364,11 +1359,6 @@ Total steps: 369
    shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [263/369] r1 R1# show startup-config
@@ -1661,7 +1651,7 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T15:52:56.239Z
+  reference time is 2026-06-03T16:03:32.761Z
   clock offset is 0.00 msec
 
 [298/369] r1 R1# show ntp associations
@@ -1670,7 +1660,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *15:52:56.000 UTC Wed Jun 3 2026
+  *16:03:32.000 UTC Wed Jun 3 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1899,11 +1889,6 @@ Total steps: 369
    shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -2123,11 +2108,6 @@ Total steps: 369
    shutdown
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [325/369] r1 R1(config)# show running-config | begin line
@@ -2201,10 +2181,6 @@ Total steps: 369
    shutdown
   interface GigabitEthernet0/3
    shutdown
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   end
 
 [327/369] r1 R1(config)# show ip route | include via
@@ -2464,11 +2440,6 @@ Total steps: 369
   interface GigabitEthernet0/3
    shutdown
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !

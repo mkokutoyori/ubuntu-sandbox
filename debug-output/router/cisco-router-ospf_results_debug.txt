@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-03T15:52:54.812Z
+Generated: 2026-06-03T16:03:05.413Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1065,11 +1065,6 @@ Total steps: 311
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [205/311] r1 R1# show startup-config
@@ -1312,7 +1307,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T15:52:54.862Z
+  reference time is 2026-06-03T16:03:05.478Z
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1321,7 +1316,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *15:52:54.000 UTC Wed Jun 3 2026
+  *16:03:05.000 UTC Wed Jun 3 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1526,11 +1521,6 @@ Total steps: 311
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1719,11 +1709,6 @@ Total steps: 311
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
   !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
-  !
   end
 
 [267/311] r1 R1# show running-config | begin line
@@ -1758,10 +1743,6 @@ Total steps: 311
    ip address 10.10.4.1 255.255.255.0
    no shutdown
   access-list 10 permit 172.16.0.0 0.0.255.255
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   end
 
 [269/311] r1 R1# show ip route | include via
@@ -1985,11 +1966,6 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  !
-  username alice privilege 15 secret 5 alice
-  username bob privilege 15 secret 5 bob
-  username carl privilege 15 secret 5 carl
-  username dave privilege 15 secret 5 dave
   line vty 0 4
   !
   !

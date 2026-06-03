@@ -1,12 +1,12 @@
 ============================================================
 RMAN debug transcript — rman-pitr-duplicate-phase4
-Generated: 2026-06-03T15:52:46.649Z
+Generated: 2026-06-03T16:03:03.831Z
 Topology:  db-pitr — Oracle PITRDB OPEN closing flow
 Total commands: 110
 ============================================================
 
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 03-JUN-2026 15:52:46
+  Recovery Manager: Release 19.0.0.0.0 - Production on 03-JUN-2026 16:03:03
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
@@ -43,14 +43,14 @@ RMAN [3/110]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  1       B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  2       B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         BL_OPEN_001
-  3       B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  4       B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  5       B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  6       B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         POST_RESET
-  7       B  0  A DISK        03-JUN-2026 15:52:46  1       1       NO         POST_RESET_L0
-  8       B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         POST_RESET_ARC
+  1       B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  2       B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         BL_OPEN_001
+  3       B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  4       B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  5       B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  6       B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         POST_RESET
+  7       B  0  A DISK        03-JUN-2026 16:03:03  1       1       NO         POST_RESET_L0
+  8       B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         POST_RESET_ARC
   
 
 RMAN [4/110]> LIST INCARNATION OF DATABASE
@@ -90,136 +90,136 @@ RMAN [6/110]> REPORT OBSOLETE
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           6      2026-06-03T15:52:46.643Z  /u01/backup/ORCL_bbhdpy3w.bkp
-  Backup Set           7      2026-06-03T15:52:46.643Z  /u01/backup/ORCL_z7iqkw9l.bkp
-  Backup Set           5      2026-06-03T15:52:46.627Z  /u01/backup/ORCL_xfxekkib.bkp
-  Backup Set           4      2026-06-03T15:52:46.625Z  /u01/backup/ORCL_00oma5kw.bkp
-  Backup Set           2      2026-06-03T15:52:46.624Z  /u01/backup/ORCL_pmf1lyf2.bkp
-  Backup Set           3      2026-06-03T15:52:46.624Z  /u01/backup/ORCL_qt61dyd2.bkp
-  Backup Set           1      2026-06-03T15:52:46.623Z  /u01/backup/ORCL_8v0urhjy.bkp
+  Backup Set           7      2026-06-03T16:03:03.826Z  /u01/backup/ORCL_gqw0tcv3.bkp
+  Backup Set           8      2026-06-03T16:03:03.826Z  /u01/backup/ORCL_6ybbpvab.bkp
+  Backup Set           5      2026-06-03T16:03:03.811Z  /u01/backup/ORCL_txmhjbbw.bkp
+  Backup Set           4      2026-06-03T16:03:03.809Z  /u01/backup/ORCL_xgmfy77z.bkp
+  Backup Set           2      2026-06-03T16:03:03.808Z  /u01/backup/ORCL_cey0fevc.bkp
+  Backup Set           3      2026-06-03T16:03:03.808Z  /u01/backup/ORCL_q528ulw3.bkp
+  Backup Set           1      2026-06-03T16:03:03.806Z  /u01/backup/ORCL_ruwnti8p.bkp
   
 
 RMAN [7/110]> CROSSCHECK BACKUP
   
-  Starting crosscheck at 03-JUN-2026 15:52:46
+  Starting crosscheck at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   crosschecked backup piece: found to be 'AVAILABLE'
   Crosschecked 6 objects
   6 piece(s) marked EXPIRED
-  Finished crosscheck at 03-JUN-2026 15:52:46
+  Finished crosscheck at 03-JUN-2026 16:03:03
   
 
 RMAN [8/110]> CROSSCHECK ARCHIVELOG ALL
   
-  Starting crosscheck at 03-JUN-2026 15:52:46
+  Starting crosscheck at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   crosschecked archived log: found to be 'AVAILABLE'
   Crosschecked 2 objects
   2 piece(s) marked EXPIRED
-  Finished crosscheck at 03-JUN-2026 15:52:46
+  Finished crosscheck at 03-JUN-2026 16:03:03
   
 
 RMAN [9/110]> DELETE NOPROMPT OBSOLETE
   
-  Starting delete at 03-JUN-2026 15:52:46
+  Starting delete at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 03-JUN-2026 15:52:46
+  Finished delete at 03-JUN-2026 16:03:03
   
 
 RMAN [10/110]> DELETE NOPROMPT EXPIRED BACKUP
   
-  Starting delete at 03-JUN-2026 15:52:46
+  Starting delete at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   using channel ORA_DISK_1
-  Finished delete at 03-JUN-2026 15:52:46
+  Finished delete at 03-JUN-2026 16:03:03
   
 
 RMAN [11/110]> BACKUP DATABASE TAG 'CLOSE_001'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_1v03mt0e.bkp tag=CLOSE_001
+  piece handle=/u01/backup/ORCL_9lcz99x4.bkp tag=CLOSE_001
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [12/110]> BACKUP DATABASE PLUS ARCHIVELOG DELETE INPUT TAG 'CLOSE_002'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=105 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_i7zav7c4.bkp tag=CLOSE_002
+  piece handle=/u01/backup/ORCL_ni7nlh5y.bkp tag=CLOSE_002
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=106 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_xydp2j60.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_mt18fm3b.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [13/110]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'CLOSE_L0'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=107 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_uuimomii.bkp tag=CLOSE_L0
+  piece handle=/u01/backup/ORCL_d1j5wsrd.bkp tag=CLOSE_L0
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [14/110]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'CLOSE_L1'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=108 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_na1zcnk0.bkp tag=CLOSE_L1
+  piece handle=/u01/backup/ORCL_icwsx5x2.bkp tag=CLOSE_L1
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [15/110]> BACKUP VALIDATE DATABASE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=109 device type=DISK
   channel ORA_DISK_1: starting validation of datafile backup set
   channel ORA_DISK_1: validating files in backup set
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [16/110]> VALIDATE DATABASE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=110 device type=DISK
   channel ORA_DISK_1: starting validation of database
   channel ORA_DISK_1: validating database
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [17/110]> VALIDATE BACKUPSET 1
@@ -271,41 +271,41 @@ RMAN [22/110]> RUN { ALLOCATE CHANNEL c1 DEVICE TYPE DISK; ALLOCATE CHANNEL c2 D
   allocated channel: c2
   channel c2: SID=112 device type=DISK
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=113 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_7j1t9xwy.bkp tag=FINAL_L0
+  piece handle=/u01/backup/ORCL_zv2eah3i.bkp tag=FINAL_L0
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=114 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_kobeucef.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_mm1nzylu.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=115 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_zx837a5s.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_esrpuzh9.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [23/110]> RUN { SET UNTIL TIME '2099-12-31 23:59:59'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=116 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -320,7 +320,7 @@ RMAN [24/110]> RUN { SET NEWNAME FOR DATAFILE 4 TO '/u03/oradata/users01.dbf'; S
   executing command: SET until clause
   datafile 4 switched to current image copy
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=117 device type=DISK
   channel ORA_DISK_1: starting datafile 4 restore
@@ -330,7 +330,7 @@ RMAN [24/110]> RUN { SET NEWNAME FOR DATAFILE 4 TO '/u03/oradata/users01.dbf'; S
   RMAN-00571: ===========================================================
   RMAN-03014: RMAN-06403: database must be mounted (not open)
   
-  Starting recover at 03-JUN-2026 15:52:46
+  Starting recover at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=118 device type=DISK
   starting media recovery
@@ -339,7 +339,7 @@ RMAN [24/110]> RUN { SET NEWNAME FOR DATAFILE 4 TO '/u03/oradata/users01.dbf'; S
   archived log for thread 1 with sequence 2 is already on disk as file /u01/backup/archivelog/arch_1_2_ORCL.arc
   archived log for thread 1 with sequence 3 is already on disk as file /u01/backup/archivelog/arch_1_3_ORCL.arc
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 03-JUN-2026 15:52:46
+  Finished recover at 03-JUN-2026 16:03:03
   
 
 RMAN [25/110]> RUN { SET NEWNAME FOR DATAFILE 1 TO '/u03/system01.dbf'; SET NEWNAME FOR DATAFILE 2 TO '/u03/sysaux01.dbf'; SET NEWNAME FOR DATAFILE 3 TO '/u03/undotbs01.dbf'; SET NEWNAME FOR DATAFILE 4 TO '/u03/users01.dbf'; RESTORE DATABASE; SWITCH DATAFILE ALL; }
@@ -349,7 +349,7 @@ RMAN [25/110]> RUN { SET NEWNAME FOR DATAFILE 1 TO '/u03/system01.dbf'; SET NEWN
   new name for datafile 4: '/u03/users01.dbf'
   datafile names switched to current image copies
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=119 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -421,10 +421,10 @@ RMAN [37/110]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  11      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  14      B  0  A DISK        03-JUN-2026 15:52:46  1       1       NO         FINAL_L0
-  15      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  16      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
+  11      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  14      B  0  A DISK        03-JUN-2026 16:03:03  1       1       NO         FINAL_L0
+  15      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  16      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
   
 
 RMAN [38/110]> REPORT SCHEMA
@@ -463,9 +463,9 @@ RMAN [40/110]> REPORT OBSOLETE
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           15     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_kobeucef.bkp
-  Backup Set           16     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_zx837a5s.bkp
-  Backup Set           11     2026-06-03T15:52:46.651Z  /u01/backup/ORCL_xydp2j60.bkp
+  Backup Set           15     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_mm1nzylu.bkp
+  Backup Set           16     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_esrpuzh9.bkp
+  Backup Set           11     2026-06-03T16:03:03.833Z  /u01/backup/ORCL_mt18fm3b.bkp
   
 
 RMAN [41/110]> REPORT UNRECOVERABLE
@@ -493,26 +493,26 @@ RMAN [43/110]> LIST ARCHIVELOG ALL
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  11      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_xydp2j60.bkp
+  11      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mt18fm3b.bkp
     List of Datafiles in backup set 11
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  15      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_kobeucef.bkp
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  15      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mm1nzylu.bkp
     List of Datafiles in backup set 15
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
   
 
 RMAN [44/110]> LIST OBSOLETE
@@ -522,30 +522,30 @@ RMAN [44/110]> LIST OBSOLETE
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  15      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_kobeucef.bkp
+  15      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mm1nzylu.bkp
     List of Datafiles in backup set 15
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  16      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_zx837a5s.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 15:52:46
-  11      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_xydp2j60.bkp
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  16      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_esrpuzh9.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 16:03:03
+  11      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mt18fm3b.bkp
     List of Datafiles in backup set 11
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
   
 
 RMAN [45/110]> LIST EXPIRED BACKUP
@@ -581,270 +581,270 @@ RMAN [47/110]> SHOW ALL
 --- [48] § 7.1 stress cycles ---
 RMAN [48/110]> BACKUP DATABASE TAG 'STRESS_01'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=120 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_xfhllu9g.bkp tag=STRESS_01
+  piece handle=/u01/backup/ORCL_rb5aej9k.bkp tag=STRESS_01
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [49/110]> BACKUP DATABASE TAG 'STRESS_02'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=121 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_nrhaihf6.bkp tag=STRESS_02
+  piece handle=/u01/backup/ORCL_y0v3v9je.bkp tag=STRESS_02
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [50/110]> BACKUP DATABASE TAG 'STRESS_03'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=122 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_12iz6x40.bkp tag=STRESS_03
+  piece handle=/u01/backup/ORCL_iuop9m3r.bkp tag=STRESS_03
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [51/110]> BACKUP DATABASE TAG 'STRESS_04'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=123 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_x6yg22nt.bkp tag=STRESS_04
+  piece handle=/u01/backup/ORCL_dqymab6b.bkp tag=STRESS_04
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [52/110]> BACKUP DATABASE TAG 'STRESS_05'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=124 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_uvbj8x99.bkp tag=STRESS_05
+  piece handle=/u01/backup/ORCL_mm3iw1ol.bkp tag=STRESS_05
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [53/110]> BACKUP DATABASE TAG 'STRESS_06'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=125 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_c0p2qkt8.bkp tag=STRESS_06
+  piece handle=/u01/backup/ORCL_0jbwchav.bkp tag=STRESS_06
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [54/110]> BACKUP DATABASE TAG 'STRESS_07'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=126 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_2x9jk38v.bkp tag=STRESS_07
+  piece handle=/u01/backup/ORCL_4smdpxqh.bkp tag=STRESS_07
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [55/110]> BACKUP DATABASE TAG 'STRESS_08'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=127 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_9xzj404f.bkp tag=STRESS_08
+  piece handle=/u01/backup/ORCL_agkjjapf.bkp tag=STRESS_08
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [56/110]> BACKUP DATABASE TAG 'STRESS_09'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=128 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_m3o6veig.bkp tag=STRESS_09
+  piece handle=/u01/backup/ORCL_9yltsdd7.bkp tag=STRESS_09
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [57/110]> BACKUP DATABASE TAG 'STRESS_10'
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=129 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_kotr9tmi.bkp tag=STRESS_10
+  piece handle=/u01/backup/ORCL_gw5s4o99.bkp tag=STRESS_10
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [58/110]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=130 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_nkf6j7v2.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_8j5sysg6.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [59/110]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=131 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_hlzlnn2a.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_7c1jfafj.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [60/110]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=132 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_qy6fg0a9.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_mejlqpbq.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [61/110]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=133 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_69ysa977.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_kb661m60.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [62/110]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=134 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_gtwemmy3.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_v3m5bd7z.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [63/110]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=135 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_8nzt3ldr.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_k3dxe8va.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [64/110]> BACKUP SPFILE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=136 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current SPFILE in backup set
-  piece handle=/u01/backup/ORCL_rknv0dfy.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_11k873m3.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [65/110]> BACKUP SPFILE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=137 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current SPFILE in backup set
-  piece handle=/u01/backup/ORCL_ybx695vz.bkp tag=TAG20260603T155246
+  piece handle=/u01/backup/ORCL_tqweayud.bkp tag=TAG20260603T160303
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [66/110]> BACKUP VALIDATE DATABASE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=138 device type=DISK
   channel ORA_DISK_1: starting validation of datafile backup set
   channel ORA_DISK_1: validating files in backup set
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [67/110]> VALIDATE DATABASE
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=139 device type=DISK
   channel ORA_DISK_1: starting validation of database
   channel ORA_DISK_1: validating database
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
 
 RMAN [68/110]> CROSSCHECK BACKUP
   
-  Starting crosscheck at 03-JUN-2026 15:52:46
+  Starting crosscheck at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=140 device type=DISK
   crosschecked backup piece: found to be 'AVAILABLE'
   Crosschecked 17 objects
   17 piece(s) marked EXPIRED
-  Finished crosscheck at 03-JUN-2026 15:52:46
+  Finished crosscheck at 03-JUN-2026 16:03:03
   
 
 RMAN [69/110]> CROSSCHECK ARCHIVELOG ALL
   
-  Starting crosscheck at 03-JUN-2026 15:52:46
+  Starting crosscheck at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=141 device type=DISK
   crosschecked archived log: found to be 'AVAILABLE'
   Crosschecked 5 objects
   5 piece(s) marked EXPIRED
-  Finished crosscheck at 03-JUN-2026 15:52:46
+  Finished crosscheck at 03-JUN-2026 16:03:03
   
 
 RMAN [70/110]> LIST BACKUP SUMMARY
@@ -853,28 +853,28 @@ RMAN [70/110]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  11      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  14      B  0  A DISK        03-JUN-2026 15:52:46  1       1       NO         FINAL_L0
-  15      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  16      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  17      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_01
-  18      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_02
-  19      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_03
-  20      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_04
-  21      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_05
-  22      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_06
-  23      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_07
-  24      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_08
-  25      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_09
-  26      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_10
-  27      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  28      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  29      B  A  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  30      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  31      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  32      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  33      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
-  34      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         TAG20260603T155246
+  11      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  14      B  0  A DISK        03-JUN-2026 16:03:03  1       1       NO         FINAL_L0
+  15      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  16      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  17      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_01
+  18      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_02
+  19      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_03
+  20      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_04
+  21      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_05
+  22      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_06
+  23      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_07
+  24      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_08
+  25      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_09
+  26      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         STRESS_10
+  27      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  28      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  29      B  A  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  30      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  31      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  32      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  33      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  34      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
   
 
 RMAN [71/110]> REPORT NEED BACKUP
@@ -893,27 +893,27 @@ RMAN [72/110]> REPORT OBSOLETE
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           22     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_c0p2qkt8.bkp
-  Backup Set           23     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_2x9jk38v.bkp
-  Backup Set           24     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_9xzj404f.bkp
-  Backup Set           25     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_m3o6veig.bkp
-  Backup Set           26     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_kotr9tmi.bkp
-  Backup Set           27     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_nkf6j7v2.bkp
-  Backup Set           28     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_hlzlnn2a.bkp
-  Backup Set           29     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_qy6fg0a9.bkp
-  Backup Set           30     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_69ysa977.bkp
-  Backup Set           31     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_gtwemmy3.bkp
-  Backup Set           32     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_8nzt3ldr.bkp
-  Backup Set           33     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_rknv0dfy.bkp
-  Backup Set           34     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_ybx695vz.bkp
-  Backup Set           17     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_xfhllu9g.bkp
-  Backup Set           18     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_nrhaihf6.bkp
-  Backup Set           19     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_12iz6x40.bkp
-  Backup Set           20     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_x6yg22nt.bkp
-  Backup Set           14     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_7j1t9xwy.bkp
-  Backup Set           15     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_kobeucef.bkp
-  Backup Set           16     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_zx837a5s.bkp
-  Backup Set           11     2026-06-03T15:52:46.651Z  /u01/backup/ORCL_xydp2j60.bkp
+  Backup Set           33     2026-06-03T16:03:03.838Z  /u01/backup/ORCL_11k873m3.bkp
+  Backup Set           34     2026-06-03T16:03:03.838Z  /u01/backup/ORCL_tqweayud.bkp
+  Backup Set           17     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_rb5aej9k.bkp
+  Backup Set           18     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_y0v3v9je.bkp
+  Backup Set           19     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_iuop9m3r.bkp
+  Backup Set           20     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_dqymab6b.bkp
+  Backup Set           21     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_mm3iw1ol.bkp
+  Backup Set           22     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_0jbwchav.bkp
+  Backup Set           23     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_4smdpxqh.bkp
+  Backup Set           24     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_agkjjapf.bkp
+  Backup Set           25     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_9yltsdd7.bkp
+  Backup Set           26     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_gw5s4o99.bkp
+  Backup Set           27     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_8j5sysg6.bkp
+  Backup Set           28     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_7c1jfafj.bkp
+  Backup Set           29     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_mejlqpbq.bkp
+  Backup Set           30     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_kb661m60.bkp
+  Backup Set           31     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_v3m5bd7z.bkp
+  Backup Set           14     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_zv2eah3i.bkp
+  Backup Set           15     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_mm1nzylu.bkp
+  Backup Set           16     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_esrpuzh9.bkp
+  Backup Set           11     2026-06-03T16:03:03.833Z  /u01/backup/ORCL_mt18fm3b.bkp
   
 
 RMAN [73/110]> CONFIGURE RETENTION POLICY TO REDUNDANCY 1
@@ -926,27 +926,27 @@ RMAN [74/110]> REPORT OBSOLETE
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           22     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_c0p2qkt8.bkp
-  Backup Set           23     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_2x9jk38v.bkp
-  Backup Set           24     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_9xzj404f.bkp
-  Backup Set           25     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_m3o6veig.bkp
-  Backup Set           26     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_kotr9tmi.bkp
-  Backup Set           27     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_nkf6j7v2.bkp
-  Backup Set           28     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_hlzlnn2a.bkp
-  Backup Set           29     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_qy6fg0a9.bkp
-  Backup Set           30     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_69ysa977.bkp
-  Backup Set           31     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_gtwemmy3.bkp
-  Backup Set           32     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_8nzt3ldr.bkp
-  Backup Set           33     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_rknv0dfy.bkp
-  Backup Set           34     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_ybx695vz.bkp
-  Backup Set           17     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_xfhllu9g.bkp
-  Backup Set           18     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_nrhaihf6.bkp
-  Backup Set           19     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_12iz6x40.bkp
-  Backup Set           20     2026-06-03T15:52:46.654Z  /u01/backup/ORCL_x6yg22nt.bkp
-  Backup Set           14     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_7j1t9xwy.bkp
-  Backup Set           15     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_kobeucef.bkp
-  Backup Set           16     2026-06-03T15:52:46.652Z  /u01/backup/ORCL_zx837a5s.bkp
-  Backup Set           11     2026-06-03T15:52:46.651Z  /u01/backup/ORCL_xydp2j60.bkp
+  Backup Set           33     2026-06-03T16:03:03.838Z  /u01/backup/ORCL_11k873m3.bkp
+  Backup Set           34     2026-06-03T16:03:03.838Z  /u01/backup/ORCL_tqweayud.bkp
+  Backup Set           17     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_rb5aej9k.bkp
+  Backup Set           18     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_y0v3v9je.bkp
+  Backup Set           19     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_iuop9m3r.bkp
+  Backup Set           20     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_dqymab6b.bkp
+  Backup Set           21     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_mm3iw1ol.bkp
+  Backup Set           22     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_0jbwchav.bkp
+  Backup Set           23     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_4smdpxqh.bkp
+  Backup Set           24     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_agkjjapf.bkp
+  Backup Set           25     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_9yltsdd7.bkp
+  Backup Set           26     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_gw5s4o99.bkp
+  Backup Set           27     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_8j5sysg6.bkp
+  Backup Set           28     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_7c1jfafj.bkp
+  Backup Set           29     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_mejlqpbq.bkp
+  Backup Set           30     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_kb661m60.bkp
+  Backup Set           31     2026-06-03T16:03:03.837Z  /u01/backup/ORCL_v3m5bd7z.bkp
+  Backup Set           14     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_zv2eah3i.bkp
+  Backup Set           15     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_mm1nzylu.bkp
+  Backup Set           16     2026-06-03T16:03:03.834Z  /u01/backup/ORCL_esrpuzh9.bkp
+  Backup Set           11     2026-06-03T16:03:03.833Z  /u01/backup/ORCL_mt18fm3b.bkp
   
 
 RMAN [75/110]> LIST OBSOLETE
@@ -956,188 +956,194 @@ RMAN [75/110]> LIST OBSOLETE
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  22      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 22   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_06
-            Piece Name: /u01/backup/ORCL_c0p2qkt8.bkp
-    List of Datafiles in backup set 22
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  23      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 23   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_07
-            Piece Name: /u01/backup/ORCL_2x9jk38v.bkp
-    List of Datafiles in backup set 23
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  24      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 24   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_08
-            Piece Name: /u01/backup/ORCL_9xzj404f.bkp
-    List of Datafiles in backup set 24
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  25      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 25   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_09
-            Piece Name: /u01/backup/ORCL_m3o6veig.bkp
-    List of Datafiles in backup set 25
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  26      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 26   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_10
-            Piece Name: /u01/backup/ORCL_kotr9tmi.bkp
-    List of Datafiles in backup set 26
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  27      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 27   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_nkf6j7v2.bkp
-    List of Datafiles in backup set 27
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  28      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 28   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_hlzlnn2a.bkp
-    List of Datafiles in backup set 28
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  29      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_qy6fg0a9.bkp
-    List of Datafiles in backup set 29
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  30      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 30   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_69ysa977.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 15:52:46
-  31      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 31   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_gtwemmy3.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 15:52:46
-  32      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 32   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_8nzt3ldr.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 15:52:46
-  33      Full    4.00K      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 33   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_rknv0dfy.bkp
-  34      Full    4.00K      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 34   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_ybx695vz.bkp
-  17      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
+  33      Full    4.00K      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 33   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_11k873m3.bkp
+  34      Full    4.00K      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 34   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_tqweayud.bkp
+  17      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
           BP Key: 17   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_01
-            Piece Name: /u01/backup/ORCL_xfhllu9g.bkp
+            Piece Name: /u01/backup/ORCL_rb5aej9k.bkp
     List of Datafiles in backup set 17
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  18      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  18      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
           BP Key: 18   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_02
-            Piece Name: /u01/backup/ORCL_nrhaihf6.bkp
+            Piece Name: /u01/backup/ORCL_y0v3v9je.bkp
     List of Datafiles in backup set 18
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  19      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  19      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
           BP Key: 19   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_03
-            Piece Name: /u01/backup/ORCL_12iz6x40.bkp
+            Piece Name: /u01/backup/ORCL_iuop9m3r.bkp
     List of Datafiles in backup set 19
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  20      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  20      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
           BP Key: 20   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_04
-            Piece Name: /u01/backup/ORCL_x6yg22nt.bkp
+            Piece Name: /u01/backup/ORCL_dqymab6b.bkp
     List of Datafiles in backup set 20
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  14      Incr-0  1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  21      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 21   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_05
+            Piece Name: /u01/backup/ORCL_mm3iw1ol.bkp
+    List of Datafiles in backup set 21
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  22      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 22   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_06
+            Piece Name: /u01/backup/ORCL_0jbwchav.bkp
+    List of Datafiles in backup set 22
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  23      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 23   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_07
+            Piece Name: /u01/backup/ORCL_4smdpxqh.bkp
+    List of Datafiles in backup set 23
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  24      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 24   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_08
+            Piece Name: /u01/backup/ORCL_agkjjapf.bkp
+    List of Datafiles in backup set 24
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  25      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 25   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_09
+            Piece Name: /u01/backup/ORCL_9yltsdd7.bkp
+    List of Datafiles in backup set 25
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  26      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 26   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_10
+            Piece Name: /u01/backup/ORCL_gw5s4o99.bkp
+    List of Datafiles in backup set 26
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  27      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 27   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_8j5sysg6.bkp
+    List of Datafiles in backup set 27
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  28      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 28   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_7c1jfafj.bkp
+    List of Datafiles in backup set 28
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  29      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mejlqpbq.bkp
+    List of Datafiles in backup set 29
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  30      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 30   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_kb661m60.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 16:03:03
+  31      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 31   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_v3m5bd7z.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 16:03:03
+  14      Incr-0  1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
           BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FINAL_L0
-            Piece Name: /u01/backup/ORCL_7j1t9xwy.bkp
+            Piece Name: /u01/backup/ORCL_zv2eah3i.bkp
     List of Datafiles in backup set 14
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  15      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_kobeucef.bkp
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  15      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mm1nzylu.bkp
     List of Datafiles in backup set 15
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  16      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_zx837a5s.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 15:52:46
-  11      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T155246
-            Piece Name: /u01/backup/ORCL_xydp2j60.bkp
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  16      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_esrpuzh9.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 16:03:03
+  11      ArchLog 1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_mt18fm3b.bkp
     List of Datafiles in backup set 11
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
   
 
 RMAN [76/110]> DELETE NOPROMPT OBSOLETE
   
-  Starting delete at 03-JUN-2026 15:52:46
+  Starting delete at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=142 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 03-JUN-2026 15:52:46
+  Finished delete at 03-JUN-2026 16:03:03
   
 
 RMAN [77/110]> LIST BACKUP SUMMARY
@@ -1146,25 +1152,25 @@ RMAN [77/110]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  21      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_05
+  32      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
   
 
 
 --- [78] § 7.2 RESTORE/RECOVER cycles ---
 RMAN [78/110]> RUN { BACKUP DATABASE TAG 'PRE_R1'; RESTORE DATABASE PREVIEW; RECOVER DATABASE; }
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=143 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_drma7fnf.bkp tag=PRE_R1
+  piece handle=/u01/backup/ORCL_ew1fm2lu.bkp tag=PRE_R1
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=144 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1174,7 +1180,7 @@ RMAN [78/110]> RUN { BACKUP DATABASE TAG 'PRE_R1'; RESTORE DATABASE PREVIEW; REC
   RMAN-00571: ===========================================================
   RMAN-03014: RMAN-06403: database must be mounted (not open)
   
-  Starting recover at 03-JUN-2026 15:52:46
+  Starting recover at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=145 device type=DISK
   starting media recovery
@@ -1182,24 +1188,24 @@ RMAN [78/110]> RUN { BACKUP DATABASE TAG 'PRE_R1'; RESTORE DATABASE PREVIEW; REC
   archived log for thread 1 with sequence 2 is already on disk as file /u01/backup/archivelog/arch_1_2_ORCL.arc
   archived log for thread 1 with sequence 3 is already on disk as file /u01/backup/archivelog/arch_1_3_ORCL.arc
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 03-JUN-2026 15:52:46
+  Finished recover at 03-JUN-2026 16:03:03
   
 
 RMAN [79/110]> RUN { BACKUP DATABASE TAG 'PRE_R2'; SET UNTIL SCN 2000000; RESTORE DATABASE PREVIEW; RECOVER DATABASE; }
   executing command: SET until clause
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=146 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_qdoip8qi.bkp tag=PRE_R2
+  piece handle=/u01/backup/ORCL_m1tcer42.bkp tag=PRE_R2
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=147 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1209,7 +1215,7 @@ RMAN [79/110]> RUN { BACKUP DATABASE TAG 'PRE_R2'; SET UNTIL SCN 2000000; RESTOR
   RMAN-00571: ===========================================================
   RMAN-03014: RMAN-06403: database must be mounted (not open)
   
-  Starting recover at 03-JUN-2026 15:52:46
+  Starting recover at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=148 device type=DISK
   starting media recovery
@@ -1217,24 +1223,24 @@ RMAN [79/110]> RUN { BACKUP DATABASE TAG 'PRE_R2'; SET UNTIL SCN 2000000; RESTOR
   archived log for thread 1 with sequence 2 is already on disk as file /u01/backup/archivelog/arch_1_2_ORCL.arc
   archived log for thread 1 with sequence 3 is already on disk as file /u01/backup/archivelog/arch_1_3_ORCL.arc
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 03-JUN-2026 15:52:46
+  Finished recover at 03-JUN-2026 16:03:03
   
 
 RMAN [80/110]> RUN { BACKUP DATABASE TAG 'PRE_R3'; SET UNTIL SCN 1850000; RESTORE DATABASE PREVIEW; RECOVER DATABASE; }
   executing command: SET until clause
   
-  Starting backup at 03-JUN-2026 15:52:46
+  Starting backup at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=149 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_cpp81mbm.bkp tag=PRE_R3
+  piece handle=/u01/backup/ORCL_zylm9cia.bkp tag=PRE_R3
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15
-  Finished backup at 03-JUN-2026 15:52:46
+  Finished backup at 03-JUN-2026 16:03:03
   
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=150 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1244,7 +1250,7 @@ RMAN [80/110]> RUN { BACKUP DATABASE TAG 'PRE_R3'; SET UNTIL SCN 1850000; RESTOR
   RMAN-00571: ===========================================================
   RMAN-03014: RMAN-06403: database must be mounted (not open)
   
-  Starting recover at 03-JUN-2026 15:52:46
+  Starting recover at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=151 device type=DISK
   starting media recovery
@@ -1252,7 +1258,7 @@ RMAN [80/110]> RUN { BACKUP DATABASE TAG 'PRE_R3'; SET UNTIL SCN 1850000; RESTOR
   archived log for thread 1 with sequence 2 is already on disk as file /u01/backup/archivelog/arch_1_2_ORCL.arc
   archived log for thread 1 with sequence 3 is already on disk as file /u01/backup/archivelog/arch_1_3_ORCL.arc
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 03-JUN-2026 15:52:46
+  Finished recover at 03-JUN-2026 16:03:03
   
 
 
@@ -1260,7 +1266,7 @@ RMAN [80/110]> RUN { BACKUP DATABASE TAG 'PRE_R3'; SET UNTIL SCN 1850000; RESTOR
 RMAN [81/110]> RUN { SET UNTIL SCN 1700000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=152 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1273,7 +1279,7 @@ RMAN [81/110]> RUN { SET UNTIL SCN 1700000; RESTORE DATABASE PREVIEW; }
 RMAN [82/110]> RUN { SET UNTIL SCN 1750000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=153 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1286,7 +1292,7 @@ RMAN [82/110]> RUN { SET UNTIL SCN 1750000; RESTORE DATABASE PREVIEW; }
 RMAN [83/110]> RUN { SET UNTIL SCN 1800000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=154 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1299,7 +1305,7 @@ RMAN [83/110]> RUN { SET UNTIL SCN 1800000; RESTORE DATABASE PREVIEW; }
 RMAN [84/110]> RUN { SET UNTIL SCN 1850000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=155 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1312,7 +1318,7 @@ RMAN [84/110]> RUN { SET UNTIL SCN 1850000; RESTORE DATABASE PREVIEW; }
 RMAN [85/110]> RUN { SET UNTIL SCN 1900000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=156 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1325,7 +1331,7 @@ RMAN [85/110]> RUN { SET UNTIL SCN 1900000; RESTORE DATABASE PREVIEW; }
 RMAN [86/110]> RUN { SET UNTIL SCN 1950000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=157 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1338,7 +1344,7 @@ RMAN [86/110]> RUN { SET UNTIL SCN 1950000; RESTORE DATABASE PREVIEW; }
 RMAN [87/110]> RUN { SET UNTIL SCN 2000000; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=158 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1351,7 +1357,7 @@ RMAN [87/110]> RUN { SET UNTIL SCN 2000000; RESTORE DATABASE PREVIEW; }
 RMAN [88/110]> RUN { SET UNTIL TIME '2025-01-01 00:00:00'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=159 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1364,7 +1370,7 @@ RMAN [88/110]> RUN { SET UNTIL TIME '2025-01-01 00:00:00'; RESTORE DATABASE PREV
 RMAN [89/110]> RUN { SET UNTIL TIME '2025-06-01 00:00:00'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=160 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1377,7 +1383,7 @@ RMAN [89/110]> RUN { SET UNTIL TIME '2025-06-01 00:00:00'; RESTORE DATABASE PREV
 RMAN [90/110]> RUN { SET UNTIL TIME '2026-01-01 00:00:00'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=161 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1390,7 +1396,7 @@ RMAN [90/110]> RUN { SET UNTIL TIME '2026-01-01 00:00:00'; RESTORE DATABASE PREV
 RMAN [91/110]> RUN { SET UNTIL TIME '2026-06-01 00:00:00'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=162 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1403,7 +1409,7 @@ RMAN [91/110]> RUN { SET UNTIL TIME '2026-06-01 00:00:00'; RESTORE DATABASE PREV
 RMAN [92/110]> RUN { SET UNTIL TIME '2027-01-01 00:00:00'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=163 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1416,7 +1422,7 @@ RMAN [92/110]> RUN { SET UNTIL TIME '2027-01-01 00:00:00'; RESTORE DATABASE PREV
 RMAN [93/110]> RUN { SET UNTIL TIME '2027-06-01 00:00:00'; RESTORE DATABASE PREVIEW; }
   executing command: SET until clause
   
-  Starting restore at 03-JUN-2026 15:52:46
+  Starting restore at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=164 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -1442,10 +1448,10 @@ RMAN [95/110]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  21      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         STRESS_05
-  35      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         PRE_R1
-  36      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         PRE_R2
-  37      B  F  A DISK        03-JUN-2026 15:52:46  1       1       NO         PRE_R3
+  32      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         TAG20260603T160303
+  35      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         PRE_R1
+  36      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         PRE_R2
+  37      B  F  A DISK        03-JUN-2026 16:03:03  1       1       NO         PRE_R3
   
 
 RMAN [96/110]> LIST OBSOLETE
@@ -1455,36 +1461,30 @@ RMAN [96/110]> LIST OBSOLETE
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  37      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
+  36      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 36   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: PRE_R2
+            Piece Name: /u01/backup/ORCL_m1tcer42.bkp
+    List of Datafiles in backup set 36
+    File LV Type Ckp SCN    Ckp Time        Name
+    ---- -- ---- ---------- --------------- ----
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  37      Full    1.61G      DISK        00:00:15     03-JUN-2026 16:03:03
           BP Key: 37   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: PRE_R3
-            Piece Name: /u01/backup/ORCL_cpp81mbm.bkp
+            Piece Name: /u01/backup/ORCL_zylm9cia.bkp
     List of Datafiles in backup set 37
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  35      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 35   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: PRE_R1
-            Piece Name: /u01/backup/ORCL_drma7fnf.bkp
-    List of Datafiles in backup set 35
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
-  21      Full    1.61G      DISK        00:00:15     03-JUN-2026 15:52:46
-          BP Key: 21   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: STRESS_05
-            Piece Name: /u01/backup/ORCL_uvbj8x99.bkp
-    List of Datafiles in backup set 21
-    File LV Type Ckp SCN    Ckp Time        Name
-    ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    03-JUN-2026 15:52:46  /u01/app/oracle/oradata/ORCL/users01.dbf
+       1    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    03-JUN-2026 16:03:03  /u01/app/oracle/oradata/ORCL/users01.dbf
+  32      Ctrl    9.20M      DISK        00:00:15     03-JUN-2026 16:03:03
+          BP Key: 32   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260603T160303
+            Piece Name: /u01/backup/ORCL_k3dxe8va.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 03-JUN-2026 16:03:03
   
 
 RMAN [97/110]> REPORT NEED BACKUP
@@ -1503,9 +1503,9 @@ RMAN [98/110]> REPORT OBSOLETE
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           37     2026-06-03T15:52:46.658Z  /u01/backup/ORCL_cpp81mbm.bkp
-  Backup Set           35     2026-06-03T15:52:46.657Z  /u01/backup/ORCL_drma7fnf.bkp
-  Backup Set           21     2026-06-03T15:52:46.655Z  /u01/backup/ORCL_uvbj8x99.bkp
+  Backup Set           36     2026-06-03T16:03:03.840Z  /u01/backup/ORCL_m1tcer42.bkp
+  Backup Set           37     2026-06-03T16:03:03.840Z  /u01/backup/ORCL_zylm9cia.bkp
+  Backup Set           32     2026-06-03T16:03:03.838Z  /u01/backup/ORCL_k3dxe8va.bkp
   
 
 RMAN [99/110]> REPORT UNRECOVERABLE
@@ -1533,42 +1533,42 @@ RMAN [104/110]> CONFIGURE RETENTION POLICY TO REDUNDANCY 1
 
 RMAN [105/110]> CROSSCHECK BACKUP
   
-  Starting crosscheck at 03-JUN-2026 15:52:46
+  Starting crosscheck at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=165 device type=DISK
   crosschecked backup piece: found to be 'AVAILABLE'
   Crosschecked 4 objects
   4 piece(s) marked EXPIRED
-  Finished crosscheck at 03-JUN-2026 15:52:46
+  Finished crosscheck at 03-JUN-2026 16:03:03
   
 
 RMAN [106/110]> CROSSCHECK ARCHIVELOG ALL
   
-  Starting crosscheck at 03-JUN-2026 15:52:46
+  Starting crosscheck at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=166 device type=DISK
   crosschecked archived log: found to be 'AVAILABLE'
   Crosschecked 0 objects
-  Finished crosscheck at 03-JUN-2026 15:52:46
+  Finished crosscheck at 03-JUN-2026 16:03:03
   
 
 RMAN [107/110]> DELETE NOPROMPT OBSOLETE
   
-  Starting delete at 03-JUN-2026 15:52:46
+  Starting delete at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=167 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 03-JUN-2026 15:52:46
+  Finished delete at 03-JUN-2026 16:03:03
   
 
 RMAN [108/110]> DELETE NOPROMPT EXPIRED BACKUP
   
-  Starting delete at 03-JUN-2026 15:52:46
+  Starting delete at 03-JUN-2026 16:03:03
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=168 device type=DISK
   using channel ORA_DISK_1
-  Finished delete at 03-JUN-2026 15:52:46
+  Finished delete at 03-JUN-2026 16:03:03
   
 
 RMAN [109/110]> LIST BACKUP SUMMARY
