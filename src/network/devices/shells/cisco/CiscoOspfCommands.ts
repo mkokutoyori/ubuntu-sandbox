@@ -690,8 +690,13 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip ospf statistics', 'Display OSPF statistics', () => showIpOspfStatistics(getRouter()));
   trie.registerGreedy('show ip route ospf', 'Display OSPF routes', (_args) => showIpRouteOspf(getRouter()));
   trie.registerGreedy('show ip route', 'Display IP routing table', (args) => {
-    if (args.length > 0 && args[0] !== 'ospf') return showIpRouteSpecific(getRouter(), args[0]);
-    return showIpRouteAll(getRouter());
+    if (args.length === 0) return showIpRouteAll(getRouter());
+    const first = args[0].toLowerCase();
+    if (first === 'ospf') return showIpRouteOspf(getRouter());
+    if (first === 'summary') return showIpRouteSummary(getRouter());
+    if (first === 'connected') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('C') || l.startsWith('Codes') || l === '').join('\n');
+    if (first === 'static') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('S') || l.startsWith('Codes') || l === '').join('\n');
+    return showIpRouteSpecific(getRouter(), args[0]);
   });
 
   // OSPFv3 show commands
@@ -1482,6 +1487,35 @@ function showIpRouteOspf(router: Router): string {
     }
   }
   return lines.length > 0 ? lines.join('\n') : '';
+}
+
+function showIpRouteSummary(router: Router): string {
+  router._ospfAutoConverge();
+  const rt = (router as any).routingTable as any[];
+  const counts: Record<string, { networks: number; subnets: number; replicates: number; overhead: number; memory: number }> = {};
+  const order = ['connected', 'static', 'ospf', 'eigrp', 'bgp', 'rip', 'default'];
+  for (const k of order) counts[k] = { networks: 0, subnets: 0, replicates: 0, overhead: 0, memory: 0 };
+  for (const r of rt) {
+    const t = r.type ?? 'connected';
+    if (!counts[t]) counts[t] = { networks: 0, subnets: 0, replicates: 0, overhead: 0, memory: 0 };
+    counts[t].subnets++;
+    counts[t].networks++;
+    counts[t].overhead += 152;
+    counts[t].memory += 360;
+  }
+  const lines = [
+    'IP routing table name is Default-IP-Routing-Table(0)',
+    'IP routing table maximum-paths is 32',
+    'Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)',
+  ];
+  let totN = 0, totS = 0, totR = 0, totO = 0, totM = 0;
+  for (const k of order) {
+    const c = counts[k];
+    lines.push(`${k.padEnd(16)}${String(c.networks).padEnd(12)}${String(c.subnets).padEnd(12)}${String(c.replicates).padEnd(12)}${String(c.overhead).padEnd(12)}${c.memory}`);
+    totN += c.networks; totS += c.subnets; totR += c.replicates; totO += c.overhead; totM += c.memory;
+  }
+  lines.push(`${'Total'.padEnd(16)}${String(totN).padEnd(12)}${String(totS).padEnd(12)}${String(totR).padEnd(12)}${String(totO).padEnd(12)}${totM}`);
+  return lines.join('\n');
 }
 
 function showIpRouteSpecific(router: Router, destIP: string): string {

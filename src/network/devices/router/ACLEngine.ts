@@ -10,9 +10,17 @@ import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 
 // ─── ACL Types ──────────────────────────────────────────────────
 
+export type PortOperator = 'eq' | 'neq' | 'gt' | 'lt' | 'range';
+
+export interface PortSpec {
+  op: PortOperator;
+  port: number;
+  endPort?: number;
+}
+
 export interface ACLEntry {
+  sequence?: number;
   action: 'permit' | 'deny';
-  /** Protocol filter: 'ip' matches all, 'icmp', 'tcp', 'udp' */
   protocol?: string;
   srcIP: IPAddress;
   srcWildcard: SubnetMask;
@@ -20,8 +28,54 @@ export interface ACLEntry {
   dstWildcard?: SubnetMask;
   srcPort?: number;
   dstPort?: number;
-  /** Match counter */
+  srcPortSpec?: PortSpec;
+  dstPortSpec?: PortSpec;
+  icmpType?: string;
+  icmpCode?: number;
+  tcpEstablished?: boolean;
+  tcpFlags?: string[];
+  dscp?: string;
+  precedence?: string;
+  tos?: string;
+  log?: boolean;
+  logInput?: boolean;
+  timeRange?: string;
+  reflect?: string;
+  reflectTimeout?: number;
+  evaluate?: string;
+  fragments?: boolean;
+  optionName?: string;
+  remark?: string;
   matchCount: number;
+}
+
+export interface ACLEntryOptions {
+  sequence?: number;
+  protocol?: string;
+  srcIP: IPAddress;
+  srcWildcard: SubnetMask;
+  dstIP?: IPAddress;
+  dstWildcard?: SubnetMask;
+  srcPort?: number;
+  dstPort?: number;
+  srcPortSpec?: PortSpec;
+  dstPortSpec?: PortSpec;
+  icmpType?: string;
+  icmpCode?: number;
+  tcpEstablished?: boolean;
+  tcpFlags?: string[];
+  dscp?: string;
+  precedence?: string;
+  tos?: string;
+  log?: boolean;
+  logInput?: boolean;
+  timeRange?: string;
+  reflect?: string;
+  reflectTimeout?: number;
+  evaluate?: string;
+  fragments?: boolean;
+  optionName?: string;
+  remark?: string;
 }
 
 export interface AccessList {
@@ -58,15 +112,7 @@ export class ACLEngine {
   addAccessListEntry(
     id: number,
     action: 'permit' | 'deny',
-    opts: {
-      protocol?: string;
-      srcIP: IPAddress;
-      srcWildcard: SubnetMask;
-      dstIP?: IPAddress;
-      dstWildcard?: SubnetMask;
-      srcPort?: number;
-      dstPort?: number;
-    },
+    opts: ACLEntryOptions,
   ): void {
     const type: 'standard' | 'extended' = (id < 100 || (id >= 2000 && id <= 2999)) ? 'standard' : 'extended';
     let acl = this.accessLists.find(a => a.id === id);
@@ -74,49 +120,63 @@ export class ACLEngine {
       acl = { id, type, entries: [] };
       this.accessLists.push(acl);
     }
-    acl.entries.push({
-      action,
-      protocol: opts.protocol,
-      srcIP: opts.srcIP,
-      srcWildcard: opts.srcWildcard,
-      dstIP: opts.dstIP,
-      dstWildcard: opts.dstWildcard,
-      srcPort: opts.srcPort,
-      dstPort: opts.dstPort,
-      matchCount: 0,
-    });
+    const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
+    acl.entries.push({ action, ...opts, sequence: seq, matchCount: 0 });
+    ACLEngine.sortBySequence(acl);
   }
 
   addNamedAccessListEntry(
     name: string,
     type: 'standard' | 'extended',
     action: 'permit' | 'deny',
-    opts: {
-      protocol?: string;
-      srcIP: IPAddress;
-      srcWildcard: SubnetMask;
-      dstIP?: IPAddress;
-      dstWildcard?: SubnetMask;
-      srcPort?: number;
-      dstPort?: number;
-    },
+    opts: ACLEntryOptions,
   ): void {
     let acl = this.accessLists.find(a => a.name === name);
     if (!acl) {
       acl = { name, type, entries: [] };
       this.accessLists.push(acl);
     }
-    acl.entries.push({
-      action,
-      protocol: opts.protocol,
-      srcIP: opts.srcIP,
-      srcWildcard: opts.srcWildcard,
-      dstIP: opts.dstIP,
-      dstWildcard: opts.dstWildcard,
-      srcPort: opts.srcPort,
-      dstPort: opts.dstPort,
-      matchCount: 0,
-    });
+    const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
+    acl.entries.push({ action, ...opts, sequence: seq, matchCount: 0 });
+    ACLEngine.sortBySequence(acl);
+  }
+
+  removeNamedACLEntryBySequence(name: string, seq: number): boolean {
+    const acl = this.accessLists.find(a => a.name === name);
+    if (!acl) return false;
+    const before = acl.entries.length;
+    acl.entries = acl.entries.filter(e => e.sequence !== seq);
+    return acl.entries.length !== before;
+  }
+
+  resequenceNamedACL(name: string, start: number, step: number): boolean {
+    const acl = this.accessLists.find(a => a.name === name);
+    if (!acl) return false;
+    ACLEngine.sortBySequence(acl);
+    let n = start;
+    for (const e of acl.entries) {
+      e.sequence = n;
+      n += step;
+    }
+    return true;
+  }
+
+  findByName(name: string): AccessList | undefined {
+    return this.accessLists.find(a => a.name === name);
+  }
+
+  findById(id: number): AccessList | undefined {
+    return this.accessLists.find(a => a.id === id);
+  }
+
+  private static nextSequence(acl: AccessList): number {
+    if (acl.entries.length === 0) return 10;
+    const maxSeq = acl.entries.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
+    return Math.floor(maxSeq / 10) * 10 + 10;
+  }
+
+  private static sortBySequence(acl: AccessList): void {
+    acl.entries.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
   }
 
   removeAccessList(id: number): void {
@@ -208,11 +268,25 @@ export class ACLEngine {
 
       if ((entry.protocol === 'tcp' || entry.protocol === 'udp') && ipPkt.payload) {
         const udp = ipPkt.payload as UDPPacket;
-        if (entry.srcPort !== undefined && udp.sourcePort !== entry.srcPort) return false;
-        if (entry.dstPort !== undefined && udp.destinationPort !== entry.dstPort) return false;
+        if (!this.portMatches(udp.sourcePort, entry.srcPort, entry.srcPortSpec)) return false;
+        if (!this.portMatches(udp.destinationPort, entry.dstPort, entry.dstPortSpec)) return false;
       }
     }
 
+    return true;
+  }
+
+  private portMatches(pktPort: number, exact: number | undefined, spec: PortSpec | undefined): boolean {
+    if (spec) {
+      switch (spec.op) {
+        case 'eq': return pktPort === spec.port;
+        case 'neq': return pktPort !== spec.port;
+        case 'gt': return pktPort > spec.port;
+        case 'lt': return pktPort < spec.port;
+        case 'range': return pktPort >= spec.port && pktPort <= (spec.endPort ?? spec.port);
+      }
+    }
+    if (exact !== undefined) return pktPort === exact;
     return true;
   }
 

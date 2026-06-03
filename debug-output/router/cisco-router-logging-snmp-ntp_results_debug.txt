@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-03T16:07:56.163Z
+Generated: 2026-06-03T19:02:24.106Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -171,13 +171,13 @@ Total steps: 322
 [49/322] r1 R1# exit
 <empty>
 
-[50/322] r1 R1> exit
+[50/322] r1 R1# exit
 <empty>
 
-[51/322] r1 R1> end
+[51/322] r1 R1# end
 <empty>
 
-[52/322] r1 R1> show logging
+[52/322] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level warnings
       Monitor logging: level debugging
@@ -194,7 +194,7 @@ Total steps: 322
       Logging to 10.0.0.10
       Logging to 10.0.0.11
 
-[53/322] r1 R1> show logging history
+[53/322] r1 R1# show logging history
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level warnings
       Monitor logging: level debugging
@@ -211,719 +211,587 @@ Total steps: 322
       Logging to 10.0.0.10
       Logging to 10.0.0.11
 
-[54/322] r1 R1> show archive
+[54/322] r1 R1# show archive
   % Invalid input detected at '^' marker.
   show archive
        ^
 
-[55/322] r1 R1> show archive config differences
+[55/322] r1 R1# show archive config differences
   % Invalid input detected at '^' marker.
   show archive config differences
        ^
 
-[56/322] r1 R1> clear logging
+[56/322] r1 R1# clear logging
   % Invalid input detected at '^' marker.
   clear logging
-  ^
+        ^
 
 
 --- [57] § SNMP v1/v2c ---
-[57/322] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[57/322] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[58/322] r1 R1> snmp-server community public RO
-  % Invalid input detected at '^' marker.
-  snmp-server community public RO
-  ^
-
-[59/322] r1 R1> snmp-server community private RW
-  % Invalid input detected at '^' marker.
-  snmp-server community private RW
-  ^
-
-[60/322] r1 R1> snmp-server community ro-acl RO 10
-  % Invalid input detected at '^' marker.
-  snmp-server community ro-acl RO 10
-  ^
-
-[61/322] r1 R1> access-list 10 permit 10.0.0.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  access-list 10 permit 10.0.0.0 0.0.0.255
-  ^
-
-[62/322] r1 R1> snmp-server location DC1-Rack5
-  % Invalid input detected at '^' marker.
-  snmp-server location DC1-Rack5
-  ^
-
-[63/322] r1 R1> snmp-server contact noc@lab.local
-  % Invalid input detected at '^' marker.
-  snmp-server contact noc@lab.local
-  ^
-
-[64/322] r1 R1> snmp-server chassis-id R1-CHASSIS
-  % Invalid input detected at '^' marker.
-  snmp-server chassis-id R1-CHASSIS
-  ^
-
-[65/322] r1 R1> snmp-server ifindex persist
-  % Invalid input detected at '^' marker.
-  snmp-server ifindex persist
-  ^
-
-[66/322] r1 R1> snmp-server packetsize 1500
-  % Invalid input detected at '^' marker.
-  snmp-server packetsize 1500
-  ^
-
-[67/322] r1 R1> snmp-server queue-length 50
-  % Invalid input detected at '^' marker.
-  snmp-server queue-length 50
-  ^
-
-[68/322] r1 R1> snmp-server trap-timeout 30
-  % Invalid input detected at '^' marker.
-  snmp-server trap-timeout 30
-  ^
-
-[69/322] r1 R1> snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
-  % Invalid input detected at '^' marker.
-  snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
-  ^
-
-[70/322] r1 R1> snmp-server enable traps ospf
-  % Invalid input detected at '^' marker.
-  snmp-server enable traps ospf
-  ^
-
-[71/322] r1 R1> snmp-server enable traps bgp
-  % Invalid input detected at '^' marker.
-  snmp-server enable traps bgp
-  ^
-
-[72/322] r1 R1> snmp-server enable traps config
-  % Invalid input detected at '^' marker.
-  snmp-server enable traps config
-  ^
-
-[73/322] r1 R1> snmp-server enable traps cpu threshold
-  % Invalid input detected at '^' marker.
-  snmp-server enable traps cpu threshold
-  ^
-
-[74/322] r1 R1> snmp-server enable traps envmon
-  % Invalid input detected at '^' marker.
-  snmp-server enable traps envmon
-  ^
-
-[75/322] r1 R1> snmp-server host 10.0.0.5 version 2c public
-  % Invalid input detected at '^' marker.
-  snmp-server host 10.0.0.5 version 2c public
-  ^
-
-[76/322] r1 R1> snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
-  % Invalid input detected at '^' marker.
-  snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
-  ^
-
-[77/322] r1 R1> snmp-server host 10.0.0.7 informs version 2c public
-  % Invalid input detected at '^' marker.
-  snmp-server host 10.0.0.7 informs version 2c public
-  ^
-
-[78/322] r1 R1> snmp-server source-interface traps Loopback0
-  % Invalid input detected at '^' marker.
-  snmp-server source-interface traps Loopback0
-  ^
-
-[79/322] r1 R1> snmp-server system-shutdown
-  % Invalid input detected at '^' marker.
-  snmp-server system-shutdown
-  ^
-
-[80/322] r1 R1> snmp-server tftp-server-list 10
-  % Invalid input detected at '^' marker.
-  snmp-server tftp-server-list 10
-  ^
-
-[81/322] r1 R1> end
+[58/322] r1 R1(config)# snmp-server community public RO
 <empty>
 
-[82/322] r1 R1> show snmp
+[59/322] r1 R1(config)# snmp-server community private RW
+<empty>
+
+[60/322] r1 R1(config)# snmp-server community ro-acl RO 10
+<empty>
+
+[61/322] r1 R1(config)# access-list 10 permit 10.0.0.0 0.0.0.255
+<empty>
+
+[62/322] r1 R1(config)# snmp-server location DC1-Rack5
+<empty>
+
+[63/322] r1 R1(config)# snmp-server contact noc@lab.local
+<empty>
+
+[64/322] r1 R1(config)# snmp-server chassis-id R1-CHASSIS
+<empty>
+
+[65/322] r1 R1(config)# snmp-server ifindex persist
+<empty>
+
+[66/322] r1 R1(config)# snmp-server packetsize 1500
+<empty>
+
+[67/322] r1 R1(config)# snmp-server queue-length 50
+<empty>
+
+[68/322] r1 R1(config)# snmp-server trap-timeout 30
+<empty>
+
+[69/322] r1 R1(config)# snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+<empty>
+
+[70/322] r1 R1(config)# snmp-server enable traps ospf
+<empty>
+
+[71/322] r1 R1(config)# snmp-server enable traps bgp
+<empty>
+
+[72/322] r1 R1(config)# snmp-server enable traps config
+<empty>
+
+[73/322] r1 R1(config)# snmp-server enable traps cpu threshold
+<empty>
+
+[74/322] r1 R1(config)# snmp-server enable traps envmon
+<empty>
+
+[75/322] r1 R1(config)# snmp-server host 10.0.0.5 version 2c public
+<empty>
+
+[76/322] r1 R1(config)# snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+<empty>
+
+[77/322] r1 R1(config)# snmp-server host 10.0.0.7 informs version 2c public
+<empty>
+
+[78/322] r1 R1(config)# snmp-server source-interface traps Loopback0
+<empty>
+
+[79/322] r1 R1(config)# snmp-server system-shutdown
+<empty>
+
+[80/322] r1 R1(config)# snmp-server tftp-server-list 10
+<empty>
+
+[81/322] r1 R1(config)# end
+<empty>
+
+[82/322] r1 R1# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[83/322] r1 R1> show snmp community
+[83/322] r1 R1# show snmp community
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[84/322] r1 R1> show snmp host
+[84/322] r1 R1# show snmp host
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[85/322] r1 R1> show snmp group
+[85/322] r1 R1# show snmp group
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
 
 --- [86] § SNMPv3 ---
-[86/322] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[86/322] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[87/322] r1 R1> snmp-server view ALL iso included
-  % Invalid input detected at '^' marker.
-  snmp-server view ALL iso included
-  ^
-
-[88/322] r1 R1> snmp-server view LIMITED system included
-  % Invalid input detected at '^' marker.
-  snmp-server view LIMITED system included
-  ^
-
-[89/322] r1 R1> snmp-server group GRP-RO v3 priv read ALL
-  % Invalid input detected at '^' marker.
-  snmp-server group GRP-RO v3 priv read ALL
-  ^
-
-[90/322] r1 R1> snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
-  % Invalid input detected at '^' marker.
-  snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
-  ^
-
-[91/322] r1 R1> snmp-server group GRP-AUTH v3 auth read LIMITED
-  % Invalid input detected at '^' marker.
-  snmp-server group GRP-AUTH v3 auth read LIMITED
-  ^
-
-[92/322] r1 R1> snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256 PrivPass123
-  % Invalid input detected at '^' marker.
-  snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256 PrivPass123
-  ^
-
-[93/322] r1 R1> snmp-server user rouser GRP-RO v3 auth sha AuthPass123
-  % Invalid input detected at '^' marker.
-  snmp-server user rouser GRP-RO v3 auth sha AuthPass123
-  ^
-
-[94/322] r1 R1> snmp-server user noauth GRP-AUTH v3
-  % Invalid input detected at '^' marker.
-  snmp-server user noauth GRP-AUTH v3
-  ^
-
-[95/322] r1 R1> snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
-  % Invalid input detected at '^' marker.
-  snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
-  ^
-
-[96/322] r1 R1> snmp-server engineID local 800000090300DEADBEEF0001
-  % Invalid input detected at '^' marker.
-  snmp-server engineID local 800000090300DEADBEEF0001
-  ^
-
-[97/322] r1 R1> snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
-  % Invalid input detected at '^' marker.
-  snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
-  ^
-
-[98/322] r1 R1> end
+[87/322] r1 R1(config)# snmp-server view ALL iso included
 <empty>
 
-[99/322] r1 R1> show snmp user
+[88/322] r1 R1(config)# snmp-server view LIMITED system included
+<empty>
+
+[89/322] r1 R1(config)# snmp-server group GRP-RO v3 priv read ALL
+<empty>
+
+[90/322] r1 R1(config)# snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+<empty>
+
+[91/322] r1 R1(config)# snmp-server group GRP-AUTH v3 auth read LIMITED
+<empty>
+
+[92/322] r1 R1(config)# snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256 PrivPass123
+<empty>
+
+[93/322] r1 R1(config)# snmp-server user rouser GRP-RO v3 auth sha AuthPass123
+<empty>
+
+[94/322] r1 R1(config)# snmp-server user noauth GRP-AUTH v3
+<empty>
+
+[95/322] r1 R1(config)# snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+<empty>
+
+[96/322] r1 R1(config)# snmp-server engineID local 800000090300DEADBEEF0001
+<empty>
+
+[97/322] r1 R1(config)# snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
+<empty>
+
+[98/322] r1 R1(config)# end
+<empty>
+
+[99/322] r1 R1# show snmp user
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[100/322] r1 R1> show snmp view
+[100/322] r1 R1# show snmp view
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[101/322] r1 R1> show snmp engineID
+[101/322] r1 R1# show snmp engineID
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
 
 --- [102] § NTP / clock ---
-[102/322] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[102/322] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[103/322] r1 R1> clock timezone CET 1 0
+[103/322] r1 R1(config)# clock timezone CET 1 0
   % Invalid input detected at '^' marker.
   clock timezone CET 1 0
   ^
 
-[104/322] r1 R1> clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+[104/322] r1 R1(config)# clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
   % Invalid input detected at '^' marker.
   clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
   ^
 
-[105/322] r1 R1> ntp authenticate
-  % Invalid input detected at '^' marker.
-  ntp authenticate
-  ^
+[105/322] r1 R1(config)# ntp authenticate
+<empty>
 
-[106/322] r1 R1> ntp authentication-key 1 md5 NtpKey123
-  % Invalid input detected at '^' marker.
-  ntp authentication-key 1 md5 NtpKey123
-  ^
+[106/322] r1 R1(config)# ntp authentication-key 1 md5 NtpKey123
+<empty>
 
-[107/322] r1 R1> ntp authentication-key 2 sha1 NtpKey456
-  % Invalid input detected at '^' marker.
-  ntp authentication-key 2 sha1 NtpKey456
-  ^
+[107/322] r1 R1(config)# ntp authentication-key 2 sha1 NtpKey456
+<empty>
 
-[108/322] r1 R1> ntp trusted-key 1
-  % Invalid input detected at '^' marker.
-  ntp trusted-key 1
-  ^
+[108/322] r1 R1(config)# ntp trusted-key 1
+<empty>
 
-[109/322] r1 R1> ntp trusted-key 2
-  % Invalid input detected at '^' marker.
-  ntp trusted-key 2
-  ^
+[109/322] r1 R1(config)# ntp trusted-key 2
+<empty>
 
-[110/322] r1 R1> ntp server 10.0.0.21 key 1 prefer
-  % Invalid input detected at '^' marker.
-  ntp server 10.0.0.21 key 1 prefer
-  ^
+[110/322] r1 R1(config)# ntp server 10.0.0.21 key 1 prefer
+<empty>
 
-[111/322] r1 R1> ntp server 10.0.0.22 key 1 prefer
-  % Invalid input detected at '^' marker.
-  ntp server 10.0.0.22 key 1 prefer
-  ^
+[111/322] r1 R1(config)# ntp server 10.0.0.22 key 1 prefer
+<empty>
 
-[112/322] r1 R1> ntp server 10.0.0.23 key 1 prefer
-  % Invalid input detected at '^' marker.
-  ntp server 10.0.0.23 key 1 prefer
-  ^
+[112/322] r1 R1(config)# ntp server 10.0.0.23 key 1 prefer
+<empty>
 
-[113/322] r1 R1> ntp server time.lab.local
-  % Invalid input detected at '^' marker.
-  ntp server time.lab.local
-  ^
+[113/322] r1 R1(config)# ntp server time.lab.local
+<JS EXCEPTION> Invalid IP address: time.lab.local
 
-[114/322] r1 R1> ntp peer 10.0.0.30
-  % Invalid input detected at '^' marker.
-  ntp peer 10.0.0.30
-  ^
+[114/322] r1 R1(config)# ntp peer 10.0.0.30
+<empty>
 
-[115/322] r1 R1> ntp master 3
-  % Invalid input detected at '^' marker.
-  ntp master 3
-  ^
+[115/322] r1 R1(config)# ntp master 3
+<empty>
 
-[116/322] r1 R1> ntp source Loopback0
-  % Invalid input detected at '^' marker.
-  ntp source Loopback0
-  ^
+[116/322] r1 R1(config)# ntp source Loopback0
+<empty>
 
-[117/322] r1 R1> ntp update-calendar
-  % Invalid input detected at '^' marker.
-  ntp update-calendar
-  ^
+[117/322] r1 R1(config)# ntp update-calendar
+<empty>
 
-[118/322] r1 R1> ntp max-associations 20
-  % Invalid input detected at '^' marker.
-  ntp max-associations 20
-  ^
+[118/322] r1 R1(config)# ntp max-associations 20
+<empty>
 
-[119/322] r1 R1> ntp access-group peer 10
-  % Invalid input detected at '^' marker.
-  ntp access-group peer 10
-  ^
+[119/322] r1 R1(config)# ntp access-group peer 10
+<empty>
 
-[120/322] r1 R1> ntp access-group serve-only 10
-  % Invalid input detected at '^' marker.
-  ntp access-group serve-only 10
-  ^
+[120/322] r1 R1(config)# ntp access-group serve-only 10
+<empty>
 
-[121/322] r1 R1> ntp logging
-  % Invalid input detected at '^' marker.
-  ntp logging
-  ^
+[121/322] r1 R1(config)# ntp logging
+<empty>
 
-[122/322] r1 R1> sntp server 10.0.0.40
+[122/322] r1 R1(config)# sntp server 10.0.0.40
   % Invalid input detected at '^' marker.
   sntp server 10.0.0.40
   ^
 
-[123/322] r1 R1> end
+[123/322] r1 R1(config)# end
 <empty>
 
-[124/322] r1 R1> show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+[124/322] r1 R1# show ntp status
+  Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:56.175Z
+  reference time is EDCAF8C0.20418937 (19:02:24.126 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
-[125/322] r1 R1> show ntp associations
+[125/322] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
+   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
-[126/322] r1 R1> show ntp associations detail
+[126/322] r1 R1# show ntp associations detail
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
+   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
-[127/322] r1 R1> show clock
-  *16:07:56.000 UTC Wed Jun 3 2026
+[127/322] r1 R1# show clock
+  *19:02:24.000 UTC Wed Jun 3 2026
 
-[128/322] r1 R1> show clock detail
+[128/322] r1 R1# show clock detail
   % Invalid input detected at '^' marker.
   show clock detail
              ^
 
-[129/322] r1 R1> show calendar
-  16:07:56 UTC Wed Jun 3 2026
+[129/322] r1 R1# show calendar
+  19:02:24 UTC Wed Jun 3 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
-[130/322] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[130/322] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[131/322] r1 R1> ip flow-export version 9
+[131/322] r1 R1(config)# ip flow-export version 9
   % Invalid input detected at '^' marker.
   ip flow-export version 9
-  ^
+     ^
 
-[132/322] r1 R1> ip flow-export destination 10.0.0.50 9996
+[132/322] r1 R1(config)# ip flow-export destination 10.0.0.50 9996
   % Invalid input detected at '^' marker.
   ip flow-export destination 10.0.0.50 9996
-  ^
+     ^
 
-[133/322] r1 R1> ip flow-export source Loopback0
+[133/322] r1 R1(config)# ip flow-export source Loopback0
   % Invalid input detected at '^' marker.
   ip flow-export source Loopback0
-  ^
+     ^
 
-[134/322] r1 R1> ip flow-cache timeout active 1
+[134/322] r1 R1(config)# ip flow-cache timeout active 1
   % Invalid input detected at '^' marker.
   ip flow-cache timeout active 1
-  ^
+     ^
 
-[135/322] r1 R1> ip flow-cache timeout inactive 15
+[135/322] r1 R1(config)# ip flow-cache timeout inactive 15
   % Invalid input detected at '^' marker.
   ip flow-cache timeout inactive 15
-  ^
+     ^
 
-[136/322] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[137/322] r1 R1> ip flow ingress
-  % Invalid input detected at '^' marker.
-  ip flow ingress
-  ^
-
-[138/322] r1 R1> ip flow egress
-  % Invalid input detected at '^' marker.
-  ip flow egress
-  ^
-
-[139/322] r1 R1> ip route-cache flow
-  % Invalid input detected at '^' marker.
-  ip route-cache flow
-  ^
-
-[140/322] r1 R1> exit
+[136/322] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
 
-[141/322] r1 R1> flow record FR1
+[137/322] r1 R1(config-if)# ip flow ingress
+  % Invalid input detected at '^' marker.
+  ip flow ingress
+     ^
+
+[138/322] r1 R1(config-if)# ip flow egress
+  % Invalid input detected at '^' marker.
+  ip flow egress
+     ^
+
+[139/322] r1 R1(config-if)# ip route-cache flow
+  % Invalid input detected at '^' marker.
+  ip route-cache flow
+     ^
+
+[140/322] r1 R1(config-if)# exit
+<empty>
+
+[141/322] r1 R1(config)# flow record FR1
   % Invalid input detected at '^' marker.
   flow record FR1
   ^
 
-[142/322] r1 R1> match ipv4 source address
+[142/322] r1 R1(config)# match ipv4 source address
   % Invalid input detected at '^' marker.
   match ipv4 source address
   ^
 
-[143/322] r1 R1> match ipv4 destination address
+[143/322] r1 R1(config)# match ipv4 destination address
   % Invalid input detected at '^' marker.
   match ipv4 destination address
   ^
 
-[144/322] r1 R1> match transport source-port
+[144/322] r1 R1(config)# match transport source-port
   % Invalid input detected at '^' marker.
   match transport source-port
   ^
 
-[145/322] r1 R1> collect counter bytes
+[145/322] r1 R1(config)# collect counter bytes
   % Invalid input detected at '^' marker.
   collect counter bytes
   ^
 
-[146/322] r1 R1> collect counter packets
+[146/322] r1 R1(config)# collect counter packets
   % Invalid input detected at '^' marker.
   collect counter packets
   ^
 
-[147/322] r1 R1> exit
+[147/322] r1 R1(config)# exit
 <empty>
 
-[148/322] r1 R1> flow exporter FE1
+[148/322] r1 R1# flow exporter FE1
   % Invalid input detected at '^' marker.
   flow exporter FE1
   ^
 
-[149/322] r1 R1> destination 10.0.0.50
+[149/322] r1 R1# destination 10.0.0.50
   % Invalid input detected at '^' marker.
   destination 10.0.0.50
   ^
 
-[150/322] r1 R1> transport udp 2055
+[150/322] r1 R1# transport udp 2055
   % Invalid input detected at '^' marker.
   transport udp 2055
   ^
 
-[151/322] r1 R1> export-protocol netflow-v9
+[151/322] r1 R1# export-protocol netflow-v9
   % Invalid input detected at '^' marker.
   export-protocol netflow-v9
   ^
 
-[152/322] r1 R1> exit
+[152/322] r1 R1# exit
 <empty>
 
-[153/322] r1 R1> flow monitor FM1
+[153/322] r1 R1# flow monitor FM1
   % Invalid input detected at '^' marker.
   flow monitor FM1
   ^
 
-[154/322] r1 R1> record FR1
+[154/322] r1 R1# record FR1
   % Invalid input detected at '^' marker.
   record FR1
   ^
 
-[155/322] r1 R1> exporter FE1
+[155/322] r1 R1# exporter FE1
   % Invalid input detected at '^' marker.
   exporter FE1
   ^
 
-[156/322] r1 R1> cache timeout active 60
+[156/322] r1 R1# cache timeout active 60
   % Invalid input detected at '^' marker.
   cache timeout active 60
   ^
 
-[157/322] r1 R1> exit
+[157/322] r1 R1# exit
 <empty>
 
-[158/322] r1 R1> interface GigabitEthernet0/1
+[158/322] r1 R1# interface GigabitEthernet0/1
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/1
   ^
 
-[159/322] r1 R1> ip flow monitor FM1 input
+[159/322] r1 R1# ip flow monitor FM1 input
   % Invalid input detected at '^' marker.
   ip flow monitor FM1 input
   ^
 
-[160/322] r1 R1> exit
+[160/322] r1 R1# exit
 <empty>
 
-[161/322] r1 R1> end
+[161/322] r1 R1# end
 <empty>
 
-[162/322] r1 R1> show ip flow export
+[162/322] r1 R1# show ip flow export
   % Invalid input detected at '^' marker.
   show ip flow export
           ^
 
-[163/322] r1 R1> show ip cache flow
+[163/322] r1 R1# show ip cache flow
   % Invalid input detected at '^' marker.
   show ip cache flow
           ^
 
-[164/322] r1 R1> show flow monitor FM1
+[164/322] r1 R1# show flow monitor FM1
   % Invalid input detected at '^' marker.
   show flow monitor FM1
        ^
 
-[165/322] r1 R1> show flow exporter FE1
+[165/322] r1 R1# show flow exporter FE1
   % Invalid input detected at '^' marker.
   show flow exporter FE1
        ^
 
-[166/322] r1 R1> show flow record FR1
+[166/322] r1 R1# show flow record FR1
   % Invalid input detected at '^' marker.
   show flow record FR1
        ^
 
-[167/322] r1 R1> show flow monitor FM1 cache
+[167/322] r1 R1# show flow monitor FM1 cache
   % Invalid input detected at '^' marker.
   show flow monitor FM1 cache
        ^
 
 
 --- [168] § EEM / scripting ---
-[168/322] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[168/322] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[169/322] r1 R1> event manager applet IF-DOWN
+[169/322] r1 R1(config)# event manager applet IF-DOWN
   % Invalid input detected at '^' marker.
   event manager applet IF-DOWN
   ^
 
-[170/322] r1 R1> event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+[170/322] r1 R1(config)# event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
   % Invalid input detected at '^' marker.
   event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
   ^
 
-[171/322] r1 R1> action 1.0 syslog msg "WAN interface changed state"
+[171/322] r1 R1(config)# action 1.0 syslog msg "WAN interface changed state"
   % Invalid input detected at '^' marker.
   action 1.0 syslog msg "WAN interface changed state"
   ^
 
-[172/322] r1 R1> action 2.0 cli command "enable"
+[172/322] r1 R1(config)# action 2.0 cli command "enable"
   % Invalid input detected at '^' marker.
   action 2.0 cli command "enable"
   ^
 
-[173/322] r1 R1> action 3.0 cli command "show ip interface brief"
+[173/322] r1 R1(config)# action 3.0 cli command "show ip interface brief"
   % Invalid input detected at '^' marker.
   action 3.0 cli command "show ip interface brief"
   ^
 
-[174/322] r1 R1> exit
+[174/322] r1 R1(config)# exit
 <empty>
 
-[175/322] r1 R1> event manager applet CRON-BACKUP
+[175/322] r1 R1# event manager applet CRON-BACKUP
   % Invalid input detected at '^' marker.
   event manager applet CRON-BACKUP
   ^
 
-[176/322] r1 R1> event timer cron cron-entry "0 2 * * *"
+[176/322] r1 R1# event timer cron cron-entry "0 2 * * *"
   % Invalid input detected at '^' marker.
   event timer cron cron-entry "0 2 * * *"
   ^
 
-[177/322] r1 R1> action 1.0 cli command "enable"
+[177/322] r1 R1# action 1.0 cli command "enable"
   % Invalid input detected at '^' marker.
   action 1.0 cli command "enable"
   ^
 
-[178/322] r1 R1> action 2.0 cli command "copy running-config flash:nightly.cfg"
+[178/322] r1 R1# action 2.0 cli command "copy running-config flash:nightly.cfg"
   % Invalid input detected at '^' marker.
   action 2.0 cli command "copy running-config flash:nightly.cfg"
   ^
 
-[179/322] r1 R1> exit
+[179/322] r1 R1# exit
 <empty>
 
-[180/322] r1 R1> event manager environment _email noc@lab.local
+[180/322] r1 R1# event manager environment _email noc@lab.local
   % Invalid input detected at '^' marker.
   event manager environment _email noc@lab.local
   ^
 
-[181/322] r1 R1> end
+[181/322] r1 R1# end
 <empty>
 
-[182/322] r1 R1> show event manager policy registered
+[182/322] r1 R1# show event manager policy registered
   % Invalid input detected at '^' marker.
   show event manager policy registered
        ^
 
-[183/322] r1 R1> show event manager environment
+[183/322] r1 R1# show event manager environment
   % Invalid input detected at '^' marker.
   show event manager environment
        ^
 
 
 --- [184] § CDP / LLDP / discovery ---
-[184/322] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[184/322] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[185/322] r1 R1> cdp run
-  % Invalid input detected at '^' marker.
-  cdp run
-  ^
+[185/322] r1 R1(config)# cdp run
+<empty>
 
-[186/322] r1 R1> cdp timer 30
-  % Invalid input detected at '^' marker.
-  cdp timer 30
-  ^
+[186/322] r1 R1(config)# cdp timer 30
+<empty>
 
-[187/322] r1 R1> cdp holdtime 120
-  % Invalid input detected at '^' marker.
-  cdp holdtime 120
-  ^
+[187/322] r1 R1(config)# cdp holdtime 120
+<empty>
 
-[188/322] r1 R1> cdp advertise-v2
+[188/322] r1 R1(config)# cdp advertise-v2
   % Invalid input detected at '^' marker.
   cdp advertise-v2
-  ^
+      ^
 
-[189/322] r1 R1> lldp run
-  % Invalid input detected at '^' marker.
-  lldp run
-  ^
-
-[190/322] r1 R1> lldp timer 30
-  % Invalid input detected at '^' marker.
-  lldp timer 30
-  ^
-
-[191/322] r1 R1> lldp holdtime 120
-  % Invalid input detected at '^' marker.
-  lldp holdtime 120
-  ^
-
-[192/322] r1 R1> lldp reinit 2
-  % Invalid input detected at '^' marker.
-  lldp reinit 2
-  ^
-
-[193/322] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[194/322] r1 R1> cdp enable
-  % Invalid input detected at '^' marker.
-  cdp enable
-  ^
-
-[195/322] r1 R1> lldp transmit
-  % Invalid input detected at '^' marker.
-  lldp transmit
-  ^
-
-[196/322] r1 R1> lldp receive
-  % Invalid input detected at '^' marker.
-  lldp receive
-  ^
-
-[197/322] r1 R1> exit
+[189/322] r1 R1(config)# lldp run
 <empty>
 
-[198/322] r1 R1> end
+[190/322] r1 R1(config)# lldp timer 30
 <empty>
 
-[199/322] r1 R1> show cdp
+[191/322] r1 R1(config)# lldp holdtime 120
+  % Invalid multiplier (2-10)
+
+[192/322] r1 R1(config)# lldp reinit 2
+<empty>
+
+[193/322] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[194/322] r1 R1(config-if)# cdp enable
+<empty>
+
+[195/322] r1 R1(config-if)# lldp transmit
+<empty>
+
+[196/322] r1 R1(config-if)# lldp receive
+<empty>
+
+[197/322] r1 R1(config-if)# exit
+<empty>
+
+[198/322] r1 R1(config)# end
+<empty>
+
+[199/322] r1 R1# show cdp
   Global CDP information:
-          Sending CDP packets every 60 seconds
-          Sending a holdtime value of 180 seconds
+          Sending CDP packets every 30 seconds
+          Sending a holdtime value of 120 seconds
           Sending CDPv2 advertisements is  enabled
 
-[200/322] r1 R1> show cdp neighbors
+[200/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -933,7 +801,7 @@ Total steps: 322
   
   Total cdp entries displayed : 2
 
-[201/322] r1 R1> show cdp neighbors detail
+[201/322] r1 R1# show cdp neighbors detail
   -------------------------
   Device ID: L1
   Entry address(es):
@@ -950,161 +818,89 @@ Total steps: 322
   
   Total cdp entries displayed : 2
 
-[202/322] r1 R1> show cdp interface
+[202/322] r1 R1# show cdp interface
   GigabitEthernet0/0 is up, line protocol is up
     Encapsulation ARPA
-    Sending CDP packets every 60 seconds
-    Holdtime is 180 seconds
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
   GigabitEthernet0/1 is up, line protocol is up
     Encapsulation ARPA
-    Sending CDP packets every 60 seconds
-    Holdtime is 180 seconds
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
   GigabitEthernet0/2 is up, line protocol is down
     Encapsulation ARPA
-    Sending CDP packets every 60 seconds
-    Holdtime is 180 seconds
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
   GigabitEthernet0/3 is up, line protocol is down
     Encapsulation ARPA
-    Sending CDP packets every 60 seconds
-    Holdtime is 180 seconds
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
   Loopback0 is up, line protocol is down
     Encapsulation ARPA
-    Sending CDP packets every 60 seconds
-    Holdtime is 180 seconds
+    Sending CDP packets every 30 seconds
+    Holdtime is 120 seconds
 
-[203/322] r1 R1> show cdp traffic
+[203/322] r1 R1# show cdp traffic
   Global CDP information:
-          Sending CDP packets every 60 seconds
-          Sending a holdtime value of 180 seconds
+          Sending CDP packets every 30 seconds
+          Sending a holdtime value of 120 seconds
           Sending CDPv2 advertisements is  enabled
 
-[204/322] r1 R1> show lldp
-  % LLDP is not enabled
+[204/322] r1 R1# show lldp
+  Global LLDP Information:
+      Status: ACTIVE
+      LLDP advertisements are sent every 30 seconds
+      LLDP hold time advertised is 120 seconds
+      LLDP interface reinitialisation delay is 2 seconds
 
-[205/322] r1 R1> show lldp neighbors
+[205/322] r1 R1# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
+  L1                  Gig 0/0        120        Host            eth0
+  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
+  
+  Total entries displayed: 2
+
+[206/322] r1 R1# show lldp neighbors detail
+  
   
   Total entries displayed: 0
 
-[206/322] r1 R1> show lldp neighbors detail
-  Capability codes:
-      (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
-      (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
-  
-  Device ID           Local Intf     Hold-time  Capability      Port ID
-  
-  Total entries displayed: 0
+[207/322] r1 R1# show lldp traffic
+  Global LLDP Information:
+      Status: ACTIVE
+      LLDP advertisements are sent every 30 seconds
+      LLDP hold time advertised is 120 seconds
+      LLDP interface reinitialisation delay is 2 seconds
 
-[207/322] r1 R1> show lldp traffic
-  % LLDP is not enabled
+[208/322] r1 R1# show running-config | section logging
+<empty>
 
-[208/322] r1 R1> show running-config | section logging
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback0
-   ip address 1.1.1.1 255.255.255.255
-   no shutdown
-  !
-  !
-  end
+[209/322] r1 R1# show running-config | section snmp
+<empty>
 
-[209/322] r1 R1> show running-config | section snmp
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback0
-   ip address 1.1.1.1 255.255.255.255
-   no shutdown
-  !
-  !
-  end
+[210/322] r1 R1# show running-config | section ntp
+<empty>
 
-[210/322] r1 R1> show running-config | section ntp
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback0
-   ip address 1.1.1.1 255.255.255.255
-   no shutdown
-  !
-  !
-  end
-
-[211/322] r1 R1> show processes cpu sorted
+[211/322] r1 R1# show processes cpu sorted
   % Invalid input detected at '^' marker.
   show processes cpu sorted
                      ^
 
-[212/322] r1 R1> show memory statistics
+[212/322] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
   I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
 
 
 --- [213] § regression: show family ---
-[213/322] r1 R1> enable
-<empty>
+[213/322] r1 R1(config)# enable
+  % Incomplete command.
 
-[214/322] r1 R1# show version
+[214/322] r1 R1(config)# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -1121,7 +917,7 @@ Total steps: 322
   
   Configuration register is 0x2102
 
-[215/322] r1 R1# show running-config
+[215/322] r1 R1(config)# show running-config
   Building configuration...
   
   Current configuration:
@@ -1147,13 +943,14 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
+  access-list 10 permit 10.0.0.0 0.0.0.255
   !
   end
 
-[216/322] r1 R1# show startup-config
+[216/322] r1 R1(config)# show startup-config
   % startup-config is not present
 
-[217/322] r1 R1# show ip interface brief
+[217/322] r1 R1(config)# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
@@ -1161,7 +958,7 @@ Total steps: 322
   GigabitEthernet0/3         unassigned      YES manual administratively down down
   Loopback0                  1.1.1.1         YES manual administratively down down
 
-[218/322] r1 R1# show interfaces
+[218/322] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1199,56 +996,66 @@ Total steps: 322
     Hardware is Loopback
     Internet address is 1.1.1.1/32
 
-[219/322] r1 R1# show ip route
+[219/322] r1 R1(config)# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   C    1.1.1.1/32 is directly connected, Loopback0
 
-[220/322] r1 R1# show ip route summary
-  % Network not in table
+[220/322] r1 R1(config)# show ip route summary
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       2           2           0           304         720
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           2           2           0           304         720
 
-[221/322] r1 R1# show ip protocols
+[221/322] r1 R1(config)# show ip protocols
   No routing protocol is configured.
 
-[222/322] r1 R1# show ip arp
+[222/322] r1 R1(config)# show ip arp
   No ARP entries.
 
-[223/322] r1 R1# show arp
+[223/322] r1 R1(config)# show arp
   No ARP entries.
 
-[224/322] r1 R1# show ip ospf
+[224/322] r1 R1(config)# show ip ospf
   % OSPF is not configured
 
-[225/322] r1 R1# show ip ospf neighbor
+[225/322] r1 R1(config)# show ip ospf neighbor
   % OSPF is not configured
 
-[226/322] r1 R1# show ip ospf database
+[226/322] r1 R1(config)# show ip ospf database
   % OSPF is not configured
 
-[227/322] r1 R1# show ip ospf interface brief
+[227/322] r1 R1(config)# show ip ospf interface brief
   % OSPF is not configured
 
-[228/322] r1 R1# show ip eigrp neighbors
+[228/322] r1 R1(config)# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[229/322] r1 R1# show ip eigrp topology
+[229/322] r1 R1(config)# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[230/322] r1 R1# show ip bgp
+[230/322] r1 R1(config)# show ip bgp
   % BGP not active
 
-[231/322] r1 R1# show ip bgp summary
+[231/322] r1 R1(config)# show ip bgp summary
   % BGP not active
 
-[232/322] r1 R1# show ip rip database
+[232/322] r1 R1(config)# show ip rip database
 <empty>
 
-[233/322] r1 R1# show ip nat translations
+[233/322] r1 R1(config)# show ip nat translations
   No NAT translations.
 
-[234/322] r1 R1# show ip nat statistics
+[234/322] r1 R1(config)# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
   Outside interfaces:  none
   Inside interfaces:   none
@@ -1258,51 +1065,51 @@ Total steps: 322
   Dynamic mappings:
   -- No dynamic NAT rules configured --
 
-[235/322] r1 R1# show ip dhcp binding
+[235/322] r1 R1(config)# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[236/322] r1 R1# show ip dhcp pool
+[236/322] r1 R1(config)# show ip dhcp pool
 <empty>
 
-[237/322] r1 R1# show access-lists
-<empty>
+[237/322] r1 R1(config)# show access-lists
+  Standard IP access list 10
+      10 permit 10.0.0.0 0.0.0.255 (0 matches)
 
-[238/322] r1 R1# show ip access-lists
-<empty>
+[238/322] r1 R1(config)# show ip access-lists
+  Standard IP access list 10
+      10 permit 10.0.0.0 0.0.0.255 (0 matches)
 
-[239/322] r1 R1# show crypto isakmp sa
+[239/322] r1 R1(config)# show crypto isakmp sa
   IPSec not configured.
 
-[240/322] r1 R1# show crypto ipsec sa
+[240/322] r1 R1(config)# show crypto ipsec sa
   IPSec not configured.
 
-[241/322] r1 R1# show crypto session
+[241/322] r1 R1(config)# show crypto session
   IPSec not configured.
 
-[242/322] r1 R1# show crypto map
+[242/322] r1 R1(config)# show crypto map
   IPSec not configured.
 
-[243/322] r1 R1# show standby brief
+[243/322] r1 R1(config)# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
-[244/322] r1 R1# show vrrp brief
+[244/322] r1 R1(config)# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
-[245/322] r1 R1# show track
+[245/322] r1 R1(config)# show track
   No tracked objects configured.
 
-[246/322] r1 R1# show ip sla statistics
+[246/322] r1 R1(config)# show ip sla statistics
   No IP SLA operations configured.
 
-[247/322] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+[247/322] r1 R1(config)# show policy-map interface
+<empty>
 
-[248/322] r1 R1# show logging
+[248/322] r1 R1(config)# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level warnings
       Monitor logging: level debugging
@@ -1319,26 +1126,29 @@ Total steps: 322
       Logging to 10.0.0.10
       Logging to 10.0.0.11
 
-[249/322] r1 R1# show snmp
+[249/322] r1 R1(config)# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[250/322] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+[250/322] r1 R1(config)# show ntp status
+  Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:56.181Z
+  reference time is EDCAF8C0.249BA5E3 (19:02:24.143 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
-[251/322] r1 R1# show ntp associations
+[251/322] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
+   ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
-[252/322] r1 R1# show clock
-  *16:07:56.000 UTC Wed Jun 3 2026
+[252/322] r1 R1(config)# show clock
+  *19:02:24.000 UTC Wed Jun 3 2026
 
-[253/322] r1 R1# show cdp neighbors
+[253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1348,41 +1158,43 @@ Total steps: 322
   
   Total cdp entries displayed : 2
 
-[254/322] r1 R1# show lldp neighbors
+[254/322] r1 R1(config)# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
   
   Device ID           Local Intf     Hold-time  Capability      Port ID
+  L1                  Gig 0/0        120        Host            eth0
+  R2                  Gig 0/1        120        Router          GigabitEthernet0/1
   
-  Total entries displayed: 0
+  Total entries displayed: 2
 
-[255/322] r1 R1# show processes cpu
+[255/322] r1 R1(config)# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[256/322] r1 R1# show memory statistics
+[256/322] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
   I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
 
-[257/322] r1 R1# show flash
+[257/322] r1 R1(config)# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
-[258/322] r1 R1# show users
+[258/322] r1 R1(config)# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[259/322] r1 R1# show history
+[259/322] r1 R1(config)# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1404,13 +1216,10 @@ Total steps: 322
   show users
   show history
 
-[260/322] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  10.0.0.0/30          attached             GigabitEthernet0/1
-  1.1.1.1/32           attached             Loopback0
+[260/322] r1 R1(config)# show ip cef
+  IP CEF is not enabled
 
-[261/322] r1 R1# show interfaces GigabitEthernet0/0
+[261/322] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1420,7 +1229,7 @@ Total steps: 322
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[262/322] r1 R1# show interfaces GigabitEthernet0/1
+[262/322] r1 R1(config)# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1431,7 +1240,7 @@ Total steps: 322
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[263/322] r1 R1# show ip interface GigabitEthernet0/1
+[263/322] r1 R1(config)# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1442,7 +1251,7 @@ Total steps: 322
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[264/322] r1 R1# show controllers
+[264/322] r1 R1(config)# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1464,7 +1273,7 @@ Total steps: 322
     Administrative state: up
     0 carrier transitions
 
-[265/322] r1 R1# show tech-support
+[265/322] r1 R1(config)# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1508,6 +1317,7 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   !
+  access-list 10 permit 10.0.0.0 0.0.0.255
   !
   end
   
@@ -1583,37 +1393,37 @@ Total steps: 322
       Logging to 10.0.0.10
       Logging to 10.0.0.11
 
-[266/322] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+[266/322] r1 R1(config)# show inventory
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[267/322] r1 R1# show environment
+[267/322] r1 R1(config)# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[268/322] r1 R1# show redundancy
+[268/322] r1 R1(config)# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[269/322] r1 R1# show ip vrf
+[269/322] r1 R1(config)# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[270/322] r1 R1# show vrf
+[270/322] r1 R1(config)# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[271/322] r1 R1# show hosts
+[271/322] r1 R1(config)# show hosts
   Default domain is not set
   Name/address lookup uses domain service
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[272/322] r1 R1# show ip ssh
+[272/322] r1 R1(config)# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[273/322] r1 R1# show line
+[273/322] r1 R1(config)# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -1622,13 +1432,13 @@ Total steps: 322
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[274/322] r1 R1# show terminal
+[274/322] r1 R1(config)# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[275/322] r1 R1# show aliases
+[275/322] r1 R1(config)# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -1645,33 +1455,18 @@ Total steps: 322
 <empty>
 
 [277/322] r1 R1(config)# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
   interface GigabitEthernet0/0
    shutdown
-  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
-  !
-  !
-  end
 
 [278/322] r1 R1(config)# show running-config | begin line
 <empty>
@@ -1694,6 +1489,7 @@ Total steps: 322
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
+  access-list 10 permit 10.0.0.0 0.0.0.255
   end
 
 [280/322] r1 R1(config)# show ip route | include via
@@ -1817,14 +1613,14 @@ Total steps: 322
     <cr>  
 
 [316/322] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -1845,6 +1641,7 @@ Total steps: 322
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [319/322] r1 R1(config)# no ?
@@ -1870,35 +1667,7 @@ Total steps: 322
 <empty>
 
 [321/322] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback0
-   ip address 1.1.1.1 255.255.255.255
-   no shutdown
-  !
-  line vty 0 4
-  !
-  !
-  end
+  12
 
 [322/322] r1 R1# write memory
   Building configuration...

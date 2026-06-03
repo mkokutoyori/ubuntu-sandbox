@@ -103,7 +103,7 @@ export class CLIStateMachine<TMode extends string = string> {
 
 export const CISCO_IOS_MODES: ModeHierarchy = {
   'user':                      { parent: null },
-  'privileged':                { parent: 'user' },  // exit → user (special: not a config mode)
+  'privileged':                { parent: null },
   'config':                    { parent: 'privileged' },
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },
@@ -126,13 +126,23 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ikev2-keyring':      { parent: 'config', clearOnExit: ['selectedIKEv2Keyring'] },
   'config-ikev2-keyring-peer': { parent: 'config-ikev2-keyring', clearOnExit: ['selectedIKEv2KeyringPeer'] },
   'config-ikev2-profile':      { parent: 'config', clearOnExit: ['selectedIKEv2Profile'] },
+  'config-time-range':         { parent: 'config', clearOnExit: ['selectedTimeRange'] },
+  'config-cmap':               { parent: 'config', clearOnExit: ['selectedClassMap'] },
+  'config-pmap':               { parent: 'config', clearOnExit: ['selectedPolicyMap'] },
+  'config-pmap-c':             { parent: 'config-pmap', clearOnExit: ['selectedPolicyClass'] },
+  'config-cp':                 { parent: 'config' },
+  'config-zone':               { parent: 'config', clearOnExit: ['selectedZone'] },
+  'config-zone-pair':          { parent: 'config', clearOnExit: ['selectedZonePair'] },
+  'config-radius-server':      { parent: 'config', clearOnExit: ['selectedRadiusServer'] },
+  'config-tacacs-server':      { parent: 'config', clearOnExit: ['selectedTacacsServer'] },
+  'config-aaa-group':          { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────
 
 export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'user':        { parent: null },
-  'privileged':  { parent: 'user' },
+  'privileged':  { parent: null },
   'config':      { parent: 'privileged' },
   'config-if':   { parent: 'config', clearOnExit: ['selectedInterface', 'selectedInterfaceRange'] },
   'config-vlan': { parent: 'config', clearOnExit: ['selectedVlan'] },

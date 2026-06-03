@@ -2070,10 +2070,12 @@ export abstract class Router extends Equipment {
   getInterfaceACL(ifName: string, direction: 'in' | 'out') { return this.aclEngine.getInterfaceACL(ifName, direction); }
   evaluateACLByName(name: string, ipPkt: IPv4Packet) { return this.aclEngine.evaluateACLByName(name, ipPkt); }
 
-  /** @internal Used by CLI shells */
   _getAccessListsInternal() { return this.aclEngine.getAccessListsInternal(); }
-  /** @internal Used by CLI shells */
   _getInterfaceACLBindingsInternal() { return this.aclEngine.getInterfaceACLBindingsInternal(); }
+  _removeNamedACLEntryBySequence(name: string, seq: number) { return this.aclEngine.removeNamedACLEntryBySequence(name, seq); }
+  _resequenceNamedACL(name: string, start: number, step: number) { return this.aclEngine.resequenceNamedACL(name, start, step); }
+  _findNamedACL(name: string) { return this.aclEngine.findByName(name); }
+  _findNumberedACL(id: number) { return this.aclEngine.findById(id); }
 
   // ─── DHCP Server Public API ────────────────────────────────────
 

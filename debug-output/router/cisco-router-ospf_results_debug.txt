@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-03T16:07:43.330Z
+Generated: 2026-06-03T19:02:16.772Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1064,7 +1064,6 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  !
   end
 
 [205/311] r1 R1# show startup-config
@@ -1141,7 +1140,17 @@ Total steps: 311
   C    10.10.4.0/24 is directly connected, Loopback4
 
 [209/311] r1 R1# show ip route summary
-  % Network not in table
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       6           6           0           912         2160
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           6           6           0           912         2160
 
 [210/311] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1251,11 +1260,11 @@ Total steps: 311
 
 [226/311] r1 R1# show access-lists
   Standard IP access list 10
-      permit 172.16.0.0 0.0.255.255 (0 matches)
+      10 permit 172.16.0.0 0.0.255.255 (0 matches)
 
 [227/311] r1 R1# show ip access-lists
   Standard IP access list 10
-      permit 172.16.0.0 0.0.255.255 (0 matches)
+      10 permit 172.16.0.0 0.0.255.255 (0 matches)
 
 [228/311] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1284,9 +1293,7 @@ Total steps: 311
   No IP SLA operations configured.
 
 [236/311] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+<empty>
 
 [237/311] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -1307,7 +1314,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:43.384Z
+  reference time is EDCAF8B8.DA1CAC08 (19:02:16.852 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1316,7 +1323,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *16:07:43.000 UTC Wed Jun 3 2026
+  *19:02:16.000 UTC Wed Jun 3 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1351,10 +1358,10 @@ Total steps: 311
 [246/311] r1 R1# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
 [247/311] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1385,14 +1392,7 @@ Total steps: 311
   show history
 
 [249/311] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
-  10.10.1.0/24         attached             Loopback1
-  10.10.2.0/24         attached             Loopback2
-  10.10.3.0/24         attached             Loopback3
-  10.10.4.0/24         attached             Loopback4
+  IP CEF is not enabled
 
 [250/311] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1520,7 +1520,6 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  !
   end
   
   ------------------ show ip interface brief ------------------
@@ -1607,8 +1606,8 @@ Total steps: 311
       No active syslog hosts
 
 [255/311] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [256/311] r1 R1# show environment
   Environmental monitoring is not instrumented on this platform.
@@ -1668,48 +1667,28 @@ Total steps: 311
 <empty>
 
 [266/311] r1 R1# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
-  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
   interface Loopback1
    ip address 10.10.1.1 255.255.255.0
    no shutdown
-  !
   interface Loopback2
    ip address 10.10.2.1 255.255.255.0
    no shutdown
-  !
   interface Loopback3
    ip address 10.10.3.1 255.255.255.0
    no shutdown
-  !
   interface Loopback4
    ip address 10.10.4.1 255.255.255.0
    no shutdown
-  !
-  access-list 10 permit 172.16.0.0 0.0.255.255
-  !
-  !
-  end
 
 [267/311] r1 R1# show running-config | begin line
 <empty>
@@ -1873,14 +1852,14 @@ Total steps: 311
     <cr>  
 
 [305/311] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -1901,6 +1880,7 @@ Total steps: 311
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [308/311] r1 R1(config)# no ?
@@ -1926,50 +1906,7 @@ Total steps: 311
 <empty>
 
 [310/311] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback1
-   ip address 10.10.1.1 255.255.255.0
-   no shutdown
-  !
-  interface Loopback2
-   ip address 10.10.2.1 255.255.255.0
-   no shutdown
-  !
-  interface Loopback3
-   ip address 10.10.3.1 255.255.255.0
-   no shutdown
-  !
-  interface Loopback4
-   ip address 10.10.4.1 255.255.255.0
-   no shutdown
-  !
-  access-list 10 permit 172.16.0.0 0.0.255.255
-  !
-  line vty 0 4
-  !
-  !
-  end
+  15
 
 [311/311] r1 R1# write memory
   Building configuration...

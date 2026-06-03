@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-06-03T16:07:56.309Z
+Generated: 2026-06-03T19:02:22.653Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -123,37 +123,75 @@ Total steps: 388
 
 [38/388] r1 R1# show access-lists
   Standard IP access list 10
-      permit 192.168.1.0 0.0.0.255 (0 matches)
-      permit 192.168.2.0 0.0.0.255 (0 matches)
-      permit 192.168.3.0 0.0.0.255 (0 matches)
-      permit 192.168.4.0 0.0.0.255 (0 matches)
-      permit 192.168.5.0 0.0.0.255 (0 matches)
-      permit 192.168.6.0 0.0.0.255 (0 matches)
-      permit 192.168.7.0 0.0.0.255 (0 matches)
-      permit 192.168.8.0 0.0.0.255 (0 matches)
-      permit 192.168.9.0 0.0.0.255 (0 matches)
-      permit 192.168.10.0 0.0.0.255 (0 matches)
-      permit 192.168.11.0 0.0.0.255 (0 matches)
-      permit 192.168.12.0 0.0.0.255 (0 matches)
-      permit 192.168.13.0 0.0.0.255 (0 matches)
-      permit 192.168.14.0 0.0.0.255 (0 matches)
-      permit 192.168.15.0 0.0.0.255 (0 matches)
-      permit 192.168.16.0 0.0.0.255 (0 matches)
-      permit 192.168.17.0 0.0.0.255 (0 matches)
-      permit 192.168.18.0 0.0.0.255 (0 matches)
-      permit 192.168.19.0 0.0.0.255 (0 matches)
-      permit 192.168.20.0 0.0.0.255 (0 matches)
-      deny any (0 matches)
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+      20 permit 192.168.2.0 0.0.0.255 (0 matches)
+      30 permit 192.168.3.0 0.0.0.255 (0 matches)
+      40 permit 192.168.4.0 0.0.0.255 (0 matches)
+      50 permit 192.168.5.0 0.0.0.255 (0 matches)
+      60 permit 192.168.6.0 0.0.0.255 (0 matches)
+      70 permit 192.168.7.0 0.0.0.255 (0 matches)
+      80 permit 192.168.8.0 0.0.0.255 (0 matches)
+      90 permit 192.168.9.0 0.0.0.255 (0 matches)
+      100 permit 192.168.10.0 0.0.0.255 (0 matches)
+      110 permit 192.168.11.0 0.0.0.255 (0 matches)
+      120 permit 192.168.12.0 0.0.0.255 (0 matches)
+      130 permit 192.168.13.0 0.0.0.255 (0 matches)
+      140 permit 192.168.14.0 0.0.0.255 (0 matches)
+      150 permit 192.168.15.0 0.0.0.255 (0 matches)
+      160 permit 192.168.16.0 0.0.0.255 (0 matches)
+      170 permit 192.168.17.0 0.0.0.255 (0 matches)
+      180 permit 192.168.18.0 0.0.0.255 (0 matches)
+      190 permit 192.168.19.0 0.0.0.255 (0 matches)
+      200 permit 192.168.20.0 0.0.0.255 (0 matches)
+      210 deny any log (0 matches)
 
 [39/388] r1 R1# show access-lists 10
-  % Invalid input detected at '^' marker.
-  show access-lists 10
-                    ^
+  Standard IP access list 10
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+      20 permit 192.168.2.0 0.0.0.255 (0 matches)
+      30 permit 192.168.3.0 0.0.0.255 (0 matches)
+      40 permit 192.168.4.0 0.0.0.255 (0 matches)
+      50 permit 192.168.5.0 0.0.0.255 (0 matches)
+      60 permit 192.168.6.0 0.0.0.255 (0 matches)
+      70 permit 192.168.7.0 0.0.0.255 (0 matches)
+      80 permit 192.168.8.0 0.0.0.255 (0 matches)
+      90 permit 192.168.9.0 0.0.0.255 (0 matches)
+      100 permit 192.168.10.0 0.0.0.255 (0 matches)
+      110 permit 192.168.11.0 0.0.0.255 (0 matches)
+      120 permit 192.168.12.0 0.0.0.255 (0 matches)
+      130 permit 192.168.13.0 0.0.0.255 (0 matches)
+      140 permit 192.168.14.0 0.0.0.255 (0 matches)
+      150 permit 192.168.15.0 0.0.0.255 (0 matches)
+      160 permit 192.168.16.0 0.0.0.255 (0 matches)
+      170 permit 192.168.17.0 0.0.0.255 (0 matches)
+      180 permit 192.168.18.0 0.0.0.255 (0 matches)
+      190 permit 192.168.19.0 0.0.0.255 (0 matches)
+      200 permit 192.168.20.0 0.0.0.255 (0 matches)
+      210 deny any log (0 matches)
 
 [40/388] r1 R1# show ip access-lists 10
-  % Invalid input detected at '^' marker.
-  show ip access-lists 10
-                       ^
+  Standard IP access list 10
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+      20 permit 192.168.2.0 0.0.0.255 (0 matches)
+      30 permit 192.168.3.0 0.0.0.255 (0 matches)
+      40 permit 192.168.4.0 0.0.0.255 (0 matches)
+      50 permit 192.168.5.0 0.0.0.255 (0 matches)
+      60 permit 192.168.6.0 0.0.0.255 (0 matches)
+      70 permit 192.168.7.0 0.0.0.255 (0 matches)
+      80 permit 192.168.8.0 0.0.0.255 (0 matches)
+      90 permit 192.168.9.0 0.0.0.255 (0 matches)
+      100 permit 192.168.10.0 0.0.0.255 (0 matches)
+      110 permit 192.168.11.0 0.0.0.255 (0 matches)
+      120 permit 192.168.12.0 0.0.0.255 (0 matches)
+      130 permit 192.168.13.0 0.0.0.255 (0 matches)
+      140 permit 192.168.14.0 0.0.0.255 (0 matches)
+      150 permit 192.168.15.0 0.0.0.255 (0 matches)
+      160 permit 192.168.16.0 0.0.0.255 (0 matches)
+      170 permit 192.168.17.0 0.0.0.255 (0 matches)
+      180 permit 192.168.18.0 0.0.0.255 (0 matches)
+      190 permit 192.168.19.0 0.0.0.255 (0 matches)
+      200 permit 192.168.20.0 0.0.0.255 (0 matches)
+      210 deny any log (0 matches)
 
 
 --- [41] § extended numbered ACL ---
@@ -275,74 +313,104 @@ Total steps: 388
 <empty>
 
 [80/388] r1 R1# show access-lists 100
-  % Invalid input detected at '^' marker.
-  show access-lists 100
-                    ^
+  Extended IP access list 100
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
+      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
+      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
+      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
+      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
+      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
+      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
+      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
+      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
+      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
+      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
+      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
+      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
+      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
+      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
+      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
+      310 permit icmp any any echo-reply (0 matches)
+      320 deny ip any any log-input (0 matches)
 
 [81/388] r1 R1# show ip access-lists
   Standard IP access list 10
-      permit 192.168.1.0 0.0.0.255 (0 matches)
-      permit 192.168.2.0 0.0.0.255 (0 matches)
-      permit 192.168.3.0 0.0.0.255 (0 matches)
-      permit 192.168.4.0 0.0.0.255 (0 matches)
-      permit 192.168.5.0 0.0.0.255 (0 matches)
-      permit 192.168.6.0 0.0.0.255 (0 matches)
-      permit 192.168.7.0 0.0.0.255 (0 matches)
-      permit 192.168.8.0 0.0.0.255 (0 matches)
-      permit 192.168.9.0 0.0.0.255 (0 matches)
-      permit 192.168.10.0 0.0.0.255 (0 matches)
-      permit 192.168.11.0 0.0.0.255 (0 matches)
-      permit 192.168.12.0 0.0.0.255 (0 matches)
-      permit 192.168.13.0 0.0.0.255 (0 matches)
-      permit 192.168.14.0 0.0.0.255 (0 matches)
-      permit 192.168.15.0 0.0.0.255 (0 matches)
-      permit 192.168.16.0 0.0.0.255 (0 matches)
-      permit 192.168.17.0 0.0.0.255 (0 matches)
-      permit 192.168.18.0 0.0.0.255 (0 matches)
-      permit 192.168.19.0 0.0.0.255 (0 matches)
-      permit 192.168.20.0 0.0.0.255 (0 matches)
-      deny any (0 matches)
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+      20 permit 192.168.2.0 0.0.0.255 (0 matches)
+      30 permit 192.168.3.0 0.0.0.255 (0 matches)
+      40 permit 192.168.4.0 0.0.0.255 (0 matches)
+      50 permit 192.168.5.0 0.0.0.255 (0 matches)
+      60 permit 192.168.6.0 0.0.0.255 (0 matches)
+      70 permit 192.168.7.0 0.0.0.255 (0 matches)
+      80 permit 192.168.8.0 0.0.0.255 (0 matches)
+      90 permit 192.168.9.0 0.0.0.255 (0 matches)
+      100 permit 192.168.10.0 0.0.0.255 (0 matches)
+      110 permit 192.168.11.0 0.0.0.255 (0 matches)
+      120 permit 192.168.12.0 0.0.0.255 (0 matches)
+      130 permit 192.168.13.0 0.0.0.255 (0 matches)
+      140 permit 192.168.14.0 0.0.0.255 (0 matches)
+      150 permit 192.168.15.0 0.0.0.255 (0 matches)
+      160 permit 192.168.16.0 0.0.0.255 (0 matches)
+      170 permit 192.168.17.0 0.0.0.255 (0 matches)
+      180 permit 192.168.18.0 0.0.0.255 (0 matches)
+      190 permit 192.168.19.0 0.0.0.255 (0 matches)
+      200 permit 192.168.20.0 0.0.0.255 (0 matches)
+      210 deny any log (0 matches)
   Extended IP access list 100
-      permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      permit udp any host 10.0.0.1 eq 53 (0 matches)
-      permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      permit udp any host 10.0.0.2 eq 53 (0 matches)
-      permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      permit udp any host 10.0.0.3 eq 53 (0 matches)
-      permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      permit udp any host 10.0.0.4 eq 53 (0 matches)
-      permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      permit udp any host 10.0.0.5 eq 53 (0 matches)
-      permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      permit udp any host 10.0.0.6 eq 53 (0 matches)
-      permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      permit udp any host 10.0.0.7 eq 53 (0 matches)
-      permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      permit udp any host 10.0.0.8 eq 53 (0 matches)
-      permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      permit udp any host 10.0.0.9 eq 53 (0 matches)
-      permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      permit udp any host 10.0.0.10 eq 53 (0 matches)
-      permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      permit udp any host 10.0.0.11 eq 53 (0 matches)
-      permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      permit udp any host 10.0.0.12 eq 53 (0 matches)
-      permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      permit udp any host 10.0.0.13 eq 53 (0 matches)
-      permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      permit udp any host 10.0.0.14 eq 53 (0 matches)
-      permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      permit udp any host 10.0.0.15 eq 53 (0 matches)
-      permit icmp any any (0 matches)
-      deny ip any any (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
+      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
+      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
+      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
+      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
+      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
+      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
+      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
+      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
+      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
+      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
+      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
+      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
+      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
+      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
+      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
+      310 permit icmp any any echo-reply (0 matches)
+      320 deny ip any any log-input (0 matches)
   Extended IP access list 101
-      permit tcp any any (0 matches)
+      10 permit tcp any any established (0 matches)
   Extended IP access list 103
-      permit tcp any any (0 matches)
+      10 permit tcp any any range 1024 65535 (0 matches)
   Extended IP access list 104
-      permit ip any any (0 matches)
+      10 permit ip any any dscp af21 (0 matches)
   Extended IP access list 105
-      permit tcp any any (0 matches)
+      10 permit tcp any any eq 80 log (0 matches)
 
 
 --- [82] § named ACL ---
@@ -407,35 +475,41 @@ Total steps: 388
 <empty>
 
 [102/388] r1 R1(config-ext-nacl)# no 30
-  % Invalid input detected at '^' marker.
-  no 30
-  ^
+<empty>
 
 [103/388] r1 R1(config-ext-nacl)# 15 permit tcp any any eq 22
-  % Invalid input detected at '^' marker.
-  15 permit tcp any any eq 22
-  ^
+<empty>
 
 [104/388] r1 R1(config-ext-nacl)# exit
 <empty>
 
 [105/388] r1 R1(config)# ip access-list resequence WAN-IN 10 10
-  % Invalid input detected at '^' marker.
-  ip access-list resequence WAN-IN 10 10
-                 ^
+<empty>
 
 [106/388] r1 R1(config)# end
 <empty>
 
 [107/388] r1 R1# show ip access-lists MGMT
-  % Invalid input detected at '^' marker.
-  show ip access-lists MGMT
-                       ^
+  Standard IP access list MGMT
+      10 permit 10.0.0.0 0.0.0.255 (0 matches)
+      20 permit host 192.168.1.10 (0 matches)
+      30 deny any log (0 matches)
 
 [108/388] r1 R1# show ip access-lists WAN-IN
-  % Invalid input detected at '^' marker.
-  show ip access-lists WAN-IN
-                       ^
+  Extended IP access list WAN-IN
+      10 permit tcp any host 10.0.0.1 eq 443 (0 matches)
+      20 permit tcp any any eq 22 (0 matches)
+      30 permit tcp any host 10.0.0.2 eq 443 (0 matches)
+      40 permit tcp any host 10.0.0.4 eq 443 (0 matches)
+      50 permit tcp any host 10.0.0.5 eq 443 (0 matches)
+      60 permit tcp any host 10.0.0.6 eq 443 (0 matches)
+      70 permit tcp any host 10.0.0.7 eq 443 (0 matches)
+      80 permit tcp any host 10.0.0.8 eq 443 (0 matches)
+      90 permit tcp any host 10.0.0.9 eq 443 (0 matches)
+      100 permit tcp any host 10.0.0.10 eq 443 (0 matches)
+      110 permit udp any any eq 161 (0 matches)
+      120 deny icmp any any (0 matches)
+      130 permit ip any any (0 matches)
 
 
 --- [109] § time-based / reflexive ---
@@ -443,122 +517,88 @@ Total steps: 388
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [110/388] r1 R1(config)# time-range BUSINESS-HOURS
-  % Invalid input detected at '^' marker.
-  time-range BUSINESS-HOURS
-  ^
-
-[111/388] r1 R1(config)# periodic weekdays 8:00 to 18:00
-  % Invalid input detected at '^' marker.
-  periodic weekdays 8:00 to 18:00
-  ^
-
-[112/388] r1 R1(config)# absolute start 00:00 1 January 2024 end 23:59 31 December 2024
-  % Invalid input detected at '^' marker.
-  absolute start 00:00 1 January 2024 end 23:59 31 December 2024
-  ^
-
-[113/388] r1 R1(config)# exit
 <empty>
 
-[114/388] r1 R1# ip access-list extended TIMED
-  % Invalid input detected at '^' marker.
-  ip access-list extended TIMED
-  ^
-
-[115/388] r1 R1# permit ip any any time-range BUSINESS-HOURS
-  % Invalid input detected at '^' marker.
-  permit ip any any time-range BUSINESS-HOURS
-  ^
-
-[116/388] r1 R1# exit
+[111/388] r1 R1(config-time-range)# periodic weekdays 8:00 to 18:00
 <empty>
 
-[117/388] r1 R1> ip access-list extended REFLECT-OUT
-  % Invalid input detected at '^' marker.
-  ip access-list extended REFLECT-OUT
-  ^
-
-[118/388] r1 R1> permit tcp any any reflect TCP-REFLECT
-  % Invalid input detected at '^' marker.
-  permit tcp any any reflect TCP-REFLECT
-  ^
-
-[119/388] r1 R1> exit
+[112/388] r1 R1(config-time-range)# absolute start 00:00 1 January 2024 end 23:59 31 December 2024
 <empty>
 
-[120/388] r1 R1> ip access-list extended REFLECT-IN
-  % Invalid input detected at '^' marker.
-  ip access-list extended REFLECT-IN
-  ^
-
-[121/388] r1 R1> evaluate TCP-REFLECT
-  % Invalid input detected at '^' marker.
-  evaluate TCP-REFLECT
-  ^
-
-[122/388] r1 R1> exit
+[113/388] r1 R1(config-time-range)# exit
 <empty>
 
-[123/388] r1 R1> end
+[114/388] r1 R1(config)# ip access-list extended TIMED
 <empty>
 
-[124/388] r1 R1> show time-range
-  % Invalid input detected at '^' marker.
-  show time-range
-       ^
+[115/388] r1 R1(config-ext-nacl)# permit ip any any time-range BUSINESS-HOURS
+<empty>
 
-[125/388] r1 R1> show ip access-lists TIMED
-  % Invalid input detected at '^' marker.
-  show ip access-lists TIMED
-                       ^
+[116/388] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[117/388] r1 R1(config)# ip access-list extended REFLECT-OUT
+<empty>
+
+[118/388] r1 R1(config-ext-nacl)# permit tcp any any reflect TCP-REFLECT
+<empty>
+
+[119/388] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[120/388] r1 R1(config)# ip access-list extended REFLECT-IN
+<empty>
+
+[121/388] r1 R1(config-ext-nacl)# evaluate TCP-REFLECT
+<empty>
+
+[122/388] r1 R1(config-ext-nacl)# exit
+<empty>
+
+[123/388] r1 R1(config)# end
+<empty>
+
+[124/388] r1 R1# show time-range
+  time-range entry: BUSINESS-HOURS (inactive)
+     periodic weekdays 8:00 to 18:00
+
+[125/388] r1 R1# show ip access-lists TIMED
+  Extended IP access list TIMED
+      10 permit ip any any time-range BUSINESS-HOURS (0 matches)
 
 
 --- [126] § apply ACLs to interface / vty ---
-[126/388] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[126/388] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[127/388] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[128/388] r1 R1> ip access-group WAN-IN in
-  % Invalid input detected at '^' marker.
-  ip access-group WAN-IN in
-  ^
-
-[129/388] r1 R1> ip access-group 100 out
-  % Invalid input detected at '^' marker.
-  ip access-group 100 out
-  ^
-
-[130/388] r1 R1> exit
+[127/388] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
 
-[131/388] r1 R1> line vty 0 4
-  % Invalid input detected at '^' marker.
-  line vty 0 4
-  ^
-
-[132/388] r1 R1> access-class MGMT in
-  % Invalid input detected at '^' marker.
-  access-class MGMT in
-  ^
-
-[133/388] r1 R1> access-class 10 out
-  % Invalid input detected at '^' marker.
-  access-class 10 out
-  ^
-
-[134/388] r1 R1> exit
+[128/388] r1 R1(config-if)# ip access-group WAN-IN in
 <empty>
 
-[135/388] r1 R1> end
+[129/388] r1 R1(config-if)# ip access-group 100 out
 <empty>
 
-[136/388] r1 R1> show ip interface GigabitEthernet0/1
+[130/388] r1 R1(config-if)# exit
+<empty>
+
+[131/388] r1 R1(config)# line vty 0 4
+<empty>
+
+[132/388] r1 R1(config-line)# access-class MGMT in
+<empty>
+
+[133/388] r1 R1(config-line)# access-class 10 out
+<empty>
+
+[134/388] r1 R1(config-line)# exit
+<empty>
+
+[135/388] r1 R1(config)# end
+<empty>
+
+[136/388] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -571,677 +611,497 @@ Total steps: 388
 
 
 --- [137] § IPv6 ACL ---
-[137/388] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[137/388] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[138/388] r1 R1> ipv6 access-list V6-FILTER
-  % Invalid input detected at '^' marker.
-  ipv6 access-list V6-FILTER
-  ^
-
-[139/388] r1 R1> permit tcp any any eq 22
-  % Invalid input detected at '^' marker.
-  permit tcp any any eq 22
-  ^
-
-[140/388] r1 R1> permit icmp any any
-  % Invalid input detected at '^' marker.
-  permit icmp any any
-  ^
-
-[141/388] r1 R1> deny ipv6 any any log
-  % Invalid input detected at '^' marker.
-  deny ipv6 any any log
-  ^
-
-[142/388] r1 R1> exit
+[138/388] r1 R1(config)# ipv6 access-list V6-FILTER
 <empty>
 
-[143/388] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[144/388] r1 R1> ipv6 traffic-filter V6-FILTER in
-  % Invalid input detected at '^' marker.
-  ipv6 traffic-filter V6-FILTER in
-  ^
-
-[145/388] r1 R1> exit
+[139/388] r1 R1(config-ipv6-nacl)# permit tcp any any eq 22
 <empty>
 
-[146/388] r1 R1> end
+[140/388] r1 R1(config-ipv6-nacl)# permit icmp any any
 <empty>
 
-[147/388] r1 R1> show ipv6 access-list
-  % Invalid input detected at '^' marker.
-  show ipv6 access-list
-            ^
+[141/388] r1 R1(config-ipv6-nacl)# deny ipv6 any any log
+<empty>
+
+[142/388] r1 R1(config-ipv6-nacl)# exit
+<empty>
+
+[143/388] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[144/388] r1 R1(config-if)# ipv6 traffic-filter V6-FILTER in
+<empty>
+
+[145/388] r1 R1(config-if)# exit
+<empty>
+
+[146/388] r1 R1(config)# end
+<empty>
+
+[147/388] r1 R1# show ipv6 access-list
+  IPv6 access list V6-FILTER
+      permit tcp any any eq 22
+      permit icmp any any
+      deny ipv6 any any log
 
 
 --- [148] § AAA ---
-[148/388] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[148/388] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[149/388] r1 R1> aaa new-model
-  % Invalid input detected at '^' marker.
-  aaa new-model
-  ^
-
-[150/388] r1 R1> aaa authentication login default local
-  % Invalid input detected at '^' marker.
-  aaa authentication login default local
-  ^
-
-[151/388] r1 R1> aaa authentication login VTY group radius local
-  % Invalid input detected at '^' marker.
-  aaa authentication login VTY group radius local
-  ^
-
-[152/388] r1 R1> aaa authentication login CON line
-  % Invalid input detected at '^' marker.
-  aaa authentication login CON line
-  ^
-
-[153/388] r1 R1> aaa authentication enable default group tacacs+ enable
-  % Invalid input detected at '^' marker.
-  aaa authentication enable default group tacacs+ enable
-  ^
-
-[154/388] r1 R1> aaa authentication ppp default local
-  % Invalid input detected at '^' marker.
-  aaa authentication ppp default local
-  ^
-
-[155/388] r1 R1> aaa authorization exec default local
-  % Invalid input detected at '^' marker.
-  aaa authorization exec default local
-  ^
-
-[156/388] r1 R1> aaa authorization commands 15 default group tacacs+ local
-  % Invalid input detected at '^' marker.
-  aaa authorization commands 15 default group tacacs+ local
-  ^
-
-[157/388] r1 R1> aaa authorization network default group radius
-  % Invalid input detected at '^' marker.
-  aaa authorization network default group radius
-  ^
-
-[158/388] r1 R1> aaa accounting exec default start-stop group tacacs+
-  % Invalid input detected at '^' marker.
-  aaa accounting exec default start-stop group tacacs+
-  ^
-
-[159/388] r1 R1> aaa accounting commands 15 default stop-only group tacacs+
-  % Invalid input detected at '^' marker.
-  aaa accounting commands 15 default stop-only group tacacs+
-  ^
-
-[160/388] r1 R1> aaa accounting network default start-stop group radius
-  % Invalid input detected at '^' marker.
-  aaa accounting network default start-stop group radius
-  ^
-
-[161/388] r1 R1> aaa session-id common
-  % Invalid input detected at '^' marker.
-  aaa session-id common
-  ^
-
-[162/388] r1 R1> radius server RAD1
-  % Invalid input detected at '^' marker.
-  radius server RAD1
-  ^
-
-[163/388] r1 R1> address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
-  % Invalid input detected at '^' marker.
-  address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
-  ^
-
-[164/388] r1 R1> key radiussecret
-  % Invalid input detected at '^' marker.
-  key radiussecret
-  ^
-
-[165/388] r1 R1> exit
+[149/388] r1 R1(config)# aaa new-model
 <empty>
 
-[166/388] r1 R1> tacacs server TAC1
-  % Invalid input detected at '^' marker.
-  tacacs server TAC1
-  ^
-
-[167/388] r1 R1> address ipv4 10.0.0.3
-  % Invalid input detected at '^' marker.
-  address ipv4 10.0.0.3
-  ^
-
-[168/388] r1 R1> key tacacssecret
-  % Invalid input detected at '^' marker.
-  key tacacssecret
-  ^
-
-[169/388] r1 R1> exit
+[150/388] r1 R1(config)# aaa authentication login default local
 <empty>
 
-[170/388] r1 R1> aaa group server radius RADGRP
-  % Invalid input detected at '^' marker.
-  aaa group server radius RADGRP
-  ^
-
-[171/388] r1 R1> server name RAD1
-  % Invalid input detected at '^' marker.
-  server name RAD1
-  ^
-
-[172/388] r1 R1> exit
+[151/388] r1 R1(config)# aaa authentication login VTY group radius local
 <empty>
 
-[173/388] r1 R1> aaa group server tacacs+ TACGRP
-  % Invalid input detected at '^' marker.
-  aaa group server tacacs+ TACGRP
-  ^
-
-[174/388] r1 R1> server name TAC1
-  % Invalid input detected at '^' marker.
-  server name TAC1
-  ^
-
-[175/388] r1 R1> exit
+[152/388] r1 R1(config)# aaa authentication login CON line
 <empty>
 
-[176/388] r1 R1> radius-server host 10.0.0.2 key legacy
-  % Invalid input detected at '^' marker.
-  radius-server host 10.0.0.2 key legacy
-  ^
-
-[177/388] r1 R1> tacacs-server host 10.0.0.3 key legacy
-  % Invalid input detected at '^' marker.
-  tacacs-server host 10.0.0.3 key legacy
-  ^
-
-[178/388] r1 R1> end
+[153/388] r1 R1(config)# aaa authentication enable default group tacacs+ enable
 <empty>
 
-[179/388] r1 R1> show aaa servers
-  No AAA servers configured
+[154/388] r1 R1(config)# aaa authentication ppp default local
+<empty>
 
-[180/388] r1 R1> show aaa sessions
+[155/388] r1 R1(config)# aaa authorization exec default local
+<empty>
+
+[156/388] r1 R1(config)# aaa authorization commands 15 default group tacacs+ local
+<empty>
+
+[157/388] r1 R1(config)# aaa authorization network default group radius
+<empty>
+
+[158/388] r1 R1(config)# aaa accounting exec default start-stop group tacacs+
+<empty>
+
+[159/388] r1 R1(config)# aaa accounting commands 15 default stop-only group tacacs+
+<empty>
+
+[160/388] r1 R1(config)# aaa accounting network default start-stop group radius
+<empty>
+
+[161/388] r1 R1(config)# aaa session-id common
+<empty>
+
+[162/388] r1 R1(config)# radius server RAD1
+<empty>
+
+[163/388] r1 R1(config-radius-server)# address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
+<empty>
+
+[164/388] r1 R1(config-radius-server)# key radiussecret
+<empty>
+
+[165/388] r1 R1(config-radius-server)# exit
+<empty>
+
+[166/388] r1 R1(config)# tacacs server TAC1
+<empty>
+
+[167/388] r1 R1(config-tacacs-server)# address ipv4 10.0.0.3
+<empty>
+
+[168/388] r1 R1(config-tacacs-server)# key tacacssecret
+<empty>
+
+[169/388] r1 R1(config-tacacs-server)# exit
+<empty>
+
+[170/388] r1 R1(config)# aaa group server radius RADGRP
+<empty>
+
+[171/388] r1 R1(config-sg-radius)# server name RAD1
+<empty>
+
+[172/388] r1 R1(config-sg-radius)# exit
+<empty>
+
+[173/388] r1 R1(config)# aaa group server tacacs+ TACGRP
+<empty>
+
+[174/388] r1 R1(config-sg-radius)# server name TAC1
+<empty>
+
+[175/388] r1 R1(config-sg-radius)# exit
+<empty>
+
+[176/388] r1 R1(config)# radius-server host 10.0.0.2 key legacy
+<empty>
+
+[177/388] r1 R1(config)# tacacs-server host 10.0.0.3 key legacy
+<empty>
+
+[178/388] r1 R1(config)# end
+<empty>
+
+[179/388] r1 R1# show aaa servers
+  RADIUS: id 1, priority 1, host 10.0.0.2, auth-port 1812, acct-port 1813
+  TACACS+: id 2, host 10.0.0.3, port 49
+
+[180/388] r1 R1# show aaa sessions
   Total sessions since last reload: 0
 
-[181/388] r1 R1> show radius statistics
-  % Invalid input detected at '^' marker.
-  show radius statistics
-       ^
+[181/388] r1 R1# show radius statistics
+    Radius Statistics:
+    Server: RAD1 (10.0.0.2)
+      Auth requests: 0, retransmits: 0, accepts: 0, rejects: 0
+      Acct requests: 0, retransmits: 0, responses: 0
 
-[182/388] r1 R1> show tacacs
-  % Invalid input detected at '^' marker.
-  show tacacs
-       ^
+[182/388] r1 R1# show tacacs
+  Tacacs+ Server : 10.0.0.3/49
+  Socket opens: 0, closes: 0
 
 
 --- [183] § SSH / device hardening ---
-[183/388] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[183/388] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[184/388] r1 R1> hostname R1
-  % Invalid input detected at '^' marker.
-  hostname R1
-  ^
-
-[185/388] r1 R1> ip domain-name lab.local
-  % Invalid input detected at '^' marker.
-  ip domain-name lab.local
-  ^
-
-[186/388] r1 R1> crypto key generate rsa modulus 2048
-  % Invalid input detected at '^' marker.
-  crypto key generate rsa modulus 2048
-  ^
-
-[187/388] r1 R1> crypto key generate rsa general-keys modulus 4096 label SSH-KEY
-  % Invalid input detected at '^' marker.
-  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
-  ^
-
-[188/388] r1 R1> ip ssh version 2
-  % Invalid input detected at '^' marker.
-  ip ssh version 2
-  ^
-
-[189/388] r1 R1> ip ssh time-out 60
-  % Invalid input detected at '^' marker.
-  ip ssh time-out 60
-  ^
-
-[190/388] r1 R1> ip ssh authentication-retries 3
-  % Invalid input detected at '^' marker.
-  ip ssh authentication-retries 3
-  ^
-
-[191/388] r1 R1> ip ssh source-interface Loopback0
-  % Invalid input detected at '^' marker.
-  ip ssh source-interface Loopback0
-  ^
-
-[192/388] r1 R1> ip ssh dh min size 2048
-  % Invalid input detected at '^' marker.
-  ip ssh dh min size 2048
-  ^
-
-[193/388] r1 R1> ip ssh logging events
-  % Invalid input detected at '^' marker.
-  ip ssh logging events
-  ^
-
-[194/388] r1 R1> username admin privilege 15 secret StrongP@ss1
-  % Invalid input detected at '^' marker.
-  username admin privilege 15 secret StrongP@ss1
-  ^
-
-[195/388] r1 R1> enable secret StrongEn@ble1
-  % Invalid input detected at '^' marker.
-  enable secret StrongEn@ble1
-         ^
-
-[196/388] r1 R1> service password-encryption
-  % Invalid input detected at '^' marker.
-  service password-encryption
-  ^
-
-[197/388] r1 R1> security passwords min-length 10
-  % Invalid input detected at '^' marker.
-  security passwords min-length 10
-  ^
-
-[198/388] r1 R1> login block-for 120 attempts 3 within 60
-  % Invalid input detected at '^' marker.
-  login block-for 120 attempts 3 within 60
-  ^
-
-[199/388] r1 R1> login quiet-mode access-class MGMT
-  % Invalid input detected at '^' marker.
-  login quiet-mode access-class MGMT
-  ^
-
-[200/388] r1 R1> login delay 2
-  % Invalid input detected at '^' marker.
-  login delay 2
-  ^
-
-[201/388] r1 R1> login on-failure log
-  % Invalid input detected at '^' marker.
-  login on-failure log
-  ^
-
-[202/388] r1 R1> login on-success log
-  % Invalid input detected at '^' marker.
-  login on-success log
-  ^
-
-[203/388] r1 R1> line vty 0 4
-  % Invalid input detected at '^' marker.
-  line vty 0 4
-  ^
-
-[204/388] r1 R1> transport input ssh
-  % Invalid input detected at '^' marker.
-  transport input ssh
-  ^
-
-[205/388] r1 R1> login authentication VTY
-  % Invalid input detected at '^' marker.
-  login authentication VTY
-  ^
-
-[206/388] r1 R1> exec-timeout 5 0
-  % Invalid input detected at '^' marker.
-  exec-timeout 5 0
-  ^
-
-[207/388] r1 R1> exit
+[184/388] r1 R1(config)# hostname R1
 <empty>
 
-[208/388] r1 R1> line console 0
-  % Invalid input detected at '^' marker.
-  line console 0
-  ^
-
-[209/388] r1 R1> login authentication CON
-  % Invalid input detected at '^' marker.
-  login authentication CON
-  ^
-
-[210/388] r1 R1> exec-timeout 10 0
-  % Invalid input detected at '^' marker.
-  exec-timeout 10 0
-  ^
-
-[211/388] r1 R1> logging synchronous
-  % Invalid input detected at '^' marker.
-  logging synchronous
-  ^
-
-[212/388] r1 R1> exit
+[185/388] r1 R1(config)# ip domain-name lab.local
 <empty>
 
-[213/388] r1 R1> end
+[186/388] r1 R1(config)# crypto key generate rsa modulus 2048
+  The key modulus size is 2048 bits
+  % Generating 2048 bit RSA keys, keys will be non-exportable...
+  [OK] (elapsed time was 1 seconds)
+
+[187/388] r1 R1(config)# crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  The key modulus size is 4096 bits
+  % Generating 4096 bit RSA keys, keys will be non-exportable...
+  [OK] (elapsed time was 1 seconds)
+
+[188/388] r1 R1(config)# ip ssh version 2
 <empty>
 
-[214/388] r1 R1> show ip ssh
+[189/388] r1 R1(config)# ip ssh time-out 60
+<empty>
+
+[190/388] r1 R1(config)# ip ssh authentication-retries 3
+<empty>
+
+[191/388] r1 R1(config)# ip ssh source-interface Loopback0
+<empty>
+
+[192/388] r1 R1(config)# ip ssh dh min size 2048
+<empty>
+
+[193/388] r1 R1(config)# ip ssh logging events
+<empty>
+
+[194/388] r1 R1(config)# username admin privilege 15 secret StrongP@ss1
+<empty>
+
+[195/388] r1 R1(config)# enable secret StrongEn@ble1
+<empty>
+
+[196/388] r1 R1(config)# service password-encryption
+<empty>
+
+[197/388] r1 R1(config)# security passwords min-length 10
+<empty>
+
+[198/388] r1 R1(config)# login block-for 120 attempts 3 within 60
+<empty>
+
+[199/388] r1 R1(config)# login quiet-mode access-class MGMT
+<empty>
+
+[200/388] r1 R1(config)# login delay 2
+<empty>
+
+[201/388] r1 R1(config)# login on-failure log
+<empty>
+
+[202/388] r1 R1(config)# login on-success log
+<empty>
+
+[203/388] r1 R1(config)# line vty 0 4
+<empty>
+
+[204/388] r1 R1(config-line)# transport input ssh
+<empty>
+
+[205/388] r1 R1(config-line)# login authentication VTY
+<empty>
+
+[206/388] r1 R1(config-line)# exec-timeout 5 0
+<empty>
+
+[207/388] r1 R1(config-line)# exit
+<empty>
+
+[208/388] r1 R1(config)# line console 0
+<empty>
+
+[209/388] r1 R1(config-line)# login authentication CON
+<empty>
+
+[210/388] r1 R1(config-line)# exec-timeout 10 0
+<empty>
+
+[211/388] r1 R1(config-line)# logging synchronous
+<empty>
+
+[212/388] r1 R1(config-line)# exit
+<empty>
+
+[213/388] r1 R1(config)# end
+<empty>
+
+[214/388] r1 R1# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[215/388] r1 R1> show ssh
-  Connection Version Mode Encryption  Hmac  State  Username
-  %No SSHv2 server connections running.
+[215/388] r1 R1# show ssh
+  No SSHv2 server connections running.
 
-[216/388] r1 R1> show crypto key mypubkey rsa
-  % Invalid input detected at '^' marker.
-  show crypto key mypubkey rsa
-              ^
+[216/388] r1 R1# show crypto key mypubkey rsa
+  Key name: default
+   Storage Device: not specified
+   Usage: General Purpose Key
+   Key is not exportable.
+   Key Data:
+    0000000000000000000000000000000000000000000000000000000000000000
+  
+  Key name: SSH-KEY
+   Storage Device: not specified
+   Usage: General Purpose Key
+   Key is not exportable.
+   Key Data:
+    0000000000000000000000000000000000000000000000000000000000000000
 
-[217/388] r1 R1> show login
-  % Invalid input detected at '^' marker.
-  show login
-       ^
+[217/388] r1 R1# show login
+  A login delay of 2 seconds is applied.
+  Quiet-Mode access list MGMT
+  Block-for: 120 sec, attempts 3, within 60 sec
 
-[218/388] r1 R1> show login failures
-  % Invalid input detected at '^' marker.
-  show login failures
-       ^
+[218/388] r1 R1# show login failures
+  Information about login failure's with the device
+  
+  No failures recorded
 
 
 --- [219] § control-plane / CoPP / uRPF ---
-[219/388] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[219/388] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[220/388] r1 R1> ip access-list extended COPP-CRITICAL
-  % Invalid input detected at '^' marker.
-  ip access-list extended COPP-CRITICAL
-  ^
-
-[221/388] r1 R1> permit ospf any any
-  % Invalid input detected at '^' marker.
-  permit ospf any any
-  ^
-
-[222/388] r1 R1> permit tcp any any eq bgp
-  % Invalid input detected at '^' marker.
-  permit tcp any any eq bgp
-  ^
-
-[223/388] r1 R1> exit
+[220/388] r1 R1(config)# ip access-list extended COPP-CRITICAL
 <empty>
 
-[224/388] r1 R1> class-map match-all CM-COPP
-  % Invalid input detected at '^' marker.
-  class-map match-all CM-COPP
-  ^
-
-[225/388] r1 R1> match access-group name COPP-CRITICAL
-  % Invalid input detected at '^' marker.
-  match access-group name COPP-CRITICAL
-  ^
-
-[226/388] r1 R1> exit
+[221/388] r1 R1(config-ext-nacl)# permit ospf any any
 <empty>
 
-[227/388] r1 R1> policy-map PM-COPP
-  % Invalid input detected at '^' marker.
-  policy-map PM-COPP
-  ^
-
-[228/388] r1 R1> class CM-COPP
-  % Invalid input detected at '^' marker.
-  class CM-COPP
-  ^
-
-[229/388] r1 R1> police 8000 conform-action transmit exceed-action drop
-  % Invalid input detected at '^' marker.
-  police 8000 conform-action transmit exceed-action drop
-  ^
-
-[230/388] r1 R1> exit
+[222/388] r1 R1(config-ext-nacl)# permit tcp any any eq bgp
 <empty>
 
-[231/388] r1 R1> exit
+[223/388] r1 R1(config-ext-nacl)# exit
 <empty>
 
-[232/388] r1 R1> control-plane
-  % Invalid input detected at '^' marker.
-  control-plane
-  ^
-
-[233/388] r1 R1> service-policy input PM-COPP
-  % Invalid input detected at '^' marker.
-  service-policy input PM-COPP
-  ^
-
-[234/388] r1 R1> exit
+[224/388] r1 R1(config)# class-map match-all CM-COPP
 <empty>
 
-[235/388] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[236/388] r1 R1> ip verify unicast source reachable-via rx
-  % Invalid input detected at '^' marker.
-  ip verify unicast source reachable-via rx
-  ^
-
-[237/388] r1 R1> ip verify unicast reverse-path
-  % Invalid input detected at '^' marker.
-  ip verify unicast reverse-path
-  ^
-
-[238/388] r1 R1> no ip unreachables
-  % Invalid input detected at '^' marker.
-  no ip unreachables
-  ^
-
-[239/388] r1 R1> no ip redirects
-  % Invalid input detected at '^' marker.
-  no ip redirects
-  ^
-
-[240/388] r1 R1> no ip proxy-arp
-  % Invalid input detected at '^' marker.
-  no ip proxy-arp
-  ^
-
-[241/388] r1 R1> exit
+[225/388] r1 R1(config-cmap)# match access-group name COPP-CRITICAL
 <empty>
 
-[242/388] r1 R1> ip cef
-  % Invalid input detected at '^' marker.
-  ip cef
-  ^
-
-[243/388] r1 R1> end
+[226/388] r1 R1(config-cmap)# exit
 <empty>
 
-[244/388] r1 R1> show policy-map control-plane
-  % Invalid input detected at '^' marker.
-  show policy-map control-plane
-       ^
+[227/388] r1 R1(config)# policy-map PM-COPP
+<empty>
 
-[245/388] r1 R1> show ip traffic
-  IP statistics:
-    Rcvd:  0 total octets
-    Sent:  0 total octets
-    Frags: 0 forwarded
-    Drop:  0 header errors, 0 address errors
+[228/388] r1 R1(config-pmap)# class CM-COPP
+<empty>
+
+[229/388] r1 R1(config-pmap-c)# police 8000 conform-action transmit exceed-action drop
+<empty>
+
+[230/388] r1 R1(config-pmap-c)# exit
+<empty>
+
+[231/388] r1 R1(config-pmap)# exit
+<empty>
+
+[232/388] r1 R1(config)# control-plane
+<empty>
+
+[233/388] r1 R1(config-cp)# service-policy input PM-COPP
+<empty>
+
+[234/388] r1 R1(config-cp)# exit
+<empty>
+
+[235/388] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[236/388] r1 R1(config-if)# ip verify unicast source reachable-via rx
+<empty>
+
+[237/388] r1 R1(config-if)# ip verify unicast reverse-path
+<empty>
+
+[238/388] r1 R1(config-if)# no ip unreachables
+<empty>
+
+[239/388] r1 R1(config-if)# no ip redirects
+<empty>
+
+[240/388] r1 R1(config-if)# no ip proxy-arp
+<empty>
+
+[241/388] r1 R1(config-if)# exit
+<empty>
+
+[242/388] r1 R1(config)# ip cef
+<empty>
+
+[243/388] r1 R1(config)# end
+<empty>
+
+[244/388] r1 R1# show policy-map control-plane
+  Control Plane
   
-  ICMP statistics:
-    Sent: 0 total
-      Destination unreachable: 0
-      Time exceeded: 0
-      Echo replies: 0
+    Service-policy input: PM-COPP
 
-[246/388] r1 R1> show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
+[245/388] r1 R1# show ip traffic
+  IP statistics:
+    Rcvd:  0 total, 0 local destination
+           0 format errors, 0 checksum errors, 0 bad hop count
+           0 unknown protocol, 0 not a gateway, 0 security failures
+           0 bad options, 0 with options
+    Frags: 0 reassembled, 0 timeouts, 0 couldn't reassemble
+    Bcast: 0 received, 0 sent
+    Mcast: 0 received, 0 sent
+    Sent:  0 generated, 0 forwarded
+
+[246/388] r1 R1# show ip cef
+  Prefix              Next Hop             Interface
+  0.0.0.0/0           drop                 Null0
 
 
 --- [247] § zone-based firewall ---
-[247/388] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[247/388] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[248/388] r1 R1> zone security INSIDE
-  % Invalid input detected at '^' marker.
-  zone security INSIDE
-  ^
-
-[249/388] r1 R1> exit
+[248/388] r1 R1(config)# zone security INSIDE
 <empty>
 
-[250/388] r1 R1> zone security OUTSIDE
-  % Invalid input detected at '^' marker.
-  zone security OUTSIDE
-  ^
-
-[251/388] r1 R1> exit
+[249/388] r1 R1(config-sec-zone)# exit
 <empty>
 
-[252/388] r1 R1> class-map type inspect match-any CM-INSPECT
-  % Invalid input detected at '^' marker.
-  class-map type inspect match-any CM-INSPECT
-  ^
-
-[253/388] r1 R1> match protocol tcp
-  % Invalid input detected at '^' marker.
-  match protocol tcp
-  ^
-
-[254/388] r1 R1> match protocol udp
-  % Invalid input detected at '^' marker.
-  match protocol udp
-  ^
-
-[255/388] r1 R1> match protocol icmp
-  % Invalid input detected at '^' marker.
-  match protocol icmp
-  ^
-
-[256/388] r1 R1> exit
+[250/388] r1 R1(config)# zone security OUTSIDE
 <empty>
 
-[257/388] r1 R1> policy-map type inspect PM-IN-OUT
-  % Invalid input detected at '^' marker.
-  policy-map type inspect PM-IN-OUT
-  ^
-
-[258/388] r1 R1> class type inspect CM-INSPECT
-  % Invalid input detected at '^' marker.
-  class type inspect CM-INSPECT
-  ^
-
-[259/388] r1 R1> inspect
-  % Invalid input detected at '^' marker.
-  inspect
-  ^
-
-[260/388] r1 R1> exit
+[251/388] r1 R1(config-sec-zone)# exit
 <empty>
 
-[261/388] r1 R1> class class-default
-  % Invalid input detected at '^' marker.
-  class class-default
-  ^
-
-[262/388] r1 R1> drop log
-  % Invalid input detected at '^' marker.
-  drop log
-  ^
-
-[263/388] r1 R1> exit
+[252/388] r1 R1(config)# class-map type inspect match-any CM-INSPECT
 <empty>
 
-[264/388] r1 R1> exit
+[253/388] r1 R1(config-cmap)# match protocol tcp
 <empty>
 
-[265/388] r1 R1> zone-pair security IN-OUT source INSIDE destination OUTSIDE
-  % Invalid input detected at '^' marker.
-  zone-pair security IN-OUT source INSIDE destination OUTSIDE
-  ^
-
-[266/388] r1 R1> service-policy type inspect PM-IN-OUT
-  % Invalid input detected at '^' marker.
-  service-policy type inspect PM-IN-OUT
-  ^
-
-[267/388] r1 R1> exit
+[254/388] r1 R1(config-cmap)# match protocol udp
 <empty>
 
-[268/388] r1 R1> interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0
-  ^
-
-[269/388] r1 R1> zone-member security INSIDE
-  % Invalid input detected at '^' marker.
-  zone-member security INSIDE
-  ^
-
-[270/388] r1 R1> exit
+[255/388] r1 R1(config-cmap)# match protocol icmp
 <empty>
 
-[271/388] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[272/388] r1 R1> zone-member security OUTSIDE
-  % Invalid input detected at '^' marker.
-  zone-member security OUTSIDE
-  ^
-
-[273/388] r1 R1> exit
+[256/388] r1 R1(config-cmap)# exit
 <empty>
 
-[274/388] r1 R1> end
+[257/388] r1 R1(config)# policy-map type inspect PM-IN-OUT
 <empty>
 
-[275/388] r1 R1> show zone security
-  % Invalid input detected at '^' marker.
-  show zone security
-       ^
+[258/388] r1 R1(config-pmap)# class type inspect CM-INSPECT
+<empty>
 
-[276/388] r1 R1> show zone-pair security
-  % Invalid input detected at '^' marker.
-  show zone-pair security
-       ^
+[259/388] r1 R1(config-pmap-c)# inspect
+<empty>
 
-[277/388] r1 R1> show policy-map type inspect zone-pair
-  % Invalid input detected at '^' marker.
-  show policy-map type inspect zone-pair
-       ^
+[260/388] r1 R1(config-pmap-c)# exit
+<empty>
 
-[278/388] r1 R1> show parameter-map type inspect
-  % Invalid input detected at '^' marker.
-  show parameter-map type inspect
-       ^
+[261/388] r1 R1(config-pmap)# class class-default
+<empty>
+
+[262/388] r1 R1(config-pmap-c)# drop log
+<empty>
+
+[263/388] r1 R1(config-pmap-c)# exit
+<empty>
+
+[264/388] r1 R1(config-pmap)# exit
+<empty>
+
+[265/388] r1 R1(config)# zone-pair security IN-OUT source INSIDE destination OUTSIDE
+<empty>
+
+[266/388] r1 R1(config-sec-zone-pair)# service-policy type inspect PM-IN-OUT
+<empty>
+
+[267/388] r1 R1(config-sec-zone-pair)# exit
+<empty>
+
+[268/388] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[269/388] r1 R1(config-if)# zone-member security INSIDE
+<empty>
+
+[270/388] r1 R1(config-if)# exit
+<empty>
+
+[271/388] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[272/388] r1 R1(config-if)# zone-member security OUTSIDE
+<empty>
+
+[273/388] r1 R1(config-if)# exit
+<empty>
+
+[274/388] r1 R1(config)# end
+<empty>
+
+[275/388] r1 R1# show zone security
+  Zone: INSIDE
+    Description: INSIDE security zone
+    Member Interfaces:
+  Zone: OUTSIDE
+    Description: OUTSIDE security zone
+    Member Interfaces:
+
+[276/388] r1 R1# show zone-pair security
+  Zone-pair name: IN-OUT
+    Source-Zone: INSIDE  Destination-Zone: OUTSIDE
+    service-policy PM-IN-OUT
+
+[277/388] r1 R1# show policy-map type inspect zone-pair
+  policy exists on zp IN-OUT
+
+[278/388] r1 R1# show parameter-map type inspect
+  parameter-map type inspect default
+    audit-trail off
+    alert on
+    max-incomplete low unlimited
+    max-incomplete high unlimited
 
 
 --- [279] § regression: show family ---
-[279/388] r1 R1> enable
-<empty>
+[279/388] r1 R1(config)# enable
+  % Incomplete command.
 
-[280/388] r1 R1# show version
+[280/388] r1 R1(config)# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -1258,7 +1118,7 @@ Total steps: 388
   
   Configuration register is 0x2102
 
-[281/388] r1 R1# show running-config
+[281/388] r1 R1(config)# show running-config
   Building configuration...
   
   Current configuration:
@@ -1270,10 +1130,19 @@ Total steps: 388
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
+   zone-member security INSIDE
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip access-group WAN-IN in
+   ip access-group 100 out
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
+   ip verify unicast source reachable-via rx
+   zone-member security OUTSIDE
+   ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
    shutdown
@@ -1301,7 +1170,7 @@ Total steps: 388
   access-list 10 permit 192.168.18.0 0.0.0.255
   access-list 10 permit 192.168.19.0 0.0.0.255
   access-list 10 permit 192.168.20.0 0.0.0.255
-  access-list 10 deny any
+  access-list 10 deny any log
   access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 81
   access-list 100 permit udp any host 10.0.0.1 eq 53
   access-list 100 permit tcp 192.168.2.0 0.0.0.255 any eq 82
@@ -1332,20 +1201,20 @@ Total steps: 388
   access-list 100 permit udp any host 10.0.0.14 eq 53
   access-list 100 permit tcp 192.168.15.0 0.0.0.255 any eq 95
   access-list 100 permit udp any host 10.0.0.15 eq 53
-  access-list 100 permit icmp any any
-  access-list 100 deny ip any any
-  access-list 101 permit tcp any any
-  access-list 103 permit tcp any any
-  access-list 104 permit ip any any
-  access-list 105 permit tcp any any
+  access-list 100 permit icmp any any echo-reply
+  access-list 100 deny ip any any log-input
+  access-list 101 permit tcp any any established
+  access-list 103 permit tcp any any range 1024 65535
+  access-list 104 permit ip any any dscp af21
+  access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
    permit 10.0.0.0 0.0.0.255
    permit host 192.168.1.10
-   deny any
+   deny any log
   ip access-list extended WAN-IN
    permit tcp any host 10.0.0.1 eq 443
+   permit tcp any any eq 22
    permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.3 eq 443
    permit tcp any host 10.0.0.4 eq 443
    permit tcp any host 10.0.0.5 eq 443
    permit tcp any host 10.0.0.6 eq 443
@@ -1353,24 +1222,108 @@ Total steps: 388
    permit tcp any host 10.0.0.8 eq 443
    permit tcp any host 10.0.0.9 eq 443
    permit tcp any host 10.0.0.10 eq 443
-   permit udp any any
+   permit udp any any eq 161
    deny icmp any any
    permit ip any any
+  ip access-list extended TIMED
+   permit ip any any time-range BUSINESS-HOURS
+  ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
+  ip access-list extended REFLECT-IN
+   evaluate TCP-REFLECT
+  ip access-list extended COPP-CRITICAL
+   permit ospf any any
+   permit tcp any any eq 179
   !
+  !
+  username admin privilege 15 secret 5 StrongP@ss1
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   transport input ssh
+  !
+  !
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  username admin privilege 15 secret StrongP@ss1
+  enable secret StrongEn@ble1
+  service password-encryption
+  security passwords min-length 10
+  login block-for 120 attempts 3 within 60
+  login quiet-mode access-class MGMT
+  login delay 2
+  login on-failure log
+  login on-success log
+  ip domain-name lab.local
+  ip cef
+  ip ssh version 2
+  ip ssh time-out 60
+  ip ssh source-interface Loopback0
+  ip ssh dh min size 2048
+  ip ssh logging events
+  crypto key generate rsa modulus 2048
+  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  radius server RAD1
+   address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
+   key radiussecret
+  tacacs server TAC1
+   address ipv4 10.0.0.3
+   key tacacssecret
+  aaa group server radius RADGRP
+   server name RAD1
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  radius-server host 10.0.0.2 key legacy
+  tacacs-server host 10.0.0.3 key legacy
+  time-range BUSINESS-HOURS
+   absolute start 0:00 1 January 2024 end 23:59 31 December 2024
+   periodic weekdays 8:00 to 18:00
+  class-map match-all CM-COPP
+   match access-group name COPP-CRITICAL
+  class-map type inspect match-any CM-INSPECT
+   match protocol tcp
+   match protocol udp
+   match protocol icmp
+  policy-map PM-COPP
+   class CM-COPP
+    police 8000 conform-action transmit exceed-action drop
+  policy-map type inspect PM-IN-OUT
+   class type inspect CM-INSPECT
+    inspect
+   class class-default
+    drop log
+  control-plane
+   service-policy input PM-COPP
+  zone security INSIDE
+  zone security OUTSIDE
+  zone-pair security IN-OUT source INSIDE destination OUTSIDE
+   service-policy type inspect PM-IN-OUT
   !
   end
 
-[282/388] r1 R1# show startup-config
+[282/388] r1 R1(config)# show startup-config
   % startup-config is not present
 
-[283/388] r1 R1# show ip interface brief
+[283/388] r1 R1(config)# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual administratively down down
   GigabitEthernet0/3         unassigned      YES manual administratively down down
 
-[284/388] r1 R1# show interfaces
+[284/388] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1406,56 +1359,66 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[285/388] r1 R1# show ip route
+[285/388] r1 R1(config)# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
 
-[286/388] r1 R1# show ip route summary
-  % Network not in table
+[286/388] r1 R1(config)# show ip route summary
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       2           2           0           304         720
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           2           2           0           304         720
 
-[287/388] r1 R1# show ip protocols
+[287/388] r1 R1(config)# show ip protocols
   No routing protocol is configured.
 
-[288/388] r1 R1# show ip arp
+[288/388] r1 R1(config)# show ip arp
   No ARP entries.
 
-[289/388] r1 R1# show arp
+[289/388] r1 R1(config)# show arp
   No ARP entries.
 
-[290/388] r1 R1# show ip ospf
+[290/388] r1 R1(config)# show ip ospf
   % OSPF is not configured
 
-[291/388] r1 R1# show ip ospf neighbor
+[291/388] r1 R1(config)# show ip ospf neighbor
   % OSPF is not configured
 
-[292/388] r1 R1# show ip ospf database
+[292/388] r1 R1(config)# show ip ospf database
   % OSPF is not configured
 
-[293/388] r1 R1# show ip ospf interface brief
+[293/388] r1 R1(config)# show ip ospf interface brief
   % OSPF is not configured
 
-[294/388] r1 R1# show ip eigrp neighbors
+[294/388] r1 R1(config)# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[295/388] r1 R1# show ip eigrp topology
+[295/388] r1 R1(config)# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[296/388] r1 R1# show ip bgp
+[296/388] r1 R1(config)# show ip bgp
   % BGP not active
 
-[297/388] r1 R1# show ip bgp summary
+[297/388] r1 R1(config)# show ip bgp summary
   % BGP not active
 
-[298/388] r1 R1# show ip rip database
+[298/388] r1 R1(config)# show ip rip database
 <empty>
 
-[299/388] r1 R1# show ip nat translations
+[299/388] r1 R1(config)# show ip nat translations
   No NAT translations.
 
-[300/388] r1 R1# show ip nat statistics
+[300/388] r1 R1(config)# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
   Outside interfaces:  none
   Inside interfaces:   none
@@ -1465,211 +1428,230 @@ Total steps: 388
   Dynamic mappings:
   -- No dynamic NAT rules configured --
 
-[301/388] r1 R1# show ip dhcp binding
+[301/388] r1 R1(config)# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[302/388] r1 R1# show ip dhcp pool
+[302/388] r1 R1(config)# show ip dhcp pool
 <empty>
 
-[303/388] r1 R1# show access-lists
+[303/388] r1 R1(config)# show access-lists
   Standard IP access list 10
-      permit 192.168.1.0 0.0.0.255 (0 matches)
-      permit 192.168.2.0 0.0.0.255 (0 matches)
-      permit 192.168.3.0 0.0.0.255 (0 matches)
-      permit 192.168.4.0 0.0.0.255 (0 matches)
-      permit 192.168.5.0 0.0.0.255 (0 matches)
-      permit 192.168.6.0 0.0.0.255 (0 matches)
-      permit 192.168.7.0 0.0.0.255 (0 matches)
-      permit 192.168.8.0 0.0.0.255 (0 matches)
-      permit 192.168.9.0 0.0.0.255 (0 matches)
-      permit 192.168.10.0 0.0.0.255 (0 matches)
-      permit 192.168.11.0 0.0.0.255 (0 matches)
-      permit 192.168.12.0 0.0.0.255 (0 matches)
-      permit 192.168.13.0 0.0.0.255 (0 matches)
-      permit 192.168.14.0 0.0.0.255 (0 matches)
-      permit 192.168.15.0 0.0.0.255 (0 matches)
-      permit 192.168.16.0 0.0.0.255 (0 matches)
-      permit 192.168.17.0 0.0.0.255 (0 matches)
-      permit 192.168.18.0 0.0.0.255 (0 matches)
-      permit 192.168.19.0 0.0.0.255 (0 matches)
-      permit 192.168.20.0 0.0.0.255 (0 matches)
-      deny any (0 matches)
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+      20 permit 192.168.2.0 0.0.0.255 (0 matches)
+      30 permit 192.168.3.0 0.0.0.255 (0 matches)
+      40 permit 192.168.4.0 0.0.0.255 (0 matches)
+      50 permit 192.168.5.0 0.0.0.255 (0 matches)
+      60 permit 192.168.6.0 0.0.0.255 (0 matches)
+      70 permit 192.168.7.0 0.0.0.255 (0 matches)
+      80 permit 192.168.8.0 0.0.0.255 (0 matches)
+      90 permit 192.168.9.0 0.0.0.255 (0 matches)
+      100 permit 192.168.10.0 0.0.0.255 (0 matches)
+      110 permit 192.168.11.0 0.0.0.255 (0 matches)
+      120 permit 192.168.12.0 0.0.0.255 (0 matches)
+      130 permit 192.168.13.0 0.0.0.255 (0 matches)
+      140 permit 192.168.14.0 0.0.0.255 (0 matches)
+      150 permit 192.168.15.0 0.0.0.255 (0 matches)
+      160 permit 192.168.16.0 0.0.0.255 (0 matches)
+      170 permit 192.168.17.0 0.0.0.255 (0 matches)
+      180 permit 192.168.18.0 0.0.0.255 (0 matches)
+      190 permit 192.168.19.0 0.0.0.255 (0 matches)
+      200 permit 192.168.20.0 0.0.0.255 (0 matches)
+      210 deny any log (0 matches)
   Extended IP access list 100
-      permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      permit udp any host 10.0.0.1 eq 53 (0 matches)
-      permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      permit udp any host 10.0.0.2 eq 53 (0 matches)
-      permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      permit udp any host 10.0.0.3 eq 53 (0 matches)
-      permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      permit udp any host 10.0.0.4 eq 53 (0 matches)
-      permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      permit udp any host 10.0.0.5 eq 53 (0 matches)
-      permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      permit udp any host 10.0.0.6 eq 53 (0 matches)
-      permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      permit udp any host 10.0.0.7 eq 53 (0 matches)
-      permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      permit udp any host 10.0.0.8 eq 53 (0 matches)
-      permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      permit udp any host 10.0.0.9 eq 53 (0 matches)
-      permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      permit udp any host 10.0.0.10 eq 53 (0 matches)
-      permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      permit udp any host 10.0.0.11 eq 53 (0 matches)
-      permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      permit udp any host 10.0.0.12 eq 53 (0 matches)
-      permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      permit udp any host 10.0.0.13 eq 53 (0 matches)
-      permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      permit udp any host 10.0.0.14 eq 53 (0 matches)
-      permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      permit udp any host 10.0.0.15 eq 53 (0 matches)
-      permit icmp any any (0 matches)
-      deny ip any any (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
+      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
+      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
+      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
+      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
+      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
+      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
+      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
+      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
+      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
+      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
+      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
+      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
+      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
+      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
+      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
+      310 permit icmp any any echo-reply (0 matches)
+      320 deny ip any any log-input (0 matches)
   Extended IP access list 101
-      permit tcp any any (0 matches)
+      10 permit tcp any any established (0 matches)
   Extended IP access list 103
-      permit tcp any any (0 matches)
+      10 permit tcp any any range 1024 65535 (0 matches)
   Extended IP access list 104
-      permit ip any any (0 matches)
+      10 permit ip any any dscp af21 (0 matches)
   Extended IP access list 105
-      permit tcp any any (0 matches)
+      10 permit tcp any any eq 80 log (0 matches)
   Standard IP access list MGMT
-      permit 10.0.0.0 0.0.0.255 (0 matches)
-      permit host 192.168.1.10 (0 matches)
-      deny any (0 matches)
+      10 permit 10.0.0.0 0.0.0.255 (0 matches)
+      20 permit host 192.168.1.10 (0 matches)
+      30 deny any log (0 matches)
   Extended IP access list WAN-IN
-      permit tcp any host 10.0.0.1 eq 443 (0 matches)
-      permit tcp any host 10.0.0.2 eq 443 (0 matches)
-      permit tcp any host 10.0.0.3 eq 443 (0 matches)
-      permit tcp any host 10.0.0.4 eq 443 (0 matches)
-      permit tcp any host 10.0.0.5 eq 443 (0 matches)
-      permit tcp any host 10.0.0.6 eq 443 (0 matches)
-      permit tcp any host 10.0.0.7 eq 443 (0 matches)
-      permit tcp any host 10.0.0.8 eq 443 (0 matches)
-      permit tcp any host 10.0.0.9 eq 443 (0 matches)
-      permit tcp any host 10.0.0.10 eq 443 (0 matches)
-      permit udp any any (0 matches)
-      deny icmp any any (0 matches)
-      permit ip any any (0 matches)
+      10 permit tcp any host 10.0.0.1 eq 443 (0 matches)
+      20 permit tcp any any eq 22 (0 matches)
+      30 permit tcp any host 10.0.0.2 eq 443 (0 matches)
+      40 permit tcp any host 10.0.0.4 eq 443 (0 matches)
+      50 permit tcp any host 10.0.0.5 eq 443 (0 matches)
+      60 permit tcp any host 10.0.0.6 eq 443 (0 matches)
+      70 permit tcp any host 10.0.0.7 eq 443 (0 matches)
+      80 permit tcp any host 10.0.0.8 eq 443 (0 matches)
+      90 permit tcp any host 10.0.0.9 eq 443 (0 matches)
+      100 permit tcp any host 10.0.0.10 eq 443 (0 matches)
+      110 permit udp any any eq 161 (0 matches)
+      120 deny icmp any any (0 matches)
+      130 permit ip any any (0 matches)
+  Extended IP access list TIMED
+      10 permit ip any any time-range BUSINESS-HOURS (0 matches)
+  Extended IP access list REFLECT-OUT
+      10 permit tcp any any reflect TCP-REFLECT (0 matches)
+  Extended IP access list REFLECT-IN
+      10 evaluate TCP-REFLECT (0 matches)
+  Extended IP access list COPP-CRITICAL
+      10 permit ospf any any (0 matches)
+      20 permit tcp any any eq 179 (0 matches)
 
-[304/388] r1 R1# show ip access-lists
+[304/388] r1 R1(config)# show ip access-lists
   Standard IP access list 10
-      permit 192.168.1.0 0.0.0.255 (0 matches)
-      permit 192.168.2.0 0.0.0.255 (0 matches)
-      permit 192.168.3.0 0.0.0.255 (0 matches)
-      permit 192.168.4.0 0.0.0.255 (0 matches)
-      permit 192.168.5.0 0.0.0.255 (0 matches)
-      permit 192.168.6.0 0.0.0.255 (0 matches)
-      permit 192.168.7.0 0.0.0.255 (0 matches)
-      permit 192.168.8.0 0.0.0.255 (0 matches)
-      permit 192.168.9.0 0.0.0.255 (0 matches)
-      permit 192.168.10.0 0.0.0.255 (0 matches)
-      permit 192.168.11.0 0.0.0.255 (0 matches)
-      permit 192.168.12.0 0.0.0.255 (0 matches)
-      permit 192.168.13.0 0.0.0.255 (0 matches)
-      permit 192.168.14.0 0.0.0.255 (0 matches)
-      permit 192.168.15.0 0.0.0.255 (0 matches)
-      permit 192.168.16.0 0.0.0.255 (0 matches)
-      permit 192.168.17.0 0.0.0.255 (0 matches)
-      permit 192.168.18.0 0.0.0.255 (0 matches)
-      permit 192.168.19.0 0.0.0.255 (0 matches)
-      permit 192.168.20.0 0.0.0.255 (0 matches)
-      deny any (0 matches)
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+      20 permit 192.168.2.0 0.0.0.255 (0 matches)
+      30 permit 192.168.3.0 0.0.0.255 (0 matches)
+      40 permit 192.168.4.0 0.0.0.255 (0 matches)
+      50 permit 192.168.5.0 0.0.0.255 (0 matches)
+      60 permit 192.168.6.0 0.0.0.255 (0 matches)
+      70 permit 192.168.7.0 0.0.0.255 (0 matches)
+      80 permit 192.168.8.0 0.0.0.255 (0 matches)
+      90 permit 192.168.9.0 0.0.0.255 (0 matches)
+      100 permit 192.168.10.0 0.0.0.255 (0 matches)
+      110 permit 192.168.11.0 0.0.0.255 (0 matches)
+      120 permit 192.168.12.0 0.0.0.255 (0 matches)
+      130 permit 192.168.13.0 0.0.0.255 (0 matches)
+      140 permit 192.168.14.0 0.0.0.255 (0 matches)
+      150 permit 192.168.15.0 0.0.0.255 (0 matches)
+      160 permit 192.168.16.0 0.0.0.255 (0 matches)
+      170 permit 192.168.17.0 0.0.0.255 (0 matches)
+      180 permit 192.168.18.0 0.0.0.255 (0 matches)
+      190 permit 192.168.19.0 0.0.0.255 (0 matches)
+      200 permit 192.168.20.0 0.0.0.255 (0 matches)
+      210 deny any log (0 matches)
   Extended IP access list 100
-      permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
-      permit udp any host 10.0.0.1 eq 53 (0 matches)
-      permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
-      permit udp any host 10.0.0.2 eq 53 (0 matches)
-      permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
-      permit udp any host 10.0.0.3 eq 53 (0 matches)
-      permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
-      permit udp any host 10.0.0.4 eq 53 (0 matches)
-      permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
-      permit udp any host 10.0.0.5 eq 53 (0 matches)
-      permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
-      permit udp any host 10.0.0.6 eq 53 (0 matches)
-      permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
-      permit udp any host 10.0.0.7 eq 53 (0 matches)
-      permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
-      permit udp any host 10.0.0.8 eq 53 (0 matches)
-      permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
-      permit udp any host 10.0.0.9 eq 53 (0 matches)
-      permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
-      permit udp any host 10.0.0.10 eq 53 (0 matches)
-      permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
-      permit udp any host 10.0.0.11 eq 53 (0 matches)
-      permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
-      permit udp any host 10.0.0.12 eq 53 (0 matches)
-      permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
-      permit udp any host 10.0.0.13 eq 53 (0 matches)
-      permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
-      permit udp any host 10.0.0.14 eq 53 (0 matches)
-      permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
-      permit udp any host 10.0.0.15 eq 53 (0 matches)
-      permit icmp any any (0 matches)
-      deny ip any any (0 matches)
+      10 permit tcp 192.168.1.0 0.0.0.255 any eq 81 (0 matches)
+      20 permit udp any host 10.0.0.1 eq 53 (0 matches)
+      30 permit tcp 192.168.2.0 0.0.0.255 any eq 82 (0 matches)
+      40 permit udp any host 10.0.0.2 eq 53 (0 matches)
+      50 permit tcp 192.168.3.0 0.0.0.255 any eq 83 (0 matches)
+      60 permit udp any host 10.0.0.3 eq 53 (0 matches)
+      70 permit tcp 192.168.4.0 0.0.0.255 any eq 84 (0 matches)
+      80 permit udp any host 10.0.0.4 eq 53 (0 matches)
+      90 permit tcp 192.168.5.0 0.0.0.255 any eq 85 (0 matches)
+      100 permit udp any host 10.0.0.5 eq 53 (0 matches)
+      110 permit tcp 192.168.6.0 0.0.0.255 any eq 86 (0 matches)
+      120 permit udp any host 10.0.0.6 eq 53 (0 matches)
+      130 permit tcp 192.168.7.0 0.0.0.255 any eq 87 (0 matches)
+      140 permit udp any host 10.0.0.7 eq 53 (0 matches)
+      150 permit tcp 192.168.8.0 0.0.0.255 any eq 88 (0 matches)
+      160 permit udp any host 10.0.0.8 eq 53 (0 matches)
+      170 permit tcp 192.168.9.0 0.0.0.255 any eq 89 (0 matches)
+      180 permit udp any host 10.0.0.9 eq 53 (0 matches)
+      190 permit tcp 192.168.10.0 0.0.0.255 any eq 90 (0 matches)
+      200 permit udp any host 10.0.0.10 eq 53 (0 matches)
+      210 permit tcp 192.168.11.0 0.0.0.255 any eq 91 (0 matches)
+      220 permit udp any host 10.0.0.11 eq 53 (0 matches)
+      230 permit tcp 192.168.12.0 0.0.0.255 any eq 92 (0 matches)
+      240 permit udp any host 10.0.0.12 eq 53 (0 matches)
+      250 permit tcp 192.168.13.0 0.0.0.255 any eq 93 (0 matches)
+      260 permit udp any host 10.0.0.13 eq 53 (0 matches)
+      270 permit tcp 192.168.14.0 0.0.0.255 any eq 94 (0 matches)
+      280 permit udp any host 10.0.0.14 eq 53 (0 matches)
+      290 permit tcp 192.168.15.0 0.0.0.255 any eq 95 (0 matches)
+      300 permit udp any host 10.0.0.15 eq 53 (0 matches)
+      310 permit icmp any any echo-reply (0 matches)
+      320 deny ip any any log-input (0 matches)
   Extended IP access list 101
-      permit tcp any any (0 matches)
+      10 permit tcp any any established (0 matches)
   Extended IP access list 103
-      permit tcp any any (0 matches)
+      10 permit tcp any any range 1024 65535 (0 matches)
   Extended IP access list 104
-      permit ip any any (0 matches)
+      10 permit ip any any dscp af21 (0 matches)
   Extended IP access list 105
-      permit tcp any any (0 matches)
+      10 permit tcp any any eq 80 log (0 matches)
   Standard IP access list MGMT
-      permit 10.0.0.0 0.0.0.255 (0 matches)
-      permit host 192.168.1.10 (0 matches)
-      deny any (0 matches)
+      10 permit 10.0.0.0 0.0.0.255 (0 matches)
+      20 permit host 192.168.1.10 (0 matches)
+      30 deny any log (0 matches)
   Extended IP access list WAN-IN
-      permit tcp any host 10.0.0.1 eq 443 (0 matches)
-      permit tcp any host 10.0.0.2 eq 443 (0 matches)
-      permit tcp any host 10.0.0.3 eq 443 (0 matches)
-      permit tcp any host 10.0.0.4 eq 443 (0 matches)
-      permit tcp any host 10.0.0.5 eq 443 (0 matches)
-      permit tcp any host 10.0.0.6 eq 443 (0 matches)
-      permit tcp any host 10.0.0.7 eq 443 (0 matches)
-      permit tcp any host 10.0.0.8 eq 443 (0 matches)
-      permit tcp any host 10.0.0.9 eq 443 (0 matches)
-      permit tcp any host 10.0.0.10 eq 443 (0 matches)
-      permit udp any any (0 matches)
-      deny icmp any any (0 matches)
-      permit ip any any (0 matches)
+      10 permit tcp any host 10.0.0.1 eq 443 (0 matches)
+      20 permit tcp any any eq 22 (0 matches)
+      30 permit tcp any host 10.0.0.2 eq 443 (0 matches)
+      40 permit tcp any host 10.0.0.4 eq 443 (0 matches)
+      50 permit tcp any host 10.0.0.5 eq 443 (0 matches)
+      60 permit tcp any host 10.0.0.6 eq 443 (0 matches)
+      70 permit tcp any host 10.0.0.7 eq 443 (0 matches)
+      80 permit tcp any host 10.0.0.8 eq 443 (0 matches)
+      90 permit tcp any host 10.0.0.9 eq 443 (0 matches)
+      100 permit tcp any host 10.0.0.10 eq 443 (0 matches)
+      110 permit udp any any eq 161 (0 matches)
+      120 deny icmp any any (0 matches)
+      130 permit ip any any (0 matches)
+  Extended IP access list TIMED
+      10 permit ip any any time-range BUSINESS-HOURS (0 matches)
+  Extended IP access list REFLECT-OUT
+      10 permit tcp any any reflect TCP-REFLECT (0 matches)
+  Extended IP access list REFLECT-IN
+      10 evaluate TCP-REFLECT (0 matches)
+  Extended IP access list COPP-CRITICAL
+      10 permit ospf any any (0 matches)
+      20 permit tcp any any eq 179 (0 matches)
 
-[305/388] r1 R1# show crypto isakmp sa
+[305/388] r1 R1(config)# show crypto isakmp sa
   IPSec not configured.
 
-[306/388] r1 R1# show crypto ipsec sa
+[306/388] r1 R1(config)# show crypto ipsec sa
   IPSec not configured.
 
-[307/388] r1 R1# show crypto session
+[307/388] r1 R1(config)# show crypto session
   IPSec not configured.
 
-[308/388] r1 R1# show crypto map
+[308/388] r1 R1(config)# show crypto map
   IPSec not configured.
 
-[309/388] r1 R1# show standby brief
+[309/388] r1 R1(config)# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
-[310/388] r1 R1# show vrrp brief
+[310/388] r1 R1(config)# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
-[311/388] r1 R1# show track
+[311/388] r1 R1(config)# show track
   No tracked objects configured.
 
-[312/388] r1 R1# show ip sla statistics
+[312/388] r1 R1(config)# show ip sla statistics
   No IP SLA operations configured.
 
-[313/388] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+[313/388] r1 R1(config)# show policy-map interface
+   GigabitEthernet0/1
+    Zone member: OUTSIDE
+   GigabitEthernet0/0
+    Zone member: INSIDE
 
-[314/388] r1 R1# show logging
+[314/388] r1 R1(config)# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
@@ -1680,26 +1662,26 @@ Total steps: 388
       Sequence numbers: disabled
       No active syslog hosts
 
-[315/388] r1 R1# show snmp
+[315/388] r1 R1(config)# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[316/388] r1 R1# show ntp status
+[316/388] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:56.327Z
+  reference time is EDCAF8BE.B020C49B (19:02:22.688 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
-[317/388] r1 R1# show ntp associations
+[317/388] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
   No NTP associations configured.
 
-[318/388] r1 R1# show clock
-  *16:07:56.000 UTC Wed Jun 3 2026
+[318/388] r1 R1(config)# show clock
+  *19:02:22.000 UTC Wed Jun 3 2026
 
-[319/388] r1 R1# show cdp neighbors
+[319/388] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1709,7 +1691,7 @@ Total steps: 388
   
   Total cdp entries displayed : 2
 
-[320/388] r1 R1# show lldp neighbors
+[320/388] r1 R1(config)# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
@@ -1718,32 +1700,32 @@ Total steps: 388
   
   Total entries displayed: 0
 
-[321/388] r1 R1# show processes cpu
+[321/388] r1 R1(config)# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[322/388] r1 R1# show memory statistics
+[322/388] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
   I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
 
-[323/388] r1 R1# show flash
+[323/388] r1 R1(config)# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
-[324/388] r1 R1# show users
+[324/388] r1 R1(config)# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[325/388] r1 R1# show history
+[325/388] r1 R1(config)# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1765,13 +1747,11 @@ Total steps: 388
   show users
   show history
 
-[326/388] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
+[326/388] r1 R1(config)# show ip cef
+  Prefix              Next Hop             Interface
+  0.0.0.0/0           drop                 Null0
 
-[327/388] r1 R1# show interfaces GigabitEthernet0/0
+[327/388] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1782,7 +1762,7 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[328/388] r1 R1# show interfaces GigabitEthernet0/1
+[328/388] r1 R1(config)# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1793,7 +1773,7 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[329/388] r1 R1# show ip interface GigabitEthernet0/1
+[329/388] r1 R1(config)# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1804,7 +1784,7 @@ Total steps: 388
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[330/388] r1 R1# show controllers
+[330/388] r1 R1(config)# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1822,7 +1802,7 @@ Total steps: 388
     Administrative state: up
     0 carrier transitions
 
-[331/388] r1 R1# show tech-support
+[331/388] r1 R1(config)# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1852,10 +1832,19 @@ Total steps: 388
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
+   zone-member security INSIDE
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip access-group WAN-IN in
+   ip access-group 100 out
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
+   ip verify unicast source reachable-via rx
+   zone-member security OUTSIDE
+   ipv6 traffic-filter V6-FILTER in
   !
   interface GigabitEthernet0/2
    shutdown
@@ -1883,7 +1872,7 @@ Total steps: 388
   access-list 10 permit 192.168.18.0 0.0.0.255
   access-list 10 permit 192.168.19.0 0.0.0.255
   access-list 10 permit 192.168.20.0 0.0.0.255
-  access-list 10 deny any
+  access-list 10 deny any log
   access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 81
   access-list 100 permit udp any host 10.0.0.1 eq 53
   access-list 100 permit tcp 192.168.2.0 0.0.0.255 any eq 82
@@ -1914,20 +1903,20 @@ Total steps: 388
   access-list 100 permit udp any host 10.0.0.14 eq 53
   access-list 100 permit tcp 192.168.15.0 0.0.0.255 any eq 95
   access-list 100 permit udp any host 10.0.0.15 eq 53
-  access-list 100 permit icmp any any
-  access-list 100 deny ip any any
-  access-list 101 permit tcp any any
-  access-list 103 permit tcp any any
-  access-list 104 permit ip any any
-  access-list 105 permit tcp any any
+  access-list 100 permit icmp any any echo-reply
+  access-list 100 deny ip any any log-input
+  access-list 101 permit tcp any any established
+  access-list 103 permit tcp any any range 1024 65535
+  access-list 104 permit ip any any dscp af21
+  access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
    permit 10.0.0.0 0.0.0.255
    permit host 192.168.1.10
-   deny any
+   deny any log
   ip access-list extended WAN-IN
    permit tcp any host 10.0.0.1 eq 443
+   permit tcp any any eq 22
    permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.3 eq 443
    permit tcp any host 10.0.0.4 eq 443
    permit tcp any host 10.0.0.5 eq 443
    permit tcp any host 10.0.0.6 eq 443
@@ -1935,10 +1924,94 @@ Total steps: 388
    permit tcp any host 10.0.0.8 eq 443
    permit tcp any host 10.0.0.9 eq 443
    permit tcp any host 10.0.0.10 eq 443
-   permit udp any any
+   permit udp any any eq 161
    deny icmp any any
    permit ip any any
+  ip access-list extended TIMED
+   permit ip any any time-range BUSINESS-HOURS
+  ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
+  ip access-list extended REFLECT-IN
+   evaluate TCP-REFLECT
+  ip access-list extended COPP-CRITICAL
+   permit ospf any any
+   permit tcp any any eq 179
   !
+  !
+  username admin privilege 15 secret 5 StrongP@ss1
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   transport input ssh
+  !
+  !
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  username admin privilege 15 secret StrongP@ss1
+  enable secret StrongEn@ble1
+  service password-encryption
+  security passwords min-length 10
+  login block-for 120 attempts 3 within 60
+  login quiet-mode access-class MGMT
+  login delay 2
+  login on-failure log
+  login on-success log
+  ip domain-name lab.local
+  ip cef
+  ip ssh version 2
+  ip ssh time-out 60
+  ip ssh source-interface Loopback0
+  ip ssh dh min size 2048
+  ip ssh logging events
+  crypto key generate rsa modulus 2048
+  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  radius server RAD1
+   address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
+   key radiussecret
+  tacacs server TAC1
+   address ipv4 10.0.0.3
+   key tacacssecret
+  aaa group server radius RADGRP
+   server name RAD1
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  radius-server host 10.0.0.2 key legacy
+  tacacs-server host 10.0.0.3 key legacy
+  time-range BUSINESS-HOURS
+   absolute start 0:00 1 January 2024 end 23:59 31 December 2024
+   periodic weekdays 8:00 to 18:00
+  class-map match-all CM-COPP
+   match access-group name COPP-CRITICAL
+  class-map type inspect match-any CM-INSPECT
+   match protocol tcp
+   match protocol udp
+   match protocol icmp
+  policy-map PM-COPP
+   class CM-COPP
+    police 8000 conform-action transmit exceed-action drop
+  policy-map type inspect PM-IN-OUT
+   class type inspect CM-INSPECT
+    inspect
+   class class-default
+    drop log
+  control-plane
+   service-policy input PM-COPP
+  zone security INSIDE
+  zone security OUTSIDE
+  zone-pair security IN-OUT source INSIDE destination OUTSIDE
+   service-policy type inspect PM-IN-OUT
   !
   end
   
@@ -2005,37 +2078,37 @@ Total steps: 388
       Sequence numbers: disabled
       No active syslog hosts
 
-[332/388] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+[332/388] r1 R1(config)# show inventory
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[333/388] r1 R1# show environment
+[333/388] r1 R1(config)# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[334/388] r1 R1# show redundancy
+[334/388] r1 R1(config)# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[335/388] r1 R1# show ip vrf
+[335/388] r1 R1(config)# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[336/388] r1 R1# show vrf
+[336/388] r1 R1(config)# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[337/388] r1 R1# show hosts
+[337/388] r1 R1(config)# show hosts
   Default domain is not set
   Name/address lookup uses domain service
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[338/388] r1 R1# show ip ssh
+[338/388] r1 R1(config)# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[339/388] r1 R1# show line
+[339/388] r1 R1(config)# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -2044,13 +2117,13 @@ Total steps: 388
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[340/388] r1 R1# show terminal
+[340/388] r1 R1(config)# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[341/388] r1 R1# show aliases
+[341/388] r1 R1(config)# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -2067,109 +2140,103 @@ Total steps: 388
 <empty>
 
 [343/388] r1 R1(config)# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
-  !
+   zone-member security INSIDE
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
+   ip access-group WAN-IN in
+   ip access-group 100 out
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
+   ip verify unicast source reachable-via rx
+   zone-member security OUTSIDE
+   ipv6 traffic-filter V6-FILTER in
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
-  access-list 10 permit 192.168.1.0 0.0.0.255
-  access-list 10 permit 192.168.2.0 0.0.0.255
-  access-list 10 permit 192.168.3.0 0.0.0.255
-  access-list 10 permit 192.168.4.0 0.0.0.255
-  access-list 10 permit 192.168.5.0 0.0.0.255
-  access-list 10 permit 192.168.6.0 0.0.0.255
-  access-list 10 permit 192.168.7.0 0.0.0.255
-  access-list 10 permit 192.168.8.0 0.0.0.255
-  access-list 10 permit 192.168.9.0 0.0.0.255
-  access-list 10 permit 192.168.10.0 0.0.0.255
-  access-list 10 permit 192.168.11.0 0.0.0.255
-  access-list 10 permit 192.168.12.0 0.0.0.255
-  access-list 10 permit 192.168.13.0 0.0.0.255
-  access-list 10 permit 192.168.14.0 0.0.0.255
-  access-list 10 permit 192.168.15.0 0.0.0.255
-  access-list 10 permit 192.168.16.0 0.0.0.255
-  access-list 10 permit 192.168.17.0 0.0.0.255
-  access-list 10 permit 192.168.18.0 0.0.0.255
-  access-list 10 permit 192.168.19.0 0.0.0.255
-  access-list 10 permit 192.168.20.0 0.0.0.255
-  access-list 10 deny any
-  access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 81
-  access-list 100 permit udp any host 10.0.0.1 eq 53
-  access-list 100 permit tcp 192.168.2.0 0.0.0.255 any eq 82
-  access-list 100 permit udp any host 10.0.0.2 eq 53
-  access-list 100 permit tcp 192.168.3.0 0.0.0.255 any eq 83
-  access-list 100 permit udp any host 10.0.0.3 eq 53
-  access-list 100 permit tcp 192.168.4.0 0.0.0.255 any eq 84
-  access-list 100 permit udp any host 10.0.0.4 eq 53
-  access-list 100 permit tcp 192.168.5.0 0.0.0.255 any eq 85
-  access-list 100 permit udp any host 10.0.0.5 eq 53
-  access-list 100 permit tcp 192.168.6.0 0.0.0.255 any eq 86
-  access-list 100 permit udp any host 10.0.0.6 eq 53
-  access-list 100 permit tcp 192.168.7.0 0.0.0.255 any eq 87
-  access-list 100 permit udp any host 10.0.0.7 eq 53
-  access-list 100 permit tcp 192.168.8.0 0.0.0.255 any eq 88
-  access-list 100 permit udp any host 10.0.0.8 eq 53
-  access-list 100 permit tcp 192.168.9.0 0.0.0.255 any eq 89
-  access-list 100 permit udp any host 10.0.0.9 eq 53
-  access-list 100 permit tcp 192.168.10.0 0.0.0.255 any eq 90
-  access-list 100 permit udp any host 10.0.0.10 eq 53
-  access-list 100 permit tcp 192.168.11.0 0.0.0.255 any eq 91
-  access-list 100 permit udp any host 10.0.0.11 eq 53
-  access-list 100 permit tcp 192.168.12.0 0.0.0.255 any eq 92
-  access-list 100 permit udp any host 10.0.0.12 eq 53
-  access-list 100 permit tcp 192.168.13.0 0.0.0.255 any eq 93
-  access-list 100 permit udp any host 10.0.0.13 eq 53
-  access-list 100 permit tcp 192.168.14.0 0.0.0.255 any eq 94
-  access-list 100 permit udp any host 10.0.0.14 eq 53
-  access-list 100 permit tcp 192.168.15.0 0.0.0.255 any eq 95
-  access-list 100 permit udp any host 10.0.0.15 eq 53
-  access-list 100 permit icmp any any
-  access-list 100 deny ip any any
-  access-list 101 permit tcp any any
-  access-list 103 permit tcp any any
-  access-list 104 permit ip any any
-  access-list 105 permit tcp any any
-  ip access-list standard MGMT
-   permit 10.0.0.0 0.0.0.255
-   permit host 192.168.1.10
-   deny any
-  ip access-list extended WAN-IN
-   permit tcp any host 10.0.0.1 eq 443
-   permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.3 eq 443
-   permit tcp any host 10.0.0.4 eq 443
-   permit tcp any host 10.0.0.5 eq 443
-   permit tcp any host 10.0.0.6 eq 443
-   permit tcp any host 10.0.0.7 eq 443
-   permit tcp any host 10.0.0.8 eq 443
-   permit tcp any host 10.0.0.9 eq 443
-   permit tcp any host 10.0.0.10 eq 443
-   permit udp any any
-   deny icmp any any
-   permit ip any any
-  !
-  !
-  end
+  ip ssh source-interface Loopback0
 
 [344/388] r1 R1(config)# show running-config | begin line
-<empty>
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   transport input ssh
+  !
+  !
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  username admin privilege 15 secret StrongP@ss1
+  enable secret StrongEn@ble1
+  service password-encryption
+  security passwords min-length 10
+  login block-for 120 attempts 3 within 60
+  login quiet-mode access-class MGMT
+  login delay 2
+  login on-failure log
+  login on-success log
+  ip domain-name lab.local
+  ip cef
+  ip ssh version 2
+  ip ssh time-out 60
+  ip ssh source-interface Loopback0
+  ip ssh dh min size 2048
+  ip ssh logging events
+  crypto key generate rsa modulus 2048
+  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  radius server RAD1
+   address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
+   key radiussecret
+  tacacs server TAC1
+   address ipv4 10.0.0.3
+   key tacacssecret
+  aaa group server radius RADGRP
+   server name RAD1
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  radius-server host 10.0.0.2 key legacy
+  tacacs-server host 10.0.0.3 key legacy
+  time-range BUSINESS-HOURS
+   absolute start 0:00 1 January 2024 end 23:59 31 December 2024
+   periodic weekdays 8:00 to 18:00
+  class-map match-all CM-COPP
+   match access-group name COPP-CRITICAL
+  class-map type inspect match-any CM-INSPECT
+   match protocol tcp
+   match protocol udp
+   match protocol icmp
+  policy-map PM-COPP
+   class CM-COPP
+    police 8000 conform-action transmit exceed-action drop
+  policy-map type inspect PM-IN-OUT
+   class type inspect CM-INSPECT
+    inspect
+   class class-default
+    drop log
+  control-plane
+   service-policy input PM-COPP
+  zone security INSIDE
+  zone security OUTSIDE
+  zone-pair security IN-OUT source INSIDE destination OUTSIDE
+   service-policy type inspect PM-IN-OUT
+  !
+  end
 
 [345/388] r1 R1(config)# show running-config | exclude !
   Building configuration...
@@ -2180,9 +2247,18 @@ Total steps: 388
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
+   zone-member security INSIDE
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip access-group WAN-IN in
+   ip access-group 100 out
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
+   ip verify unicast source reachable-via rx
+   zone-member security OUTSIDE
+   ipv6 traffic-filter V6-FILTER in
   interface GigabitEthernet0/2
    shutdown
   interface GigabitEthernet0/3
@@ -2207,7 +2283,7 @@ Total steps: 388
   access-list 10 permit 192.168.18.0 0.0.0.255
   access-list 10 permit 192.168.19.0 0.0.0.255
   access-list 10 permit 192.168.20.0 0.0.0.255
-  access-list 10 deny any
+  access-list 10 deny any log
   access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 81
   access-list 100 permit udp any host 10.0.0.1 eq 53
   access-list 100 permit tcp 192.168.2.0 0.0.0.255 any eq 82
@@ -2238,20 +2314,20 @@ Total steps: 388
   access-list 100 permit udp any host 10.0.0.14 eq 53
   access-list 100 permit tcp 192.168.15.0 0.0.0.255 any eq 95
   access-list 100 permit udp any host 10.0.0.15 eq 53
-  access-list 100 permit icmp any any
-  access-list 100 deny ip any any
-  access-list 101 permit tcp any any
-  access-list 103 permit tcp any any
-  access-list 104 permit ip any any
-  access-list 105 permit tcp any any
+  access-list 100 permit icmp any any echo-reply
+  access-list 100 deny ip any any log-input
+  access-list 101 permit tcp any any established
+  access-list 103 permit tcp any any range 1024 65535
+  access-list 104 permit ip any any dscp af21
+  access-list 105 permit tcp any any eq 80 log
   ip access-list standard MGMT
    permit 10.0.0.0 0.0.0.255
    permit host 192.168.1.10
-   deny any
+   deny any log
   ip access-list extended WAN-IN
    permit tcp any host 10.0.0.1 eq 443
+   permit tcp any any eq 22
    permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.3 eq 443
    permit tcp any host 10.0.0.4 eq 443
    permit tcp any host 10.0.0.5 eq 443
    permit tcp any host 10.0.0.6 eq 443
@@ -2259,9 +2335,90 @@ Total steps: 388
    permit tcp any host 10.0.0.8 eq 443
    permit tcp any host 10.0.0.9 eq 443
    permit tcp any host 10.0.0.10 eq 443
-   permit udp any any
+   permit udp any any eq 161
    deny icmp any any
    permit ip any any
+  ip access-list extended TIMED
+   permit ip any any time-range BUSINESS-HOURS
+  ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
+  ip access-list extended REFLECT-IN
+   evaluate TCP-REFLECT
+  ip access-list extended COPP-CRITICAL
+   permit ospf any any
+   permit tcp any any eq 179
+  username admin privilege 15 secret 5 StrongP@ss1
+  line vty 0 4
+   exec-timeout 5 0
+   access-class MGMT in
+   access-class 10 out
+   transport input ssh
+  aaa new-model
+  aaa authentication login default local
+  aaa authentication login VTY group radius local
+  aaa authentication login CON line
+  aaa authentication enable default group tacacs+ enable
+  aaa authentication ppp default local
+  aaa authorization exec default local
+  aaa authorization commands 15 default group tacacs+ local
+  aaa authorization network default group radius
+  aaa accounting exec default start-stop group tacacs+
+  aaa accounting commands 15 default stop-only group tacacs+
+  aaa accounting network default start-stop group radius
+  aaa session-id common
+  username admin privilege 15 secret StrongP@ss1
+  enable secret StrongEn@ble1
+  service password-encryption
+  security passwords min-length 10
+  login block-for 120 attempts 3 within 60
+  login quiet-mode access-class MGMT
+  login delay 2
+  login on-failure log
+  login on-success log
+  ip domain-name lab.local
+  ip cef
+  ip ssh version 2
+  ip ssh time-out 60
+  ip ssh source-interface Loopback0
+  ip ssh dh min size 2048
+  ip ssh logging events
+  crypto key generate rsa modulus 2048
+  crypto key generate rsa general-keys modulus 4096 label SSH-KEY
+  radius server RAD1
+   address ipv4 10.0.0.2 auth-port 1812 acct-port 1813
+   key radiussecret
+  tacacs server TAC1
+   address ipv4 10.0.0.3
+   key tacacssecret
+  aaa group server radius RADGRP
+   server name RAD1
+  aaa group server tacacs+ TACGRP
+   server name TAC1
+  radius-server host 10.0.0.2 key legacy
+  tacacs-server host 10.0.0.3 key legacy
+  time-range BUSINESS-HOURS
+   absolute start 0:00 1 January 2024 end 23:59 31 December 2024
+   periodic weekdays 8:00 to 18:00
+  class-map match-all CM-COPP
+   match access-group name COPP-CRITICAL
+  class-map type inspect match-any CM-INSPECT
+   match protocol tcp
+   match protocol udp
+   match protocol icmp
+  policy-map PM-COPP
+   class CM-COPP
+    police 8000 conform-action transmit exceed-action drop
+  policy-map type inspect PM-IN-OUT
+   class type inspect CM-INSPECT
+    inspect
+   class class-default
+    drop log
+  control-plane
+   service-policy input PM-COPP
+  zone security INSIDE
+  zone security OUTSIDE
+  zone-pair security IN-OUT source INSIDE destination OUTSIDE
+   service-policy type inspect PM-IN-OUT
   end
 
 [346/388] r1 R1(config)# show ip route | include via
@@ -2384,14 +2541,14 @@ Total steps: 388
     <cr>  
 
 [382/388] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -2412,6 +2569,7 @@ Total steps: 388
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [385/388] r1 R1(config)# no ?
@@ -2437,108 +2595,7 @@ Total steps: 388
 <empty>
 
 [387/388] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  access-list 10 permit 192.168.1.0 0.0.0.255
-  access-list 10 permit 192.168.2.0 0.0.0.255
-  access-list 10 permit 192.168.3.0 0.0.0.255
-  access-list 10 permit 192.168.4.0 0.0.0.255
-  access-list 10 permit 192.168.5.0 0.0.0.255
-  access-list 10 permit 192.168.6.0 0.0.0.255
-  access-list 10 permit 192.168.7.0 0.0.0.255
-  access-list 10 permit 192.168.8.0 0.0.0.255
-  access-list 10 permit 192.168.9.0 0.0.0.255
-  access-list 10 permit 192.168.10.0 0.0.0.255
-  access-list 10 permit 192.168.11.0 0.0.0.255
-  access-list 10 permit 192.168.12.0 0.0.0.255
-  access-list 10 permit 192.168.13.0 0.0.0.255
-  access-list 10 permit 192.168.14.0 0.0.0.255
-  access-list 10 permit 192.168.15.0 0.0.0.255
-  access-list 10 permit 192.168.16.0 0.0.0.255
-  access-list 10 permit 192.168.17.0 0.0.0.255
-  access-list 10 permit 192.168.18.0 0.0.0.255
-  access-list 10 permit 192.168.19.0 0.0.0.255
-  access-list 10 permit 192.168.20.0 0.0.0.255
-  access-list 10 deny any
-  access-list 100 permit tcp 192.168.1.0 0.0.0.255 any eq 81
-  access-list 100 permit udp any host 10.0.0.1 eq 53
-  access-list 100 permit tcp 192.168.2.0 0.0.0.255 any eq 82
-  access-list 100 permit udp any host 10.0.0.2 eq 53
-  access-list 100 permit tcp 192.168.3.0 0.0.0.255 any eq 83
-  access-list 100 permit udp any host 10.0.0.3 eq 53
-  access-list 100 permit tcp 192.168.4.0 0.0.0.255 any eq 84
-  access-list 100 permit udp any host 10.0.0.4 eq 53
-  access-list 100 permit tcp 192.168.5.0 0.0.0.255 any eq 85
-  access-list 100 permit udp any host 10.0.0.5 eq 53
-  access-list 100 permit tcp 192.168.6.0 0.0.0.255 any eq 86
-  access-list 100 permit udp any host 10.0.0.6 eq 53
-  access-list 100 permit tcp 192.168.7.0 0.0.0.255 any eq 87
-  access-list 100 permit udp any host 10.0.0.7 eq 53
-  access-list 100 permit tcp 192.168.8.0 0.0.0.255 any eq 88
-  access-list 100 permit udp any host 10.0.0.8 eq 53
-  access-list 100 permit tcp 192.168.9.0 0.0.0.255 any eq 89
-  access-list 100 permit udp any host 10.0.0.9 eq 53
-  access-list 100 permit tcp 192.168.10.0 0.0.0.255 any eq 90
-  access-list 100 permit udp any host 10.0.0.10 eq 53
-  access-list 100 permit tcp 192.168.11.0 0.0.0.255 any eq 91
-  access-list 100 permit udp any host 10.0.0.11 eq 53
-  access-list 100 permit tcp 192.168.12.0 0.0.0.255 any eq 92
-  access-list 100 permit udp any host 10.0.0.12 eq 53
-  access-list 100 permit tcp 192.168.13.0 0.0.0.255 any eq 93
-  access-list 100 permit udp any host 10.0.0.13 eq 53
-  access-list 100 permit tcp 192.168.14.0 0.0.0.255 any eq 94
-  access-list 100 permit udp any host 10.0.0.14 eq 53
-  access-list 100 permit tcp 192.168.15.0 0.0.0.255 any eq 95
-  access-list 100 permit udp any host 10.0.0.15 eq 53
-  access-list 100 permit icmp any any
-  access-list 100 deny ip any any
-  access-list 101 permit tcp any any
-  access-list 103 permit tcp any any
-  access-list 104 permit ip any any
-  access-list 105 permit tcp any any
-  ip access-list standard MGMT
-   permit 10.0.0.0 0.0.0.255
-   permit host 192.168.1.10
-   deny any
-  ip access-list extended WAN-IN
-   permit tcp any host 10.0.0.1 eq 443
-   permit tcp any host 10.0.0.2 eq 443
-   permit tcp any host 10.0.0.3 eq 443
-   permit tcp any host 10.0.0.4 eq 443
-   permit tcp any host 10.0.0.5 eq 443
-   permit tcp any host 10.0.0.6 eq 443
-   permit tcp any host 10.0.0.7 eq 443
-   permit tcp any host 10.0.0.8 eq 443
-   permit tcp any host 10.0.0.9 eq 443
-   permit tcp any host 10.0.0.10 eq 443
-   permit udp any any
-   deny icmp any any
-   permit ip any any
-  !
-  line vty 0 4
-  !
-  !
-  end
+  12
 
 [388/388] r1 R1# write memory
   Building configuration...

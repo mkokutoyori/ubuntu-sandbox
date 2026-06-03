@@ -197,10 +197,12 @@ export function showRunningConfig(router: Router): string {
     for (const h of helpers) {
       lines.push(` ip helper-address ${h}`);
     }
-    // ACL bindings on interface
     lines.push(...runningConfigInterfaceACL(router, name));
-    // NAT designation on interface
     lines.push(...runningConfigInterfaceNAT(router, name));
+    const sec = (router as unknown as {
+      [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
+    })[Symbol.for('CiscoSecurityConfig')];
+    if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
     lines.push('!');
   }
 
@@ -257,7 +259,15 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
-  lines.push('!');
+  const securityLines = (router as unknown as {
+    [s: symbol]: { asRunningConfigLines?: () => string[] } | undefined;
+  })[Symbol.for('CiscoSecurityConfig')]?.asRunningConfigLines?.() ?? [];
+  if (securityLines.length > 0) {
+    lines.push('!');
+    lines.push(...securityLines);
+    lines.push('!');
+  }
+
   lines.push('end');
   return lines.join('\n');
 }

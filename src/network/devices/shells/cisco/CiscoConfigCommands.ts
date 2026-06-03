@@ -25,7 +25,10 @@ export type CiscoShellMode =
   | 'config-isakmp' | 'config-tfset' | 'config-crypto-map'
   | 'config-ipsec-profile'
   | 'config-ikev2-proposal' | 'config-ikev2-policy'
-  | 'config-ikev2-keyring' | 'config-ikev2-keyring-peer' | 'config-ikev2-profile';
+  | 'config-ikev2-keyring' | 'config-ikev2-keyring-peer' | 'config-ikev2-profile'
+  | 'config-time-range' | 'config-cmap' | 'config-pmap' | 'config-pmap-c'
+  | 'config-cp' | 'config-zone' | 'config-zone-pair'
+  | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */

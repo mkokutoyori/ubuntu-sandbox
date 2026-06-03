@@ -28,7 +28,7 @@ export interface PipeFilter {
   pattern: string;
 }
 
-const PIPE_FILTER_RE = /^(include|exclude|begin|grep|findstr)\s+(.+)$/i;
+const PIPE_FILTER_RE = /^(include|exclude|begin|grep|findstr|section|count)(?:\s+(.+))?$/i;
 
 /**
  * Resolve a Huawei VRP global-navigation abbreviation.
@@ -61,7 +61,7 @@ export function parsePipeFilter(trimmed: string): { cmd: string; filter: PipeFil
 
   return {
     cmd,
-    filter: { type: match[1].toLowerCase(), pattern: match[2] },
+    filter: { type: match[1].toLowerCase(), pattern: match[2] ?? '' },
   };
 }
 
@@ -93,8 +93,50 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
     const start = lines.findIndex(l => l.toLowerCase().includes(lowerPattern));
     return start === -1 ? '' : lines.slice(start).join('\n');
   }
+  if (filter.type === 'section') {
+    return extractSections(lines, pattern).join('\n');
+  }
+  if (filter.type === 'count') {
+    if (!pattern) return String(lines.length);
+    try {
+      const re = new RegExp(pattern);
+      let count = 0;
+      for (const l of lines) if (re.test(l)) count++;
+      return String(count);
+    } catch {
+      let count = 0;
+      for (const l of lines) if (l.includes(pattern)) count++;
+      return String(count);
+    }
+  }
 
   return output;
+}
+
+function extractSections(lines: string[], pattern: string): string[] {
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern);
+  } catch {
+    re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  }
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const isTopLevel = line.length > 0 && !/^\s/.test(line);
+    if (isTopLevel && re.test(line)) {
+      out.push(line);
+      i++;
+      while (i < lines.length && (/^\s/.test(lines[i]) || lines[i] === '')) {
+        out.push(lines[i]);
+        i++;
+      }
+      continue;
+    }
+    i++;
+  }
+  return out;
 }
 
 // ─── Interface Name Resolution ────────────────────────────────────

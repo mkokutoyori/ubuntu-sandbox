@@ -15,9 +15,17 @@ import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../core/types';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
+export type PortOperator = 'eq' | 'neq' | 'gt' | 'lt' | 'range';
+
+export interface PortSpec {
+  op: PortOperator;
+  port: number;
+  endPort?: number;
+}
+
 export interface ACLEntry {
+  sequence?: number;
   action: 'permit' | 'deny';
-  /** Protocol filter: 'ip' matches all, 'icmp', 'tcp', 'udp' */
   protocol?: string;
   srcIP: IPAddress;
   srcWildcard: SubnetMask;
@@ -25,7 +33,24 @@ export interface ACLEntry {
   dstWildcard?: SubnetMask;
   srcPort?: number;
   dstPort?: number;
-  /** Match counter */
+  srcPortSpec?: PortSpec;
+  dstPortSpec?: PortSpec;
+  icmpType?: string;
+  icmpCode?: number;
+  tcpEstablished?: boolean;
+  tcpFlags?: string[];
+  dscp?: string;
+  precedence?: string;
+  tos?: string;
+  log?: boolean;
+  logInput?: boolean;
+  timeRange?: string;
+  reflect?: string;
+  reflectTimeout?: number;
+  evaluate?: string;
+  fragments?: boolean;
+  optionName?: string;
+  remark?: string;
   matchCount: number;
 }
 
@@ -47,8 +72,8 @@ export interface InterfaceACLBinding {
   outbound: number | string | null;
 }
 
-/** Options for adding an ACL entry */
 export interface ACLEntryOptions {
+  sequence?: number;
   protocol?: string;
   srcIP: IPAddress;
   srcWildcard: SubnetMask;
@@ -56,6 +81,24 @@ export interface ACLEntryOptions {
   dstWildcard?: SubnetMask;
   srcPort?: number;
   dstPort?: number;
+  srcPortSpec?: PortSpec;
+  dstPortSpec?: PortSpec;
+  icmpType?: string;
+  icmpCode?: number;
+  tcpEstablished?: boolean;
+  tcpFlags?: string[];
+  dscp?: string;
+  precedence?: string;
+  tos?: string;
+  log?: boolean;
+  logInput?: boolean;
+  timeRange?: string;
+  reflect?: string;
+  reflectTimeout?: number;
+  evaluate?: string;
+  fragments?: boolean;
+  optionName?: string;
+  remark?: string;
 }
 
 // ─── Protocol Number → Name Mapping ─────────────────────────────────
@@ -107,7 +150,6 @@ export class ACLEngine {
     return this.lists;
   }
 
-  /** Add an entry to a numbered ACL */
   addEntry(id: number, action: 'permit' | 'deny', opts: ACLEntryOptions): void {
     const type: 'standard' | 'extended' = id < 100 ? 'standard' : 'extended';
     let acl = this.lists.find(a => a.id === id);
@@ -115,10 +157,11 @@ export class ACLEngine {
       acl = { id, type, entries: [] };
       this.lists.push(acl);
     }
-    acl.entries.push({ action, ...opts, matchCount: 0 });
+    const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
+    acl.entries.push({ action, ...opts, sequence: seq, matchCount: 0 });
+    ACLEngine.sortBySequence(acl);
   }
 
-  /** Add an entry to a named ACL */
   addNamedEntry(
     name: string,
     type: 'standard' | 'extended',
@@ -130,7 +173,39 @@ export class ACLEngine {
       acl = { name, type, entries: [] };
       this.lists.push(acl);
     }
-    acl.entries.push({ action, ...opts, matchCount: 0 });
+    const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
+    acl.entries.push({ action, ...opts, sequence: seq, matchCount: 0 });
+    ACLEngine.sortBySequence(acl);
+  }
+
+  removeNamedEntryBySequence(name: string, seq: number): boolean {
+    const acl = this.lists.find(a => a.name === name);
+    if (!acl) return false;
+    const before = acl.entries.length;
+    acl.entries = acl.entries.filter(e => e.sequence !== seq);
+    return acl.entries.length !== before;
+  }
+
+  resequenceNamedACL(name: string, start: number, step: number): boolean {
+    const acl = this.lists.find(a => a.name === name);
+    if (!acl) return false;
+    ACLEngine.sortBySequence(acl);
+    let n = start;
+    for (const e of acl.entries) {
+      e.sequence = n;
+      n += step;
+    }
+    return true;
+  }
+
+  private static nextSequence(acl: AccessList): number {
+    if (acl.entries.length === 0) return 10;
+    const maxSeq = acl.entries.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
+    return Math.floor(maxSeq / 10) * 10 + 10;
+  }
+
+  private static sortBySequence(acl: AccessList): void {
+    acl.entries.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
   }
 
   /** Remove a numbered ACL and all its interface bindings */
