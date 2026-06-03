@@ -106,6 +106,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Register device-specific commands on the tries (called from constructor) */
   protected abstract registerDeviceCommands(): void;
 
+  protected getChassisProfile(): import('./cisco/CiscoCommonShow').CiscoChassisProfile {
+    return 'switch-c2960';
+  }
+
   // ─── Device accessor ────────────────────────────────────────────
 
   /** Get typed device reference. Throws if called outside execute(). */
@@ -243,7 +247,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return applyPipeFilter(output, pipeFilter);
     }
 
-    // 'show' shortcut in config modes (same as 'do show')
     if (this.isConfigMode() && lower.startsWith('show ')) {
       const savedMode = this.mode;
       this.mode = 'privileged';
@@ -253,7 +256,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return applyPipeFilter(output, pipeFilter);
     }
 
-    // Normal command execution
+    if (this.isAclSubMode() && /^\d/.test(cmdPart)) {
+      const output = this.executeOnTrie('sequence ' + cmdPart);
+      this.deviceRef = null;
+      return applyPipeFilter(output, pipeFilter);
+    }
+
     const output = this.executeOnTrie(cmdPart);
 
     // Async escape hatch (e.g. ping on routers sets this)
@@ -311,6 +319,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.mode !== 'user' && this.mode !== 'privileged';
   }
 
+  protected isAclSubMode(): boolean {
+    return this.mode === 'config-std-nacl'
+      || this.mode === 'config-ext-nacl'
+      || this.mode === 'config-ipv6-nacl';
+  }
+
   // ─── Help / Tab-Complete ────────────────────────────────────────
 
   getHelp(input: string): string {
@@ -343,12 +357,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show clock', 'Display the system clock', () => showClock());
     trie.register('show users', 'Display active lines', () => showUsers());
     trie.register('show inventory', 'Display hardware inventory', () =>
-      showInventory(this.d().getHostname()));
+      showInventory(this.d().getHostname(), this.getChassisProfile()));
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics());
-    trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash());
+    trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));
     trie.register('show history', 'Display command history', () =>

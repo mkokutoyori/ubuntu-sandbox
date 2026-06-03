@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-03T16:07:57.445Z
+Generated: 2026-06-03T19:59:35.873Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -103,14 +103,10 @@ Total steps: 343
      ^
 
 [23/343] r1 R1(config-if)# no ip redirects
-  % Invalid input detected at '^' marker.
-  no ip redirects
-        ^
+<empty>
 
 [24/343] r1 R1(config-if)# no ip proxy-arp
-  % Invalid input detected at '^' marker.
-  no ip proxy-arp
-        ^
+<empty>
 
 [25/343] r1 R1(config-if)# ip proxy-arp
   % Invalid input detected at '^' marker.
@@ -118,9 +114,7 @@ Total steps: 343
      ^
 
 [26/343] r1 R1(config-if)# no ip unreachables
-  % Invalid input detected at '^' marker.
-  no ip unreachables
-        ^
+<empty>
 
 [27/343] r1 R1(config-if)# ip directed-broadcast
   % Invalid input detected at '^' marker.
@@ -283,16 +277,16 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
 
 
 --- [75] § unnumbered / dhcp / negotiated ---
@@ -388,474 +382,458 @@ Total steps: 343
 [98/343] r1 R1# exit
 <empty>
 
-[99/343] r1 R1> interface GigabitEthernet0/0.30
+[99/343] r1 R1# interface GigabitEthernet0/0.30
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.30
   ^
 
-[100/343] r1 R1> encapsulation dot1Q 30
+[100/343] r1 R1# encapsulation dot1Q 30
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 30
   ^
 
-[101/343] r1 R1> ip address 192.168.3.1 255.255.255.0
+[101/343] r1 R1# ip address 192.168.3.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.3.1 255.255.255.0
   ^
 
-[102/343] r1 R1> description VLAN30
+[102/343] r1 R1# description VLAN30
   % Invalid input detected at '^' marker.
   description VLAN30
   ^
 
-[103/343] r1 R1> exit
+[103/343] r1 R1# exit
 <empty>
 
-[104/343] r1 R1> interface GigabitEthernet0/0.40
+[104/343] r1 R1# interface GigabitEthernet0/0.40
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.40
   ^
 
-[105/343] r1 R1> encapsulation dot1Q 40
+[105/343] r1 R1# encapsulation dot1Q 40
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 40
   ^
 
-[106/343] r1 R1> ip address 192.168.4.1 255.255.255.0
+[106/343] r1 R1# ip address 192.168.4.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.4.1 255.255.255.0
   ^
 
-[107/343] r1 R1> description VLAN40
+[107/343] r1 R1# description VLAN40
   % Invalid input detected at '^' marker.
   description VLAN40
   ^
 
-[108/343] r1 R1> exit
+[108/343] r1 R1# exit
 <empty>
 
-[109/343] r1 R1> interface GigabitEthernet0/0.50
+[109/343] r1 R1# interface GigabitEthernet0/0.50
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.50
   ^
 
-[110/343] r1 R1> encapsulation dot1Q 50
+[110/343] r1 R1# encapsulation dot1Q 50
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 50
   ^
 
-[111/343] r1 R1> ip address 192.168.5.1 255.255.255.0
+[111/343] r1 R1# ip address 192.168.5.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.5.1 255.255.255.0
   ^
 
-[112/343] r1 R1> description VLAN50
+[112/343] r1 R1# description VLAN50
   % Invalid input detected at '^' marker.
   description VLAN50
   ^
 
-[113/343] r1 R1> exit
+[113/343] r1 R1# exit
 <empty>
 
-[114/343] r1 R1> interface GigabitEthernet0/0.60
+[114/343] r1 R1# interface GigabitEthernet0/0.60
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.60
   ^
 
-[115/343] r1 R1> encapsulation dot1Q 60
+[115/343] r1 R1# encapsulation dot1Q 60
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 60
   ^
 
-[116/343] r1 R1> ip address 192.168.6.1 255.255.255.0
+[116/343] r1 R1# ip address 192.168.6.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.6.1 255.255.255.0
   ^
 
-[117/343] r1 R1> description VLAN60
+[117/343] r1 R1# description VLAN60
   % Invalid input detected at '^' marker.
   description VLAN60
   ^
 
-[118/343] r1 R1> exit
+[118/343] r1 R1# exit
 <empty>
 
-[119/343] r1 R1> interface GigabitEthernet0/0.70
+[119/343] r1 R1# interface GigabitEthernet0/0.70
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.70
   ^
 
-[120/343] r1 R1> encapsulation dot1Q 70
+[120/343] r1 R1# encapsulation dot1Q 70
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 70
   ^
 
-[121/343] r1 R1> ip address 192.168.7.1 255.255.255.0
+[121/343] r1 R1# ip address 192.168.7.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.7.1 255.255.255.0
   ^
 
-[122/343] r1 R1> description VLAN70
+[122/343] r1 R1# description VLAN70
   % Invalid input detected at '^' marker.
   description VLAN70
   ^
 
-[123/343] r1 R1> exit
+[123/343] r1 R1# exit
 <empty>
 
-[124/343] r1 R1> interface GigabitEthernet0/0.80
+[124/343] r1 R1# interface GigabitEthernet0/0.80
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.80
   ^
 
-[125/343] r1 R1> encapsulation dot1Q 80
+[125/343] r1 R1# encapsulation dot1Q 80
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 80
   ^
 
-[126/343] r1 R1> ip address 192.168.8.1 255.255.255.0
+[126/343] r1 R1# ip address 192.168.8.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.8.1 255.255.255.0
   ^
 
-[127/343] r1 R1> description VLAN80
+[127/343] r1 R1# description VLAN80
   % Invalid input detected at '^' marker.
   description VLAN80
   ^
 
-[128/343] r1 R1> exit
+[128/343] r1 R1# exit
 <empty>
 
-[129/343] r1 R1> interface GigabitEthernet0/0.90
+[129/343] r1 R1# interface GigabitEthernet0/0.90
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.90
   ^
 
-[130/343] r1 R1> encapsulation dot1Q 90
+[130/343] r1 R1# encapsulation dot1Q 90
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 90
   ^
 
-[131/343] r1 R1> ip address 192.168.9.1 255.255.255.0
+[131/343] r1 R1# ip address 192.168.9.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.9.1 255.255.255.0
   ^
 
-[132/343] r1 R1> description VLAN90
+[132/343] r1 R1# description VLAN90
   % Invalid input detected at '^' marker.
   description VLAN90
   ^
 
-[133/343] r1 R1> exit
+[133/343] r1 R1# exit
 <empty>
 
-[134/343] r1 R1> interface GigabitEthernet0/0.100
+[134/343] r1 R1# interface GigabitEthernet0/0.100
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.100
   ^
 
-[135/343] r1 R1> encapsulation dot1Q 100
+[135/343] r1 R1# encapsulation dot1Q 100
   % Invalid input detected at '^' marker.
   encapsulation dot1Q 100
   ^
 
-[136/343] r1 R1> ip address 192.168.10.1 255.255.255.0
+[136/343] r1 R1# ip address 192.168.10.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.10.1 255.255.255.0
   ^
 
-[137/343] r1 R1> description VLAN100
+[137/343] r1 R1# description VLAN100
   % Invalid input detected at '^' marker.
   description VLAN100
   ^
 
-[138/343] r1 R1> exit
+[138/343] r1 R1# exit
 <empty>
 
-[139/343] r1 R1> interface GigabitEthernet0/0.999
+[139/343] r1 R1# interface GigabitEthernet0/0.999
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0.999
   ^
 
-[140/343] r1 R1> encapsulation isl 999
+[140/343] r1 R1# encapsulation isl 999
   % Invalid input detected at '^' marker.
   encapsulation isl 999
   ^
 
-[141/343] r1 R1> ip address 192.168.99.1 255.255.255.0
+[141/343] r1 R1# ip address 192.168.99.1 255.255.255.0
   % Invalid input detected at '^' marker.
   ip address 192.168.99.1 255.255.255.0
   ^
 
-[142/343] r1 R1> exit
+[142/343] r1 R1# exit
 <empty>
 
-[143/343] r1 R1> end
+[143/343] r1 R1# end
 <empty>
 
-[144/343] r1 R1> show ip interface brief
+[144/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
 
-[145/343] r1 R1> show interfaces GigabitEthernet0/0.10
+[145/343] r1 R1# show interfaces GigabitEthernet0/0.10
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/0.10
        ^
 
-[146/343] r1 R1> show vlans
+[146/343] r1 R1# show vlans
   % Invalid input detected at '^' marker.
   show vlans
        ^
 
 
 --- [147] § tunnels ---
-[147/343] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[147/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[148/343] r1 R1> interface Tunnel0
-  % Invalid input detected at '^' marker.
-  interface Tunnel0
-  ^
+[148/343] r1 R1(config)# interface Tunnel0
+<empty>
 
-[149/343] r1 R1> ip address 172.16.0.1 255.255.255.252
-  % Invalid input detected at '^' marker.
-  ip address 172.16.0.1 255.255.255.252
-  ^
+[149/343] r1 R1(config-if)# ip address 172.16.0.1 255.255.255.252
+<empty>
 
-[150/343] r1 R1> tunnel source GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  tunnel source GigabitEthernet0/1
-  ^
+[150/343] r1 R1(config-if)# tunnel source GigabitEthernet0/1
+<empty>
 
-[151/343] r1 R1> tunnel destination 10.0.0.2
-  % Invalid input detected at '^' marker.
-  tunnel destination 10.0.0.2
-  ^
+[151/343] r1 R1(config-if)# tunnel destination 10.0.0.2
+<empty>
 
-[152/343] r1 R1> tunnel mode gre ip
+[152/343] r1 R1(config-if)# tunnel mode gre ip
   % Invalid input detected at '^' marker.
   tunnel mode gre ip
-  ^
+         ^
 
-[153/343] r1 R1> tunnel key 1234
+[153/343] r1 R1(config-if)# tunnel key 1234
   % Invalid input detected at '^' marker.
   tunnel key 1234
-  ^
+         ^
 
-[154/343] r1 R1> keepalive 5 3
+[154/343] r1 R1(config-if)# keepalive 5 3
   % Invalid input detected at '^' marker.
   keepalive 5 3
   ^
 
-[155/343] r1 R1> exit
+[155/343] r1 R1(config-if)# exit
 <empty>
 
-[156/343] r1 R1> interface Tunnel1
-  % Invalid input detected at '^' marker.
-  interface Tunnel1
-  ^
+[156/343] r1 R1(config)# interface Tunnel1
+<empty>
 
-[157/343] r1 R1> ip address 172.16.0.5 255.255.255.252
-  % Invalid input detected at '^' marker.
-  ip address 172.16.0.5 255.255.255.252
-  ^
+[157/343] r1 R1(config-if)# ip address 172.16.0.5 255.255.255.252
+<empty>
 
-[158/343] r1 R1> tunnel source Loopback0
-  % Invalid input detected at '^' marker.
-  tunnel source Loopback0
-  ^
+[158/343] r1 R1(config-if)# tunnel source Loopback0
+<empty>
 
-[159/343] r1 R1> tunnel destination 10.0.0.2
-  % Invalid input detected at '^' marker.
-  tunnel destination 10.0.0.2
-  ^
+[159/343] r1 R1(config-if)# tunnel destination 10.0.0.2
+<empty>
 
-[160/343] r1 R1> tunnel mode ipip
+[160/343] r1 R1(config-if)# tunnel mode ipip
   % Invalid input detected at '^' marker.
   tunnel mode ipip
-  ^
+         ^
 
-[161/343] r1 R1> tunnel protection ipsec profile IPSEC-PROF
-  % Invalid input detected at '^' marker.
-  tunnel protection ipsec profile IPSEC-PROF
-  ^
-
-[162/343] r1 R1> exit
+[161/343] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF
 <empty>
 
-[163/343] r1 R1> interface Tunnel2
-  % Invalid input detected at '^' marker.
-  interface Tunnel2
-  ^
+[162/343] r1 R1(config-if)# exit
+<empty>
 
-[164/343] r1 R1> ipv6 address 2001:db8:ffff::1/64
-  % Invalid input detected at '^' marker.
-  ipv6 address 2001:db8:ffff::1/64
-  ^
+[163/343] r1 R1(config)# interface Tunnel2
+<empty>
 
-[165/343] r1 R1> tunnel mode ipv6ip
+[164/343] r1 R1(config-if)# ipv6 address 2001:db8:ffff::1/64
+<empty>
+
+[165/343] r1 R1(config-if)# tunnel mode ipv6ip
   % Invalid input detected at '^' marker.
   tunnel mode ipv6ip
-  ^
+         ^
 
-[166/343] r1 R1> exit
+[166/343] r1 R1(config-if)# exit
 <empty>
 
-[167/343] r1 R1> end
+[167/343] r1 R1(config)# end
 <empty>
 
-[168/343] r1 R1> show ip interface brief
+[168/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
-[169/343] r1 R1> show interfaces Tunnel0
-  % Invalid input detected at '^' marker.
-  show interface Tunnel0
-       ^
+[169/343] r1 R1# show interfaces Tunnel0
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    Tunnel protocol/transport GRE/IP
 
 
 --- [170] § DHCP relay / helper ---
-[170/343] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[170/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[171/343] r1 R1> interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0
-  ^
-
-[172/343] r1 R1> ip helper-address 10.0.0.2
-  % Invalid input detected at '^' marker.
-  ip helper-address 10.0.0.2
-  ^
-
-[173/343] r1 R1> ip helper-address 10.0.0.3
-  % Invalid input detected at '^' marker.
-  ip helper-address 10.0.0.3
-  ^
-
-[174/343] r1 R1> no ip helper-address 10.0.0.3
-  % Invalid input detected at '^' marker.
-  no ip helper-address 10.0.0.3
-  ^
-
-[175/343] r1 R1> ip dhcp relay information trusted
-  % Invalid input detected at '^' marker.
-  ip dhcp relay information trusted
-  ^
-
-[176/343] r1 R1> exit
+[171/343] r1 R1(config)# interface GigabitEthernet0/0
 <empty>
 
-[177/343] r1 R1> end
+[172/343] r1 R1(config-if)# ip helper-address 10.0.0.2
+<empty>
+
+[173/343] r1 R1(config-if)# ip helper-address 10.0.0.3
+<empty>
+
+[174/343] r1 R1(config-if)# no ip helper-address 10.0.0.3
+  % Invalid input detected at '^' marker.
+  no ip helper-address 10.0.0.3
+        ^
+
+[175/343] r1 R1(config-if)# ip dhcp relay information trusted
+  % Invalid input detected at '^' marker.
+  ip dhcp relay information trusted
+     ^
+
+[176/343] r1 R1(config-if)# exit
+<empty>
+
+[177/343] r1 R1(config)# end
 <empty>
 
 
 --- [178] § shutdown / error / clear ---
-[178/343] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[178/343] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[179/343] r1 R1> interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0
-  ^
-
-[180/343] r1 R1> shutdown
-  % Invalid input detected at '^' marker.
-  shutdown
-  ^
-
-[181/343] r1 R1> do show ip interface brief
-  % Invalid input detected at '^' marker.
-  do show ip interface brief
-  ^
-
-[182/343] r1 R1> no shutdown
-  % Invalid input detected at '^' marker.
-  no shutdown
-  ^
-
-[183/343] r1 R1> exit
+[179/343] r1 R1(config)# interface GigabitEthernet0/0
 <empty>
 
-[184/343] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[185/343] r1 R1> shutdown
-  % Invalid input detected at '^' marker.
-  shutdown
-  ^
-
-[186/343] r1 R1> do show ip interface brief
-  % Invalid input detected at '^' marker.
-  do show ip interface brief
-  ^
-
-[187/343] r1 R1> no shutdown
-  % Invalid input detected at '^' marker.
-  no shutdown
-  ^
-
-[188/343] r1 R1> exit
+[180/343] r1 R1(config-if)# shutdown
 <empty>
 
-[189/343] r1 R1> end
+[181/343] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual administratively down down
+  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
+
+[182/343] r1 R1(config-if)# no shutdown
 <empty>
 
-[190/343] r1 R1> clear counters GigabitEthernet0/0
+[183/343] r1 R1(config-if)# exit
+<empty>
+
+[184/343] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[185/343] r1 R1(config-if)# shutdown
+<empty>
+
+[186/343] r1 R1(config-if)# do show ip interface brief
+  Interface                  IP-Address      OK? Method Status                Protocol
+  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
+
+[187/343] r1 R1(config-if)# no shutdown
+<empty>
+
+[188/343] r1 R1(config-if)# exit
+<empty>
+
+[189/343] r1 R1(config)# end
+<empty>
+
+[190/343] r1 R1# clear counters GigabitEthernet0/0
   % Invalid input detected at '^' marker.
   clear counters GigabitEthernet0/0
-  ^
+        ^
 
-[191/343] r1 R1> clear ip route *
+[191/343] r1 R1# clear ip route *
   % Invalid input detected at '^' marker.
   clear ip route *
-  ^
+           ^
 
-[192/343] r1 R1> clear arp-cache
-  % Invalid input detected at '^' marker.
-  clear arp-cache
-  ^
+[192/343] r1 R1# clear arp-cache
+<empty>
 
-[193/343] r1 R1> clear ip arp 192.168.1.10
+[193/343] r1 R1# clear ip arp 192.168.1.10
   % Invalid input detected at '^' marker.
   clear ip arp 192.168.1.10
-  ^
+           ^
 
 
 --- [194] § per-interface show family ---
-[194/343] r1 R1> show interfaces
+[194/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
@@ -917,8 +895,20 @@ Total steps: 343
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    Tunnel protocol/transport GRE/IP
+  Tunnel1 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.5/30
+    tunnel protection ipsec profile IPSEC-PROF
+    Tunnel protocol/transport GRE/IP
+  Tunnel2 is up, line protocol is up
+    Hardware is Tunnel
+    Tunnel protocol/transport GRE/IP
 
-[195/343] r1 R1> show interfaces GigabitEthernet0/0
+[195/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
@@ -929,7 +919,7 @@ Total steps: 343
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[196/343] r1 R1> show ip interface GigabitEthernet0/0
+[196/343] r1 R1# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.100.1/24
@@ -940,33 +930,33 @@ Total steps: 343
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[197/343] r1 R1> show ipv6 interface GigabitEthernet0/0
+[197/343] r1 R1# show ipv6 interface GigabitEthernet0/0
   % Invalid input detected at '^' marker.
   show ipv6 interface GigabitEthernet0/0
             ^
 
-[198/343] r1 R1> show interfaces GigabitEthernet0/0 accounting
+[198/343] r1 R1# show interfaces GigabitEthernet0/0 accounting
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/0 accounting
        ^
 
-[199/343] r1 R1> show interfaces GigabitEthernet0/0 switchport
+[199/343] r1 R1# show interfaces GigabitEthernet0/0 switchport
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/0 switchport
        ^
 
-[200/343] r1 R1> show interfaces GigabitEthernet0/0 stats
+[200/343] r1 R1# show interfaces GigabitEthernet0/0 stats
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/0 stats
        ^
 
-[201/343] r1 R1> show controllers GigabitEthernet0/0
+[201/343] r1 R1# show controllers GigabitEthernet0/0
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
     0 carrier transitions
 
-[202/343] r1 R1> show running-config interface GigabitEthernet0/0
+[202/343] r1 R1# show running-config interface GigabitEthernet0/0
   Building configuration...
   
   Current configuration : interface GigabitEthernet0/0
@@ -974,9 +964,11 @@ Total steps: 343
   interface GigabitEthernet0/0
    ip address 192.168.100.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
   end
 
-[203/343] r1 R1> show interfaces GigabitEthernet0/1
+[203/343] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -987,7 +979,7 @@ Total steps: 343
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[204/343] r1 R1> show ip interface GigabitEthernet0/1
+[204/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -998,33 +990,33 @@ Total steps: 343
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[205/343] r1 R1> show ipv6 interface GigabitEthernet0/1
+[205/343] r1 R1# show ipv6 interface GigabitEthernet0/1
   % Invalid input detected at '^' marker.
   show ipv6 interface GigabitEthernet0/1
             ^
 
-[206/343] r1 R1> show interfaces GigabitEthernet0/1 accounting
+[206/343] r1 R1# show interfaces GigabitEthernet0/1 accounting
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/1 accounting
        ^
 
-[207/343] r1 R1> show interfaces GigabitEthernet0/1 switchport
+[207/343] r1 R1# show interfaces GigabitEthernet0/1 switchport
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/1 switchport
        ^
 
-[208/343] r1 R1> show interfaces GigabitEthernet0/1 stats
+[208/343] r1 R1# show interfaces GigabitEthernet0/1 stats
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/1 stats
        ^
 
-[209/343] r1 R1> show controllers GigabitEthernet0/1
+[209/343] r1 R1# show controllers GigabitEthernet0/1
   GigabitEthernet0/1 -
     Hardware is present, link is connected
     Administrative state: up
     0 carrier transitions
 
-[210/343] r1 R1> show running-config interface GigabitEthernet0/1
+[210/343] r1 R1# show running-config interface GigabitEthernet0/1
   Building configuration...
   
   Current configuration : interface GigabitEthernet0/1
@@ -1034,75 +1026,89 @@ Total steps: 343
    no shutdown
   end
 
-[211/343] r1 R1> show interfaces Loopback0
+[211/343] r1 R1# show interfaces Loopback0
   % Invalid input detected at '^' marker.
   show interface Loopback0
        ^
 
-[212/343] r1 R1> show ip interface Loopback0
+[212/343] r1 R1# show ip interface Loopback0
   % Invalid input detected at '^' marker.
 
-[213/343] r1 R1> show ipv6 interface Loopback0
+[213/343] r1 R1# show ipv6 interface Loopback0
   % Invalid input detected at '^' marker.
   show ipv6 interface Loopback0
             ^
 
-[214/343] r1 R1> show interfaces Loopback0 accounting
+[214/343] r1 R1# show interfaces Loopback0 accounting
   % Invalid input detected at '^' marker.
   show interface Loopback0 accounting
        ^
 
-[215/343] r1 R1> show interfaces Loopback0 switchport
+[215/343] r1 R1# show interfaces Loopback0 switchport
   % Invalid input detected at '^' marker.
   show interface Loopback0 switchport
        ^
 
-[216/343] r1 R1> show interfaces Loopback0 stats
+[216/343] r1 R1# show interfaces Loopback0 stats
   % Invalid input detected at '^' marker.
   show interface Loopback0 stats
        ^
 
-[217/343] r1 R1> show controllers Loopback0
+[217/343] r1 R1# show controllers Loopback0
   Interface does not exist
 
-[218/343] r1 R1> show running-config interface Loopback0
+[218/343] r1 R1# show running-config interface Loopback0
   % Invalid interface
 
-[219/343] r1 R1> show interfaces Tunnel0
-  % Invalid input detected at '^' marker.
-  show interface Tunnel0
-       ^
+[219/343] r1 R1# show interfaces Tunnel0
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    Tunnel protocol/transport GRE/IP
 
-[220/343] r1 R1> show ip interface Tunnel0
-  % Invalid input detected at '^' marker.
+[220/343] r1 R1# show ip interface Tunnel0
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    Tunnel protocol/transport GRE/IP
 
-[221/343] r1 R1> show ipv6 interface Tunnel0
+[221/343] r1 R1# show ipv6 interface Tunnel0
   % Invalid input detected at '^' marker.
   show ipv6 interface Tunnel0
             ^
 
-[222/343] r1 R1> show interfaces Tunnel0 accounting
+[222/343] r1 R1# show interfaces Tunnel0 accounting
   % Invalid input detected at '^' marker.
   show interface Tunnel0 accounting
        ^
 
-[223/343] r1 R1> show interfaces Tunnel0 switchport
+[223/343] r1 R1# show interfaces Tunnel0 switchport
   % Invalid input detected at '^' marker.
   show interface Tunnel0 switchport
        ^
 
-[224/343] r1 R1> show interfaces Tunnel0 stats
+[224/343] r1 R1# show interfaces Tunnel0 stats
   % Invalid input detected at '^' marker.
   show interface Tunnel0 stats
        ^
 
-[225/343] r1 R1> show controllers Tunnel0
-  Interface does not exist
+[225/343] r1 R1# show controllers Tunnel0
+  Tunnel0 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
 
-[226/343] r1 R1> show running-config interface Tunnel0
-  % Invalid interface
+[226/343] r1 R1# show running-config interface Tunnel0
+  Building configuration...
+  
+  Current configuration : interface Tunnel0
+  !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  end
 
-[227/343] r1 R1> show interfaces description
+[227/343] r1 R1# show interfaces description
   Interface                      Status         Protocol Description
   GigabitEthernet0/0             up             up       ## LAN to L1 ##
   GigabitEthernet0/1             up             up       
@@ -1117,8 +1123,11 @@ Total steps: 343
   Loopback7                      up             down     LOOP-7
   Loopback8                      up             down     LOOP-8
   Loopback100                    up             down     
+  Tunnel0                        up             down     
+  Tunnel1                        up             down     
+  Tunnel2                        up             down     
 
-[228/343] r1 R1> show interfaces status
+[228/343] r1 R1# show interfaces status
   Port      Name               Status       Vlan       Duplex  Speed Type
   GigabitEt ## LAN to L1 ##    connected    routed     full    1000  1000BASE-T
   GigabitEt                    connected    routed     full    1000  1000BASE-T
@@ -1133,43 +1142,61 @@ Total steps: 343
   Loopback7 LOOP-7             notconnect   routed     full    1000  10/100BaseTX
   Loopback8 LOOP-8             notconnect   routed     full    1000  10/100BaseTX
   Loopback1                    notconnect   routed     full    1000  10/100BaseTX
+  Tunnel0                      notconnect   routed     full    1000  10/100BaseTX
+  Tunnel1                      notconnect   routed     full    1000  10/100BaseTX
+  Tunnel2                      notconnect   routed     full    1000  10/100BaseTX
 
-[229/343] r1 R1> show ip interface brief
+[229/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
-[230/343] r1 R1> show ipv6 interface brief
+[230/343] r1 R1# show ipv6 interface brief
   % Invalid input detected at '^' marker.
   show ipv6 interface brief
             ^
 
-[231/343] r1 R1> show interfaces trunk
+[231/343] r1 R1# show interfaces trunk
   % Invalid input detected at '^' marker.
   show interface trunk
        ^
 
-[232/343] r1 R1> show ip interface brief | include up
+[232/343] r1 R1# show ip interface brief | include up
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
-[233/343] r1 R1> end
+[233/343] r1 R1# end
 <empty>
 
 
 --- [234] § regression: show family ---
-[234/343] r1 R1> enable
+[234/343] r1 R1# enable
 <empty>
 
 [235/343] r1 R1# show version
@@ -1202,6 +1229,11 @@ Total steps: 343
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -1257,6 +1289,16 @@ Total steps: 343
    ip address 172.31.0.1 255.255.255.255
    no shutdown
   !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel2
+   shutdown
   !
   end
 
@@ -1267,17 +1309,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [239/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1341,6 +1386,18 @@ Total steps: 343
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    Tunnel protocol/transport GRE/IP
+  Tunnel1 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.5/30
+    tunnel protection ipsec profile IPSEC-PROF
+    Tunnel protocol/transport GRE/IP
+  Tunnel2 is up, line protocol is up
+    Hardware is Tunnel
+    Tunnel protocol/transport GRE/IP
 
 [240/343] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1357,9 +1414,21 @@ Total steps: 343
   C    10.255.255.8/32 is directly connected, Loopback8
   C    172.31.0.1/32 is directly connected, Loopback100
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  C    172.16.0.0/30 is directly connected, Tunnel0
+  C    172.16.0.4/30 is directly connected, Tunnel1
 
 [241/343] r1 R1# show ip route summary
-  % Network not in table
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       13          13          0           1976        4680
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           13          13          0           1976        4680
 
 [242/343] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1424,16 +1493,19 @@ Total steps: 343
 <empty>
 
 [260/343] r1 R1# show crypto isakmp sa
-  IPSec not configured.
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
 
 [261/343] r1 R1# show crypto ipsec sa
-  IPSec not configured.
+  No IPSec SAs established.
 
 [262/343] r1 R1# show crypto session
-  IPSec not configured.
+  No active crypto sessions.
 
 [263/343] r1 R1# show crypto map
-  IPSec not configured.
+  No crypto maps configured.
 
 [264/343] r1 R1# show standby brief
                        P indicates configured to preempt.
@@ -1450,9 +1522,7 @@ Total steps: 343
   No IP SLA operations configured.
 
 [268/343] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+<empty>
 
 [269/343] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -1473,7 +1543,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:57.465Z
+  reference time is EDCB0627.E9BA5E35 (19:59:35.913 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1482,7 +1552,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *16:07:57.000 UTC Wed Jun 3 2026
+  *19:59:35.000 UTC Wed Jun 3 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1517,10 +1587,10 @@ Total steps: 343
 [278/343] r1 R1# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
 [279/343] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1551,19 +1621,7 @@ Total steps: 343
   show history
 
 [281/343] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.100.0/24     attached             GigabitEthernet0/0
-  10.255.255.1/32      attached             Loopback1
-  10.255.255.2/32      attached             Loopback2
-  10.255.255.3/32      attached             Loopback3
-  10.255.255.4/32      attached             Loopback4
-  10.255.255.5/32      attached             Loopback5
-  10.255.255.6/32      attached             Loopback6
-  10.255.255.7/32      attached             Loopback7
-  10.255.255.8/32      attached             Loopback8
-  172.31.0.1/32        attached             Loopback100
-  10.0.0.0/30          attached             GigabitEthernet0/1
+  IP CEF is not enabled
 
 [282/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1651,6 +1709,18 @@ Total steps: 343
     Hardware is present, link is down
     Administrative state: up
     0 carrier transitions
+  Tunnel0 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Tunnel1 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
+  Tunnel2 -
+    Hardware is present, link is down
+    Administrative state: up
+    0 carrier transitions
 
 [286/343] r1 R1# show tech-support
   ------------------ show version ------------------
@@ -1683,6 +1753,11 @@ Total steps: 343
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -1738,6 +1813,16 @@ Total steps: 343
    ip address 172.31.0.1 255.255.255.255
    no shutdown
   !
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  !
+  interface Tunnel2
+   shutdown
   !
   end
   
@@ -1745,17 +1830,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -1771,6 +1859,8 @@ Total steps: 343
   C    10.255.255.8/32 is directly connected, Loopback8
   C    172.31.0.1/32 is directly connected, Loopback100
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  C    172.16.0.0/30 is directly connected, Tunnel0
+  C    172.16.0.4/30 is directly connected, Tunnel1
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -1834,6 +1924,18 @@ Total steps: 343
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
+  Tunnel0 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.1/30
+    Tunnel protocol/transport GRE/IP
+  Tunnel1 is up, line protocol is up
+    Hardware is Tunnel
+    Internet address is 172.16.0.5/30
+    tunnel protection ipsec profile IPSEC-PROF
+    Tunnel protocol/transport GRE/IP
+  Tunnel2 is up, line protocol is up
+    Hardware is Tunnel
+    Tunnel protocol/transport GRE/IP
   
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
@@ -1850,8 +1952,8 @@ Total steps: 343
       No active syslog hosts
 
 [287/343] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [288/343] r1 R1# show environment
   Environmental monitoring is not instrumented on this platform.
@@ -1911,75 +2013,65 @@ Total steps: 343
 <empty>
 
 [298/343] r1 R1# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    no shutdown
-  !
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
    no shutdown
-  !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
    no shutdown
-  !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
    no shutdown
-  !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
    no shutdown
-  !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
    no shutdown
-  !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
    no shutdown
-  !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
    no shutdown
-  !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
    no shutdown
-  !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
    no shutdown
-  !
-  !
-  end
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  interface Tunnel2
+   shutdown
 
 [299/343] r1 R1# show running-config | begin line
 <empty>
@@ -1994,6 +2086,11 @@ Total steps: 343
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
@@ -2036,6 +2133,14 @@ Total steps: 343
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
    no shutdown
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   no shutdown
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   no shutdown
+  interface Tunnel2
+   shutdown
   end
 
 [301/343] r1 R1# show ip route | include via
@@ -2045,15 +2150,17 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
 
 
 --- [303] § regression: mode nav + negation ---
@@ -2127,17 +2234,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [326/343] r1 R1(config-if)# shutdown
 <empty>
@@ -2176,14 +2286,14 @@ Total steps: 343
     <cr>  
 
 [337/343] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -2204,6 +2314,7 @@ Total steps: 343
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [340/343] r1 R1(config)# no ?
@@ -2229,77 +2340,7 @@ Total steps: 343
 <empty>
 
 [342/343] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   description ## LAN to L1 ##
-   ip address 192.168.100.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback1
-   description LOOP-1
-   ip address 10.255.255.1 255.255.255.255
-   no shutdown
-  !
-  interface Loopback2
-   description LOOP-2
-   ip address 10.255.255.2 255.255.255.255
-   no shutdown
-  !
-  interface Loopback3
-   description LOOP-3
-   ip address 10.255.255.3 255.255.255.255
-   no shutdown
-  !
-  interface Loopback4
-   description LOOP-4
-   ip address 10.255.255.4 255.255.255.255
-   no shutdown
-  !
-  interface Loopback5
-   description LOOP-5
-   ip address 10.255.255.5 255.255.255.255
-   no shutdown
-  !
-  interface Loopback6
-   description LOOP-6
-   ip address 10.255.255.6 255.255.255.255
-   no shutdown
-  !
-  interface Loopback7
-   description LOOP-7
-   ip address 10.255.255.7 255.255.255.255
-   no shutdown
-  !
-  interface Loopback8
-   description LOOP-8
-   ip address 10.255.255.8 255.255.255.255
-   no shutdown
-  !
-  interface Loopback100
-   ip address 172.31.0.1 255.255.255.255
-   no shutdown
-  !
-  line vty 0 4
-  !
-  !
-  end
+  22
 
 [343/343] r1 R1# write memory
   Building configuration...

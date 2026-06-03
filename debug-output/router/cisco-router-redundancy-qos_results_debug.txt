@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-06-03T16:07:52.012Z
+Generated: 2026-06-03T19:59:26.589Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1072,415 +1072,372 @@ Total steps: 413
 <empty>
 
 [216/413] r1 R1(config)# class-map match-any CM-VOICE
-  % Invalid input detected at '^' marker.
-  class-map match-any CM-VOICE
-  ^
-
-[217/413] r1 R1(config)# match ip dscp ef
-  % Invalid input detected at '^' marker.
-  match ip dscp ef
-  ^
-
-[218/413] r1 R1(config)# match access-group name VOICE
-  % Invalid input detected at '^' marker.
-  match access-group name VOICE
-  ^
-
-[219/413] r1 R1(config)# match protocol rtp
-  % Invalid input detected at '^' marker.
-  match protocol rtp
-  ^
-
-[220/413] r1 R1(config)# exit
 <empty>
 
-[221/413] r1 R1# class-map match-all CM-VIDEO
-  % Invalid input detected at '^' marker.
-  class-map match-all CM-VIDEO
-  ^
-
-[222/413] r1 R1# match ip dscp af41
-  % Invalid input detected at '^' marker.
-  match ip dscp af41
-  ^
-
-[223/413] r1 R1# match access-group name VIDEO
-  % Invalid input detected at '^' marker.
-  match access-group name VIDEO
-  ^
-
-[224/413] r1 R1# exit
+[217/413] r1 R1(config-cmap)# match ip dscp ef
 <empty>
 
-[225/413] r1 R1> class-map match-any CM-CRITICAL
-  % Invalid input detected at '^' marker.
-  class-map match-any CM-CRITICAL
-  ^
-
-[226/413] r1 R1> match protocol bgp
-  % Invalid input detected at '^' marker.
-  match protocol bgp
-  ^
-
-[227/413] r1 R1> match protocol ospf
-  % Invalid input detected at '^' marker.
-  match protocol ospf
-  ^
-
-[228/413] r1 R1> match ip precedence 6
-  % Invalid input detected at '^' marker.
-  match ip precedence 6
-  ^
-
-[229/413] r1 R1> exit
+[218/413] r1 R1(config-cmap)# match access-group name VOICE
 <empty>
 
-[230/413] r1 R1> class-map match-any CM-SCAVENGER
-  % Invalid input detected at '^' marker.
-  class-map match-any CM-SCAVENGER
-  ^
-
-[231/413] r1 R1> match protocol bittorrent
-  % Invalid input detected at '^' marker.
-  match protocol bittorrent
-  ^
-
-[232/413] r1 R1> match protocol napster
-  % Invalid input detected at '^' marker.
-  match protocol napster
-  ^
-
-[233/413] r1 R1> exit
+[219/413] r1 R1(config-cmap)# match protocol rtp
 <empty>
 
-[234/413] r1 R1> policy-map PM-WAN-OUT
-  % Invalid input detected at '^' marker.
-  policy-map PM-WAN-OUT
-  ^
+[220/413] r1 R1(config-cmap)# exit
+<empty>
 
-[235/413] r1 R1> class CM-VOICE
-  % Invalid input detected at '^' marker.
-  class CM-VOICE
-  ^
+[221/413] r1 R1(config)# class-map match-all CM-VIDEO
+<empty>
 
-[236/413] r1 R1> priority percent 20
+[222/413] r1 R1(config-cmap)# match ip dscp af41
+<empty>
+
+[223/413] r1 R1(config-cmap)# match access-group name VIDEO
+<empty>
+
+[224/413] r1 R1(config-cmap)# exit
+<empty>
+
+[225/413] r1 R1(config)# class-map match-any CM-CRITICAL
+<empty>
+
+[226/413] r1 R1(config-cmap)# match protocol bgp
+<empty>
+
+[227/413] r1 R1(config-cmap)# match protocol ospf
+<empty>
+
+[228/413] r1 R1(config-cmap)# match ip precedence 6
+<empty>
+
+[229/413] r1 R1(config-cmap)# exit
+<empty>
+
+[230/413] r1 R1(config)# class-map match-any CM-SCAVENGER
+<empty>
+
+[231/413] r1 R1(config-cmap)# match protocol bittorrent
+<empty>
+
+[232/413] r1 R1(config-cmap)# match protocol napster
+<empty>
+
+[233/413] r1 R1(config-cmap)# exit
+<empty>
+
+[234/413] r1 R1(config)# policy-map PM-WAN-OUT
+<empty>
+
+[235/413] r1 R1(config-pmap)# class CM-VOICE
+<empty>
+
+[236/413] r1 R1(config-pmap-c)# priority percent 20
   % Invalid input detected at '^' marker.
   priority percent 20
   ^
 
-[237/413] r1 R1> set dscp ef
-  % Invalid input detected at '^' marker.
-  set dscp ef
-  ^
-
-[238/413] r1 R1> exit
+[237/413] r1 R1(config-pmap-c)# set dscp ef
 <empty>
 
-[239/413] r1 R1> class CM-VIDEO
-  % Invalid input detected at '^' marker.
-  class CM-VIDEO
-  ^
+[238/413] r1 R1(config-pmap-c)# exit
+<empty>
 
-[240/413] r1 R1> bandwidth percent 25
+[239/413] r1 R1(config-pmap)# class CM-VIDEO
+<empty>
+
+[240/413] r1 R1(config-pmap-c)# bandwidth percent 25
   % Invalid input detected at '^' marker.
   bandwidth percent 25
   ^
 
-[241/413] r1 R1> random-detect dscp-based
+[241/413] r1 R1(config-pmap-c)# random-detect dscp-based
   % Invalid input detected at '^' marker.
   random-detect dscp-based
   ^
 
-[242/413] r1 R1> set dscp af41
-  % Invalid input detected at '^' marker.
-  set dscp af41
-  ^
-
-[243/413] r1 R1> exit
+[242/413] r1 R1(config-pmap-c)# set dscp af41
 <empty>
 
-[244/413] r1 R1> class CM-CRITICAL
-  % Invalid input detected at '^' marker.
-  class CM-CRITICAL
-  ^
+[243/413] r1 R1(config-pmap-c)# exit
+<empty>
 
-[245/413] r1 R1> bandwidth percent 15
+[244/413] r1 R1(config-pmap)# class CM-CRITICAL
+<empty>
+
+[245/413] r1 R1(config-pmap-c)# bandwidth percent 15
   % Invalid input detected at '^' marker.
   bandwidth percent 15
   ^
 
-[246/413] r1 R1> exit
+[246/413] r1 R1(config-pmap-c)# exit
 <empty>
 
-[247/413] r1 R1> class CM-SCAVENGER
-  % Invalid input detected at '^' marker.
-  class CM-SCAVENGER
-  ^
+[247/413] r1 R1(config-pmap)# class CM-SCAVENGER
+<empty>
 
-[248/413] r1 R1> bandwidth percent 1
+[248/413] r1 R1(config-pmap-c)# bandwidth percent 1
   % Invalid input detected at '^' marker.
   bandwidth percent 1
   ^
 
-[249/413] r1 R1> set dscp cs1
-  % Invalid input detected at '^' marker.
-  set dscp cs1
-  ^
-
-[250/413] r1 R1> exit
+[249/413] r1 R1(config-pmap-c)# set dscp cs1
 <empty>
 
-[251/413] r1 R1> class class-default
-  % Invalid input detected at '^' marker.
-  class class-default
-  ^
+[250/413] r1 R1(config-pmap-c)# exit
+<empty>
 
-[252/413] r1 R1> fair-queue
+[251/413] r1 R1(config-pmap)# class class-default
+<empty>
+
+[252/413] r1 R1(config-pmap-c)# fair-queue
   % Invalid input detected at '^' marker.
   fair-queue
   ^
 
-[253/413] r1 R1> random-detect
+[253/413] r1 R1(config-pmap-c)# random-detect
   % Invalid input detected at '^' marker.
   random-detect
   ^
 
-[254/413] r1 R1> shape average 50000000
+[254/413] r1 R1(config-pmap-c)# shape average 50000000
   % Invalid input detected at '^' marker.
   shape average 50000000
   ^
 
-[255/413] r1 R1> exit
+[255/413] r1 R1(config-pmap-c)# exit
 <empty>
 
-[256/413] r1 R1> exit
+[256/413] r1 R1(config-pmap)# exit
 <empty>
 
-[257/413] r1 R1> policy-map PM-SHAPER
-  % Invalid input detected at '^' marker.
-  policy-map PM-SHAPER
-  ^
+[257/413] r1 R1(config)# policy-map PM-SHAPER
+<empty>
 
-[258/413] r1 R1> class class-default
-  % Invalid input detected at '^' marker.
-  class class-default
-  ^
+[258/413] r1 R1(config-pmap)# class class-default
+<empty>
 
-[259/413] r1 R1> shape average 100000000 1000000
+[259/413] r1 R1(config-pmap-c)# shape average 100000000 1000000
   % Invalid input detected at '^' marker.
   shape average 100000000 1000000
   ^
 
-[260/413] r1 R1> service-policy PM-WAN-OUT
+[260/413] r1 R1(config-pmap-c)# service-policy PM-WAN-OUT
   % Invalid input detected at '^' marker.
   service-policy PM-WAN-OUT
   ^
 
-[261/413] r1 R1> exit
+[261/413] r1 R1(config-pmap-c)# exit
 <empty>
 
-[262/413] r1 R1> exit
+[262/413] r1 R1(config-pmap)# exit
 <empty>
 
-[263/413] r1 R1> policy-map PM-POLICE-IN
-  % Invalid input detected at '^' marker.
-  policy-map PM-POLICE-IN
-  ^
-
-[264/413] r1 R1> class CM-SCAVENGER
-  % Invalid input detected at '^' marker.
-  class CM-SCAVENGER
-  ^
-
-[265/413] r1 R1> police 1000000 conform-action transmit exceed-action drop
-  % Invalid input detected at '^' marker.
-  police 1000000 conform-action transmit exceed-action drop
-  ^
-
-[266/413] r1 R1> exit
+[263/413] r1 R1(config)# policy-map PM-POLICE-IN
 <empty>
 
-[267/413] r1 R1> class class-default
-  % Invalid input detected at '^' marker.
-  class class-default
-  ^
-
-[268/413] r1 R1> police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
-  % Invalid input detected at '^' marker.
-  police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
-  ^
-
-[269/413] r1 R1> exit
+[264/413] r1 R1(config-pmap)# class CM-SCAVENGER
 <empty>
 
-[270/413] r1 R1> exit
+[265/413] r1 R1(config-pmap-c)# police 1000000 conform-action transmit exceed-action drop
 <empty>
 
-[271/413] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
+[266/413] r1 R1(config-pmap-c)# exit
+<empty>
 
-[272/413] r1 R1> service-policy output PM-SHAPER
+[267/413] r1 R1(config-pmap)# class class-default
+<empty>
+
+[268/413] r1 R1(config-pmap-c)# police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+<empty>
+
+[269/413] r1 R1(config-pmap-c)# exit
+<empty>
+
+[270/413] r1 R1(config-pmap)# exit
+<empty>
+
+[271/413] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[272/413] r1 R1(config-if)# service-policy output PM-SHAPER
   % Invalid input detected at '^' marker.
   service-policy output PM-SHAPER
   ^
 
-[273/413] r1 R1> service-policy input PM-POLICE-IN
+[273/413] r1 R1(config-if)# service-policy input PM-POLICE-IN
   % Invalid input detected at '^' marker.
   service-policy input PM-POLICE-IN
   ^
 
-[274/413] r1 R1> bandwidth 100000
+[274/413] r1 R1(config-if)# bandwidth 100000
   % Invalid input detected at '^' marker.
   bandwidth 100000
   ^
 
-[275/413] r1 R1> max-reserved-bandwidth 90
+[275/413] r1 R1(config-if)# max-reserved-bandwidth 90
   % Invalid input detected at '^' marker.
   max-reserved-bandwidth 90
   ^
 
-[276/413] r1 R1> exit
+[276/413] r1 R1(config-if)# exit
 <empty>
 
-[277/413] r1 R1> end
+[277/413] r1 R1(config)# end
 <empty>
 
-[278/413] r1 R1> show policy-map
-  % Invalid input detected at '^' marker.
-  show policy-map
-       ^
+[278/413] r1 R1# show policy-map
+  Policy Map PM-WAN-OUT
+    Class CM-VOICE
+      set-dscp ef
+    Class CM-VIDEO
+      set-dscp af41
+    Class CM-CRITICAL
+    Class CM-SCAVENGER
+      set-dscp cs1
+    Class class-default
+  Policy Map PM-SHAPER
+    Class class-default
+  Policy Map PM-POLICE-IN
+    Class CM-SCAVENGER
+      police 1000000 conform-action transmit exceed-action drop
+    Class class-default
+      police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
 
-[279/413] r1 R1> show policy-map PM-WAN-OUT
-  % Invalid input detected at '^' marker.
-  show policy-map PM-WAN-OUT
-       ^
+[279/413] r1 R1# show policy-map PM-WAN-OUT
+  Policy Map PM-WAN-OUT
+    Class CM-VOICE
+      set-dscp ef
+    Class CM-VIDEO
+      set-dscp af41
+    Class CM-CRITICAL
+    Class CM-SCAVENGER
+      set-dscp cs1
+    Class class-default
 
-[280/413] r1 R1> show policy-map interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  show policy-map interface GigabitEthernet0/1
-       ^
+[280/413] r1 R1# show policy-map interface GigabitEthernet0/1
+<empty>
 
-[281/413] r1 R1> show class-map
-  % Invalid input detected at '^' marker.
-  show class-map
-       ^
+[281/413] r1 R1# show class-map
+  Class Map match-any CM-VOICE
+    Match access-group name VOICE
+    Match protocol rtp
+  Class Map match-all CM-VIDEO
+    Match access-group name VIDEO
+  Class Map match-any CM-CRITICAL
+    Match protocol bgp
+    Match protocol ospf
+  Class Map match-any CM-SCAVENGER
+    Match protocol bittorrent
+    Match protocol napster
 
-[282/413] r1 R1> show class-map CM-VOICE
-  % Invalid input detected at '^' marker.
-  show class-map CM-VOICE
-       ^
+[282/413] r1 R1# show class-map CM-VOICE
+  Class Map match-any CM-VOICE
+    Match access-group name VOICE
+    Match protocol rtp
 
-[283/413] r1 R1> show table-map
+[283/413] r1 R1# show table-map
   % Invalid input detected at '^' marker.
   show table-map
        ^
 
-[284/413] r1 R1> show mls qos
+[284/413] r1 R1# show mls qos
   % Invalid input detected at '^' marker.
   show mls qos
        ^
 
 
 --- [285] § legacy QoS / NBAR ---
-[285/413] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[285/413] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[286/413] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
+[286/413] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
 
-[287/413] r1 R1> rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+[287/413] r1 R1(config-if)# rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
   % Invalid input detected at '^' marker.
   rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
   ^
 
-[288/413] r1 R1> ip nbar protocol-discovery
+[288/413] r1 R1(config-if)# ip nbar protocol-discovery
   % Invalid input detected at '^' marker.
   ip nbar protocol-discovery
-  ^
+     ^
 
-[289/413] r1 R1> priority-group 1
+[289/413] r1 R1(config-if)# priority-group 1
   % Invalid input detected at '^' marker.
   priority-group 1
   ^
 
-[290/413] r1 R1> custom-queue-list 1
+[290/413] r1 R1(config-if)# custom-queue-list 1
   % Invalid input detected at '^' marker.
   custom-queue-list 1
   ^
 
-[291/413] r1 R1> fair-queue 64 256 8
+[291/413] r1 R1(config-if)# fair-queue 64 256 8
   % Invalid input detected at '^' marker.
   fair-queue 64 256 8
   ^
 
-[292/413] r1 R1> random-detect
+[292/413] r1 R1(config-if)# random-detect
   % Invalid input detected at '^' marker.
   random-detect
   ^
 
-[293/413] r1 R1> tx-ring-limit 3
+[293/413] r1 R1(config-if)# tx-ring-limit 3
   % Invalid input detected at '^' marker.
   tx-ring-limit 3
   ^
 
-[294/413] r1 R1> exit
+[294/413] r1 R1(config-if)# exit
 <empty>
 
-[295/413] r1 R1> priority-list 1 protocol ip high tcp telnet
+[295/413] r1 R1(config)# priority-list 1 protocol ip high tcp telnet
   % Invalid input detected at '^' marker.
   priority-list 1 protocol ip high tcp telnet
   ^
 
-[296/413] r1 R1> queue-list 1 protocol ip 1 tcp www
+[296/413] r1 R1(config)# queue-list 1 protocol ip 1 tcp www
   % Invalid input detected at '^' marker.
   queue-list 1 protocol ip 1 tcp www
   ^
 
-[297/413] r1 R1> access-list rate-limit 10 5
-  % Invalid input detected at '^' marker.
-  access-list rate-limit 10 5
-  ^
+[297/413] r1 R1(config)# access-list rate-limit 10 5
+  % Invalid access-list number.
 
-[298/413] r1 R1> end
+[298/413] r1 R1(config)# end
 <empty>
 
-[299/413] r1 R1> show ip nbar protocol-discovery
+[299/413] r1 R1# show ip nbar protocol-discovery
   % Invalid input detected at '^' marker.
   show ip nbar protocol-discovery
           ^
 
-[300/413] r1 R1> show queueing interface GigabitEthernet0/1
+[300/413] r1 R1# show queueing interface GigabitEthernet0/1
   % Invalid input detected at '^' marker.
   show queueing interface GigabitEthernet0/1
        ^
 
-[301/413] r1 R1> show interfaces GigabitEthernet0/1 rate-limit
+[301/413] r1 R1# show interfaces GigabitEthernet0/1 rate-limit
   % Invalid input detected at '^' marker.
   show interface GigabitEthernet0/1 rate-limit
        ^
 
-[302/413] r1 R1> show traffic-shape
+[302/413] r1 R1# show traffic-shape
   % Invalid input detected at '^' marker.
   show traffic-shape
        ^
 
-[303/413] r1 R1> show traffic-shape statistics
+[303/413] r1 R1# show traffic-shape statistics
   % Invalid input detected at '^' marker.
   show traffic-shape statistics
        ^
 
 
 --- [304] § regression: show family ---
-[304/413] r1 R1> enable
-<empty>
+[304/413] r1 R1(config)# enable
+  % Incomplete command.
 
-[305/413] r1 R1# show version
+[305/413] r1 R1(config)# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -1497,7 +1454,7 @@ Total steps: 413
   
   Configuration register is 0x2102
 
-[306/413] r1 R1# show running-config
+[306/413] r1 R1(config)# show running-config
   Building configuration...
   
   Current configuration:
@@ -1521,25 +1478,53 @@ Total steps: 413
    shutdown
   !
   ip access-list extended VOICE
-   permit udp any any
+   permit udp any any range 16384 32767
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
   !
+  class-map match-any CM-VOICE
+   match access-group name VOICE
+   match protocol rtp
+  class-map match-all CM-VIDEO
+   match access-group name VIDEO
+  class-map match-any CM-CRITICAL
+   match protocol bgp
+   match protocol ospf
+  class-map match-any CM-SCAVENGER
+   match protocol bittorrent
+   match protocol napster
+  policy-map PM-WAN-OUT
+   class CM-VOICE
+    set dscp ef
+   class CM-VIDEO
+    set dscp af41
+   class CM-CRITICAL
+   class CM-SCAVENGER
+    set dscp cs1
+   class class-default
+  policy-map PM-SHAPER
+   class class-default
+  policy-map PM-POLICE-IN
+   class CM-SCAVENGER
+    police 1000000 conform-action transmit exceed-action drop
+   class class-default
+    police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
+  !
   end
 
-[307/413] r1 R1# show startup-config
+[307/413] r1 R1(config)# show startup-config
   % startup-config is not present
 
-[308/413] r1 R1# show ip interface brief
+[308/413] r1 R1(config)# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.2     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
-[309/413] r1 R1# show interfaces
+[309/413] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.2/24
@@ -1575,7 +1560,7 @@ Total steps: 413
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[310/413] r1 R1# show ip route
+[310/413] r1 R1(config)# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
@@ -1583,53 +1568,63 @@ Total steps: 413
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   S    192.168.9.0/24 [1/0] via 10.0.0.2
 
-[311/413] r1 R1# show ip route summary
-  % Network not in table
+[311/413] r1 R1(config)# show ip route summary
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       2           2           0           304         720
+  static          1           1           0           152         360
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           3           3           0           456         1080
 
-[312/413] r1 R1# show ip protocols
+[312/413] r1 R1(config)# show ip protocols
   No routing protocol is configured.
 
-[313/413] r1 R1# show ip arp
+[313/413] r1 R1(config)# show ip arp
   No ARP entries.
 
-[314/413] r1 R1# show arp
+[314/413] r1 R1(config)# show arp
   No ARP entries.
 
-[315/413] r1 R1# show ip ospf
+[315/413] r1 R1(config)# show ip ospf
   Routing Process "ospf 1" with ID 192.168.1.2
    Number of areas in this router is 0
    Reference bandwidth unit is 100 mbps
   
 
-[316/413] r1 R1# show ip ospf neighbor
+[316/413] r1 R1(config)# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
 
-[317/413] r1 R1# show ip ospf database
+[317/413] r1 R1(config)# show ip ospf database
               OSPF Router with ID (192.168.1.2) (Process ID 1)
   
 
-[318/413] r1 R1# show ip ospf interface brief
+[318/413] r1 R1(config)# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
 
-[319/413] r1 R1# show ip eigrp neighbors
+[319/413] r1 R1(config)# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[320/413] r1 R1# show ip eigrp topology
+[320/413] r1 R1(config)# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[321/413] r1 R1# show ip bgp
+[321/413] r1 R1(config)# show ip bgp
   % BGP not active
 
-[322/413] r1 R1# show ip bgp summary
+[322/413] r1 R1(config)# show ip bgp summary
   % BGP not active
 
-[323/413] r1 R1# show ip rip database
+[323/413] r1 R1(config)# show ip rip database
 <empty>
 
-[324/413] r1 R1# show ip nat translations
+[324/413] r1 R1(config)# show ip nat translations
   No NAT translations.
 
-[325/413] r1 R1# show ip nat statistics
+[325/413] r1 R1(config)# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
   Outside interfaces:  none
   Inside interfaces:   none
@@ -1639,38 +1634,38 @@ Total steps: 413
   Dynamic mappings:
   -- No dynamic NAT rules configured --
 
-[326/413] r1 R1# show ip dhcp binding
+[326/413] r1 R1(config)# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[327/413] r1 R1# show ip dhcp pool
+[327/413] r1 R1(config)# show ip dhcp pool
 <empty>
 
-[328/413] r1 R1# show access-lists
+[328/413] r1 R1(config)# show access-lists
   Extended IP access list VOICE
-      permit udp any any (0 matches)
+      10 permit udp any any range 16384 32767 (0 matches)
   Extended IP access list VIDEO
-      permit tcp any any eq 1720 (0 matches)
+      10 permit tcp any any eq 1720 (0 matches)
 
-[329/413] r1 R1# show ip access-lists
+[329/413] r1 R1(config)# show ip access-lists
   Extended IP access list VOICE
-      permit udp any any (0 matches)
+      10 permit udp any any range 16384 32767 (0 matches)
   Extended IP access list VIDEO
-      permit tcp any any eq 1720 (0 matches)
+      10 permit tcp any any eq 1720 (0 matches)
 
-[330/413] r1 R1# show crypto isakmp sa
+[330/413] r1 R1(config)# show crypto isakmp sa
   IPSec not configured.
 
-[331/413] r1 R1# show crypto ipsec sa
+[331/413] r1 R1(config)# show crypto ipsec sa
   IPSec not configured.
 
-[332/413] r1 R1# show crypto session
+[332/413] r1 R1(config)# show crypto session
   IPSec not configured.
 
-[333/413] r1 R1# show crypto map
+[333/413] r1 R1(config)# show crypto map
   IPSec not configured.
 
-[334/413] r1 R1# show standby brief
+[334/413] r1 R1(config)# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
@@ -1679,13 +1674,13 @@ Total steps: 413
   GigabitEthe 3    130 P Active   local           unknown         192.168.1.3
   GigabitEthe 4    140 P Active   local           unknown         192.168.1.4
 
-[335/413] r1 R1# show vrrp brief
+[335/413] r1 R1(config)# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
   GigabitEthernet0/0 1   120     -   Y   Master  local           192.168.1.201
   GigabitEthernet0/0 2   130     -   Y   Master  local           192.168.1.202
   GigabitEthernet0/0 3   140     -   Y   Master  local           192.168.1.203
 
-[336/413] r1 R1# show track
+[336/413] r1 R1(config)# show track
   Track 1
     Interface GigabitEthernet0/1 line-protocol
     State is Up
@@ -1715,7 +1710,7 @@ Total steps: 413
     Stub object
     State is Down
 
-[337/413] r1 R1# show ip sla statistics
+[337/413] r1 R1(config)# show ip sla statistics
   IPSLA operation id: 1
     Type of operation: icmp-echo
     Latest operation state: Active (reachable)
@@ -1732,12 +1727,10 @@ Total steps: 413
     Type of operation: dns
     Latest operation state: Pending (unreachable)
 
-[338/413] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+[338/413] r1 R1(config)# show policy-map interface
+<empty>
 
-[339/413] r1 R1# show logging
+[339/413] r1 R1(config)# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
@@ -1748,26 +1741,26 @@ Total steps: 413
       Sequence numbers: disabled
       No active syslog hosts
 
-[340/413] r1 R1# show snmp
+[340/413] r1 R1(config)# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[341/413] r1 R1# show ntp status
+[341/413] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:52.048Z
+  reference time is EDCB061E.A147AE14 (19:59:26.630 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
-[342/413] r1 R1# show ntp associations
+[342/413] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
   No NTP associations configured.
 
-[343/413] r1 R1# show clock
-  *16:07:52.000 UTC Wed Jun 3 2026
+[343/413] r1 R1(config)# show clock
+  *19:59:26.000 UTC Wed Jun 3 2026
 
-[344/413] r1 R1# show cdp neighbors
+[344/413] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1777,7 +1770,7 @@ Total steps: 413
   
   Total cdp entries displayed : 2
 
-[345/413] r1 R1# show lldp neighbors
+[345/413] r1 R1(config)# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
@@ -1786,32 +1779,32 @@ Total steps: 413
   
   Total entries displayed: 0
 
-[346/413] r1 R1# show processes cpu
+[346/413] r1 R1(config)# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[347/413] r1 R1# show memory statistics
+[347/413] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
   I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
 
-[348/413] r1 R1# show flash
+[348/413] r1 R1(config)# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
-[349/413] r1 R1# show users
+[349/413] r1 R1(config)# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[350/413] r1 R1# show history
+[350/413] r1 R1(config)# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1833,14 +1826,10 @@ Total steps: 413
   show users
   show history
 
-[351/413] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
-  192.168.9.0/24       10.0.0.2             GigabitEthernet0/1
+[351/413] r1 R1(config)# show ip cef
+  IP CEF is not enabled
 
-[352/413] r1 R1# show interfaces GigabitEthernet0/0
+[352/413] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.2/24
@@ -1851,7 +1840,7 @@ Total steps: 413
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[353/413] r1 R1# show interfaces GigabitEthernet0/1
+[353/413] r1 R1(config)# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1862,7 +1851,7 @@ Total steps: 413
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[354/413] r1 R1# show ip interface GigabitEthernet0/1
+[354/413] r1 R1(config)# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1873,7 +1862,7 @@ Total steps: 413
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[355/413] r1 R1# show controllers
+[355/413] r1 R1(config)# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1891,7 +1880,7 @@ Total steps: 413
     Administrative state: up
     0 carrier transitions
 
-[356/413] r1 R1# show tech-support
+[356/413] r1 R1(config)# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1933,11 +1922,39 @@ Total steps: 413
    shutdown
   !
   ip access-list extended VOICE
-   permit udp any any
+   permit udp any any range 16384 32767
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  class-map match-any CM-VOICE
+   match access-group name VOICE
+   match protocol rtp
+  class-map match-all CM-VIDEO
+   match access-group name VIDEO
+  class-map match-any CM-CRITICAL
+   match protocol bgp
+   match protocol ospf
+  class-map match-any CM-SCAVENGER
+   match protocol bittorrent
+   match protocol napster
+  policy-map PM-WAN-OUT
+   class CM-VOICE
+    set dscp ef
+   class CM-VIDEO
+    set dscp af41
+   class CM-CRITICAL
+   class CM-SCAVENGER
+    set dscp cs1
+   class class-default
+  policy-map PM-SHAPER
+   class class-default
+  policy-map PM-POLICE-IN
+   class CM-SCAVENGER
+    police 1000000 conform-action transmit exceed-action drop
+   class class-default
+    police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
   !
   end
   
@@ -1945,8 +1962,8 @@ Total steps: 413
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.2     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -2005,37 +2022,37 @@ Total steps: 413
       Sequence numbers: disabled
       No active syslog hosts
 
-[357/413] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+[357/413] r1 R1(config)# show inventory
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[358/413] r1 R1# show environment
+[358/413] r1 R1(config)# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[359/413] r1 R1# show redundancy
+[359/413] r1 R1(config)# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[360/413] r1 R1# show ip vrf
+[360/413] r1 R1(config)# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[361/413] r1 R1# show vrf
+[361/413] r1 R1(config)# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[362/413] r1 R1# show hosts
+[362/413] r1 R1(config)# show hosts
   Default domain is not set
   Name/address lookup uses domain service
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[363/413] r1 R1# show ip ssh
+[363/413] r1 R1(config)# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[364/413] r1 R1# show line
+[364/413] r1 R1(config)# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -2044,13 +2061,13 @@ Total steps: 413
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[365/413] r1 R1# show terminal
+[365/413] r1 R1(config)# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[366/413] r1 R1# show aliases
+[366/413] r1 R1(config)# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -2067,36 +2084,16 @@ Total steps: 413
 <empty>
 
 [368/413] r1 R1(config)# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
    no shutdown
-  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
-  ip access-list extended VOICE
-   permit udp any any
-  ip access-list extended VIDEO
-   permit tcp any any eq 1720
-  !
-  ip route 192.168.9.0 255.255.255.0 10.0.0.2
-  !
-  end
 
 [369/413] r1 R1(config)# show running-config | begin line
 <empty>
@@ -2118,10 +2115,37 @@ Total steps: 413
   interface GigabitEthernet0/3
    shutdown
   ip access-list extended VOICE
-   permit udp any any
+   permit udp any any range 16384 32767
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  class-map match-any CM-VOICE
+   match access-group name VOICE
+   match protocol rtp
+  class-map match-all CM-VIDEO
+   match access-group name VIDEO
+  class-map match-any CM-CRITICAL
+   match protocol bgp
+   match protocol ospf
+  class-map match-any CM-SCAVENGER
+   match protocol bittorrent
+   match protocol napster
+  policy-map PM-WAN-OUT
+   class CM-VOICE
+    set dscp ef
+   class CM-VIDEO
+    set dscp af41
+   class CM-CRITICAL
+   class CM-SCAVENGER
+    set dscp cs1
+   class class-default
+  policy-map PM-SHAPER
+   class class-default
+  policy-map PM-POLICE-IN
+   class CM-SCAVENGER
+    police 1000000 conform-action transmit exceed-action drop
+   class class-default
+    police cir 8000000 bc 1500000 conform-action transmit exceed-action set-dscp-transmit 0
   end
 
 [371/413] r1 R1(config)# show ip route | include via
@@ -2204,8 +2228,8 @@ Total steps: 413
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.2     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [396/413] r1 R1(config-if)# shutdown
 <empty>
@@ -2244,14 +2268,14 @@ Total steps: 413
     <cr>  
 
 [407/413] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -2272,6 +2296,7 @@ Total steps: 413
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [410/413] r1 R1(config)# no ?
@@ -2297,38 +2322,7 @@ Total steps: 413
 <empty>
 
 [412/413] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.2 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  ip access-list extended VOICE
-   permit udp any any
-  ip access-list extended VIDEO
-   permit tcp any any eq 1720
-  !
-  ip route 192.168.9.0 255.255.255.0 10.0.0.2
-  line vty 0 4
-  !
-  !
-  end
+  11
 
 [413/413] r1 R1# write memory
   Building configuration...

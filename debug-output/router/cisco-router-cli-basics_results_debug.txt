@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-06-03T16:07:58.801Z
+Generated: 2026-06-03T19:59:24.676Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [4/482] r1 R1> show calendar
-  16:07:58 UTC Wed Jun 3 2026
+  19:59:24 UTC Wed Jun 3 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -63,8 +63,8 @@ Total steps: 482
   show history
 
 [7/482] r1 R1> show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [8/482] r1 R1> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -112,7 +112,6 @@ Total steps: 482
   interface GigabitEthernet0/3
    shutdown
   !
-  !
   end
 
 [14/482] r1 R1> show startup-config
@@ -127,8 +126,8 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [17/482] r1 R1> show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -218,10 +217,21 @@ Total steps: 482
   
 
 [23/482] r1 R1> show ip route summary
-  % Network not in table
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       0           0           0           0           0
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           0           0           0           0           0
 
 [24/482] r1 R1> show ip route connected
-  % Network not in table
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
 
 [25/482] r1 R1> show ip protocols
   No routing protocol is configured.
@@ -362,7 +372,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:58.814Z
+  reference time is EDCB061C.B2F1A9FB (19:59:24.699 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -373,10 +383,10 @@ Total steps: 482
 [45/482] r1 R1> show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
 [46/482] r1 R1> show file systems
   File Systems:
@@ -467,8 +477,7 @@ Total steps: 482
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [62/482] r1 R1> show ssh
-  Connection Version Mode Encryption  Hmac  State  Username
-  %No SSHv2 server connections running.
+  No SSHv2 server connections running.
 
 [63/482] r1 R1> show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
@@ -533,15 +542,14 @@ Total steps: 482
   interface GigabitEthernet0/3
    shutdown
   !
-  !
   end
   
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   No routes configured.
@@ -608,6 +616,9 @@ Total steps: 482
     enable      Enter privileged EXEC mode
     show        show
     terminal    Set terminal parameters
+    clear       clear
+    debug       debug
+    no          no
     ping        Send echo messages
     traceroute  Trace route to destination
 
@@ -628,7 +639,7 @@ Total steps: 482
     environment     Display environment
     line            Display TTY lines
     ip              ip
-    ssh             Display SSH sessions
+    ssh             Display SSH connections
     hosts           Display host cache
     vrf             Display VRFs
     boot            Display boot variables
@@ -664,6 +675,15 @@ Total steps: 482
     version         Display system hardware and software status
     interface       Display interface status
     interfaces      Display interface status
+    radius          radius
+    tacacs          Display TACACS
+    login           Display login config
+    policy-map      Show policy-map
+    parameter-map   parameter-map
+    zone            zone
+    zone-pair       zone-pair
+    class-map       Show class-map
+    time-range      Show time-range
 
 [73/482] r1 R1> ping
   % Ping requires a target IP address.
@@ -707,10 +727,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [81/482] r1 R1# show calendar
-  16:07:58 UTC Wed Jun 3 2026
+  19:59:24 UTC Wed Jun 3 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -741,8 +761,8 @@ Total steps: 482
   show history
 
 [84/482] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [85/482] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -790,7 +810,6 @@ Total steps: 482
   interface GigabitEthernet0/3
    shutdown
   !
-  !
   end
 
 [91/482] r1 R1# show startup-config
@@ -805,8 +824,8 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [94/482] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -896,10 +915,21 @@ Total steps: 482
   
 
 [100/482] r1 R1# show ip route summary
-  % Network not in table
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       0           0           0           0           0
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           0           0           0           0           0
 
 [101/482] r1 R1# show ip route connected
-  % Network not in table
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
 
 [102/482] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1040,7 +1070,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:58.817Z
+  reference time is EDCB061C.B47AE147 (19:59:24.705 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1051,10 +1081,10 @@ Total steps: 482
 [122/482] r1 R1# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
 [123/482] r1 R1# show file systems
   File Systems:
@@ -1145,8 +1175,7 @@ Total steps: 482
   Authentication timeout: 120 secs; Authentication retries: 3
 
 [139/482] r1 R1# show ssh
-  Connection Version Mode Encryption  Hmac  State  Username
-  %No SSHv2 server connections running.
+  No SSHv2 server connections running.
 
 [140/482] r1 R1# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
@@ -1211,15 +1240,14 @@ Total steps: 482
   interface GigabitEthernet0/3
    shutdown
   !
-  !
   end
   
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   No routes configured.
@@ -1330,7 +1358,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1339,7 +1367,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1348,7 +1376,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1357,7 +1385,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1366,7 +1394,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1375,7 +1403,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1384,7 +1412,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1393,7 +1421,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1402,7 +1430,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1411,7 +1439,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1420,7 +1448,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1429,7 +1457,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1438,7 +1466,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1447,198 +1475,162 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
 
 [198/482] r1 R1(config)# class-map CM1
-  % Invalid input detected at '^' marker.
-  class-map CM1
-  ^
-
-[199/482] r1 R1(config)# do show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
-
-[200/482] r1 R1(config)# exit
 <empty>
 
-[201/482] r1 R1# policy-map PM1
-  % Invalid input detected at '^' marker.
-  policy-map PM1
-  ^
+[199/482] r1 R1(config-cmap)# do show clock
+  *19:59:24.000 UTC Wed Jun 3 2026
 
-[202/482] r1 R1# do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[203/482] r1 R1# exit
+[200/482] r1 R1(config-cmap)# exit
 <empty>
 
-[204/482] r1 R1> crypto isakmp policy 10
-  % Invalid input detected at '^' marker.
-  crypto isakmp policy 10
-  ^
-
-[205/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[206/482] r1 R1> exit
+[201/482] r1 R1(config)# policy-map PM1
 <empty>
 
-[207/482] r1 R1> crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
-  % Invalid input detected at '^' marker.
-  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
-  ^
+[202/482] r1 R1(config-pmap)# do show clock
+  *19:59:24.000 UTC Wed Jun 3 2026
 
-[208/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[209/482] r1 R1> exit
+[203/482] r1 R1(config-pmap)# exit
 <empty>
 
-[210/482] r1 R1> crypto map CM 10 ipsec-isakmp
-  % Invalid input detected at '^' marker.
-  crypto map CM 10 ipsec-isakmp
-  ^
-
-[211/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
-
-[212/482] r1 R1> exit
+[204/482] r1 R1(config)# crypto isakmp policy 10
 <empty>
 
-[213/482] r1 R1> key chain KC1
+[205/482] r1 R1(config-isakmp)# do show clock
+  *19:59:24.000 UTC Wed Jun 3 2026
+
+[206/482] r1 R1(config-isakmp)# exit
+<empty>
+
+[207/482] r1 R1(config)# crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+<empty>
+
+[208/482] r1 R1(cfg-crypto-trans)# do show clock
+  *19:59:24.000 UTC Wed Jun 3 2026
+
+[209/482] r1 R1(cfg-crypto-trans)# exit
+<empty>
+
+[210/482] r1 R1(config)# crypto map CM 10 ipsec-isakmp
+<empty>
+
+[211/482] r1 R1(config-crypto-map)# do show clock
+  *19:59:24.000 UTC Wed Jun 3 2026
+
+[212/482] r1 R1(config-crypto-map)# exit
+<empty>
+
+[213/482] r1 R1(config)# key chain KC1
   % Invalid input detected at '^' marker.
   key chain KC1
   ^
 
-[214/482] r1 R1> do show clock
-  % Invalid input detected at '^' marker.
-  do show clock
-  ^
+[214/482] r1 R1(config)# do show clock
+  *19:59:24.000 UTC Wed Jun 3 2026
 
-[215/482] r1 R1> exit
+[215/482] r1 R1(config)# exit
 <empty>
 
-[216/482] r1 R1> track 1 interface GigabitEthernet0/0 line-protocol
+[216/482] r1 R1# track 1 interface GigabitEthernet0/0 line-protocol
   % Invalid input detected at '^' marker.
   track 1 interface GigabitEthernet0/0 line-protocol
   ^
 
-[217/482] r1 R1> do show clock
+[217/482] r1 R1# do show clock
   % Invalid input detected at '^' marker.
   do show clock
   ^
 
-[218/482] r1 R1> exit
+[218/482] r1 R1# exit
 <empty>
 
-[219/482] r1 R1> vrf definition CUST
+[219/482] r1 R1# vrf definition CUST
   % Invalid input detected at '^' marker.
   vrf definition CUST
   ^
 
-[220/482] r1 R1> do show clock
+[220/482] r1 R1# do show clock
   % Invalid input detected at '^' marker.
   do show clock
   ^
 
-[221/482] r1 R1> exit
+[221/482] r1 R1# exit
 <empty>
 
-[222/482] r1 R1> end
+[222/482] r1 R1# end
 <empty>
 
 
 --- [223] § hostname / domain / banner ---
-[223/482] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[223/482] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[224/482] r1 R1> hostname R1-CORE
-  % Invalid input detected at '^' marker.
-  hostname R1-CORE
-  ^
+[224/482] r1 R1(config)# hostname R1-CORE
+<empty>
 
-[225/482] r1 R1> ip domain-name lab.local
-  % Invalid input detected at '^' marker.
-  ip domain-name lab.local
-  ^
+[225/482] r1 R1-CORE(config)# ip domain-name lab.local
+<empty>
 
-[226/482] r1 R1> ip domain-lookup
-  % Invalid input detected at '^' marker.
-  ip domain-lookup
-  ^
+[226/482] r1 R1-CORE(config)# ip domain-lookup
+<empty>
 
-[227/482] r1 R1> no ip domain-lookup
-  % Invalid input detected at '^' marker.
-  no ip domain-lookup
-  ^
+[227/482] r1 R1-CORE(config)# no ip domain-lookup
+<empty>
 
-[228/482] r1 R1> ip name-server 8.8.8.8
+[228/482] r1 R1-CORE(config)# ip name-server 8.8.8.8
   % Invalid input detected at '^' marker.
   ip name-server 8.8.8.8
-  ^
+     ^
 
-[229/482] r1 R1> ip name-server 8.8.4.4 1.1.1.1
+[229/482] r1 R1-CORE(config)# ip name-server 8.8.4.4 1.1.1.1
   % Invalid input detected at '^' marker.
   ip name-server 8.8.4.4 1.1.1.1
-  ^
+     ^
 
-[230/482] r1 R1> banner motd # Authorized access only #
-  % Invalid input detected at '^' marker.
-  banner motd # Authorized access only #
-  ^
+[230/482] r1 R1-CORE(config)# banner motd # Authorized access only #
+<empty>
 
-[231/482] r1 R1> banner login ^C Login banner ^C
-  % Invalid input detected at '^' marker.
-  banner login ^C Login banner ^C
-  ^
+[231/482] r1 R1-CORE(config)# banner login ^C Login banner ^C
+<empty>
 
-[232/482] r1 R1> banner exec $ Exec banner $
-  % Invalid input detected at '^' marker.
-  banner exec $ Exec banner $
-  ^
+[232/482] r1 R1-CORE(config)# banner exec $ Exec banner $
+<empty>
 
-[233/482] r1 R1> clock timezone UTC 0
+[233/482] r1 R1-CORE(config)# clock timezone UTC 0
   % Invalid input detected at '^' marker.
   clock timezone UTC 0
   ^
 
-[234/482] r1 R1> clock summer-time CEST recurring
+[234/482] r1 R1-CORE(config)# clock summer-time CEST recurring
   % Invalid input detected at '^' marker.
   clock summer-time CEST recurring
   ^
 
-[235/482] r1 R1> no banner motd
+[235/482] r1 R1-CORE(config)# no banner motd
   % Invalid input detected at '^' marker.
   no banner motd
-  ^
+     ^
 
-[236/482] r1 R1> end
+[236/482] r1 R1-CORE(config)# end
 <empty>
 
-[237/482] r1 R1> show running-config | include banner
+[237/482] r1 R1-CORE# show running-config | include banner
 <empty>
 
 
 --- [238] § abbreviations ---
-[238/482] r1 R1> en
+[238/482] r1 R1-CORE# en
 <empty>
 
-[239/482] r1 R1# conf t
+[239/482] r1 R1-CORE# conf t
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[240/482] r1 R1(config)# host R1-EDGE
+[240/482] r1 R1-CORE(config)# host R1-EDGE
 <empty>
 
 [241/482] r1 R1-EDGE(config)# do sh ver
@@ -1720,14 +1712,14 @@ Total steps: 482
     <cr>  
 
 [256/482] r1 R1-EDGE(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -1767,6 +1759,7 @@ Total steps: 482
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [260/482] r1 R1-EDGE(config)# access-list ?
@@ -1797,7 +1790,7 @@ Total steps: 482
     <cr>  
 
 [267/482] r1 R1-EDGE(config)# username ?
-    WORD  Configure a local user
+    WORD  Local user
     <cr>  
 
 [268/482] r1 R1-EDGE(config)# line ?
@@ -1805,8 +1798,9 @@ Total steps: 482
     <cr>  
 
 [269/482] r1 R1-EDGE(config)# service ?
-    dhcp  Enable DHCP service
-    <cr>  
+    dhcp                 Enable DHCP service
+    password-encryption  Enable password encryption
+    <cr>                 
 
 [270/482] r1 R1-EDGE(config)# spanning-tree ?
   % Unrecognized command
@@ -1820,13 +1814,18 @@ Total steps: 482
     forward-protocol  forward-protocol
     access-group      Set access group on interface
     nat               nat
-    ospf              ospf
+    ospf              OSPF interface configuration
+    verify            verify
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
     WORD  Set interface IP address
     <cr>  
 
 [274/482] r1 R1-EDGE(config-if)# ip ospf ?
+    bfd                  Enable BFD on this OSPF interface
+    flood-reduction      Enable OSPF flood reduction
+    database-filter      OSPF database filter
+    area                 Enable OSPF on this interface
     cost                 Set OSPF cost on interface
     priority             Set OSPF priority on interface
     hello-interval       Set OSPF hello interval
@@ -1839,6 +1838,7 @@ Total steps: 482
     mtu-ignore           Ignore MTU mismatch in DBD packets
     retransmit-interval  Set OSPF retransmit interval
     transmit-delay       Set OSPF transmit delay
+    <cr>                 
 
 [275/482] r1 R1-EDGE(config-if)# standby ?
     WORD  HSRP configuration
@@ -1994,6 +1994,11 @@ Total steps: 482
   router rip
    version 2
   line vty 0 4
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
   end
 
 [314/482] r1 R1-EDGE# show running-config | begin interface
@@ -2022,87 +2027,38 @@ Total steps: 482
   line vty 0 4
   !
   !
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [315/482] r1 R1-EDGE# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1-EDGE
-  !
-  service dhcp
-  !
-  ip dhcp pool LAN
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
-  !
   interface GigabitEthernet0/1
    shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
   interface Loopback0
    shutdown
-  !
   interface Tunnel0
    shutdown
-  !
-  !
-  router rip
-   version 2
-  line vty 0 4
-  !
-  !
-  end
 
 [316/482] r1 R1-EDGE# show running-config | section router
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1-EDGE
-  !
-  service dhcp
-  !
-  ip dhcp pool LAN
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback0
-   shutdown
-  !
-  interface Tunnel0
-   shutdown
-  !
-  !
   router rip
    version 2
-  line vty 0 4
-  !
-  !
-  end
 
 [317/482] r1 R1-EDGE# show ip interface brief | include up
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [318/482] r1 R1-EDGE# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -2163,6 +2119,12 @@ Total steps: 482
   line vty 0 4
   !
   !
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [324/482] r1 R1-EDGE# show running-config | append flash:cfg.txt
@@ -2201,6 +2163,12 @@ Total steps: 482
   line vty 0 4
   !
   !
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [325/482] r1 R1-EDGE# show running-config | tee flash:cfg.txt
@@ -2238,6 +2206,12 @@ Total steps: 482
    version 2
   line vty 0 4
   !
+  !
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
   !
   end
 
@@ -2388,16 +2362,25 @@ Total steps: 482
    transport input telnet
   !
   !
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [360/482] r1 R1-EDGE# sib
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [361/482] r1 R1-EDGE# show aliases
   Exec mode aliases:
@@ -2489,6 +2472,15 @@ Total steps: 482
    transport input telnet
   !
   !
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [370/482] r1 R1-EDGE# reload in 5
@@ -2570,6 +2562,15 @@ Total steps: 482
    transport input telnet
   !
   !
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [376/482] r1 R1-EDGE# show startup-config
@@ -2614,16 +2615,25 @@ Total steps: 482
    transport input telnet
   !
   !
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
 
 [377/482] r1 R1-EDGE# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [378/482] r1 R1-EDGE# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -2672,7 +2682,17 @@ Total steps: 482
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
 [380/482] r1 R1-EDGE# show ip route summary
-  % Network not in table
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       1           1           0           152         360
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           1           1           0           152         360
 
 [381/482] r1 R1-EDGE# show ip protocols
   Routing Protocol is "rip"
@@ -2767,16 +2787,26 @@ Total steps: 482
 <empty>
 
 [399/482] r1 R1-EDGE# show crypto isakmp sa
-  IPSec not configured.
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
 
 [400/482] r1 R1-EDGE# show crypto ipsec sa
-  IPSec not configured.
+  No IPSec SAs established.
 
 [401/482] r1 R1-EDGE# show crypto session
-  IPSec not configured.
+  No active crypto sessions.
 
 [402/482] r1 R1-EDGE# show crypto map
-  IPSec not configured.
+  Crypto Map "CM" 10 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map CM:
 
 [403/482] r1 R1-EDGE# show standby brief
                        P indicates configured to preempt.
@@ -2793,9 +2823,7 @@ Total steps: 482
   No IP SLA operations configured.
 
 [407/482] r1 R1-EDGE# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+<empty>
 
 [408/482] r1 R1-EDGE# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -2816,7 +2844,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:58.836Z
+  reference time is EDCB061C.BBA5E353 (19:59:24.733 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -2825,7 +2853,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *16:07:58.000 UTC Wed Jun 3 2026
+  *19:59:24.000 UTC Wed Jun 3 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2858,10 +2886,10 @@ Total steps: 482
 [417/482] r1 R1-EDGE# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
 [418/482] r1 R1-EDGE# show users
       Line       User       Host(s)              Idle       Location
@@ -2892,9 +2920,8 @@ Total steps: 482
   show history
 
 [420/482] r1 R1-EDGE# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
+  Prefix              Next Hop             Interface
+  192.168.1.0/24      attached             GigabitEthernet0/0
 
 [421/482] r1 R1-EDGE# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -3013,16 +3040,25 @@ Total steps: 482
    transport input telnet
   !
   !
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
+  !
   end
   
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -3094,8 +3130,8 @@ Total steps: 482
       No active syslog hosts
 
 [426/482] r1 R1-EDGE# show inventory
-  NAME: "R1-EDGE", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "R1-EDGE", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [427/482] r1 R1-EDGE# show environment
   Environmental monitoring is not instrumented on this platform.
@@ -3157,48 +3193,19 @@ Total steps: 482
   router rip
 
 [437/482] r1 R1-EDGE# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1-EDGE
-  !
-  service dhcp
-  !
-  ip dhcp pool LAN
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
-  !
   interface GigabitEthernet0/1
    shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
   interface Loopback0
    shutdown
-  !
   interface Tunnel0
    shutdown
-  !
-  !
-  router rip
-   version 2
-  !
-  username admin privilege 15 secret 5 admin123
-  username operator privilege 5 secret 5 oper
-  line vty 0 4
-   exec-timeout 5 0
-   access-class 10 in
-   transport input telnet
-  !
-  !
-  end
 
 [438/482] r1 R1-EDGE# show running-config | begin line
   line vty 0 4
@@ -3206,6 +3213,15 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  !
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
   !
   end
 
@@ -3237,6 +3253,14 @@ Total steps: 482
    exec-timeout 5 0
    access-class 10 in
    transport input telnet
+  username admin privilege 15 secret admin123
+  username operator privilege 5 secret oper
+  enable secret weakpass
+  service password-encryption
+  ip domain-name lab.local
+  ip cef
+  class-map match-all CM1
+  policy-map PM1
   end
 
 [440/482] r1 R1-EDGE# show ip route | include via
@@ -3318,10 +3342,10 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [465/482] r1 R1-EDGE(config-if)# shutdown
 <empty>
@@ -3375,14 +3399,14 @@ Total steps: 482
     <cr>  
 
 [476/482] r1 R1-EDGE(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -3403,6 +3427,7 @@ Total steps: 482
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [479/482] r1 R1-EDGE(config)# no ?
@@ -3428,48 +3453,7 @@ Total steps: 482
 <empty>
 
 [481/482] r1 R1-EDGE# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1-EDGE
-  !
-  service dhcp
-  !
-  ip dhcp pool LAN
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback0
-   shutdown
-  !
-  interface Tunnel0
-   shutdown
-  !
-  !
-  router rip
-   version 2
-  !
-  username admin privilege 15 secret 5 admin123
-  username operator privilege 5 secret 5 oper
-  line vty 0 4
-   exec-timeout 5 0
-   access-class 10 in
-   transport input telnet
-  !
-  !
-  end
+  15
 
 [482/482] r1 R1-EDGE# write memory
   Building configuration...

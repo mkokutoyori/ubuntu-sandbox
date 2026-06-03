@@ -46,7 +46,7 @@ export interface NatDynamicRule {
   aclId: string | number;
   type: NatDynamicRuleType;
   poolName?: string;
-  // When type === 'overload', the global IP comes from the outside interface IP
+  interfaceName?: string;
 }
 
 /** TCP session state (RFC 6146 §2.1). */
@@ -188,6 +188,7 @@ export class NATEngine {
 
   setInsideInterface(iface: string): void   { this.insideIfaces.add(iface); }
   setOutsideInterface(iface: string): void  { this.outsideIfaces.add(iface); }
+  getOutsideInterfaces(): ReadonlySet<string> { return this.outsideIfaces; }
   removeInsideInterface(iface: string): void  { this.insideIfaces.delete(iface); }
   removeOutsideInterface(iface: string): void { this.outsideIfaces.delete(iface); }
 

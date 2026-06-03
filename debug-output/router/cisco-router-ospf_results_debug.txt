@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-03T16:07:43.330Z
+Generated: 2026-06-03T19:59:27.235Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -93,19 +93,13 @@ Total steps: 311
           Please ensure reference bandwidth is consistent across all routers.
 
 [28/311] r1 R1(config-router)# log-adjacency-changes detail
-  % Invalid input detected at '^' marker.
-  log-adjacency-changes detail
-                        ^
+<empty>
 
 [29/311] r1 R1(config-router)# maximum-paths 4
-  % Invalid input detected at '^' marker.
-  maximum-paths 4
-  ^
+<empty>
 
 [30/311] r1 R1(config-router)# compatible rfc1583
-  % Invalid input detected at '^' marker.
-  compatible rfc1583
-  ^
+<empty>
 
 [31/311] r1 R1(config-router)# network 10.10.1.0 0.0.0.255 area 1
 <empty>
@@ -153,27 +147,19 @@ Total steps: 311
 <empty>
 
 [46/311] r1 R1(config-router)# default-metric 20
-  % Invalid input detected at '^' marker.
-  default-metric 20
-  ^
+<empty>
 
 [47/311] r1 R1(config-router)# distance ospf intra-area 90 inter-area 100 external 110
-  % Invalid input detected at '^' marker.
-  distance ospf intra-area 90 inter-area 100 external 110
-  ^
+<empty>
 
 [48/311] r1 R1(config-router)# timers throttle spf 10 100 5000
 <empty>
 
 [49/311] r1 R1(config-router)# timers throttle lsa 0 50 5000
-  % Invalid input detected at '^' marker.
-  timers throttle lsa 0 50 5000
-                  ^
+<empty>
 
 [50/311] r1 R1(config-router)# timers lsa arrival 100
-  % Invalid input detected at '^' marker.
-  timers lsa arrival 100
-         ^
+<empty>
 
 [51/311] r1 R1(config-router)# max-lsa 10000
 <empty>
@@ -192,6 +178,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
   
       Area 1
           Number of interfaces in this area is 2
@@ -213,9 +200,33 @@ Total steps: 311
   
 
 [55/311] r1 R1# show ip ospf process 1
-  % Invalid input detected at '^' marker.
-  show ip ospf process 1
-               ^
+  Routing Process "ospf 1" with ID 1.1.1.1
+   Number of areas in this router is 3
+   Reference bandwidth unit is 10000 mbps
+   Initial SPF schedule delay 10 msecs
+   Minimum hold time between two consecutive SPFs 100 msecs
+   Maximum wait time between two consecutive SPFs 5000 msecs
+   Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
+  
+      Area 1
+          Number of interfaces in this area is 2
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 1
+  
+      Area 2
+          Number of interfaces in this area is 1
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 1
+  
+      Area 0
+          Number of interfaces in this area is 3
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 1
+  
 
 
 --- [56] § area types ---
@@ -247,13 +258,13 @@ Total steps: 311
 <empty>
 
 [65/311] r1 R1(config-router)# area 1 default-cost 10
-  % Invalid area sub-command "default-cost"
+<empty>
 
 [66/311] r1 R1(config-router)# area 0 authentication
-  % Invalid area sub-command "authentication"
+<empty>
 
 [67/311] r1 R1(config-router)# area 0 authentication message-digest
-  % Invalid area sub-command "authentication"
+<empty>
 
 [68/311] r1 R1(config-router)# area 1 virtual-link 2.2.2.2
 <empty>
@@ -265,7 +276,7 @@ Total steps: 311
 <empty>
 
 [71/311] r1 R1(config-router)# area 1 sham-link 1.1.1.1 2.2.2.2
-  % Invalid area sub-command "sham-link"
+<empty>
 
 [72/311] r1 R1(config-router)# exit
 <empty>
@@ -281,6 +292,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
   
       Area 1
           Number of interfaces in this area is 2
@@ -325,9 +337,7 @@ Total steps: 311
 <empty>
 
 [79/311] r1 R1(config-if)# ip ospf 1 area 0
-  % Invalid input detected at '^' marker.
-  ip ospf 1 area 0
-          ^
+<empty>
 
 [80/311] r1 R1(config-if)# ip ospf cost 100
 <empty>
@@ -384,22 +394,16 @@ Total steps: 311
 <empty>
 
 [98/311] r1 R1(config-if)# ip ospf bfd
-  % Invalid input detected at '^' marker.
-  ip ospf bfd
-          ^
+<empty>
 
 [99/311] r1 R1(config-if)# ip ospf flood-reduction
-  % Invalid input detected at '^' marker.
-  ip ospf flood-reduction
-          ^
+<empty>
 
 [100/311] r1 R1(config-if)# ip ospf demand-circuit
 <empty>
 
 [101/311] r1 R1(config-if)# ip ospf database-filter all out
-  % Invalid input detected at '^' marker.
-  ip ospf database-filter all out
-          ^
+<empty>
 
 [102/311] r1 R1(config-if)# ip ospf hello-interval 10
 <empty>
@@ -412,7 +416,7 @@ Total steps: 311
 
 [105/311] r1 R1# show ip ospf interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Internet address is 10.0.0.1/30, Area 0
+    Internet address is 10.0.0.1/30, Area 0.0.0.0
     Process ID 1, Router ID 1.1.1.1, Network Type POINT-TO-MULTIPOINT, Cost: 100
     Transmit Delay is 2 sec, State DR, Priority 200
     DR: 10.0.0.1
@@ -426,12 +430,12 @@ Total steps: 311
 
 [106/311] r1 R1# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
-  Loopback1            1     1               10.10.1.1/24       10000000DR    0/0
-  Loopback2            1     2               10.10.2.1/24       10000000DR    0/0
-  Loopback3            1     0               10.10.3.1/24       10000000DR    0/0
-  Loopback4            1     1               10.10.4.1/24       10000000DR    0/0
-  GigabitEthernet0/0   1     0               192.168.1.1/24     10000000DR    0/0
-  GigabitEthernet0/1   1     0               10.0.0.1/30        100   DR    0/0
+  Loopback1            1     1               10.10.1.1/24       1     DR    0/0
+  Loopback2            1     2               10.10.2.1/24       1     DR    0/0
+  Loopback3            1     0               10.10.3.1/24       1     DR    0/0
+  Loopback4            1     1               10.10.4.1/24       1     DR    0/0
+  GigabitEthernet0/0   1     0               192.168.1.1/24     10    DR    0/0
+  GigabitEthernet0/1   1     0.0.0.0         10.0.0.1/30        100   DR    0/0
 
 
 --- [107] § redistribution ---
@@ -494,6 +498,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
      172.17.0.0 255.255.0.0
@@ -535,7 +540,7 @@ Total steps: 311
 <empty>
 
 [130/311] r1 R1(config-rtr)# passive-interface default
-  % Invalid interface
+<empty>
 
 [131/311] r1 R1(config-rtr)# redistribute connected
 <empty>
@@ -609,6 +614,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
      172.17.0.0 255.255.0.0
@@ -646,17 +652,17 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003a        0x5acf      2
+  1.1.1.1         1.1.1.1         0           0x8000003d        0x31d0      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003b        0x1d6a      1
+  1.1.1.1         1.1.1.1         0           0x8000003e        0xafc       1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003c        0x2cb6      3
+  1.1.1.1         1.1.1.1         0           0x8000003f        0x908b      2
   
 
 [151/311] r1 R1# show ip ospf database router
@@ -665,17 +671,17 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003d        0x5d33      2
+  1.1.1.1         1.1.1.1         0           0x80000040        0x3434      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003e        0x20a9      1
+  1.1.1.1         1.1.1.1         0           0x80000041        0xd3c       1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x8000003f        0x2f3e      3
+  1.1.1.1         1.1.1.1         0           0x80000042        0x93ee      2
   
 
 [152/311] r1 R1# show ip ospf database network
@@ -695,24 +701,30 @@ Total steps: 311
   Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address
 
 [155/311] r1 R1# show ip ospf database nssa-external
-  % Invalid input detected at '^' marker.
-  show ip ospf database nssa-external
-                        ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+  (no NSSA external LSAs)
 
 [156/311] r1 R1# show ip ospf database asbr-summary
-  % Invalid input detected at '^' marker.
-  show ip ospf database asbr-summary
-                        ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+  Summary ASB Link States
+  (no ASBR-summary LSAs)
 
 [157/311] r1 R1# show ip ospf database self-originate
-  % Invalid input detected at '^' marker.
-  show ip ospf database self-originate
-                        ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+    Area 1 self-originated LSAs
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x80000049
+    Area 2 self-originated LSAs
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000004a
+    Area 0 self-originated LSAs
+      Type-1 LS-ID 1.1.1.1 Age 0 Seq 0x8000004b
 
 [158/311] r1 R1# show ip ospf interface
   Loopback1 is up, line protocol is up
     Internet address is 10.10.1.1/24, Area 1
-    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10000000
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
     Transmit Delay is 1 sec, State DR, Priority 1
     DR: 10.10.1.1
     BDR: 0.0.0.0
@@ -723,7 +735,7 @@ Total steps: 311
   
   Loopback2 is up, line protocol is up
     Internet address is 10.10.2.1/24, Area 2
-    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10000000
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
     Transmit Delay is 1 sec, State DR, Priority 1
     DR: 10.10.2.1
     BDR: 0.0.0.0
@@ -734,7 +746,7 @@ Total steps: 311
   
   Loopback3 is up, line protocol is up
     Internet address is 10.10.3.1/24, Area 0
-    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10000000
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
     Transmit Delay is 1 sec, State DR, Priority 1
     DR: 10.10.3.1
     BDR: 0.0.0.0
@@ -745,7 +757,7 @@ Total steps: 311
   
   Loopback4 is up, line protocol is up
     Internet address is 10.10.4.1/24, Area 1
-    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10000000
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
     Transmit Delay is 1 sec, State DR, Priority 1
     DR: 10.10.4.1
     BDR: 0.0.0.0
@@ -756,7 +768,7 @@ Total steps: 311
   
   GigabitEthernet0/0 is up, line protocol is up
     Internet address is 192.168.1.1/24, Area 0
-    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10000000
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
     Transmit Delay is 1 sec, State DR, Priority 1
     DR: 192.168.1.1
     BDR: 0.0.0.0
@@ -766,7 +778,7 @@ Total steps: 311
     No Hellos (Passive interface)
   
   GigabitEthernet0/1 is up, line protocol is up
-    Internet address is 10.0.0.1/30, Area 0
+    Internet address is 10.0.0.1/30, Area 0.0.0.0
     Process ID 1, Router ID 1.1.1.1, Network Type POINT-TO-MULTIPOINT, Cost: 100
     Transmit Delay is 2 sec, State DR, Priority 200
     DR: 10.0.0.1
@@ -780,12 +792,12 @@ Total steps: 311
 
 [159/311] r1 R1# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
-  Loopback1            1     1               10.10.1.1/24       10000000DR    0/0
-  Loopback2            1     2               10.10.2.1/24       10000000DR    0/0
-  Loopback3            1     0               10.10.3.1/24       10000000DR    0/0
-  Loopback4            1     1               10.10.4.1/24       10000000DR    0/0
-  GigabitEthernet0/0   1     0               192.168.1.1/24     10000000DR    0/0
-  GigabitEthernet0/1   1     0               10.0.0.1/30        100   DR    0/0
+  Loopback1            1     1               10.10.1.1/24       1     DR    0/0
+  Loopback2            1     2               10.10.2.1/24       1     DR    0/0
+  Loopback3            1     0               10.10.3.1/24       1     DR    0/0
+  Loopback4            1     1               10.10.4.1/24       1     DR    0/0
+  GigabitEthernet0/0   1     0               192.168.1.1/24     10    DR    0/0
+  GigabitEthernet0/1   1     0.0.0.0         10.0.0.1/30        100   DR    0/0
 
 [160/311] r1 R1# show ip ospf border-routers
               OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -806,7 +818,7 @@ Total steps: 311
   OSPF statistics:
     Rcvd: 0 total, 0 errors
     LSA: 3 total
-    SPF: 28 runs, last run recently
+    SPF: 29 runs, last run recently
     Neighbors: 0, Adjacent: 0
     Neighbor state changes: 0
   
@@ -816,24 +828,31 @@ Total steps: 311
       Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 [163/311] r1 R1# show ip ospf summary-address
-  % Invalid input detected at '^' marker.
-  show ip ospf summary-address
-               ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1), Summary-address
+    172.16.0.0 255.255.0.0
+    172.17.0.0 255.255.0.0
 
 [164/311] r1 R1# show ip ospf rib
-  % Invalid input detected at '^' marker.
-  show ip ospf rib
-               ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+  Base Topology (MTID 0)
+  
+  OSPF local RIB
+  Codes: * - Best, > - Installed in global RIB
+  
+  (no OSPF routes)
 
 [165/311] r1 R1# show ip ospf events
-  % Invalid input detected at '^' marker.
-  show ip ospf events
-               ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+    No events logged
 
 [166/311] r1 R1# show ip ospf timers
-  % Invalid input detected at '^' marker.
-  show ip ospf timers
-               ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+    SPF schedule delay 0.01 secs, Hold time between two SPFs 0.1 secs, Maximum wait time 5 secs
+    LSA throttle: start 0ms, hold 50ms, max 5000ms
+    LSA arrival 100ms
+    Pacing flood 33ms, retransmission 66ms
 
 [167/311] r1 R1# show ip route ospf
 <empty>
@@ -842,44 +861,28 @@ Total steps: 311
   No routing protocol is configured.
 
 [169/311] r1 R1# clear ip ospf process
-  % Invalid input detected at '^' marker.
-  clear ip ospf process
-           ^
+<empty>
 
 [170/311] r1 R1# clear ip ospf 1 process
-  % Invalid input detected at '^' marker.
-  clear ip ospf 1 process
-           ^
+<empty>
 
 [171/311] r1 R1# clear ip ospf counters
-  % Invalid input detected at '^' marker.
-  clear ip ospf counters
-           ^
+<empty>
 
 [172/311] r1 R1# clear ip ospf redistribution
-  % Invalid input detected at '^' marker.
-  clear ip ospf redistribution
-           ^
+<empty>
 
 [173/311] r1 R1# debug ip ospf adj
-  % Invalid input detected at '^' marker.
-  debug ip ospf adj
-           ^
+  OSPF adj debugging is on
 
 [174/311] r1 R1# debug ip ospf events
-  % Invalid input detected at '^' marker.
-  debug ip ospf events
-           ^
+  OSPF events debugging is on
 
 [175/311] r1 R1# debug ip ospf hello
-  % Invalid input detected at '^' marker.
-  debug ip ospf hello
-           ^
+  OSPF hello debugging is on
 
 [176/311] r1 R1# debug ip ospf packet
-  % Invalid input detected at '^' marker.
-  debug ip ospf packet
-           ^
+  OSPF packet debugging is on
 
 [177/311] r1 R1# undebug all
   All possible debugging has been turned off
@@ -893,52 +896,34 @@ Total steps: 311
 <empty>
 
 [180/311] r1 R1(config-router)# maximum-paths 8
-  % Invalid input detected at '^' marker.
-  maximum-paths 8
-  ^
+<empty>
 
 [181/311] r1 R1(config-router)# timers pacing flood 33
-  % Invalid input detected at '^' marker.
-  timers pacing flood 33
-         ^
+<empty>
 
 [182/311] r1 R1(config-router)# timers pacing retransmission 66
-  % Invalid input detected at '^' marker.
-  timers pacing retransmission 66
-         ^
+<empty>
 
 [183/311] r1 R1(config-router)# ispf
-  % Invalid input detected at '^' marker.
-  ispf
-  ^
+<empty>
 
 [184/311] r1 R1(config-router)# prefix-suppression
-  % Invalid input detected at '^' marker.
-  prefix-suppression
-  ^
+<empty>
 
 [185/311] r1 R1(config-router)# shutdown
-  % Invalid input detected at '^' marker.
-  shutdown
-  ^
+<empty>
 
 [186/311] r1 R1(config-router)# no shutdown
-  % Invalid input detected at '^' marker.
-  no shutdown
-     ^
+<empty>
 
 [187/311] r1 R1(config-router)# segment-routing mpls
-  % Invalid input detected at '^' marker.
-  segment-routing mpls
-  ^
+<empty>
 
 [188/311] r1 R1(config-router)# capability vrf-lite
 <empty>
 
 [189/311] r1 R1(config-router)# discard-route external
-  % Invalid input detected at '^' marker.
-  discard-route external
-  ^
+<empty>
 
 [190/311] r1 R1(config-router)# exit
 <empty>
@@ -964,42 +949,46 @@ Total steps: 311
                         ^
 
 [194/311] r1 R1# show ip ospf request-list
-  % Invalid input detected at '^' marker.
-  show ip ospf request-list
-               ^
+  Neighbor                Interface  Area
+  (no LS Request list entries)
 
 [195/311] r1 R1# show ip ospf retransmission-list
-  % Invalid input detected at '^' marker.
-  show ip ospf retransmission-list
-               ^
+  Neighbor                Interface  Area  Queue length
+  (no LS Retransmission list entries)
 
 [196/311] r1 R1# show ip ospf flood-list
-  % Invalid input detected at '^' marker.
-  show ip ospf flood-list
-               ^
+  Interface              Area
+  Loopback1              1
+  Loopback2              2
+  Loopback3              0
+  Loopback4              1
+  GigabitEthernet0/0     0
+  GigabitEthernet0/1     0.0.0.0
+  (no LSAs in flood list — flooding is synchronous in this implementation)
 
 [197/311] r1 R1# show ip ospf max-metric
-  % Invalid input detected at '^' marker.
-  show ip ospf max-metric
-               ^
+  OSPF Router with ID (1.1.1.1) (Process ID 1)
+    Originating router-LSAs with maximum metric: not configured
 
 [198/311] r1 R1# show ip ospf traffic
-  % Invalid input detected at '^' marker.
-  show ip ospf traffic
-               ^
+  OSPF statistics:
+    Rcvd: 0 total, 0 checksum errors
+           0 hello, 0 database desc, 0 link state req
+           0 link state updates, 0 link state acks
+    Sent: 0 total
+           0 hello, 0 database desc, 0 link state req
+           0 link state updates, 0 link state acks
 
 [199/311] r1 R1# show ip ospf segment-routing
-  % Invalid input detected at '^' marker.
-  show ip ospf segment-routing
-               ^
+  OSPF Router with ID (1.1.1.1)
+    Segment Routing MPLS: enabled
+    SRGB: 16000 - 23999
 
 [200/311] r1 R1# show ip route ospf | include O
 <empty>
 
 [201/311] r1 R1# clear ip ospf force-spf
-  % Invalid input detected at '^' marker.
-  clear ip ospf force-spf
-           ^
+<empty>
 
 
 --- [202] § regression: show family ---
@@ -1064,7 +1053,6 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  !
   end
 
 [205/311] r1 R1# show startup-config
@@ -1074,12 +1062,12 @@ Total steps: 311
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.10.1.1       YES manual administratively down down
-  Loopback2                  10.10.2.1       YES manual administratively down down
-  Loopback3                  10.10.3.1       YES manual administratively down down
-  Loopback4                  10.10.4.1       YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.10.1.1       YES manual up                    up
+  Loopback2                  10.10.2.1       YES manual up                    up
+  Loopback3                  10.10.3.1       YES manual up                    up
+  Loopback4                  10.10.4.1       YES manual up                    up
 
 [207/311] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1141,7 +1129,17 @@ Total steps: 311
   C    10.10.4.0/24 is directly connected, Loopback4
 
 [209/311] r1 R1# show ip route summary
-  % Network not in table
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       6           6           0           912         2160
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           6           6           0           912         2160
 
 [210/311] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1160,6 +1158,7 @@ Total steps: 311
    Minimum hold time between two consecutive SPFs 100 msecs
    Maximum wait time between two consecutive SPFs 5000 msecs
    Maximum number of LSAs allowed: 10000
+   Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
      172.17.0.0 255.255.0.0
@@ -1192,27 +1191,27 @@ Total steps: 311
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000067        0x87a2      2
+  1.1.1.1         1.1.1.1         0           0x80000076        0x6a31      2
   
                   Router Link States (Area 2)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000068        0x4a1f      1
+  1.1.1.1         1.1.1.1         0           0x80000077        0x43ae      1
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000069        0x59a7      3
+  1.1.1.1         1.1.1.1         0           0x80000078        0xc9eb      2
   
 
 [216/311] r1 R1# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
-  Loopback1            1     1               10.10.1.1/24       10000000DR    0/0
-  Loopback2            1     2               10.10.2.1/24       10000000DR    0/0
-  Loopback3            1     0               10.10.3.1/24       10000000DR    0/0
-  Loopback4            1     1               10.10.4.1/24       10000000DR    0/0
-  GigabitEthernet0/0   1     0               192.168.1.1/24     10000000DR    0/0
-  GigabitEthernet0/1   1     0               10.0.0.1/30        100   DR    0/0
+  Loopback1            1     1               10.10.1.1/24       1     DR    0/0
+  Loopback2            1     2               10.10.2.1/24       1     DR    0/0
+  Loopback3            1     0               10.10.3.1/24       1     DR    0/0
+  Loopback4            1     1               10.10.4.1/24       1     DR    0/0
+  GigabitEthernet0/0   1     0               192.168.1.1/24     10    DR    0/0
+  GigabitEthernet0/1   1     0.0.0.0         10.0.0.1/30        100   DR    0/0
 
 [217/311] r1 R1# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
@@ -1251,11 +1250,11 @@ Total steps: 311
 
 [226/311] r1 R1# show access-lists
   Standard IP access list 10
-      permit 172.16.0.0 0.0.255.255 (0 matches)
+      10 permit 172.16.0.0 0.0.255.255 (0 matches)
 
 [227/311] r1 R1# show ip access-lists
   Standard IP access list 10
-      permit 172.16.0.0 0.0.255.255 (0 matches)
+      10 permit 172.16.0.0 0.0.255.255 (0 matches)
 
 [228/311] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1284,9 +1283,7 @@ Total steps: 311
   No IP SLA operations configured.
 
 [236/311] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+<empty>
 
 [237/311] r1 R1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -1307,7 +1304,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:43.384Z
+  reference time is EDCB061F.5E76C8B4 (19:59:27.369 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1316,7 +1313,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *16:07:43.000 UTC Wed Jun 3 2026
+  *19:59:27.000 UTC Wed Jun 3 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1351,10 +1348,10 @@ Total steps: 311
 [246/311] r1 R1# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
 [247/311] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -1385,14 +1382,7 @@ Total steps: 311
   show history
 
 [249/311] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
-  10.10.1.0/24         attached             Loopback1
-  10.10.2.0/24         attached             Loopback2
-  10.10.3.0/24         attached             Loopback3
-  10.10.4.0/24         attached             Loopback4
+  IP CEF is not enabled
 
 [250/311] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1520,19 +1510,18 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  !
   end
   
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.10.1.1       YES manual administratively down down
-  Loopback2                  10.10.2.1       YES manual administratively down down
-  Loopback3                  10.10.3.1       YES manual administratively down down
-  Loopback4                  10.10.4.1       YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.10.1.1       YES manual up                    up
+  Loopback2                  10.10.2.1       YES manual up                    up
+  Loopback3                  10.10.3.1       YES manual up                    up
+  Loopback4                  10.10.4.1       YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -1607,8 +1596,8 @@ Total steps: 311
       No active syslog hosts
 
 [255/311] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
 [256/311] r1 R1# show environment
   Environmental monitoring is not instrumented on this platform.
@@ -1668,48 +1657,28 @@ Total steps: 311
 <empty>
 
 [266/311] r1 R1# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
-  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
   interface Loopback1
    ip address 10.10.1.1 255.255.255.0
    no shutdown
-  !
   interface Loopback2
    ip address 10.10.2.1 255.255.255.0
    no shutdown
-  !
   interface Loopback3
    ip address 10.10.3.1 255.255.255.0
    no shutdown
-  !
   interface Loopback4
    ip address 10.10.4.1 255.255.255.0
    no shutdown
-  !
-  access-list 10 permit 172.16.0.0 0.0.255.255
-  !
-  !
-  end
 
 [267/311] r1 R1# show running-config | begin line
 <empty>
@@ -1752,10 +1721,10 @@ Total steps: 311
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  Loopback1                  10.10.1.1       YES manual administratively down down
-  Loopback2                  10.10.2.1       YES manual administratively down down
-  Loopback3                  10.10.3.1       YES manual administratively down down
-  Loopback4                  10.10.4.1       YES manual administratively down down
+  Loopback1                  10.10.1.1       YES manual up                    up
+  Loopback2                  10.10.2.1       YES manual up                    up
+  Loopback3                  10.10.3.1       YES manual up                    up
+  Loopback4                  10.10.4.1       YES manual up                    up
 
 
 --- [271] § regression: mode nav + negation ---
@@ -1829,12 +1798,12 @@ Total steps: 311
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.10.1.1       YES manual administratively down down
-  Loopback2                  10.10.2.1       YES manual administratively down down
-  Loopback3                  10.10.3.1       YES manual administratively down down
-  Loopback4                  10.10.4.1       YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.10.1.1       YES manual up                    up
+  Loopback2                  10.10.2.1       YES manual up                    up
+  Loopback3                  10.10.3.1       YES manual up                    up
+  Loopback4                  10.10.4.1       YES manual up                    up
 
 [294/311] r1 R1(config-if)# shutdown
 <empty>
@@ -1873,14 +1842,14 @@ Total steps: 311
     <cr>  
 
 [305/311] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -1901,6 +1870,7 @@ Total steps: 311
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [308/311] r1 R1(config)# no ?
@@ -1926,50 +1896,7 @@ Total steps: 311
 <empty>
 
 [310/311] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  interface Loopback1
-   ip address 10.10.1.1 255.255.255.0
-   no shutdown
-  !
-  interface Loopback2
-   ip address 10.10.2.1 255.255.255.0
-   no shutdown
-  !
-  interface Loopback3
-   ip address 10.10.3.1 255.255.255.0
-   no shutdown
-  !
-  interface Loopback4
-   ip address 10.10.4.1 255.255.255.0
-   no shutdown
-  !
-  access-list 10 permit 172.16.0.0 0.0.255.255
-  !
-  line vty 0 4
-  !
-  !
-  end
+  15
 
 [311/311] r1 R1# write memory
   Building configuration...

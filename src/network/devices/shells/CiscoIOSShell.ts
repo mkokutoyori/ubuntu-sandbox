@@ -86,6 +86,10 @@ import {
 } from './cisco/CiscoIPSecIKEv2Commands';
 import { registerIPSecShowCommands } from './cisco/CiscoIPSecShowCommands';
 import {
+  buildSecurityConfigCommands, buildSecurityInterfaceCommands,
+  buildSecuritySubmodeCommands, buildSecurityShowCommands,
+} from './cisco/CiscoSecurityCommands';
+import {
   buildNATConfigCommands, buildNATInterfaceCommands,
   registerNATPrivilegedCommands, registerNATShowCommands,
 } from './cisco/CiscoNATCommands';
@@ -157,6 +161,48 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configIkev2KeyringTrie = new CommandTrie();
   private configIkev2KeyringPeerTrie = new CommandTrie();
   private configIkev2ProfileTrie = new CommandTrie();
+  private configTimeRangeTrie = new CommandTrie();
+  private configCmapTrie = new CommandTrie();
+  private configPmapTrie = new CommandTrie();
+  private configPmapClassTrie = new CommandTrie();
+  private configCpTrie = new CommandTrie();
+  private configZoneTrie = new CommandTrie();
+  private configZonePairTrie = new CommandTrie();
+  private configRadiusServerTrie = new CommandTrie();
+  private configTacacsServerTrie = new CommandTrie();
+  private configAaaGroupTrie = new CommandTrie();
+
+  private selectedTimeRange: string | null = null;
+  private selectedClassMap: string | null = null;
+  private selectedPolicyMap: string | null = null;
+  private selectedPolicyClass: string | null = null;
+  private controlPlaneActive: boolean = false;
+  private selectedZone: string | null = null;
+  private selectedZonePair: string | null = null;
+  private selectedRadiusServer: string | null = null;
+  private selectedTacacsServer: string | null = null;
+  private selectedAaaGroup: string | null = null;
+
+  getTimeRange(): string | null { return this.selectedTimeRange; }
+  setTimeRange(n: string | null): void { this.selectedTimeRange = n; }
+  getClassMap(): string | null { return this.selectedClassMap; }
+  setClassMap(n: string | null): void { this.selectedClassMap = n; }
+  getPolicyMap(): string | null { return this.selectedPolicyMap; }
+  setPolicyMap(n: string | null): void { this.selectedPolicyMap = n; }
+  getPolicyClass(): string | null { return this.selectedPolicyClass; }
+  setPolicyClass(n: string | null): void { this.selectedPolicyClass = n; }
+  getControlPlane(): boolean { return this.controlPlaneActive; }
+  setControlPlane(v: boolean): void { this.controlPlaneActive = v; }
+  getZone(): string | null { return this.selectedZone; }
+  setZone(n: string | null): void { this.selectedZone = n; }
+  getZonePair(): string | null { return this.selectedZonePair; }
+  setZonePair(n: string | null): void { this.selectedZonePair = n; }
+  getRadiusServer(): string | null { return this.selectedRadiusServer; }
+  setRadiusServer(n: string | null): void { this.selectedRadiusServer = n; }
+  getTacacsServer(): string | null { return this.selectedTacacsServer; }
+  setTacacsServer(n: string | null): void { this.selectedTacacsServer = n; }
+  getAaaGroup(): string | null { return this.selectedAaaGroup; }
+  setAaaGroup(n: string | null): void { this.selectedAaaGroup = n; }
 
   constructor() {
     super();
@@ -298,6 +344,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected getPromptMap(): PromptMap { return CISCO_IOS_PROMPTS; }
 
+  protected override getChassisProfile(): import('./cisco/CiscoCommonShow').CiscoChassisProfile {
+    return 'router-isr2911';
+  }
+
   /** Real saved configuration (null until first `write memory`). */
   private startupConfig: string | null = null;
 
@@ -343,6 +393,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ikev2-keyring': return this.configIkev2KeyringTrie;
       case 'config-ikev2-keyring-peer': return this.configIkev2KeyringPeerTrie;
       case 'config-ikev2-profile': return this.configIkev2ProfileTrie;
+      case 'config-time-range': return this.configTimeRangeTrie;
+      case 'config-cmap': return this.configCmapTrie;
+      case 'config-pmap': return this.configPmapTrie;
+      case 'config-pmap-c': return this.configPmapClassTrie;
+      case 'config-cp': return this.configCpTrie;
+      case 'config-zone': return this.configZoneTrie;
+      case 'config-zone-pair': return this.configZonePairTrie;
+      case 'config-radius-server': return this.configRadiusServerTrie;
+      case 'config-tacacs-server': return this.configTacacsServerTrie;
+      case 'config-aaa-group': return this.configAaaGroupTrie;
       default: return this.userTrie;
     }
   }
@@ -367,6 +427,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedIKEv2Keyring') this.selectedIKEv2Keyring = null;
       if (f === 'selectedIKEv2KeyringPeer') this.selectedIKEv2KeyringPeer = null;
       if (f === 'selectedIKEv2Profile') this.selectedIKEv2Profile = null;
+      if (f === 'selectedTimeRange') this.selectedTimeRange = null;
+      if (f === 'selectedClassMap') this.selectedClassMap = null;
+      if (f === 'selectedPolicyMap') this.selectedPolicyMap = null;
+      if (f === 'selectedPolicyClass') this.selectedPolicyClass = null;
+      if (f === 'selectedZone') this.selectedZone = null;
+      if (f === 'selectedZonePair') this.selectedZonePair = null;
+      if (f === 'selectedRadiusServer') this.selectedRadiusServer = null;
+      if (f === 'selectedTacacsServer') this.selectedTacacsServer = null;
+      if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
     }
   }
 
@@ -435,6 +504,24 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIKEv2KeyringCommands(this.configIkev2KeyringTrie, this);
     buildIKEv2KeyringPeerCommands(this.configIkev2KeyringPeerTrie, this);
     buildIKEv2ProfileCommands(this.configIkev2ProfileTrie, this);
+
+    buildSecurityConfigCommands(this.configTrie, this);
+    buildSecurityInterfaceCommands(this.configIfTrie, this);
+    buildSecuritySubmodeCommands(
+      this.configCmapTrie,
+      this.configPmapTrie,
+      this.configPmapClassTrie,
+      this.configCpTrie,
+      this.configZoneTrie,
+      this.configZonePairTrie,
+      this.configTimeRangeTrie,
+      this.configRadiusServerTrie,
+      this.configTacacsServerTrie,
+      this.configAaaGroupTrie,
+      this,
+    );
+    buildSecurityShowCommands(this.userTrie, () => this.d());
+    buildSecurityShowCommands(this.privilegedTrie, () => this.d());
   }
 
   // ─── Show Commands (Router-specific) ──────────────────────────────

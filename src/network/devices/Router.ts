@@ -527,6 +527,27 @@ export abstract class Router extends Equipment {
     return true;
   }
 
+  removeStaticRoute(network: IPAddress, mask: SubnetMask, nextHop?: IPAddress): boolean {
+    const networkStr = network.toString();
+    const maskStr = mask.toString();
+    const nextHopStr = nextHop?.toString();
+    const before = this.routingTable.length;
+    this.routingTable = this.routingTable.filter(r => {
+      if (r.type !== 'static') return true;
+      if (r.network.toString() !== networkStr) return true;
+      if (r.mask.toString() !== maskStr) return true;
+      if (nextHopStr && r.nextHop?.toString() !== nextHopStr) return true;
+      return false;
+    });
+    return this.routingTable.length < before;
+  }
+
+  removeDefaultRoute(): boolean {
+    const before = this.routingTable.length;
+    this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+    return this.routingTable.length < before;
+  }
+
   setDefaultRoute(
     nextHop: IPAddress, metric: number = 0,
     opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface'>>,
@@ -603,6 +624,14 @@ export abstract class Router extends Equipment {
       if (ip && mask && ip.isInSameSubnet(targetIP, mask)) return port;
     }
     return null;
+  }
+
+  private peerOnSameSubnet(portName: string, peerIP: IPAddress): boolean {
+    const port = this.ports.get(portName);
+    if (!port) return false;
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    return !!(ip && mask && ip.isInSameSubnet(peerIP, mask));
   }
 
   // ─── IPv6 Routing Table Management — delegated to IPv6DataPlane ─
@@ -916,20 +945,16 @@ export abstract class Router extends Equipment {
         this.counters.icmpOutMsgs++;
         this.counters.ifOutOctets += replyIP.totalLength;
 
-        // If IPSec is active, route the reply through the forwarding path
-        // so it goes through outbound IPSec processing (transport mode).
-        // Otherwise send directly for efficiency.
-        if (this.ipsecEngine) {
-          this.processIPv4(inPort, replyIP);
-          return;
-        }
-
-        const targetMAC = this.arpTable.get(ipPkt.sourceIP.toString());
-        if (targetMAC) {
+        const sameSubnetMac = this.peerOnSameSubnet(inPort, ipPkt.sourceIP)
+          ? this.arpTable.get(ipPkt.sourceIP.toString())
+          : undefined;
+        if (sameSubnetMac && !this.ipsecEngine) {
           this.sendFrame(inPort, {
-            srcMAC: port.getMAC(), dstMAC: targetMAC.mac,
+            srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
             etherType: ETHERTYPE_IPV4, payload: replyIP,
           });
+        } else {
+          this.forwardPacket(inPort, replyIP);
         }
       } else if (icmp.icmpType === 'destination-unreachable' && icmp.code === 4) {
         // ── RFC 4301 §6 / RFC 1191: ICMP Fragmentation Needed (Type 3, Code 4) ──
@@ -2070,10 +2095,12 @@ export abstract class Router extends Equipment {
   getInterfaceACL(ifName: string, direction: 'in' | 'out') { return this.aclEngine.getInterfaceACL(ifName, direction); }
   evaluateACLByName(name: string, ipPkt: IPv4Packet) { return this.aclEngine.evaluateACLByName(name, ipPkt); }
 
-  /** @internal Used by CLI shells */
   _getAccessListsInternal() { return this.aclEngine.getAccessListsInternal(); }
-  /** @internal Used by CLI shells */
   _getInterfaceACLBindingsInternal() { return this.aclEngine.getInterfaceACLBindingsInternal(); }
+  _removeNamedACLEntryBySequence(name: string, seq: number) { return this.aclEngine.removeNamedACLEntryBySequence(name, seq); }
+  _resequenceNamedACL(name: string, start: number, step: number) { return this.aclEngine.resequenceNamedACL(name, start, step); }
+  _findNamedACL(name: string) { return this.aclEngine.findByName(name); }
+  _findNumberedACL(id: number) { return this.aclEngine.findById(id); }
 
   // ─── DHCP Server Public API ────────────────────────────────────
 

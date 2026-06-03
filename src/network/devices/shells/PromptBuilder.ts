@@ -74,6 +74,16 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ikev2-keyring':      '{host}(config-ikev2-keyring)#',
   'config-ikev2-keyring-peer': '{host}(config-ikev2-keyring-peer)#',
   'config-ikev2-profile':      '{host}(config-ikev2-profile)#',
+  'config-time-range':         '{host}(config-time-range)#',
+  'config-cmap':               '{host}(config-cmap)#',
+  'config-pmap':               '{host}(config-pmap)#',
+  'config-pmap-c':             '{host}(config-pmap-c)#',
+  'config-cp':                 '{host}(config-cp)#',
+  'config-zone':               '{host}(config-sec-zone)#',
+  'config-zone-pair':          '{host}(config-sec-zone-pair)#',
+  'config-radius-server':      '{host}(config-radius-server)#',
+  'config-tacacs-server':      '{host}(config-tacacs-server)#',
+  'config-aaa-group':          '{host}(config-sg-radius)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

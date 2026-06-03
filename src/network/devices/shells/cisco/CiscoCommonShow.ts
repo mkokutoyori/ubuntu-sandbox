@@ -89,11 +89,18 @@ export function showUsers(): string {
   ].join('\n');
 }
 
-/** `show inventory` — chassis line. */
-export function showInventory(hostname: string): string {
+export type CiscoChassisProfile = 'router-isr2911' | 'switch-c2960';
+
+const CHASSIS_INVENTORY: Record<CiscoChassisProfile, { descr: string; pid: string; sn: string }> = {
+  'router-isr2911': { descr: 'Cisco ISR 2911 Integrated Services Router', pid: 'CISCO2911/K9', sn: 'FTX1234567A' },
+  'switch-c2960':   { descr: 'Cisco Catalyst Switch', pid: 'WS-C2960-24TT-L', sn: 'FOC1234X56Y' },
+};
+
+export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c2960'): string {
+  const c = CHASSIS_INVENTORY[profile];
   return [
-    `NAME: "${hostname}", DESCR: "Cisco Catalyst Switch"`,
-    'PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y',
+    `NAME: "${hostname}", DESCR: "${c.descr}"`,
+    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.sn}`,
   ].join('\n');
 }
 
@@ -116,16 +123,27 @@ export function showMemoryStatistics(): string {
   ].join('\n');
 }
 
-/** `show flash` — flash filesystem listing. */
-export function showFlash(): string {
-  return [
+const CHASSIS_FLASH: Record<CiscoChassisProfile, string[]> = {
+  'router-isr2911': [
+    'Directory of flash:/',
+    '',
+    '    1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin',
+    '    2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg',
+    '',
+    '256016384 bytes total (169782272 bytes free)',
+  ],
+  'switch-c2960': [
     'Directory of flash:/',
     '',
     '    1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin',
     '    2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat',
     '',
     '64016384 bytes total (46188544 bytes free)',
-  ].join('\n');
+  ],
+};
+
+export function showFlash(profile: CiscoChassisProfile = 'switch-c2960'): string {
+  return CHASSIS_FLASH[profile].join('\n');
 }
 
 /** `show privilege` — current EXEC level. */
@@ -314,9 +332,32 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
   return [
     `Clock is ${synced ? 'synchronized' : 'unsynchronized'}, stratum ${cfg.localStratum}, reference is ${cfg.refIdentifier || '.INIT.'}`,
     `nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18`,
-    `reference time is ${new Date(cfg.lastSyncMs || Date.now()).toISOString()}`,
+    `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || Date.now())}`,
     `clock offset is ${cfg.offsetMs.toFixed(2)} msec`,
   ].join('\n');
+}
+
+const NTP_EPOCH_OFFSET_SEC = 2208988800;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatNtpReferenceTime(ms: number): string {
+  const d = new Date(ms);
+  const totalSecUtc = Math.floor(ms / 1000);
+  const ntpSecs = totalSecUtc + NTP_EPOCH_OFFSET_SEC;
+  const fracMs = ms % 1000;
+  const fracNtp = Math.floor((fracMs / 1000) * 0x100000000);
+  const ntpHex = (ntpSecs >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  const fracHex = (fracNtp >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
+  const msStr = String(d.getUTCMilliseconds()).padStart(3, '0');
+  const wd = WEEKDAYS[d.getUTCDay()];
+  const mo = MONTHS[d.getUTCMonth()];
+  const day = d.getUTCDate();
+  const yr = d.getUTCFullYear();
+  return `${ntpHex}.${fracHex} (${hh}:${mm}:${ss}.${msStr} UTC ${wd} ${mo} ${day} ${yr})`;
 }
 
 export function showNtpAssociations(dev?: ShowStateDevice): string {

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-03T16:07:59.071Z
+Generated: 2026-06-03T19:59:29.001Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -525,92 +525,59 @@ Total steps: 369
   No conflicts detected.
 
 [126/369] r1 R1# show running-config | section dhcp
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
   service dhcp
-  !
   ip dhcp pool VLAN10
    network 192.168.1.0 255.255.255.0
    default-router 192.168.1.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan10.lab
-  !
   ip dhcp pool VLAN20
    network 192.168.2.0 255.255.255.0
    default-router 192.168.2.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan20.lab
    lease 2
-  !
   ip dhcp pool VLAN30
    network 192.168.3.0 255.255.255.0
    default-router 192.168.3.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan30.lab
    lease 3
-  !
   ip dhcp pool VLAN40
    network 192.168.4.0 255.255.255.0
    default-router 192.168.4.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan40.lab
    lease 4
-  !
   ip dhcp pool VLAN50
    network 192.168.5.0 255.255.255.0
    default-router 192.168.5.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan50.lab
    lease 5
-  !
   ip dhcp pool VLAN60
    network 192.168.6.0 255.255.255.0
    default-router 192.168.6.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan60.lab
    lease 6
-  !
   ip dhcp pool VLAN70
    network 192.168.7.0 255.255.255.0
    default-router 192.168.7.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan70.lab
    lease 7
-  !
   ip dhcp pool VLAN80
    network 192.168.8.0 255.255.255.0
    default-router 192.168.8.1
    dns-server 8.8.8.8 8.8.4.4
    domain-name vlan80.lab
    lease 8
-  !
   ip dhcp pool RESERVED
-  !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  !
-  end
 
 
 --- [127] § DHCP classes / options ---
@@ -643,472 +610,472 @@ Total steps: 369
 [133/369] r1 R1# exit
 <empty>
 
-[134/369] r1 R1> ip dhcp pool MULTI
+[134/369] r1 R1# ip dhcp pool MULTI
   % Invalid input detected at '^' marker.
   ip dhcp pool MULTI
   ^
 
-[135/369] r1 R1> network 10.50.0.0 255.255.0.0
+[135/369] r1 R1# network 10.50.0.0 255.255.0.0
   % Invalid input detected at '^' marker.
   network 10.50.0.0 255.255.0.0
   ^
 
-[136/369] r1 R1> class VOICE
+[136/369] r1 R1# class VOICE
   % Invalid input detected at '^' marker.
   class VOICE
   ^
 
-[137/369] r1 R1> address range 10.50.1.1 10.50.1.254
+[137/369] r1 R1# address range 10.50.1.1 10.50.1.254
   % Invalid input detected at '^' marker.
   address range 10.50.1.1 10.50.1.254
   ^
 
-[138/369] r1 R1> exit
+[138/369] r1 R1# exit
 <empty>
 
-[139/369] r1 R1> class DATA
+[139/369] r1 R1# class DATA
   % Invalid input detected at '^' marker.
   class DATA
   ^
 
-[140/369] r1 R1> address range 10.50.2.1 10.50.2.254
+[140/369] r1 R1# address range 10.50.2.1 10.50.2.254
   % Invalid input detected at '^' marker.
   address range 10.50.2.1 10.50.2.254
   ^
 
-[141/369] r1 R1> exit
+[141/369] r1 R1# exit
 <empty>
 
-[142/369] r1 R1> exit
+[142/369] r1 R1# exit
 <empty>
 
-[143/369] r1 R1> ip dhcp use class
+[143/369] r1 R1# ip dhcp use class
   % Invalid input detected at '^' marker.
   ip dhcp use class
   ^
 
-[144/369] r1 R1> ip dhcp ping packets 2
+[144/369] r1 R1# ip dhcp ping packets 2
   % Invalid input detected at '^' marker.
   ip dhcp ping packets 2
   ^
 
-[145/369] r1 R1> ip dhcp ping timeout 500
+[145/369] r1 R1# ip dhcp ping timeout 500
   % Invalid input detected at '^' marker.
   ip dhcp ping timeout 500
   ^
 
-[146/369] r1 R1> ip dhcp database flash:dhcp-bindings write-delay 60
+[146/369] r1 R1# ip dhcp database flash:dhcp-bindings write-delay 60
   % Invalid input detected at '^' marker.
   ip dhcp database flash:dhcp-bindings write-delay 60
   ^
 
-[147/369] r1 R1> ip dhcp bootp ignore
+[147/369] r1 R1# ip dhcp bootp ignore
   % Invalid input detected at '^' marker.
   ip dhcp bootp ignore
   ^
 
-[148/369] r1 R1> ip dhcp compatibility suboption link-selection standard
+[148/369] r1 R1# ip dhcp compatibility suboption link-selection standard
   % Invalid input detected at '^' marker.
   ip dhcp compatibility suboption link-selection standard
   ^
 
-[149/369] r1 R1> service dhcp
+[149/369] r1 R1# service dhcp
   % Invalid input detected at '^' marker.
   service dhcp
   ^
 
-[150/369] r1 R1> no service dhcp
+[150/369] r1 R1# no service dhcp
   % Invalid input detected at '^' marker.
   no service dhcp
-  ^
+     ^
 
-[151/369] r1 R1> service dhcp
+[151/369] r1 R1# service dhcp
   % Invalid input detected at '^' marker.
   service dhcp
   ^
 
-[152/369] r1 R1> end
+[152/369] r1 R1# end
 <empty>
 
 
 --- [153] § DHCP relay ---
-[153/369] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[153/369] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[154/369] r1 R1> interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0
-  ^
+[154/369] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
 
-[155/369] r1 R1> ip helper-address 10.0.0.2
-  % Invalid input detected at '^' marker.
-  ip helper-address 10.0.0.2
-  ^
+[155/369] r1 R1(config-if)# ip helper-address 10.0.0.2
+<empty>
 
-[156/369] r1 R1> ip helper-address 10.0.0.3
-  % Invalid input detected at '^' marker.
-  ip helper-address 10.0.0.3
-  ^
+[156/369] r1 R1(config-if)# ip helper-address 10.0.0.3
+<empty>
 
-[157/369] r1 R1> ip dhcp relay information trusted
+[157/369] r1 R1(config-if)# ip dhcp relay information trusted
   % Invalid input detected at '^' marker.
   ip dhcp relay information trusted
-  ^
+     ^
 
-[158/369] r1 R1> exit
+[158/369] r1 R1(config-if)# exit
 <empty>
 
-[159/369] r1 R1> ip dhcp relay information option
+[159/369] r1 R1(config)# ip dhcp relay information option
   % Invalid input detected at '^' marker.
   ip dhcp relay information option
-  ^
+          ^
 
-[160/369] r1 R1> ip dhcp relay information policy keep
+[160/369] r1 R1(config)# ip dhcp relay information policy keep
   % Invalid input detected at '^' marker.
   ip dhcp relay information policy keep
-  ^
+          ^
 
-[161/369] r1 R1> ip dhcp relay information trust-all
+[161/369] r1 R1(config)# ip dhcp relay information trust-all
   % Invalid input detected at '^' marker.
   ip dhcp relay information trust-all
-  ^
+          ^
 
-[162/369] r1 R1> ip dhcp smart-relay
+[162/369] r1 R1(config)# ip dhcp smart-relay
   % Invalid input detected at '^' marker.
   ip dhcp smart-relay
-  ^
+          ^
 
-[163/369] r1 R1> end
+[163/369] r1 R1(config)# end
 <empty>
 
-[164/369] r1 R1> show ip dhcp relay statistics
+[164/369] r1 R1# show ip dhcp relay statistics
   % Invalid input detected at '^' marker.
   show ip dhcp relay statistics
                ^
 
 
 --- [165] § DHCP snooping ---
-[165/369] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[165/369] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[166/369] r1 R1> ip dhcp snooping
+[166/369] r1 R1(config)# ip dhcp snooping
   % Invalid input detected at '^' marker.
   ip dhcp snooping
-  ^
+          ^
 
-[167/369] r1 R1> ip dhcp snooping vlan 10,20,30
+[167/369] r1 R1(config)# ip dhcp snooping vlan 10,20,30
   % Invalid input detected at '^' marker.
   ip dhcp snooping vlan 10,20,30
-  ^
+          ^
 
-[168/369] r1 R1> ip dhcp snooping information option
+[168/369] r1 R1(config)# ip dhcp snooping information option
   % Invalid input detected at '^' marker.
   ip dhcp snooping information option
-  ^
+          ^
 
-[169/369] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
+[169/369] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
 
-[170/369] r1 R1> ip dhcp snooping trust
+[170/369] r1 R1(config-if)# ip dhcp snooping trust
   % Invalid input detected at '^' marker.
   ip dhcp snooping trust
-  ^
+     ^
 
-[171/369] r1 R1> ip dhcp snooping limit rate 100
+[171/369] r1 R1(config-if)# ip dhcp snooping limit rate 100
   % Invalid input detected at '^' marker.
   ip dhcp snooping limit rate 100
-  ^
+     ^
 
-[172/369] r1 R1> exit
+[172/369] r1 R1(config-if)# exit
 <empty>
 
-[173/369] r1 R1> end
+[173/369] r1 R1(config)# end
 <empty>
 
-[174/369] r1 R1> show ip dhcp snooping
+[174/369] r1 R1# show ip dhcp snooping
   % Invalid input detected at '^' marker.
   show ip dhcp snooping
                ^
 
-[175/369] r1 R1> show ip dhcp snooping binding
+[175/369] r1 R1# show ip dhcp snooping binding
   % Invalid input detected at '^' marker.
   show ip dhcp snooping binding
                ^
 
 
 --- [176] § DHCPv6 ---
-[176/369] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[176/369] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[177/369] r1 R1> ipv6 unicast-routing
-  % Invalid input detected at '^' marker.
-  ipv6 unicast-routing
-  ^
+[177/369] r1 R1(config)# ipv6 unicast-routing
+<empty>
 
-[178/369] r1 R1> ipv6 dhcp pool V6POOL
+[178/369] r1 R1(config)# ipv6 dhcp pool V6POOL
   % Invalid input detected at '^' marker.
   ipv6 dhcp pool V6POOL
-  ^
+       ^
 
-[179/369] r1 R1> address prefix 2001:db8:1::/64 lifetime 3600 1800
+[179/369] r1 R1(config)# address prefix 2001:db8:1::/64 lifetime 3600 1800
   % Invalid input detected at '^' marker.
   address prefix 2001:db8:1::/64 lifetime 3600 1800
   ^
 
-[180/369] r1 R1> dns-server 2001:4860:4860::8888
+[180/369] r1 R1(config)# dns-server 2001:4860:4860::8888
   % Invalid input detected at '^' marker.
   dns-server 2001:4860:4860::8888
   ^
 
-[181/369] r1 R1> domain-name v6.lab
+[181/369] r1 R1(config)# domain-name v6.lab
   % Invalid input detected at '^' marker.
   domain-name v6.lab
   ^
 
-[182/369] r1 R1> exit
+[182/369] r1 R1(config)# exit
 <empty>
 
-[183/369] r1 R1> interface GigabitEthernet0/0
+[183/369] r1 R1# interface GigabitEthernet0/0
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/0
   ^
 
-[184/369] r1 R1> ipv6 address 2001:db8:1::1/64
+[184/369] r1 R1# ipv6 address 2001:db8:1::1/64
   % Invalid input detected at '^' marker.
   ipv6 address 2001:db8:1::1/64
   ^
 
-[185/369] r1 R1> ipv6 dhcp server V6POOL
+[185/369] r1 R1# ipv6 dhcp server V6POOL
   % Invalid input detected at '^' marker.
   ipv6 dhcp server V6POOL
   ^
 
-[186/369] r1 R1> ipv6 nd managed-config-flag
+[186/369] r1 R1# ipv6 nd managed-config-flag
   % Invalid input detected at '^' marker.
   ipv6 nd managed-config-flag
   ^
 
-[187/369] r1 R1> ipv6 nd other-config-flag
+[187/369] r1 R1# ipv6 nd other-config-flag
   % Invalid input detected at '^' marker.
   ipv6 nd other-config-flag
   ^
 
-[188/369] r1 R1> exit
+[188/369] r1 R1# exit
 <empty>
 
-[189/369] r1 R1> interface GigabitEthernet0/1
+[189/369] r1 R1# interface GigabitEthernet0/1
   % Invalid input detected at '^' marker.
   interface GigabitEthernet0/1
   ^
 
-[190/369] r1 R1> ipv6 dhcp relay destination 2001:db8:ff::1
+[190/369] r1 R1# ipv6 dhcp relay destination 2001:db8:ff::1
   % Invalid input detected at '^' marker.
   ipv6 dhcp relay destination 2001:db8:ff::1
   ^
 
-[191/369] r1 R1> exit
+[191/369] r1 R1# exit
 <empty>
 
-[192/369] r1 R1> end
+[192/369] r1 R1# end
 <empty>
 
-[193/369] r1 R1> show ipv6 dhcp pool
+[193/369] r1 R1# show ipv6 dhcp pool
   % Invalid input detected at '^' marker.
   show ipv6 dhcp pool
             ^
 
-[194/369] r1 R1> show ipv6 dhcp binding
+[194/369] r1 R1# show ipv6 dhcp binding
   % Invalid input detected at '^' marker.
   show ipv6 dhcp binding
             ^
 
-[195/369] r1 R1> show ipv6 dhcp interface
+[195/369] r1 R1# show ipv6 dhcp interface
   % Invalid input detected at '^' marker.
   show ipv6 dhcp interface
             ^
 
 
 --- [196] § DHCP client ---
-[196/369] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[196/369] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[197/369] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[198/369] r1 R1> ip address dhcp
-  % Invalid input detected at '^' marker.
-  ip address dhcp
-  ^
-
-[199/369] r1 R1> ip address dhcp hostname R1
-  % Invalid input detected at '^' marker.
-  ip address dhcp hostname R1
-  ^
-
-[200/369] r1 R1> ip address dhcp client-id GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  ip address dhcp client-id GigabitEthernet0/1
-  ^
-
-[201/369] r1 R1> ipv6 address dhcp
-  % Invalid input detected at '^' marker.
-  ipv6 address dhcp
-  ^
-
-[202/369] r1 R1> ipv6 address autoconfig
-  % Invalid input detected at '^' marker.
-  ipv6 address autoconfig
-  ^
-
-[203/369] r1 R1> exit
+[197/369] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
 
-[204/369] r1 R1> end
+[198/369] r1 R1(config-if)# ip address dhcp
+  % Incomplete command.
+
+[199/369] r1 R1(config-if)# ip address dhcp hostname R1
+  % Invalid input: Invalid IP address: dhcp
+
+[200/369] r1 R1(config-if)# ip address dhcp client-id GigabitEthernet0/1
+  % Invalid input: Invalid IP address: dhcp
+
+[201/369] r1 R1(config-if)# ipv6 address dhcp
+  % Invalid IPv6 address format (expected addr/prefix)
+
+[202/369] r1 R1(config-if)# ipv6 address autoconfig
+  % Invalid IPv6 address format (expected addr/prefix)
+
+[203/369] r1 R1(config-if)# exit
 <empty>
 
-[205/369] r1 R1> show dhcp lease
+[204/369] r1 R1(config)# end
+<empty>
+
+[205/369] r1 R1# show dhcp lease
   % Invalid input detected at '^' marker.
   show dhcp lease
        ^
 
-[206/369] r1 R1> show dhcp server
+[206/369] r1 R1# show dhcp server
   % Invalid input detected at '^' marker.
   show dhcp server
        ^
 
 
 --- [207] § NAT static ---
-[207/369] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[207/369] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[208/369] r1 R1> interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0
-  ^
-
-[209/369] r1 R1> ip nat inside
-  % Invalid input detected at '^' marker.
-  ip nat inside
-  ^
-
-[210/369] r1 R1> exit
+[208/369] r1 R1(config)# interface GigabitEthernet0/0
 <empty>
 
-[211/369] r1 R1> interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[212/369] r1 R1> ip nat outside
-  % Invalid input detected at '^' marker.
-  ip nat outside
-  ^
-
-[213/369] r1 R1> exit
+[209/369] r1 R1(config-if)# ip nat inside
 <empty>
 
-[214/369] r1 R1> ip nat inside source static 192.168.1.11 10.0.0.11
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.11 10.0.0.11
-  ^
+[210/369] r1 R1(config-if)# exit
+<empty>
 
-[215/369] r1 R1> ip nat inside source static 192.168.1.12 10.0.0.12
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.12 10.0.0.12
-  ^
+[211/369] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
 
-[216/369] r1 R1> ip nat inside source static 192.168.1.13 10.0.0.13
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.13 10.0.0.13
-  ^
+[212/369] r1 R1(config-if)# ip nat outside
+<empty>
 
-[217/369] r1 R1> ip nat inside source static 192.168.1.14 10.0.0.14
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.14 10.0.0.14
-  ^
+[213/369] r1 R1(config-if)# exit
+<empty>
 
-[218/369] r1 R1> ip nat inside source static 192.168.1.15 10.0.0.15
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.15 10.0.0.15
-  ^
+[214/369] r1 R1(config)# ip nat inside source static 192.168.1.11 10.0.0.11
+<empty>
 
-[219/369] r1 R1> ip nat inside source static 192.168.1.16 10.0.0.16
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.16 10.0.0.16
-  ^
+[215/369] r1 R1(config)# ip nat inside source static 192.168.1.12 10.0.0.12
+<empty>
 
-[220/369] r1 R1> ip nat inside source static 192.168.1.17 10.0.0.17
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.17 10.0.0.17
-  ^
+[216/369] r1 R1(config)# ip nat inside source static 192.168.1.13 10.0.0.13
+<empty>
 
-[221/369] r1 R1> ip nat inside source static 192.168.1.18 10.0.0.18
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.18 10.0.0.18
-  ^
+[217/369] r1 R1(config)# ip nat inside source static 192.168.1.14 10.0.0.14
+<empty>
 
-[222/369] r1 R1> ip nat inside source static 192.168.1.19 10.0.0.19
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.19 10.0.0.19
-  ^
+[218/369] r1 R1(config)# ip nat inside source static 192.168.1.15 10.0.0.15
+<empty>
 
-[223/369] r1 R1> ip nat inside source static 192.168.1.20 10.0.0.20
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.20 10.0.0.20
-  ^
+[219/369] r1 R1(config)# ip nat inside source static 192.168.1.16 10.0.0.16
+<empty>
 
-[224/369] r1 R1> ip nat inside source static tcp 192.168.1.100 80 10.0.0.100 8080
-  % Invalid input detected at '^' marker.
-  ip nat inside source static tcp 192.168.1.100 80 10.0.0.100 8080
-  ^
+[220/369] r1 R1(config)# ip nat inside source static 192.168.1.17 10.0.0.17
+<empty>
 
-[225/369] r1 R1> ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222 extendable
-  % Invalid input detected at '^' marker.
-  ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222 extendable
-  ^
+[221/369] r1 R1(config)# ip nat inside source static 192.168.1.18 10.0.0.18
+<empty>
 
-[226/369] r1 R1> ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
-  % Invalid input detected at '^' marker.
-  ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
-  ^
+[222/369] r1 R1(config)# ip nat inside source static 192.168.1.19 10.0.0.19
+<empty>
 
-[227/369] r1 R1> ip nat outside source static 8.8.8.8 192.168.1.200
+[223/369] r1 R1(config)# ip nat inside source static 192.168.1.20 10.0.0.20
+<empty>
+
+[224/369] r1 R1(config)# ip nat inside source static tcp 192.168.1.100 80 10.0.0.100 8080
+<empty>
+
+[225/369] r1 R1(config)# ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222 extendable
+<empty>
+
+[226/369] r1 R1(config)# ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
+<empty>
+
+[227/369] r1 R1(config)# ip nat outside source static 8.8.8.8 192.168.1.200
   % Invalid input detected at '^' marker.
   ip nat outside source static 8.8.8.8 192.168.1.200
-  ^
+         ^
 
-[228/369] r1 R1> ip nat inside source static 192.168.1.150 10.0.0.150 route-map RM-NAT
-  % Invalid input detected at '^' marker.
-  ip nat inside source static 192.168.1.150 10.0.0.150 route-map RM-NAT
-  ^
-
-[229/369] r1 R1> end
+[228/369] r1 R1(config)# ip nat inside source static 192.168.1.150 10.0.0.150 route-map RM-NAT
 <empty>
 
-[230/369] r1 R1> show ip nat translations
-  No NAT translations.
+[229/369] r1 R1(config)# end
+<empty>
 
-[231/369] r1 R1> show ip nat translations verbose
-  No NAT translations.
+[230/369] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.11              192.168.1.11           ---                    ---
+  ---  10.0.0.12              192.168.1.12           ---                    ---
+  ---  10.0.0.13              192.168.1.13           ---                    ---
+  ---  10.0.0.14              192.168.1.14           ---                    ---
+  ---  10.0.0.15              192.168.1.15           ---                    ---
+  ---  10.0.0.16              192.168.1.16           ---                    ---
+  ---  10.0.0.17              192.168.1.17           ---                    ---
+  ---  10.0.0.18              192.168.1.18           ---                    ---
+  ---  10.0.0.19              192.168.1.19           ---                    ---
+  ---  10.0.0.20              192.168.1.20           ---                    ---
+  tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
+  tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
+  udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
+  ---  10.0.0.150             192.168.1.150          ---                    ---
 
-[232/369] r1 R1> show ip nat statistics
-  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
-  Outside interfaces:  none
-  Inside interfaces:   none
+[231/369] r1 R1# show ip nat translations verbose
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.11              192.168.1.11           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.12              192.168.1.12           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.13              192.168.1.13           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.14              192.168.1.14           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.15              192.168.1.15           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.16              192.168.1.16           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.17              192.168.1.17           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.18              192.168.1.18           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.19              192.168.1.19           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.20              192.168.1.20           ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+  
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.150             192.168.1.150          ---                    ---
+      create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+
+[232/369] r1 R1# show ip nat statistics
+  Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Outside interfaces:  GigabitEthernet0/1
+  Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
@@ -1117,146 +1084,133 @@ Total steps: 369
 
 
 --- [233] § NAT dynamic / PAT ---
-[233/369] r1 R1> configure terminal
-  % Invalid input detected at '^' marker.
-  configure terminal
-  ^
+[233/369] r1 R1# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
-[234/369] r1 R1> ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
-  ^
+[234/369] r1 R1(config)# ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+<empty>
 
-[235/369] r1 R1> ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
-  % Invalid input detected at '^' marker.
-  ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
-  ^
+[235/369] r1 R1(config)# ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
+  % Expected "netmask" keyword.
 
-[236/369] r1 R1> access-list 1 permit 192.168.1.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  access-list 1 permit 192.168.1.0 0.0.0.255
-  ^
+[236/369] r1 R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
+<empty>
 
-[237/369] r1 R1> access-list 2 permit 192.168.2.0 0.0.0.255
-  % Invalid input detected at '^' marker.
-  access-list 2 permit 192.168.2.0 0.0.0.255
-  ^
+[237/369] r1 R1(config)# access-list 2 permit 192.168.2.0 0.0.0.255
+<empty>
 
-[238/369] r1 R1> ip nat inside source list 1 pool POOL1
-  % Invalid input detected at '^' marker.
-  ip nat inside source list 1 pool POOL1
-  ^
+[238/369] r1 R1(config)# ip nat inside source list 1 pool POOL1
+<empty>
 
-[239/369] r1 R1> ip nat inside source list 1 pool POOL1 overload
-  % Invalid input detected at '^' marker.
-  ip nat inside source list 1 pool POOL1 overload
-  ^
+[239/369] r1 R1(config)# ip nat inside source list 1 pool POOL1 overload
+<empty>
 
-[240/369] r1 R1> ip nat inside source list 2 interface GigabitEthernet0/1 overload
-  % Invalid input detected at '^' marker.
-  ip nat inside source list 2 interface GigabitEthernet0/1 overload
-  ^
+[240/369] r1 R1(config)# ip nat inside source list 2 interface GigabitEthernet0/1 overload
+<empty>
 
-[241/369] r1 R1> ip nat inside source route-map RM-NAT pool POOL2 overload
+[241/369] r1 R1(config)# ip nat inside source route-map RM-NAT pool POOL2 overload
   % Invalid input detected at '^' marker.
   ip nat inside source route-map RM-NAT pool POOL2 overload
-  ^
+                       ^
 
-[242/369] r1 R1> ip nat translation timeout 3600
+[242/369] r1 R1(config)# ip nat translation timeout 3600
   % Invalid input detected at '^' marker.
   ip nat translation timeout 3600
-  ^
+                     ^
 
-[243/369] r1 R1> ip nat translation tcp-timeout 600
-  % Invalid input detected at '^' marker.
-  ip nat translation tcp-timeout 600
-  ^
+[243/369] r1 R1(config)# ip nat translation tcp-timeout 600
+<empty>
 
-[244/369] r1 R1> ip nat translation udp-timeout 120
-  % Invalid input detected at '^' marker.
-  ip nat translation udp-timeout 120
-  ^
+[244/369] r1 R1(config)# ip nat translation udp-timeout 120
+<empty>
 
-[245/369] r1 R1> ip nat translation icmp-timeout 30
-  % Invalid input detected at '^' marker.
-  ip nat translation icmp-timeout 30
-  ^
+[245/369] r1 R1(config)# ip nat translation icmp-timeout 30
+<empty>
 
-[246/369] r1 R1> ip nat translation max-entries 10000
+[246/369] r1 R1(config)# ip nat translation max-entries 10000
   % Invalid input detected at '^' marker.
   ip nat translation max-entries 10000
-  ^
+                     ^
 
-[247/369] r1 R1> ip nat log translations syslog
+[247/369] r1 R1(config)# ip nat log translations syslog
   % Invalid input detected at '^' marker.
   ip nat log translations syslog
-  ^
+         ^
 
-[248/369] r1 R1> route-map RM-NAT permit 10
-  % Invalid input detected at '^' marker.
-  route-map RM-NAT permit 10
-  ^
-
-[249/369] r1 R1> match ip address 2
-  % Invalid input detected at '^' marker.
-  match ip address 2
-  ^
-
-[250/369] r1 R1> exit
+[248/369] r1 R1(config)# route-map RM-NAT permit 10
 <empty>
 
-[251/369] r1 R1> end
+[249/369] r1 R1(config-route-map)# match ip address 2
 <empty>
 
-[252/369] r1 R1> show ip nat translations
-  No NAT translations.
+[250/369] r1 R1(config-route-map)# exit
+<empty>
 
-[253/369] r1 R1> show ip nat statistics
-  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
-  Outside interfaces:  none
-  Inside interfaces:   none
+[251/369] r1 R1(config)# end
+<empty>
+
+[252/369] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.11              192.168.1.11           ---                    ---
+  ---  10.0.0.12              192.168.1.12           ---                    ---
+  ---  10.0.0.13              192.168.1.13           ---                    ---
+  ---  10.0.0.14              192.168.1.14           ---                    ---
+  ---  10.0.0.15              192.168.1.15           ---                    ---
+  ---  10.0.0.16              192.168.1.16           ---                    ---
+  ---  10.0.0.17              192.168.1.17           ---                    ---
+  ---  10.0.0.18              192.168.1.18           ---                    ---
+  ---  10.0.0.19              192.168.1.19           ---                    ---
+  ---  10.0.0.20              192.168.1.20           ---                    ---
+  tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
+  tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
+  udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
+  ---  10.0.0.150             192.168.1.150          ---                    ---
+
+[253/369] r1 R1# show ip nat statistics
+  Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Outside interfaces:  GigabitEthernet0/1
+  Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Expired translations: 0
-  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
   Dynamic mappings:
-  -- No dynamic NAT rules configured --
+   -- Inside Source [acl 1] pool POOL1
+   -- Inside Source [acl 1] pool POOL1
+   -- Inside Source [acl 2] overload
+  Pools: 1 configured
 
-[254/369] r1 R1> show ip nat nvi translations
+[254/369] r1 R1# show ip nat nvi translations
   % Invalid input detected at '^' marker.
   show ip nat nvi translations
               ^
 
-[255/369] r1 R1> clear ip nat translation *
-  % Invalid input detected at '^' marker.
-  clear ip nat translation *
-  ^
+[255/369] r1 R1# clear ip nat translation *
+<empty>
 
-[256/369] r1 R1> clear ip nat translation inside 10.0.0.50 192.168.1.10
+[256/369] r1 R1# clear ip nat translation inside 10.0.0.50 192.168.1.10
   % Invalid input detected at '^' marker.
   clear ip nat translation inside 10.0.0.50 192.168.1.10
-  ^
+                           ^
 
-[257/369] r1 R1> debug ip nat
+[257/369] r1 R1# debug ip nat
   % Invalid input detected at '^' marker.
   debug ip nat
-  ^
+           ^
 
-[258/369] r1 R1> debug ip nat detailed
+[258/369] r1 R1# debug ip nat detailed
   % Invalid input detected at '^' marker.
   debug ip nat detailed
-  ^
+           ^
 
-[259/369] r1 R1> undebug all
-  % Invalid input detected at '^' marker.
-  undebug all
-  ^
+[259/369] r1 R1# undebug all
+  All possible debugging has been turned off
 
 
 --- [260] § regression: show family ---
-[260/369] r1 R1> enable
-<empty>
+[260/369] r1 R1(config)# enable
+  % Incomplete command.
 
-[261/369] r1 R1# show version
+[261/369] r1 R1(config)# show version
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
@@ -1273,7 +1227,7 @@ Total steps: 369
   
   Configuration register is 0x2102
 
-[262/369] r1 R1# show running-config
+[262/369] r1 R1(config)# show running-config
   Building configuration...
   
   Current configuration:
@@ -1347,10 +1301,14 @@ Total steps: 369
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   ip nat inside
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip nat outside
   !
   interface GigabitEthernet0/2
    shutdown
@@ -1358,20 +1316,44 @@ Total steps: 369
   interface GigabitEthernet0/3
    shutdown
   !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  access-list 2 permit 192.168.2.0 0.0.0.255
+  !
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+  ip nat inside source static 192.168.1.11 10.0.0.11
+  ip nat inside source static 192.168.1.12 10.0.0.12
+  ip nat inside source static 192.168.1.13 10.0.0.13
+  ip nat inside source static 192.168.1.14 10.0.0.14
+  ip nat inside source static 192.168.1.15 10.0.0.15
+  ip nat inside source static 192.168.1.16 10.0.0.16
+  ip nat inside source static 192.168.1.17 10.0.0.17
+  ip nat inside source static 192.168.1.18 10.0.0.18
+  ip nat inside source static 192.168.1.19 10.0.0.19
+  ip nat inside source static 192.168.1.20 10.0.0.20
+  ip nat inside source static tcp 192.168.1.100 80 10.0.0.100 8080
+  ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222
+  ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
+  ip nat inside source static 192.168.1.150 10.0.0.150
+  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
+  ip nat translation tcp-timeout 600
+  ip nat translation udp-timeout 120
+  ip nat translation icmp-timeout 30
   !
   end
 
-[263/369] r1 R1# show startup-config
+[263/369] r1 R1(config)# show startup-config
   % startup-config is not present
 
-[264/369] r1 R1# show ip interface brief
+[264/369] r1 R1(config)# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
-[265/369] r1 R1# show interfaces
+[265/369] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1407,70 +1389,97 @@ Total steps: 369
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[266/369] r1 R1# show ip route
+[266/369] r1 R1(config)# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
 
-[267/369] r1 R1# show ip route summary
-  % Network not in table
+[267/369] r1 R1(config)# show ip route summary
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       2           2           0           304         720
+  static          0           0           0           0           0
+  ospf            0           0           0           0           0
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           2           2           0           304         720
 
-[268/369] r1 R1# show ip protocols
+[268/369] r1 R1(config)# show ip protocols
   No routing protocol is configured.
 
-[269/369] r1 R1# show ip arp
+[269/369] r1 R1(config)# show ip arp
   No ARP entries.
 
-[270/369] r1 R1# show arp
+[270/369] r1 R1(config)# show arp
   No ARP entries.
 
-[271/369] r1 R1# show ip ospf
+[271/369] r1 R1(config)# show ip ospf
   % OSPF is not configured
 
-[272/369] r1 R1# show ip ospf neighbor
+[272/369] r1 R1(config)# show ip ospf neighbor
   % OSPF is not configured
 
-[273/369] r1 R1# show ip ospf database
+[273/369] r1 R1(config)# show ip ospf database
   % OSPF is not configured
 
-[274/369] r1 R1# show ip ospf interface brief
+[274/369] r1 R1(config)# show ip ospf interface brief
   % OSPF is not configured
 
-[275/369] r1 R1# show ip eigrp neighbors
+[275/369] r1 R1(config)# show ip eigrp neighbors
   % EIGRP not running (no autonomous-system configured)
 
-[276/369] r1 R1# show ip eigrp topology
+[276/369] r1 R1(config)# show ip eigrp topology
   % EIGRP not running (no autonomous-system configured)
 
-[277/369] r1 R1# show ip bgp
+[277/369] r1 R1(config)# show ip bgp
   % BGP not active
 
-[278/369] r1 R1# show ip bgp summary
+[278/369] r1 R1(config)# show ip bgp summary
   % BGP not active
 
-[279/369] r1 R1# show ip rip database
+[279/369] r1 R1(config)# show ip rip database
 <empty>
 
-[280/369] r1 R1# show ip nat translations
-  No NAT translations.
+[280/369] r1 R1(config)# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.11              192.168.1.11           ---                    ---
+  ---  10.0.0.12              192.168.1.12           ---                    ---
+  ---  10.0.0.13              192.168.1.13           ---                    ---
+  ---  10.0.0.14              192.168.1.14           ---                    ---
+  ---  10.0.0.15              192.168.1.15           ---                    ---
+  ---  10.0.0.16              192.168.1.16           ---                    ---
+  ---  10.0.0.17              192.168.1.17           ---                    ---
+  ---  10.0.0.18              192.168.1.18           ---                    ---
+  ---  10.0.0.19              192.168.1.19           ---                    ---
+  ---  10.0.0.20              192.168.1.20           ---                    ---
+  tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
+  tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
+  udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
+  ---  10.0.0.150             192.168.1.150          ---                    ---
 
-[281/369] r1 R1# show ip nat statistics
-  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
-  Outside interfaces:  none
-  Inside interfaces:   none
+[281/369] r1 R1(config)# show ip nat statistics
+  Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Outside interfaces:  GigabitEthernet0/1
+  Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
   Expired translations: 0
-  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
   Dynamic mappings:
-  -- No dynamic NAT rules configured --
+   -- Inside Source [acl 1] pool POOL1
+   -- Inside Source [acl 1] pool POOL1
+   -- Inside Source [acl 2] overload
+  Pools: 1 configured
 
-[282/369] r1 R1# show ip dhcp binding
+[282/369] r1 R1(config)# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
 
-[283/369] r1 R1# show ip dhcp pool
+[283/369] r1 R1(config)# show ip dhcp pool
   Pool VLAN10 :
     Network          : 192.168.1.0/24
     Default Router   : 192.168.1.1
@@ -1595,44 +1604,48 @@ Total steps: 369
     Lease Time       : infinite
     Current Bindings : 0
 
-[284/369] r1 R1# show access-lists
-<empty>
+[284/369] r1 R1(config)# show access-lists
+  Standard IP access list 1
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+  Standard IP access list 2
+      10 permit 192.168.2.0 0.0.0.255 (0 matches)
 
-[285/369] r1 R1# show ip access-lists
-<empty>
+[285/369] r1 R1(config)# show ip access-lists
+  Standard IP access list 1
+      10 permit 192.168.1.0 0.0.0.255 (0 matches)
+  Standard IP access list 2
+      10 permit 192.168.2.0 0.0.0.255 (0 matches)
 
-[286/369] r1 R1# show crypto isakmp sa
+[286/369] r1 R1(config)# show crypto isakmp sa
   IPSec not configured.
 
-[287/369] r1 R1# show crypto ipsec sa
+[287/369] r1 R1(config)# show crypto ipsec sa
   IPSec not configured.
 
-[288/369] r1 R1# show crypto session
+[288/369] r1 R1(config)# show crypto session
   IPSec not configured.
 
-[289/369] r1 R1# show crypto map
+[289/369] r1 R1(config)# show crypto map
   IPSec not configured.
 
-[290/369] r1 R1# show standby brief
+[290/369] r1 R1(config)# show standby brief
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
 
-[291/369] r1 R1# show vrrp brief
+[291/369] r1 R1(config)# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
-[292/369] r1 R1# show track
+[292/369] r1 R1(config)# show track
   No tracked objects configured.
 
-[293/369] r1 R1# show ip sla statistics
+[293/369] r1 R1(config)# show ip sla statistics
   No IP SLA operations configured.
 
-[294/369] r1 R1# show policy-map interface
-  % Invalid input detected at '^' marker.
-  show policy-map interface
-       ^
+[294/369] r1 R1(config)# show policy-map interface
+<empty>
 
-[295/369] r1 R1# show logging
+[295/369] r1 R1(config)# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
       Console logging: level debugging
       Monitor logging: level debugging
@@ -1643,26 +1656,26 @@ Total steps: 369
       Sequence numbers: disabled
       No active syslog hosts
 
-[296/369] r1 R1# show snmp
+[296/369] r1 R1(config)# show snmp
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
-[297/369] r1 R1# show ntp status
+[297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T16:07:59.089Z
+  reference time is EDCB0621.07AE147A (19:59:29.030 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
-[298/369] r1 R1# show ntp associations
+[298/369] r1 R1(config)# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
   No NTP associations configured.
 
-[299/369] r1 R1# show clock
-  *16:07:59.000 UTC Wed Jun 3 2026
+[299/369] r1 R1(config)# show clock
+  *19:59:29.000 UTC Wed Jun 3 2026
 
-[300/369] r1 R1# show cdp neighbors
+[300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
@@ -1672,7 +1685,7 @@ Total steps: 369
   
   Total cdp entries displayed : 2
 
-[301/369] r1 R1# show lldp neighbors
+[301/369] r1 R1(config)# show lldp neighbors
   Capability codes:
       (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device
       (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other
@@ -1681,32 +1694,32 @@ Total steps: 369
   
   Total entries displayed: 0
 
-[302/369] r1 R1# show processes cpu
+[302/369] r1 R1(config)# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
-[303/369] r1 R1# show memory statistics
+[303/369] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
   Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
   I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
 
-[304/369] r1 R1# show flash
+[304/369] r1 R1(config)# show flash
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
-      2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
+      1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
+      2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  64016384 bytes total (46188544 bytes free)
+  256016384 bytes total (169782272 bytes free)
 
-[305/369] r1 R1# show users
+[305/369] r1 R1(config)# show users
       Line       User       Host(s)              Idle       Location
   *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
-[306/369] r1 R1# show history
+[306/369] r1 R1(config)# show history
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1728,13 +1741,10 @@ Total steps: 369
   show users
   show history
 
-[307/369] r1 R1# show ip cef
-  Prefix               Next Hop             Interface
-  0.0.0.0/0            no route
-  192.168.1.0/24       attached             GigabitEthernet0/0
-  10.0.0.0/30          attached             GigabitEthernet0/1
+[307/369] r1 R1(config)# show ip cef
+  IP CEF is not enabled
 
-[308/369] r1 R1# show interfaces GigabitEthernet0/0
+[308/369] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
     Internet address is 192.168.1.1/24
@@ -1745,7 +1755,7 @@ Total steps: 369
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[309/369] r1 R1# show interfaces GigabitEthernet0/1
+[309/369] r1 R1(config)# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1756,7 +1766,7 @@ Total steps: 369
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[310/369] r1 R1# show ip interface GigabitEthernet0/1
+[310/369] r1 R1(config)# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1767,7 +1777,7 @@ Total steps: 369
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
 
-[311/369] r1 R1# show controllers
+[311/369] r1 R1(config)# show controllers
   GigabitEthernet0/0 -
     Hardware is present, link is connected
     Administrative state: up
@@ -1785,7 +1795,7 @@ Total steps: 369
     Administrative state: up
     0 carrier transitions
 
-[312/369] r1 R1# show tech-support
+[312/369] r1 R1(config)# show tech-support
   ------------------ show version ------------------
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
@@ -1877,10 +1887,14 @@ Total steps: 369
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   ip nat inside
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip nat outside
   !
   interface GigabitEthernet0/2
    shutdown
@@ -1888,6 +1902,30 @@ Total steps: 369
   interface GigabitEthernet0/3
    shutdown
   !
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  access-list 2 permit 192.168.2.0 0.0.0.255
+  !
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+  ip nat inside source static 192.168.1.11 10.0.0.11
+  ip nat inside source static 192.168.1.12 10.0.0.12
+  ip nat inside source static 192.168.1.13 10.0.0.13
+  ip nat inside source static 192.168.1.14 10.0.0.14
+  ip nat inside source static 192.168.1.15 10.0.0.15
+  ip nat inside source static 192.168.1.16 10.0.0.16
+  ip nat inside source static 192.168.1.17 10.0.0.17
+  ip nat inside source static 192.168.1.18 10.0.0.18
+  ip nat inside source static 192.168.1.19 10.0.0.19
+  ip nat inside source static 192.168.1.20 10.0.0.20
+  ip nat inside source static tcp 192.168.1.100 80 10.0.0.100 8080
+  ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222
+  ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
+  ip nat inside source static 192.168.1.150 10.0.0.150
+  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
+  ip nat translation tcp-timeout 600
+  ip nat translation udp-timeout 120
+  ip nat translation icmp-timeout 30
   !
   end
   
@@ -1895,8 +1933,8 @@ Total steps: 369
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -1954,37 +1992,37 @@ Total steps: 369
       Sequence numbers: disabled
       No active syslog hosts
 
-[313/369] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+[313/369] r1 R1(config)# show inventory
+  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
 
-[314/369] r1 R1# show environment
+[314/369] r1 R1(config)# show environment
   Environmental monitoring is not instrumented on this platform.
 
-[315/369] r1 R1# show redundancy
+[315/369] r1 R1(config)# show redundancy
   Redundant System Information :
          Configured Redundancy Mode = Simplex
   Current Processor Information :
          Active Location = slot 0
          Current Software state = ACTIVE
 
-[316/369] r1 R1# show ip vrf
+[316/369] r1 R1(config)# show ip vrf
     Name                             Default RD            Protocols   Interfaces
 
-[317/369] r1 R1# show vrf
+[317/369] r1 R1(config)# show vrf
     Name                             Default RD            Protocols   Interfaces
 
-[318/369] r1 R1# show hosts
+[318/369] r1 R1(config)# show hosts
   Default domain is not set
   Name/address lookup uses domain service
   
   Host                      Port  Flags      Age Type   Address(es)
 
-[319/369] r1 R1# show ip ssh
+[319/369] r1 R1(config)# show ip ssh
   SSH Enabled - version 2.0
   Authentication timeout: 120 secs; Authentication retries: 3
 
-[320/369] r1 R1# show line
+[320/369] r1 R1(config)# show line
      Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
   *    0    0 CTY               -    -    -    -      0     0   0/0       -
        1    1 VTY               -    -    -    -      0     0   0/0       -
@@ -1993,13 +2031,13 @@ Total steps: 369
        4    4 VTY               -    -    -    -      0     0   0/0       -
        5    5 VTY               -    -    -    -      0     0   0/0       -
 
-[321/369] r1 R1# show terminal
+[321/369] r1 R1(config)# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
 
-[322/369] r1 R1# show aliases
+[322/369] r1 R1(config)# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -2023,92 +2061,21 @@ Total steps: 369
    default-router 192.168.8.1
 
 [324/369] r1 R1(config)# show running-config | section interface
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  ip dhcp pool VLAN10
-   network 192.168.1.0 255.255.255.0
-   default-router 192.168.1.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan10.lab
-  !
-  ip dhcp pool VLAN20
-   network 192.168.2.0 255.255.255.0
-   default-router 192.168.2.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan20.lab
-   lease 2
-  !
-  ip dhcp pool VLAN30
-   network 192.168.3.0 255.255.255.0
-   default-router 192.168.3.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan30.lab
-   lease 3
-  !
-  ip dhcp pool VLAN40
-   network 192.168.4.0 255.255.255.0
-   default-router 192.168.4.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan40.lab
-   lease 4
-  !
-  ip dhcp pool VLAN50
-   network 192.168.5.0 255.255.255.0
-   default-router 192.168.5.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan50.lab
-   lease 5
-  !
-  ip dhcp pool VLAN60
-   network 192.168.6.0 255.255.255.0
-   default-router 192.168.6.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan60.lab
-   lease 6
-  !
-  ip dhcp pool VLAN70
-   network 192.168.7.0 255.255.255.0
-   default-router 192.168.7.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan70.lab
-   lease 7
-  !
-  ip dhcp pool VLAN80
-   network 192.168.8.0 255.255.255.0
-   default-router 192.168.8.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan80.lab
-   lease 8
-  !
-  ip dhcp pool RESERVED
-  !
-  ip dhcp pool INFINITE
-   network 172.16.0.0 255.255.0.0
-  ip dhcp excluded-address 192.168.1.1 192.168.1.20
-  ip dhcp excluded-address 192.168.1.250 192.168.1.254
-  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
-  !
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   ip nat inside
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
-  !
+   ip nat outside
   interface GigabitEthernet0/2
    shutdown
-  !
   interface GigabitEthernet0/3
    shutdown
-  !
-  !
-  end
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
 
 [325/369] r1 R1(config)# show running-config | begin line
 <empty>
@@ -2174,13 +2141,40 @@ Total steps: 369
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    no shutdown
+   ip helper-address 10.0.0.2
+   ip helper-address 10.0.0.3
+   ip nat inside
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip nat outside
   interface GigabitEthernet0/2
    shutdown
   interface GigabitEthernet0/3
    shutdown
+  access-list 1 permit 192.168.1.0 0.0.0.255
+  access-list 2 permit 192.168.2.0 0.0.0.255
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+  ip nat inside source static 192.168.1.11 10.0.0.11
+  ip nat inside source static 192.168.1.12 10.0.0.12
+  ip nat inside source static 192.168.1.13 10.0.0.13
+  ip nat inside source static 192.168.1.14 10.0.0.14
+  ip nat inside source static 192.168.1.15 10.0.0.15
+  ip nat inside source static 192.168.1.16 10.0.0.16
+  ip nat inside source static 192.168.1.17 10.0.0.17
+  ip nat inside source static 192.168.1.18 10.0.0.18
+  ip nat inside source static 192.168.1.19 10.0.0.19
+  ip nat inside source static 192.168.1.20 10.0.0.20
+  ip nat inside source static tcp 192.168.1.100 80 10.0.0.100 8080
+  ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222
+  ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
+  ip nat inside source static 192.168.1.150 10.0.0.150
+  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 2 interface GigabitEthernet0/1 overload
+  ip nat translation tcp-timeout 600
+  ip nat translation udp-timeout 120
+  ip nat translation icmp-timeout 30
   end
 
 [327/369] r1 R1(config)# show ip route | include via
@@ -2263,8 +2257,8 @@ Total steps: 369
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [352/369] r1 R1(config-if)# shutdown
 <empty>
@@ -2303,14 +2297,14 @@ Total steps: 369
     <cr>  
 
 [363/369] r1 R1(config)# ip ?
-    cef            CEF
+    cef            Enable CEF
     http           http
     source-route   IP source-route
     domain-lookup  DNS lookup
     domain-name    Set domain name
     domain         IP domain configuration
     host           Configure a static host entry
-    ssh            SSH server configuration
+    ssh            SSH config
     dhcp           dhcp
     route          Establish static routes
     prefix-list    Build a prefix list
@@ -2331,6 +2325,7 @@ Total steps: 369
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    key          key
     <cr>         
 
 [366/369] r1 R1(config)# no ?
@@ -2356,94 +2351,7 @@ Total steps: 369
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  Building configuration...
-  
-  Current configuration:
-  !
-  hostname R1
-  !
-  service dhcp
-  !
-  ip dhcp pool VLAN10
-   network 192.168.1.0 255.255.255.0
-   default-router 192.168.1.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan10.lab
-  !
-  ip dhcp pool VLAN20
-   network 192.168.2.0 255.255.255.0
-   default-router 192.168.2.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan20.lab
-   lease 2
-  !
-  ip dhcp pool VLAN30
-   network 192.168.3.0 255.255.255.0
-   default-router 192.168.3.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan30.lab
-   lease 3
-  !
-  ip dhcp pool VLAN40
-   network 192.168.4.0 255.255.255.0
-   default-router 192.168.4.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan40.lab
-   lease 4
-  !
-  ip dhcp pool VLAN50
-   network 192.168.5.0 255.255.255.0
-   default-router 192.168.5.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan50.lab
-   lease 5
-  !
-  ip dhcp pool VLAN60
-   network 192.168.6.0 255.255.255.0
-   default-router 192.168.6.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan60.lab
-   lease 6
-  !
-  ip dhcp pool VLAN70
-   network 192.168.7.0 255.255.255.0
-   default-router 192.168.7.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan70.lab
-   lease 7
-  !
-  ip dhcp pool VLAN80
-   network 192.168.8.0 255.255.255.0
-   default-router 192.168.8.1
-   dns-server 8.8.8.8 8.8.4.4
-   domain-name vlan80.lab
-   lease 8
-  !
-  ip dhcp pool RESERVED
-  !
-  ip dhcp pool INFINITE
-   network 172.16.0.0 255.255.0.0
-  ip dhcp excluded-address 192.168.1.1 192.168.1.20
-  ip dhcp excluded-address 192.168.1.250 192.168.1.254
-  !
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  !
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  !
-  interface GigabitEthernet0/2
-   shutdown
-  !
-  interface GigabitEthernet0/3
-   shutdown
-  !
-  line vty 0 4
-  !
-  !
-  end
+  22
 
 [369/369] r1 R1# write memory
   Building configuration...
