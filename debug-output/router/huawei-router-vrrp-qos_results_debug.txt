@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-05-31T19:01:19.864Z
+Generated: 2026-06-03T13:29:23.432Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -916,8 +916,8 @@ Total steps: 257
    clock offset: 0.0000 ms
 
 [188/257] r1 [R1] display clock
-  2026-05-31 19:01:19
-  Sunday
+  2026-06-03 13:29:23
+  Wednesday
   Time Zone(UTC) : UTC
 
 [189/257] r1 [R1] display lldp neighbor
@@ -933,13 +933,13 @@ Total steps: 257
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:19
+  CPU Usage Stat. Time : 2026-06-03 13:29:23
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:19
+  Memory utilization statistics at 2026-06-03 13:29:23
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -965,13 +965,12 @@ Total steps: 257
 
 [196/257] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:19 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [197/257] r1 [R1] display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1192,12 +1191,10 @@ Total steps: 257
   Error: Unrecognized command "undo info-center enable"
 
 [232/257] r1 [R1] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [233/257] r1 [R1] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [234/257] r1 [R1] ntp-service enable
 <empty>
@@ -1270,6 +1267,7 @@ Total steps: 257
     routing       Enable IP routing
 
 [254/257] r1 [TEST] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length

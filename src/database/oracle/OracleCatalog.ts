@@ -1173,7 +1173,9 @@ export class OracleCatalog extends BaseCatalog {
       currentUser: _currentUser,
     });
     if (fromRegistry) return fromRegistry;
-    return emptyResult(`View ${name} not implemented`);
+    // Unknown V$/GV$ view → let the executor raise ORA-00942 (table or
+    // view does not exist), matching real Oracle's behavior.
+    return null;
   }
 
   // ── DBA_ views ───────────────────────────────────────────────────

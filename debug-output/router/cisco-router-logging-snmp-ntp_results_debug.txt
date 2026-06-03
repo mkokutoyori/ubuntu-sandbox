@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-05-31T19:01:29.600Z
+Generated: 2026-06-03T13:28:47.886Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -562,7 +562,10 @@ Total steps: 322
 <empty>
 
 [124/322] r1 R1> show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T13:28:47.901Z
+  clock offset is 0.00 msec
 
 [125/322] r1 R1> show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -575,7 +578,7 @@ Total steps: 322
   No NTP associations configured.
 
 [127/322] r1 R1> show clock
-  *19:01:29.000 UTC Sun May 31 2026
+  *13:28:47.000 UTC Wed Jun 3 2026
 
 [128/322] r1 R1> show clock detail
   % Invalid input detected at '^' marker.
@@ -583,7 +586,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1> show calendar
-  19:01:29 UTC Sun May 31 2026
+  13:28:47 UTC Wed Jun 3 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1342,7 +1345,10 @@ Total steps: 322
   0 SNMP packets output
 
 [250/322] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T13:28:47.909Z
+  clock offset is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1350,7 +1356,7 @@ Total steps: 322
   No NTP associations configured.
 
 [252/322] r1 R1# show clock
-  *19:01:29.000 UTC Sun May 31 2026
+  *13:28:47.000 UTC Wed Jun 3 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1883,6 +1889,7 @@ Total steps: 322
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry

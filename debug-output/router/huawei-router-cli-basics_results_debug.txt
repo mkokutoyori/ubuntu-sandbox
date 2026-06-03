@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-05-31T19:01:30.777Z
+Generated: 2026-06-03T13:28:59.806Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-05-31 19:01:30
-  Sunday
+  2026-06-03 13:28:59
+  Wednesday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -53,13 +53,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:30
+  CPU Usage Stat. Time : 2026-06-03 13:28:59
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:30
+  Memory utilization statistics at 2026-06-03 13:28:59
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -255,13 +255,12 @@ Total steps: 304
 
 [38/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:30 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -817,6 +816,7 @@ Total steps: 304
     <cr>  
 
 [135/304] r1 [R1-EDGE] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length
@@ -896,12 +896,10 @@ Total steps: 304
 <empty>
 
 [154/304] r1 [R1-EDGE] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [155/304] r1 [R1-EDGE] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [156/304] r1 [R1-EDGE] snmp-agent
 <empty>
@@ -1385,8 +1383,8 @@ Total steps: 304
    clock offset: 0.0000 ms
 
 [235/304] r1 <TEMP> display clock
-  2026-05-31 19:01:30
-  Sunday
+  2026-06-03 13:28:59
+  Wednesday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <TEMP> display lldp neighbor
@@ -1402,13 +1400,13 @@ Total steps: 304
 [238/304] r1 <TEMP> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-05-31 19:01:30
+  CPU Usage Stat. Time : 2026-06-03 13:28:59
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <TEMP> display memory-usage
-  Memory utilization statistics at 2026-05-31 19:01:30
+  Memory utilization statistics at 2026-06-03 13:28:59
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1434,13 +1432,12 @@ Total steps: 304
 
 [243/304] r1 <TEMP> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 512
-  Actual buffer size : 512
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 1
-  2026-05-31 19:01:30 %01SRM/4/PORT_STATE: Port state changed.
+  Current messages : 0
 
 [244/304] r1 <TEMP> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1672,12 +1669,10 @@ Total steps: 304
   Error: Unrecognized command "undo info-center enable"
 
 [279/304] r1 [TEMP] lldp enable
-  % Invalid input detected at '^' marker.
-  lldp enable
-  ^
+<empty>
 
 [280/304] r1 [TEMP] undo lldp enable
-  Error: Unrecognized command "undo lldp enable"
+<empty>
 
 [281/304] r1 [TEMP] ntp-service enable
 <empty>
@@ -1750,6 +1745,7 @@ Total steps: 304
     routing       Enable IP routing
 
 [301/304] r1 [TEST] undo ?
+    lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
     screen-length  Restore default screen length

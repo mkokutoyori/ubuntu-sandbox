@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-05-31T19:01:31.988Z
+Generated: 2026-06-03T13:29:16.087Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -143,24 +143,16 @@ Total steps: 343
      ^
 
 [31/343] r1 R1(config-if)# cdp enable
-  % Invalid input detected at '^' marker.
-  cdp enable
-  ^
+<empty>
 
 [32/343] r1 R1(config-if)# no cdp enable
-  % Invalid input detected at '^' marker.
-  no cdp enable
-     ^
+<empty>
 
 [33/343] r1 R1(config-if)# lldp transmit
-  % Invalid input detected at '^' marker.
-  lldp transmit
-  ^
+<empty>
 
 [34/343] r1 R1(config-if)# lldp receive
-  % Invalid input detected at '^' marker.
-  lldp receive
-  ^
+<empty>
 
 [35/343] r1 R1(config-if)# ip flow ingress
   % Invalid input detected at '^' marker.
@@ -1484,7 +1476,10 @@ Total steps: 343
   0 SNMP packets output
 
 [271/343] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T13:29:16.112Z
+  clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1492,7 +1487,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *19:01:32.000 UTC Sun May 31 2026
+  *13:29:16.000 UTC Wed Jun 3 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2238,6 +2233,7 @@ Total steps: 343
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry

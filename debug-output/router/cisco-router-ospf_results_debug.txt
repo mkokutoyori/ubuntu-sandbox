@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-05-31T19:00:59.167Z
+Generated: 2026-06-03T13:28:52.061Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1310,7 +1310,10 @@ Total steps: 311
   0 SNMP packets output
 
 [239/311] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, no reference clock
+  Clock is unsynchronized, stratum 16, reference is .INIT.
+  nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
+  reference time is 2026-06-03T13:28:52.128Z
+  clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -1318,7 +1321,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *19:00:59.000 UTC Sun May 31 2026
+  *13:28:52.000 UTC Wed Jun 3 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1927,6 +1930,7 @@ Total steps: 311
     ip           ip
     ipv6         ipv6
     logging      Disable logging
+    ntp          Remove NTP config
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
