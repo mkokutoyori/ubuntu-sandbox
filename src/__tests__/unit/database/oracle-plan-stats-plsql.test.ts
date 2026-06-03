@@ -112,6 +112,23 @@ describe('DBMS_STATS', () => {
     sh.dispose();
   });
 
+  it('GATHER_INDEX_STATS refreshes a single index entry without re-touching peers', () => {
+    const sh = newSession('stats-gi');
+    sh.processLine('CREATE TABLE GI_T (id NUMBER, cat VARCHAR2(2));');
+    for (let i = 1; i <= 20; i++) {
+      sh.processLine(`INSERT INTO GI_T VALUES (${i}, '${i % 4}');`);
+    }
+    sh.processLine('CREATE INDEX GI_T_CAT ON GI_T(cat);');
+    sh.processLine("BEGIN DBMS_STATS.GATHER_INDEX_STATS('SYS', 'GI_T_CAT'); END;");
+    const out = run(sh, "SELECT DISTINCT_KEYS FROM DBA_IND_STATISTICS WHERE INDEX_NAME='GI_T_CAT';");
+    expect(out).toMatch(/\s4\s/);
+    sh.processLine("BEGIN DBMS_STATS.DELETE_INDEX_STATS('SYS', 'GI_T_CAT'); END;");
+    sh.processLine('/');
+    const out2 = run(sh, "SELECT DISTINCT_KEYS, STALE_STATS FROM DBA_IND_STATISTICS WHERE INDEX_NAME='GI_T_CAT';");
+    expect(out2).toMatch(/\s0\s+YES/);
+    sh.dispose();
+  });
+
   it('GATHER_TABLE_STATS computes BLEVEL and CLUSTERING_FACTOR for an index', () => {
     const sh = newSession('stats-idx');
     sh.processLine('CREATE TABLE IDX_T (id NUMBER, cat VARCHAR2(2));');

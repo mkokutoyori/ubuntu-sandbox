@@ -78,6 +78,24 @@ export class IndexUsageMonitor {
     }
   }
 
+  /**
+   * Scan an ExecutionPlan and flip USED on for every monitored index
+   * whose name appears as an INDEX-prefixed operation's object. This
+   * mirrors real Oracle's behavior: an index is only marked USED when
+   * a query plan actually accesses it (not on every DML).
+   */
+  notePlanUsage(nodes: ReadonlyArray<{ operation: string; objectName: string | null }>): void {
+    if (this.records.size === 0) return;
+    for (const node of nodes) {
+      if (!node.operation.startsWith('INDEX')) continue;
+      if (!node.objectName) continue;
+      const target = node.objectName.toUpperCase();
+      for (const r of this.records.values()) {
+        if (r.monitoring && r.indexName === target) r.used = true;
+      }
+    }
+  }
+
   /** Snapshot for view rendering. */
   getRecords(): IndexUsageRecord[] { return [...this.records.values()]; }
 }

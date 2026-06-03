@@ -22,6 +22,34 @@ function stats(ctx: PackageCallContext): StatisticsManager | null {
   return s._statisticsManager ?? null;
 }
 
+class GatherIndexStats implements IPackageRoutine {
+  readonly fullName = 'DBMS_STATS.GATHER_INDEX_STATS';
+  invoke(args: string[], ctx: PackageCallContext): string | null {
+    const m = stats(ctx); if (!m) return null;
+    const owner = (args[0] ?? '').toUpperCase();
+    const indexName = (args[1] ?? '').toUpperCase();
+    const storage = (ctx.session as unknown as {
+      _statisticsManagerStorage?: import('../OracleStorage').OracleStorage;
+    })._statisticsManagerStorage;
+    if (!storage) return null;
+    const idx = storage.getIndexes(owner).find((x) => x.name.toUpperCase() === indexName);
+    if (!idx) return null;
+    // GATHER_INDEX_STATS recomputes the index's owning-table stats
+    // (per Oracle docs: includes index stats). Re-gather covers it.
+    const ok = m.gatherTableStats(owner, idx.tableName);
+    return ok ? 'PL/SQL procedure successfully completed.' : null;
+  }
+}
+
+class DeleteIndexStats implements IPackageRoutine {
+  readonly fullName = 'DBMS_STATS.DELETE_INDEX_STATS';
+  invoke(args: string[], ctx: PackageCallContext): string | null {
+    const m = stats(ctx); if (!m) return null;
+    m.deleteIndexStats?.(args[0] ?? '', args[1] ?? '');
+    return null;
+  }
+}
+
 class GatherTableStats implements IPackageRoutine {
   readonly fullName = 'DBMS_STATS.GATHER_TABLE_STATS';
   invoke(args: string[], ctx: PackageCallContext): string | null {
@@ -84,5 +112,7 @@ export class DbmsStats {
     builtinPackageRegistry.register(new GatherDatabaseStats());
     builtinPackageRegistry.register(new DeleteTableStats());
     builtinPackageRegistry.register(new SetTableStats());
+    builtinPackageRegistry.register(new GatherIndexStats());
+    builtinPackageRegistry.register(new DeleteIndexStats());
   }
 }

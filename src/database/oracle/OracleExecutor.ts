@@ -206,6 +206,10 @@ export class OracleExecutor extends BaseExecutor {
       try {
         const plan = db.planGenerator.generate(statement, sqlId, text, this.context.currentSchema);
         this.instance.planCache.put(plan);
+        const monitor = (this.instance as unknown as {
+          getIndexUsageMonitor?: () => { notePlanUsage: (nodes: ReadonlyArray<{ operation: string; objectName: string | null }>) => void } | null;
+        }).getIndexUsageMonitor?.();
+        monitor?.notePlanUsage(plan.nodes);
       } catch {
         // PlanGenerator is best-effort. Don't break the actual statement.
       }

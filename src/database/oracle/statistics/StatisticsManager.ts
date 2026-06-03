@@ -199,6 +199,12 @@ export class StatisticsManager {
     }
   }
 
+  /** DBMS_STATS.DELETE_INDEX_STATS — wipe stats for a single index. */
+  deleteIndexStats(owner: string, indexName: string): void {
+    const o = owner.toUpperCase(), i = indexName.toUpperCase();
+    this.indexStats.delete(`${o}.${i}`);
+  }
+
   // ── Read APIs (consumed by views) ────────────────────────────────
 
   getTableStats(owner: string, table: string): TableStatistics | undefined {
