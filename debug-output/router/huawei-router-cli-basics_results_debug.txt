@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-03T14:32:00.041Z
+Generated: 2026-06-03T15:53:18.717Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-03 14:32:00
+  2026-06-03 15:53:18
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -36,7 +36,10 @@ Total steps: 304
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [5/304] r1 <R1> display users
@@ -53,13 +56,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 14:32:00
+  CPU Usage Stat. Time : 2026-06-03 15:53:18
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-03 14:32:00
+  Memory utilization statistics at 2026-06-03 15:53:18
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -80,20 +83,6 @@ Total steps: 304
   interface GigabitEthernet0/0/3
    shutdown
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [10/304] r1 <R1> display saved-configuration
@@ -102,9 +91,22 @@ Total steps: 304
           ^
 
 [11/304] r1 <R1> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  #
 
 [12/304] r1 <R1> display startup
   % Invalid input detected at '^' marker.
@@ -112,11 +114,20 @@ Total steps: 304
           ^
 
 [13/304] r1 <R1> display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
 
 [14/304] r1 <R1> display interface
   GE0/0/0 current state : UP
@@ -167,9 +178,12 @@ Total steps: 304
   Total     0
 
 [18/304] r1 <R1> display ip routing-table protocol direct
-  % Invalid input detected at '^' marker.
-  display ip routing-table protocol direct
-                                    ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Public routing table : DIRECT
+           Destinations : 0        Routes : 0
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
 
 [19/304] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -181,12 +195,28 @@ Total steps: 304
               ^
 
 [21/304] r1 <R1> display fib
-  % Invalid input detected at '^' marker.
-  display fib
-          ^
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 0        Routes : 0
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
 
 [22/304] r1 <R1> display ip interface
-  % Incomplete command.
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
+  Interface                         IP Address/Mask      Physical   Protocol
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
 
 [23/304] r1 <R1> display ospf peer
   Error: OSPF is not configured.
@@ -281,10 +311,10 @@ Total steps: 304
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -404,8 +434,10 @@ Total steps: 304
     current-configuration   Display running configuration
     counters                Display traffic counters
     rip                     Display RIP information
-    debugging               Display active debugging flags
+    router                  router
+    fib                     Display forwarding table
     ipv6                    ipv6
+    debugging               Display active debugging flags
     interface               Display interface information
     clock                   Display system clock
     cpu-usage               Display CPU usage
@@ -433,6 +465,11 @@ Total steps: 304
     nat                     nat
     dhcp-server             dhcp-server
     dhcp-snooping           dhcp-snooping
+    route-policy            Display a route-policy
+    traffic                 traffic
+    traffic-policy          traffic-policy
+    nqa                     nqa
+    this                    Display current view configuration
 
 [61/304] r1 <R1> ping 10.0.0.2
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
@@ -470,9 +507,10 @@ Total steps: 304
 <empty>
 
 [70/304] r1 [R1-CORE-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
 
 [71/304] r1 [R1-CORE-GE0/0/0] quit
 <empty>
@@ -481,9 +519,10 @@ Total steps: 304
 <empty>
 
 [73/304] r1 [R1-CORE-LoopBack0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  interface LoopBack0
+   shutdown
+  #
 
 [74/304] r1 [R1-CORE-LoopBack0] quit
 <empty>
@@ -492,9 +531,25 @@ Total steps: 304
   Error: Wrong parameter found at '^' position.
 
 [76/304] r1 [R1-CORE] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
 
 [77/304] r1 [R1-CORE] quit
 <empty>
@@ -505,9 +560,25 @@ Total steps: 304
   ^
 
 [79/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
 
 [80/304] r1 <R1-CORE> quit
 <empty>
@@ -516,9 +587,28 @@ Total steps: 304
 <empty>
 
 [82/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [83/304] r1 <R1-CORE> quit
 <empty>
@@ -529,9 +619,28 @@ Total steps: 304
   ^
 
 [85/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [86/304] r1 <R1-CORE> quit
 <empty>
@@ -542,9 +651,28 @@ Total steps: 304
   ^
 
 [88/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [89/304] r1 <R1-CORE> quit
 <empty>
@@ -555,9 +683,28 @@ Total steps: 304
   ^
 
 [91/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [92/304] r1 <R1-CORE> quit
 <empty>
@@ -568,9 +715,28 @@ Total steps: 304
   ^
 
 [94/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [95/304] r1 <R1-CORE> quit
 <empty>
@@ -581,9 +747,28 @@ Total steps: 304
      ^
 
 [97/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [98/304] r1 <R1-CORE> quit
 <empty>
@@ -594,9 +779,28 @@ Total steps: 304
   ^
 
 [100/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [101/304] r1 <R1-CORE> quit
 <empty>
@@ -607,9 +811,28 @@ Total steps: 304
   ^
 
 [103/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [104/304] r1 <R1-CORE> quit
 <empty>
@@ -620,9 +843,28 @@ Total steps: 304
   ^
 
 [106/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [107/304] r1 <R1-CORE> quit
 <empty>
@@ -633,9 +875,28 @@ Total steps: 304
   ^
 
 [109/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [110/304] r1 <R1-CORE> quit
 <empty>
@@ -646,9 +907,28 @@ Total steps: 304
   ^
 
 [112/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [113/304] r1 <R1-CORE> quit
 <empty>
@@ -659,9 +939,28 @@ Total steps: 304
   ^
 
 [115/304] r1 <R1-CORE> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [116/304] r1 <R1-CORE> quit
 <empty>
@@ -672,7 +971,7 @@ Total steps: 304
   ^
 
 [118/304] r1 <R1-CORE> undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [119/304] r1 <R1-CORE> return
 <empty>
@@ -699,20 +998,6 @@ Total steps: 304
   #
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 
@@ -724,17 +1009,55 @@ Total steps: 304
 <empty>
 
 [123/304] r1 [R1-EDGE] dis th
-  % Invalid input detected at '^' marker.
-  dis th
-      ^
+  #
+  sysname R1-EDGE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
   Error: Wrong parameter found at '^' position.
 
 [125/304] r1 [R1-EDGE] dis th
-  % Invalid input detected at '^' marker.
-  dis th
-      ^
+  #
+  sysname R1-EDGE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
 
 [126/304] r1 [R1-EDGE] q
 <empty>
@@ -764,29 +1087,24 @@ Total steps: 304
   #
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack0                         unassigned           down       down
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack0                         unassigned           DOWN       DOWN
 
 [130/304] r1 <R1-EDGE> dis ip rou
   Route Flags: R - relay, D - download to fib
@@ -810,6 +1128,8 @@ Total steps: 304
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
+    ip-prefix     Configure an IPv4 prefix list
+    ipv6-prefix   Configure an IPv6 prefix list
 
 [134/304] r1 [R1-EDGE] ospf ?
     WORD  Configure OSPF protocol
@@ -828,6 +1148,9 @@ Total steps: 304
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
@@ -881,13 +1204,13 @@ Total steps: 304
   ^
 
 [149/304] r1 [R1-EDGE] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [150/304] r1 [R1-EDGE] telnet server enable
 <empty>
 
 [151/304] r1 [R1-EDGE] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [152/304] r1 [R1-EDGE] dhcp enable
 <empty>
@@ -905,60 +1228,55 @@ Total steps: 304
 <empty>
 
 [157/304] r1 [R1-EDGE] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [158/304] r1 [R1-EDGE] ntp-service enable
 <empty>
 
 [159/304] r1 [R1-EDGE] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [160/304] r1 [R1-EDGE] ip route-static 1.1.1.0 24 10.0.0.2
-  Error: Invalid subnet mask: 24
+<empty>
 
 [161/304] r1 [R1-EDGE] undo ip route-static 1.1.1.0 24 10.0.0.2
-  % Invalid input detected at '^' marker.
-  undo ip route-static 1.1.1.0 24 10.0.0.2
-          ^
+  Error: Invalid subnet mask: 24
 
 [162/304] r1 [R1-EDGE] sysname TEMP
 <empty>
 
 [163/304] r1 [TEMP] undo sysname
-  Error: Unrecognized command "undo sysname"
-
-[164/304] r1 [TEMP] interface GigabitEthernet0/0/0
 <empty>
 
-[165/304] r1 [TEMP-GE0/0/0] description WAN-LINK
+[164/304] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[166/304] r1 [TEMP-GE0/0/0] undo description
+[165/304] r1 [Huawei-GE0/0/0] description WAN-LINK
 <empty>
 
-[167/304] r1 [TEMP-GE0/0/0] shutdown
+[166/304] r1 [Huawei-GE0/0/0] undo description
 <empty>
 
-[168/304] r1 [TEMP-GE0/0/0] undo shutdown
+[167/304] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[169/304] r1 [TEMP-GE0/0/0] quit
+[168/304] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[170/304] r1 [TEMP] return
+[169/304] r1 [Huawei-GE0/0/0] quit
+<empty>
+
+[170/304] r1 [Huawei] return
 <empty>
 
 
 --- [171] § pipe filters ---
-[171/304] r1 <TEMP> display current-configuration | include ip
+[171/304] r1 <Huawei> display current-configuration | include ip
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
-   local-user alice password cipher alice
-   local-user bob password cipher bob
-   local-user carl password cipher carl
-   local-user dave password cipher dave
 
-[172/304] r1 <TEMP> display current-configuration | exclude #
-  sysname TEMP
+[172/304] r1 <Huawei> display current-configuration | exclude #
+  sysname Huawei
   dhcp enable
   interface GigabitEthernet0/0/0
    shutdown
@@ -970,23 +1288,11 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
-[173/304] r1 <TEMP> display current-configuration | begin interface
+[173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1002,33 +1308,22 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
-[174/304] r1 <TEMP> display ip routing-table | include Direct
+[174/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
 
-[175/304] r1 <TEMP> display ip interface brief | include up
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           unassigned           up         up
+[175/304] r1 <Huawei> display ip interface brief | include up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           unassigned           UP         UP
 
-[176/304] r1 <TEMP> display interface | include line protocol
+[176/304] r1 <Huawei> display interface | include line protocol
   Line protocol current state : UP
   Line protocol current state : UP
   Line protocol current state : DOWN
@@ -1037,131 +1332,131 @@ Total steps: 304
 
 
 --- [177] § user-interface / screen ---
-[177/304] r1 <TEMP> screen-length 0 temporary
+[177/304] r1 <Huawei> screen-length 0 temporary
 <empty>
 
-[178/304] r1 <TEMP> screen-length 24 temporary
+[178/304] r1 <Huawei> screen-length 24 temporary
 <empty>
 
-[179/304] r1 <TEMP> system-view
+[179/304] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[180/304] r1 [TEMP] user-interface console 0
+[180/304] r1 [Huawei] user-interface console 0
 <empty>
 
-[181/304] r1 [TEMP] idle-timeout 0 0
+[181/304] r1 [Huawei] idle-timeout 0 0
   % Invalid input detected at '^' marker.
   idle-timeout 0 0
   ^
 
-[182/304] r1 [TEMP] authentication-mode password
+[182/304] r1 [Huawei] authentication-mode password
   % Invalid input detected at '^' marker.
   authentication-mode password
   ^
 
-[183/304] r1 [TEMP] set authentication password cipher Huawei@123
+[183/304] r1 [Huawei] set authentication password cipher Huawei@123
   % Invalid input detected at '^' marker.
   set authentication password cipher Huawei@123
   ^
 
-[184/304] r1 [TEMP] quit
+[184/304] r1 [Huawei] quit
 <empty>
 
-[185/304] r1 <TEMP> user-interface vty 0 4
+[185/304] r1 <Huawei> user-interface vty 0 4
   % Invalid input detected at '^' marker.
   user-interface vty 0 4
   ^
 
-[186/304] r1 <TEMP> protocol inbound ssh
+[186/304] r1 <Huawei> protocol inbound ssh
   % Invalid input detected at '^' marker.
   protocol inbound ssh
   ^
 
-[187/304] r1 <TEMP> authentication-mode aaa
+[187/304] r1 <Huawei> authentication-mode aaa
   % Invalid input detected at '^' marker.
   authentication-mode aaa
   ^
 
-[188/304] r1 <TEMP> user privilege level 15
+[188/304] r1 <Huawei> user privilege level 15
   % Invalid input detected at '^' marker.
   user privilege level 15
   ^
 
-[189/304] r1 <TEMP> idle-timeout 5 0
+[189/304] r1 <Huawei> idle-timeout 5 0
   % Invalid input detected at '^' marker.
   idle-timeout 5 0
   ^
 
-[190/304] r1 <TEMP> quit
+[190/304] r1 <Huawei> quit
 <empty>
 
-[191/304] r1 <TEMP> return
+[191/304] r1 <Huawei> return
 <empty>
 
 
 --- [192] § save / reset / reboot ---
-[192/304] r1 <TEMP> save
+[192/304] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.
   Save the configuration successfully.
 
-[193/304] r1 <TEMP> save force
+[193/304] r1 <Huawei> save force
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.
   Save the configuration successfully.
 
-[194/304] r1 <TEMP> display saved-configuration
+[194/304] r1 <Huawei> display saved-configuration
   % Invalid input detected at '^' marker.
   display saved-configuration
           ^
 
-[195/304] r1 <TEMP> reset saved-configuration
+[195/304] r1 <Huawei> reset saved-configuration
   Info: Succeeded in clearing the configuration in the device.
 
-[196/304] r1 <TEMP> compare configuration
+[196/304] r1 <Huawei> compare configuration
   % Invalid input detected at '^' marker.
   compare configuration
   ^
 
-[197/304] r1 <TEMP> startup saved-configuration vrpcfg.zip
+[197/304] r1 <Huawei> startup saved-configuration vrpcfg.zip
   % Invalid input detected at '^' marker.
   startup saved-configuration vrpcfg.zip
   ^
 
-[198/304] r1 <TEMP> reboot fast
+[198/304] r1 <Huawei> reboot fast
   % Invalid input detected at '^' marker.
   reboot fast
          ^
 
-[199/304] r1 <TEMP> reboot
+[199/304] r1 <Huawei> reboot
   Info: The system is now comparing the configuration, please wait.
   Info: System will reboot.
 
 
 --- [200] § regression: display family ---
-[200/304] r1 <TEMP> display version
+[200/304] r1 <Huawei> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  TEMP uptime is 0 days, 0 hours, 0 minutes
+  Huawei uptime is 0 days, 0 hours, 0 minutes
 
-[201/304] r1 <TEMP> display version
+[201/304] r1 <Huawei> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  TEMP uptime is 0 days, 0 hours, 0 minutes
+  Huawei uptime is 0 days, 0 hours, 0 minutes
 
-[202/304] r1 <TEMP> display current-configuration
+[202/304] r1 <Huawei> display current-configuration
   #
-  sysname TEMP
+  sysname Huawei
   #
   dhcp enable
   #
@@ -1180,39 +1475,35 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
-[203/304] r1 <TEMP> display saved-configuration
+[203/304] r1 <Huawei> display saved-configuration
   % Invalid input detected at '^' marker.
   display saved-configuration
           ^
 
-[204/304] r1 <TEMP> display ip interface brief
+[204/304] r1 <Huawei> display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           unassigned           up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack0                         unassigned           down       down
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           unassigned           UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack0                         unassigned           DOWN       DOWN
 
-[205/304] r1 <TEMP> display interface
+[205/304] r1 <Huawei> display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -1244,47 +1535,49 @@ Total steps: 304
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[206/304] r1 <TEMP> display ip routing-table
+[206/304] r1 <Huawei> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 0        Routes : 0
+           Destinations : 1        Routes : 1
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  1.1.1.0/24          Static  60   0     RD    10.0.0.2        
 
-[207/304] r1 <TEMP> display ip routing-table statistics
+[207/304] r1 <Huawei> display ip routing-table statistics
   Proto     route
   --------------------
+  Static    1
   --------------------
-  Total     0
+  Total     1
 
-[208/304] r1 <TEMP> display arp
+[208/304] r1 <Huawei> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[209/304] r1 <TEMP> display arp all
+[209/304] r1 <Huawei> display arp all
   % Invalid input detected at '^' marker.
   display arp all
               ^
 
-[210/304] r1 <TEMP> display ospf peer
+[210/304] r1 <Huawei> display ospf peer
   Error: OSPF is not configured.
 
-[211/304] r1 <TEMP> display ospf interface
+[211/304] r1 <Huawei> display ospf interface
   Error: OSPF is not configured.
 
-[212/304] r1 <TEMP> display ospf routing
+[212/304] r1 <Huawei> display ospf routing
   % Invalid input detected at '^' marker.
   display ospf routing
                ^
 
-[213/304] r1 <TEMP> display ospf lsdb
+[213/304] r1 <Huawei> display ospf lsdb
   Error: OSPF is not configured.
 
-[214/304] r1 <TEMP> display ospf brief
+[214/304] r1 <Huawei> display ospf brief
   Error: OSPF is not configured.
 
-[215/304] r1 <TEMP> display rip
+[215/304] r1 <Huawei> display rip
   RIP process 1
     Version: 2
     Update timer: 30s
@@ -1295,76 +1588,76 @@ Total steps: 304
   
     Routes: 0
 
-[216/304] r1 <TEMP> display rip 1 route
+[216/304] r1 <Huawei> display rip 1 route
   % Invalid input detected at '^' marker.
   display rip 1 route
               ^
 
-[217/304] r1 <TEMP> display bgp peer
+[217/304] r1 <Huawei> display bgp peer
   % Invalid input detected at '^' marker.
   display bgp peer
           ^
 
-[218/304] r1 <TEMP> display bgp routing-table
+[218/304] r1 <Huawei> display bgp routing-table
   % Invalid input detected at '^' marker.
   display bgp routing-table
           ^
 
-[219/304] r1 <TEMP> display nat session all
+[219/304] r1 <Huawei> display nat session all
   % Invalid input detected at '^' marker.
   display nat session all
                       ^
 
-[220/304] r1 <TEMP> display nat address-group
+[220/304] r1 <Huawei> display nat address-group
   % Invalid input detected at '^' marker.
   display nat address-group
               ^
 
-[221/304] r1 <TEMP> display ip pool
+[221/304] r1 <Huawei> display ip pool
   No DHCP pools configured.
 
-[222/304] r1 <TEMP> display acl all
+[222/304] r1 <Huawei> display acl all
   Total 0 ACL(s)
 
-[223/304] r1 <TEMP> display dhcp server statistics
+[223/304] r1 <Huawei> display dhcp server statistics
   % Invalid input detected at '^' marker.
   display dhcp server statistics
                       ^
 
-[224/304] r1 <TEMP> display vrrp
+[224/304] r1 <Huawei> display vrrp
   % Invalid input detected at '^' marker.
   display vrrp
           ^
 
-[225/304] r1 <TEMP> display vrrp brief
+[225/304] r1 <Huawei> display vrrp brief
   % Invalid input detected at '^' marker.
   display vrrp brief
           ^
 
-[226/304] r1 <TEMP> display ike sa
+[226/304] r1 <Huawei> display ike sa
   Info: No IPSec configuration.
 
-[227/304] r1 <TEMP> display ipsec sa
+[227/304] r1 <Huawei> display ipsec sa
   Info: No IPSec configuration.
 
-[228/304] r1 <TEMP> display ipsec policy
+[228/304] r1 <Huawei> display ipsec policy
   Info: No IPSec configuration.
 
-[229/304] r1 <TEMP> display ipsec proposal
+[229/304] r1 <Huawei> display ipsec proposal
   Info: No IPSec configuration.
 
-[230/304] r1 <TEMP> display ike proposal
+[230/304] r1 <Huawei> display ike proposal
   Info: No IPSec configuration.
 
-[231/304] r1 <TEMP> display ike peer
+[231/304] r1 <Huawei> display ike peer
   Info: No IKE peers configured.
 
-[232/304] r1 <TEMP> display snmp-agent sys-info
+[232/304] r1 <Huawei> display snmp-agent sys-info
   The contact person for this managed node: R&D Beijing, Huawei
   The physical location of this node: Beijing China
   SNMP version running in the system: SNMPv2c SNMPv3
 
-[233/304] r1 <TEMP> display ntp status
+[233/304] r1 <Huawei> display ntp status
    clock status: unsynchronized
    clock stratum: 16
    reference clock ID: none
@@ -1373,7 +1666,7 @@ Total steps: 304
    clock precision: 2^18
    clock offset: 0.0000 ms
 
-[234/304] r1 <TEMP> display ntp session
+[234/304] r1 <Huawei> display ntp session
    clock status: unsynchronized
    clock stratum: 16
    reference clock ID: none
@@ -1382,55 +1675,58 @@ Total steps: 304
    clock precision: 2^18
    clock offset: 0.0000 ms
 
-[235/304] r1 <TEMP> display clock
-  2026-06-03 14:32:00
+[235/304] r1 <Huawei> display clock
+  2026-06-03 15:53:18
   Wednesday
   Time Zone(UTC) : UTC
 
-[236/304] r1 <TEMP> display lldp neighbor
+[236/304] r1 <Huawei> display lldp neighbor
   % Invalid input detected at '^' marker.
   display lldp neighbor
           ^
 
-[237/304] r1 <TEMP> display lldp neighbor brief
+[237/304] r1 <Huawei> display lldp neighbor brief
   % Invalid input detected at '^' marker.
   display lldp neighbor brief
           ^
 
-[238/304] r1 <TEMP> display cpu-usage
+[238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 14:32:00
+  CPU Usage Stat. Time : 2026-06-03 15:53:18
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[239/304] r1 <TEMP> display memory-usage
-  Memory utilization statistics at 2026-06-03 14:32:00
+[239/304] r1 <Huawei> display memory-usage
+  Memory utilization statistics at 2026-06-03 15:53:18
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[240/304] r1 <TEMP> display device
-  TEMP's Device status:
+[240/304] r1 <Huawei> display device
+  Huawei's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[241/304] r1 <TEMP> display users
+[241/304] r1 <Huawei> display users
     User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   + 0    CON 0   00:00:00                              pass            no
   
   Wait     : Wait for the user to press ENTER.
 
-[242/304] r1 <TEMP> display history-command
+[242/304] r1 <Huawei> display history-command
   % Invalid input detected at '^' marker.
   display history-command
           ^
 
-[243/304] r1 <TEMP> display logbuffer
+[243/304] r1 <Huawei> display logbuffer
   Logging buffer configuration and contents: enabled
   Allowed max buffer size : 4096
   Actual buffer size : 4096
@@ -1439,7 +1735,7 @@ Total steps: 304
   Overwritten messages : 0
   Current messages : 0
 
-[244/304] r1 <TEMP> display trapbuffer
+[244/304] r1 <Huawei> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -1447,38 +1743,38 @@ Total steps: 304
   Dropped messages : 0
   Current messages : 0
 
-[245/304] r1 <TEMP> display alarm all
+[245/304] r1 <Huawei> display alarm all
   % Invalid input detected at '^' marker.
   display alarm all
                 ^
 
-[246/304] r1 <TEMP> display startup
+[246/304] r1 <Huawei> display startup
   % Invalid input detected at '^' marker.
   display startup
           ^
 
-[247/304] r1 <TEMP> display patch-information
+[247/304] r1 <Huawei> display patch-information
   Info: No patch exists.
 
-[248/304] r1 <TEMP> display elabel
+[248/304] r1 <Huawei> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235TEMP;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305HUAWEI;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[249/304] r1 <TEMP> display license
+[249/304] r1 <Huawei> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[250/304] r1 <TEMP> display interface brief
+[250/304] r1 <Huawei> display interface brief
   PHY: Physical   *down: administratively down
   Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
   GE0/0/0                     up      up        0%    0%       0          0
@@ -1487,12 +1783,20 @@ Total steps: 304
   GE0/0/3                     down    down      0%    0%       0          0
   LoopBack0                   down    down      0%    0%       0          0
 
-[251/304] r1 <TEMP> display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+[251/304] r1 <Huawei> display ip interface GigabitEthernet0/0/0
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is unassigned
+  Broadcast address : 0.0.0.0
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
-[252/304] r1 <TEMP> display interface GigabitEthernet0/0/0
+[252/304] r1 <Huawei> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
@@ -1500,57 +1804,12 @@ Total steps: 304
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[253/304] r1 <TEMP> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[254/304] r1 <TEMP> display diagnostic-information
-  Info: It will take several minutes to save diagnostic information,
-  please wait.....................
-  Info: Diagnostic information collected.
-
-[255/304] r1 <TEMP> display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
-
-[256/304] r1 <TEMP> display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
-
-[257/304] r1 <TEMP> display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
-
-[258/304] r1 <TEMP> display ssh user-information
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
-
-[259/304] r1 <TEMP> display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
-
-[260/304] r1 <TEMP> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
-
-
---- [261] § regression: pipe filters ---
-[261/304] r1 <TEMP> display current-configuration | include ospf
-<empty>
-
-[262/304] r1 <TEMP> display current-configuration | begin interface
+[253/304] r1 <Huawei> display this
+  #
+  sysname Huawei
+  #
+  dhcp enable
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1566,27 +1825,81 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
-[263/304] r1 <TEMP> display current-configuration | exclude #
-  sysname TEMP
+[254/304] r1 <Huawei> display diagnostic-information
+  Info: It will take several minutes to save diagnostic information,
+  please wait.....................
+  Info: Diagnostic information collected.
+
+[255/304] r1 <Huawei> display aaa configuration
+  % Invalid input detected at '^' marker.
+  display aaa configuration
+          ^
+
+[256/304] r1 <Huawei> display aaa online-fail-record
+  % Invalid input detected at '^' marker.
+  display aaa online-fail-record
+          ^
+
+[257/304] r1 <Huawei> display ssh server status
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[258/304] r1 <Huawei> display ssh user-information
+  SSH version                     : 2.0
+  SSH connection timeout          : 60 seconds
+  SSH server key generating interval : 0 hours
+  SSH authentication retries      : 3 times
+  SFTP server                     : Disable
+  STELNET server                  : Enable
+
+[259/304] r1 <Huawei> display user-interface
+  % Invalid input detected at '^' marker.
+  display user-interface
+          ^
+
+[260/304] r1 <Huawei> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [261] § regression: pipe filters ---
+[261/304] r1 <Huawei> display current-configuration | include ospf
+<empty>
+
+[262/304] r1 <Huawei> display current-configuration | begin interface
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  #
+  rip 1
+   version 2
+  #
+
+[263/304] r1 <Huawei> display current-configuration | exclude #
+  sysname Huawei
   dhcp enable
   interface GigabitEthernet0/0/0
    shutdown
@@ -1598,153 +1911,146 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
-[264/304] r1 <TEMP> display ip routing-table | include Direct
+[264/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
 
-[265/304] r1 <TEMP> display ip interface brief | include up
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           unassigned           up         up
+[265/304] r1 <Huawei> display ip interface brief | include up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           unassigned           UP         UP
 
 
 --- [266] § regression: view nav + undo ---
-[266/304] r1 <TEMP> system-view
+[266/304] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[267/304] r1 [TEMP] ip routing-table limit 1000
+[267/304] r1 [Huawei] ip routing-table limit 1000
   % Invalid input detected at '^' marker.
   ip routing-table limit 1000
      ^
 
-[268/304] r1 [TEMP] undo ip routing-table limit 1000
+[268/304] r1 [Huawei] undo ip routing-table limit 1000
   % Invalid input detected at '^' marker.
   undo ip routing-table limit 1000
           ^
 
-[269/304] r1 [TEMP] dhcp enable
+[269/304] r1 [Huawei] dhcp enable
 <empty>
 
-[270/304] r1 [TEMP] undo dhcp enable
+[270/304] r1 [Huawei] undo dhcp enable
 <empty>
 
-[271/304] r1 [TEMP] snmp-agent
+[271/304] r1 [Huawei] snmp-agent
 <empty>
 
-[272/304] r1 [TEMP] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+[272/304] r1 [Huawei] undo snmp-agent
+<empty>
 
-[273/304] r1 [TEMP] ftp server enable
+[273/304] r1 [Huawei] ftp server enable
   % Invalid input detected at '^' marker.
   ftp server enable
   ^
 
-[274/304] r1 [TEMP] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
-
-[275/304] r1 [TEMP] telnet server enable
+[274/304] r1 [Huawei] undo ftp server enable
 <empty>
 
-[276/304] r1 [TEMP] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
-
-[277/304] r1 [TEMP] info-center enable
+[275/304] r1 [Huawei] telnet server enable
 <empty>
 
-[278/304] r1 [TEMP] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
-
-[279/304] r1 [TEMP] lldp enable
+[276/304] r1 [Huawei] undo telnet server enable
 <empty>
 
-[280/304] r1 [TEMP] undo lldp enable
+[277/304] r1 [Huawei] info-center enable
 <empty>
 
-[281/304] r1 [TEMP] ntp-service enable
+[278/304] r1 [Huawei] undo info-center enable
 <empty>
 
-[282/304] r1 [TEMP] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+[279/304] r1 [Huawei] lldp enable
+<empty>
 
-[283/304] r1 [TEMP] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+[280/304] r1 [Huawei] undo lldp enable
+<empty>
 
-[284/304] r1 [TEMP] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+[281/304] r1 [Huawei] ntp-service enable
+<empty>
 
-[285/304] r1 [TEMP] sysname TEST
+[282/304] r1 [Huawei] undo ntp-service enable
+<empty>
+
+[283/304] r1 [Huawei] undo terminal monitor
+<empty>
+
+[284/304] r1 [Huawei] undo terminal monitor
+<empty>
+
+[285/304] r1 [Huawei] sysname TEST
 <empty>
 
 [286/304] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[287/304] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[288/304] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[289/304] r1 [TEST-GE0/0/0] shutdown
+[287/304] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[290/304] r1 [TEST-GE0/0/0] undo shutdown
+[288/304] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+
+[289/304] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[291/304] r1 [TEST-GE0/0/0] quit
+[290/304] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[292/304] r1 [TEST] ospf 1
+[291/304] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[293/304] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[294/304] r1 [TEST-ospf-1] quit
+[292/304] r1 [Huawei] ospf 1
 <empty>
 
-[295/304] r1 [TEST] user-interface vty 0 4
+[293/304] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+  #
+
+[294/304] r1 [Huawei-ospf-1] quit
 <empty>
 
-[296/304] r1 [TEST-ui-vty0 4] quit
+[295/304] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[297/304] r1 [TEST] return
+[296/304] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[297/304] r1 [Huawei] return
 <empty>
 
 
 --- [298] § regression: context help ---
-[298/304] r1 <TEST> system-view
+[298/304] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[299/304] r1 [TEST] interface ?
+[299/304] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[300/304] r1 [TEST] ip ?
+[300/304] r1 [Huawei] ip ?
     host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
+    ip-prefix     Configure an IPv4 prefix list
+    ipv6-prefix   Configure an IPv6 prefix list
 
-[301/304] r1 [TEST] undo ?
+[301/304] r1 [Huawei] undo ?
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
@@ -1757,16 +2063,19 @@ Total steps: 304
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[302/304] r1 [TEST] acl ?
+[302/304] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[303/304] r1 [TEST] return
+[303/304] r1 [Huawei] return
 <empty>
 
-[304/304] r1 <TEST> save
+[304/304] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.

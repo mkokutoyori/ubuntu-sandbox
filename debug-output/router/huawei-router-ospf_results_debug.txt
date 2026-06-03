@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-06-03T14:31:48.950Z
+Generated: 2026-06-03T15:53:04.586Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -682,20 +682,6 @@ Total steps: 247
     network 10.10.6.0 0.0.0.255
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [146/247] r1 <R1> display saved-configuration
@@ -704,15 +690,24 @@ Total steps: 247
           ^
 
 [147/247] r1 <R1> display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack1                         10.10.1.1/255.255.255.0down       down
-  LoopBack2                         10.10.2.1/255.255.255.0down       down
-  LoopBack3                         10.10.3.1/255.255.255.0down       down
-  LoopBack4                         10.10.4.1/255.255.255.0down       down
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack1                         10.10.1.1/24         DOWN       DOWN
+  LoopBack2                         10.10.2.1/24         DOWN       DOWN
+  LoopBack3                         10.10.3.1/24         DOWN       DOWN
+  LoopBack4                         10.10.4.1/24         DOWN       DOWN
 
 [148/247] r1 <R1> display interface
   GE0/0/0 current state : UP
@@ -771,12 +766,12 @@ Total steps: 247
            Destinations : 6        Routes : 6
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  10.10.1.0/255.255.255.0Direct  0    0     D     10.10.1.0       LoopBack1
-  10.10.2.0/255.255.255.0Direct  0    0     D     10.10.2.0       LoopBack2
-  10.10.3.0/255.255.255.0Direct  0    0     D     10.10.3.0       LoopBack3
-  10.10.4.0/255.255.255.0Direct  0    0     D     10.10.4.0       LoopBack4
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  10.10.1.0/24        Direct  0    0     D     10.10.1.1       LoopBack1
+  10.10.2.0/24        Direct  0    0     D     10.10.2.1       LoopBack2
+  10.10.3.0/24        Direct  0    0     D     10.10.3.1       LoopBack3
+  10.10.4.0/24        Direct  0    0     D     10.10.4.1       LoopBack4
 
 [150/247] r1 <R1> display ip routing-table statistics
   Proto     route
@@ -965,7 +960,7 @@ Total steps: 247
    clock offset: 0.0000 ms
 
 [178/247] r1 <R1> display clock
-  2026-06-03 14:31:48
+  2026-06-03 15:53:04
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -982,13 +977,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 14:31:48
+  CPU Usage Stat. Time : 2026-06-03 15:53:04
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-03 14:31:48
+  Memory utilization statistics at 2026-06-03 15:53:04
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -998,7 +993,10 @@ Total steps: 247
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [184/247] r1 <R1> display users
@@ -1048,10 +1046,10 @@ Total steps: 247
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -1073,9 +1071,17 @@ Total steps: 247
   LoopBack4                   down    down      0%    0%       0          0
 
 [194/247] r1 <R1> display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 192.168.1.1/24
+  Broadcast address : 192.168.1.1
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [195/247] r1 <R1> display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1086,9 +1092,46 @@ Total steps: 247
   Output: 0 packets, 0 bytes
 
 [196/247] r1 <R1> display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack1
+   ip address 10.10.1.1 255.255.255.0
+  #
+  interface LoopBack2
+   ip address 10.10.2.1 255.255.255.0
+  #
+  interface LoopBack3
+   ip address 10.10.3.1 255.255.255.0
+  #
+  interface LoopBack4
+   ip address 10.10.4.1 255.255.255.0
+  #
+  #
+  ospf 1
+   router-id 192.168.1.1
+   area 0
+    network 10.10.1.0 0.0.0.255
+    network 10.10.2.0 0.0.0.255
+    network 10.10.3.0 0.0.0.255
+    network 10.10.4.0 0.0.0.255
+    network 10.10.5.0 0.0.0.255
+    network 10.10.6.0 0.0.0.255
+    network 192.168.1.0 0.0.0.255
+    network 10.0.0.0 0.0.0.3
+  #
 
 [197/247] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -1172,20 +1215,6 @@ Total steps: 247
     network 10.10.6.0 0.0.0.255
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [206/247] r1 <R1> display current-configuration | exclude #
@@ -1217,31 +1246,20 @@ Total steps: 247
     network 10.10.6.0 0.0.0.255
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
 [207/247] r1 <R1> display ip routing-table | include Direct
-  192.168.1.0/255.255.255.0Direct  0    0     D     192.168.1.0     GE0/0/0
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  10.10.1.0/255.255.255.0Direct  0    0     D     10.10.1.0       LoopBack1
-  10.10.2.0/255.255.255.0Direct  0    0     D     10.10.2.0       LoopBack2
-  10.10.3.0/255.255.255.0Direct  0    0     D     10.10.3.0       LoopBack3
-  10.10.4.0/255.255.255.0Direct  0    0     D     10.10.4.0       LoopBack4
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  10.10.1.0/24        Direct  0    0     D     10.10.1.1       LoopBack1
+  10.10.2.0/24        Direct  0    0     D     10.10.2.1       LoopBack2
+  10.10.3.0/24        Direct  0    0     D     10.10.3.1       LoopBack3
+  10.10.4.0/24        Direct  0    0     D     10.10.4.1       LoopBack4
 
 [208/247] r1 <R1> display ip interface brief | include up
-  GE0/0/0                           192.168.1.1/255.255.255.0up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
 
 
 --- [209] § regression: view nav + undo ---
@@ -1268,7 +1286,7 @@ Total steps: 247
 <empty>
 
 [215/247] r1 [R1] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [216/247] r1 [R1] ftp server enable
   % Invalid input detected at '^' marker.
@@ -1276,19 +1294,19 @@ Total steps: 247
   ^
 
 [217/247] r1 [R1] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [218/247] r1 [R1] telnet server enable
 <empty>
 
 [219/247] r1 [R1] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [220/247] r1 [R1] info-center enable
 <empty>
 
 [221/247] r1 [R1] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [222/247] r1 [R1] lldp enable
 <empty>
@@ -1300,73 +1318,86 @@ Total steps: 247
 <empty>
 
 [225/247] r1 [R1] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [226/247] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [227/247] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [228/247] r1 [R1] sysname TEST
 <empty>
 
 [229/247] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[230/247] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[231/247] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[232/247] r1 [TEST-GE0/0/0] shutdown
+[230/247] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[233/247] r1 [TEST-GE0/0/0] undo shutdown
+[231/247] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+
+[232/247] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[234/247] r1 [TEST-GE0/0/0] quit
+[233/247] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[235/247] r1 [TEST] ospf 1
+[234/247] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[236/247] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[237/247] r1 [TEST-ospf-1] quit
+[235/247] r1 [Huawei] ospf 1
 <empty>
 
-[238/247] r1 [TEST] user-interface vty 0 4
+[236/247] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+   router-id 192.168.1.1
+   area 0
+    network 10.10.1.0 0.0.0.255
+    network 10.10.2.0 0.0.0.255
+    network 10.10.3.0 0.0.0.255
+    network 10.10.4.0 0.0.0.255
+    network 10.10.5.0 0.0.0.255
+    network 10.10.6.0 0.0.0.255
+    network 192.168.1.0 0.0.0.255
+    network 10.0.0.0 0.0.0.3
+  #
+
+[237/247] r1 [Huawei-ospf-1] quit
 <empty>
 
-[239/247] r1 [TEST-ui-vty0 4] quit
+[238/247] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[240/247] r1 [TEST] return
+[239/247] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[240/247] r1 [Huawei] return
 <empty>
 
 
 --- [241] § regression: context help ---
-[241/247] r1 <TEST> system-view
+[241/247] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[242/247] r1 [TEST] interface ?
+[242/247] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[243/247] r1 [TEST] ip ?
+[243/247] r1 [Huawei] ip ?
     host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
+    ip-prefix     Configure an IPv4 prefix list
+    ipv6-prefix   Configure an IPv6 prefix list
 
-[244/247] r1 [TEST] undo ?
+[244/247] r1 [Huawei] undo ?
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
@@ -1379,16 +1410,19 @@ Total steps: 247
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[245/247] r1 [TEST] acl ?
+[245/247] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[246/247] r1 [TEST] return
+[246/247] r1 [Huawei] return
 <empty>
 
-[247/247] r1 <TEST> save
+[247/247] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.

@@ -41,6 +41,10 @@ import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
+import { IpPrefixListStore } from './router/policy/IpPrefixList';
+import { RoutePolicyStore } from './router/policy/RoutePolicy';
+import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
+import { NqaEngine } from './router/diag/NqaEngine';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -87,20 +91,19 @@ export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslatio
 // ─── Routing Table (RIB) ───────────────────────────────────────────
 
 export interface RouteEntry {
-  /** Network address (e.g. 10.0.1.0) */
   network: IPAddress;
-  /** Subnet mask (e.g. 255.255.255.0) */
   mask: SubnetMask;
-  /** Next-hop IP (null for connected routes → use destination directly) */
   nextHop: IPAddress | null;
-  /** Outgoing interface name */
   iface: string;
-  /** Route type for display */
   type: 'connected' | 'static' | 'default' | 'rip' | 'ospf' | 'eigrp' | 'bgp';
-  /** Administrative distance (lower = preferred) */
   ad: number;
-  /** Metric (lower = preferred when prefix lengths and ADs are equal) */
   metric: number;
+  preference?: number;
+  tag?: number;
+  description?: string;
+  track?: string;
+  vpnInstance?: string;
+  permanent?: boolean;
 }
 
 // ─── Performance Counters (SNMP-ready) ──────────────────────────────
@@ -191,6 +194,16 @@ export abstract class Router extends Equipment {
 
   // ── NAT Engine ───────────────────────────────────────────────
   private natEngine = new NATEngine();
+
+  private ipPrefixListStore = new IpPrefixListStore();
+  private routePolicyStore = new RoutePolicyStore();
+  private trafficPolicyStore = new TrafficPolicyStore();
+  private nqaEngine = new NqaEngine();
+
+  getIpPrefixListStore(): IpPrefixListStore { return this.ipPrefixListStore; }
+  getRoutePolicyStore(): RoutePolicyStore { return this.routePolicyStore; }
+  getTrafficPolicyStore(): TrafficPolicyStore { return this.trafficPolicyStore; }
+  getNqaEngine(): NqaEngine { return this.nqaEngine; }
 
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
@@ -488,10 +501,12 @@ export abstract class Router extends Equipment {
     return [...this.routingTable];
   }
 
-  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 0): boolean {
+  addStaticRoute(
+    network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 0,
+    opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'track' | 'vpnInstance' | 'permanent' | 'iface'>>,
+  ): boolean {
     const iface = this.findInterfaceForIP(nextHop);
-    // Static routes can be installed even when next-hop is not directly reachable (recursive lookup)
-    const ifaceName = iface ? iface.getName() : '';
+    const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
     this.routingTable.push({
       network, mask, nextHop,
@@ -499,6 +514,12 @@ export abstract class Router extends Equipment {
       type: 'static',
       ad: 1,
       metric,
+      preference: opts?.preference,
+      tag: opts?.tag,
+      description: opts?.description,
+      track: opts?.track,
+      vpnInstance: opts?.vpnInstance,
+      permanent: opts?.permanent,
     });
 
     Logger.info(this.id, 'router:route-add',
@@ -506,11 +527,13 @@ export abstract class Router extends Equipment {
     return true;
   }
 
-  setDefaultRoute(nextHop: IPAddress, metric: number = 0): boolean {
+  setDefaultRoute(
+    nextHop: IPAddress, metric: number = 0,
+    opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'iface'>>,
+  ): boolean {
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
     const iface = this.findInterfaceForIP(nextHop);
-    // Default routes can be installed even when next-hop is not directly reachable
-    const ifaceName = iface ? iface.getName() : '';
+    const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
     this.routingTable.push({
       network: new IPAddress('0.0.0.0'),
@@ -520,6 +543,9 @@ export abstract class Router extends Equipment {
       type: 'default',
       ad: 1,
       metric,
+      preference: opts?.preference,
+      tag: opts?.tag,
+      description: opts?.description,
     });
     return true;
   }
@@ -583,23 +609,29 @@ export abstract class Router extends Equipment {
 
   getIPv6RoutingTable() { return this.ipv6Engine.getRoutingTable(); }
 
-  addIPv6StaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, metric: number = 0): boolean {
-    const iface = this._findInterfaceForIPv6(nextHop);
-    if (!iface) {
-      Logger.warn(this.id, 'router:ipv6-route-add-fail',
-        `${this.name}: IPv6 next-hop ${nextHop} not reachable`);
-      return false;
-    }
-    this.ipv6Engine.addStaticRoute(prefix.getNetworkPrefix(prefixLength), prefixLength, nextHop, iface.getName(), metric);
+  addIPv6StaticRoute(
+    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, metric: number = 0,
+    opts?: { iface?: string; preference?: number },
+  ): boolean {
+    const ifaceName = opts?.iface ?? this._findInterfaceForIPv6(nextHop)?.getName() ?? '';
+    this.ipv6Engine.addStaticRoute(prefix.getNetworkPrefix(prefixLength), prefixLength, nextHop, ifaceName, metric);
+    const table = this.ipv6Engine.getRoutingTableInternal();
+    const entry = table[table.length - 1];
+    if (entry && opts?.preference !== undefined) entry.preference = opts.preference;
     Logger.info(this.id, 'router:ipv6-route-add',
       `${this.name}: static route ${prefix}/${prefixLength} via ${nextHop} metric ${metric}`);
     return true;
   }
 
-  setIPv6DefaultRoute(nextHop: IPv6Address, metric: number = 0): boolean {
-    const iface = this._findInterfaceForIPv6(nextHop);
-    if (!iface) return false;
-    this.ipv6Engine.setDefaultRoute(nextHop, iface.getName(), metric);
+  setIPv6DefaultRoute(
+    nextHop: IPv6Address, metric: number = 0,
+    opts?: { iface?: string; preference?: number },
+  ): boolean {
+    const ifaceName = opts?.iface ?? this._findInterfaceForIPv6(nextHop)?.getName() ?? '';
+    this.ipv6Engine.setDefaultRoute(nextHop, ifaceName, metric);
+    const table = this.ipv6Engine.getRoutingTableInternal();
+    const entry = table[table.length - 1];
+    if (entry && opts?.preference !== undefined) entry.preference = opts.preference;
     return true;
   }
 
@@ -1437,6 +1469,16 @@ export abstract class Router extends Equipment {
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
 
+  private _globalToggles = new Map<string, boolean>();
+  _setGlobalToggle(key: string, enabled: boolean): void { this._globalToggles.set(key, enabled); }
+  _getGlobalToggle(key: string): boolean | undefined { return this._globalToggles.get(key); }
+  _undoGlobalToggle(commandTail: string): void {
+    const key = commandTail.replace(/\s+enable\s*$/, '').trim();
+    this._globalToggles.set(key, false);
+    if (key === 'ssh' || /^stelnet/.test(commandTail)) this._setSshServerEnabled(false);
+    if (key === 'dhcp') this._getDHCPServerInternal().disable();
+  }
+
   // ─── SSH server surface (SshExecTarget) ────────────────────────
   //
   // Routers and switches that grow an `ip ssh / stelnet server`
@@ -1529,10 +1571,10 @@ export abstract class Router extends Equipment {
         active: this.sshServerEnabled,
         banner: this.sshBannerText,
       });
-      // Provision the standard cast (alice/alice, bob/bob, …) so
-      // cross-equipment SSH tests don't need per-pairing setup.
       for (const u of ['alice', 'bob', 'carl', 'dave']) {
-        this._addLocalUser(u, 15, u);
+        const acc = NetworkOsAccount.create({ name: u, privilege: 15, secret: u })
+          .asFactoryDefault();
+        this._credentialStore.upsert(acc);
       }
     }
     return this._credentialStore;
@@ -1556,9 +1598,10 @@ export abstract class Router extends Equipment {
   _addLocalUser(name: string, privilege: number, secret: string): void {
     this.getSecurityAuditLog();
     const existing = this.getCredentialStore().get(name);
-    const acc = (existing ?? NetworkOsAccount.create({ name }))
+    let acc = (existing ?? NetworkOsAccount.create({ name }))
       .withPrivilege(privilege)
       .withSecret(secret);
+    if (acc.factoryDefault) acc = acc.asOperatorOwned();
     this.getCredentialStore().upsert(acc);
   }
 
@@ -1574,6 +1617,7 @@ export abstract class Router extends Equipment {
     if (kv.nopassword) account = account.withSecret('', 'plain');
     else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
     if (kv.description) account = account.withDescription(kv.description);
+    if (account.factoryDefault) account = account.asOperatorOwned();
     store.upsert(account);
   }
   _removeLocalUser(name: string): void {
@@ -1584,8 +1628,11 @@ export abstract class Router extends Equipment {
     const a = this.getCredentialStore().get(name);
     return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string }> {
-    return this.getCredentialStore().list().map(a => ({ name: a.name, privilege: a.privilege, secret: a.secret }));
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; factoryDefault: boolean }> {
+    return this.getCredentialStore().list().map(a => ({
+      name: a.name, privilege: a.privilege, secret: a.secret,
+      factoryDefault: a.factoryDefault,
+    }));
   }
 
   _setSshServerEnabled(enabled: boolean): void {

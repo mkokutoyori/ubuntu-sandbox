@@ -33,6 +33,7 @@ export interface NetworkOsAccountSnapshot {
   readonly description: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly factoryDefault: boolean;
 }
 
 export interface NetworkOsAccountInit {
@@ -52,6 +53,7 @@ export interface NetworkOsAccountInit {
   ftpDirectory?: string | null;
   homeDirectory?: string | null;
   description?: string | null;
+  factoryDefault?: boolean;
   now?: number;
 }
 
@@ -110,6 +112,7 @@ export class NetworkOsAccount {
     this.description = s.description;
     this.createdAt = s.createdAt;
     this.updatedAt = s.updatedAt;
+    this.factoryDefault = s.factoryDefault;
   }
 
   static create(init: NetworkOsAccountInit): NetworkOsAccount {
@@ -141,7 +144,16 @@ export class NetworkOsAccount {
       description: init.description ?? null,
       createdAt: now,
       updatedAt: now,
+      factoryDefault: init.factoryDefault ?? false,
     });
+  }
+
+  asFactoryDefault(): NetworkOsAccount {
+    return this.mutate({ factoryDefault: true });
+  }
+
+  asOperatorOwned(): NetworkOsAccount {
+    return this.mutate({ factoryDefault: false });
   }
 
   snapshot(): NetworkOsAccountSnapshot {
@@ -157,6 +169,7 @@ export class NetworkOsAccount {
       accessClassOut: this.accessClassOut, ftpDirectory: this.ftpDirectory,
       homeDirectory: this.homeDirectory, publicKeys: this.publicKeys,
       description: this.description, createdAt: this.createdAt, updatedAt: this.updatedAt,
+      factoryDefault: this.factoryDefault,
     };
   }
 

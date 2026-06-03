@@ -7,6 +7,11 @@
  * entry to these pure functions.
  */
 
+import {
+  HuaweiHardwareProfile, S5720_HARDWARE_PROFILE,
+  renderHardwareDevice, renderHardwareElabel,
+} from './HuaweiHardwareProfile';
+
 const WEEKDAYS = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
 ];
@@ -67,15 +72,11 @@ export function displayUsers(): string {
 }
 
 /** `display device` — chassis/board inventory (single-board S-series/AR). */
-export function displayDevice(hostname: string): string {
-  return [
-    `${hostname}'s Device status:`,
-    '-------------------------------------------------------------------------------',
-    'Slot  Sub  Type            Online    Power    Register     Status   Role',
-    '-------------------------------------------------------------------------------',
-    '1     -    S5720-28X-LI    Present   On       Registered   Normal   Master',
-    '-------------------------------------------------------------------------------',
-  ].join('\n');
+export function displayDevice(
+  hostname: string,
+  profile: HuaweiHardwareProfile = S5720_HARDWARE_PROFILE,
+): string {
+  return renderHardwareDevice(hostname, profile);
 }
 
 /** `display history-command` — recent CLI history for the session. */
@@ -90,20 +91,11 @@ export function displayAlarm(): string {
 }
 
 /** `display elabel` — electronic label / manufacturing info. */
-export function displayElabel(hostname: string): string {
-  return [
-    '/$[ARCHIVES INFO VERSION]',
-    '/$ArchivesInfoVersion=3.0;',
-    '',
-    '[Slot_1]',
-    '/$[Board Integrated Component]',
-    '/$BoardType=S5720-28X-LI-AC;',
-    `/$BarCode=210235${hostname.toUpperCase().slice(0, 8)};`,
-    '/$Item=02359556;',
-    '/$Description=Huawei S5720-28X-LI-AC Switch;',
-    '/$Manufactured=2024-01-01;',
-    '/$VendorName=Huawei;',
-  ].join('\n');
+export function displayElabel(
+  hostname: string,
+  profile: HuaweiHardwareProfile = S5720_HARDWARE_PROFILE,
+): string {
+  return renderHardwareElabel(hostname, profile);
 }
 
 /** `display license` — license state (default trial). */

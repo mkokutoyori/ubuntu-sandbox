@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-06-03T14:31:44.578Z
+Generated: 2026-06-03T15:53:05.194Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -476,6 +476,8 @@ Total steps: 325
 
 [90/325] r1 R1# show ipv6 route
   IPv6 Routing Table
+  S  2001:db8:2::/64 [1/0], via 2001:db8:1::2
+  S  ::/0 [1/0], via 2001:db8:1::2
 
 [91/325] r1 R1# show ipv6 route static
   % Route to static
@@ -1529,7 +1531,7 @@ Total steps: 325
 [253/325] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is 2026-06-03T14:31:44.619Z
+  reference time is 2026-06-03T15:53:05.225Z
   clock offset is 0.00 msec
 
 [254/325] r1 R1(config)# show ntp associations
@@ -1538,7 +1540,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1(config)# show clock
-  *14:31:44.000 UTC Wed Jun 3 2026
+  *15:53:05.000 UTC Wed Jun 3 2026
 
 [256/325] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

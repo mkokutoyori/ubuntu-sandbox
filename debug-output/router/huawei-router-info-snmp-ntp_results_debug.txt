@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-06-03T14:32:06.398Z
+Generated: 2026-06-03T15:53:20.339Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -327,7 +327,7 @@ Total steps: 233
 <empty>
 
 [92/233] r1 [R1] undo ntp-service server disable
-  Error: Unrecognized command "undo ntp-service server disable"
+<empty>
 
 [93/233] r1 [R1] return
 <empty>
@@ -360,7 +360,7 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-06-03 14:32:06
+  2026-06-03 15:53:20
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -400,72 +400,54 @@ Total steps: 233
 <empty>
 
 [107/233] r1 [R1] nqa test-instance admin jitter
-  % Invalid input detected at '^' marker.
-  nqa test-instance admin jitter
-  ^
-
-[108/233] r1 [R1] test-type jitter
-  % Invalid input detected at '^' marker.
-  test-type jitter
-  ^
-
-[109/233] r1 [R1] destination-address ipv4 10.0.0.2
-  % Invalid input detected at '^' marker.
-  destination-address ipv4 10.0.0.2
-  ^
-
-[110/233] r1 [R1] destination-port 16384
-  % Invalid input detected at '^' marker.
-  destination-port 16384
-  ^
-
-[111/233] r1 [R1] frequency 60
-  % Invalid input detected at '^' marker.
-  frequency 60
-  ^
-
-[112/233] r1 [R1] start now
-  % Invalid input detected at '^' marker.
-  start now
-  ^
-
-[113/233] r1 [R1] quit
 <empty>
 
-[114/233] r1 <R1> sflow collector 1 ip 10.0.0.9
-  % Invalid input detected at '^' marker.
-  sflow collector 1 ip 10.0.0.9
-  ^
+[108/233] r1 [R1-nqa-admin-jitter] test-type jitter
+<empty>
 
-[115/233] r1 <R1> sflow agent ip 1.1.1.1
-  % Invalid input detected at '^' marker.
-  sflow agent ip 1.1.1.1
-  ^
+[109/233] r1 [R1-nqa-admin-jitter] destination-address ipv4 10.0.0.2
+<empty>
 
-[116/233] r1 <R1> interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/1
-  ^
+[110/233] r1 [R1-nqa-admin-jitter] destination-port 16384
+<empty>
 
-[117/233] r1 <R1> sflow flow-sampling collector 1
+[111/233] r1 [R1-nqa-admin-jitter] frequency 60
+<empty>
+
+[112/233] r1 [R1-nqa-admin-jitter] start now
+<empty>
+
+[113/233] r1 [R1-nqa-admin-jitter] quit
+<empty>
+
+[114/233] r1 [R1] sflow collector 1 ip 10.0.0.9
+<empty>
+
+[115/233] r1 [R1] sflow agent ip 1.1.1.1
+<empty>
+
+[116/233] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[117/233] r1 [R1-GE0/0/1] sflow flow-sampling collector 1
   % Invalid input detected at '^' marker.
   sflow flow-sampling collector 1
   ^
 
-[118/233] r1 <R1> sflow flow-sampling rate 1000
+[118/233] r1 [R1-GE0/0/1] sflow flow-sampling rate 1000
   % Invalid input detected at '^' marker.
   sflow flow-sampling rate 1000
   ^
 
-[119/233] r1 <R1> sflow counter-sampling collector 1
+[119/233] r1 [R1-GE0/0/1] sflow counter-sampling collector 1
   % Invalid input detected at '^' marker.
   sflow counter-sampling collector 1
   ^
 
-[120/233] r1 <R1> quit
+[120/233] r1 [R1-GE0/0/1] quit
 <empty>
 
-[121/233] r1 <R1> return
+[121/233] r1 [R1] return
 <empty>
 
 [122/233] r1 <R1> display lldp local
@@ -489,9 +471,16 @@ Total steps: 233
           ^
 
 [126/233] r1 <R1> display nqa results test-instance admin jitter
-  % Invalid input detected at '^' marker.
-  display nqa results test-instance admin jitter
-          ^
+  NQA entry(admin, jitter) :
+    Send operation times: 0             Receive response times: 0
+    Completion: active                  RTD OverThresholds number: 0
+    Attempts number: 0    Drop operation number: 0
+    Disconnect operation number: 0              Operation timeout number: 0
+    System busy operation number: 0             Connection fail number: 0
+    Operation sequence errors number: 0         RTT Stats errors number: 0
+    Destination ip address: 10.0.0.2
+    Min/Max/Avg RTT: 0/0/0 ms
+    Packet loss: 0.0%
 
 [127/233] r1 <R1> display sflow
   % Invalid input detected at '^' marker.
@@ -505,8 +494,8 @@ Total steps: 233
            Destinations : 2        Routes : 2
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
 
 
 --- [129] § regression: display family ---
@@ -547,20 +536,6 @@ Total steps: 233
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [132/233] r1 [R1] display saved-configuration
@@ -569,12 +544,21 @@ Total steps: 233
           ^
 
 [133/233] r1 [R1] display ip interface brief
+  *down: administratively down
+  ^down: standby
+  (l): loopback
+  (s): spoofing
+  The number of interface that is UP in Physical is 0
+  The number of interface that is DOWN in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  The number of interface that is DOWN in Protocol is 0
+  
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
-  GE0/0/2                           unassigned           down       down
-  GE0/0/3                           unassigned           down       down
-  LoopBack0                         1.1.1.1/255.255.255.255down       down
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
+  GE0/0/2                           unassigned           DOWN       DOWN
+  GE0/0/3                           unassigned           DOWN       DOWN
+  LoopBack0                         1.1.1.1/32           DOWN       DOWN
 
 [134/233] r1 [R1] display interface
   GE0/0/0 current state : UP
@@ -615,8 +599,8 @@ Total steps: 233
            Destinations : 2        Routes : 2
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
 
 [136/233] r1 [R1] display ip routing-table statistics
   Proto     route
@@ -742,7 +726,7 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [164/233] r1 [R1] display clock
-  2026-06-03 14:32:06
+  2026-06-03 15:53:20
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -759,13 +743,13 @@ Total steps: 233
 [167/233] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 14:32:06
+  CPU Usage Stat. Time : 2026-06-03 15:53:20
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-03 14:32:06
+  Memory utilization statistics at 2026-06-03 15:53:20
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -775,7 +759,10 @@ Total steps: 233
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
-  1     -    S5720-28X-LI    Present   On       Registered   Normal   Master
+  0     -    AR2220          Present   On       Registered   Normal   Master
+  1     -    2GE-COMBO       Present   On       Registered   Normal   -
+  2     -    2SA             Present   On       Registered   Normal   -
+  3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
 [170/233] r1 [R1] display users
@@ -825,10 +812,10 @@ Total steps: 233
   
   [Slot_1]
   /$[Board Integrated Component]
-  /$BoardType=S5720-28X-LI-AC;
-  /$BarCode=210235R1;
-  /$Item=02359556;
-  /$Description=Huawei S5720-28X-LI-AC Switch;
+  /$BoardType=AR2220;
+  /$BarCode=210305R1;
+  /$Item=02113965;
+  /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
@@ -847,9 +834,17 @@ Total steps: 233
   LoopBack0                   down    down      0%    0%       0          0
 
 [180/233] r1 [R1] display ip interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ip interface GigabitEthernet0/0/0
-                       ^
+  GE0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is unassigned
+  Broadcast address : 0.0.0.0
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [181/233] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -860,9 +855,25 @@ Total steps: 233
   Output: 0 packets, 0 bytes
 
 [182/233] r1 [R1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
 
 [183/233] r1 [R1] display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -925,20 +936,6 @@ Total steps: 233
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
   #
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
   #
 
 [192/233] r1 [R1] display current-configuration | exclude #
@@ -953,27 +950,16 @@ Total steps: 233
    shutdown
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
-  aaa
-   local-user alice password cipher alice
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password cipher bob
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password cipher carl
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password cipher dave
-   local-user dave privilege level 15
-   local-user dave service-type ssh
 
 [193/233] r1 [R1] display ip routing-table | include Direct
-  10.0.0.0/255.255.255.252Direct  0    0     D     10.0.0.0        GE0/0/1
-  1.1.1.1/255.255.255.255Direct  0    0     D     1.1.1.1         LoopBack0
+  10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
+  1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
 
 [194/233] r1 [R1] display ip interface brief | include up
-  GE0/0/0                           unassigned           up         up
-  GE0/0/1                           10.0.0.1/255.255.255.252up         up
+  The number of interface that is UP in Physical is 0
+  The number of interface that is UP in Protocol is 0
+  GE0/0/0                           unassigned           UP         UP
+  GE0/0/1                           10.0.0.1/30          UP         UP
 
 
 --- [195] § regression: view nav + undo ---
@@ -1000,7 +986,7 @@ Total steps: 233
 <empty>
 
 [201/233] r1 [R1] undo snmp-agent
-  Error: Unrecognized command "undo snmp-agent"
+<empty>
 
 [202/233] r1 [R1] ftp server enable
   % Invalid input detected at '^' marker.
@@ -1008,19 +994,19 @@ Total steps: 233
   ^
 
 [203/233] r1 [R1] undo ftp server enable
-  Error: Unrecognized command "undo ftp server enable"
+<empty>
 
 [204/233] r1 [R1] telnet server enable
 <empty>
 
 [205/233] r1 [R1] undo telnet server enable
-  Error: Unrecognized command "undo telnet server enable"
+<empty>
 
 [206/233] r1 [R1] info-center enable
 <empty>
 
 [207/233] r1 [R1] undo info-center enable
-  Error: Unrecognized command "undo info-center enable"
+<empty>
 
 [208/233] r1 [R1] lldp enable
 <empty>
@@ -1032,73 +1018,77 @@ Total steps: 233
 <empty>
 
 [211/233] r1 [R1] undo ntp-service enable
-  Error: Unrecognized command "undo ntp-service enable"
+<empty>
 
 [212/233] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [213/233] r1 [R1] undo terminal monitor
-  Error: Unrecognized command "undo terminal monitor"
+<empty>
 
 [214/233] r1 [R1] sysname TEST
 <empty>
 
 [215/233] r1 [TEST] undo sysname TEST
-  Error: Unrecognized command "undo sysname TEST"
-
-[216/233] r1 [TEST] interface GigabitEthernet0/0/0
 <empty>
 
-[217/233] r1 [TEST-GE0/0/0] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[218/233] r1 [TEST-GE0/0/0] shutdown
+[216/233] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[219/233] r1 [TEST-GE0/0/0] undo shutdown
+[217/233] r1 [Huawei-GE0/0/0] display this
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+
+[218/233] r1 [Huawei-GE0/0/0] shutdown
 <empty>
 
-[220/233] r1 [TEST-GE0/0/0] quit
+[219/233] r1 [Huawei-GE0/0/0] undo shutdown
 <empty>
 
-[221/233] r1 [TEST] ospf 1
+[220/233] r1 [Huawei-GE0/0/0] quit
 <empty>
 
-[222/233] r1 [TEST-ospf-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-          ^
-
-[223/233] r1 [TEST-ospf-1] quit
+[221/233] r1 [Huawei] ospf 1
 <empty>
 
-[224/233] r1 [TEST] user-interface vty 0 4
+[222/233] r1 [Huawei-ospf-1] display this
+  #
+  ospf 1
+   router-id 10.0.0.1
+  #
+
+[223/233] r1 [Huawei-ospf-1] quit
 <empty>
 
-[225/233] r1 [TEST-ui-vty0 4] quit
+[224/233] r1 [Huawei] user-interface vty 0 4
 <empty>
 
-[226/233] r1 [TEST] return
+[225/233] r1 [Huawei-ui-vty0 4] quit
+<empty>
+
+[226/233] r1 [Huawei] return
 <empty>
 
 
 --- [227] § regression: context help ---
-[227/233] r1 <TEST> system-view
+[227/233] r1 <Huawei> system-view
   Enter system view, return user view with return command.
 
-[228/233] r1 [TEST] interface ?
+[228/233] r1 [Huawei] interface ?
     WORD  Enter interface view
     <cr>  
 
-[229/233] r1 [TEST] ip ?
+[229/233] r1 [Huawei] ip ?
     host          Configure a static host entry
     route-static  Configure static route
     pool          Enter DHCP pool view
     routing       Enable IP routing
+    ip-prefix     Configure an IPv4 prefix list
+    ipv6-prefix   Configure an IPv6 prefix list
 
-[230/233] r1 [TEST] undo ?
+[230/233] r1 [Huawei] undo ?
     lldp           lldp
     command-alias  Disable CLI alias
     ip             ip
@@ -1111,16 +1101,19 @@ Total steps: 233
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    route-policy   Remove a route-policy
+    traffic        traffic
+    nqa            nqa
     <cr>           
 
-[231/233] r1 [TEST] acl ?
+[231/233] r1 [Huawei] acl ?
     WORD  Configure Access Control List
     <cr>  
 
-[232/233] r1 [TEST] return
+[232/233] r1 [Huawei] return
 <empty>
 
-[233/233] r1 <TEST> save
+[233/233] r1 <Huawei> save
   The current configuration will be written to the device.
   Info: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip
   Now saving the current configuration to the slot.
