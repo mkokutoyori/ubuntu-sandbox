@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-03T19:02:24.106Z
+Generated: 2026-06-03T19:29:40.315Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -456,7 +456,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8C0.20418937 (19:02:24.126 UTC Wed Jun 3 2026)
+  reference time is EDCAFF24.55C28F5C (19:29:40.335 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -476,7 +476,7 @@ Total steps: 322
    ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  *19:02:24.000 UTC Wed Jun 3 2026
+  *19:29:40.000 UTC Wed Jun 3 2026
 
 [128/322] r1 R1# show clock detail
   % Invalid input detected at '^' marker.
@@ -484,7 +484,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1# show calendar
-  19:02:24 UTC Wed Jun 3 2026
+  19:29:40 UTC Wed Jun 3 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -954,9 +954,9 @@ Total steps: 322
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  1.1.1.1         YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  1.1.1.1         YES manual up                    up
 
 [218/322] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1134,7 +1134,7 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8C0.249BA5E3 (19:02:24.143 UTC Wed Jun 3 2026)
+  reference time is EDCAFF24.589374BC (19:29:40.346 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1146,7 +1146,7 @@ Total steps: 322
    ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  *19:02:24.000 UTC Wed Jun 3 2026
+  *19:29:40.000 UTC Wed Jun 3 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1325,9 +1325,9 @@ Total steps: 322
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  1.1.1.1         YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  1.1.1.1         YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -1498,7 +1498,7 @@ Total steps: 322
 [281/322] r1 R1(config)# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  Loopback0                  1.1.1.1         YES manual administratively down down
+  Loopback0                  1.1.1.1         YES manual up                    up
 
 
 --- [282] § regression: mode nav + negation ---
@@ -1572,9 +1572,9 @@ Total steps: 322
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  1.1.1.1         YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  1.1.1.1         YES manual up                    up
 
 [305/322] r1 R1(config-if)# shutdown
 <empty>

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-06-03T19:02:26.749Z
+Generated: 2026-06-03T19:29:31.498Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1003,14 +1003,10 @@ Total steps: 325
 <empty>
 
 [202/325] r1 R1(config-router)# distance 110
-  % Invalid input detected at '^' marker.
-  distance 110
-  ^
+<empty>
 
 [203/325] r1 R1(config-router)# distance ospf intra-area 90 inter-area 100 external 120
-  % Invalid input detected at '^' marker.
-  distance ospf intra-area 90 inter-area 100 external 120
-  ^
+<empty>
 
 [204/325] r1 R1(config-router)# exit
 <empty>
@@ -1261,8 +1257,8 @@ Total steps: 325
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [221/325] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1489,7 +1485,7 @@ Total steps: 325
 [253/325] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8C2.CA3D70A3 (19:02:26.790 UTC Wed Jun 3 2026)
+  reference time is EDCAFF1B.89374BC6 (19:29:31.536 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1(config)# show ntp associations
@@ -1498,7 +1494,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1(config)# show clock
-  *19:02:26.000 UTC Wed Jun 3 2026
+  *19:29:31.000 UTC Wed Jun 3 2026
 
 [256/325] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1719,8 +1715,8 @@ Total steps: 325
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -2089,8 +2085,8 @@ Total steps: 325
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [308/325] r1 R1(config-if)# shutdown
 <empty>

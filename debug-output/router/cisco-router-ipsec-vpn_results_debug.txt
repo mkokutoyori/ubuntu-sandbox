@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-03T19:02:25.250Z
+Generated: 2026-06-03T19:29:43.067Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1150,12 +1150,12 @@ Total steps: 370
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  1.1.1.1         YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel100                  172.20.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  1.1.1.1         YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel100                  172.20.0.1      YES manual up                    up
 
 [266/370] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1387,7 +1387,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8C1.476C8B43 (19:02:25.279 UTC Wed Jun 3 2026)
+  reference time is EDCAFF27.189374BC (19:29:43.096 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1396,7 +1396,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *19:02:25.000 UTC Wed Jun 3 2026
+  *19:29:43.000 UTC Wed Jun 3 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1600,12 +1600,12 @@ Total steps: 370
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  1.1.1.1         YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel100                  172.20.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  1.1.1.1         YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel100                  172.20.0.1      YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -1812,10 +1812,10 @@ Total steps: 370
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  Loopback0                  1.1.1.1         YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel100                  172.20.0.1      YES manual administratively down down
+  Loopback0                  1.1.1.1         YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel100                  172.20.0.1      YES manual up                    up
 
 
 --- [330] § regression: mode nav + negation ---
@@ -1889,12 +1889,12 @@ Total steps: 370
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  1.1.1.1         YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel100                  172.20.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  1.1.1.1         YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel100                  172.20.0.1      YES manual up                    up
 
 [353/370] r1 R1(config-if)# shutdown
 <empty>

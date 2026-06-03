@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-06-03T19:02:27.052Z
+Generated: 2026-06-03T19:29:37.453Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -449,7 +449,7 @@ Total steps: 247
 
 [121/247] r1 <R1> display ospf interface
    GE0/0/0 (192.168.1.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 10  State: DR
      Type: broadcast  Priority: 1
      DR: 192.168.1.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
@@ -463,28 +463,28 @@ Total steps: 247
      Neighbors: 0
   
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.1.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.2.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.3.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.4.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
@@ -834,7 +834,7 @@ Total steps: 247
 
 [154/247] r1 <R1> display ospf interface
    GE0/0/0 (192.168.1.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 10  State: DR
      Type: broadcast  Priority: 1
      DR: 192.168.1.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
@@ -848,28 +848,28 @@ Total steps: 247
      Neighbors: 0
   
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.1.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.2.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.3.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 10000000  State: DR
+     Area: 0  Cost: 1  State: DR
      Type: broadcast  Priority: 1
      DR: 10.10.4.1  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
@@ -990,7 +990,7 @@ Total steps: 247
    clock offset: 0.0000 ms
 
 [178/247] r1 <R1> display clock
-  2026-06-03 19:02:27
+  2026-06-03 19:29:37
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -1003,13 +1003,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 19:02:27
+  CPU Usage Stat. Time : 2026-06-03 19:29:37
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-03 19:02:27
+  Memory utilization statistics at 2026-06-03 19:29:37
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%

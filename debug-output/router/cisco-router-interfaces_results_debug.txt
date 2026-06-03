@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-03T19:02:28.602Z
+Generated: 2026-06-03T19:29:36.104Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -277,16 +277,16 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
 
 
 --- [75] § unnumbered / dhcp / negotiated ---
@@ -591,17 +591,17 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
 
 [145/343] r1 R1# show interfaces GigabitEthernet0/0.10
   % Invalid input detected at '^' marker.
@@ -692,20 +692,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [169/343] r1 R1# show interfaces Tunnel0
   Tunnel0 is up, line protocol is up
@@ -756,22 +756,22 @@ Total steps: 343
 
 [181/343] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.100.1   YES manual administratively down down
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [182/343] r1 R1(config-if)# no shutdown
 <empty>
@@ -788,21 +788,21 @@ Total steps: 343
 [186/343] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/1         10.0.0.1        YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [187/343] r1 R1(config-if)# no shutdown
 <empty>
@@ -1150,20 +1150,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [230/343] r1 R1# show ipv6 interface brief
   % Invalid input detected at '^' marker.
@@ -1178,6 +1178,18 @@ Total steps: 343
 [232/343] r1 R1# show ip interface brief | include up
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [233/343] r1 R1# end
 <empty>
@@ -1297,20 +1309,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [239/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1531,7 +1543,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8C4.A20C49BA (19:02:28.633 UTC Wed Jun 3 2026)
+  reference time is EDCAFF20.23126E97 (19:29:36.137 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1540,7 +1552,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *19:02:28.000 UTC Wed Jun 3 2026
+  *19:29:36.000 UTC Wed Jun 3 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1818,20 +1830,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -2138,17 +2150,17 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
 
 
 --- [303] § regression: mode nav + negation ---
@@ -2222,20 +2234,20 @@ Total steps: 343
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.100.1   YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback1                  10.255.255.1    YES manual administratively down down
-  Loopback2                  10.255.255.2    YES manual administratively down down
-  Loopback3                  10.255.255.3    YES manual administratively down down
-  Loopback4                  10.255.255.4    YES manual administratively down down
-  Loopback5                  10.255.255.5    YES manual administratively down down
-  Loopback6                  10.255.255.6    YES manual administratively down down
-  Loopback7                  10.255.255.7    YES manual administratively down down
-  Loopback8                  10.255.255.8    YES manual administratively down down
-  Loopback100                172.31.0.1      YES manual administratively down down
-  Tunnel0                    172.16.0.1      YES manual administratively down down
-  Tunnel1                    172.16.0.5      YES manual administratively down down
-  Tunnel2                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback1                  10.255.255.1    YES manual up                    up
+  Loopback2                  10.255.255.2    YES manual up                    up
+  Loopback3                  10.255.255.3    YES manual up                    up
+  Loopback4                  10.255.255.4    YES manual up                    up
+  Loopback5                  10.255.255.5    YES manual up                    up
+  Loopback6                  10.255.255.6    YES manual up                    up
+  Loopback7                  10.255.255.7    YES manual up                    up
+  Loopback8                  10.255.255.8    YES manual up                    up
+  Loopback100                172.31.0.1      YES manual up                    up
+  Tunnel0                    172.16.0.1      YES manual up                    up
+  Tunnel1                    172.16.0.5      YES manual up                    up
+  Tunnel2                    unassigned      YES manual up                    up
 
 [326/343] r1 R1(config-if)# shutdown
 <empty>

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-06-03T19:02:19.782Z
+Generated: 2026-06-03T19:29:28.083Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [4/482] r1 R1> show calendar
-  19:02:19 UTC Wed Jun 3 2026
+  19:29:28 UTC Wed Jun 3 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -126,8 +126,8 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [17/482] r1 R1> show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -372,7 +372,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8BB.D0E56041 (19:02:19.816 UTC Wed Jun 3 2026)
+  reference time is EDCAFF18.1A9FBE76 (19:29:28.104 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -548,8 +548,8 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   No routes configured.
@@ -616,6 +616,9 @@ Total steps: 482
     enable      Enter privileged EXEC mode
     show        show
     terminal    Set terminal parameters
+    clear       clear
+    debug       debug
+    no          no
     ping        Send echo messages
     traceroute  Trace route to destination
 
@@ -724,10 +727,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [81/482] r1 R1# show calendar
-  19:02:19 UTC Wed Jun 3 2026
+  19:29:28 UTC Wed Jun 3 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -821,8 +824,8 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
 
 [94/482] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1067,7 +1070,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8BB.D22D0E56 (19:02:19.821 UTC Wed Jun 3 2026)
+  reference time is EDCAFF18.1C6A7EF9 (19:29:28.111 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1243,8 +1246,8 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
   No routes configured.
@@ -1355,7 +1358,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1364,7 +1367,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1373,7 +1376,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1382,7 +1385,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1391,7 +1394,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1400,7 +1403,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1409,7 +1412,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1418,7 +1421,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1427,7 +1430,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1436,7 +1439,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1445,7 +1448,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1454,7 +1457,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1463,7 +1466,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1472,7 +1475,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1481,7 +1484,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1490,7 +1493,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1499,7 +1502,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1508,7 +1511,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1517,7 +1520,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1528,7 +1531,7 @@ Total steps: 482
   ^
 
 [214/482] r1 R1(config)# do show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [215/482] r1 R1(config)# exit
 <empty>
@@ -1811,7 +1814,7 @@ Total steps: 482
     forward-protocol  forward-protocol
     access-group      Set access group on interface
     nat               nat
-    ospf              ospf
+    ospf              OSPF interface configuration
     verify            verify
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
@@ -1819,6 +1822,10 @@ Total steps: 482
     <cr>  
 
 [274/482] r1 R1-EDGE(config-if)# ip ospf ?
+    bfd                  Enable BFD on this OSPF interface
+    flood-reduction      Enable OSPF flood reduction
+    database-filter      OSPF database filter
+    area                 Enable OSPF on this interface
     cost                 Set OSPF cost on interface
     priority             Set OSPF priority on interface
     hello-interval       Set OSPF hello interval
@@ -1831,6 +1838,7 @@ Total steps: 482
     mtu-ignore           Ignore MTU mismatch in DBD packets
     retransmit-interval  Set OSPF retransmit interval
     transmit-delay       Set OSPF transmit delay
+    <cr>                 
 
 [275/482] r1 R1-EDGE(config-if)# standby ?
     WORD  HSRP configuration
@@ -2049,6 +2057,8 @@ Total steps: 482
 [317/482] r1 R1-EDGE# show ip interface brief | include up
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [318/482] r1 R1-EDGE# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -2367,10 +2377,10 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [361/482] r1 R1-EDGE# show aliases
   Exec mode aliases:
@@ -2620,10 +2630,10 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [378/482] r1 R1-EDGE# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -2834,7 +2844,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCAF8BB.DBA5E353 (19:02:19.858 UTC Wed Jun 3 2026)
+  reference time is EDCAFF18.29FBE76C (19:29:28.164 UTC Wed Jun 3 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -2843,7 +2853,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *19:02:19.000 UTC Wed Jun 3 2026
+  *19:29:28.000 UTC Wed Jun 3 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3045,10 +3055,10 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -3332,10 +3342,10 @@ Total steps: 482
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual administratively down down
-  GigabitEthernet0/3         unassigned      YES manual administratively down down
-  Loopback0                  unassigned      YES manual administratively down down
-  Tunnel0                    unassigned      YES manual administratively down down
+  GigabitEthernet0/2         unassigned      YES manual down                  down
+  GigabitEthernet0/3         unassigned      YES manual down                  down
+  Loopback0                  unassigned      YES manual up                    up
+  Tunnel0                    unassigned      YES manual up                    up
 
 [465/482] r1 R1-EDGE(config-if)# shutdown
 <empty>
