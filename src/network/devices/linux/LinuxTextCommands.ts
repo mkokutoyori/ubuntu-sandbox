@@ -303,41 +303,86 @@ export function cmdHead(ctx: ShellContext, args: string[], stdin?: string): stri
 
 export function cmdWc(ctx: ShellContext, args: string[], stdin?: string): string {
   let countBytes = false;
+  let countChars = false;
   let countLines = false;
   let countWords = false;
+  let countMaxLine = false;
   const files: string[] = [];
 
-  for (const a of args) {
-    if (a === '-c') { countBytes = true; continue; }
-    if (a === '-l') { countLines = true; continue; }
-    if (a === '-w') { countWords = true; continue; }
+  // Expand combined short options (`-lw`, `-clw`) the way real wc does.
+  const expanded = args.flatMap((a) => {
+    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2) return [a];
+    return a.slice(1).split('').map(c => `-${c}`);
+  });
+  for (const a of expanded) {
+    if (a === '-c' || a === '--bytes') { countBytes = true; continue; }
+    if (a === '-m' || a === '--chars') { countChars = true; continue; }
+    if (a === '-l' || a === '--lines') { countLines = true; continue; }
+    if (a === '-w' || a === '--words') { countWords = true; continue; }
+    if (a === '-L' || a === '--max-line-length') { countMaxLine = true; continue; }
     if (!a.startsWith('-')) files.push(a);
   }
 
-  // Default: show all three
-  if (!countBytes && !countLines && !countWords) {
-    countBytes = true; countLines = true; countWords = true;
+  // Default: lines + words + bytes (POSIX order).
+  if (!countBytes && !countChars && !countLines && !countWords && !countMaxLine) {
+    countLines = true; countWords = true; countBytes = true;
   }
 
-  const processContent = (content: string, filename?: string): string => {
+  interface Stats { lines: number; words: number; bytes: number; chars: number; maxLine: number }
+
+  const statsOf = (content: string): Stats => {
+    // `lines` is the count of '\n' bytes — real wc's metric, so the
+    // tail of a file with no final newline doesn't add a phantom line.
+    const lines = (content.match(/\n/g) ?? []).length;
+    const words = content.split(/\s+/).filter(Boolean).length;
+    const bytes = content.length;
+    // For an ASCII-only sandbox bytes == chars; multi-byte support
+    // would require encoding into UTF-8 first.
+    const chars = bytes;
+    let maxLine = 0;
+    for (const l of content.split('\n')) {
+      if (l.length > maxLine) maxLine = l.length;
+    }
+    return { lines, words, bytes, chars, maxLine };
+  };
+
+  // wc right-pads each metric column to 7 chars (real coreutils).
+  const formatRow = (s: Stats, filename?: string): string => {
     const parts: string[] = [];
-    if (countLines) parts.push(content.split('\n').filter((_, i, arr) => i < arr.length - 1 || arr[arr.length - 1] !== '').length.toString());
-    if (countWords) parts.push(content.split(/\s+/).filter(Boolean).length.toString());
-    if (countBytes) parts.push(content.length.toString());
-    if (filename) parts.push(filename);
-    return parts.join(' ');
+    const push = (n: number) => parts.push(String(n).padStart(7));
+    if (countLines) push(s.lines);
+    if (countWords) push(s.words);
+    if (countChars) push(s.chars);
+    if (countBytes) push(s.bytes);
+    if (countMaxLine) push(s.maxLine);
+    const row = parts.join(' ').trimStart();
+    return filename ? `${parts.join(' ')} ${filename}` : row;
   };
 
   if (files.length === 0) {
-    return stdin !== undefined ? processContent(stdin) : '';
+    if (stdin === undefined) return '';
+    return formatRow(statsOf(stdin));
   }
 
   const results: string[] = [];
+  const totals: Stats = { lines: 0, words: 0, bytes: 0, chars: 0, maxLine: 0 };
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
     const content = ctx.vfs.readFile(absPath);
-    if (content !== null) results.push(processContent(content, f));
+    if (content === null) {
+      results.push(`wc: ${f}: No such file or directory`);
+      continue;
+    }
+    const s = statsOf(content);
+    results.push(formatRow(s, f));
+    totals.lines += s.lines;
+    totals.words += s.words;
+    totals.bytes += s.bytes;
+    totals.chars += s.chars;
+    if (s.maxLine > totals.maxLine) totals.maxLine = s.maxLine;
   }
+  // Real wc adds a "total" row when given more than one file.
+  if (files.length > 1) results.push(formatRow(totals, 'total'));
   return results.join('\n');
 }
 
