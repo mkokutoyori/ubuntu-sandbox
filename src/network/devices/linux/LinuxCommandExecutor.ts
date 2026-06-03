@@ -1160,7 +1160,20 @@ export class LinuxCommandExecutor {
     // auth.log line and session-table entry, file writes, … — must still
     // happen so `jobs`, `who`, `w` and the logs stay coherent. The
     // command's own stdout is detached from the terminal.
-    try { this.execute(cmdLine); } catch { /* background failures are silent */ }
+    let captured = '';
+    let exitCode = 0;
+    try {
+      captured = this.execute(cmdLine);
+      exitCode = this.lastExitCode;
+    } catch { /* background failures are silent */ }
+    // The sync simulator executes the work eagerly. We still want
+    // `jobs` to report the job as Running until the user explicitly
+    // brings it forward with `fg`/`wait`/`bg`, mirroring how a real
+    // bash shows `sleep 60 &` for the duration of the sleep. The
+    // captured output and exit code are stashed on the job for cmdFg
+    // to drain when the user actually waits on it.
+    job.capturedOutput = captured;
+    job.exitCode = exitCode;
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${job.id}] ${proc.pid}`);
@@ -1191,7 +1204,9 @@ export class LinuxCommandExecutor {
             return `Connection closed by ${host}`;
           }
         }
-        return cmdFg(args, ctx).output;
+        const r = cmdFg(args, ctx);
+        this.lastExitCode = r.exitCode;
+        return r.output;
       }
       case 'bg':     return cmdBg(args, ctx).output;
       case 'wait':   return cmdWait(args, ctx).output;

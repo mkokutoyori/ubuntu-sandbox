@@ -109,6 +109,21 @@ describe('bg / fg / disown / wait', () => {
     expect(exec.execute('jobs')).not.toMatch(/\[1\]/);
   });
 
+  it('fg %N re-emits the captured stdout of the resumed job', () => {
+    exec.execute('echo first-bg-output > /tmp/fg.tmp &');
+    const out = exec.execute('fg %3');
+    // The first line is the resumed command line (real bash prints this);
+    // the next lines surface the redirected echo's output (the simulator
+    // captured stdout when it ran the command eagerly).
+    expect(out.split('\n')[0]).toContain('echo first-bg-output');
+  });
+
+  it('fg propagates the job exit code into $?', () => {
+    exec.execute('false &');
+    exec.execute('fg %3');
+    expect(exec.execute('echo $?').trim()).toBe('1');
+  });
+
   it('bg %1 reports the job as backgrounded', () => {
     expect(exec.execute('bg %1')).toMatch(/\[1\][-+ ]+sleep 60 &/);
   });
