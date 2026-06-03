@@ -329,6 +329,16 @@ export class LinuxLogManager {
     // Filter entries
     let entries = this.filterEntries(unitFilter, priorityFilter, pidFilter);
 
+    // Hide entries with timestamps in the future. The boot-time canned
+    // messages (kernel + systemd + sshd "Server listening on …") are
+    // staggered along synthetic offsets from bootTime — when the host
+    // is queried within the first few seconds, some offsets exceed real
+    // wall-clock time and would surface as "events that haven't
+    // happened yet" relative to `date(1)`. Real journalctl only ever
+    // returns entries it has already received.
+    const nowMs = Date.now();
+    entries = entries.filter((e) => e.timestamp.getTime() <= nowMs);
+
     if (entries.length === 0) return '-- No entries --';
 
     // Apply -n

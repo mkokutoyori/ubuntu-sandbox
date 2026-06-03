@@ -682,14 +682,15 @@ export class LinuxServiceManager {
     const uid = userEntry === 'root' ? 0 : 1;
     const gid = userEntry === 'root' ? 0 : 1;
     const expanded = u.execStart.replace(/\$MAINPID/g, '');
+    const profile = serviceMemoryProfile(u.name);
     const proc = this.processMgr.spawn({
       command: expanded,
       user: userEntry,
       uid,
       gid,
       serviceName: u.name,
-      vsize: 80000,
-      rss: 8000,
+      vsize: profile.vsize,
+      rss: profile.rss,
     });
     u.mainPid = proc.pid;
     u.activeSince = new Date();
@@ -838,4 +839,53 @@ export function parseUnitFile(content: string): ParsedUnit {
     }
   }
   return out;
+}
+
+/** Plausible VSZ/RSS (in KiB) for each well-known systemd unit, with
+ *  small ±10% jitter so two daemons of the same family don't look like
+ *  pixel-perfect clones in `ps aux` / `top`. Falls back to a generic
+ *  middleweight daemon footprint. */
+function serviceMemoryProfile(name: string): { vsize: number; rss: number } {
+  const table: Record<string, [number, number]> = {
+    'systemd':              [169000, 13000],
+    'systemd-journald':     [55000,  5400],
+    'systemd-logind':       [82000,  3900],
+    'systemd-resolved':     [98000,  6800],
+    'systemd-timesyncd':    [85000,  3000],
+    'systemd-networkd':     [89000,  4900],
+    'systemd-udevd':        [25000,  4400],
+    'sshd':                 [15000,  6200],
+    'cron':                 [10000,  2400],
+    'atd':                  [8200,   1600],
+    'rsyslog':              [223000, 4700],
+    'dbus':                 [9500,   3500],
+    'dbus-daemon':          [9500,   3500],
+    'auditd':               [82000,  4200],
+    'apparmor':             [3500,   200],
+    'NetworkManager':       [310000, 11000],
+    'polkit':               [185000, 8800],
+    'polkitd':              [185000, 8800],
+    'getty':                [5400,   1700],
+    'agetty':               [5400,   1700],
+    'snapd':                [820000, 35000],
+    'unattended-upgrade':   [126000, 16000],
+    'nginx':                [55000,  4900],
+    'apache2':              [220000, 12000],
+    'mariadbd':             [1180000, 130000],
+    'mysqld':               [1180000, 130000],
+    'postgres':             [355000, 26000],
+    'redis-server':         [62000,  9700],
+    'docker':               [1450000, 70000],
+    'containerd':           [1450000, 65000],
+  };
+  const base = table[name] ?? [48000, 4300];
+  // Deterministic jitter so a given service name always renders the
+  // same numbers across calls (otherwise `ps` and `top` would disagree).
+  let seed = 0;
+  for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) >>> 0;
+  const jitter = (((seed % 2000) - 1000) / 10000); // ±10 %
+  return {
+    vsize: Math.max(1024, Math.round(base[0] * (1 + jitter))),
+    rss:   Math.max(256,  Math.round(base[1] * (1 + jitter * 0.7))),
+  };
 }
