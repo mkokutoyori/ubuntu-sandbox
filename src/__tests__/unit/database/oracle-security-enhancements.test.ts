@@ -140,6 +140,26 @@ describe('Data Redaction (DBMS_REDACT)', () => {
     expect(out).toMatch(/DATE/);
     sh.dispose();
   });
+
+  it('actually masks HR.EMPLOYEES.SALARY for non-HR users (FULL → 0)', () => {
+    const sh = newSession('rdc-4');
+    run(sh, "CREATE USER OBSERVER IDENTIFIED BY pass123;");
+    run(sh, "GRANT CREATE SESSION TO OBSERVER;");
+    run(sh, "GRANT SELECT ON HR.EMPLOYEES TO OBSERVER;");
+    run(sh, "CONNECT OBSERVER/pass123;");
+    const out = run(sh, "SELECT SALARY FROM HR.EMPLOYEES WHERE ROWNUM = 1;");
+    expect(out).toMatch(/^\s*0\s*$/m);
+    sh.dispose();
+  });
+
+  it('does not mask the same column for HR (policy expression exempts HR)', () => {
+    const sh = newSession('rdc-5');
+    const out = run(sh, "CONNECT HR/HR;");
+    void out;
+    const r = run(sh, "SELECT SALARY FROM HR.EMPLOYEES WHERE ROWNUM = 1;");
+    expect(r).not.toMatch(/^\s*0\s*$/m);
+    sh.dispose();
+  });
 });
 
 describe('component registry + feature usage', () => {

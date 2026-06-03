@@ -726,6 +726,40 @@ export class OracleExecutor extends BaseExecutor {
     return this.executeSelectFromTable(stmt);
   }
 
+  /**
+   * Apply DBMS_REDACT policies at row-source level when loading a table.
+   * Bypassed for SYS / SYSTEM and any user whose name appears in the
+   * policy expression's `SESSION_USER NOT IN (…)` exclusion list.
+   */
+  private maybeRedactRows(
+    schema: string, tableName: string,
+    cols: StorageColMeta[], rows: StorageRow[],
+  ): StorageRow[] {
+    if (!rows.length) return rows;
+    const user = (this.context.currentUser ?? '').toUpperCase();
+    if (user === 'SYS' || user === 'SYSTEM') return rows;
+    const redact = (this.instance as unknown as {
+      redaction?: import('./security/DataRedactionManager').DataRedactionManager;
+    }).redaction;
+    if (!redact) return rows;
+    const map = redact.findActiveRedactions(schema, tableName, user);
+    if (map.size === 0) return rows;
+    const indexed: Array<{ i: number; action: import('./security/DataRedactionManager').RedactionColumn } | null> =
+      cols.map((c, i) => {
+        const a = map.get(c.name.toUpperCase());
+        return a ? { i, action: a } : null;
+      });
+    if (!indexed.some(Boolean)) return rows;
+    return rows.map((row) => {
+      const next = row.slice();
+      for (const e of indexed) {
+        if (!e) continue;
+        next[e.i] = redact.applyRedaction(next[e.i], e.action) as StorageRow[number];
+      }
+      return next;
+    });
+  }
+
   // ── WITH / CTE ──────────────────────────────────────────────────
 
   private executeWithCTE(stmt: SelectStatement): ResultSet {
@@ -1023,7 +1057,8 @@ export class OracleExecutor extends BaseExecutor {
     this.requireObjectAccess(schema, tableName, 'SELECT');
 
     const meta = this.storage.getTableMeta(schema, tableName)!;
-    const rows = this.storage.getRows(schema, tableName);
+    const storageRows = this.storage.getRows(schema, tableName);
+    const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
     const prefix = alias || tableName;
