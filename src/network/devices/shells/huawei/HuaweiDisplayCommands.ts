@@ -786,11 +786,141 @@ export function registerDisplayCommands(
   });
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
   trie.register('display arp', 'Display ARP table', () => displayArp(getRouter()));
+  trie.register('display arp all', 'Display all ARP entries', () => displayArp(getRouter()));
   trie.register('display arp static', 'Display static ARP entries', () => displayArpFiltered(getRouter(), 'static'));
   trie.register('display arp dynamic', 'Display dynamic ARP entries', () => displayArpFiltered(getRouter(), 'dynamic'));
   trie.register('display current-configuration', 'Display running configuration', () => {
     const s = getState();
     return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+  });
+
+  trie.register('display saved-configuration', 'Display saved configuration', () => {
+    const s = getState();
+    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+  });
+
+  trie.register('display startup', 'Display startup configuration', () => {
+    return [
+      'MainBoard:',
+      `  Configured startup system software:    flash:/vrp.cc`,
+      `  Startup system software:                flash:/vrp.cc`,
+      `  Next startup system software:           flash:/vrp.cc`,
+      `  Startup saved-configuration file:       flash:/vrpcfg.zip`,
+      `  Next startup saved-configuration file:  flash:/vrpcfg.zip`,
+      `  Startup license file:                   NULL`,
+      `  Next startup license file:              NULL`,
+      `  Startup patch package:                  NULL`,
+      `  Next startup patch package:             NULL`,
+    ].join('\n');
+  });
+
+  trie.registerGreedy('display history-command', 'Display CLI history', () => {
+    return 'Info: No history command.';
+  });
+
+  trie.registerGreedy('display alarm', 'Display alarm records', () =>
+    commonDisplayAlarm());
+
+  trie.register('display aaa configuration', 'Display AAA configuration', () => {
+    return [
+      '  Domain Name           : default',
+      '  Domain State          : Active',
+      '  Authentication-scheme : default',
+      '  Authorization-scheme  : default',
+      '  Accounting-scheme     : default',
+      '  Service-scheme        : -',
+      '  RADIUS-server-template: -',
+      '  HWTACACS-server-template: -',
+    ].join('\n');
+  });
+
+  trie.register('display aaa online-fail-record', 'Display AAA failed login attempts', () => {
+    return 'Info: No online-fail record.';
+  });
+
+  trie.register('display user-interface', 'Display user interface info', () => {
+    const vty = (getRouter() as unknown as { _getVtyLineConfig?: () => { renderAllHuawei: () => string[] } })._getVtyLineConfig?.();
+    const cfg = vty ? vty.renderAllHuawei() : [];
+    const lines = [
+      '  Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int',
+      '+ 0      CON 0           9600     -      0      0            N      -',
+      '  34     VTY 0           -        -      0      0            N      -',
+      '  35     VTY 1           -        -      0      0            N      -',
+      '  36     VTY 2           -        -      0      0            N      -',
+      '  37     VTY 3           -        -      0      0            N      -',
+      '  38     VTY 4           -        -      0      0            N      -',
+    ];
+    if (cfg.length > 0) { lines.push(''); lines.push(...cfg); }
+    return lines.join('\n');
+  });
+
+  trie.register('display dhcp server statistics', 'Display DHCP server statistics', () => {
+    const dhcp = getRouter()._getDHCPServerInternal();
+    const pools = dhcp.getAllPools();
+    return [
+      'DHCP server packets statistics:',
+      '  Receive total: 0',
+      '  Send total: 0',
+      '  Discover: 0      Offer: 0',
+      '  Request: 0       Ack: 0',
+      '  Nak: 0           Release: 0',
+      '  Inform: 0        Decline: 0',
+      `Pool number: ${pools.size}`,
+    ].join('\n');
+  });
+
+  trie.register('display nat session all', 'Display NAT session table', () => {
+    return 'Info: No NAT session is found.';
+  });
+
+  trie.register('display nat address-group', 'Display NAT address groups', () => {
+    return 'Info: No NAT address-group is configured.';
+  });
+
+  trie.register('display vrrp', 'Display VRRP groups', () => {
+    return 'Info: No VRRP backup group is configured.';
+  });
+
+  trie.register('display vrrp brief', 'Display VRRP brief', () => {
+    return [
+      'Total: 0     Master: 0     Backup: 0     Non-active: 0',
+      'VRID  State        Interface                Type     Virtual IP',
+    ].join('\n');
+  });
+
+  trie.register('display lldp neighbor', 'Display LLDP neighbors', () => {
+    return 'Info: No LLDP neighbor is found.';
+  });
+
+  trie.register('display lldp neighbor brief', 'Display LLDP brief', () => {
+    return 'Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)';
+  });
+
+  trie.registerGreedy('display bgp peer', 'Display BGP peers', () => {
+    return 'Info: BGP is not running.';
+  });
+
+  trie.registerGreedy('display bgp routing-table', 'Display BGP routing table', () => {
+    return 'Info: BGP is not running.';
+  });
+
+  trie.register('display ospf routing', 'Display OSPF routing', () => {
+    const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return 'Info: OSPF is not running.';
+    return 'OSPF Process 1 with Router ID 0.0.0.0\n  Routing Tables\n\n  Routing for Network';
+  });
+
+  trie.registerGreedy('display rip', 'Display RIP info', (args) => {
+    if (args[1] === 'route') {
+      if (!getRouter().isRIPEnabled()) return 'Info: RIP is not enabled.';
+      const routes = getRouter().getRIPRoutes();
+      const lines = ['  Peer       Family      Destination/Mask      Nexthop      Cost  Tag    Flags'];
+      for (const [key, info] of routes) {
+        lines.push(`  ${info.learnedFrom}      IPv4        ${key}      ${info.learnedFrom}    ${info.metric}     0      A`);
+      }
+      return lines.join('\n');
+    }
+    return displayRip(getRouter());
   });
   trie.register('display counters', 'Display traffic counters', () => displayCounters(getRouter()));
   trie.register('display rip', 'Display RIP information', () => displayRip(getRouter()));

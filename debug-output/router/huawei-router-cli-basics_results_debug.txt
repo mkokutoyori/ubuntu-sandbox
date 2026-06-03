@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-03T16:03:29.889Z
+Generated: 2026-06-03T16:08:04.266Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-03 16:03:29
+  2026-06-03 16:08:04
   Wednesday
   Time Zone(UTC) : UTC
 
@@ -49,20 +49,18 @@ Total steps: 304
   Wait     : Wait for the user to press ENTER.
 
 [6/304] r1 <R1> display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 16:03:29
+  CPU Usage Stat. Time : 2026-06-03 16:08:04
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-03 16:03:29
+  Memory utilization statistics at 2026-06-03 16:08:04
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -86,9 +84,22 @@ Total steps: 304
   #
 
 [10/304] r1 <R1> display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  #
 
 [11/304] r1 <R1> display this
   #
@@ -109,9 +120,16 @@ Total steps: 304
   #
 
 [12/304] r1 <R1> display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [13/304] r1 <R1> display ip interface brief
   *down: administratively down
@@ -190,9 +208,8 @@ Total steps: 304
   No ARP entries found.
 
 [20/304] r1 <R1> display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [21/304] r1 <R1> display fib
   Route Flags: R - relay, D - download to fib
@@ -228,30 +245,29 @@ Total steps: 304
   Info: RIP is not enabled.
 
 [26/304] r1 <R1> display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [27/304] r1 <R1> display acl all
   Total 0 ACL(s)
 
 [28/304] r1 <R1> display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [29/304] r1 <R1> display ip pool
   No DHCP pools configured.
 
 [30/304] r1 <R1> display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [31/304] r1 <R1> display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [32/304] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -274,14 +290,10 @@ Total steps: 304
    clock offset: 0.0000 ms
 
 [36/304] r1 <R1> display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [37/304] r1 <R1> display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [38/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -301,9 +313,7 @@ Total steps: 304
   Current messages : 0
 
 [40/304] r1 <R1> display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [41/304] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
@@ -343,14 +353,23 @@ Total steps: 304
   STELNET server                  : Enable
 
 [46/304] r1 <R1> display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [47/304] r1 <R1> display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [48/304] r1 <R1> display port
   Port-security is enabled on the following interfaces:
@@ -432,8 +451,20 @@ Total steps: 304
     ip                      ip
     arp                     Display ARP table
     current-configuration   Display running configuration
-    counters                Display traffic counters
+    saved-configuration     Display saved configuration
+    startup                 Display startup configuration
+    history-command         Display CLI history
+    alarm                   Display alarm records
+    aaa                     aaa
+    user-interface          Display user interface info
+    dhcp                    Display DHCP snooping
+    nat                     nat
+    vrrp                    Display VRRP groups
+    lldp                    lldp
+    bgp                     bgp
+    ospf                    ospf
     rip                     Display RIP information
+    counters                Display traffic counters
     router                  router
     fib                     Display forwarding table
     ipv6                    ipv6
@@ -444,7 +475,6 @@ Total steps: 304
     memory-usage            Display memory usage
     users                   Display user sessions
     device                  Display device status
-    alarm                   Display alarm records
     elabel                  Display electronic label
     license                 Display license information
     logbuffer               Display log buffer
@@ -455,14 +485,11 @@ Total steps: 304
     ssh                     Display SSH server status
     snmp-agent              Display SNMP agent info
     ntp-service             Display NTP status
-    dhcp                    Display DHCP snooping
     port-security           Display port security
-    ospf                    ospf
     ospfv3                  ospfv3
     ike                     ike
     ipsec                   ipsec
     acl                     Display ACL configuration
-    nat                     nat
     dhcp-server             dhcp-server
     dhcp-snooping           dhcp-snooping
     route-policy            Display a route-policy
@@ -1124,12 +1151,13 @@ Total steps: 304
     <cr>  
 
 [133/304] r1 [R1-EDGE] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
-    ip-prefix     Configure an IPv4 prefix list
-    ipv6-prefix   Configure an IPv6 prefix list
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
 [134/304] r1 [R1-EDGE] ospf ?
     WORD  Configure OSPF protocol
@@ -1161,12 +1189,12 @@ Total steps: 304
   Error: Unrecognized command
 
 [138/304] r1 [R1-EDGE] snmp-agent ?
-    WORD  snmp-agent configuration
+    WORD  Toggle: snmp-agent
     <cr>  
 
 [139/304] r1 [R1-EDGE] ntp-service ?
-    WORD  ntp-service configuration
-    <cr>  
+    enable  Toggle: ntp-service enable
+    <cr>    
 
 [140/304] r1 [R1-EDGE] rip ?
     WORD  Enter RIP view or configure RIP
@@ -1199,9 +1227,7 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [148/304] r1 [R1-EDGE] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [149/304] r1 [R1-EDGE] undo ftp server enable
 <empty>
@@ -1408,9 +1434,31 @@ Total steps: 304
   Save the configuration successfully.
 
 [194/304] r1 <Huawei> display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname Huawei
+  #
+  dhcp enable
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  #
+  rip 1
+   version 2
+  #
 
 [195/304] r1 <Huawei> reset saved-configuration
   Info: Succeeded in clearing the configuration in the device.
@@ -1482,9 +1530,31 @@ Total steps: 304
   #
 
 [203/304] r1 <Huawei> display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname Huawei
+  #
+  dhcp enable
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  #
+  rip 1
+   version 2
+  #
 
 [204/304] r1 <Huawei> display ip interface brief
   *down: administratively down
@@ -1556,9 +1626,8 @@ Total steps: 304
   No ARP entries found.
 
 [209/304] r1 <Huawei> display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [210/304] r1 <Huawei> display ospf peer
   Error: OSPF is not configured.
@@ -1567,9 +1636,7 @@ Total steps: 304
   Error: OSPF is not configured.
 
 [212/304] r1 <Huawei> display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [213/304] r1 <Huawei> display ospf lsdb
   Error: OSPF is not configured.
@@ -1589,29 +1656,27 @@ Total steps: 304
     Routes: 0
 
 [216/304] r1 <Huawei> display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  RIP process 1
+    Version: 2
+    Update timer: 30s
+    Timeout timer: 180s
+    Garbage-collect timer: 120s
+  
+    Networks:
+  
+    Routes: 0
 
 [217/304] r1 <Huawei> display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [218/304] r1 <Huawei> display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [219/304] r1 <Huawei> display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [220/304] r1 <Huawei> display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [221/304] r1 <Huawei> display ip pool
   No DHCP pools configured.
@@ -1620,19 +1685,21 @@ Total steps: 304
   Total 0 ACL(s)
 
 [223/304] r1 <Huawei> display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [224/304] r1 <Huawei> display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [225/304] r1 <Huawei> display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [226/304] r1 <Huawei> display ike sa
   Info: No IPSec configuration.
@@ -1676,30 +1743,26 @@ Total steps: 304
    clock offset: 0.0000 ms
 
 [235/304] r1 <Huawei> display clock
-  2026-06-03 16:03:29
+  2026-06-03 16:08:04
   Wednesday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <Huawei> display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [237/304] r1 <Huawei> display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 16:03:29
+  CPU Usage Stat. Time : 2026-06-03 16:08:04
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-03 16:03:29
+  Memory utilization statistics at 2026-06-03 16:08:04
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1722,9 +1785,7 @@ Total steps: 304
   Wait     : Wait for the user to press ENTER.
 
 [242/304] r1 <Huawei> display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [243/304] r1 <Huawei> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1744,14 +1805,19 @@ Total steps: 304
   Current messages : 0
 
 [245/304] r1 <Huawei> display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [246/304] r1 <Huawei> display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [247/304] r1 <Huawei> display patch-information
   Info: No patch exists.
@@ -1837,14 +1903,17 @@ Total steps: 304
   Info: Diagnostic information collected.
 
 [255/304] r1 <Huawei> display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [256/304] r1 <Huawei> display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [257/304] r1 <Huawei> display ssh server status
   SSH version                     : 2.0
@@ -1863,9 +1932,13 @@ Total steps: 304
   STELNET server                  : Enable
 
 [259/304] r1 <Huawei> display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [260/304] r1 <Huawei> display port-security
   Port-security is enabled on the following interfaces:
@@ -1930,14 +2003,10 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [267/304] r1 [Huawei] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [268/304] r1 [Huawei] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [269/304] r1 [Huawei] dhcp enable
 <empty>
@@ -1952,9 +2021,7 @@ Total steps: 304
 <empty>
 
 [273/304] r1 [Huawei] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [274/304] r1 [Huawei] undo ftp server enable
 <empty>
@@ -2043,12 +2110,13 @@ Total steps: 304
     <cr>  
 
 [300/304] r1 [Huawei] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
-    ip-prefix     Configure an IPv4 prefix list
-    ipv6-prefix   Configure an IPv6 prefix list
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
 [301/304] r1 [Huawei] undo ?
     lldp           lldp

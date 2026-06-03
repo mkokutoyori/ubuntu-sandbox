@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-03T16:03:34.151Z
+Generated: 2026-06-03T16:08:13.798Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -822,9 +822,85 @@ Total steps: 279
   #
 
 [178/279] r1 [R1] display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   ipsec policy MAP1
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   ip address 1.1.1.1 255.255.255.255
+  #
+  #
+  ike proposal 1
+   encryption-algorithm aes-128
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 2
+   encryption-algorithm aes-192
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 3
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike proposal 4
+   encryption-algorithm aes-256
+   authentication-algorithm sha256
+   dh group14
+  #
+  ike peer PEER1
+   remote-address 10.0.0.2
+   pre-shared-key simple MyKey@12345
+  #
+  ike peer PEER2
+   remote-address 10.0.0.6
+   pre-shared-key simple Key2@12345
+  #
+  ipsec proposal TP1
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP2
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec proposal TP3
+   transform esp
+   encapsulation-mode tunnel
+   esp encryption-algorithm aes 256
+   esp authentication-algorithm sha256
+  #
+  ipsec policy MAP1 10 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec policy MAP1 20 isakmp
+   proposal TP2
+  #
+  ipsec policy PROF1 0 isakmp
+   ike-peer PEER1
+   proposal TP1
+  #
+  ipsec profile PROF1
+  #
 
 [179/279] r1 [R1] display ip interface brief
   *down: administratively down
@@ -898,9 +974,8 @@ Total steps: 279
   No ARP entries found.
 
 [184/279] r1 [R1] display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [185/279] r1 [R1] display ospf peer
   Error: OSPF is not configured.
@@ -909,9 +984,7 @@ Total steps: 279
   Error: OSPF is not configured.
 
 [187/279] r1 [R1] display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [188/279] r1 [R1] display ospf lsdb
   Error: OSPF is not configured.
@@ -923,29 +996,19 @@ Total steps: 279
   Info: RIP is not enabled.
 
 [191/279] r1 [R1] display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  Info: RIP is not enabled.
 
 [192/279] r1 [R1] display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [193/279] r1 [R1] display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [194/279] r1 [R1] display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [195/279] r1 [R1] display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [196/279] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -954,19 +1017,21 @@ Total steps: 279
   Total 0 ACL(s)
 
 [198/279] r1 [R1] display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [199/279] r1 [R1] display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [200/279] r1 [R1] display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [201/279] r1 [R1] display ike sa
   IPv4 Crypto ISAKMP SA
@@ -1086,30 +1151,26 @@ Total steps: 279
    clock offset: 0.0000 ms
 
 [210/279] r1 [R1] display clock
-  2026-06-03 16:03:34
+  2026-06-03 16:08:13
   Wednesday
   Time Zone(UTC) : UTC
 
 [211/279] r1 [R1] display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [212/279] r1 [R1] display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 16:03:34
+  CPU Usage Stat. Time : 2026-06-03 16:08:13
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-03 16:03:34
+  Memory utilization statistics at 2026-06-03 16:08:13
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1132,9 +1193,7 @@ Total steps: 279
   Wait     : Wait for the user to press ENTER.
 
 [217/279] r1 [R1] display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [218/279] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1154,14 +1213,19 @@ Total steps: 279
   Current messages : 0
 
 [220/279] r1 [R1] display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [221/279] r1 [R1] display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [222/279] r1 [R1] display patch-information
   Info: No patch exists.
@@ -1301,14 +1365,17 @@ Total steps: 279
   Info: Diagnostic information collected.
 
 [230/279] r1 [R1] display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [231/279] r1 [R1] display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [232/279] r1 [R1] display ssh server status
   SSH version                     : 2.0
@@ -1327,9 +1394,13 @@ Total steps: 279
   STELNET server                  : Enable
 
 [234/279] r1 [R1] display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [235/279] r1 [R1] display port-security
   Port-security is enabled on the following interfaces:
@@ -1495,14 +1566,10 @@ Total steps: 279
   Enter system view, return user view with return command.
 
 [242/279] r1 [R1] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [243/279] r1 [R1] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [244/279] r1 [R1] dhcp enable
 <empty>
@@ -1517,9 +1584,7 @@ Total steps: 279
 <empty>
 
 [248/279] r1 [R1] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [249/279] r1 [R1] undo ftp server enable
 <empty>
@@ -1609,12 +1674,13 @@ Total steps: 279
     <cr>  
 
 [275/279] r1 [Huawei] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
-    ip-prefix     Configure an IPv4 prefix list
-    ipv6-prefix   Configure an IPv6 prefix list
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
 [276/279] r1 [Huawei] undo ?
     lldp           lldp

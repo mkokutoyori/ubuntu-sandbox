@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-03T16:03:29.265Z
+Generated: 2026-06-03T16:08:11.540Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -258,24 +258,21 @@ Total steps: 257
 <empty>
 
 [56/257] r1 <R1> display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [57/257] r1 <R1> display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [58/257] r1 <R1> display vrrp interface GigabitEthernet0/0/0
   % Invalid input detected at '^' marker.
   display vrrp interface GigabitEthernet0/0/0
-          ^
+               ^
 
 [59/257] r1 <R1> display vrrp statistics
   % Invalid input detected at '^' marker.
   display vrrp statistics
-          ^
+               ^
 
 
 --- [60] § BFD for VRRP ---
@@ -681,9 +678,22 @@ Total steps: 257
   #
 
 [156/257] r1 [R1] display saved-configuration
-  % Invalid input detected at '^' marker.
-  display saved-configuration
-          ^
+  #
+  sysname R1
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.2 255.255.255.0
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  #
 
 [157/257] r1 [R1] display ip interface brief
   *down: administratively down
@@ -749,9 +759,8 @@ Total steps: 257
   No ARP entries found.
 
 [162/257] r1 [R1] display arp all
-  % Invalid input detected at '^' marker.
-  display arp all
-              ^
+  IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
+  No ARP entries found.
 
 [163/257] r1 [R1] display ospf peer
   Error: OSPF is not configured.
@@ -760,9 +769,7 @@ Total steps: 257
   Error: OSPF is not configured.
 
 [165/257] r1 [R1] display ospf routing
-  % Invalid input detected at '^' marker.
-  display ospf routing
-               ^
+  Info: OSPF is not running.
 
 [166/257] r1 [R1] display ospf lsdb
   Error: OSPF is not configured.
@@ -774,29 +781,19 @@ Total steps: 257
   Info: RIP is not enabled.
 
 [169/257] r1 [R1] display rip 1 route
-  % Invalid input detected at '^' marker.
-  display rip 1 route
-              ^
+  Info: RIP is not enabled.
 
 [170/257] r1 [R1] display bgp peer
-  % Invalid input detected at '^' marker.
-  display bgp peer
-          ^
+  Info: BGP is not running.
 
 [171/257] r1 [R1] display bgp routing-table
-  % Invalid input detected at '^' marker.
-  display bgp routing-table
-          ^
+  Info: BGP is not running.
 
 [172/257] r1 [R1] display nat session all
-  % Invalid input detected at '^' marker.
-  display nat session all
-                      ^
+  Info: No NAT session is found.
 
 [173/257] r1 [R1] display nat address-group
-  % Invalid input detected at '^' marker.
-  display nat address-group
-              ^
+  Info: No NAT address-group is configured.
 
 [174/257] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -805,19 +802,21 @@ Total steps: 257
   Total 0 ACL(s)
 
 [176/257] r1 [R1] display dhcp server statistics
-  % Invalid input detected at '^' marker.
-  display dhcp server statistics
-                      ^
+  DHCP server packets statistics:
+    Receive total: 0
+    Send total: 0
+    Discover: 0      Offer: 0
+    Request: 0       Ack: 0
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 0
 
 [177/257] r1 [R1] display vrrp
-  % Invalid input detected at '^' marker.
-  display vrrp
-          ^
+  Info: No VRRP backup group is configured.
 
 [178/257] r1 [R1] display vrrp brief
-  % Invalid input detected at '^' marker.
-  display vrrp brief
-          ^
+  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  VRID  State        Interface                Type     Virtual IP
 
 [179/257] r1 [R1] display ike sa
   Info: No IPSec configuration.
@@ -861,30 +860,26 @@ Total steps: 257
    clock offset: 0.0000 ms
 
 [188/257] r1 [R1] display clock
-  2026-06-03 16:03:29
+  2026-06-03 16:08:11
   Wednesday
   Time Zone(UTC) : UTC
 
 [189/257] r1 [R1] display lldp neighbor
-  % Invalid input detected at '^' marker.
-  display lldp neighbor
-          ^
+  Info: No LLDP neighbor is found.
 
 [190/257] r1 [R1] display lldp neighbor brief
-  % Invalid input detected at '^' marker.
-  display lldp neighbor brief
-          ^
+  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 16:03:29
+  CPU Usage Stat. Time : 2026-06-03 16:08:11
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-03 16:03:29
+  Memory utilization statistics at 2026-06-03 16:08:11
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -907,9 +902,7 @@ Total steps: 257
   Wait     : Wait for the user to press ENTER.
 
 [195/257] r1 [R1] display history-command
-  % Invalid input detected at '^' marker.
-  display history-command
-          ^
+  Info: No history command.
 
 [196/257] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
@@ -929,14 +922,19 @@ Total steps: 257
   Current messages : 0
 
 [198/257] r1 [R1] display alarm all
-  % Invalid input detected at '^' marker.
-  display alarm all
-                ^
+  Info: There is no alarm record.
 
 [199/257] r1 [R1] display startup
-  % Invalid input detected at '^' marker.
-  display startup
-          ^
+  MainBoard:
+    Configured startup system software:    flash:/vrp.cc
+    Startup system software:                flash:/vrp.cc
+    Next startup system software:           flash:/vrp.cc
+    Startup saved-configuration file:       flash:/vrpcfg.zip
+    Next startup saved-configuration file:  flash:/vrpcfg.zip
+    Startup license file:                   NULL
+    Next startup license file:              NULL
+    Startup patch package:                  NULL
+    Next startup patch package:             NULL
 
 [200/257] r1 [R1] display patch-information
   Info: No patch exists.
@@ -1012,14 +1010,17 @@ Total steps: 257
   Info: Diagnostic information collected.
 
 [208/257] r1 [R1] display aaa configuration
-  % Invalid input detected at '^' marker.
-  display aaa configuration
-          ^
+    Domain Name           : default
+    Domain State          : Active
+    Authentication-scheme : default
+    Authorization-scheme  : default
+    Accounting-scheme     : default
+    Service-scheme        : -
+    RADIUS-server-template: -
+    HWTACACS-server-template: -
 
 [209/257] r1 [R1] display aaa online-fail-record
-  % Invalid input detected at '^' marker.
-  display aaa online-fail-record
-          ^
+  Info: No online-fail record.
 
 [210/257] r1 [R1] display ssh server status
   SSH version                     : 2.0
@@ -1038,9 +1039,13 @@ Total steps: 257
   STELNET server                  : Enable
 
 [212/257] r1 [R1] display user-interface
-  % Invalid input detected at '^' marker.
-  display user-interface
-          ^
+    Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
+  + 0      CON 0           9600     -      0      0            N      -
+    34     VTY 0           -        -      0      0            N      -
+    35     VTY 1           -        -      0      0            N      -
+    36     VTY 2           -        -      0      0            N      -
+    37     VTY 3           -        -      0      0            N      -
+    38     VTY 4           -        -      0      0            N      -
 
 [213/257] r1 [R1] display port-security
   Port-security is enabled on the following interfaces:
@@ -1093,14 +1098,10 @@ Total steps: 257
   Enter system view, return user view with return command.
 
 [220/257] r1 [R1] ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  ip routing-table limit 1000
-     ^
+<empty>
 
 [221/257] r1 [R1] undo ip routing-table limit 1000
-  % Invalid input detected at '^' marker.
-  undo ip routing-table limit 1000
-          ^
+<empty>
 
 [222/257] r1 [R1] dhcp enable
 <empty>
@@ -1115,9 +1116,7 @@ Total steps: 257
 <empty>
 
 [226/257] r1 [R1] ftp server enable
-  % Invalid input detected at '^' marker.
-  ftp server enable
-  ^
+<empty>
 
 [227/257] r1 [R1] undo ftp server enable
 <empty>
@@ -1207,12 +1206,13 @@ Total steps: 257
     <cr>  
 
 [253/257] r1 [Huawei] ip ?
-    host          Configure a static host entry
-    route-static  Configure static route
-    pool          Enter DHCP pool view
-    routing       Enable IP routing
-    ip-prefix     Configure an IPv4 prefix list
-    ipv6-prefix   Configure an IPv6 prefix list
+    host           Configure a static host entry
+    route-static   Configure static route
+    pool           Enter DHCP pool view
+    routing        Enable IP routing
+    ip-prefix      Configure an IPv4 prefix list
+    ipv6-prefix    Configure an IPv6 prefix list
+    routing-table  routing-table
 
 [254/257] r1 [Huawei] undo ?
     lldp           lldp

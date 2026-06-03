@@ -1108,6 +1108,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
+
+    for (const kw of ['ftp server enable', 'snmp-agent', 'info-center enable',
+      'ntp-service enable', 'telnet server enable', 'http server',
+      'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
+      t.register(kw, `Toggle: ${kw}`, () => {
+        this.r()._setGlobalToggle?.(kw.replace(/\s+enable\s*$/, ''), true);
+        return '';
+      });
+    }
+    t.registerGreedy('ip routing-table limit', 'Configure IPv4 routing-table limit', () => '');
+    t.registerGreedy('undo ip routing-table limit', 'Remove routing-table limit', () => '');
+    t.registerGreedy('ftp', 'FTP server config', (args) => {
+      if (args[0] === 'server' && (args[1] === 'enable' || !args[1])) {
+        this.r()._setGlobalToggle?.('ftp', true);
+      }
+      return '';
+    });
   }
 
   // ─── Interface View ([hostname-GE0/0/X]) ─────────────────────────
