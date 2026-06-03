@@ -270,8 +270,40 @@ function commMatches(p: ProcessInfo, name: string): boolean {
   return p.comm === name || p.comm.replace(/^-/, '') === name;
 }
 
+/** Build a transient `ps` entry mirroring what real Linux shows when ps
+ *  enumerates itself: max(pids)+1, ppid = shell, comm 'ps', state 'R',
+ *  tty inherited from the shell. The simulator's process manager is
+ *  not mutated. */
+function transientPsProcess(ctx: PsContext): ProcessInfo {
+  const peers = ctx.pm.list();
+  const maxPid = peers.reduce((m, p) => Math.max(m, p.pid), 1);
+  const now = new Date();
+  return {
+    pid: maxPid + 1,
+    ppid: ctx.shellPid ?? 1,
+    pgid: ctx.shellPid ?? 1,
+    sid: ctx.shellPid ?? 1,
+    uid: ctx.currentUid,
+    gid: ctx.currentUid,
+    user: ctx.currentUser,
+    command: 'ps',
+    comm: 'ps',
+    args: ['ps'],
+    state: 'R',
+    startTime: now,
+    cpuTime: 0,
+    vsize: 12 * 1024,
+    rss: 3 * 1024,
+    tty: ctx.tty,
+    nice: 0,
+    priority: 20,
+    cwd: '/',
+    exe: '/usr/bin/ps',
+  };
+}
+
 function selectProcesses(q: PsQuery, ctx: PsContext): ProcessInfo[] {
-  let list = ctx.pm.list();
+  let list = [...ctx.pm.list(), transientPsProcess(ctx)];
   const hasSelector = q.pids || q.ppids || q.comms || q.users;
 
   if (q.pids) list = list.filter(p => q.pids!.includes(p.pid));

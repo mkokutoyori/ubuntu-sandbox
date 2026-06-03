@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-services-processes
-Generated: 2026-06-03T13:53:04.210Z
+Generated: 2026-06-03T14:04:25.139Z
 Engine: linux
 host=L-SRV-SP-DBG (linux-server) — focus: processus & services
 Total commands: 512
@@ -75,13 +75,13 @@ $ [16/512]> pwd
   /root
 
 $ [17/512]> date
-  Wed Jun 03 13:53:04 UTC 2026
+  Wed Jun 03 14:04:25 UTC 2026
 
 $ [18/512]> date -u
-  Wed Jun 03 13:53:04 UTC 2026
+  Wed Jun 03 14:04:25 UTC 2026
 
 $ [19/512]> uptime
-   13:53:04 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   14:04:25 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 $ [20/512]> uptime -p
   up 0 minutes
@@ -90,12 +90,12 @@ $ [21/512]> runlevel
   N 3
 
 $ [22/512]> who
-  root     tty1     2026-06-03 13:53 (:0)
+  root     tty1     2026-06-03 14:04 (:0)
 
 $ [23/512]> w
-   03 Jun 2026 13:5  up 0 min,  1 users,  load average: 0.00, 0.00, 0.00
+   03 Jun 2026 14:0  up 0 min,  1 users,  load average: 0.00, 0.00, 0.00
   USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-  root      tty1      :0               13:53    0.00s   0.00s 0.00s -bash
+  root      tty1      :0               14:04    0.00s   0.00s 0.00s -bash
 
 
 --- [24] § inventaire ps ---
@@ -113,42 +113,45 @@ $ [24/512]> ps
      12 ?           00:00 ufw-init
      13 ?           00:00 apparmor.systemd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [25/512]> ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    13:53       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/auditd
-  root         6  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/atd -f
-  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-logind
-  messagebus    10  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.2   80000   8000 ?        S    13:53       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    13:53       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    14:04       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/auditd
+  root         6  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/atd -f
+  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-logind
+  messagebus    10  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.2   80000   8000 ?        S    14:04       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    14:04       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    14:04       00:00 ps
 
 $ [26/512]> ps -ef
   UID      PID   PPID  C  STIME TTY      TIME     CMD
-  root         1     0  0 13:53 ?           00:00 /sbin/init
-  root         2     1  0 13:53 ?           00:00 /usr/sbin/sshd -D
-  root         3     1  0 13:53 ?           00:00 /usr/sbin/cron -f
-  root         4     1  0 13:53 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5     1  0 13:53 ?           00:00 /sbin/auditd
-  root         6     1  0 13:53 ?           00:00 /usr/sbin/atd -f
-  systemd-resolve     7     1  0 13:53 ?           00:00 /lib/systemd/systemd-resolved
-  root         8     1  0 13:53 ?           00:00 /lib/systemd/systemd-journald
-  root         9     1  0 13:53 ?           00:00 /lib/systemd/systemd-logind
-  messagebus    10     1  0 13:53 ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11     1  0 13:53 ?           00:00 /sbin/ifup -a --read-environment
-  root        12     1  0 13:53 ?           00:00 /lib/ufw/ufw-init start quiet
-  root        13     1  0 13:53 ?           00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14     1  0 13:53 ?           00:00 /etc/init.d/init.ohasd run
-  root        15     2  0 13:53 pts/0       00:00 -bash
+  root         1     0  0 14:04 ?           00:00 /sbin/init
+  root         2     1  0 14:04 ?           00:00 /usr/sbin/sshd -D
+  root         3     1  0 14:04 ?           00:00 /usr/sbin/cron -f
+  root         4     1  0 14:04 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5     1  0 14:04 ?           00:00 /sbin/auditd
+  root         6     1  0 14:04 ?           00:00 /usr/sbin/atd -f
+  systemd-resolve     7     1  0 14:04 ?           00:00 /lib/systemd/systemd-resolved
+  root         8     1  0 14:04 ?           00:00 /lib/systemd/systemd-journald
+  root         9     1  0 14:04 ?           00:00 /lib/systemd/systemd-logind
+  messagebus    10     1  0 14:04 ?           00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11     1  0 14:04 ?           00:00 /sbin/ifup -a --read-environment
+  root        12     1  0 14:04 ?           00:00 /lib/ufw/ufw-init start quiet
+  root        13     1  0 14:04 ?           00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14     1  0 14:04 ?           00:00 /etc/init.d/init.ohasd run
+  root        15     2  0 14:04 pts/0       00:00 -bash
+  root        16    15  0 14:04 pts/0       00:00 ps
 
 $ [27/512]> ps -e
   PID   TTY      TIME     CMD
@@ -167,6 +170,7 @@ $ [27/512]> ps -e
      13 ?           00:00 apparmor.systemd
      14 ?           00:00 init.ohasd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [28/512]> ps -A
   PID   TTY      TIME     CMD
@@ -185,6 +189,7 @@ $ [28/512]> ps -A
      13 ?           00:00 apparmor.systemd
      14 ?           00:00 init.ohasd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [29/512]> ps -el
   F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
@@ -203,6 +208,7 @@ $ [29/512]> ps -el
   4 S     0    13     1  0  20   0 -         20000 -      ?           00:00 /lib/apparmor/apparmor.systemd reload
   0 S     1    14     1  0  20   0 -         20000 -      ?           00:00 /etc/init.d/init.ohasd run
   4 S     0    15     2  0  20   0 -          2560 -      pts/0       00:00 -bash
+  4 R     0    16    15  0  20   0 -          3072 -      pts/0       00:00 ps
 
 $ [30/512]> ps -ely
   F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
@@ -221,21 +227,23 @@ $ [30/512]> ps -ely
   4 S     0    13     1  0  20   0 -         20000 -      ?           00:00 /lib/apparmor/apparmor.systemd reload
   0 S     1    14     1  0  20   0 -         20000 -      ?           00:00 /etc/init.d/init.ohasd run
   4 S     0    15     2  0  20   0 -          2560 -      pts/0       00:00 -bash
+  4 R     0    16    15  0  20   0 -          3072 -      pts/0       00:00 ps
 
 $ [31/512]> ps -f
   UID      PID   PPID  C  STIME TTY      TIME     CMD
-  root         1     0  0 13:53 ?           00:00 /sbin/init
-  root         2     1  0 13:53 ?           00:00 /usr/sbin/sshd -D
-  root         3     1  0 13:53 ?           00:00 /usr/sbin/cron -f
-  root         4     1  0 13:53 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5     1  0 13:53 ?           00:00 /sbin/auditd
-  root         6     1  0 13:53 ?           00:00 /usr/sbin/atd -f
-  root         8     1  0 13:53 ?           00:00 /lib/systemd/systemd-journald
-  root         9     1  0 13:53 ?           00:00 /lib/systemd/systemd-logind
-  root        11     1  0 13:53 ?           00:00 /sbin/ifup -a --read-environment
-  root        12     1  0 13:53 ?           00:00 /lib/ufw/ufw-init start quiet
-  root        13     1  0 13:53 ?           00:00 /lib/apparmor/apparmor.systemd reload
-  root        15     2  0 13:53 pts/0       00:00 -bash
+  root         1     0  0 14:04 ?           00:00 /sbin/init
+  root         2     1  0 14:04 ?           00:00 /usr/sbin/sshd -D
+  root         3     1  0 14:04 ?           00:00 /usr/sbin/cron -f
+  root         4     1  0 14:04 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5     1  0 14:04 ?           00:00 /sbin/auditd
+  root         6     1  0 14:04 ?           00:00 /usr/sbin/atd -f
+  root         8     1  0 14:04 ?           00:00 /lib/systemd/systemd-journald
+  root         9     1  0 14:04 ?           00:00 /lib/systemd/systemd-logind
+  root        11     1  0 14:04 ?           00:00 /sbin/ifup -a --read-environment
+  root        12     1  0 14:04 ?           00:00 /lib/ufw/ufw-init start quiet
+  root        13     1  0 14:04 ?           00:00 /lib/apparmor/apparmor.systemd reload
+  root        15     2  0 14:04 pts/0       00:00 -bash
+  root        16    15  0 14:04 pts/0       00:00 ps
 
 $ [32/512]> ps -fl
   F S UID   PID   PPID  C  PRI NI  ADDR     SZ     WCHAN  TTY      TIME     CMD
@@ -251,6 +259,7 @@ $ [32/512]> ps -fl
   4 S     0    12     1  0  20   0 -         20000 -      ?           00:00 /lib/ufw/ufw-init start quiet
   4 S     0    13     1  0  20   0 -         20000 -      ?           00:00 /lib/apparmor/apparmor.systemd reload
   4 S     0    15     2  0  20   0 -          2560 -      pts/0       00:00 -bash
+  4 R     0    16    15  0  20   0 -          3072 -      pts/0       00:00 ps
 
 $ [33/512]> ps ax
   PID   TTY      TIME     CMD
@@ -269,24 +278,26 @@ $ [33/512]> ps ax
      13 ?           00:00 apparmor.systemd
      14 ?           00:00 init.ohasd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [34/512]> ps axu
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    13:53       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/auditd
-  root         6  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/atd -f
-  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-logind
-  messagebus    10  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.2   80000   8000 ?        S    13:53       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    13:53       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    14:04       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/auditd
+  root         6  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/atd -f
+  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-logind
+  messagebus    10  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.2   80000   8000 ?        S    14:04       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    14:04       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    14:04       00:00 ps
 
 $ [35/512]> ps -e f
   PID   TTY      TIME     CMD
@@ -305,6 +316,7 @@ $ [35/512]> ps -e f
      13 ?           00:00   \_ apparmor.systemd
      14 ?           00:00   \_ init.ohasd
      15 pts/0       00:00     \_ -bash
+     16 pts/0       00:00       \_ ps
 
 $ [36/512]> ps --forest
   PID   TTY      TIME     CMD
@@ -320,6 +332,7 @@ $ [36/512]> ps --forest
      12 ?           00:00   \_ ufw-init
      13 ?           00:00   \_ apparmor.systemd
      15 pts/0       00:00     \_ -bash
+     16 pts/0       00:00       \_ ps
 
 $ [37/512]> ps -ejH
   PID   TTY      TIME     CMD
@@ -338,6 +351,7 @@ $ [37/512]> ps -ejH
      13 ?           00:00   \_ apparmor.systemd
      14 ?           00:00   \_ init.ohasd
      15 pts/0       00:00     \_ -bash
+     16 pts/0       00:00       \_ ps
 
 $ [38/512]> ps axjf
   PID   TTY      TIME     CMD
@@ -356,6 +370,7 @@ $ [38/512]> ps axjf
      13 ?           00:00   \_ apparmor.systemd
      14 ?           00:00   \_ init.ohasd
      15 pts/0       00:00     \_ -bash
+     16 pts/0       00:00       \_ ps
 
 $ [39/512]> ps -p 1
   PID   TTY      TIME     CMD
@@ -396,6 +411,7 @@ $ [45/512]> ps -u root
      12 ?           00:00 ufw-init
      13 ?           00:00 apparmor.systemd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [46/512]> ps -U root
   PID   TTY      TIME     CMD
@@ -411,6 +427,7 @@ $ [46/512]> ps -U root
      12 ?           00:00 ufw-init
      13 ?           00:00 apparmor.systemd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [47/512]> ps --ppid 1
   PID   TTY      TIME     CMD
@@ -442,6 +459,7 @@ $ [48/512]> ps -o pid,ppid,user,stat,pcpu,pmem,comm
      12     1 root     S     0.0  0.2 ufw-init
      13     1 root     S     0.0  0.2 apparmor.systemd
      15     2 root     S     0.0  0.1 -bash
+     16    15 root     R     0.0  0.1 ps
 
 $ [49/512]> ps -o pid=,comm=
       1 systemd
@@ -456,6 +474,7 @@ $ [49/512]> ps -o pid=,comm=
      12 ufw-init
      13 apparmor.systemd
      15 -bash
+     16 ps
 
 $ [50/512]> ps -eo pid,ni,pri,comm
   PID   NI  PRI COMMAND
@@ -474,6 +493,7 @@ $ [50/512]> ps -eo pid,ni,pri,comm
      13   0  20 apparmor.systemd
      14   0  20 init.ohasd
      15   0  20 -bash
+     16   0  20 ps
 
 $ [51/512]> ps -eo pid,tty,time,cmd
   PID   TTY      TIME     CMD
@@ -492,6 +512,7 @@ $ [51/512]> ps -eo pid,tty,time,cmd
      13 ?           00:00 /lib/apparmor/apparmor.systemd reload
      14 ?           00:00 /etc/init.d/init.ohasd run
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [52/512]> ps axo pid,stat,euser,cmd --sort=-pcpu
   ps: error: improper list
@@ -500,39 +521,41 @@ $ [52/512]> ps axo pid,stat,euser,cmd --sort=-pcpu
 
 $ [53/512]> ps aux --sort=-%mem
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    13:53       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/auditd
-  root         6  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/atd -f
-  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-logind
-  messagebus    10  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.2   80000   8000 ?        S    13:53       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    13:53       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    14:04       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/auditd
+  root         6  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/atd -f
+  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-logind
+  messagebus    10  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.2   80000   8000 ?        S    14:04       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    14:04       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    14:04       00:00 ps
 
 $ [54/512]> ps aux --sort=-%cpu
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    13:53       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/auditd
-  root         6  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/atd -f
-  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-logind
-  messagebus    10  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.2   80000   8000 ?        S    13:53       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    13:53       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    14:04       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/auditd
+  root         6  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/atd -f
+  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-logind
+  messagebus    10  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.2   80000   8000 ?        S    14:04       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    14:04       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    14:04       00:00 ps
 
 $ [55/512]> ps -e --sort=start_time
   PID   TTY      TIME     CMD
@@ -551,6 +574,7 @@ $ [55/512]> ps -e --sort=start_time
      13 ?           00:00 apparmor.systemd
      14 ?           00:00 init.ohasd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [56/512]> ps -e --sort=-rss
   PID   TTY      TIME     CMD
@@ -569,6 +593,7 @@ $ [56/512]> ps -e --sort=-rss
      13 ?           00:00 apparmor.systemd
      14 ?           00:00 init.ohasd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [57/512]> ps h -e -o pid
   1
@@ -586,6 +611,7 @@ $ [57/512]> ps h -e -o pid
   13
   14
   15
+  16
 
 $ [58/512]> ps -e --no-headers
       1 ?           00:00 systemd
@@ -603,6 +629,7 @@ $ [58/512]> ps -e --no-headers
      13 ?           00:00 apparmor.systemd
      14 ?           00:00 init.ohasd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [59/512]> ps -L -p 1
   PID   TTY      TIME     CMD
@@ -629,6 +656,7 @@ $ [61/512]> ps -e -o pid,nlwp,comm
      13    1 apparmor.systemd
      14    1 init.ohasd
      15    1 -bash
+     16    1 ps
 
 $ [62/512]> ps --version
   ps from procps-ng 3.3.17
@@ -647,30 +675,32 @@ $ [63/512]> ps w
      12 ?           00:00 ufw-init
      13 ?           00:00 apparmor.systemd
      15 pts/0       00:00 -bash
+     16 pts/0       00:00 ps
 
 $ [64/512]> ps ww aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    13:53       00:00 /sbin/init
-  root         2  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/auditd
-  root         6  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/sbin/atd -f
-  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/systemd/systemd-logind
-  messagebus    10  0.0  0.2   80000   8000 ?        S    13:53       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.2   80000   8000 ?        S    13:53       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.2   80000   8000 ?        S    13:53       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      14  0.0  0.2   80000   8000 ?        S    13:53       00:00 /etc/init.d/init.ohasd run
-  root        15  0.0  0.1   10240   4096 pts/0    S    13:53       00:00 -bash
+  root         1  0.0  0.3  169000  13000 ?        S    14:04       00:00 /sbin/init
+  root         2  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/auditd
+  root         6  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/sbin/atd -f
+  systemd-resolve     7  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/systemd/systemd-logind
+  messagebus    10  0.0  0.2   80000   8000 ?        S    14:04       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.2   80000   8000 ?        S    14:04       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.2   80000   8000 ?        S    14:04       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      14  0.0  0.2   80000   8000 ?        S    14:04       00:00 /etc/init.d/init.ohasd run
+  root        15  0.0  0.1   10240   4096 pts/0    S    14:04       00:00 -bash
+  root        16  0.0  0.1   12288   3072 pts/0    R    14:04       00:00 ps
 
 $ [65/512]> ps -e | wc -l
-  16
+  17
 
 $ [66/512]> ps aux | grep bash | grep -v grep
-  root        15  0.0  0.1   10240   4096 pts/0    S    13:53       00:00 -bash
+  root        15  0.0  0.1   10240   4096 pts/0    S    14:04       00:00 -bash
 
 $ [67/512]> ps -Z
   ps: invalid option -- 'Z'
@@ -951,7 +981,7 @@ $ [103/512]> pgrep -Z bash
 
 --- [104] § top / vmstat / free ---
 $ [104/512]> top -b -n 1
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -975,7 +1005,7 @@ $ [104/512]> top -b -n 1
        15 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [105/512]> top -b -n 1 | head -20
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -997,7 +1027,7 @@ $ [105/512]> top -b -n 1 | head -20
        13 root       20    0     78M     7M     4M S   0.0   0.2   0:00.10 apparmor.systemd
 
 $ [106/512]> top -b -n 1 -o %CPU
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1021,7 +1051,7 @@ $ [106/512]> top -b -n 1 -o %CPU
        15 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [107/512]> top -b -n 1 -o %MEM
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1045,7 +1075,7 @@ $ [107/512]> top -b -n 1 -o %MEM
        15 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [108/512]> top -b -n 1 -p 1
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1069,7 +1099,7 @@ $ [108/512]> top -b -n 1 -p 1
        15 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [109/512]> top -b -n 1 -u root
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1093,7 +1123,7 @@ $ [109/512]> top -b -n 1 -u root
        15 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [110/512]> top -H -b -n 1
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1137,13 +1167,13 @@ $ [115/512]> free -h
 
 $ [116/512]> free -m
                  total        used        free      shared  buff/cache   available
-  Mem:         3981312     1258496     1468416       24576     1254400     2519040
-  Swap:        2097152           0     2097152
+  Mem:            3888        1229        1434          24        1225        2460
+  Swap:           2048           0        2048
 
 $ [117/512]> free -g
                  total        used        free      shared  buff/cache   available
-  Mem:         3981312     1258496     1468416       24576     1254400     2519040
-  Swap:        2097152           0     2097152
+  Mem:               4           1           1           0           1           2
+  Swap:              2           0           2
 
 $ [118/512]> free -k
                  total        used        free      shared  buff/cache   available
@@ -1152,13 +1182,14 @@ $ [118/512]> free -k
 
 $ [119/512]> free -b
                  total        used        free      shared  buff/cache   available
-  Mem:         3981312     1258496     1468416       24576     1254400     2519040
-  Swap:        2097152           0     2097152
+  Mem:      4076863488  1288699904  1503657984    25165824  1284505600  2579496960
+  Swap:     2147483648           0  2147483648
 
 $ [120/512]> free -t
                  total        used        free      shared  buff/cache   available
   Mem:         3981312     1258496     1468416       24576     1254400     2519040
   Swap:        2097152           0     2097152
+  Total:       6078464     1258496     3565568
 
 $ [121/512]> free -w
                  total        used        free      shared     buffers       cache   available
@@ -1178,7 +1209,7 @@ $ [125/512]> iostat -x
   iostat: command not found
 
 $ [126/512]> top -z
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1202,7 +1233,7 @@ $ [126/512]> top -z
        15 root       20    0     10M     4M     4M S   0.0   0.1   0:00.10 -bash
 
 $ [127/512]> top -b -n abc
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -1228,7 +1259,7 @@ $ [127/512]> top -b -n abc
 
 --- [128] § /proc ---
 $ [128/512]> ls /proc
-  cpuinfo  meminfo  [1;34mnet[0m      [1;34msys[0m      uptime   version
+  cpuinfo  meminfo  net      sys      uptime   version
 
 $ [129/512]> cat /proc/cpuinfo
   processor       : 0
@@ -1919,7 +1950,7 @@ $ [290/512]> systemctl status
       State: running
        Jobs: 0 queued
      Failed: 0 units
-     Since: Wed, 03 Jun 2026 13:53:04 GMT
+     Since: Wed, 03 Jun 2026 14:04:25 GMT
      CGroup: /
 
 $ [291/512]> systemctl is-system-running
@@ -2133,7 +2164,7 @@ $ [302/512]> systemctl get-default
 $ [303/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 30 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -2142,7 +2173,7 @@ $ [303/512]> systemctl status cron
 $ [304/512]> systemctl status ssh
   ● ssh.service - OpenBSD Secure Shell server
        Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 2 (ssh)
         Tasks: 1
        CGroup: /system.slice/ssh.service
@@ -2154,7 +2185,7 @@ $ [305/512]> systemctl status sshd
 $ [306/512]> systemctl status systemd-journald
   ● systemd-journald.service - Journal Service
        Loaded: loaded (/usr/lib/systemd/system/systemd-journald.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 8 (systemd-journald)
         Tasks: 1
        CGroup: /system.slice/systemd-journald.service
@@ -2163,7 +2194,7 @@ $ [306/512]> systemctl status systemd-journald
 $ [307/512]> systemctl status systemd-logind
   ● systemd-logind.service - User Login Management
        Loaded: loaded (/usr/lib/systemd/system/systemd-logind.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 9 (systemd-logind)
         Tasks: 1
        CGroup: /system.slice/systemd-logind.service
@@ -2172,7 +2203,7 @@ $ [307/512]> systemctl status systemd-logind
 $ [308/512]> systemctl status dbus
   ● dbus.service - D-Bus System Message Bus
        Loaded: loaded (/usr/lib/systemd/system/dbus.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 10 (dbus)
         Tasks: 1
        CGroup: /system.slice/dbus.service
@@ -2300,7 +2331,7 @@ $ [330/512]> systemctl is-enabled cron
 $ [331/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; masked; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 30 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -2356,7 +2387,7 @@ $ [346/512]> systemctl is-active cron
 $ [347/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 30 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -2399,192 +2430,192 @@ $ [359/512]> systemctl daemon-reload
 <empty>
 
 $ [360/512]> journalctl
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  Jun  3 13:53:04 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  Jun  3 13:53:04 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  Jun  3 13:53:04 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  Jun  3 13:53:04 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET protocol family
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET6 protocol family
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Jun  3 13:53:06 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Jun  3 13:53:06 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Jun  3 13:53:06 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Jun  3 13:53:06 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on :: port 22.
-  Jun  3 13:53:06 localhost systemd-logind[456]: New seat seat0.
-  Jun  3 13:53:06 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Jun  3 13:53:04 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jun  3 13:53:04 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:04 localhost kernel: nice[16] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[102]: nice[16] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[17] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[103]: nice[17] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[18] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[104]: nice[18] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[19] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[20] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[21] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[22] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[23] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[24] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[25] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[26] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[27] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[28] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[29] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
-  Jun  3 13:53:04 localhost kernel: cron[3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[116]: cron[3] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: atd[6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[117]: atd[6] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
-  Jun  3 13:53:04 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[30] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[122]: cron[30] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[32] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[123]: cron[32] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jun  3 14:04:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jun  3 14:04:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jun  3 14:04:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jun  3 14:04:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET protocol family
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET6 protocol family
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Jun  3 14:04:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Jun  3 14:04:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Jun  3 14:04:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Jun  3 14:04:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on :: port 22.
+  Jun  3 14:04:27 localhost systemd-logind[456]: New seat seat0.
+  Jun  3 14:04:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Jun  3 14:04:25 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  3 14:04:25 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:25 localhost kernel: nice[16] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[102]: nice[16] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[17] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[103]: nice[17] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[18] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[104]: nice[18] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[19] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[20] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[21] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[22] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[23] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[24] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[25] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[26] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[27] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[28] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[29] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
+  Jun  3 14:04:25 localhost kernel: cron[3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[116]: cron[3] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: atd[6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[117]: atd[6] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
+  Jun  3 14:04:25 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[30] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[122]: cron[30] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[32] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[123]: cron[32] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [361/512]> journalctl -n 20
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost kernel[117]: atd[6] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
-  Jun  3 13:53:04 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[30] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[122]: cron[30] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[32] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[123]: cron[32] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost kernel[117]: atd[6] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
+  Jun  3 14:04:25 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[30] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[122]: cron[30] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[32] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[123]: cron[32] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [362/512]> journalctl -n 50 --no-pager
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost kernel[104]: nice[18] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[19] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[20] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[21] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[22] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[23] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[24] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[25] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[26] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[27] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[28] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[29] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
-  Jun  3 13:53:04 localhost kernel: cron[3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[116]: cron[3] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: atd[6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[117]: atd[6] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
-  Jun  3 13:53:04 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[30] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[122]: cron[30] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[32] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[123]: cron[32] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost kernel[104]: nice[18] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[19] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[20] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[21] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[22] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[23] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[24] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[25] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[26] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[27] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[28] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[29] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
+  Jun  3 14:04:25 localhost kernel: cron[3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[116]: cron[3] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: atd[6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[117]: atd[6] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
+  Jun  3 14:04:25 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[30] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[122]: cron[30] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[32] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[123]: cron[32] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [363/512]> journalctl -u cron
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [364/512]> journalctl -u cron -n 20
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [365/512]> journalctl -u cron --since "today"
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [366/512]> journalctl -p err
   -- No entries --
@@ -2593,168 +2624,168 @@ $ [367/512]> journalctl -p err -n 10
   -- No entries --
 
 $ [368/512]> journalctl -k
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  Jun  3 13:53:04 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  Jun  3 13:53:04 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  Jun  3 13:53:04 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  Jun  3 13:53:04 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET protocol family
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET6 protocol family
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Jun  3 13:53:06 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Jun  3 13:53:06 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Jun  3 13:53:06 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Jun  3 13:53:06 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on :: port 22.
-  Jun  3 13:53:06 localhost systemd-logind[456]: New seat seat0.
-  Jun  3 13:53:06 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Jun  3 13:53:04 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jun  3 13:53:04 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:04 localhost kernel: nice[16] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[102]: nice[16] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[17] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[103]: nice[17] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[18] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[104]: nice[18] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[19] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[20] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[21] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[22] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[23] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[24] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[25] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[26] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[27] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[28] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[29] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
-  Jun  3 13:53:04 localhost kernel: cron[3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[116]: cron[3] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: atd[6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[117]: atd[6] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
-  Jun  3 13:53:04 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[30] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[122]: cron[30] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[32] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[123]: cron[32] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jun  3 14:04:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jun  3 14:04:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jun  3 14:04:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jun  3 14:04:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET protocol family
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET6 protocol family
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Jun  3 14:04:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Jun  3 14:04:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Jun  3 14:04:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Jun  3 14:04:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on :: port 22.
+  Jun  3 14:04:27 localhost systemd-logind[456]: New seat seat0.
+  Jun  3 14:04:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Jun  3 14:04:25 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  3 14:04:25 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:25 localhost kernel: nice[16] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[102]: nice[16] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[17] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[103]: nice[17] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[18] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[104]: nice[18] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[19] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[20] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[21] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[22] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[23] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[24] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[25] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[26] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[27] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[28] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[29] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
+  Jun  3 14:04:25 localhost kernel: cron[3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[116]: cron[3] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: atd[6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[117]: atd[6] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
+  Jun  3 14:04:25 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[30] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[122]: cron[30] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[32] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[123]: cron[32] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [369/512]> journalctl -b
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  Jun  3 13:53:04 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  Jun  3 13:53:04 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  Jun  3 13:53:04 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  Jun  3 13:53:04 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET protocol family
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET6 protocol family
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Jun  3 13:53:06 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Jun  3 13:53:06 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Jun  3 13:53:06 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Jun  3 13:53:06 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on :: port 22.
-  Jun  3 13:53:06 localhost systemd-logind[456]: New seat seat0.
-  Jun  3 13:53:06 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Jun  3 13:53:04 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jun  3 13:53:04 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:04 localhost kernel: nice[16] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[102]: nice[16] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[17] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[103]: nice[17] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[18] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[104]: nice[18] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[19] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[20] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[21] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[22] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[23] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[24] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[25] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[26] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[27] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[28] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[29] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
-  Jun  3 13:53:04 localhost kernel: cron[3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[116]: cron[3] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: atd[6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[117]: atd[6] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
-  Jun  3 13:53:04 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[30] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[122]: cron[30] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[32] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[123]: cron[32] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jun  3 14:04:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jun  3 14:04:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jun  3 14:04:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jun  3 14:04:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET protocol family
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET6 protocol family
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Jun  3 14:04:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Jun  3 14:04:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Jun  3 14:04:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Jun  3 14:04:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on :: port 22.
+  Jun  3 14:04:27 localhost systemd-logind[456]: New seat seat0.
+  Jun  3 14:04:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Jun  3 14:04:25 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  3 14:04:25 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:25 localhost kernel: nice[16] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[102]: nice[16] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[17] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[103]: nice[17] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[18] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[104]: nice[18] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[19] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[20] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[21] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[22] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[23] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[24] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[25] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[26] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[27] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[28] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[29] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
+  Jun  3 14:04:25 localhost kernel: cron[3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[116]: cron[3] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: atd[6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[117]: atd[6] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
+  Jun  3 14:04:25 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[30] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[122]: cron[30] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[32] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[123]: cron[32] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
 
 $ [370/512]> journalctl --disk-usage
   Archived and active journals take up 9.5K in the file system.
 
 $ [371/512]> journalctl --list-boots
-   0 b21ebdae-7f78-54e5-6e85-ceab0221d1ce Wed Jun  3 13:53:04 2026—Wed Jun  3 13:53:04 2026
+   0 aff4b357-3362-30b2-a584-09da01ec4dff Wed Jun  3 14:04:25 2026—Wed Jun  3 14:04:25 2026
 
 $ [372/512]> systemctl start service_inexistant_xyz
   Failed to start service_inexistant_xyz.service: Unit service_inexistant_xyz.service not found.
@@ -2797,8 +2828,8 @@ $ [380/512]> cat /etc/systemd/system/debugdemo.service
 
 $ [381/512]> ls -l /etc/systemd/system/
   total 16
-  -rw-r--r-- 1 root root 165 Jun  3 13:53 debugdemo.service
-  drwxr-xr-x 2 root root   0 Jun  3 13:53 [1;34mmulti-user.target.wants[0m
+  -rw-r--r-- 1 root root 165 Jun  3 14:04 debugdemo.service
+  drwxr-xr-x 2 root root   0 Jun  3 14:04 multi-user.target.wants
 
 $ [382/512]> systemctl daemon-reload
 <empty>
@@ -2906,7 +2937,7 @@ $ [406/512]> runlevel
   N 3
 
 $ [407/512]> who -r
-  root     tty1     2026-06-03 13:53 (:0)
+  root     tty1     2026-06-03 14:04 (:0)
 
 $ [408/512]> systemctl get-default
   multi-user.target
@@ -2977,10 +3008,10 @@ $ [421/512]> atq
 <empty>
 
 $ [422/512]> echo "echo hello" | at now + 5 minutes
-  job 1 at Wed Jun 03 13:58:00 2026
+  job 1 at Wed Jun 03 14:09:00 2026
 
 $ [423/512]> atq
-  1	Wed Jun 03 13:58:00 2026 a root
+  1	Wed Jun 03 14:09:00 2026 a root
 
 $ [424/512]> ls /etc/cron.d
   ls: cannot access '/etc/cron.d': No such file or directory
@@ -2998,49 +3029,109 @@ $ [428/512]> crontab -z
 <empty>
 
 $ [429/512]> atq -x
-  1	Wed Jun 03 13:58:00 2026 a root
+  1	Wed Jun 03 14:09:00 2026 a root
 
 
 --- [430] § lsof / fuser ---
 $ [430/512]> lsof
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  systemd        1  root   cwd    DIR    8,1     4096    2 /
+  sshd           2  root   cwd    DIR    8,1     4096    2 /
+  rsyslogd       4  root   cwd    DIR    8,1     4096    2 /
+  auditd         5  root   cwd    DIR    8,1     4096    2 /
+  systemd-resolved     7  systemd-resolve cwd    DIR    8,1     4096    2 /
+  systemd-journald     8  root   cwd    DIR    8,1     4096    2 /
+  systemd-logind     9  root   cwd    DIR    8,1     4096    2 /
+  dbus-daemon    10  messagebus cwd    DIR    8,1     4096    2 /
+  ifup          11  root   cwd    DIR    8,1     4096    2 /
+  ufw-init      12  root   cwd    DIR    8,1     4096    2 /
+  apparmor.systemd    13  root   cwd    DIR    8,1     4096    2 /
+  init.ohasd    14  oracle cwd    DIR    8,1     4096    2 /
+  -bash         15  root   cwd    DIR    8,1     4096    2 /root
+  atd           31  root   cwd    DIR    8,1     4096    2 /
+  cron          37  root   cwd    DIR    8,1     4096    2 /
+  sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+  systemd-re   540  root     5u  IPv4 10001      0t0  UDP *:53 (LISTEN)
+  tnslsnr     2001  root     6u  IPv4 10002      0t0  TCP *:1521 (LISTEN)
+  systemd-re     7  systemd-resolve   7u  IPv4 10003      0t0  TCP *:53 (LISTEN)
 
 $ [431/512]> lsof -p 1
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  systemd        1  root   cwd    DIR    8,1     4096    2 /
 
 $ [432/512]> lsof -p $$
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  -bash         15  root   cwd    DIR    8,1     4096    2 /root
 
 $ [433/512]> lsof -u root
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  systemd        1  root   cwd    DIR    8,1     4096    2 /
+  sshd           2  root   cwd    DIR    8,1     4096    2 /
+  rsyslogd       4  root   cwd    DIR    8,1     4096    2 /
+  auditd         5  root   cwd    DIR    8,1     4096    2 /
+  systemd-journald     8  root   cwd    DIR    8,1     4096    2 /
+  systemd-logind     9  root   cwd    DIR    8,1     4096    2 /
+  ifup          11  root   cwd    DIR    8,1     4096    2 /
+  ufw-init      12  root   cwd    DIR    8,1     4096    2 /
+  apparmor.systemd    13  root   cwd    DIR    8,1     4096    2 /
+  -bash         15  root   cwd    DIR    8,1     4096    2 /root
+  atd           31  root   cwd    DIR    8,1     4096    2 /
+  cron          37  root   cwd    DIR    8,1     4096    2 /
 
 $ [434/512]> lsof -i
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+  systemd-re   540  root     5u  IPv4 10001      0t0  UDP *:53 (LISTEN)
+  tnslsnr     2001  root     6u  IPv4 10002      0t0  TCP *:1521 (LISTEN)
+  systemd-re     7  systemd-resolve   7u  IPv4 10003      0t0  TCP *:53 (LISTEN)
 
 $ [435/512]> lsof -i :22
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
 
 $ [436/512]> lsof /var/log
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  systemd        1  root   cwd    DIR    8,1     4096    2 /
+  sshd           2  root   cwd    DIR    8,1     4096    2 /
+  rsyslogd       4  root   cwd    DIR    8,1     4096    2 /
+  auditd         5  root   cwd    DIR    8,1     4096    2 /
+  systemd-resolved     7  systemd-resolve cwd    DIR    8,1     4096    2 /
+  systemd-journald     8  root   cwd    DIR    8,1     4096    2 /
+  systemd-logind     9  root   cwd    DIR    8,1     4096    2 /
+  dbus-daemon    10  messagebus cwd    DIR    8,1     4096    2 /
+  ifup          11  root   cwd    DIR    8,1     4096    2 /
+  ufw-init      12  root   cwd    DIR    8,1     4096    2 /
+  apparmor.systemd    13  root   cwd    DIR    8,1     4096    2 /
+  init.ohasd    14  oracle cwd    DIR    8,1     4096    2 /
+  -bash         15  root   cwd    DIR    8,1     4096    2 /root
+  atd           31  root   cwd    DIR    8,1     4096    2 /
+  cron          37  root   cwd    DIR    8,1     4096    2 /
+  sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+  systemd-re   540  root     5u  IPv4 10001      0t0  UDP *:53 (LISTEN)
+  tnslsnr     2001  root     6u  IPv4 10002      0t0  TCP *:1521 (LISTEN)
+  systemd-re     7  systemd-resolve   7u  IPv4 10003      0t0  TCP *:53 (LISTEN)
 
 $ [437/512]> lsof -c bash
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  systemd        1  root   cwd    DIR    8,1     4096    2 /
+  sshd           2  root   cwd    DIR    8,1     4096    2 /
+  rsyslogd       4  root   cwd    DIR    8,1     4096    2 /
+  auditd         5  root   cwd    DIR    8,1     4096    2 /
+  systemd-resolved     7  systemd-resolve cwd    DIR    8,1     4096    2 /
+  systemd-journald     8  root   cwd    DIR    8,1     4096    2 /
+  systemd-logind     9  root   cwd    DIR    8,1     4096    2 /
+  dbus-daemon    10  messagebus cwd    DIR    8,1     4096    2 /
+  ifup          11  root   cwd    DIR    8,1     4096    2 /
+  ufw-init      12  root   cwd    DIR    8,1     4096    2 /
+  apparmor.systemd    13  root   cwd    DIR    8,1     4096    2 /
+  init.ohasd    14  oracle cwd    DIR    8,1     4096    2 /
+  -bash         15  root   cwd    DIR    8,1     4096    2 /root
+  atd           31  root   cwd    DIR    8,1     4096    2 /
+  cron          37  root   cwd    DIR    8,1     4096    2 /
+  sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+  systemd-re   540  root     5u  IPv4 10001      0t0  UDP *:53 (LISTEN)
+  tnslsnr     2001  root     6u  IPv4 10002      0t0  TCP *:1521 (LISTEN)
+  systemd-re     7  systemd-resolve   7u  IPv4 10003      0t0  TCP *:53 (LISTEN)
 
 $ [438/512]> fuser /var/log
   fuser: command not found
@@ -3064,9 +3155,7 @@ $ [444/512]> pmap -x $$
   pmap: command not found
 
 $ [445/512]> lsof -p 999999
-  COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-  systemd     1   root  cwd    DIR    8,1     4096    2 /
-  sshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)
+  lsof: PID 999999: No such process
 
 $ [446/512]> fuser /chemin/inexistant_xyz
   fuser: command not found
@@ -3150,7 +3239,7 @@ $ [468/512]> systemctl restart cron
 $ [469/512]> systemctl status cron
   ● cron.service - Regular background program processing daemon
        Loaded: loaded (/usr/lib/systemd/system/cron.service; enabled; vendor preset: enabled)
-       Active: active (running) since Wed, 03 Jun 2026 13:53:04 GMT
+       Active: active (running) since Wed, 03 Jun 2026 14:04:25 GMT
      Main PID: 40 (cron)
         Tasks: 1
        CGroup: /system.slice/cron.service
@@ -3187,7 +3276,7 @@ $ [475/512]> ps -eo pid,pmem,comm --sort=-pmem | head -5
       5  0.2 auditd
 
 $ [476/512]> ps -e | wc -l
-  17
+  18
 
 $ [477/512]> systemctl list-units --type=service --state=running | wc -l
   8
@@ -3229,8 +3318,10 @@ $ [484/512]> ps --sort=
      31 ?           00:00 atd
      38 pts/0       00:00 sleep
      40 ?           00:00 cron
+     41 pts/0       00:00 ps
 
 $ [485/512]> ps -o
+  
   
   
   
@@ -3272,7 +3363,7 @@ $ [494/512]> taskset
   taskset: usage: taskset [options] -p [mask] pid
 
 $ [495/512]> top -p
-  top - 13:53:04 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  top - 14:04:25 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
   Tasks: 16 total,  0 running, 16 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
@@ -3338,115 +3429,115 @@ $ [500/512]> systemctl --type
   To show all installed unit files use 'systemctl list-unit-files'.
 
 $ [501/512]> journalctl -u
-  -- Logs begin at Wed Jun  3 13:53:04 2026, end at Wed Jun  3 13:53:04 2026. --
-  Jun  3 13:53:04 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  Jun  3 13:53:04 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  Jun  3 13:53:04 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  Jun  3 13:53:04 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  Jun  3 13:53:04 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET protocol family
-  Jun  3 13:53:04 localhost kernel: NET: Registered PF_INET6 protocol family
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Jun  3 13:53:05 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Jun  3 13:53:06 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Jun  3 13:53:06 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Jun  3 13:53:06 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Jun  3 13:53:06 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Jun  3 13:53:06 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:07 localhost sshd[1234]: Server listening on :: port 22.
-  Jun  3 13:53:06 localhost systemd-logind[456]: New seat seat0.
-  Jun  3 13:53:06 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Jun  3 13:53:04 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jun  3 13:53:04 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jun  3 13:53:04 localhost kernel: nice[16] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[102]: nice[16] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[17] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[103]: nice[17] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: nice[18] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[104]: nice[18] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[19] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[20] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[21] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[22] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[23] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[24] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[25] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[26] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[27] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[28] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: sleep[29] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
-  Jun  3 13:53:04 localhost kernel: cron[3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[116]: cron[3] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [3] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: atd[6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[117]: atd[6] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost kernel: [6] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemd[1]: Stopped atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started atd.service.
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGKILL from unknown
-  Jun  3 13:53:04 localhost kernel: systemd[1] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
-  Jun  3 13:53:04 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[30] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[122]: cron[30] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[32] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[123]: cron[32] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemctl[124]: Created symlink /etc/systemd/system/multi-user.target.wants/debugdemo.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started debugdemo.service.
-  Jun  3 13:53:04 localhost kernel: sleep[34] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[125]: sleep[34] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped debugdemo.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started debugdemo.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started debugdemo.service.
-  Jun  3 13:53:04 localhost kernel: sleep[35] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[126]: sleep[35] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped debugdemo.service.
-  Jun  3 13:53:04 localhost systemctl[127]: Removed symlink /etc/systemd/system/multi-user.target.wants/debugdemo.service.
-  Jun  3 13:53:04 localhost kernel: cron[33] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[128]: cron[33] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[36] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[129]: cron[36] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost cron[130]: (root) RELOAD (crontabs/root)
-  Jun  3 13:53:04 localhost kernel: cron[37] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[131]: cron[37] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost kernel: cron[39] received signal SIGTERM from unknown
-  Jun  3 13:53:04 localhost kernel[132]: cron[39] terminated by signal SIGTERM
-  Jun  3 13:53:04 localhost systemd[1]: Stopped cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemd[1]: Started cron.service.
-  Jun  3 13:53:04 localhost systemctl[133]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
-  Jun  3 13:53:04 localhost systemctl[134]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  -- Logs begin at Wed Jun  3 14:04:25 2026, end at Wed Jun  3 14:04:25 2026. --
+  Jun  3 14:04:25 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jun  3 14:04:25 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jun  3 14:04:25 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jun  3 14:04:25 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jun  3 14:04:25 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET protocol family
+  Jun  3 14:04:25 localhost kernel: NET: Registered PF_INET6 protocol family
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Jun  3 14:04:26 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Jun  3 14:04:27 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Jun  3 14:04:27 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Jun  3 14:04:27 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Jun  3 14:04:27 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Jun  3 14:04:27 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:28 localhost sshd[1234]: Server listening on :: port 22.
+  Jun  3 14:04:27 localhost systemd-logind[456]: New seat seat0.
+  Jun  3 14:04:27 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Jun  3 14:04:25 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  3 14:04:25 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  3 14:04:25 localhost kernel: nice[16] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[102]: nice[16] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[17] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[103]: nice[17] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: nice[18] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[104]: nice[18] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[19] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[105]: sleep[19] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[20] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[106]: sleep[20] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[21] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[107]: sleep[21] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[22] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[108]: sleep[22] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[23] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[109]: sleep[23] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[24] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[110]: sleep[24] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[25] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[111]: sleep[25] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[26] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[112]: sleep[26] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[27] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[113]: sleep[27] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[28] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[114]: sleep[28] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: sleep[29] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel[115]: sleep[29] terminated by signal SIGKILL
+  Jun  3 14:04:25 localhost kernel: cron[3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[116]: cron[3] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [3] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: atd[6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[117]: atd[6] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost kernel: [6] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemd[1]: Stopped atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started atd.service.
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGKILL from unknown
+  Jun  3 14:04:25 localhost kernel: systemd[1] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost systemctl[118]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[119]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[120]: Created symlink /etc/systemd/system/cron.service → /dev/null.
+  Jun  3 14:04:25 localhost systemctl[121]: Removed /etc/systemd/system/cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[30] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[122]: cron[30] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[32] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[123]: cron[32] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemctl[124]: Created symlink /etc/systemd/system/multi-user.target.wants/debugdemo.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started debugdemo.service.
+  Jun  3 14:04:25 localhost kernel: sleep[34] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[125]: sleep[34] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped debugdemo.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started debugdemo.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started debugdemo.service.
+  Jun  3 14:04:25 localhost kernel: sleep[35] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[126]: sleep[35] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped debugdemo.service.
+  Jun  3 14:04:25 localhost systemctl[127]: Removed symlink /etc/systemd/system/multi-user.target.wants/debugdemo.service.
+  Jun  3 14:04:25 localhost kernel: cron[33] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[128]: cron[33] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[36] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[129]: cron[36] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost cron[130]: (root) RELOAD (crontabs/root)
+  Jun  3 14:04:25 localhost kernel: cron[37] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[131]: cron[37] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost kernel: cron[39] received signal SIGTERM from unknown
+  Jun  3 14:04:25 localhost kernel[132]: cron[39] terminated by signal SIGTERM
+  Jun  3 14:04:25 localhost systemd[1]: Stopped cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemd[1]: Started cron.service.
+  Jun  3 14:04:25 localhost systemctl[133]: Removed symlink /etc/systemd/system/multi-user.target.wants/cron.service.
+  Jun  3 14:04:25 localhost systemctl[134]: Created symlink /etc/systemd/system/multi-user.target.wants/cron.service.
 
 $ [502/512]> crontab
 <empty>

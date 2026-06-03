@@ -2228,7 +2228,7 @@ export class LinuxCommandExecutor {
       }
       case 'lscpu': return { output: this.hardware.cpu.toLscpu(), exitCode: 0 };
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
-      case 'lsof': return { output: 'COMMAND   PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\nsystemd     1   root  cwd    DIR    8,1     4096    2 /\nsshd      985   root    3u  IPv4  15432      0t0  TCP *:22 (LISTEN)', exitCode: 0 };
+      case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
         const target = args.filter(a => !a.startsWith('-'))[0];
         if (!target) return { output: 'Usage: file [-options] file...', exitCode: 1 };
@@ -3541,6 +3541,75 @@ export class LinuxCommandExecutor {
 
     // Complete file/directory paths
     return this.getPathCompletions(word);
+  }
+
+  /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
+  private cmdLsof(args: string[]): string {
+    const filterPid = ((): number | null => {
+      const i = args.indexOf('-p');
+      return i >= 0 && args[i + 1] ? parseInt(args[i + 1], 10) || null : null;
+    })();
+    const filterUser = ((): string | null => {
+      const i = args.indexOf('-u');
+      return i >= 0 ? args[i + 1] ?? null : null;
+    })();
+    const filterInet = ((): { proto?: string; port?: number } | null => {
+      const i = args.indexOf('-i');
+      if (i < 0) return null;
+      const spec = args[i + 1] ?? '';
+      // -i :22  |  -i tcp:22  |  -i tcp
+      const portMatch = spec.match(/:(\d+)$/);
+      const protoMatch = spec.match(/^(tcp|udp)/i);
+      return {
+        proto: protoMatch ? protoMatch[1].toLowerCase() : undefined,
+        port: portMatch ? parseInt(portMatch[1], 10) : undefined,
+      };
+    })();
+
+    const lines = ['COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME'];
+    const procs = this.processMgr.list();
+    let nodeSeq = 10_000;
+
+    for (const p of procs) {
+      if (filterPid !== null && p.pid !== filterPid) continue;
+      if (filterUser !== null && p.user !== filterUser) continue;
+      if (filterInet === null) {
+        // cwd entry — the canonical first row real lsof prints.
+        lines.push(`${p.comm.padEnd(10)} ${String(p.pid).padStart(5)}  ${p.user.padEnd(6)} cwd    DIR    8,1     4096    2 ${p.cwd ?? '/'}`);
+      }
+    }
+
+    if (this.socketTable) {
+      for (const s of this.socketTable.getAll()) {
+        if (filterPid !== null && s.pid !== filterPid) continue;
+        if (filterUser !== null) {
+          const proc = s.pid ? this.processMgr.get(s.pid) : null;
+          if (!proc || proc.user !== filterUser) continue;
+        }
+        if (filterInet) {
+          if (filterInet.proto && s.protocol !== filterInet.proto) continue;
+          if (filterInet.port !== undefined && s.localPort !== filterInet.port) continue;
+        }
+        const ipv = s.localAddress.includes(':') ? 'IPv6' : 'IPv4';
+        const peer = s.state === 'LISTEN' || s.state === 'CLOSED'
+          ? '*:*'
+          : `${s.remoteAddress}:${s.remotePort}`;
+        const target = s.state === 'LISTEN'
+          ? `*:${s.localPort} (LISTEN)`
+          : `${s.localAddress}:${s.localPort}->${peer} (${s.state})`;
+        const comm = (s.processName ?? 'unknown').slice(0, 10);
+        const pid = String(s.pid ?? 0).padStart(5);
+        const proc = s.pid ? this.processMgr.get(s.pid) : null;
+        const user = (proc?.user ?? 'root').padEnd(6);
+        lines.push(`${comm.padEnd(10)} ${pid}  ${user} ${String(s.id + 3).padStart(3)}u  ${ipv} ${String(nodeSeq++).padStart(5)}      0t0  ${s.protocol.toUpperCase()} ${target}`);
+      }
+    }
+
+    if (lines.length === 1) {
+      if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
+      return '';
+    }
+    return lines.join('\n');
   }
 
   private getEnvVarNames(prefix: string): string[] {
