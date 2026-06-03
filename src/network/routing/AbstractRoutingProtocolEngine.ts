@@ -36,7 +36,7 @@ implements IRoutingProtocolEngine<TConfig> {
   private enabled = false;
   private locator: RoutingPeerLocator = NULL_PEER_LOCATOR;
   protected deviceCtx: RoutingDeviceContext = NULL_DEVICE_CONTEXT;
-  private bus: IEventBus | null = null;
+  protected bus: IEventBus | null = null;
   private routes: RibRoute[] = [];
 
   private readonly store = new RoutingSignalStore();

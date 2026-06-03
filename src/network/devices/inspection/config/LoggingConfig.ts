@@ -41,6 +41,13 @@ export class LoggingConfig {
     warnings: 4, notifications: 5, informational: 6, debugging: 7,
   };
 
+  /** `event` like `bfd:state` → tag `bfd`. */
+  private tagFromEvent(event: string): string {
+    const colon = event.indexOf(':');
+    if (colon === -1) return event.replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+    return event.slice(0, colon).replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+  }
+
   /** Append a log message into the buffered/console projection. */
   append(severity: Severity, tag: string, text: string): void {
     if (!this.enabled) return;
@@ -202,6 +209,17 @@ export class LoggingConfig {
         const p = e.payload as { localPort?: string; remoteSystemName?: string };
         this.append('debugging', 'lldp',
           `Neighbor ${p.remoteSystemName ?? '?'} on ${p.localPort ?? '?'} refreshed`);
+      }),
+      bus.subscribeWhere('bgp.neighbor.state-changed', isOurs, (e) => {
+        const p = e.payload as { neighborIp?: string; oldState?: string; newState?: string; remoteAs?: number | null };
+        const asPart = p.remoteAs ? ` AS${p.remoteAs}` : '';
+        this.append('notifications', 'bgp',
+          `Neighbor ${p.neighborIp ?? '?'}${asPart} ${p.oldState ?? '?'} -> ${p.newState ?? '?'}`);
+      }),
+      bus.subscribeWhere('eigrp.neighbor.state-changed', isOurs, (e) => {
+        const p = e.payload as { neighbor?: string; iface?: string; oldState?: string; newState?: string; asn?: number };
+        this.append('notifications', 'eigrp',
+          `${p.asn ?? '?'}: Neighbor ${p.neighbor ?? '?'} (${p.iface ?? '?'}) is ${p.newState ?? '?'}`);
       }),
       bus.subscribeWhere('port.security.violation', isOurs, (e) => {
         const p = e.payload;
@@ -644,6 +662,12 @@ export class LoggingConfig {
       if (p.source !== deviceId) return;
       if (p.event.startsWith('router:acl-deny')) {
         this.append('warnings', 'sec', p.message);
+        return;
+      }
+      if (p.level === 'error') {
+        this.append('errors', this.tagFromEvent(p.event), p.message);
+      } else if (p.level === 'warn') {
+        this.append('warnings', this.tagFromEvent(p.event), p.message);
       }
     };
     unsubs.push(bus.subscribe('log', logHandler));

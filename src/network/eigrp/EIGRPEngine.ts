@@ -88,6 +88,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   }
 
   protected computeNeighbors(peers: RoutingPeer[]): void {
+    const previousIds = new Set(this.neighbors.view().map((n) => n.id));
     const keep = new Set<string>();
     for (const p of peers) {
       if (this.config.passive.has(p.localIface)) continue;
@@ -95,12 +96,39 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       if (!peerEng || !peerEng.isEnabled()) continue;
       if (peerEng.asn !== this.config.asn) continue;   // AS must match
       keep.add(p.deviceId);
+      const isNew = !previousIds.has(p.deviceId);
       this.neighbors.upsert(
         p.deviceId,
         p.remoteIp ? String(p.remoteIp) : p.hostname,
         p.localIface, 'Up',
         peerEng.getConfig().routerId,
       );
+      if (isNew) {
+        this.bus?.publish({
+          topic: 'eigrp.neighbor.state-changed',
+          payload: {
+            deviceId: this.deviceId,
+            neighbor: p.deviceId,
+            iface: p.localIface,
+            oldState: 'Down', newState: 'Up',
+            asn: this.config.asn,
+          },
+        } as never);
+      }
+    }
+    for (const stale of previousIds) {
+      if (!keep.has(stale)) {
+        this.bus?.publish({
+          topic: 'eigrp.neighbor.state-changed',
+          payload: {
+            deviceId: this.deviceId,
+            neighbor: stale,
+            iface: '',
+            oldState: 'Up', newState: 'Down',
+            asn: this.config.asn,
+          },
+        } as never);
+      }
     }
     this.neighbors.retainOnly(keep);
   }
