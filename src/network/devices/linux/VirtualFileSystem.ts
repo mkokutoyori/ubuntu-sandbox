@@ -358,11 +358,18 @@ export class VirtualFileSystem {
     if (!parent) return null;
     const [parentInode, basename] = parent;
 
+    // POSIX: write to a directory requires write+execute permission on
+    // the directory. Reject when a non-root caller targets a system
+    // path (`/etc`, `/sbin`, `/usr`, `/boot`, `/var/log`, `/var/lib`)
+    // owned by root with no world-write bit set.
+    if (!this.canWriteInParent(parentInode, uid, gid)) return null;
+
     // If file already exists, just update content
     const existingId = parentInode.children.get(basename);
     if (existingId !== undefined) {
       const existing = this.inodes.get(existingId);
       if (existing && existing.type === 'file') {
+        if (!this.canWriteFile(existing, uid, gid)) return null;
         existing.content = content;
         existing.size = content.length;
         existing.mtime = Date.now();
@@ -462,6 +469,28 @@ export class VirtualFileSystem {
     return '';
   }
 
+  /** POSIX-ish write check on an existing file: root bypass, owner→
+   *  user-w, group→group-w, other→other-w. Generated pseudo-files are
+   *  treated as writable so /proc no-op writes still succeed. */
+  private canWriteFile(inode: INode, uid: number, gid: number): boolean {
+    if (uid === 0) return true;
+    if (inode.generator) return true;
+    const m = inode.permissions;
+    if (uid === inode.uid) return (m & 0o200) !== 0;
+    if (gid === inode.gid) return (m & 0o020) !== 0;
+    return (m & 0o002) !== 0;
+  }
+
+  /** POSIX-ish write check on a directory: needed both to create a new
+   *  child and to delete an existing one. */
+  private canWriteInParent(parent: INode, uid: number, gid: number): boolean {
+    if (uid === 0) return true;
+    const m = parent.permissions;
+    if (uid === parent.uid) return (m & 0o200) !== 0;
+    if (gid === parent.gid) return (m & 0o020) !== 0;
+    return (m & 0o002) !== 0;
+  }
+
   writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false): boolean {
     // Handle special devices
     const inode = this.resolveInode(path);
@@ -473,6 +502,7 @@ export class VirtualFileSystem {
     if (inode?.type === 'file') {
       // Generated pseudo-files (procfs) are read-only — writes are discarded.
       if (inode.generator) return true;
+      if (!this.canWriteFile(inode, uid, gid)) return false;
       const previous = inode.content;
       if (append) {
         inode.content += content;

@@ -171,6 +171,20 @@ const LASTLOG_HELP = [
   'For more details see lastlog(8).',
 ].join('\n');
 
+/** Map the short process state code to the long name procfs prints in
+ *  /proc/<pid>/status (State: R (running) etc.). */
+function stateLabel(s: string): string {
+  switch (s) {
+    case 'R': return 'running';
+    case 'S': return 'sleeping';
+    case 'D': return 'disk sleep';
+    case 'T': return 'stopped';
+    case 'Z': return 'zombie';
+    case 'X': return 'dead';
+    default:  return 'unknown';
+  }
+}
+
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly userMgr: LinuxUserManager;
@@ -409,6 +423,75 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
   }
+
+  /** Tracked set of PIDs currently materialized under /proc as per-pid dirs. */
+  private materializedProcPids: Set<number> = new Set();
+
+
+
+  /** Materialize /proc/<pid>/ for every live process, drop entries for dead
+   *  PIDs. Each entry exposes generated `status`, `cmdline`, `comm`, `stat`
+   *  files driven live from the process manager. */
+  private syncProcPids(): void {
+    const live = new Set(this.processMgr.list().map((p) => p.pid));
+    // Remove gone.
+    for (const pid of [...this.materializedProcPids]) {
+      if (!live.has(pid)) {
+        try {
+          for (const f of ['status', 'cmdline', 'comm', 'stat']) {
+            this.vfs.deleteFile(`/proc/${pid}/${f}`);
+          }
+          this.vfs.rmdir(`/proc/${pid}`);
+        } catch { /* ignore */ }
+        this.materializedProcPids.delete(pid);
+      }
+    }
+    // Add new.
+    for (const pid of live) {
+      if (this.materializedProcPids.has(pid)) continue;
+      this.vfs.mkdirp(`/proc/${pid}`, 0o555, 0, 0);
+      this.vfs.registerGeneratedFile(`/proc/${pid}/comm`, () => {
+        const p = this.processMgr.get(pid);
+        return p ? `${p.comm}\n` : '';
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/cmdline`, () => {
+        const p = this.processMgr.get(pid);
+        // Real /proc/<pid>/cmdline NUL-separates args, then a trailing NUL.
+        return p ? p.args.join('\0') + '\0' : '';
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/status`, () => {
+        const p = this.processMgr.get(pid);
+        if (!p) return '';
+        return [
+          `Name:\t${p.comm}`,
+          `State:\t${p.state} (${stateLabel(p.state)})`,
+          `Tgid:\t${p.pid}`,
+          `Pid:\t${p.pid}`,
+          `PPid:\t${p.ppid}`,
+          `Uid:\t${p.uid}\t${p.uid}\t${p.uid}\t${p.uid}`,
+          `Gid:\t${p.gid}\t${p.gid}\t${p.gid}\t${p.gid}`,
+          `VmSize:\t${p.vsize} kB`,
+          `VmRSS:\t${p.rss} kB`,
+          '',
+        ].join('\n');
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/stat`, () => {
+        const p = this.processMgr.get(pid);
+        if (!p) return '';
+        return [
+          p.pid, `(${p.comm})`, p.state, p.ppid, p.pgid, p.sid, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
+          p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
+        ].join(' ') + '\n';
+      });
+      this.materializedProcPids.add(pid);
+    }
+    // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
+    if (this.shellPid && !this.vfs.exists('/proc/self')) {
+      this.vfs.createSymlink('/proc/self', String(this.shellPid), 0, 0);
+    }
+  }
+
+
 
   /**
    * Register `/proc/cpuinfo`, `/proc/meminfo` and `/proc/uptime` as generated
@@ -1298,6 +1381,11 @@ export class LinuxCommandExecutor {
   execute(input: string): string {
     const trimmed = input.trim();
     if (!trimmed) { this.lastExitCode = 0; return ''; }
+
+    // Keep /proc/<pid>/ tree in sync with the live process table before any
+    // command runs (cheap diff). Real Linux exposes per-process subdirs via
+    // procfs; the simulator emulates this lazily here.
+    this.syncProcPids();
 
     // Track command in history (store the raw input, like bash)
     this.commandHistory.push(trimmed);
