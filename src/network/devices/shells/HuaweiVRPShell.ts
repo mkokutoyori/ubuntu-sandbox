@@ -978,6 +978,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
+    t.register('reset arp all', 'Clear all ARP entries', () => {
+      getRouter()._clearARPCache();
+      return '';
+    });
+
     // reset arp dynamic — clear only dynamic ARP entries
     t.register('reset arp dynamic', 'Clear dynamic ARP entries', () => {
       const arpTable = getRouter()._getArpTableInternal();
@@ -987,9 +992,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
+    t.registerGreedy('reset arp interface', 'Clear ARP entries for an interface', (args) => {
+      if (!args[0]) return '';
+      const arp = getRouter()._getArpTableInternal();
+      for (const [ip, entry] of [...arp.entries()]) {
+        if ((entry as any).iface === args[0]) arp.delete(ip);
+      }
+      return '';
+    });
+
     // reset counters — reset IP traffic counters
     t.register('reset counters', 'Reset traffic counters', () => {
       getRouter().resetCounters();
+      return '';
+    });
+
+    t.registerGreedy('reset counters interface', 'Reset interface counters', (args) => {
+      const router = getRouter();
+      if (!args[0]) { router.resetCounters(); return ''; }
+      const port = router.getPort(args[0]);
+      if (port && typeof (port as any).resetCounters === 'function') (port as any).resetCounters();
+      return '';
+    });
+
+    t.registerGreedy('reset ip routing-table statistics', 'Reset routing-table statistics', (_args) => {
+      return '';
+    });
+
+    t.registerGreedy('reset dhcp', 'Reset DHCP statistics / bindings', (_args) => {
       return '';
     });
 

@@ -452,10 +452,7 @@ export function displayCurrentConfig(
     for (const h of helpers) {
       lines.push(` dhcp relay server-ip ${h}`);
     }
-    // Tunnel source/destination
-    const pendingCfg = ospfExtra.pendingIfConfig?.get(name) as any;
-    if (pendingCfg?.tunnelSource) lines.push(` source ${pendingCfg.tunnelSource}`);
-    if (pendingCfg?.tunnelDest) lines.push(` destination ${pendingCfg.tunnelDest}`);
+    lines.push(...renderHuaweiInterfaceExtras(router, port, name));
     // IPSec policy/profile applied to interface
     const ipsecEng2 = (router as any)._getIPSecEngineInternal?.();
     if (ipsecEng2) {
@@ -662,6 +659,31 @@ export function displayIpv6RoutingTableProtocol(router: Router, proto: string): 
   return [...head, ...renderHuaweiIpv6Rows(rt)].join('\n').trimEnd();
 }
 
+export function displayIpv6Interface(router: Router, ifName: string): string {
+  const portName = resolveHuaweiInterfaceName(router, ifName) || ifName;
+  const port = router.getPort(portName);
+  if (!port) return `Error: Wrong parameter found at '^' position.`;
+  const ipv6Enabled = (port as any).ipv6Enabled === true;
+  const addrs = port.getIPv6Addresses?.() || [];
+  const isUp = port.getIsUp();
+  const isConn = port.isConnected();
+  const isVirtual = /^(LoopBack|Tunnel)/i.test(portName);
+  const ipv6Mtu = (port as any).ipv6Mtu;
+  const raHalt = (port as any).ipv6NdRaHalt === true;
+  const lines = [
+    `${portName} current state : ${isUp ? (isConn || isVirtual ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
+    `IPv6 protocol current state : ${ipv6Enabled ? 'UP' : 'DOWN'}`,
+  ];
+  if (addrs.length === 0) lines.push('IPv6 is enabled, link-local address is not assigned');
+  for (const a of addrs as Array<{ address: string; prefixLength: number }>) {
+    lines.push(`  Global unicast address(es):`);
+    lines.push(`    ${a.address}, subnet is ${a.address}/${a.prefixLength}`);
+  }
+  if (ipv6Mtu) lines.push(`MTU is ${ipv6Mtu} bytes`);
+  if (raHalt) lines.push('ND RA messages are suppressed');
+  return lines.join('\n');
+}
+
 export function displayIpv6InterfaceBrief(router: Router): string {
   const ports = router._getPortsInternal();
   const lines = ['Interface                         IPv6 Address                    State'];
@@ -849,17 +871,44 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
     lines.push(` shutdown`);
   }
 
-  // Tunnel interface source/destination
-  const extra = router._getOSPFExtraConfig();
-  const pending = extra.pendingIfConfig?.get(portName) as any;
-  if (pending?.tunnelSource) lines.push(` source ${pending.tunnelSource}`);
-  if (pending?.tunnelDest) lines.push(` destination ${pending.tunnelDest}`);
+  lines.push(...renderHuaweiInterfaceExtras(router, port, portName));
 
   const vrrp = (router as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
   if (vrrp) lines.push(...vrrp.asInterfaceRunningConfigLines(portName));
 
   lines.push('#');
   return lines.join('\n');
+}
+
+export function renderHuaweiInterfaceExtras(router: Router, port: any, portName: string): string[] {
+  const lines: string[] = [];
+  const extra = router._getOSPFExtraConfig();
+  const pending = extra.pendingIfConfig?.get(portName) as any;
+  if (pending?.tunnelProtocol) lines.push(` tunnel-protocol ${pending.tunnelProtocol}`);
+  if (pending?.tunnelSource) lines.push(` source ${pending.tunnelSource}`);
+  if (pending?.tunnelDest) lines.push(` destination ${pending.tunnelDest}`);
+  if (pending?.greKey !== undefined) lines.push(` gre key ${pending.greKey}`);
+  if (pending?.ipsecProfile) lines.push(` ipsec profile ${pending.ipsecProfile}`);
+  if (pending?.tunnelKeepalivePeriod !== undefined) {
+    const kp = pending.tunnelKeepalivePeriod;
+    const kr = pending.tunnelKeepaliveRetry;
+    lines.push(` keepalive period ${kp}${kr !== undefined ? ` retry-times ${kr}` : ''}`);
+  }
+  if (port.dot1qVlan !== undefined) lines.push(` dot1q termination vid ${port.dot1qVlan}`);
+  if (port.arpBroadcastEnabled) lines.push(` arp broadcast enable`);
+  if (port.proxyArp) lines.push(` arp-proxy enable`);
+  if (port.arpTimeoutSec !== undefined && port.arpTimeoutSec !== 4 * 60 * 60 && typeof port.getArpTimeoutSec === 'function') {
+    lines.push(` arp expire-time ${port.getArpTimeoutSec()}`);
+  }
+  if (typeof port.getMTU === 'function' && port.getMTU() !== 1500) lines.push(` mtu ${port.getMTU()}`);
+  if (typeof port.getBandwidthKbps === 'function' && port.getBandwidthKbps() > 0) lines.push(` bandwidth ${port.getBandwidthKbps()}`);
+  if (port.configuredMacAddress) lines.push(` mac-address ${port.configuredMacAddress}`);
+  if (port.loopbackInternal) lines.push(` loopback internal`);
+  if (port.flowControl) lines.push(` flow-control`);
+  if (port.ipv6Enabled) lines.push(` ipv6 enable`);
+  if (port.ipv6Mtu) lines.push(` ipv6 mtu ${port.ipv6Mtu}`);
+  if (port.ipv6NdRaHalt) lines.push(` ipv6 nd ra halt`);
+  return lines;
 }
 
 // ─── Trie Registration ──────────────────────────────────────────────
@@ -1392,6 +1441,11 @@ export function registerDisplayCommands(
 
   trie.register('display ipv6 interface brief', 'Display IPv6 interface summary', () =>
     displayIpv6InterfaceBrief(getRouter()));
+
+  trie.registerGreedy('display ipv6 interface', 'Display IPv6 interface detail', (args) => {
+    if (args.length === 0) return displayIpv6InterfaceBrief(getRouter());
+    return displayIpv6Interface(getRouter(), args.join(' '));
+  });
 
   trie.registerGreedy('display current-configuration interface', 'Display interface running config', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';

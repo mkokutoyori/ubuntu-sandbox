@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-04T12:41:39.226Z
+Generated: 2026-06-04T12:56:41.652Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -495,61 +495,45 @@ Total steps: 279
 <empty>
 
 [123/279] r1 [R1] interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
-
-[124/279] r1 [R1] tunnel-protocol ipsec
-  % Invalid input detected at '^' marker.
-  tunnel-protocol ipsec
-  ^
-
-[125/279] r1 [R1] ip address 172.16.0.1 255.255.255.252
-  % Invalid input detected at '^' marker.
-  ip address 172.16.0.1 255.255.255.252
-     ^
-
-[126/279] r1 [R1] source 10.0.0.1
-  % Invalid input detected at '^' marker.
-  source 10.0.0.1
-  ^
-
-[127/279] r1 [R1] destination 10.0.0.2
-  % Invalid input detected at '^' marker.
-  destination 10.0.0.2
-  ^
-
-[128/279] r1 [R1] ipsec profile PROF1
 <empty>
 
-[129/279] r1 [R1-ipsec-policy-PROF1-0] quit
+[124/279] r1 [R1-Tunnel0/0/0] tunnel-protocol ipsec
+<empty>
+
+[125/279] r1 [R1-Tunnel0/0/0] ip address 172.16.0.1 255.255.255.252
+<empty>
+
+[126/279] r1 [R1-Tunnel0/0/0] source 10.0.0.1
+<empty>
+
+[127/279] r1 [R1-Tunnel0/0/0] destination 10.0.0.2
+<empty>
+
+[128/279] r1 [R1-Tunnel0/0/0] ipsec profile PROF1
+<empty>
+
+[129/279] r1 [R1-Tunnel0/0/0] quit
 <empty>
 
 [130/279] r1 [R1] interface Tunnel0/0/1
-  Error: Wrong parameter found at '^' position.
-
-[131/279] r1 [R1] tunnel-protocol gre
-  % Invalid input detected at '^' marker.
-  tunnel-protocol gre
-  ^
-
-[132/279] r1 [R1] ip address 172.16.0.5 255.255.255.252
-  % Invalid input detected at '^' marker.
-  ip address 172.16.0.5 255.255.255.252
-     ^
-
-[133/279] r1 [R1] source LoopBack0
-  % Invalid input detected at '^' marker.
-  source LoopBack0
-  ^
-
-[134/279] r1 [R1] destination 10.0.0.2
-  % Invalid input detected at '^' marker.
-  destination 10.0.0.2
-  ^
-
-[135/279] r1 [R1] ipsec profile PROF1
 <empty>
 
-[136/279] r1 [R1-ipsec-policy-PROF1-0] quit
+[131/279] r1 [R1-Tunnel0/0/1] tunnel-protocol gre
+<empty>
+
+[132/279] r1 [R1-Tunnel0/0/1] ip address 172.16.0.5 255.255.255.252
+<empty>
+
+[133/279] r1 [R1-Tunnel0/0/1] source LoopBack0
+<empty>
+
+[134/279] r1 [R1-Tunnel0/0/1] destination 10.0.0.2
+<empty>
+
+[135/279] r1 [R1-Tunnel0/0/1] ipsec profile PROF1
+<empty>
+
+[136/279] r1 [R1-Tunnel0/0/1] quit
 <empty>
 
 [137/279] r1 [R1] return
@@ -566,7 +550,15 @@ Total steps: 279
     Mode: tunnel
 
 [140/279] r1 <R1> display interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.1/255.255.255.252
+  Tunnel source 10.0.0.1
+  Tunnel destination 10.0.0.2
+  Tunnel protection IPSec profile PROF1
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 
 --- [141] § IKEv2 ---
@@ -760,6 +752,18 @@ Total steps: 279
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
   #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source 10.0.0.1
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -841,6 +845,18 @@ Total steps: 279
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
   #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source 10.0.0.1
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -918,6 +934,8 @@ Total steps: 279
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
   LoopBack0                         1.1.1.1/32           DOWN       DOWN
+  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
+  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
 
 [180/279] r1 [R1] display interface
   GE0/0/0 current state : UP
@@ -950,24 +968,44 @@ Total steps: 279
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.1/255.255.255.252
+  Tunnel source 10.0.0.1
+  Tunnel destination 10.0.0.2
+  Tunnel protection IPSec profile PROF1
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  Tunnel0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.5/255.255.255.252
+  Tunnel source LoopBack0
+  Tunnel destination 10.0.0.2
+  Tunnel protection IPSec profile PROF1
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [181/279] r1 [R1] display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 3        Routes : 3
+           Destinations : 5        Routes : 5
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
   1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
+  172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
+  172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [182/279] r1 [R1] display ip routing-table statistics
   Proto     route
   --------------------
-  Direct    3
+  Direct    5
   --------------------
-  Total     3
+  Total     5
 
 [183/279] r1 [R1] display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1141,7 +1179,7 @@ Total steps: 279
   No NTP associations
 
 [210/279] r1 [R1] display clock
-  2026-06-04 12:41:39
+  2026-06-04 12:56:41
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1154,13 +1192,13 @@ Total steps: 279
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:41:39
+  CPU Usage Stat. Time : 2026-06-04 12:56:41
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 12:41:39
+  Memory utilization statistics at 2026-06-04 12:56:41
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1255,6 +1293,8 @@ Total steps: 279
   GE0/0/2                     down    down      0%    0%       0          0
   GE0/0/3                     down    down      0%    0%       0          0
   LoopBack0                   down    down      0%    0%       0          0
+  Tunnel0/0/0                 down    down      0%    0%       0          0
+  Tunnel0/0/1                 down    down      0%    0%       0          0
 
 [226/279] r1 [R1] display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1296,6 +1336,18 @@ Total steps: 279
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+  #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source 10.0.0.1
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
   #
   #
   ike proposal 1
@@ -1422,6 +1474,18 @@ Total steps: 279
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
   #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source 10.0.0.1
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
+  #
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1496,6 +1560,16 @@ Total steps: 279
    shutdown
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source 10.0.0.1
+   destination 10.0.0.2
+   ipsec profile PROF1
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1547,6 +1621,8 @@ Total steps: 279
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
   1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
+  172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
+  172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [240/279] r1 [R1] display ip interface brief | include up
   The number of interface that is UP in Physical is 0

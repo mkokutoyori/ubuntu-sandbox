@@ -48,6 +48,30 @@ function looksLikeInterfaceName(token: string): boolean {
   return HUAWEI_NULL_IFACE.test(token) || HUAWEI_IFACE_PREFIX.test(token);
 }
 
+function resolveOrCreateHuaweiInterface(router: Router, raw: string): string | null {
+  const subMatch = raw.match(/^(.+?)\.(\d+)$/);
+  if (subMatch) {
+    const base = resolveHuaweiInterfaceName(router, subMatch[1]);
+    if (!base) return null;
+    const sub = `${base}.${subMatch[2]}`;
+    if (!router.getPort(sub)) router._createVirtualInterface(sub);
+    return sub;
+  }
+  const direct = resolveHuaweiInterfaceName(router, raw);
+  if (direct) return direct;
+  const vMatch = raw.match(/^(loopback|tunnel|nve|vlanif|eth-trunk|null)([\d/]+)$/i);
+  if (!vMatch) return null;
+  const typeMap: Record<string, string> = {
+    'loopback': 'LoopBack', 'lo': 'LoopBack',
+    'tunnel': 'Tunnel', 'tu': 'Tunnel',
+    'nve': 'Nve', 'vlanif': 'Vlanif',
+    'eth-trunk': 'Eth-Trunk', 'null': 'NULL',
+  };
+  const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+  router._createVirtualInterface(fullName);
+  return fullName;
+}
+
 export function cmdIpRouteStatic(router: Router, args: string[]): string {
   if (args.length < 3) return 'Error: Incomplete command.';
   try {
@@ -318,7 +342,10 @@ function cmdIpAddress(router: Router, ctx: HuaweiShellContext, args: string[]): 
   if (args.length < 2) return 'Error: Incomplete command.';
   try {
     const ip = new IPAddress(args[0]);
-    const mask = new SubnetMask(args[1]);
+    const maskArg = args[1];
+    const mask = /^\d+$/.test(maskArg) && !maskArg.includes('.')
+      ? SubnetMask.fromCIDR(parseInt(maskArg, 10))
+      : new SubnetMask(maskArg);
     router.configureInterface(ctx.getSelectedInterface()!, ip, mask);
     return '';
   } catch (e: any) {
@@ -348,17 +375,8 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
   trie.registerGreedy('interface', 'Enter interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const raw = args.join('');
-    let portName = resolveHuaweiInterfaceName(getRouter(), raw);
-    if (!portName) {
-      const vMatch = raw.match(/^(loopback|tunnel)([\d]+)$/i);
-      if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'LoopBack', 'tunnel': 'Tunnel' };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
-        getRouter()._createVirtualInterface(fullName);
-        portName = fullName;
-      }
-      if (!portName) return `Error: Wrong parameter found at '^' position.`;
-    }
+    const portName = resolveOrCreateHuaweiInterface(getRouter(), raw);
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
     ctx.setSelectedInterface(portName);
     ctx.setMode('interface');
     return '';
@@ -466,17 +484,8 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const raw = args.join('');
-    let portName = resolveHuaweiInterfaceName(getRouter(), raw);
-    if (!portName) {
-      const vMatch = raw.match(/^(loopback|tunnel)([\d]+)$/i);
-      if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'LoopBack', 'tunnel': 'Tunnel' };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
-        getRouter()._createVirtualInterface(fullName);
-        portName = fullName;
-      }
-      if (!portName) return `Error: Wrong parameter found at '^' position.`;
-    }
+    const portName = resolveOrCreateHuaweiInterface(getRouter(), raw);
+    if (!portName) return `Error: Wrong parameter found at '^' position.`;
     ctx.setSelectedInterface(portName);
     return '';
   });
@@ -576,12 +585,243 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
-  trie.registerGreedy('tunnel-protocol', 'Set tunnel protocol', (_args) => {
+  trie.registerGreedy('tunnel-protocol', 'Set tunnel protocol', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelProtocol = args.join(' ').toLowerCase();
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+
+  trie.registerGreedy('gre key', 'Set GRE tunnel key', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).greKey = parseInt(args[0], 10);
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+
+  trie.registerGreedy('keepalive period', 'Set tunnel keepalive', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const period = parseInt(args[0] ?? '', 10);
+    let retry: number | undefined;
+    const ridx = args.indexOf('retry-times');
+    if (ridx >= 0 && args[ridx + 1]) retry = parseInt(args[ridx + 1], 10);
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    if (!isNaN(period)) (pending as any).tunnelKeepalivePeriod = period;
+    if (retry !== undefined && !isNaN(retry)) (pending as any).tunnelKeepaliveRetry = retry;
+    extra.pendingIfConfig.set(ifName, pending);
+    const port = ctx.r().getPort(ifName);
+    if (port && !isNaN(period)) port.setKeepalive(period);
+    return '';
+  });
+
+  trie.registerGreedy('ipsec profile', 'Apply IPSec profile to tunnel', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).ipsecProfile = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+
+  trie.registerGreedy('mtu', 'Set interface MTU', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return 'Error: No interface selected';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) { try { port.setMTU(n); } catch (e: any) { return `Error: ${e.message}`; } }
+    return '';
+  });
+  trie.registerGreedy('jumboframe enable', 'Enable jumbo frames', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '9216', 10);
+    if (port && !isNaN(n)) { try { port.setMTU(n); } catch { /* ignore */ } }
+    return '';
+  });
+  trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.setBandwidthKbps(n);
+    return '';
+  });
+  trie.registerGreedy('speed', 'Set interface speed', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (!port) return '';
+    if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) { try { port.setSpeed(n); } catch { /* ignore */ } }
+    return '';
+  });
+  trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const a = (args[0] ?? '').toLowerCase();
+    if (port && (a === 'full' || a === 'half' || a === 'auto')) port.setDuplex(a as any);
+    return '';
+  });
+  trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
+    return '';
+  });
+  trie.register('flow-control', 'Enable flow control', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).flowControl = true;
+    return '';
+  });
+  trie.register('undo flow-control', 'Disable flow control', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).flowControl = false;
+    return '';
+  });
+  trie.register('loopback internal', 'Enable internal loopback', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).loopbackInternal = true;
+    return '';
+  });
+  trie.register('undo loopback', 'Disable loopback', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).loopbackInternal = false;
+    return '';
+  });
+  trie.registerGreedy('arp expire-time', 'Set ARP expire time (seconds)', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.setArpTimeoutSec(n);
+    return '';
+  });
+  trie.register('arp-proxy enable', 'Enable proxy-ARP', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).proxyArp = true;
+    return '';
+  });
+  trie.register('undo arp-proxy enable', 'Disable proxy-ARP', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).proxyArp = false;
+    return '';
+  });
+  trie.register('arp broadcast enable', 'Enable ARP broadcast (sub-if)', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).arpBroadcastEnabled = true;
+    return '';
+  });
+  trie.register('undo arp broadcast enable', 'Disable ARP broadcast (sub-if)', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).arpBroadcastEnabled = false;
+    return '';
+  });
+  trie.registerGreedy('mac-address', 'Set MAC address (aaaa-bbbb-cccc)', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).configuredMacAddress = args[0];
+    return '';
+  });
+  trie.registerGreedy('dot1q termination vid', 'Set 802.1Q VLAN tag for sub-interface', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as any).dot1qVlan = n;
+    return '';
+  });
+  trie.registerGreedy('qos queue', 'Configure QoS queue', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (!port) return '';
+    const queueId = parseInt(args[0] ?? '', 10);
+    const qos = (port as any).qosQueues || ((port as any).qosQueues = new Map<number, Record<string, number>>());
+    if (!isNaN(queueId)) {
+      const entry = qos.get(queueId) || {};
+      for (let i = 1; i < args.length; i += 2) {
+        const k = args[i]; const v = parseInt(args[i + 1] ?? '', 10);
+        if (k && !isNaN(v)) entry[k] = v;
+      }
+      qos.set(queueId, entry);
+    }
+    return '';
+  });
+  trie.register('dhcp select interface', 'Use interface DHCP pool', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const dhcp = ctx.r()._getDHCPServerInternal() as unknown as { setInterfaceMode?: (i: string, m: string) => void };
+    dhcp.setInterfaceMode?.(ifName, 'interface');
     return '';
   });
 
   // IPv6 interface commands
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (ifName) {
+      const port = ctx.r().getPort(ifName);
+      if (port) (port as any).ipv6Enabled = true;
+    }
+    return '';
+  });
+  trie.register('undo ipv6 enable', 'Disable IPv6 on interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (ifName) {
+      const port = ctx.r().getPort(ifName);
+      if (port) (port as any).ipv6Enabled = false;
+    }
+    return '';
+  });
+  trie.registerGreedy('ipv6 mtu', 'Set IPv6 MTU', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as any).ipv6Mtu = n;
+    return '';
+  });
+  trie.register('ipv6 nd ra halt', 'Halt IPv6 RA messages', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6NdRaHalt = true;
+    return '';
+  });
+  trie.register('undo ipv6 nd ra halt', 'Resume IPv6 RA messages', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6NdRaHalt = false;
     return '';
   });
 

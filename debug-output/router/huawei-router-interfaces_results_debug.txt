@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-06-04T12:41:39.124Z
+Generated: 2026-06-04T12:56:41.702Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -18,7 +18,7 @@ Total steps: 286
 <empty>
 
 [4/286] r1 [R1-GE0/0/0] ip address 192.168.100.1 24 sub
-  Error: Invalid subnet mask: 24
+<empty>
 
 [5/286] r1 [R1-GE0/0/0] ipv6 enable
 <empty>
@@ -33,81 +33,55 @@ Total steps: 286
 <empty>
 
 [9/286] r1 [R1-GE0/0/0] mtu 1500
-  % Invalid input detected at '^' marker.
-  mtu 1500
-  ^
+<empty>
 
 [10/286] r1 [R1-GE0/0/0] jumboframe enable 9000
-  % Invalid input detected at '^' marker.
-  jumboframe enable 9000
-  ^
+<empty>
 
 [11/286] r1 [R1-GE0/0/0] bandwidth 100000
-  % Invalid input detected at '^' marker.
-  bandwidth 100000
-  ^
+<empty>
 
 [12/286] r1 [R1-GE0/0/0] speed 1000
-  % Invalid input detected at '^' marker.
-  speed 1000
-  ^
+<empty>
 
 [13/286] r1 [R1-GE0/0/0] duplex full
-  % Invalid input detected at '^' marker.
-  duplex full
-  ^
+<empty>
 
 [14/286] r1 [R1-GE0/0/0] negotiation auto
-  % Invalid input detected at '^' marker.
-  negotiation auto
-  ^
+<empty>
 
 [15/286] r1 [R1-GE0/0/0] undo negotiation auto
 <empty>
 
 [16/286] r1 [R1-GE0/0/0] flow-control
-  % Invalid input detected at '^' marker.
-  flow-control
-  ^
+<empty>
 
 [17/286] r1 [R1-GE0/0/0] loopback internal
-  % Invalid input detected at '^' marker.
-  loopback internal
-  ^
+<empty>
 
 [18/286] r1 [R1-GE0/0/0] undo loopback
 <empty>
 
 [19/286] r1 [R1-GE0/0/0] arp expire-time 600
-  % Invalid input detected at '^' marker.
-  arp expire-time 600
-  ^
+<empty>
 
 [20/286] r1 [R1-GE0/0/0] arp-proxy enable
-  % Invalid input detected at '^' marker.
-  arp-proxy enable
-  ^
+<empty>
 
 [21/286] r1 [R1-GE0/0/0] undo arp-proxy enable
 <empty>
 
 [22/286] r1 [R1-GE0/0/0] mac-address 00e0-fc12-3456
-  % Invalid input detected at '^' marker.
-  mac-address 00e0-fc12-3456
-  ^
+<empty>
 
 [23/286] r1 [R1-GE0/0/0] traffic-policy P1 inbound
 <empty>
 
 [24/286] r1 [R1-GE0/0/0] qos queue 0 shaping 50
-  % Invalid input detected at '^' marker.
-  qos queue 0 shaping 50
-  ^
+<empty>
 
 [25/286] r1 [R1-GE0/0/0] dhcp select interface
-  % Invalid input detected at '^' marker.
-  dhcp select interface
-              ^
+<empty>
 
 [26/286] r1 [R1-GE0/0/0] dhcp select global
 <empty>
@@ -239,7 +213,7 @@ Total steps: 286
   The number of interface that is DOWN in Protocol is 0
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/0                           192.168.100.1/24     UP         UP
   GE0/0/1                           unassigned           UP         UP
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
@@ -258,234 +232,156 @@ Total steps: 286
   Enter system view, return user view with return command.
 
 [67/286] r1 [R1] interface GigabitEthernet0/0/0.10
-  Error: Wrong parameter found at '^' position.
-
-[68/286] r1 [R1] dot1q termination vid 10
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 10
-  ^
-
-[69/286] r1 [R1] ip address 192.168.1.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.1.1 255.255.255.0
-     ^
-
-[70/286] r1 [R1] arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-      ^
-
-[71/286] r1 [R1] quit
 <empty>
 
-[72/286] r1 <R1> interface GigabitEthernet0/0/0.20
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.20
-  ^
-
-[73/286] r1 <R1> dot1q termination vid 20
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 20
-  ^
-
-[74/286] r1 <R1> ip address 192.168.2.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.2.1 255.255.255.0
-     ^
-
-[75/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[76/286] r1 <R1> quit
+[68/286] r1 [R1-GE0/0/0.10] dot1q termination vid 10
 <empty>
 
-[77/286] r1 <R1> interface GigabitEthernet0/0/0.30
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.30
-  ^
-
-[78/286] r1 <R1> dot1q termination vid 30
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 30
-  ^
-
-[79/286] r1 <R1> ip address 192.168.3.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.3.1 255.255.255.0
-     ^
-
-[80/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[81/286] r1 <R1> quit
+[69/286] r1 [R1-GE0/0/0.10] ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[82/286] r1 <R1> interface GigabitEthernet0/0/0.40
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.40
-  ^
-
-[83/286] r1 <R1> dot1q termination vid 40
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 40
-  ^
-
-[84/286] r1 <R1> ip address 192.168.4.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.4.1 255.255.255.0
-     ^
-
-[85/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[86/286] r1 <R1> quit
+[70/286] r1 [R1-GE0/0/0.10] arp broadcast enable
 <empty>
 
-[87/286] r1 <R1> interface GigabitEthernet0/0/0.50
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.50
-  ^
-
-[88/286] r1 <R1> dot1q termination vid 50
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 50
-  ^
-
-[89/286] r1 <R1> ip address 192.168.5.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.5.1 255.255.255.0
-     ^
-
-[90/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[91/286] r1 <R1> quit
+[71/286] r1 [R1-GE0/0/0.10] quit
 <empty>
 
-[92/286] r1 <R1> interface GigabitEthernet0/0/0.60
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.60
-  ^
-
-[93/286] r1 <R1> dot1q termination vid 60
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 60
-  ^
-
-[94/286] r1 <R1> ip address 192.168.6.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.6.1 255.255.255.0
-     ^
-
-[95/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[96/286] r1 <R1> quit
+[72/286] r1 [R1] interface GigabitEthernet0/0/0.20
 <empty>
 
-[97/286] r1 <R1> interface GigabitEthernet0/0/0.70
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.70
-  ^
-
-[98/286] r1 <R1> dot1q termination vid 70
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 70
-  ^
-
-[99/286] r1 <R1> ip address 192.168.7.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.7.1 255.255.255.0
-     ^
-
-[100/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[101/286] r1 <R1> quit
+[73/286] r1 [R1-GE0/0/0.20] dot1q termination vid 20
 <empty>
 
-[102/286] r1 <R1> interface GigabitEthernet0/0/0.80
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.80
-  ^
-
-[103/286] r1 <R1> dot1q termination vid 80
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 80
-  ^
-
-[104/286] r1 <R1> ip address 192.168.8.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.8.1 255.255.255.0
-     ^
-
-[105/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[106/286] r1 <R1> quit
+[74/286] r1 [R1-GE0/0/0.20] ip address 192.168.2.1 255.255.255.0
 <empty>
 
-[107/286] r1 <R1> interface GigabitEthernet0/0/0.90
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.90
-  ^
-
-[108/286] r1 <R1> dot1q termination vid 90
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 90
-  ^
-
-[109/286] r1 <R1> ip address 192.168.9.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.9.1 255.255.255.0
-     ^
-
-[110/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[111/286] r1 <R1> quit
+[75/286] r1 [R1-GE0/0/0.20] arp broadcast enable
 <empty>
 
-[112/286] r1 <R1> interface GigabitEthernet0/0/0.100
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/0.100
-  ^
-
-[113/286] r1 <R1> dot1q termination vid 100
-  % Invalid input detected at '^' marker.
-  dot1q termination vid 100
-  ^
-
-[114/286] r1 <R1> ip address 192.168.10.1 255.255.255.0
-  % Invalid input detected at '^' marker.
-  ip address 192.168.10.1 255.255.255.0
-     ^
-
-[115/286] r1 <R1> arp broadcast enable
-  % Invalid input detected at '^' marker.
-  arp broadcast enable
-  ^
-
-[116/286] r1 <R1> quit
+[76/286] r1 [R1-GE0/0/0.20] quit
 <empty>
 
-[117/286] r1 <R1> return
+[77/286] r1 [R1] interface GigabitEthernet0/0/0.30
+<empty>
+
+[78/286] r1 [R1-GE0/0/0.30] dot1q termination vid 30
+<empty>
+
+[79/286] r1 [R1-GE0/0/0.30] ip address 192.168.3.1 255.255.255.0
+<empty>
+
+[80/286] r1 [R1-GE0/0/0.30] arp broadcast enable
+<empty>
+
+[81/286] r1 [R1-GE0/0/0.30] quit
+<empty>
+
+[82/286] r1 [R1] interface GigabitEthernet0/0/0.40
+<empty>
+
+[83/286] r1 [R1-GE0/0/0.40] dot1q termination vid 40
+<empty>
+
+[84/286] r1 [R1-GE0/0/0.40] ip address 192.168.4.1 255.255.255.0
+<empty>
+
+[85/286] r1 [R1-GE0/0/0.40] arp broadcast enable
+<empty>
+
+[86/286] r1 [R1-GE0/0/0.40] quit
+<empty>
+
+[87/286] r1 [R1] interface GigabitEthernet0/0/0.50
+<empty>
+
+[88/286] r1 [R1-GE0/0/0.50] dot1q termination vid 50
+<empty>
+
+[89/286] r1 [R1-GE0/0/0.50] ip address 192.168.5.1 255.255.255.0
+<empty>
+
+[90/286] r1 [R1-GE0/0/0.50] arp broadcast enable
+<empty>
+
+[91/286] r1 [R1-GE0/0/0.50] quit
+<empty>
+
+[92/286] r1 [R1] interface GigabitEthernet0/0/0.60
+<empty>
+
+[93/286] r1 [R1-GE0/0/0.60] dot1q termination vid 60
+<empty>
+
+[94/286] r1 [R1-GE0/0/0.60] ip address 192.168.6.1 255.255.255.0
+<empty>
+
+[95/286] r1 [R1-GE0/0/0.60] arp broadcast enable
+<empty>
+
+[96/286] r1 [R1-GE0/0/0.60] quit
+<empty>
+
+[97/286] r1 [R1] interface GigabitEthernet0/0/0.70
+<empty>
+
+[98/286] r1 [R1-GE0/0/0.70] dot1q termination vid 70
+<empty>
+
+[99/286] r1 [R1-GE0/0/0.70] ip address 192.168.7.1 255.255.255.0
+<empty>
+
+[100/286] r1 [R1-GE0/0/0.70] arp broadcast enable
+<empty>
+
+[101/286] r1 [R1-GE0/0/0.70] quit
+<empty>
+
+[102/286] r1 [R1] interface GigabitEthernet0/0/0.80
+<empty>
+
+[103/286] r1 [R1-GE0/0/0.80] dot1q termination vid 80
+<empty>
+
+[104/286] r1 [R1-GE0/0/0.80] ip address 192.168.8.1 255.255.255.0
+<empty>
+
+[105/286] r1 [R1-GE0/0/0.80] arp broadcast enable
+<empty>
+
+[106/286] r1 [R1-GE0/0/0.80] quit
+<empty>
+
+[107/286] r1 [R1] interface GigabitEthernet0/0/0.90
+<empty>
+
+[108/286] r1 [R1-GE0/0/0.90] dot1q termination vid 90
+<empty>
+
+[109/286] r1 [R1-GE0/0/0.90] ip address 192.168.9.1 255.255.255.0
+<empty>
+
+[110/286] r1 [R1-GE0/0/0.90] arp broadcast enable
+<empty>
+
+[111/286] r1 [R1-GE0/0/0.90] quit
+<empty>
+
+[112/286] r1 [R1] interface GigabitEthernet0/0/0.100
+<empty>
+
+[113/286] r1 [R1-GE0/0/0.100] dot1q termination vid 100
+<empty>
+
+[114/286] r1 [R1-GE0/0/0.100] ip address 192.168.10.1 255.255.255.0
+<empty>
+
+[115/286] r1 [R1-GE0/0/0.100] arp broadcast enable
+<empty>
+
+[116/286] r1 [R1-GE0/0/0.100] quit
+<empty>
+
+[117/286] r1 [R1] return
 <empty>
 
 [118/286] r1 <R1> display ip interface brief
@@ -499,7 +395,7 @@ Total steps: 286
   The number of interface that is DOWN in Protocol is 0
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/0                           192.168.100.1/24     UP         UP
   GE0/0/1                           unassigned           UP         UP
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
@@ -511,9 +407,24 @@ Total steps: 286
   LoopBack6                         10.255.255.6/32      DOWN       DOWN
   LoopBack7                         10.255.255.7/32      DOWN       DOWN
   LoopBack8                         10.255.255.8/32      DOWN       DOWN
+  GE0/0/0.10                        192.168.1.1/24       DOWN       DOWN
+  GE0/0/0.20                        192.168.2.1/24       DOWN       DOWN
+  GE0/0/0.30                        192.168.3.1/24       DOWN       DOWN
+  GE0/0/0.40                        192.168.4.1/24       DOWN       DOWN
+  GE0/0/0.50                        192.168.5.1/24       DOWN       DOWN
+  GE0/0/0.60                        192.168.6.1/24       DOWN       DOWN
+  GE0/0/0.70                        192.168.7.1/24       DOWN       DOWN
+  GE0/0/0.80                        192.168.8.1/24       DOWN       DOWN
+  GE0/0/0.90                        192.168.9.1/24       DOWN       DOWN
+  GE0/0/0.100                       192.168.10.1/24      DOWN       DOWN
 
 [119/286] r1 <R1> display interface GigabitEthernet0/0/0.10
-  Error: Wrong parameter found at '^' position.
+  GE0/0/0.10 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 
 --- [120] § tunnels ---
@@ -521,79 +432,62 @@ Total steps: 286
   Enter system view, return user view with return command.
 
 [121/286] r1 [R1] interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
-
-[122/286] r1 [R1] tunnel-protocol gre
-  % Invalid input detected at '^' marker.
-  tunnel-protocol gre
-  ^
-
-[123/286] r1 [R1] ip address 172.16.0.1 255.255.255.252
-  % Invalid input detected at '^' marker.
-  ip address 172.16.0.1 255.255.255.252
-     ^
-
-[124/286] r1 [R1] source GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  source GigabitEthernet0/0/0
-  ^
-
-[125/286] r1 [R1] destination 10.0.0.2
-  % Invalid input detected at '^' marker.
-  destination 10.0.0.2
-  ^
-
-[126/286] r1 [R1] gre key 1234
-  % Invalid input detected at '^' marker.
-  gre key 1234
-  ^
-
-[127/286] r1 [R1] keepalive period 5 retry-times 3
-  % Invalid input detected at '^' marker.
-  keepalive period 5 retry-times 3
-  ^
-
-[128/286] r1 [R1] quit
 <empty>
 
-[129/286] r1 <R1> interface Tunnel0/0/1
-  % Invalid input detected at '^' marker.
-  interface Tunnel0/0/1
-  ^
-
-[130/286] r1 <R1> tunnel-protocol ipsec
-  % Invalid input detected at '^' marker.
-  tunnel-protocol ipsec
-  ^
-
-[131/286] r1 <R1> ip address 172.16.0.5 255.255.255.252
-  % Invalid input detected at '^' marker.
-  ip address 172.16.0.5 255.255.255.252
-     ^
-
-[132/286] r1 <R1> source LoopBack0
-  % Invalid input detected at '^' marker.
-  source LoopBack0
-  ^
-
-[133/286] r1 <R1> destination 10.0.0.2
-  % Invalid input detected at '^' marker.
-  destination 10.0.0.2
-  ^
-
-[134/286] r1 <R1> ipsec profile PROF1
-  % Invalid input detected at '^' marker.
-  ipsec profile PROF1
-  ^
-
-[135/286] r1 <R1> quit
+[122/286] r1 [R1-Tunnel0/0/0] tunnel-protocol gre
 <empty>
 
-[136/286] r1 <R1> return
+[123/286] r1 [R1-Tunnel0/0/0] ip address 172.16.0.1 255.255.255.252
+<empty>
+
+[124/286] r1 [R1-Tunnel0/0/0] source GigabitEthernet0/0/0
+<empty>
+
+[125/286] r1 [R1-Tunnel0/0/0] destination 10.0.0.2
+<empty>
+
+[126/286] r1 [R1-Tunnel0/0/0] gre key 1234
+<empty>
+
+[127/286] r1 [R1-Tunnel0/0/0] keepalive period 5 retry-times 3
+<empty>
+
+[128/286] r1 [R1-Tunnel0/0/0] quit
+<empty>
+
+[129/286] r1 [R1] interface Tunnel0/0/1
+<empty>
+
+[130/286] r1 [R1-Tunnel0/0/1] tunnel-protocol ipsec
+<empty>
+
+[131/286] r1 [R1-Tunnel0/0/1] ip address 172.16.0.5 255.255.255.252
+<empty>
+
+[132/286] r1 [R1-Tunnel0/0/1] source LoopBack0
+<empty>
+
+[133/286] r1 [R1-Tunnel0/0/1] destination 10.0.0.2
+<empty>
+
+[134/286] r1 [R1-Tunnel0/0/1] ipsec profile PROF1
+<empty>
+
+[135/286] r1 [R1-Tunnel0/0/1] quit
+<empty>
+
+[136/286] r1 [R1] return
 <empty>
 
 [137/286] r1 <R1> display interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.1/255.255.255.252
+  Tunnel source GigabitEthernet0/0/0
+  Tunnel destination 10.0.0.2
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 
 --- [138] § IPv6 addressing ---
@@ -616,17 +510,13 @@ Total steps: 286
   Error: Invalid IPv6 address format (expected addr/prefix)
 
 [144/286] r1 [R1-GE0/0/0] ipv6 nd ra halt
-  % Invalid input detected at '^' marker.
-  ipv6 nd ra halt
-       ^
+<empty>
 
 [145/286] r1 [R1-GE0/0/0] undo ipv6 nd ra halt
 <empty>
 
 [146/286] r1 [R1-GE0/0/0] ipv6 mtu 1280
-  % Invalid input detected at '^' marker.
-  ipv6 mtu 1280
-       ^
+<empty>
 
 [147/286] r1 [R1-GE0/0/0] quit
 <empty>
@@ -635,13 +525,17 @@ Total steps: 286
 <empty>
 
 [149/286] r1 <R1> display ipv6 interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display ipv6 interface GigabitEthernet0/0/0
-                         ^
+  GE0/0/0 current state : UP
+  IPv6 protocol current state : UP
+    Global unicast address(es):
+      2001:db8:1::1, subnet is 2001:db8:1::1/64
+    Global unicast address(es):
+      2001:db8:abcd::1, subnet is 2001:db8:abcd::1/64
+  MTU is 1280 bytes
 
 [150/286] r1 <R1> display ipv6 interface brief
   Interface                         IPv6 Address                    State
-  GE0/0/0                           fe80::ff:fe00:1%GE0/0/0/64, 2001:db8:1::1/64, 2001:db8:abcd::1/64up
+  GE0/0/0                           2001:db8:1::1/64, 2001:db8:abcd::1/64up
   GE0/0/1                           unassigned                      up
   GE0/0/2                           unassigned                      down
   GE0/0/3                           unassigned                      down
@@ -653,6 +547,18 @@ Total steps: 286
   LoopBack6                         unassigned                      down
   LoopBack7                         unassigned                      down
   LoopBack8                         unassigned                      down
+  GE0/0/0.10                        unassigned                      down
+  GE0/0/0.20                        unassigned                      down
+  GE0/0/0.30                        unassigned                      down
+  GE0/0/0.40                        unassigned                      down
+  GE0/0/0.50                        unassigned                      down
+  GE0/0/0.60                        unassigned                      down
+  GE0/0/0.70                        unassigned                      down
+  GE0/0/0.80                        unassigned                      down
+  GE0/0/0.90                        unassigned                      down
+  GE0/0/0.100                       unassigned                      down
+  Tunnel0/0/0                       unassigned                      down
+  Tunnel0/0/1                       unassigned                      down
 
 
 --- [151] § shutdown / clear ---
@@ -669,7 +575,7 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   #
 
@@ -701,19 +607,13 @@ Total steps: 286
 <empty>
 
 [163/286] r1 <R1> reset counters interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  reset counters interface GigabitEthernet0/0/0
-                 ^
+<empty>
 
 [164/286] r1 <R1> reset ip routing-table statistics protocol all
-  % Invalid input detected at '^' marker.
-  reset ip routing-table statistics protocol all
-           ^
+<empty>
 
 [165/286] r1 <R1> reset arp all
-  % Invalid input detected at '^' marker.
-  reset arp all
-            ^
+<empty>
 
 
 --- [166] § per-interface display family ---
@@ -721,7 +621,7 @@ Total steps: 286
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.100.1/255.255.255.0
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -799,12 +699,89 @@ Total steps: 286
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
+  GE0/0/0.10 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.20 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.2.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.30 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.3.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.40 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.4.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.50 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.5.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.60 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.6.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.70 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.7.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.80 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.8.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.90 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.9.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.100 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.10.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.1/255.255.255.252
+  Tunnel source GigabitEthernet0/0/0
+  Tunnel destination 10.0.0.2
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  Tunnel0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.5/255.255.255.252
+  Tunnel source LoopBack0
+  Tunnel destination 10.0.0.2
+  Tunnel protection IPSec profile PROF1
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [167/286] r1 [R1] display interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.100.1/255.255.255.0
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -812,8 +789,8 @@ Total steps: 286
 [168/286] r1 [R1] display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Internet Address is 192.168.100.1/24
+  Broadcast address : 192.168.100.1
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -859,13 +836,30 @@ Total steps: 286
   Error: Wrong parameter found at '^' position.
 
 [176/286] r1 [R1] display interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.1/255.255.255.252
+  Tunnel source GigabitEthernet0/0/0
+  Tunnel destination 10.0.0.2
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [177/286] r1 [R1] display ip interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
+  Tunnel0/0/0 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 172.16.0.1/30
+  Broadcast address : 172.16.0.1
+  The Maximum Transmit Unit : 1500 bytes
+  Input bandwidth utilization  : 0%
+  Output bandwidth utilization : 0%
+      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+      Input:  0 packets, 0 bytes
+      Output: 0 packets, 0 bytes
 
 [178/286] r1 [R1] display interface Tunnel0/0/0 | include line protocol
-  Error: Wrong parameter found at '^' position.
+  Line protocol current state : UP
 
 [179/286] r1 [R1] display interface brief
   PHY: Physical   *down: administratively down
@@ -882,6 +876,18 @@ Total steps: 286
   LoopBack6                   down    down      0%    0%       0          0
   LoopBack7                   down    down      0%    0%       0          0
   LoopBack8                   down    down      0%    0%       0          0
+  GE0/0/0.10                  down    down      0%    0%       0          0
+  GE0/0/0.20                  down    down      0%    0%       0          0
+  GE0/0/0.30                  down    down      0%    0%       0          0
+  GE0/0/0.40                  down    down      0%    0%       0          0
+  GE0/0/0.50                  down    down      0%    0%       0          0
+  GE0/0/0.60                  down    down      0%    0%       0          0
+  GE0/0/0.70                  down    down      0%    0%       0          0
+  GE0/0/0.80                  down    down      0%    0%       0          0
+  GE0/0/0.90                  down    down      0%    0%       0          0
+  GE0/0/0.100                 down    down      0%    0%       0          0
+  Tunnel0/0/0                 down    down      0%    0%       0          0
+  Tunnel0/0/1                 down    down      0%    0%       0          0
 
 [180/286] r1 [R1] display interface description
   Interface                     PHY     Protocol Description
@@ -897,6 +903,18 @@ Total steps: 286
   LoopBack6                     down    down     LOOP-6
   LoopBack7                     down    down     LOOP-7
   LoopBack8                     down    down     LOOP-8
+  GE0/0/0.10                    down    down     
+  GE0/0/0.20                    down    down     
+  GE0/0/0.30                    down    down     
+  GE0/0/0.40                    down    down     
+  GE0/0/0.50                    down    down     
+  GE0/0/0.60                    down    down     
+  GE0/0/0.70                    down    down     
+  GE0/0/0.80                    down    down     
+  GE0/0/0.90                    down    down     
+  GE0/0/0.100                   down    down     
+  Tunnel0/0/0                   down    down     
+  Tunnel0/0/1                   down    down     
 
 [181/286] r1 [R1] display ip interface brief
   *down: administratively down
@@ -909,7 +927,7 @@ Total steps: 286
   The number of interface that is DOWN in Protocol is 0
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/0                           192.168.100.1/24     UP         UP
   GE0/0/1                           unassigned           UP         UP
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
@@ -921,6 +939,18 @@ Total steps: 286
   LoopBack6                         10.255.255.6/32      DOWN       DOWN
   LoopBack7                         10.255.255.7/32      DOWN       DOWN
   LoopBack8                         10.255.255.8/32      DOWN       DOWN
+  GE0/0/0.10                        192.168.1.1/24       DOWN       DOWN
+  GE0/0/0.20                        192.168.2.1/24       DOWN       DOWN
+  GE0/0/0.30                        192.168.3.1/24       DOWN       DOWN
+  GE0/0/0.40                        192.168.4.1/24       DOWN       DOWN
+  GE0/0/0.50                        192.168.5.1/24       DOWN       DOWN
+  GE0/0/0.60                        192.168.6.1/24       DOWN       DOWN
+  GE0/0/0.70                        192.168.7.1/24       DOWN       DOWN
+  GE0/0/0.80                        192.168.8.1/24       DOWN       DOWN
+  GE0/0/0.90                        192.168.9.1/24       DOWN       DOWN
+  GE0/0/0.100                       192.168.10.1/24      DOWN       DOWN
+  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
+  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
 
 
 --- [182] § regression: display family ---
@@ -948,7 +978,7 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   #
   interface GigabitEthernet0/0/1
@@ -991,6 +1021,47 @@ Total steps: 286
   interface LoopBack8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+  #
+  interface GigabitEthernet0/0/0.10
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.20
+   ip address 192.168.2.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.30
+   ip address 192.168.3.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.40
+   ip address 192.168.4.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.50
+   ip address 192.168.5.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.60
+   ip address 192.168.6.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.70
+   ip address 192.168.7.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.80
+   ip address 192.168.8.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.90
+   ip address 192.168.9.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.100
+   ip address 192.168.10.1 255.255.255.0
+  #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source GigabitEthernet0/0/0
+   destination 10.0.0.2
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
   #
   #
 
@@ -1000,7 +1071,7 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   #
   interface GigabitEthernet0/0/1
@@ -1043,6 +1114,47 @@ Total steps: 286
   interface LoopBack8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+  #
+  interface GigabitEthernet0/0/0.10
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.20
+   ip address 192.168.2.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.30
+   ip address 192.168.3.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.40
+   ip address 192.168.4.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.50
+   ip address 192.168.5.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.60
+   ip address 192.168.6.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.70
+   ip address 192.168.7.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.80
+   ip address 192.168.8.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.90
+   ip address 192.168.9.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.100
+   ip address 192.168.10.1 255.255.255.0
+  #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source GigabitEthernet0/0/0
+   destination 10.0.0.2
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
   #
   #
 
@@ -1057,7 +1169,7 @@ Total steps: 286
   The number of interface that is DOWN in Protocol is 0
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/0                           192.168.100.1/24     UP         UP
   GE0/0/1                           unassigned           UP         UP
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
@@ -1069,12 +1181,24 @@ Total steps: 286
   LoopBack6                         10.255.255.6/32      DOWN       DOWN
   LoopBack7                         10.255.255.7/32      DOWN       DOWN
   LoopBack8                         10.255.255.8/32      DOWN       DOWN
+  GE0/0/0.10                        192.168.1.1/24       DOWN       DOWN
+  GE0/0/0.20                        192.168.2.1/24       DOWN       DOWN
+  GE0/0/0.30                        192.168.3.1/24       DOWN       DOWN
+  GE0/0/0.40                        192.168.4.1/24       DOWN       DOWN
+  GE0/0/0.50                        192.168.5.1/24       DOWN       DOWN
+  GE0/0/0.60                        192.168.6.1/24       DOWN       DOWN
+  GE0/0/0.70                        192.168.7.1/24       DOWN       DOWN
+  GE0/0/0.80                        192.168.8.1/24       DOWN       DOWN
+  GE0/0/0.90                        192.168.9.1/24       DOWN       DOWN
+  GE0/0/0.100                       192.168.10.1/24      DOWN       DOWN
+  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
+  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
 
 [187/286] r1 [R1] display interface
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.100.1/255.255.255.0
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1152,15 +1276,92 @@ Total steps: 286
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
+  GE0/0/0.10 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.1.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.20 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.2.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.30 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.3.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.40 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.4.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.50 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.5.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.60 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.6.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.70 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.7.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.80 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.8.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.90 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.9.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  GE0/0/0.100 current state : DOWN
+  Line protocol current state : DOWN
+  Internet Address is 192.168.10.1/255.255.255.0
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.1/255.255.255.252
+  Tunnel source GigabitEthernet0/0/0
+  Tunnel destination 10.0.0.2
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
+  Tunnel0/0/1 current state : UP
+  Line protocol current state : UP
+  Internet Address is 172.16.0.5/255.255.255.252
+  Tunnel source LoopBack0
+  Tunnel destination 10.0.0.2
+  Tunnel protection IPSec profile PROF1
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [188/286] r1 [R1] display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 9        Routes : 9
+           Destinations : 21        Routes : 21
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  192.168.100.0/24    Direct  0    0     D     192.168.100.1   GE0/0/0
   10.255.255.1/32     Direct  0    0     D     10.255.255.1    LoopBack1
   10.255.255.2/32     Direct  0    0     D     10.255.255.2    LoopBack2
   10.255.255.3/32     Direct  0    0     D     10.255.255.3    LoopBack3
@@ -1169,13 +1370,25 @@ Total steps: 286
   10.255.255.6/32     Direct  0    0     D     10.255.255.6    LoopBack6
   10.255.255.7/32     Direct  0    0     D     10.255.255.7    LoopBack7
   10.255.255.8/32     Direct  0    0     D     10.255.255.8    LoopBack8
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0.10
+  192.168.2.0/24      Direct  0    0     D     192.168.2.1     GE0/0/0.20
+  192.168.3.0/24      Direct  0    0     D     192.168.3.1     GE0/0/0.30
+  192.168.4.0/24      Direct  0    0     D     192.168.4.1     GE0/0/0.40
+  192.168.5.0/24      Direct  0    0     D     192.168.5.1     GE0/0/0.50
+  192.168.6.0/24      Direct  0    0     D     192.168.6.1     GE0/0/0.60
+  192.168.7.0/24      Direct  0    0     D     192.168.7.1     GE0/0/0.70
+  192.168.8.0/24      Direct  0    0     D     192.168.8.1     GE0/0/0.80
+  192.168.9.0/24      Direct  0    0     D     192.168.9.1     GE0/0/0.90
+  192.168.10.0/24     Direct  0    0     D     192.168.10.1    GE0/0/0.100
+  172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
+  172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [189/286] r1 [R1] display ip routing-table statistics
   Proto     route
   --------------------
-  Direct    9
+  Direct    21
   --------------------
-  Total     9
+  Total     21
 
 [190/286] r1 [R1] display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1242,19 +1455,28 @@ Total steps: 286
   VRID  State        Interface                Type     Virtual IP
 
 [208/286] r1 [R1] display ike sa
-  Info: No IPSec configuration.
+  IPv4 Crypto ISAKMP SA
+  dst             src             state          conn-id status
+  
+  There are no IKEv1 SAs (no SA established)
 
 [209/286] r1 [R1] display ipsec sa
-  Info: No IPSec configuration.
+  No IPSec SAs established.
 
 [210/286] r1 [R1] display ipsec policy
-  Info: No IPSec configuration.
+  No crypto maps configured.
 
 [211/286] r1 [R1] display ipsec proposal
-  Info: No IPSec configuration.
+  No transform sets defined.
 
 [212/286] r1 [R1] display ike proposal
-  Info: No IPSec configuration.
+  Global IKE policy
+  Default protection suite
+  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
+  	hash algorithm:         Secure Hash Standard
+  	authentication method:  Rivest-Shamir-Adleman Signature
+  	Diffie-Hellman group:   #1 (768 bit)
+  	lifetime:               86400 seconds, no volume limit
 
 [213/286] r1 [R1] display ike peer
   Info: No IKE peers configured.
@@ -1273,7 +1495,7 @@ Total steps: 286
   No NTP associations
 
 [217/286] r1 [R1] display clock
-  2026-06-04 12:41:39
+  2026-06-04 12:56:41
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1286,13 +1508,13 @@ Total steps: 286
 [220/286] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:41:39
+  CPU Usage Stat. Time : 2026-06-04 12:56:41
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 12:41:39
+  Memory utilization statistics at 2026-06-04 12:56:41
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1394,12 +1616,24 @@ Total steps: 286
   LoopBack6                   down    down      0%    0%       0          0
   LoopBack7                   down    down      0%    0%       0          0
   LoopBack8                   down    down      0%    0%       0          0
+  GE0/0/0.10                  down    down      0%    0%       0          0
+  GE0/0/0.20                  down    down      0%    0%       0          0
+  GE0/0/0.30                  down    down      0%    0%       0          0
+  GE0/0/0.40                  down    down      0%    0%       0          0
+  GE0/0/0.50                  down    down      0%    0%       0          0
+  GE0/0/0.60                  down    down      0%    0%       0          0
+  GE0/0/0.70                  down    down      0%    0%       0          0
+  GE0/0/0.80                  down    down      0%    0%       0          0
+  GE0/0/0.90                  down    down      0%    0%       0          0
+  GE0/0/0.100                 down    down      0%    0%       0          0
+  Tunnel0/0/0                 down    down      0%    0%       0          0
+  Tunnel0/0/1                 down    down      0%    0%       0          0
 
 [233/286] r1 [R1] display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Internet Address is 192.168.100.1/24
+  Broadcast address : 192.168.100.1
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -1412,7 +1646,7 @@ Total steps: 286
   GE0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.100.1/255.255.255.0
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1423,7 +1657,7 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   #
   interface GigabitEthernet0/0/1
@@ -1466,6 +1700,47 @@ Total steps: 286
   interface LoopBack8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+  #
+  interface GigabitEthernet0/0/0.10
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.20
+   ip address 192.168.2.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.30
+   ip address 192.168.3.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.40
+   ip address 192.168.4.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.50
+   ip address 192.168.5.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.60
+   ip address 192.168.6.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.70
+   ip address 192.168.7.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.80
+   ip address 192.168.8.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.90
+   ip address 192.168.9.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.100
+   ip address 192.168.10.1 255.255.255.0
+  #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source GigabitEthernet0/0/0
+   destination 10.0.0.2
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
   #
   #
 
@@ -1519,7 +1794,7 @@ Total steps: 286
 [244/286] r1 [R1] display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   #
   interface GigabitEthernet0/0/1
@@ -1562,13 +1837,54 @@ Total steps: 286
   interface LoopBack8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+  #
+  interface GigabitEthernet0/0/0.10
+   ip address 192.168.1.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.20
+   ip address 192.168.2.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.30
+   ip address 192.168.3.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.40
+   ip address 192.168.4.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.50
+   ip address 192.168.5.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.60
+   ip address 192.168.6.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.70
+   ip address 192.168.7.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.80
+   ip address 192.168.8.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.90
+   ip address 192.168.9.1 255.255.255.0
+  #
+  interface GigabitEthernet0/0/0.100
+   ip address 192.168.10.1 255.255.255.0
+  #
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source GigabitEthernet0/0/0
+   destination 10.0.0.2
+  #
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
   #
   #
 
 [245/286] r1 [R1] display current-configuration | exclude #
   sysname R1
   interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   interface GigabitEthernet0/0/1
    shutdown
@@ -1600,9 +1916,38 @@ Total steps: 286
   interface LoopBack8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+  interface GigabitEthernet0/0/0.10
+   ip address 192.168.1.1 255.255.255.0
+  interface GigabitEthernet0/0/0.20
+   ip address 192.168.2.1 255.255.255.0
+  interface GigabitEthernet0/0/0.30
+   ip address 192.168.3.1 255.255.255.0
+  interface GigabitEthernet0/0/0.40
+   ip address 192.168.4.1 255.255.255.0
+  interface GigabitEthernet0/0/0.50
+   ip address 192.168.5.1 255.255.255.0
+  interface GigabitEthernet0/0/0.60
+   ip address 192.168.6.1 255.255.255.0
+  interface GigabitEthernet0/0/0.70
+   ip address 192.168.7.1 255.255.255.0
+  interface GigabitEthernet0/0/0.80
+   ip address 192.168.8.1 255.255.255.0
+  interface GigabitEthernet0/0/0.90
+   ip address 192.168.9.1 255.255.255.0
+  interface GigabitEthernet0/0/0.100
+   ip address 192.168.10.1 255.255.255.0
+  interface Tunnel0/0/0
+   ip address 172.16.0.1 255.255.255.252
+   source GigabitEthernet0/0/0
+   destination 10.0.0.2
+  interface Tunnel0/0/1
+   ip address 172.16.0.5 255.255.255.252
+   source LoopBack0
+   destination 10.0.0.2
+   ipsec profile PROF1
 
 [246/286] r1 [R1] display ip routing-table | include Direct
-  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
+  192.168.100.0/24    Direct  0    0     D     192.168.100.1   GE0/0/0
   10.255.255.1/32     Direct  0    0     D     10.255.255.1    LoopBack1
   10.255.255.2/32     Direct  0    0     D     10.255.255.2    LoopBack2
   10.255.255.3/32     Direct  0    0     D     10.255.255.3    LoopBack3
@@ -1611,11 +1956,23 @@ Total steps: 286
   10.255.255.6/32     Direct  0    0     D     10.255.255.6    LoopBack6
   10.255.255.7/32     Direct  0    0     D     10.255.255.7    LoopBack7
   10.255.255.8/32     Direct  0    0     D     10.255.255.8    LoopBack8
+  192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0.10
+  192.168.2.0/24      Direct  0    0     D     192.168.2.1     GE0/0/0.20
+  192.168.3.0/24      Direct  0    0     D     192.168.3.1     GE0/0/0.30
+  192.168.4.0/24      Direct  0    0     D     192.168.4.1     GE0/0/0.40
+  192.168.5.0/24      Direct  0    0     D     192.168.5.1     GE0/0/0.50
+  192.168.6.0/24      Direct  0    0     D     192.168.6.1     GE0/0/0.60
+  192.168.7.0/24      Direct  0    0     D     192.168.7.1     GE0/0/0.70
+  192.168.8.0/24      Direct  0    0     D     192.168.8.1     GE0/0/0.80
+  192.168.9.0/24      Direct  0    0     D     192.168.9.1     GE0/0/0.90
+  192.168.10.0/24     Direct  0    0     D     192.168.10.1    GE0/0/0.100
+  172.16.0.0/30       Direct  0    0     D     172.16.0.1      Tunnel0/0/0
+  172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [247/286] r1 [R1] display ip interface brief | include up
   The number of interface that is UP in Physical is 0
   The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
+  GE0/0/0                           192.168.100.1/24     UP         UP
   GE0/0/1                           unassigned           UP         UP
 
 
@@ -1690,7 +2047,7 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0
    description ## LAN to L1 ##
-   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0
    dhcp select global
   #
 
@@ -1709,7 +2066,7 @@ Total steps: 286
 [275/286] r1 [Huawei-ospf-1] display this
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 192.168.100.1
   #
 
 [276/286] r1 [Huawei-ospf-1] quit

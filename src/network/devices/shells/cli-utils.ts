@@ -166,6 +166,15 @@ const HUAWEI_INTERFACE_PREFIXES: Record<string, string[]> = {
   'ge': ['GE', 'GigabitEthernet'],
   'gi': ['GE', 'GigabitEthernet'],
   'gigabitethernet': ['GE', 'GigabitEthernet'],
+  'loopback': ['LoopBack'],
+  'lo': ['LoopBack'],
+  'lb': ['LoopBack'],
+  'tunnel': ['Tunnel'],
+  'tu': ['Tunnel'],
+  'eth-trunk': ['Eth-Trunk'],
+  'vlanif': ['Vlanif'],
+  'nve': ['Nve'],
+  'null': ['NULL'],
 };
 
 const IFACE_NAME_RE = /^([a-z]+)([\d/.-]+)$/;
@@ -212,13 +221,11 @@ export function resolveHuaweiInterfaceName(
 ): string | null {
   const lower = input.toLowerCase();
 
-  // Direct match
   for (const name of portNames) {
     if (name.toLowerCase() === lower) return name;
   }
 
-  // Abbreviation: GE0/0/0 → full port name
-  const match = lower.match(/^(ge|gigabitethernet|gi)([\d/]+)$/);
+  const match = lower.match(/^([a-z-]+)([\d/.]+)$/);
   if (!match) return null;
 
   const numbers = match[2];
@@ -231,6 +238,5 @@ export function resolveHuaweiInterfaceName(
       if (name === resolved) return name;
     }
   }
-
   return null;
 }

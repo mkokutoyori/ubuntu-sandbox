@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T12:41:40.706Z
+Generated: 2026-06-04T12:56:35.392Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 12:41:40
+  2026-06-04 12:56:35
   Thursday
   Time Zone(UTC) : UTC
 
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:41:40
+  CPU Usage Stat. Time : 2026-06-04 12:56:35
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 12:41:40
+  Memory utilization statistics at 2026-06-04 12:56:35
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -560,92 +560,41 @@ Total steps: 304
 <empty>
 
 [75/304] r1 [R1-CORE] interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
-
-[76/304] r1 [R1-CORE] display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  #
-
-[77/304] r1 [R1-CORE] quit
 <empty>
 
-[78/304] r1 <R1-CORE> ospf 1
-  % Invalid input detected at '^' marker.
+[76/304] r1 [R1-CORE-Tunnel0/0/0] display this
+  #
+  interface Tunnel0/0/0
+   shutdown
+  #
+
+[77/304] r1 [R1-CORE-Tunnel0/0/0] quit
+<empty>
+
+[78/304] r1 [R1-CORE] ospf 1
+<empty>
+
+[79/304] r1 [R1-CORE-ospf-1] display this
+  #
   ospf 1
-  ^
-
-[79/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
   #
 
-[80/304] r1 <R1-CORE> quit
+[80/304] r1 [R1-CORE-ospf-1] quit
 <empty>
 
-[81/304] r1 <R1-CORE> rip 1
+[81/304] r1 [R1-CORE] rip 1
 <empty>
 
-[82/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
+[82/304] r1 [R1-CORE-rip-1] display this
   #
   rip 1
    version 2
   #
 
-[83/304] r1 <R1-CORE> quit
+[83/304] r1 [R1-CORE-rip-1] quit
 <empty>
 
-[84/304] r1 <R1-CORE> bgp 65000
+[84/304] r1 [R1-CORE] bgp 65000
 <empty>
 
 [85/304] r1 [R1-CORE-bgp-65000] display this
@@ -689,9 +638,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [92/304] r1 [R1-CORE-acl-basic-2000] quit
@@ -719,9 +673,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [95/304] r1 [R1-CORE] quit
@@ -751,9 +710,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [98/304] r1 <R1-CORE> quit
@@ -783,9 +747,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [101/304] r1 <R1-CORE> quit
@@ -815,9 +784,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [104/304] r1 <R1-CORE> quit
@@ -847,9 +821,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [107/304] r1 <R1-CORE> quit
@@ -879,9 +858,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [110/304] r1 <R1-CORE> quit
@@ -911,9 +895,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [113/304] r1 <R1-CORE> quit
@@ -943,9 +932,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [116/304] r1 <R1-CORE> quit
@@ -981,9 +975,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 
@@ -1013,9 +1012,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
@@ -1040,9 +1044,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [126/304] r1 [R1-EDGE] q
@@ -1070,9 +1079,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
@@ -1091,6 +1105,7 @@ Total steps: 304
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
   LoopBack0                         unassigned           DOWN       DOWN
+  Tunnel0/0/0                       unassigned           DOWN       DOWN
 
 [130/304] r1 <R1-EDGE> dis ip rou
   Route Flags: R - relay, D - download to fib
@@ -1277,9 +1292,12 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+  interface Tunnel0/0/0
+   shutdown
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
+  ospf 1
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1297,10 +1315,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [174/304] r1 <Huawei> display ip routing-table | include Direct
@@ -1317,6 +1340,7 @@ Total steps: 304
   Line protocol current state : UP
   Line protocol current state : DOWN
   Line protocol current state : DOWN
+  Line protocol current state : UP
   Line protocol current state : UP
 
 
@@ -1417,10 +1441,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [195/304] r1 <Huawei> reset saved-configuration
@@ -1486,10 +1515,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [203/304] r1 <Huawei> display saved-configuration
@@ -1513,10 +1547,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [204/304] r1 <Huawei> display ip interface brief
@@ -1535,6 +1574,7 @@ Total steps: 304
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
   LoopBack0                         unassigned           DOWN       DOWN
+  Tunnel0/0/0                       unassigned           DOWN       DOWN
 
 [205/304] r1 <Huawei> display interface
   GE0/0/0 current state : UP
@@ -1567,6 +1607,12 @@ Total steps: 304
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [206/304] r1 <Huawei> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1593,19 +1639,29 @@ Total steps: 304
   No ARP entries found.
 
 [210/304] r1 <Huawei> display ospf peer
-  Error: OSPF is not configured.
+  OSPF Process with Router ID 0.0.0.0
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
 
 [211/304] r1 <Huawei> display ospf interface
-  Error: OSPF is not configured.
+<empty>
 
 [212/304] r1 <Huawei> display ospf routing
-  Info: OSPF is not running.
+  OSPF Process 1 with Router ID 0.0.0.0
+    Routing Tables
+  
+    Routing for Network
 
 [213/304] r1 <Huawei> display ospf lsdb
-  Error: OSPF is not configured.
+           OSPF Process 1 with Router ID 0.0.0.0
+                    Link State Database
+  
 
 [214/304] r1 <Huawei> display ospf brief
-  Error: OSPF is not configured.
+  OSPF Process 1 with Router ID 0.0.0.0
+  
+   Area    Type   Intf    Adj   LSA
 
 [215/304] r1 <Huawei> display rip
   RIP process 1
@@ -1707,7 +1763,7 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 12:41:40
+  2026-06-04 12:56:35
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1720,13 +1776,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:41:40
+  CPU Usage Stat. Time : 2026-06-04 12:56:35
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 12:41:40
+  Memory utilization statistics at 2026-06-04 12:56:35
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1821,6 +1877,7 @@ Total steps: 304
   GE0/0/2                     down    down      0%    0%       0          0
   GE0/0/3                     down    down      0%    0%       0          0
   LoopBack0                   down    down      0%    0%       0          0
+  Tunnel0/0/0                 down    down      0%    0%       0          0
 
 [251/304] r1 <Huawei> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1864,10 +1921,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [254/304] r1 <Huawei> display diagnostic-information
@@ -1915,7 +1977,7 @@ Total steps: 304
 
 --- [261] § regression: pipe filters ---
 [261/304] r1 <Huawei> display current-configuration | include ospf
-<empty>
+  ospf 1
 
 [262/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1933,10 +1995,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [263/304] r1 <Huawei> display current-configuration | exclude #
@@ -1952,9 +2019,12 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+  interface Tunnel0/0/0
+   shutdown
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
+  ospf 1
 
 [264/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>

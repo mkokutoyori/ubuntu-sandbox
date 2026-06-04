@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-04T12:41:40.790Z
+Generated: 2026-06-04T12:57:05.859Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -450,27 +450,25 @@ Total steps: 257
 [123/257] r1 [R1-GE0/0/1] qos lr outbound cir 100000 cbs 1875000
   % Invalid input detected at '^' marker.
   qos lr outbound cir 100000 cbs 1875000
-  ^
+      ^
 
 [124/257] r1 [R1-GE0/0/1] qos gts dscp ef cir 2000 cbs 50000
   % Invalid input detected at '^' marker.
   qos gts dscp ef cir 2000 cbs 50000
-  ^
+      ^
 
 [125/257] r1 [R1-GE0/0/1] qos queue 5 length packets 100
-  % Invalid input detected at '^' marker.
-  qos queue 5 length packets 100
-  ^
+<empty>
 
 [126/257] r1 [R1-GE0/0/1] qos wfq
   % Invalid input detected at '^' marker.
   qos wfq
-  ^
+      ^
 
 [127/257] r1 [R1-GE0/0/1] qos wred dscp
   % Invalid input detected at '^' marker.
   qos wred dscp
-  ^
+      ^
 
 [128/257] r1 [R1-GE0/0/1] trust dscp
   % Invalid input detected at '^' marker.
@@ -485,7 +483,7 @@ Total steps: 257
 [130/257] r1 [R1-GE0/0/1] qos queue-profile QP1
   % Invalid input detected at '^' marker.
   qos queue-profile QP1
-  ^
+      ^
 
 [131/257] r1 [R1-GE0/0/1] quit
 <empty>
@@ -529,27 +527,27 @@ Total steps: 257
 [142/257] r1 [R1-GE0/0/1] qos car inbound cir 8000 cbs 1500000
   % Invalid input detected at '^' marker.
   qos car inbound cir 8000 cbs 1500000
-  ^
+      ^
 
 [143/257] r1 [R1-GE0/0/1] qos pq
   % Invalid input detected at '^' marker.
   qos pq
-  ^
+      ^
 
 [144/257] r1 [R1-GE0/0/1] qos cq
   % Invalid input detected at '^' marker.
   qos cq
-  ^
+      ^
 
 [145/257] r1 [R1-GE0/0/1] qos wrr
   % Invalid input detected at '^' marker.
   qos wrr
-  ^
+      ^
 
 [146/257] r1 [R1-GE0/0/1] qos priority 5
   % Invalid input detected at '^' marker.
   qos priority 5
-  ^
+      ^
 
 [147/257] r1 [R1-GE0/0/1] undo qos pq
 <empty>
@@ -815,7 +813,7 @@ Total steps: 257
   No NTP associations
 
 [188/257] r1 [R1] display clock
-  2026-06-04 12:41:40
+  2026-06-04 12:57:05
   Thursday
   Time Zone(UTC) : UTC
 
@@ -828,13 +826,13 @@ Total steps: 257
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:41:40
+  CPU Usage Stat. Time : 2026-06-04 12:57:05
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 12:41:40
+  Memory utilization statistics at 2026-06-04 12:57:05
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
