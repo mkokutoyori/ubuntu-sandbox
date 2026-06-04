@@ -95,6 +95,8 @@ import { EemService } from './router/eem/EemService';
 import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
+import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
+import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1700,6 +1702,18 @@ export abstract class Router extends Equipment {
   getHuaweiRoutingExtras(): HuaweiRoutingExtras {
     if (!this._huaweiRoutingExtras) this._huaweiRoutingExtras = new HuaweiRoutingExtras();
     return this._huaweiRoutingExtras;
+  }
+
+  private _huaweiVrrpService: HuaweiVrrpService | null = null;
+  getHuaweiVrrpService(): HuaweiVrrpService {
+    if (!this._huaweiVrrpService) this._huaweiVrrpService = new HuaweiVrrpService();
+    return this._huaweiVrrpService;
+  }
+
+  private _huaweiBfdService: HuaweiBfdService | null = null;
+  getHuaweiBfdService(): HuaweiBfdService {
+    if (!this._huaweiBfdService) this._huaweiBfdService = new HuaweiBfdService();
+    return this._huaweiBfdService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;

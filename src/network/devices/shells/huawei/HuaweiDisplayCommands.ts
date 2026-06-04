@@ -741,10 +741,13 @@ export function displayRip(router: Router): string {
   const routingExtras = (router as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
   if (routingExtras) {
     const rl = routingExtras.asRunningConfigLines();
-    if (rl.length > 0) {
-      lines.push('#');
-      lines.push(...rl);
-    }
+    if (rl.length > 0) { lines.push('#'); lines.push(...rl); }
+  }
+
+  const bfd = (router as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
+  if (bfd) {
+    const bl = bfd.asRunningConfigLines();
+    if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
   }
 
   return lines.join('\n');
@@ -851,6 +854,9 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
   const pending = extra.pendingIfConfig?.get(portName) as any;
   if (pending?.tunnelSource) lines.push(` source ${pending.tunnelSource}`);
   if (pending?.tunnelDest) lines.push(` destination ${pending.tunnelDest}`);
+
+  const vrrp = (router as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+  if (vrrp) lines.push(...vrrp.asInterfaceRunningConfigLines(portName));
 
   lines.push('#');
   return lines.join('\n');
@@ -1047,23 +1053,84 @@ export function registerDisplayCommands(
   });
 
   trie.register('display vrrp', 'Display VRRP groups', () => {
-    const shell = (getRouter() as unknown as { getShell?: () => { _getFhrpRepository?: () => { allVrrp: () => Array<{ group: number; iface: string; virtualIp: string; state: string; priority: number }> } } }).getShell?.();
-    const groups = shell?._getFhrpRepository?.().allVrrp() ?? [];
+    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const groups = svc?.list() ?? [];
     if (groups.length === 0) return 'Info: No VRRP backup group is configured.';
-    return groups.map(g => `VRID ${g.group} on ${g.iface}: state=${g.state} priority=${g.priority} virtual-ip=${g.virtualIp}`).join('\n');
+    return groups.map(g => [
+      `${g.ifName} | Virtual Router ${g.vrid}`,
+      `    State : ${g.state}`,
+      `    Virtual IP : ${g.virtualIps.join(', ') || '<none>'}`,
+      `    Priority : ${g.priority}`,
+      `    Advertisement timer : ${g.advertiseTimerSec} seconds`,
+      `    Preempt mode : ${g.preemptMode ? 'Yes' : 'No'}${g.preemptDelaySec > 0 ? ' (delay ' + g.preemptDelaySec + 's)' : ''}`,
+      `    Authentication : ${g.authMode}`,
+      g.description ? `    Description : ${g.description}` : '',
+    ].filter(Boolean).join('\n')).join('\n');
+  });
+  trie.registerGreedy('display vrrp interface', 'Display VRRP on interface', (args) => {
+    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const ifName = args.join(' ');
+    const groups = svc?.list().filter(g => g.ifName === ifName) ?? [];
+    if (groups.length === 0) return `Info: No VRRP group on ${ifName}`;
+    return groups.map(g => `VRID ${g.vrid}: state=${g.state} virtual-ip=${g.virtualIps.join(',')}`).join('\n');
+  });
+  trie.register('display vrrp statistics', 'Display VRRP statistics', () => {
+    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const groups = svc?.list() ?? [];
+    if (groups.length === 0) return 'Info: No VRRP groups';
+    return groups.map(g => `${g.ifName} | VRID ${g.vrid} | Adv sent: 0 received: 0 | Track triggers: ${g.trackEntries.length}`).join('\n');
   });
 
+  trie.register('display bfd configuration all', 'Display BFD configuration', () => {
+    const svc = (getRouter() as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
+    if (!svc || !svc.isEnabled()) return 'Info: BFD is not enabled';
+    const sessions = svc.list();
+    if (sessions.length === 0) return 'Info: No BFD sessions configured';
+    return sessions.map(s => [
+      `Session: ${s.name}`,
+      `  Peer IP: ${s.peerIp ?? '<not set>'}`,
+      `  Source IP: ${s.sourceIp ?? '<not set>'}`,
+      s.outIface ? `  Interface: ${s.outIface}` : '',
+      `  Local discriminator: ${s.discriminatorLocal ?? 'auto'}`,
+      `  Remote discriminator: ${s.discriminatorRemote ?? 'auto'}`,
+      `  Min Tx interval: ${s.minTxIntervalMs ?? 'default'}ms`,
+      `  Min Rx interval: ${s.minRxIntervalMs ?? 'default'}ms`,
+      `  Detect multiplier: ${s.detectMultiplier ?? 3}`,
+    ].filter(Boolean).join('\n')).join('\n\n');
+  });
+  trie.register('display bfd session all', 'Display BFD sessions', () => {
+    const svc = (getRouter() as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
+    if (!svc) return 'Info: BFD is not enabled';
+    const sessions = svc.list();
+    if (sessions.length === 0) return 'Info: No BFD sessions';
+    const lines = ['Local Remote      PeerIpAddr       State     Type        InterfaceName'];
+    for (const s of sessions) {
+      lines.push(`${String(s.discriminatorLocal ?? '-').padEnd(6)}${String(s.discriminatorRemote ?? '-').padEnd(12)}${(s.peerIp ?? '-').padEnd(17)}${s.state.padEnd(10)}${(s.auto ? 'AUTO' : 'STATIC').padEnd(12)}${s.outIface ?? '-'}`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.registerGreedy('display qos car interface', 'Display QoS CAR', () => 'Info: No QoS CAR configured');
+  trie.registerGreedy('display qos configuration interface', 'Display QoS configuration', () => 'Info: No QoS policy configured');
+  trie.registerGreedy('display qos cq interface', 'Display custom queue', () => 'Info: Custom queueing not configured');
+  trie.registerGreedy('display qos pq interface', 'Display priority queue', () => 'Info: Priority queueing not configured');
+  trie.registerGreedy('display qos queue statistics interface', 'Display QoS queue stats', () => 'Info: No QoS statistics');
+  trie.register('display qos map-table', 'Display QoS map tables', () => 'Info: No QoS map tables');
+  trie.registerGreedy('display traffic classifier', 'Display traffic classifiers', () => 'Info: No traffic classifiers configured');
+  trie.registerGreedy('display traffic behavior', 'Display traffic behaviors', () => 'Info: No traffic behaviors configured');
+  trie.registerGreedy('display traffic policy', 'Display traffic policies', () => 'Info: No traffic policies configured');
+
   trie.register('display vrrp brief', 'Display VRRP brief', () => {
-    const shell = (getRouter() as unknown as { getShell?: () => { _getFhrpRepository?: () => { allVrrp: () => Array<{ group: number; iface: string; virtualIp: string; state: string; priority: number }> } } }).getShell?.();
-    const groups = shell?._getFhrpRepository?.().allVrrp() ?? [];
-    const master = groups.filter(g => g.state?.toLowerCase() === 'master').length;
-    const backup = groups.filter(g => g.state?.toLowerCase() === 'backup').length;
+    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
+    const groups = svc?.list() ?? [];
+    const master = groups.filter(g => g.state === 'Master').length;
+    const backup = groups.filter(g => g.state === 'Backup').length;
     const total = groups.length;
     const lines = [
       `Total: ${total}     Master: ${master}     Backup: ${backup}     Non-active: ${total - master - backup}`,
       'VRID  State        Interface                Type     Virtual IP',
     ];
-    for (const g of groups) lines.push(`${String(g.group).padEnd(6)}${(g.state ?? '').padEnd(13)}${g.iface.padEnd(25)}Normal   ${g.virtualIp}`);
+    for (const g of groups) lines.push(`${String(g.vrid).padEnd(6)}${g.state.padEnd(13)}${g.ifName.padEnd(25)}Normal   ${g.virtualIps.join(',')}`);
     return lines.join('\n');
   });
 

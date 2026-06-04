@@ -1176,6 +1176,43 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (!isNaN(asn)) this.r().getHuaweiRoutingExtras().removeBgp();
       return '';
     });
+    t.register('bfd', 'Enable BFD globally', () => {
+      this.r().getHuaweiBfdService().enable();
+      return '';
+    });
+    t.register('undo bfd', 'Disable BFD globally', () => {
+      this.r().getHuaweiBfdService().disable();
+      return '';
+    });
+    t.registerGreedy('bfd', 'BFD session configuration', (args) => {
+      const name = args[0];
+      if (!name) return '';
+      const svc = this.r().getHuaweiBfdService();
+      const session = svc.ensureSession(name);
+      let i = 1;
+      while (i < args.length) {
+        if (args[i] === 'bind' && args[i + 1] === 'peer-ip' && args[i + 2]) {
+          session.peerIp = args[i + 2]; i += 3;
+        } else if (args[i] === 'source-ip' && args[i + 1]) {
+          session.sourceIp = args[i + 1]; i += 2;
+        } else if (args[i] === 'interface' && args[i + 1]) {
+          session.outIface = args[i + 1]; i += 2;
+        } else if (args[i] === 'auto') { session.auto = true; i++; }
+        else if (args[i] === 'discriminator' && args[i + 1] === 'local' && args[i + 2]) {
+          session.discriminatorLocal = parseInt(args[i + 2], 10); i += 3;
+        } else if (args[i] === 'discriminator' && args[i + 1] === 'remote' && args[i + 2]) {
+          session.discriminatorRemote = parseInt(args[i + 2], 10); i += 3;
+        } else if (args[i] === 'min-tx-interval' && args[i + 1]) {
+          session.minTxIntervalMs = parseInt(args[i + 1], 10); i += 2;
+        } else if (args[i] === 'min-rx-interval' && args[i + 1]) {
+          session.minRxIntervalMs = parseInt(args[i + 1], 10); i += 2;
+        } else if (args[i] === 'detect-multiplier' && args[i + 1]) {
+          session.detectMultiplier = parseInt(args[i + 1], 10); i += 2;
+        } else { i++; }
+      }
+      return '';
+    });
+
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
       const pid = args[0] ? parseInt(args[0], 10) : 1;
       const id = isNaN(pid) ? 1 : pid;
@@ -1353,6 +1390,59 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(this.ospfAreaTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
     buildOSPFAreaViewCommands(this.ospfAreaTrie, this as any, () => this.ospfArea);
+
+    this.interfaceTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return 'Error: No interface selected';
+      const vridIdx = args[0]?.toLowerCase() === 'vrid' ? 1 : -1;
+      const vrid = parseInt(args[vridIdx] ?? '', 10);
+      if (isNaN(vrid)) return 'Error: Invalid VRID';
+      const svc = this.r().getHuaweiVrrpService();
+      const g = svc.ensure(ifName, vrid);
+      let i = vridIdx + 1;
+      const sub = args[i]?.toLowerCase();
+      if (sub === 'virtual-ip' && args[i + 1]) {
+        if (!g.virtualIps.includes(args[i + 1])) g.virtualIps.push(args[i + 1]);
+      } else if (sub === 'priority' && args[i + 1]) {
+        g.priority = parseInt(args[i + 1], 10);
+      } else if (sub === 'preempt-mode') {
+        if (args[i + 1] === 'timer' && args[i + 2] === 'delay' && args[i + 3]) {
+          g.preemptMode = true;
+          g.preemptDelaySec = parseInt(args[i + 3], 10);
+        } else g.preemptMode = true;
+      } else if (sub === 'description') {
+        g.description = args.slice(i + 1).join(' ');
+      } else if (sub === 'timer' && args[i + 1] === 'advertise' && args[i + 2]) {
+        g.advertiseTimerSec = parseInt(args[i + 2], 10);
+      } else if (sub === 'authentication-mode' && args[i + 1]) {
+        const mode = args[i + 1].toLowerCase();
+        if (mode === 'md5' || mode === 'simple' || mode === 'none') g.authMode = mode;
+        if (args[i + 2] === 'cipher' && args[i + 3]) g.authKey = args[i + 3];
+        else if (args[i + 2]) g.authKey = args[i + 2];
+      } else if (sub === 'track' && args[i + 1] === 'interface' && args[i + 2]) {
+        const reducedIdx = args.indexOf('reduced', i + 2);
+        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
+        g.trackEntries.push({ kind: 'interface', target: args[i + 2], reduced });
+      } else if (sub === 'track' && args[i + 1] === 'ip' && args[i + 2] === 'route' && args[i + 3]) {
+        const reducedIdx = args.indexOf('reduced', i + 3);
+        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
+        g.trackEntries.push({ kind: 'route', target: `${args[i + 3]} ${args[i + 4] ?? ''}`, reduced });
+      } else if (sub === 'track' && args[i + 1] === 'bfd-session' && args[i + 2]) {
+        const reducedIdx = args.indexOf('reduced', i + 2);
+        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
+        g.trackEntries.push({ kind: 'bfd', target: args[i + 2], reduced });
+      } else {
+        g.rawLines.push(`vrrp ${args.join(' ')}`);
+      }
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('admin-vrrp', 'Admin VRRP', (args) => {
+      if (args[0]?.toLowerCase() === 'vrid' && args[1]) {
+        const vrid = parseInt(args[1], 10);
+        if (!isNaN(vrid)) this.r().getHuaweiVrrpService().ensureAdmin(vrid).ifName = this.selectedInterface ?? '';
+      }
+      return '';
+    });
   }
 
   // ─── RIP View ([hostname-rip-1]) ────────────────────────────────
