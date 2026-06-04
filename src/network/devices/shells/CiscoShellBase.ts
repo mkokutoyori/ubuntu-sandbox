@@ -333,6 +333,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private static readonly IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
 
+  private static readonly MONTH_MAP: Record<string, number> = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  };
+
+  protected parseClockSetArgs(args: string[]): number | null {
+    if (args.length < 5) return null;
+    const hm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(args[0]);
+    if (!hm) return null;
+    const day = parseInt(args[1], 10);
+    const month = CiscoShellBase.MONTH_MAP[args[2]?.toLowerCase()];
+    const year = parseInt(args[3], 10);
+    if (isNaN(day) || !month || isNaN(year)) return null;
+    const date = new Date(Date.UTC(year, month - 1, day,
+      parseInt(hm[1], 10), parseInt(hm[2], 10), hm[3] ? parseInt(hm[3], 10) : 0));
+    return date.getTime();
+  }
+
   protected resolveNtpTarget(target: string): string | null {
     if (CiscoShellBase.IPV4_RE.test(target)) return target;
     const dev = this.d() as unknown as { _getHostsTable?: () => { resolve?: (n: string) => string | null } };
@@ -370,7 +388,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
   private registerCommonShowCommands(trie: CommandTrie): void {
-    trie.register('show clock', 'Display the system clock', () => showClock());
+    trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
     trie.register('show users', 'Display active lines', () => showUsers());
     trie.register('show inventory', 'Display hardware inventory', () =>
       showInventory(this.d().getHostname(), this.getChassisProfile()));
@@ -793,8 +811,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
-    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
+    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt && args[0]) (mgmt as unknown as { domainName: string }).domainName = args[0];
+      return '';
+    });
+    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
+      if (args[0]?.toLowerCase() !== 'name' || !args[1]) return '';
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[1];
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = '';
+      return '';
+    });
     // `ip host <name> <ip>` — static hostname → IP mapping consulted by
     // outbound ssh / stelnet / ping / traceroute before any DNS fallback.
     this.configTrie.registerGreedy('ip host', 'Configure a static host entry', (args) => {
@@ -902,14 +937,50 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.register('clock set', 'Set system clock', () => '');
-    this.configTrie.registerGreedy('clock', 'Clock configuration', () => '');
+    this.configTrie.registerGreedy('clock set', 'Set system clock', (args) => {
+      const dev = this.d() as unknown as { _setSystemClock?: (epochMs: number) => void };
+      const parsedMs = this.parseClockSetArgs(args);
+      if (parsedMs !== null) dev._setSystemClock?.(parsedMs);
+      return '';
+    });
+    this.configTrie.registerGreedy('clock', 'Clock configuration (unhandled)', (args, raw) => {
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
+      return '';
+    });
 
     // Management commands missing on BOTH switch & router → shared here
     // (DRY). Recognised; the sim has no AAA/crypto datapath.
-    this.configTrie.registerGreedy('aaa', 'AAA configuration', () => '');
-    this.configTrie.registerGreedy('enable secret', 'Set enable secret', () => '');
-    this.configTrie.registerGreedy('enable password', 'Set enable password', () => '');
+    this.configTrie.registerGreedy('aaa', 'AAA configuration', (args, raw) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) (mgmt as unknown as { recordRaw: (f: string, l: string) => void }).recordRaw('aaa', raw ?? `aaa ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
+      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'type-7') => void };
+      let algo: 'plain' | 'md5' | 'sha256' | 'type-7' = 'md5';
+      let secret = '';
+      if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '8' || args[0] === '9') { algo = 'sha256'; secret = args.slice(1).join(' '); }
+      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
+        secret = args.slice(2).join(' ');
+      } else { secret = args.join(' '); }
+      dev._setEnableSecret?.(secret, algo);
+      return '';
+    });
+    this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
+      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void };
+      let algo: 'plain' | 'type-7' = 'plain';
+      let password = '';
+      if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
+      else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
+      else { password = args.join(' '); }
+      dev._setEnablePassword?.(password, algo);
+      return '';
+    });
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
@@ -951,9 +1022,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._upsertCiscoUsername(name, kv);
       return '';
     });
-    this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');
-    this.configTrie.registerGreedy('service', 'Service configuration', () => '');
-    this.configTrie.registerGreedy('no service', 'Disable a service', () => '');
+    this.configTrie.registerGreedy('crypto', 'Crypto configuration (unhandled keywords)', (args, raw) => {
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('service', 'Service configuration', (args) => {
+      const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
+      const name = args.join(' ');
+      if (name) dev._setServiceFlag?.(name, true);
+      return '';
+    });
+    this.configTrie.registerGreedy('no service', 'Disable a service', (args) => {
+      const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
+      const name = args.join(' ');
+      if (name) dev._setServiceFlag?.(name, false);
+      return '';
+    });
     this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {
       const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
       if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
@@ -978,7 +1063,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
+    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', (args, raw) => {
+      const dev = this.d() as unknown as {
+        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        _recordUnhandledConfigLine?: (l: string) => void;
+      };
+      const mgmt = dev.getManagementService?.();
+      const ssh = mgmt?.getSsh();
+      const head = args[0]?.toLowerCase();
+      if (!ssh) {
+        dev._recordUnhandledConfigLine?.(raw ?? `ip ssh ${args.join(' ')}`);
+        return '';
+      }
+      if (head === 'version' && args[1]) (ssh as unknown as { version: number }).version = parseInt(args[1], 10);
+      else if (head === 'time-out' && args[1]) (ssh as unknown as { timeout: number }).timeout = parseInt(args[1], 10);
+      else if (head === 'authentication-retries' && args[1]) (ssh as unknown as { retries: number }).retries = parseInt(args[1], 10);
+      else if (head === 'port' && args[1]) (ssh as unknown as { port: number }).port = parseInt(args[1], 10);
+      else dev._recordUnhandledConfigLine?.(raw ?? `ip ssh ${args.join(' ')}`);
+      (ssh as unknown as { enabled: boolean }).enabled = true;
+      return '';
+    });
 
     // `line {console|vty|aux} …` → shared config-line sub-mode.
     // We remember the selected VTY range so subsequent directives
@@ -1001,7 +1105,49 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       'logging', 'privilege', 'no', 'speed', 'stopbits',
       'session-timeout', 'history', 'length', 'width', 'authorization',
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
-      this.configLineTrie.registerGreedy(kw, `line ${kw}`, () => '');
+      this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
+        const range = this.selectedVtyRange;
+        if (!range) return '';
+        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+        const update: Record<string, unknown> = { first: range.first, last: range.last };
+        if (kw === 'login') {
+          update.loginMethod = args[0] === 'authentication' && args[1] ? `authentication ${args[1]}` : args[0] ?? 'local';
+        } else if (kw === 'password') {
+          update.password = args.slice(1).join(' ') || args[0];
+        } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+          update.loggingSynchronous = true;
+        } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
+          update.privilegeLevel = parseInt(args[1], 10);
+        } else if (kw === 'session-timeout' && args[0]) {
+          update.sessionTimeoutMinutes = parseInt(args[0], 10);
+        } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
+          update.historySize = parseInt(args[1], 10);
+        } else if (kw === 'length' && args[0]) {
+          update.terminalLength = parseInt(args[0], 10);
+        } else if (kw === 'width' && args[0]) {
+          update.terminalWidth = parseInt(args[0], 10);
+        } else if (kw === 'autocommand') {
+          update.autocommand = args.join(' ');
+        } else if (kw === 'motd-banner') {
+          update.motdBannerSuppressed = false;
+        } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
+          update.execBannerSuppressed = false;
+        } else if (kw === 'authorization' && args[0] && args[1]) {
+          update.authorizationList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'accounting' && args[0] && args[1]) {
+          update.accountingList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'speed' && args[0]) {
+          update.speedBaud = parseInt(args[0], 10);
+        } else if (kw === 'stopbits' && args[0]) {
+          update.stopbits = parseInt(args[0], 10);
+        } else if (kw === 'rotary' && args[0]) {
+          update.rotaryGroup = parseInt(args[0], 10);
+        } else if (kw === 'no' && args.length > 0) {
+          update.removed = (raw ?? `no ${args.join(' ')}`).trim();
+        }
+        dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        return '';
+      });
     }
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.

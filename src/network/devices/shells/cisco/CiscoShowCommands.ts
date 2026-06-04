@@ -327,6 +327,39 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
+  const enableSecret = router.getEnableSecret();
+  if (enableSecret) {
+    const algoNum = enableSecret.algo === 'md5' ? 5 : enableSecret.algo === 'sha256' ? 8 : enableSecret.algo === 'type-7' ? 7 : 0;
+    lines.push(`enable secret ${algoNum} ${enableSecret.value}`);
+  }
+  const enablePassword = router.getEnablePassword();
+  if (enablePassword) {
+    const algoNum = enablePassword.algo === 'type-7' ? 7 : 0;
+    lines.push(`enable password ${algoNum} ${enablePassword.value}`);
+  }
+  for (const [name, on] of router.getServiceFlags()) {
+    lines.push(`${on ? '' : 'no '}service ${name}`);
+  }
+
+  const mgmtForSsh = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+  if (mgmtForSsh) {
+    if (mgmtForSsh.domainName) lines.push(`ip domain-name ${mgmtForSsh.domainName}`);
+    const ssh = mgmtForSsh.getSsh();
+    if (ssh.enabled) {
+      if (ssh.version !== 2) lines.push(`ip ssh version ${ssh.version}`);
+      if (ssh.timeout !== 60) lines.push(`ip ssh time-out ${ssh.timeout}`);
+      if (ssh.retries !== 3) lines.push(`ip ssh authentication-retries ${ssh.retries}`);
+      const port = (ssh as unknown as { port?: number }).port ?? 22;
+      if (port !== 22) lines.push(`ip ssh port ${port}`);
+    }
+  }
+
+  const unhandled = router.getUnhandledConfigLines();
+  if (unhandled.length > 0) {
+    lines.push('!');
+    lines.push(...unhandled);
+  }
+
   const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (mgmt) {
     const clock = mgmt.getClock();

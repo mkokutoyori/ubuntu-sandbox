@@ -1574,6 +1574,43 @@ export abstract class Router extends Equipment {
   getRipVersion(): 1 | 2 { return this._ripVersion; }
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
+  private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'type-7' } | null = null;
+  private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
+  private readonly _serviceFlags: Map<string, boolean> = new Map();
+  private readonly _unhandledConfigLines: string[] = [];
+  private _systemClockOverrideMs: number | null = null;
+  private _systemClockSetAtMs: number = 0;
+
+  getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'type-7' } | null { return this._enableSecret; }
+  _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'type-7'): void {
+    this._enableSecret = { value, algo };
+  }
+
+  getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
+  _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
+    this._enablePassword = { value, algo };
+  }
+
+  getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
+  _setServiceFlag(name: string, on: boolean): void {
+    if (on) this._serviceFlags.set(name, true);
+    else this._serviceFlags.delete(name);
+  }
+
+  getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
+  _recordUnhandledConfigLine(line: string): void {
+    if (this._unhandledConfigLines.length < 1024) this._unhandledConfigLines.push(line);
+  }
+
+  _setSystemClock(epochMs: number): void {
+    this._systemClockOverrideMs = epochMs;
+    this._systemClockSetAtMs = Date.now();
+  }
+  getSystemClockMs(): number {
+    if (this._systemClockOverrideMs === null) return Date.now();
+    return this._systemClockOverrideMs + (Date.now() - this._systemClockSetAtMs);
+  }
+
   private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
   getRoutingTableLimit(): { max: number; thresholdPct?: number } | null { return this._routingTableLimit; }
   _setRoutingTableLimit(max: number | null, thresholdPct?: number): void {

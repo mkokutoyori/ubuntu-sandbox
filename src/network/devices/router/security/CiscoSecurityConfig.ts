@@ -333,8 +333,8 @@ export class CiscoSecurityConfig {
       const auth = u.secret ? `secret ${u.secret}` : u.password ? `password ${u.password}` : '';
       lines.push(`username ${u.name} privilege ${u.privilege} ${auth}`.trim());
     }
-    if (this.enableSecret) lines.push(`enable secret ${this.enableSecret}`);
-    if (this.servicePasswordEncryption) lines.push('service password-encryption');
+    void this.enableSecret;
+    void this.servicePasswordEncryption;
     if (this.passwords.minLength) lines.push(`security passwords min-length ${this.passwords.minLength}`);
     if (this.login.blockFor) lines.push(`login block-for ${this.login.blockFor.seconds} attempts ${this.login.blockFor.attempts} within ${this.login.blockFor.withinSeconds}`);
     if (this.login.quietModeAcl) lines.push(`login quiet-mode access-class ${this.login.quietModeAcl}`);
