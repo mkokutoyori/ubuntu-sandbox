@@ -143,6 +143,8 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-flow-monitor':       { parent: 'config', clearOnExit: ['selectedFlowMonitor'] },
   'config-archive':            { parent: 'config' },
   'config-archive-log':        { parent: 'config-archive' },
+  'config-dhcp-class':         { parent: 'config' },
+  'config-ipv6-dhcp':          { parent: 'config' },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────

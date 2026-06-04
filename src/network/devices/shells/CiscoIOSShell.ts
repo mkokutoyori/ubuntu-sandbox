@@ -54,6 +54,8 @@ import {
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands,
+  buildConfigDhcpClassCommands,
+  buildConfigIpv6DhcpCommands,
   registerDhcpShowCommands,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
@@ -184,6 +186,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configFlowMonitorTrie = new CommandTrie();
   private configArchiveTrie = new CommandTrie();
   private configArchiveLogTrie = new CommandTrie();
+  private configDhcpClassTrie = new CommandTrie();
+  private configIpv6DhcpTrie = new CommandTrie();
 
   private selectedTimeRange: string | null = null;
   private selectedClassMap: string | null = null;
@@ -438,6 +442,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-flow-monitor': return this.configFlowMonitorTrie;
       case 'config-archive': return this.configArchiveTrie;
       case 'config-archive-log': return this.configArchiveLogTrie;
+      case 'config-dhcp-class': return this.configDhcpClassTrie;
+      case 'config-ipv6-dhcp': return this.configIpv6DhcpTrie;
       default: return this.userTrie;
     }
   }
@@ -521,6 +527,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
     buildConfigDhcpCommands(this.configDhcpTrie, this);
+    buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
+    buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);

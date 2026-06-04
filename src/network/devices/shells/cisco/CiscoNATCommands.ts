@@ -142,6 +142,36 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     ctx.r()._getNATEngine().setTimeouts({ tcpHalfOpen: s * 1000 });
     return '';
   });
+
+  trie.registerGreedy('ip nat outside source static', 'Configure outside static NAT', (args) => {
+    if (args.length < 2) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    (r._ciscoNatOutsideStatic ??= []).push({ outside: args[0], inside: args[1] });
+    return '';
+  });
+
+  trie.registerGreedy('ip nat inside source route-map', 'NAT via route-map', (args, raw) => {
+    const r = ctx.r() as any;
+    (r._ciscoNatRouteMapRules ??= []).push(raw ?? `ip nat inside source route-map ${args.join(' ')}`);
+    return '';
+  });
+
+  trie.registerGreedy('ip nat translation timeout', 'Set generic NAT timeout', (args) => {
+    const s = parseInt(args[0] ?? '', 10);
+    if (!isNaN(s)) ctx.r()._getNATEngine().setTimeouts({ tcp: s * 1000, udp: s * 1000, icmp: s * 1000 });
+    return '';
+  });
+
+  trie.registerGreedy('ip nat translation max-entries', 'Set NAT translation table cap', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) (ctx.r() as any)._ciscoNatMaxEntries = n;
+    return '';
+  });
+
+  trie.registerGreedy('ip nat log translations', 'Enable NAT translation logging', (args) => {
+    (ctx.r() as any)._ciscoNatLogTranslations = args.join(' ') || 'syslog';
+    return '';
+  });
 }
 
 // ─── Interface Config Mode ────────────────────────────────────────────────────
@@ -183,11 +213,20 @@ export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () =
     getRouter()._getNATEngine().clearTranslations();
     return '';
   });
+  trie.registerGreedy('clear ip nat translation inside', 'Clear inside NAT translation entries', (_args) => {
+    getRouter()._getNATEngine().clearTranslations();
+    return '';
+  });
+  trie.registerGreedy('clear ip nat translation outside', 'Clear outside NAT translation entries', (_args) => {
+    getRouter()._getNATEngine().clearTranslations();
+    return '';
+  });
 }
 
 // ─── Show Commands ────────────────────────────────────────────────────────────
 
 export function registerNATShowCommands(trie: CommandTrie, getRouter: () => Router): void {
+  trie.register('show ip nat nvi translations', 'Show NVI NAT translations', () => showNATTranslations(getRouter()));
   trie.register('show ip nat translations', 'Display NAT translation table', () => showNATTranslations(getRouter()));
   trie.register('show ip nat translations verbose', 'Display detailed NAT translations', () => showNATTranslationsVerbose(getRouter()));
   trie.register('show ip nat statistics', 'Display NAT statistics', () => showNATStatistics(getRouter()));

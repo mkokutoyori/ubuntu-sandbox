@@ -91,6 +91,8 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-flow-monitor':       '{host}(config-flow-monitor)#',
   'config-archive':            '{host}(config-archive)#',
   'config-archive-log':        '{host}(config-archive-log-cfg)#',
+  'config-dhcp-class':         '{host}(config-dhcp-class)#',
+  'config-ipv6-dhcp':          '{host}(config-dhcpv6)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

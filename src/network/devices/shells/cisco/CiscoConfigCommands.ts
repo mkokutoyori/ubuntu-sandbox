@@ -148,6 +148,70 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
+  trie.registerGreedy('ip dhcp class', 'Define DHCP class', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    const classes = r._ciscoDhcpClasses ?? (r._ciscoDhcpClasses = new Map<string, any>());
+    if (!classes.has(args[0])) classes.set(args[0], { name: args[0], options: [], lines: [] });
+    r._ciscoDhcpCurrentClass = args[0];
+    ctx.setMode('config-dhcp-class' as any);
+    return '';
+  });
+
+  trie.registerGreedy('ipv6 dhcp pool', 'Define an IPv6 DHCP pool', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    const pools = r._ciscoIpv6DhcpPools ?? (r._ciscoIpv6DhcpPools = new Map<string, any>());
+    if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
+    r._ciscoIpv6DhcpCurrent = args[0];
+    ctx.setMode('config-ipv6-dhcp' as any);
+    return '';
+  });
+
+  trie.register('ip dhcp use class', 'Enable DHCP class lookup', () => {
+    (ctx.r() as any)._ciscoDhcpUseClass = true;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp ping packets', 'Set DHCP ping packets', (args) => {
+    (ctx.r() as any)._ciscoDhcpPingPackets = parseInt(args[0] ?? '', 10) || 0;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp ping timeout', 'Set DHCP ping timeout (ms)', (args) => {
+    (ctx.r() as any)._ciscoDhcpPingTimeout = parseInt(args[0] ?? '', 10) || 0;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
+    (ctx.r() as any)._ciscoDhcpDatabase = raw ?? args.join(' ');
+    return '';
+  });
+  trie.register('ip dhcp bootp ignore', 'Ignore BOOTP requests', () => {
+    (ctx.r() as any)._ciscoDhcpBootpIgnore = true; return '';
+  });
+  trie.registerGreedy('ip dhcp compatibility', 'DHCP compatibility tweaks', (_args) => '');
+
+  trie.register('ip dhcp relay information option', 'Enable option-82 insertion', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoOption = true; return '';
+  });
+  trie.registerGreedy('ip dhcp relay information policy', 'Option-82 policy (keep/replace/drop)', (args) => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoPolicy = args[0]?.toLowerCase() ?? 'replace'; return '';
+  });
+  trie.register('ip dhcp relay information trust-all', 'Trust option-82 on all interfaces', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoTrustAll = true; return '';
+  });
+  trie.register('ip dhcp smart-relay', 'Enable DHCP smart relay', () => {
+    (ctx.r() as any)._ciscoDhcpSmartRelay = true; return '';
+  });
+
+  trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
+    (ctx.r() as any)._ciscoDhcpSnooping = true; return '';
+  });
+  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args, raw) => {
+    (ctx.r() as any)._ciscoDhcpSnoopingVlans = raw ?? args.join(' '); return '';
+  });
+  trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
+    (ctx.r() as any)._ciscoDhcpSnoopingInfoOption = true; return '';
+  });
+
   trie.registerGreedy('ip route', 'Establish static routes', (args) => {
     return cmdIpRoute(ctx.r(), args);
   });
@@ -389,6 +453,59 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) (port as unknown as { dhcpRelayInfoTrusted?: boolean }).dhcpRelayInfoTrusted = true;
+    return '';
+  });
+  trie.register('ip dhcp snooping trust', 'Trust DHCP snooping on interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).dhcpSnoopingTrust = true;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp snooping limit rate', 'Snooping rate-limit (pps)', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as any).dhcpSnoopingRateLimit = n;
+    return '';
+  });
+  trie.registerGreedy('ipv6 dhcp server', 'Bind IPv6 DHCP pool to interface', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6DhcpPool = args[0];
+    return '';
+  });
+  trie.registerGreedy('ipv6 dhcp relay destination', 'IPv6 DHCP relay destination', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) ((port as any).ipv6DhcpRelayDestinations ??= []).push(args[0]);
+    return '';
+  });
+  trie.register('ipv6 nd managed-config-flag', 'Set IPv6 ND M flag', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6NdManagedFlag = true;
+    return '';
+  });
+  trie.register('ipv6 nd other-config-flag', 'Set IPv6 ND O flag', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6NdOtherFlag = true;
+    return '';
+  });
+  trie.registerGreedy('ip address dhcp', 'Configure IP via DHCP', (args, raw) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) {
+      (port as any).ipAddressDhcp = true;
+      (port as any).ipAddressDhcpRaw = raw ?? `ip address dhcp ${args.join(' ')}`;
+    }
     return '';
   });
   trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-04T13:23:00.132Z
+Generated: 2026-06-04T13:28:13.649Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -585,68 +585,50 @@ Total steps: 369
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [128/369] r1 R1(config)# ip dhcp class VOICE
-  % Invalid input detected at '^' marker.
-  ip dhcp class VOICE
-          ^
-
-[129/369] r1 R1(config)# option 60 ascii Cisco
-  % Invalid input detected at '^' marker.
-  option 60 ascii Cisco
-  ^
-
-[130/369] r1 R1(config)# exit
 <empty>
 
-[131/369] r1 R1# ip dhcp class DATA
-  % Invalid input detected at '^' marker.
-  ip dhcp class DATA
-  ^
-
-[132/369] r1 R1# option 60 hex 0001
-  % Invalid input detected at '^' marker.
-  option 60 hex 0001
-  ^
-
-[133/369] r1 R1# exit
+[129/369] r1 R1(config-dhcp-class)# option 60 ascii Cisco
 <empty>
 
-[134/369] r1 R1# ip dhcp pool MULTI
-  % Invalid input detected at '^' marker.
-  ip dhcp pool MULTI
-  ^
-
-[135/369] r1 R1# network 10.50.0.0 255.255.0.0
-  % Invalid input detected at '^' marker.
-  network 10.50.0.0 255.255.0.0
-  ^
-
-[136/369] r1 R1# class VOICE
-  % Invalid input detected at '^' marker.
-  class VOICE
-  ^
-
-[137/369] r1 R1# address range 10.50.1.1 10.50.1.254
-  % Invalid input detected at '^' marker.
-  address range 10.50.1.1 10.50.1.254
-  ^
-
-[138/369] r1 R1# exit
+[130/369] r1 R1(config-dhcp-class)# exit
 <empty>
 
-[139/369] r1 R1# class DATA
-  % Invalid input detected at '^' marker.
-  class DATA
-  ^
+[131/369] r1 R1(config)# ip dhcp class DATA
+<empty>
 
-[140/369] r1 R1# address range 10.50.2.1 10.50.2.254
+[132/369] r1 R1(config-dhcp-class)# option 60 hex 0001
+<empty>
+
+[133/369] r1 R1(config-dhcp-class)# exit
+<empty>
+
+[134/369] r1 R1(config)# ip dhcp pool MULTI
+<empty>
+
+[135/369] r1 R1(dhcp-config)# network 10.50.0.0 255.255.0.0
+<empty>
+
+[136/369] r1 R1(dhcp-config)# class VOICE
+<empty>
+
+[137/369] r1 R1(dhcp-config)# address range 10.50.1.1 10.50.1.254
+<empty>
+
+[138/369] r1 R1(dhcp-config)# exit
+<empty>
+
+[139/369] r1 R1(config)# class DATA
+<empty>
+
+[140/369] r1 R1(config-cmap)# address range 10.50.2.1 10.50.2.254
   % Invalid input detected at '^' marker.
   address range 10.50.2.1 10.50.2.254
   ^
 
-[141/369] r1 R1# exit
+[141/369] r1 R1(config-cmap)# exit
 <empty>
 
-[142/369] r1 R1# exit
+[142/369] r1 R1(config)# exit
 <empty>
 
 [143/369] r1 R1# ip dhcp use class
@@ -718,32 +700,22 @@ Total steps: 369
 <empty>
 
 [159/369] r1 R1(config)# ip dhcp relay information option
-  % Invalid input detected at '^' marker.
-  ip dhcp relay information option
-          ^
+<empty>
 
 [160/369] r1 R1(config)# ip dhcp relay information policy keep
-  % Invalid input detected at '^' marker.
-  ip dhcp relay information policy keep
-          ^
+<empty>
 
 [161/369] r1 R1(config)# ip dhcp relay information trust-all
-  % Invalid input detected at '^' marker.
-  ip dhcp relay information trust-all
-          ^
+<empty>
 
 [162/369] r1 R1(config)# ip dhcp smart-relay
-  % Invalid input detected at '^' marker.
-  ip dhcp smart-relay
-          ^
+<empty>
 
 [163/369] r1 R1(config)# end
 <empty>
 
 [164/369] r1 R1# show ip dhcp relay statistics
-  % Invalid input detected at '^' marker.
-  show ip dhcp relay statistics
-               ^
+  DHCP relay: forwarded 0 packets, dropped 0.
 
 
 --- [165] § DHCP snooping ---
@@ -751,32 +723,22 @@ Total steps: 369
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [166/369] r1 R1(config)# ip dhcp snooping
-  % Invalid input detected at '^' marker.
-  ip dhcp snooping
-          ^
+<empty>
 
 [167/369] r1 R1(config)# ip dhcp snooping vlan 10,20,30
-  % Invalid input detected at '^' marker.
-  ip dhcp snooping vlan 10,20,30
-          ^
+<empty>
 
 [168/369] r1 R1(config)# ip dhcp snooping information option
-  % Invalid input detected at '^' marker.
-  ip dhcp snooping information option
-          ^
+<empty>
 
 [169/369] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
 
 [170/369] r1 R1(config-if)# ip dhcp snooping trust
-  % Invalid input detected at '^' marker.
-  ip dhcp snooping trust
-          ^
+<empty>
 
 [171/369] r1 R1(config-if)# ip dhcp snooping limit rate 100
-  % Invalid input detected at '^' marker.
-  ip dhcp snooping limit rate 100
-          ^
+<empty>
 
 [172/369] r1 R1(config-if)# exit
 <empty>
@@ -785,14 +747,13 @@ Total steps: 369
 <empty>
 
 [174/369] r1 R1# show ip dhcp snooping
-  % Invalid input detected at '^' marker.
-  show ip dhcp snooping
-               ^
+  Switch DHCP snooping is enabled
+  DHCP snooping VLAN configuration: ip dhcp snooping vlan 10,20,30
+  Insertion of option-82 information: yes
 
 [175/369] r1 R1# show ip dhcp snooping binding
-  % Invalid input detected at '^' marker.
-  show ip dhcp snooping binding
-               ^
+  MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface
+  (no bindings)
 
 
 --- [176] § DHCPv6 ---
@@ -803,86 +764,61 @@ Total steps: 369
 <empty>
 
 [178/369] r1 R1(config)# ipv6 dhcp pool V6POOL
-  % Invalid input detected at '^' marker.
-  ipv6 dhcp pool V6POOL
-       ^
-
-[179/369] r1 R1(config)# address prefix 2001:db8:1::/64 lifetime 3600 1800
-  % Invalid input detected at '^' marker.
-  address prefix 2001:db8:1::/64 lifetime 3600 1800
-  ^
-
-[180/369] r1 R1(config)# dns-server 2001:4860:4860::8888
-  % Invalid input detected at '^' marker.
-  dns-server 2001:4860:4860::8888
-  ^
-
-[181/369] r1 R1(config)# domain-name v6.lab
-  % Invalid input detected at '^' marker.
-  domain-name v6.lab
-  ^
-
-[182/369] r1 R1(config)# exit
 <empty>
 
-[183/369] r1 R1# interface GigabitEthernet0/0
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0
-  ^
-
-[184/369] r1 R1# ipv6 address 2001:db8:1::1/64
-  % Invalid input detected at '^' marker.
-  ipv6 address 2001:db8:1::1/64
-  ^
-
-[185/369] r1 R1# ipv6 dhcp server V6POOL
-  % Invalid input detected at '^' marker.
-  ipv6 dhcp server V6POOL
-  ^
-
-[186/369] r1 R1# ipv6 nd managed-config-flag
-  % Invalid input detected at '^' marker.
-  ipv6 nd managed-config-flag
-  ^
-
-[187/369] r1 R1# ipv6 nd other-config-flag
-  % Invalid input detected at '^' marker.
-  ipv6 nd other-config-flag
-  ^
-
-[188/369] r1 R1# exit
+[179/369] r1 R1(config-dhcpv6)# address prefix 2001:db8:1::/64 lifetime 3600 1800
 <empty>
 
-[189/369] r1 R1# interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[190/369] r1 R1# ipv6 dhcp relay destination 2001:db8:ff::1
-  % Invalid input detected at '^' marker.
-  ipv6 dhcp relay destination 2001:db8:ff::1
-  ^
-
-[191/369] r1 R1# exit
+[180/369] r1 R1(config-dhcpv6)# dns-server 2001:4860:4860::8888
 <empty>
 
-[192/369] r1 R1# end
+[181/369] r1 R1(config-dhcpv6)# domain-name v6.lab
+<empty>
+
+[182/369] r1 R1(config-dhcpv6)# exit
+<empty>
+
+[183/369] r1 R1(config)# interface GigabitEthernet0/0
+<empty>
+
+[184/369] r1 R1(config-if)# ipv6 address 2001:db8:1::1/64
+<empty>
+
+[185/369] r1 R1(config-if)# ipv6 dhcp server V6POOL
+<empty>
+
+[186/369] r1 R1(config-if)# ipv6 nd managed-config-flag
+<empty>
+
+[187/369] r1 R1(config-if)# ipv6 nd other-config-flag
+<empty>
+
+[188/369] r1 R1(config-if)# exit
+<empty>
+
+[189/369] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[190/369] r1 R1(config-if)# ipv6 dhcp relay destination 2001:db8:ff::1
+<empty>
+
+[191/369] r1 R1(config-if)# exit
+<empty>
+
+[192/369] r1 R1(config)# end
 <empty>
 
 [193/369] r1 R1# show ipv6 dhcp pool
-  % Invalid input detected at '^' marker.
-  show ipv6 dhcp pool
-            ^
+  DHCPv6 pool: V6POOL
+    Prefix: 2001:db8:1::/64
+    DNS servers: 2001:4860:4860::8888
+    Domain: v6.lab
 
 [194/369] r1 R1# show ipv6 dhcp binding
-  % Invalid input detected at '^' marker.
-  show ipv6 dhcp binding
-            ^
+  No IPv6 DHCP bindings.
 
 [195/369] r1 R1# show ipv6 dhcp interface
-  % Invalid input detected at '^' marker.
-  show ipv6 dhcp interface
-            ^
+  No IPv6 DHCP interface state.
 
 
 --- [196] § DHCP client ---
@@ -893,13 +829,13 @@ Total steps: 369
 <empty>
 
 [198/369] r1 R1(config-if)# ip address dhcp
-  % Incomplete command.
+<empty>
 
 [199/369] r1 R1(config-if)# ip address dhcp hostname R1
-  % Invalid input: Invalid IP address: dhcp
+<empty>
 
 [200/369] r1 R1(config-if)# ip address dhcp client-id GigabitEthernet0/1
-  % Invalid input: Invalid IP address: dhcp
+<empty>
 
 [201/369] r1 R1(config-if)# ipv6 address dhcp
   % Invalid IPv6 address format (expected addr/prefix)
@@ -914,14 +850,10 @@ Total steps: 369
 <empty>
 
 [205/369] r1 R1# show dhcp lease
-  % Invalid input detected at '^' marker.
-  show dhcp lease
-       ^
+  No DHCP client lease.
 
 [206/369] r1 R1# show dhcp server
-  % Invalid input detected at '^' marker.
-  show dhcp server
-       ^
+  No DHCP server known.
 
 
 --- [207] § NAT static ---
@@ -986,9 +918,7 @@ Total steps: 369
 <empty>
 
 [227/369] r1 R1(config)# ip nat outside source static 8.8.8.8 192.168.1.200
-  % Invalid input detected at '^' marker.
-  ip nat outside source static 8.8.8.8 192.168.1.200
-         ^
+<empty>
 
 [228/369] r1 R1(config)# ip nat inside source static 192.168.1.150 10.0.0.150 route-map RM-NAT
 <empty>
@@ -1107,14 +1037,10 @@ Total steps: 369
 <empty>
 
 [241/369] r1 R1(config)# ip nat inside source route-map RM-NAT pool POOL2 overload
-  % Invalid input detected at '^' marker.
-  ip nat inside source route-map RM-NAT pool POOL2 overload
-                       ^
+<empty>
 
 [242/369] r1 R1(config)# ip nat translation timeout 3600
-  % Invalid input detected at '^' marker.
-  ip nat translation timeout 3600
-                     ^
+<empty>
 
 [243/369] r1 R1(config)# ip nat translation tcp-timeout 600
 <empty>
@@ -1126,14 +1052,10 @@ Total steps: 369
 <empty>
 
 [246/369] r1 R1(config)# ip nat translation max-entries 10000
-  % Invalid input detected at '^' marker.
-  ip nat translation max-entries 10000
-                     ^
+<empty>
 
 [247/369] r1 R1(config)# ip nat log translations syslog
-  % Invalid input detected at '^' marker.
-  ip nat log translations syslog
-         ^
+<empty>
 
 [248/369] r1 R1(config)# route-map RM-NAT permit 10
 <empty>
@@ -1178,17 +1100,27 @@ Total steps: 369
   Pools: 1 configured
 
 [254/369] r1 R1# show ip nat nvi translations
-  % Invalid input detected at '^' marker.
-  show ip nat nvi translations
-              ^
+  Pro  Inside global          Inside local           Outside local          Outside global
+  ---  10.0.0.11              192.168.1.11           ---                    ---
+  ---  10.0.0.12              192.168.1.12           ---                    ---
+  ---  10.0.0.13              192.168.1.13           ---                    ---
+  ---  10.0.0.14              192.168.1.14           ---                    ---
+  ---  10.0.0.15              192.168.1.15           ---                    ---
+  ---  10.0.0.16              192.168.1.16           ---                    ---
+  ---  10.0.0.17              192.168.1.17           ---                    ---
+  ---  10.0.0.18              192.168.1.18           ---                    ---
+  ---  10.0.0.19              192.168.1.19           ---                    ---
+  ---  10.0.0.20              192.168.1.20           ---                    ---
+  tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
+  tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
+  udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
+  ---  10.0.0.150             192.168.1.150          ---                    ---
 
 [255/369] r1 R1# clear ip nat translation *
 <empty>
 
 [256/369] r1 R1# clear ip nat translation inside 10.0.0.50 192.168.1.10
-  % Invalid input detected at '^' marker.
-  clear ip nat translation inside 10.0.0.50 192.168.1.10
-                           ^
+<empty>
 
 [257/369] r1 R1# debug ip nat
   IP NAT debugging is on
@@ -1289,6 +1221,9 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
+  !
+  ip dhcp pool MULTI
+   network 10.50.0.0 255.255.0.0
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
@@ -1334,6 +1269,9 @@ Total steps: 369
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
   ip nat translation icmp-timeout 30
+  !
+  !
+  class-map match-all DATA
   !
   end
 
@@ -1597,6 +1535,14 @@ Total steps: 369
     Domain Name      : not configured
     Lease Time       : infinite
     Current Bindings : 0
+  
+  Pool MULTI :
+    Network          : 10.50.0.0/16
+    Default Router   : not configured
+    DNS Server(s)    : not configured
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 0
 
 [284/369] r1 R1(config)# show access-lists
   Standard IP access list 1
@@ -1658,7 +1604,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBFAB4.29374BC6 (13:23:00.161 UTC Thu Jun 4 2026)
+  reference time is EDCBFBED.AE147AE1 (13:28:13.680 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1667,7 +1613,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *13:23:00.000 UTC Thu Jun 4 2026
+  *13:28:13.000 UTC Thu Jun 4 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1875,6 +1821,9 @@ Total steps: 369
   !
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
+  !
+  ip dhcp pool MULTI
+   network 10.50.0.0 255.255.0.0
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   !
@@ -1920,6 +1869,9 @@ Total steps: 369
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
   ip nat translation icmp-timeout 30
+  !
+  !
+  class-map match-all DATA
   !
   end
   
@@ -2130,6 +2082,8 @@ Total steps: 369
   ip dhcp pool RESERVED
   ip dhcp pool INFINITE
    network 172.16.0.0 255.255.0.0
+  ip dhcp pool MULTI
+   network 10.50.0.0 255.255.0.0
   ip dhcp excluded-address 192.168.1.1 192.168.1.20
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   interface GigabitEthernet0/0
@@ -2169,6 +2123,7 @@ Total steps: 369
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
   ip nat translation icmp-timeout 30
+  class-map match-all DATA
   end
 
 [327/369] r1 R1(config)# show ip route | include via
@@ -2355,7 +2310,7 @@ Total steps: 369
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  23
+  24
 
 [369/369] r1 R1# write memory
   Building configuration...
