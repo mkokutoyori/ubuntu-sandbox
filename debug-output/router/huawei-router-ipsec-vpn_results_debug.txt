@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-04T12:56:41.652Z
+Generated: 2026-06-04T13:10:49.193Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -581,9 +581,7 @@ Total steps: 279
   ^
 
 [145/279] r1 [R1] dh group14
-  % Invalid input detected at '^' marker.
-  dh group14
-     ^
+  % Ambiguous command: "dh" (matches: dhcp, dhcpv6)
 
 [146/279] r1 [R1] prf hmac-sha2-256
   % Invalid input detected at '^' marker.
@@ -754,12 +752,14 @@ Total steps: 279
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol ipsec
    source 10.0.0.1
    destination 10.0.0.2
    ipsec profile PROF1
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol gre
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -847,12 +847,14 @@ Total steps: 279
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol ipsec
    source 10.0.0.1
    destination 10.0.0.2
    ipsec profile PROF1
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol gre
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1046,7 +1048,7 @@ Total steps: 279
   Info: No NAT session is found.
 
 [195/279] r1 [R1] display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [196/279] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -1179,7 +1181,7 @@ Total steps: 279
   No NTP associations
 
 [210/279] r1 [R1] display clock
-  2026-06-04 12:56:41
+  2026-06-04 13:10:49
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1192,13 +1194,13 @@ Total steps: 279
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:56:41
+  CPU Usage Stat. Time : 2026-06-04 13:10:49
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 12:56:41
+  Memory utilization statistics at 2026-06-04 13:10:49
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1339,12 +1341,14 @@ Total steps: 279
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol ipsec
    source 10.0.0.1
    destination 10.0.0.2
    ipsec profile PROF1
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol gre
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1476,12 +1480,14 @@ Total steps: 279
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol ipsec
    source 10.0.0.1
    destination 10.0.0.2
    ipsec profile PROF1
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol gre
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1562,11 +1568,13 @@ Total steps: 279
    ip address 1.1.1.1 255.255.255.255
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol ipsec
    source 10.0.0.1
    destination 10.0.0.2
    ipsec profile PROF1
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol gre
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1768,6 +1776,7 @@ Total steps: 279
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T12:56:35.392Z
+Generated: 2026-06-04T13:10:52.524Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 12:56:35
+  2026-06-04 13:10:52
   Thursday
   Time Zone(UTC) : UTC
 
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:56:35
+  CPU Usage Stat. Time : 2026-06-04 13:10:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 12:56:35
+  Memory utilization statistics at 2026-06-04 13:10:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -498,6 +498,7 @@ Total steps: 304
     acl                     Display ACL configuration
     dhcp-server             dhcp-server
     dhcp-snooping           dhcp-snooping
+    dhcpv6                  dhcpv6
     route-policy            Display a route-policy
     traffic-policy          traffic-policy
     nqa                     nqa
@@ -1153,6 +1154,7 @@ Total steps: 304
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
@@ -1706,7 +1708,7 @@ Total steps: 304
   Info: No NAT session is found.
 
 [220/304] r1 <Huawei> display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [221/304] r1 <Huawei> display ip pool
   No DHCP pools configured.
@@ -1763,7 +1765,7 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 12:56:35
+  2026-06-04 13:10:52
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1776,13 +1778,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:56:35
+  CPU Usage Stat. Time : 2026-06-04 13:10:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 12:56:35
+  Memory utilization statistics at 2026-06-04 13:10:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2172,6 +2174,7 @@ Total steps: 304
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa

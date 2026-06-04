@@ -44,6 +44,7 @@ import {
 import {
   registerDhcpSystemCommands, buildDhcpPoolCommands,
   registerDhcpDisplayCommands, registerDhcpDebugCommands,
+  registerDhcpInterfaceCommands, registerDhcpv6SystemCommands,
 } from './huawei/HuaweiDhcpCommands';
 import {
   registerOSPFSystemCommands, buildOSPFViewCommands, buildOSPFAreaViewCommands,
@@ -69,6 +70,7 @@ import {
 } from './huawei/HuaweiAclCommands';
 import {
   registerHuaweiNATInterfaceCommands,
+  registerHuaweiNATSystemCommands,
   registerHuaweiNATDisplayCommands,
 } from './huawei/HuaweiNATCommands';
 import {
@@ -1272,11 +1274,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // ACL display commands
     registerHuaweiACLDisplayCommands(t, () => this.r());
 
-    // NAT display commands
+    // NAT display + system commands
     registerHuaweiNATDisplayCommands(t, () => this.r());
+    registerHuaweiNATSystemCommands(t, this);
 
-    // DHCP display commands
+    // DHCP display + DHCPv6 system commands
     registerDhcpDisplayCommands(t, () => this.r());
+    registerDhcpv6SystemCommands(t, this);
 
     // DHCP debug/clear commands
     registerDhcpDebugCommands(t, () => this.r());
@@ -1343,6 +1347,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiACLInterfaceCommands(t, this);
 
     registerHuaweiNATInterfaceCommands(t, this);
+    registerDhcpInterfaceCommands(t, this);
 
     t.registerGreedy('traffic-policy', 'Apply traffic policy on interface', (args) => {
       const name = args[0]; const dir = (args[1] || 'inbound').toLowerCase();

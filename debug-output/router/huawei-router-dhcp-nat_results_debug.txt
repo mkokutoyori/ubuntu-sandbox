@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-06-04T12:56:34.556Z
+Generated: 2026-06-04T13:10:55.464Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -68,29 +68,19 @@ Total steps: 288
 <empty>
 
 [20/288] r1 [R1-ip-pool-VLAN10] netbios-type h-node
-  % Invalid input detected at '^' marker.
-  netbios-type h-node
-  ^
+<empty>
 
 [21/288] r1 [R1-ip-pool-VLAN10] nbns-list 192.168.1.2
-  % Invalid input detected at '^' marker.
-  nbns-list 192.168.1.2
-  ^
+<empty>
 
 [22/288] r1 [R1-ip-pool-VLAN10] option 43 sub-option 3 ascii 10.1.1.1
-  % Invalid input detected at '^' marker.
-  option 43 sub-option 3 ascii 10.1.1.1
-  ^
+<empty>
 
 [23/288] r1 [R1-ip-pool-VLAN10] option 150 ip-address 192.168.1.3
-  % Invalid input detected at '^' marker.
-  option 150 ip-address 192.168.1.3
-  ^
+<empty>
 
 [24/288] r1 [R1-ip-pool-VLAN10] static-bind ip-address 192.168.1.50 mac-address 00e0-fc00-0001
-  % Invalid input detected at '^' marker.
-  static-bind ip-address 192.168.1.50 mac-address 00e0-fc00-0001
-  ^
+<empty>
 
 [25/288] r1 [R1-ip-pool-VLAN10] quit
 <empty>
@@ -117,29 +107,19 @@ Total steps: 288
 <empty>
 
 [33/288] r1 [R1-ip-pool-VLAN20] netbios-type h-node
-  % Invalid input detected at '^' marker.
-  netbios-type h-node
-  ^
+<empty>
 
 [34/288] r1 [R1-ip-pool-VLAN20] nbns-list 192.168.2.2
-  % Invalid input detected at '^' marker.
-  nbns-list 192.168.2.2
-  ^
+<empty>
 
 [35/288] r1 [R1-ip-pool-VLAN20] option 43 sub-option 3 ascii 10.1.1.2
-  % Invalid input detected at '^' marker.
-  option 43 sub-option 3 ascii 10.1.1.2
-  ^
+<empty>
 
 [36/288] r1 [R1-ip-pool-VLAN20] option 150 ip-address 192.168.2.3
-  % Invalid input detected at '^' marker.
-  option 150 ip-address 192.168.2.3
-  ^
+<empty>
 
 [37/288] r1 [R1-ip-pool-VLAN20] static-bind ip-address 192.168.2.50 mac-address 00e0-fc00-0002
-  % Invalid input detected at '^' marker.
-  static-bind ip-address 192.168.2.50 mac-address 00e0-fc00-0002
-  ^
+<empty>
 
 [38/288] r1 [R1-ip-pool-VLAN20] quit
 <empty>
@@ -166,29 +146,19 @@ Total steps: 288
 <empty>
 
 [46/288] r1 [R1-ip-pool-VLAN30] netbios-type h-node
-  % Invalid input detected at '^' marker.
-  netbios-type h-node
-  ^
+<empty>
 
 [47/288] r1 [R1-ip-pool-VLAN30] nbns-list 192.168.3.2
-  % Invalid input detected at '^' marker.
-  nbns-list 192.168.3.2
-  ^
+<empty>
 
 [48/288] r1 [R1-ip-pool-VLAN30] option 43 sub-option 3 ascii 10.1.1.3
-  % Invalid input detected at '^' marker.
-  option 43 sub-option 3 ascii 10.1.1.3
-  ^
+<empty>
 
 [49/288] r1 [R1-ip-pool-VLAN30] option 150 ip-address 192.168.3.3
-  % Invalid input detected at '^' marker.
-  option 150 ip-address 192.168.3.3
-  ^
+<empty>
 
 [50/288] r1 [R1-ip-pool-VLAN30] static-bind ip-address 192.168.3.50 mac-address 00e0-fc00-0003
-  % Invalid input detected at '^' marker.
-  static-bind ip-address 192.168.3.50 mac-address 00e0-fc00-0003
-  ^
+<empty>
 
 [51/288] r1 [R1-ip-pool-VLAN30] quit
 <empty>
@@ -215,29 +185,19 @@ Total steps: 288
 <empty>
 
 [59/288] r1 [R1-ip-pool-VLAN40] netbios-type h-node
-  % Invalid input detected at '^' marker.
-  netbios-type h-node
-  ^
+<empty>
 
 [60/288] r1 [R1-ip-pool-VLAN40] nbns-list 192.168.4.2
-  % Invalid input detected at '^' marker.
-  nbns-list 192.168.4.2
-  ^
+<empty>
 
 [61/288] r1 [R1-ip-pool-VLAN40] option 43 sub-option 3 ascii 10.1.1.4
-  % Invalid input detected at '^' marker.
-  option 43 sub-option 3 ascii 10.1.1.4
-  ^
+<empty>
 
 [62/288] r1 [R1-ip-pool-VLAN40] option 150 ip-address 192.168.4.3
-  % Invalid input detected at '^' marker.
-  option 150 ip-address 192.168.4.3
-  ^
+<empty>
 
 [63/288] r1 [R1-ip-pool-VLAN40] static-bind ip-address 192.168.4.50 mac-address 00e0-fc00-0004
-  % Invalid input detected at '^' marker.
-  static-bind ip-address 192.168.4.50 mac-address 00e0-fc00-0004
-  ^
+<empty>
 
 [64/288] r1 [R1-ip-pool-VLAN40] quit
 <empty>
@@ -264,29 +224,19 @@ Total steps: 288
 <empty>
 
 [72/288] r1 [R1-ip-pool-VLAN50] netbios-type h-node
-  % Invalid input detected at '^' marker.
-  netbios-type h-node
-  ^
+<empty>
 
 [73/288] r1 [R1-ip-pool-VLAN50] nbns-list 192.168.5.2
-  % Invalid input detected at '^' marker.
-  nbns-list 192.168.5.2
-  ^
+<empty>
 
 [74/288] r1 [R1-ip-pool-VLAN50] option 43 sub-option 3 ascii 10.1.1.5
-  % Invalid input detected at '^' marker.
-  option 43 sub-option 3 ascii 10.1.1.5
-  ^
+<empty>
 
 [75/288] r1 [R1-ip-pool-VLAN50] option 150 ip-address 192.168.5.3
-  % Invalid input detected at '^' marker.
-  option 150 ip-address 192.168.5.3
-  ^
+<empty>
 
 [76/288] r1 [R1-ip-pool-VLAN50] static-bind ip-address 192.168.5.50 mac-address 00e0-fc00-0005
-  % Invalid input detected at '^' marker.
-  static-bind ip-address 192.168.5.50 mac-address 00e0-fc00-0005
-  ^
+<empty>
 
 [77/288] r1 [R1-ip-pool-VLAN50] quit
 <empty>
@@ -313,29 +263,19 @@ Total steps: 288
 <empty>
 
 [85/288] r1 [R1-ip-pool-VLAN60] netbios-type h-node
-  % Invalid input detected at '^' marker.
-  netbios-type h-node
-  ^
+<empty>
 
 [86/288] r1 [R1-ip-pool-VLAN60] nbns-list 192.168.6.2
-  % Invalid input detected at '^' marker.
-  nbns-list 192.168.6.2
-  ^
+<empty>
 
 [87/288] r1 [R1-ip-pool-VLAN60] option 43 sub-option 3 ascii 10.1.1.6
-  % Invalid input detected at '^' marker.
-  option 43 sub-option 3 ascii 10.1.1.6
-  ^
+<empty>
 
 [88/288] r1 [R1-ip-pool-VLAN60] option 150 ip-address 192.168.6.3
-  % Invalid input detected at '^' marker.
-  option 150 ip-address 192.168.6.3
-  ^
+<empty>
 
 [89/288] r1 [R1-ip-pool-VLAN60] static-bind ip-address 192.168.6.50 mac-address 00e0-fc00-0006
-  % Invalid input detected at '^' marker.
-  static-bind ip-address 192.168.6.50 mac-address 00e0-fc00-0006
-  ^
+<empty>
 
 [90/288] r1 [R1-ip-pool-VLAN60] quit
 <empty>
@@ -456,9 +396,7 @@ Total steps: 288
   Pool number: 7
 
 [99/288] r1 <R1> display dhcp server conflict all
-  % Invalid input detected at '^' marker.
-  display dhcp server conflict all
-                      ^
+  No conflict addresses.
 
 
 --- [100] § DHCP interface pool ---
@@ -472,24 +410,16 @@ Total steps: 288
 <empty>
 
 [103/288] r1 [R1-GE0/0/0] dhcp server dns-list 8.8.8.8
-  % Invalid input detected at '^' marker.
-  dhcp server dns-list 8.8.8.8
-       ^
+<empty>
 
 [104/288] r1 [R1-GE0/0/0] dhcp server lease day 1
-  % Invalid input detected at '^' marker.
-  dhcp server lease day 1
-       ^
+<empty>
 
 [105/288] r1 [R1-GE0/0/0] dhcp server excluded-ip-address 192.168.1.1 192.168.1.9
-  % Invalid input detected at '^' marker.
-  dhcp server excluded-ip-address 192.168.1.1 192.168.1.9
-       ^
+<empty>
 
 [106/288] r1 [R1-GE0/0/0] dhcp server static-bind ip-address 192.168.1.60 mac-address 00e0-fc11-2233
-  % Invalid input detected at '^' marker.
-  dhcp server static-bind ip-address 192.168.1.60 mac-address 00e0-fc11-2233
-       ^
+<empty>
 
 [107/288] r1 [R1-GE0/0/0] quit
 <empty>
@@ -498,9 +428,7 @@ Total steps: 288
 <empty>
 
 [109/288] r1 <R1> display dhcp server interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display dhcp server interface GigabitEthernet0/0/0
-                      ^
+  No DHCP server config on interface GigabitEthernet0/0/0.
 
 
 --- [110] § DHCP relay ---
@@ -520,14 +448,10 @@ Total steps: 288
 <empty>
 
 [115/288] r1 [R1-GE0/0/0] dhcp relay information enable
-  % Invalid input detected at '^' marker.
-  dhcp relay information enable
-             ^
+<empty>
 
 [116/288] r1 [R1-GE0/0/0] dhcp relay information strategy keep
-  % Invalid input detected at '^' marker.
-  dhcp relay information strategy keep
-             ^
+<empty>
 
 [117/288] r1 [R1-GE0/0/0] quit
 <empty>
@@ -555,24 +479,16 @@ Total steps: 288
   Enter system view, return user view with return command.
 
 [122/288] r1 [R1] dhcpv6 pool V6POOL
-  % Invalid input detected at '^' marker.
-  dhcpv6 pool V6POOL
-  ^
+<empty>
 
 [123/288] r1 [R1] address prefix 2001:db8:1::/64
-  % Invalid input detected at '^' marker.
-  address prefix 2001:db8:1::/64
-  ^
+<empty>
 
 [124/288] r1 [R1] dns-server 2001:4860:4860::8888
-  % Invalid input detected at '^' marker.
-  dns-server 2001:4860:4860::8888
-  ^
+<empty>
 
 [125/288] r1 [R1] dns-domain-name v6.lab
-  % Invalid input detected at '^' marker.
-  dns-domain-name v6.lab
-  ^
+<empty>
 
 [126/288] r1 [R1] quit
 <empty>
@@ -607,14 +523,13 @@ Total steps: 288
 <empty>
 
 [134/288] r1 <R1> display dhcpv6 pool
-  % Invalid input detected at '^' marker.
-  display dhcpv6 pool
-          ^
+  Pool name: V6POOL
+    Prefix: 2001:db8:1::/64
+    DNS: 2001:4860:4860::8888
+    Domain: v6.lab
 
 [135/288] r1 <R1> display dhcpv6 server
-  % Invalid input detected at '^' marker.
-  display dhcpv6 server
-          ^
+  DHCPv6 server: enabled
 
 
 --- [136] § DHCP snooping ---
@@ -625,27 +540,19 @@ Total steps: 288
 <empty>
 
 [138/288] r1 [R1] dhcp snooping enable ipv4
-  % Invalid input detected at '^' marker.
-  dhcp snooping enable ipv4
-                       ^
+<empty>
 
 [139/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
 [140/288] r1 [R1-GE0/0/1] dhcp snooping trusted
-  % Invalid input detected at '^' marker.
-  dhcp snooping trusted
-                ^
+<empty>
 
 [141/288] r1 [R1-GE0/0/1] dhcp snooping check dhcp-rate enable
-  % Invalid input detected at '^' marker.
-  dhcp snooping check dhcp-rate enable
-                ^
+<empty>
 
 [142/288] r1 [R1-GE0/0/1] dhcp snooping check dhcp-rate 100
-  % Invalid input detected at '^' marker.
-  dhcp snooping check dhcp-rate 100
-                ^
+<empty>
 
 [143/288] r1 [R1-GE0/0/1] quit
 <empty>
@@ -657,9 +564,7 @@ Total steps: 288
   % Incomplete command.
 
 [146/288] r1 <R1> display dhcp snooping interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display dhcp snooping interface GigabitEthernet0/0/1
-                        ^
+  DHCP snooping not configured on GigabitEthernet0/0/1.
 
 
 --- [147] § NAT outbound / PAT ---
@@ -685,9 +590,7 @@ Total steps: 288
 <empty>
 
 [154/288] r1 [R1] nat address-group 1 10.0.0.50 10.0.0.60
-  % Invalid input detected at '^' marker.
-  nat address-group 1 10.0.0.50 10.0.0.60
-  ^
+<empty>
 
 [155/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
@@ -720,15 +623,14 @@ Total steps: 288
    2000      overload  ---
 
 [163/288] r1 <R1> display nat address-group
-  Info: No NAT address-group is configured.
+   Index  Pool Name   Start IP         End IP
+   0      1           10.0.0.50        10.0.0.60
 
 [164/288] r1 <R1> display nat session all
   Info: No NAT session is found.
 
 [165/288] r1 <R1> display nat session protocol tcp
-  % Invalid input detected at '^' marker.
-  display nat session protocol tcp
-                      ^
+  No active NAT sessions.
 
 
 --- [166] § NAT static / server ---
@@ -736,34 +638,22 @@ Total steps: 288
   Enter system view, return user view with return command.
 
 [167/288] r1 [R1] nat static global 10.0.0.11 inside 192.168.1.11
-  % Invalid input detected at '^' marker.
-  nat static global 10.0.0.11 inside 192.168.1.11
-  ^
+<empty>
 
 [168/288] r1 [R1] nat static global 10.0.0.12 inside 192.168.1.12
-  % Invalid input detected at '^' marker.
-  nat static global 10.0.0.12 inside 192.168.1.12
-  ^
+<empty>
 
 [169/288] r1 [R1] nat static global 10.0.0.13 inside 192.168.1.13
-  % Invalid input detected at '^' marker.
-  nat static global 10.0.0.13 inside 192.168.1.13
-  ^
+<empty>
 
 [170/288] r1 [R1] nat static global 10.0.0.14 inside 192.168.1.14
-  % Invalid input detected at '^' marker.
-  nat static global 10.0.0.14 inside 192.168.1.14
-  ^
+<empty>
 
 [171/288] r1 [R1] nat static global 10.0.0.15 inside 192.168.1.15
-  % Invalid input detected at '^' marker.
-  nat static global 10.0.0.15 inside 192.168.1.15
-  ^
+<empty>
 
 [172/288] r1 [R1] nat static global 10.0.0.16 inside 192.168.1.16
-  % Invalid input detected at '^' marker.
-  nat static global 10.0.0.16 inside 192.168.1.16
-  ^
+<empty>
 
 [173/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
@@ -778,17 +668,13 @@ Total steps: 288
 <empty>
 
 [177/288] r1 [R1-GE0/0/1] nat dns-map example.com 10.0.0.100 80 tcp
-  % Invalid input detected at '^' marker.
-  nat dns-map example.com 10.0.0.100 80 tcp
-      ^
+<empty>
 
 [178/288] r1 [R1-GE0/0/1] quit
 <empty>
 
 [179/288] r1 [R1] nat static enable
-  % Invalid input detected at '^' marker.
-  nat static enable
-  ^
+<empty>
 
 [180/288] r1 [R1] return
 <empty>
@@ -797,19 +683,32 @@ Total steps: 288
    Static NAT:
    Global IP        Local IP          Protocol  GPort  LPort
    ------------------------------------------------------------
+   10.0.0.11        192.168.1.11      ---       ---    ---
+   10.0.0.12        192.168.1.12      ---       ---    ---
+   10.0.0.13        192.168.1.13      ---       ---    ---
+   10.0.0.14        192.168.1.14      ---       ---    ---
+   10.0.0.15        192.168.1.15      ---       ---    ---
+   10.0.0.16        192.168.1.16      ---       ---    ---
    10.0.0.100       192.168.1.100     tcp       80     8080
    current-interface192.168.1.101     tcp       2222   22
    10.0.0.100       192.168.1.102     udp       53     53
 
 [182/288] r1 <R1> display nat server
-  % Invalid input detected at '^' marker.
-  display nat server
-              ^
+   Static NAT:
+   Global IP        Local IP          Protocol  GPort  LPort
+   ------------------------------------------------------------
+   10.0.0.11        192.168.1.11      ---       ---    ---
+   10.0.0.12        192.168.1.12      ---       ---    ---
+   10.0.0.13        192.168.1.13      ---       ---    ---
+   10.0.0.14        192.168.1.14      ---       ---    ---
+   10.0.0.15        192.168.1.15      ---       ---    ---
+   10.0.0.16        192.168.1.16      ---       ---    ---
+   10.0.0.100       192.168.1.100     tcp       80     8080
+   current-interface192.168.1.101     tcp       2222   22
+   10.0.0.100       192.168.1.102     udp       53     53
 
 [183/288] r1 <R1> reset nat session all
-  % Invalid input detected at '^' marker.
-  reset nat session all
-                    ^
+<empty>
 
 
 --- [184] § regression: display family ---
@@ -890,6 +789,7 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.4.1 192.168.4.10
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
    dhcp relay server-ip 10.0.0.2
@@ -965,6 +865,7 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.4.1 192.168.4.10
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
    dhcp relay server-ip 10.0.0.2
@@ -1079,7 +980,8 @@ Total steps: 288
   Info: No NAT session is found.
 
 [204/288] r1 [R1] display nat address-group
-  Info: No NAT address-group is configured.
+   Index  Pool Name   Start IP         End IP
+   0      1           10.0.0.50        10.0.0.60
 
 [205/288] r1 [R1] display ip pool
   Pool-name      : VLAN10
@@ -1211,7 +1113,7 @@ Total steps: 288
   No NTP associations
 
 [219/288] r1 [R1] display clock
-  2026-06-04 12:56:34
+  2026-06-04 13:10:55
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1224,13 +1126,13 @@ Total steps: 288
 [222/288] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:56:34
+  CPU Usage Stat. Time : 2026-06-04 13:10:55
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 12:56:34
+  Memory utilization statistics at 2026-06-04 13:10:55
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1405,6 +1307,7 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.4.1 192.168.4.10
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
    dhcp relay server-ip 10.0.0.2
@@ -1533,6 +1436,7 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.4.1 192.168.4.10
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
+  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
    dhcp relay server-ip 10.0.0.2
@@ -1694,6 +1598,7 @@ Total steps: 288
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa

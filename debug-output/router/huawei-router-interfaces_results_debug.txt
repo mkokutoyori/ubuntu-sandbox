@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-06-04T12:56:41.702Z
+Generated: 2026-06-04T13:10:52.388Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -577,6 +577,13 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   #
 
 [155/286] r1 [R1-GE0/0/0] undo shutdown
@@ -980,6 +987,13 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
    shutdown
@@ -1024,41 +1038,65 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0.10
    ip address 192.168.1.1 255.255.255.0
+   dot1q termination vid 10
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.20
    ip address 192.168.2.1 255.255.255.0
+   dot1q termination vid 20
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.30
    ip address 192.168.3.1 255.255.255.0
+   dot1q termination vid 30
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.40
    ip address 192.168.4.1 255.255.255.0
+   dot1q termination vid 40
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.50
    ip address 192.168.5.1 255.255.255.0
+   dot1q termination vid 50
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.60
    ip address 192.168.6.1 255.255.255.0
+   dot1q termination vid 60
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.70
    ip address 192.168.7.1 255.255.255.0
+   dot1q termination vid 70
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.80
    ip address 192.168.8.1 255.255.255.0
+   dot1q termination vid 80
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.90
    ip address 192.168.9.1 255.255.255.0
+   dot1q termination vid 90
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.100
    ip address 192.168.10.1 255.255.255.0
+   dot1q termination vid 100
+   arp broadcast enable
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol gre
    source GigabitEthernet0/0/0
    destination 10.0.0.2
+   gre key 1234
+   keepalive period 5 retry-times 3
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol ipsec
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1073,6 +1111,13 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
    shutdown
@@ -1117,41 +1162,65 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0.10
    ip address 192.168.1.1 255.255.255.0
+   dot1q termination vid 10
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.20
    ip address 192.168.2.1 255.255.255.0
+   dot1q termination vid 20
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.30
    ip address 192.168.3.1 255.255.255.0
+   dot1q termination vid 30
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.40
    ip address 192.168.4.1 255.255.255.0
+   dot1q termination vid 40
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.50
    ip address 192.168.5.1 255.255.255.0
+   dot1q termination vid 50
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.60
    ip address 192.168.6.1 255.255.255.0
+   dot1q termination vid 60
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.70
    ip address 192.168.7.1 255.255.255.0
+   dot1q termination vid 70
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.80
    ip address 192.168.8.1 255.255.255.0
+   dot1q termination vid 80
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.90
    ip address 192.168.9.1 255.255.255.0
+   dot1q termination vid 90
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.100
    ip address 192.168.10.1 255.255.255.0
+   dot1q termination vid 100
+   arp broadcast enable
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol gre
    source GigabitEthernet0/0/0
    destination 10.0.0.2
+   gre key 1234
+   keepalive period 5 retry-times 3
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol ipsec
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1429,7 +1498,7 @@ Total steps: 286
   Info: No NAT session is found.
 
 [202/286] r1 [R1] display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [203/286] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -1495,7 +1564,7 @@ Total steps: 286
   No NTP associations
 
 [217/286] r1 [R1] display clock
-  2026-06-04 12:56:41
+  2026-06-04 13:10:52
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1508,13 +1577,13 @@ Total steps: 286
 [220/286] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:56:41
+  CPU Usage Stat. Time : 2026-06-04 13:10:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 12:56:41
+  Memory utilization statistics at 2026-06-04 13:10:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1659,6 +1728,13 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
    shutdown
@@ -1703,41 +1779,65 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0.10
    ip address 192.168.1.1 255.255.255.0
+   dot1q termination vid 10
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.20
    ip address 192.168.2.1 255.255.255.0
+   dot1q termination vid 20
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.30
    ip address 192.168.3.1 255.255.255.0
+   dot1q termination vid 30
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.40
    ip address 192.168.4.1 255.255.255.0
+   dot1q termination vid 40
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.50
    ip address 192.168.5.1 255.255.255.0
+   dot1q termination vid 50
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.60
    ip address 192.168.6.1 255.255.255.0
+   dot1q termination vid 60
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.70
    ip address 192.168.7.1 255.255.255.0
+   dot1q termination vid 70
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.80
    ip address 192.168.8.1 255.255.255.0
+   dot1q termination vid 80
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.90
    ip address 192.168.9.1 255.255.255.0
+   dot1q termination vid 90
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.100
    ip address 192.168.10.1 255.255.255.0
+   dot1q termination vid 100
+   arp broadcast enable
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol gre
    source GigabitEthernet0/0/0
    destination 10.0.0.2
+   gre key 1234
+   keepalive period 5 retry-times 3
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol ipsec
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1796,6 +1896,13 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
    shutdown
@@ -1840,41 +1947,65 @@ Total steps: 286
   #
   interface GigabitEthernet0/0/0.10
    ip address 192.168.1.1 255.255.255.0
+   dot1q termination vid 10
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.20
    ip address 192.168.2.1 255.255.255.0
+   dot1q termination vid 20
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.30
    ip address 192.168.3.1 255.255.255.0
+   dot1q termination vid 30
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.40
    ip address 192.168.4.1 255.255.255.0
+   dot1q termination vid 40
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.50
    ip address 192.168.5.1 255.255.255.0
+   dot1q termination vid 50
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.60
    ip address 192.168.6.1 255.255.255.0
+   dot1q termination vid 60
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.70
    ip address 192.168.7.1 255.255.255.0
+   dot1q termination vid 70
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.80
    ip address 192.168.8.1 255.255.255.0
+   dot1q termination vid 80
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.90
    ip address 192.168.9.1 255.255.255.0
+   dot1q termination vid 90
+   arp broadcast enable
   #
   interface GigabitEthernet0/0/0.100
    ip address 192.168.10.1 255.255.255.0
+   dot1q termination vid 100
+   arp broadcast enable
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol gre
    source GigabitEthernet0/0/0
    destination 10.0.0.2
+   gre key 1234
+   keepalive period 5 retry-times 3
   #
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol ipsec
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -1886,6 +2017,13 @@ Total steps: 286
   interface GigabitEthernet0/0/0
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   interface GigabitEthernet0/0/1
    shutdown
   interface GigabitEthernet0/0/2
@@ -1918,30 +2056,54 @@ Total steps: 286
    ip address 10.255.255.8 255.255.255.255
   interface GigabitEthernet0/0/0.10
    ip address 192.168.1.1 255.255.255.0
+   dot1q termination vid 10
+   arp broadcast enable
   interface GigabitEthernet0/0/0.20
    ip address 192.168.2.1 255.255.255.0
+   dot1q termination vid 20
+   arp broadcast enable
   interface GigabitEthernet0/0/0.30
    ip address 192.168.3.1 255.255.255.0
+   dot1q termination vid 30
+   arp broadcast enable
   interface GigabitEthernet0/0/0.40
    ip address 192.168.4.1 255.255.255.0
+   dot1q termination vid 40
+   arp broadcast enable
   interface GigabitEthernet0/0/0.50
    ip address 192.168.5.1 255.255.255.0
+   dot1q termination vid 50
+   arp broadcast enable
   interface GigabitEthernet0/0/0.60
    ip address 192.168.6.1 255.255.255.0
+   dot1q termination vid 60
+   arp broadcast enable
   interface GigabitEthernet0/0/0.70
    ip address 192.168.7.1 255.255.255.0
+   dot1q termination vid 70
+   arp broadcast enable
   interface GigabitEthernet0/0/0.80
    ip address 192.168.8.1 255.255.255.0
+   dot1q termination vid 80
+   arp broadcast enable
   interface GigabitEthernet0/0/0.90
    ip address 192.168.9.1 255.255.255.0
+   dot1q termination vid 90
+   arp broadcast enable
   interface GigabitEthernet0/0/0.100
    ip address 192.168.10.1 255.255.255.0
+   dot1q termination vid 100
+   arp broadcast enable
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
+   tunnel-protocol gre
    source GigabitEthernet0/0/0
    destination 10.0.0.2
+   gre key 1234
+   keepalive period 5 retry-times 3
   interface Tunnel0/0/1
    ip address 172.16.0.5 255.255.255.252
+   tunnel-protocol ipsec
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
@@ -2049,6 +2211,13 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   arp expire-time 600
+   mtu 9000
+   bandwidth 100000
+   mac-address 00e0-fc12-3456
+   flow-control
+   ipv6 enable
+   ipv6 mtu 1280
   #
 
 [271/286] r1 [Huawei-GE0/0/0] shutdown
@@ -2115,6 +2284,7 @@ Total steps: 286
     ipsec          ipsec
     debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
