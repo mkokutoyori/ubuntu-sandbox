@@ -911,6 +911,31 @@ export class DHCPServer implements IProtocolEngine {
     }
   }
 
+  private readonly interfaceModes: Map<string, 'server' | 'relay' | 'none'> = new Map();
+  private readonly snoopingEnabledIfaces: Set<string> = new Set();
+  private readonly forwardProtocolPorts: Map<string, Set<number>> = new Map();
+
+  setInterfaceMode(iface: string, mode: 'server' | 'relay' | 'none'): void {
+    this.interfaceModes.set(iface, mode);
+  }
+  getInterfaceMode(iface: string): 'server' | 'relay' | 'none' { return this.interfaceModes.get(iface) ?? 'server'; }
+
+  setSnoopingEnabled(iface: string, enabled: boolean): void {
+    if (enabled) this.snoopingEnabledIfaces.add(iface);
+    else this.snoopingEnabledIfaces.delete(iface);
+  }
+  isSnoopingEnabled(iface: string): boolean { return this.snoopingEnabledIfaces.has(iface); }
+  getSnoopingInterfaces(): readonly string[] { return [...this.snoopingEnabledIfaces]; }
+
+  addForwardProtocolPort(iface: string, port: number): void {
+    let set = this.forwardProtocolPorts.get(iface);
+    if (!set) { set = new Set(); this.forwardProtocolPorts.set(iface, set); }
+    set.add(port);
+  }
+  getForwardProtocolPorts(iface: string): readonly number[] {
+    return [...(this.forwardProtocolPorts.get(iface) ?? [])];
+  }
+
   getHelperAddresses(iface: string): string[] {
     return this.relay.helperAddresses.get(iface) || [];
   }

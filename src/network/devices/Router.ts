@@ -89,6 +89,7 @@ import { NATEngine } from './router/NATEngine';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
+import { RouterManagementService } from './router/management/RouterManagementService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1577,6 +1578,12 @@ export abstract class Router extends Equipment {
   getDmvpnService(): DmvpnService {
     if (!this._dmvpnService) this._dmvpnService = new DmvpnService(this.getNhrpService());
     return this._dmvpnService;
+  }
+
+  private _managementService: RouterManagementService | null = null;
+  getManagementService(): RouterManagementService {
+    if (!this._managementService) this._managementService = new RouterManagementService();
+    return this._managementService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;
