@@ -761,6 +761,22 @@ export function buildIPv6ACLModeCommands(trie: CommandTrie, ctx: CiscoACLShellCo
   };
   trie.registerGreedy('permit', 'Permit matching IPv6 packets', (args) => handle('permit', args));
   trie.registerGreedy('deny', 'Deny matching IPv6 packets', (args) => handle('deny', args));
-  trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', () => '');
-  trie.registerGreedy('remark', 'ACL remark', () => '');
+  trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', (args) => {
+    const name = ctx.getSelectedACL();
+    if (!name || !args[0]) return '';
+    const r = ctx.r() as any;
+    if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
+    const acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+    if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', evaluate: args[0] });
+    return '';
+  });
+  trie.registerGreedy('remark', 'ACL remark', (args) => {
+    const name = ctx.getSelectedACL();
+    if (!name) return '';
+    const r = ctx.r() as any;
+    if (!r.ipv6AccessLists) r.ipv6AccessLists = [];
+    const acl = r.ipv6AccessLists.find((a: any) => a.name === name);
+    if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', remark: args.join(' ') });
+    return '';
+  });
 }

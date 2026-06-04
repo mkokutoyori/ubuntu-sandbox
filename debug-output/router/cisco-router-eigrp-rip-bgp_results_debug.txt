@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-03T20:24:15.647Z
+Generated: 2026-06-04T06:45:31.422Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -254,9 +254,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
 
 [60/355] r1 R1# show ip route rip
@@ -478,9 +483,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 100"
     Router-ID: 1.1.1.1
@@ -1046,9 +1056,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 0"
     Router-ID: 1.1.1.1
@@ -1265,9 +1280,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 0"
     Router-ID: 1.1.1.1
@@ -1454,7 +1474,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0BEF.AD916872 (20:24:15.678 UTC Wed Jun 3 2026)
+  reference time is EDCB9D8B.753F7CED (06:45:31.458 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1463,7 +1483,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *20:24:15.000 UTC Wed Jun 3 2026
+  *06:45:31.000 UTC Thu Jun 4 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1953,9 +1973,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 0"
     Router-ID: 1.1.1.1

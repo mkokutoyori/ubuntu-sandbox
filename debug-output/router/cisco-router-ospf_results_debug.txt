@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-03T20:24:08.788Z
+Generated: 2026-06-04T06:45:25.970Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -873,13 +873,13 @@ Total steps: 311
 <empty>
 
 [173/311] r1 R1# debug ip ospf adj
-  OSPF adj debugging is on
+  OSPF adjacency debugging is on
 
 [174/311] r1 R1# debug ip ospf events
   OSPF events debugging is on
 
 [175/311] r1 R1# debug ip ospf hello
-  OSPF hello debugging is on
+  OSPF Hello debugging is on
 
 [176/311] r1 R1# debug ip ospf packet
   OSPF packet debugging is on
@@ -1304,7 +1304,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0BE8.E10624DD (20:24:08.879 UTC Wed Jun 3 2026)
+  reference time is EDCB9D86.1AE147AE (06:45:26.105 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1313,7 +1313,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *20:24:08.000 UTC Wed Jun 3 2026
+  *06:45:26.000 UTC Thu Jun 4 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

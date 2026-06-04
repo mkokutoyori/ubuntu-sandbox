@@ -330,7 +330,21 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     if (!tp) return `% Trustpoint ${name} not configured`;
     return `% Trustpoint ${name} CA certificate accepted`;
   });
-  trie.registerGreedy('crypto pki import', 'Import certificate', () => '% Certificate import not supported in offline mode');
+  trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
+    const name = args[0];
+    if (!name) return '% Incomplete command.';
+    const tp = sec().pkiTrustpoints.get(name);
+    if (!tp) return `% Trustpoint ${name} not configured`;
+    const what = args[1]?.toLowerCase();
+    if (what === 'certificate' || what === 'pem') {
+      (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
+        format: what,
+        importedAtMs: Date.now(),
+      };
+      return `% Certificate imported into trustpoint ${name}`;
+    }
+    return `% Unknown import type "${what}"`;
+  });
 
   trie.registerGreedy('parameter-map type inspect', 'Define parameter-map', (args) => {
     if (!args[0]) return '% Incomplete command.';
@@ -450,7 +464,13 @@ export function buildSecuritySubmodeCommands(
     return '';
   });
 
-  zoneTrie.registerGreedy('description', 'Zone description', () => '');
+  zoneTrie.registerGreedy('description', 'Zone description', (args) => {
+    const name = ctx.getZone?.();
+    if (!name) return '';
+    const z = sec().zones.get(name);
+    if (z) (z as unknown as { description?: string }).description = args.join(' ');
+    return '';
+  });
 
   zonePairTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
     const name = ctx.getZonePair?.();

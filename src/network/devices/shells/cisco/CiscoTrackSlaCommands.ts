@@ -120,9 +120,30 @@ export function buildTrackSlaConfig(
     sla.responderEnabled = true;
     return '';
   });
-  configTrie.registerGreedy('ip sla enable', 'IP SLA option', () => '');
-  configTrie.registerGreedy('ip sla logging', 'IP SLA option', () => '');
-  configTrie.registerGreedy('ip sla reaction-configuration', 'IP SLA option', () => '');
+  configTrie.registerGreedy('ip sla enable', 'Enable IP SLA', () => { sla.globalEnabled = true; return ''; });
+  configTrie.registerGreedy('no ip sla enable', 'Disable IP SLA', () => { sla.globalEnabled = false; return ''; });
+  configTrie.registerGreedy('ip sla logging', 'Enable IP SLA logging', () => { sla.loggingTrapsEnabled = true; return ''; });
+  configTrie.registerGreedy('no ip sla logging', 'Disable IP SLA logging', () => { sla.loggingTrapsEnabled = false; return ''; });
+  configTrie.registerGreedy('ip sla reaction-configuration', 'Reaction config', (args) => {
+    const opId = parseInt(args[0] ?? '', 10);
+    if (isNaN(opId)) return '% Invalid operation ID';
+    const r: import('../../inspection/config/IpSlaRepository').SlaReactionConfiguration = { opId, reactionType: 'rtt' };
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === 'react' && args[i + 1]) { r.reactionType = args[i + 1]; i++; }
+      else if (args[i] === 'threshold-type' && args[i + 1]) { r.thresholdType = args[i + 1]; i++; }
+      else if (args[i] === 'threshold-value' && args[i + 1] && args[i + 2]) {
+        r.thresholdValueLow = parseInt(args[i + 1], 10);
+        r.thresholdValueHigh = parseInt(args[i + 2], 10);
+        i += 2;
+      }
+      else if (args[i] === 'action-type' && args[i + 1]) {
+        r.actionType = args[i + 1] as 'none' | 'trapAndTrigger' | 'trapOnly' | 'triggerOnly';
+        i++;
+      }
+    }
+    sla.addReaction(r);
+    return '';
+  });
   configTrie.registerGreedy('ip sla', 'Configure an IP SLA operation', (args) => {
     const id = parseInt(args[0], 10);
     if (Number.isNaN(id)) return '% Incomplete command.';
@@ -191,7 +212,22 @@ export function buildTrackSlaConfig(
   });
   for (const kw of ['threshold', 'timeout', 'tag', 'history',
     'request-data-size', 'tos', 'verify-data', 'owner']) {
-    slaTrie.registerGreedy(kw, `IP SLA ${kw}`, () => '');
+    slaTrie.registerGreedy(kw, `IP SLA ${kw}`, (args) => {
+      const id = ctx.getSelectedIpSla();
+      const op = id !== null ? sla.get(id) : undefined;
+      if (!op) return '';
+      const extra = (op as unknown as Record<string, unknown>);
+      const n = parseInt(args[0] ?? '', 10);
+      if (kw === 'threshold' && !isNaN(n)) extra.thresholdMs = n;
+      else if (kw === 'timeout' && !isNaN(n)) extra.timeoutMs = n;
+      else if (kw === 'tag') extra.tag = args.join(' ');
+      else if (kw === 'history') extra.history = args.join(' ');
+      else if (kw === 'request-data-size' && !isNaN(n)) extra.requestDataSize = n;
+      else if (kw === 'tos' && !isNaN(n)) extra.tos = n;
+      else if (kw === 'verify-data') extra.verifyData = true;
+      else if (kw === 'owner') extra.owner = args.join(' ');
+      return '';
+    });
   }
 }
 

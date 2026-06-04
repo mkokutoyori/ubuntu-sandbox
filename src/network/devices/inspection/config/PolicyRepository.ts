@@ -16,8 +16,9 @@ export interface PrefixListEntry {
 export interface RouteMapClause {
   action: 'permit' | 'deny';
   seq: number;
-  match: string[];      // raw match lines (real, as configured)
-  set: string[];        // raw set lines
+  match: string[];
+  set: string[];
+  description?: string;
 }
 
 export class PolicyRepository {
@@ -93,6 +94,7 @@ export class PolicyRepository {
       if (!clauses) { out.push(`% route-map ${n} not found`); continue; }
       for (const c of clauses) {
         out.push(`route-map ${n}, ${c.action} sequence ${c.seq}`);
+        if (c.description) out.push(`  Description: ${c.description}`);
         out.push('  Match clauses:');
         for (const m of c.match) out.push(`    ${m}`);
         out.push('  Set clauses:');

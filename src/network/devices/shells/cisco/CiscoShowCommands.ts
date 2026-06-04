@@ -234,6 +234,8 @@ export function showRunningConfig(router: Router): string {
       [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
     })[Symbol.for('CiscoSecurityConfig')];
     if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
+    const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
+    if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
     lines.push('!');
   }
 

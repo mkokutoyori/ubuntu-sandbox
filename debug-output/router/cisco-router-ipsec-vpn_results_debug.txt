@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-03T20:24:10.548Z
+Generated: 2026-06-04T06:45:30.487Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -922,16 +922,38 @@ Total steps: 370
 <empty>
 
 [232/370] r1 R1# show ip nhrp
-  IP-NHRP table contains no entries
+  IP NHRP cache:
+  172.20.0.2/32 via 10.0.0.2, Tunnel100 created 0s ago
+    Type: static, Flags: S
+    NBMA address: 10.0.0.2
+  224.0.0.0/32 via 10.0.0.2, Tunnel100 created 0s ago
+    Type: static, Flags: M
+    NBMA address: 10.0.0.2
 
 [233/370] r1 R1# show ip nhrp brief
-  IP-NHRP table contains no entries
+  Target            Via                NBMA Address        Interface
+  172.20.0.2/32     172.20.0.2         10.0.0.2            Tunnel100
+  224.0.0.0/32      224.0.0.0          10.0.0.2            Tunnel100
 
 [234/370] r1 R1# show dmvpn
-  No DMVPN sessions
+  Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
+          N - NATed, L - Local, X - No Socket
+  
+  Interface: Tunnel100, IPv4 NHRP Details
+  Type: Hub, NHRP Peers: 0, Phase: 3
+  
+   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
+   ----- --------------- --------------- ----- -------- -----
 
 [235/370] r1 R1# show dmvpn detail
-  No DMVPN sessions
+  Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
+          N - NATed, L - Local, X - No Socket
+  
+  Interface: Tunnel100, IPv4 NHRP Details
+  Type: Hub, NHRP Peers: 0, Phase: 3
+  
+   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
+   ----- --------------- --------------- ----- -------- -----
 
 
 --- [236] § PKI / trustpoint ---
@@ -1104,6 +1126,14 @@ Total steps: 370
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
@@ -1451,7 +1481,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0BEA.96C8B439 (20:24:10.589 UTC Wed Jun 3 2026)
+  reference time is EDCB9D8A.85A1CAC0 (06:45:30.522 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1460,7 +1490,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *20:24:10.000 UTC Wed Jun 3 2026
+  *06:45:30.000 UTC Thu Jun 4 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1654,6 +1684,14 @@ Total steps: 370
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
@@ -1922,6 +1960,14 @@ Total steps: 370
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
 
 [326/370] r1 R1(config)# show running-config | begin line
 <empty>
@@ -1954,6 +2000,14 @@ Total steps: 370
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   crypto pki trustpoint CA1

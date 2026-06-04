@@ -3941,6 +3941,53 @@ export class IPSecEngine implements IProtocolEngine {
     return lines;
   }
 
+  clearISAKMPSAs(peer?: string): number {
+    if (!peer) {
+      const n = this.ikeSADB.size;
+      this.ikeSADB.clear();
+      return n;
+    }
+    const had = this.ikeSADB.delete(peer);
+    return had ? 1 : 0;
+  }
+
+  clearIKEv2SAs(peer?: string): number {
+    if (!peer) {
+      const n = this.ikev2SADB.size;
+      this.ikev2SADB.clear();
+      return n;
+    }
+    const had = this.ikev2SADB.delete(peer);
+    return had ? 1 : 0;
+  }
+
+  clearIPSecSAs(peer?: string): number {
+    if (!peer) {
+      let n = 0;
+      for (const arr of this.ipsecSADB.values()) n += arr.length;
+      this.ipsecSADB.clear();
+      return n;
+    }
+    const arr = this.ipsecSADB.get(peer);
+    if (!arr) return 0;
+    const count = arr.length;
+    this.ipsecSADB.delete(peer);
+    return count;
+  }
+
+  clearAllSAs(): { ikeSAs: number; ikev2SAs: number; ipsecSAs: number } {
+    return {
+      ikeSAs: this.clearISAKMPSAs(),
+      ikev2SAs: this.clearIKEv2SAs(),
+      ipsecSAs: this.clearIPSecSAs(),
+    };
+  }
+
+  clearSessions(): number {
+    const total = this.clearAllSAs();
+    return total.ikeSAs + total.ikev2SAs + total.ipsecSAs;
+  }
+
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     for (const [, p] of [...this.isakmpPolicies].sort((a, b) => a[0] - b[0])) {

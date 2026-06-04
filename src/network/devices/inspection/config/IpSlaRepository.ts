@@ -39,9 +39,26 @@ function ipReachable(router: Router, ip: string | null): boolean {
   return false;
 }
 
+export interface SlaReactionConfiguration {
+  opId: number;
+  reactionType: string;
+  thresholdType?: string;
+  thresholdValueLow?: number;
+  thresholdValueHigh?: number;
+  actionType?: 'none' | 'trapAndTrigger' | 'trapOnly' | 'triggerOnly';
+}
+
 export class IpSlaRepository {
   private readonly ops = new Map<number, SlaOperation>();
+  private readonly reactions: SlaReactionConfiguration[] = [];
   responderEnabled = false;
+  globalEnabled = true;
+  loggingTrapsEnabled = false;
+
+  addReaction(r: SlaReactionConfiguration): void { this.reactions.push(r); }
+  getReactions(opId?: number): readonly SlaReactionConfiguration[] {
+    return opId === undefined ? [...this.reactions] : this.reactions.filter(r => r.opId === opId);
+  }
 
   ensure(id: number): SlaOperation {
     let op = this.ops.get(id);

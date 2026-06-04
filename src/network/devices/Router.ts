@@ -86,6 +86,9 @@ import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
+import { RouterDebugService } from './router/diag/RouterDebugService';
+import { NhrpService } from './router/nhrp/NhrpService';
+import { DmvpnService } from './router/nhrp/DmvpnService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1549,6 +1552,32 @@ export abstract class Router extends Equipment {
    * …` (Huawei) is executed.
    */
   private _credentialStore: NetworkOsCredentialStore | null = null;
+  private _debugService: RouterDebugService | null = null;
+  private _ipRoutingEnabled: boolean = true;
+  private _ripVersion: 1 | 2 = 2;
+
+  isIpRoutingEnabled(): boolean { return this._ipRoutingEnabled; }
+  _setIpRoutingEnabled(enabled: boolean): void { this._ipRoutingEnabled = enabled; }
+  getRipVersion(): 1 | 2 { return this._ripVersion; }
+  _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
+
+  getDebugService(): RouterDebugService {
+    if (!this._debugService) this._debugService = new RouterDebugService();
+    return this._debugService;
+  }
+
+  private _nhrpService: NhrpService | null = null;
+  private _dmvpnService: DmvpnService | null = null;
+
+  getNhrpService(): NhrpService {
+    if (!this._nhrpService) this._nhrpService = new NhrpService();
+    return this._nhrpService;
+  }
+
+  getDmvpnService(): DmvpnService {
+    if (!this._dmvpnService) this._dmvpnService = new DmvpnService(this.getNhrpService());
+    return this._dmvpnService;
+  }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;
   private _loginBlockConfig: { attempts: number; withinSeconds: number; blockSeconds: number } | null = null;

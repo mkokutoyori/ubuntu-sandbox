@@ -106,28 +106,71 @@ export function registerIPSecShowCommands(
 
   trie.register('show crypto pki certificates verbose', 'Detailed PKI certificates', () => 'No PKI certificates installed');
 
-  trie.registerGreedy('clear crypto sa', 'Clear IPSec SAs', () => {
+  trie.registerGreedy('clear crypto sa', 'Clear IPSec SAs', (args) => {
     const e = eng();
     if (!e) return 'IPSec not configured.';
-    (e as unknown as { clearAllSAs?: () => void }).clearAllSAs?.();
-    return '';
+    const peer = parsePeerFromArgs(args);
+    const n = e.clearIPSecSAs(peer);
+    return n === 0 ? 'No matching IPSec SAs found' : `Cleared ${n} IPSec SA${n === 1 ? '' : 's'}`;
   });
-  trie.register('clear crypto isakmp', 'Clear ISAKMP SAs', () => '');
-  trie.register('clear crypto isakmp sa', 'Clear ISAKMP SAs', () => '');
-  trie.register('clear crypto session', 'Clear crypto sessions', () => '');
-  trie.register('clear crypto ikev2 sa', 'Clear IKEv2 SAs', () => '');
-  trie.registerGreedy('debug crypto isakmp', 'Enable ISAKMP debug', () => 'Crypto ISAKMP debugging is on');
-  trie.registerGreedy('debug crypto ipsec', 'Enable IPSec debug', () => 'Crypto IPSec debugging is on');
-  trie.registerGreedy('debug crypto ikev2', 'Enable IKEv2 debug', () => 'Crypto IKEv2 debugging is on');
-  trie.registerGreedy('debug crypto pki', 'Enable PKI debug', () => 'Crypto PKI debugging is on');
-  trie.registerGreedy('no debug crypto isakmp', 'Disable ISAKMP debug', () => 'Crypto ISAKMP debugging is off');
-  trie.registerGreedy('no debug crypto ipsec', 'Disable IPSec debug', () => 'Crypto IPSec debugging is off');
-  trie.registerGreedy('no debug crypto ikev2', 'Disable IKEv2 debug', () => 'Crypto IKEv2 debugging is off');
-  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => 'Crypto PKI debugging is off');
-  trie.register('undebug all', 'Disable all debug', () => 'All possible debugging has been turned off');
+  trie.registerGreedy('clear crypto isakmp', 'Clear ISAKMP SAs', (args) => {
+    const e = eng();
+    if (!e) return 'IPSec not configured.';
+    const peer = parsePeerFromArgs(args);
+    const n = e.clearISAKMPSAs(peer);
+    return n === 0 ? 'No matching ISAKMP SAs found' : `Cleared ${n} ISAKMP SA${n === 1 ? '' : 's'}`;
+  });
+  trie.registerGreedy('clear crypto isakmp sa', 'Clear ISAKMP SAs', (args) => {
+    const e = eng();
+    if (!e) return 'IPSec not configured.';
+    const peer = parsePeerFromArgs(args);
+    const n = e.clearISAKMPSAs(peer);
+    return n === 0 ? 'No matching ISAKMP SAs found' : `Cleared ${n} ISAKMP SA${n === 1 ? '' : 's'}`;
+  });
+  trie.registerGreedy('clear crypto session', 'Clear crypto sessions', () => {
+    const e = eng();
+    if (!e) return 'IPSec not configured.';
+    const n = e.clearSessions();
+    return n === 0 ? 'No active crypto sessions' : `Cleared ${n} crypto session entries`;
+  });
+  trie.registerGreedy('clear crypto ikev2 sa', 'Clear IKEv2 SAs', (args) => {
+    const e = eng();
+    if (!e) return 'IPSec not configured.';
+    const peer = parsePeerFromArgs(args);
+    const n = e.clearIKEv2SAs(peer);
+    return n === 0 ? 'No matching IKEv2 SAs found' : `Cleared ${n} IKEv2 SA${n === 1 ? '' : 's'}`;
+  });
 
-  trie.register('show dmvpn', 'Display DMVPN status', () => 'No DMVPN sessions');
-  trie.register('show dmvpn detail', 'Detailed DMVPN status', () => 'No DMVPN sessions');
-  trie.register('show ip nhrp', 'Display NHRP cache', () => 'IP-NHRP table contains no entries');
-  trie.register('show ip nhrp brief', 'NHRP cache brief', () => 'IP-NHRP table contains no entries');
+  const debugSvc = () => getRouter().getDebugService();
+  trie.registerGreedy('debug crypto isakmp', 'Enable ISAKMP debug', () => debugSvc().enable('crypto.isakmp'));
+  trie.registerGreedy('debug crypto ipsec', 'Enable IPSec debug', () => debugSvc().enable('crypto.ipsec'));
+  trie.registerGreedy('debug crypto ikev2', 'Enable IKEv2 debug', () => debugSvc().enable('crypto.ikev2'));
+  trie.registerGreedy('debug crypto pki', 'Enable PKI debug', (args) => {
+    const scope = args.join(' ').toLowerCase();
+    if (scope.startsWith('transactions')) return debugSvc().enable('crypto.pki.transactions');
+    if (scope.startsWith('messages')) return debugSvc().enable('crypto.pki.messages');
+    return debugSvc().enable('crypto.pki');
+  });
+  trie.registerGreedy('no debug crypto isakmp', 'Disable ISAKMP debug', () => debugSvc().disable('crypto.isakmp'));
+  trie.registerGreedy('no debug crypto ipsec', 'Disable IPSec debug', () => debugSvc().disable('crypto.ipsec'));
+  trie.registerGreedy('no debug crypto ikev2', 'Disable IKEv2 debug', () => debugSvc().disable('crypto.ikev2'));
+  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => debugSvc().disable('crypto.pki'));
+  trie.register('undebug all', 'Disable all debug', () => debugSvc().disableAll());
+  trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
+
+  const nhrp = () => getRouter().getNhrpService();
+  trie.register('show ip nhrp', 'Display NHRP cache', () => nhrp().formatCache());
+  trie.register('show ip nhrp brief', 'NHRP cache brief', () => nhrp().formatCacheBrief());
+  trie.register('show ip nhrp summary', 'NHRP cache summary', () => nhrp().formatSummary());
+  const dmvpn = () => getRouter().getDmvpnService();
+  trie.register('show dmvpn', 'Display DMVPN status', () => dmvpn().formatSessions(false));
+  trie.register('show dmvpn detail', 'Detailed DMVPN status', () => dmvpn().formatSessions(true));
+}
+
+function parsePeerFromArgs(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'peer' && args[i + 1]) return args[i + 1];
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(args[i])) return args[i];
+  }
+  return undefined;
 }
