@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T13:28:13.638Z
+Generated: 2026-06-04T17:03:52.461Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 13:28:13
+  2026-06-04 17:03:52
   Thursday
   Time Zone(UTC) : UTC
 
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:28:13
+  CPU Usage Stat. Time : 2026-06-04 17:03:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 13:28:13
+  Memory utilization statistics at 2026-06-04 17:03:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -380,25 +380,36 @@ Total steps: 304
 
 [50/304] r1 <R1> display health
   R1 system health:
-    Status: normal
-    CPU usage: 5%
-    Memory usage: 20%
+    Hardware status   : Normal
+    Temperature       : Normal
+    Fans              : 2 present
+    Power supplies    : 1 present
 
 [51/304] r1 <R1> display temperature all
-   Slot CPU 1 : 45 C (Normal)
-   Slot CPU 2 : 46 C (Normal)
+   Slot CPU  Temperature(C)  Threshold(C)  Status
+   0    1    45              95            Normal
+   0    2    46              95            Normal
 
 [52/304] r1 <R1> display fan
-   Slot No  FAN No  Status
-   0        1       Normal
-   0        2       Normal
+   Slot  FAN  Status     Redundancy
+   0     1    Normal     No
+   0     2    Normal     Yes
 
 [53/304] r1 <R1> display power
-   Slot No  PWR No  Status
-   0        1       Normal
+   Slot  PWR  Wattage  Status
+   0     1    150W     Normal
 
 [54/304] r1 <R1> display environment
-   All sensors normal.
+   Slot CPU  Temperature(C)  Threshold(C)  Status
+   0    1    45              95            Normal
+   0    2    46              95            Normal
+  
+   Slot  FAN  Status     Redundancy
+   0     1    Normal     No
+   0     2    Normal     Yes
+  
+   Slot  PWR  Wattage  Status
+   0     1    150W     Normal
 
 [55/304] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -407,10 +418,13 @@ Total steps: 304
 
 [56/304] r1 <R1> display tcp status
   TCPCB       Local Address                Foreign Address           State
-  (none)
+  (no TCP listeners)
 
 [57/304] r1 <R1> display sockets
-   Active sockets: 0
+   Active sockets: 2
+   Proto  Port   Service
+   udp    123    ntp
+   udp    67     dhcp-server
 
 [58/304] r1 <R1> display dns server
   No DNS server configured.
@@ -497,7 +511,7 @@ Total steps: 304
     power                   Display power supply status
     environment             Display environment status
     tcp                     tcp
-    sockets                 Display socket list
+    sockets                 Display open sockets
     dns                     dns
     dhcp-server             dhcp-server
     dhcp-snooping           dhcp-snooping
@@ -1804,7 +1818,7 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 13:28:13
+  2026-06-04 17:03:52
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1817,13 +1831,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:28:13
+  CPU Usage Stat. Time : 2026-06-04 17:03:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 13:28:13
+  Memory utilization statistics at 2026-06-04 17:03:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%

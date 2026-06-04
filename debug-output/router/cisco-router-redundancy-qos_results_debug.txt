@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-06-04T13:28:15.111Z
+Generated: 2026-06-04T17:03:45.763Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -434,14 +434,10 @@ Total steps: 413
     Following group HSRP-GRP-1
 
 [72/413] r1 R1# debug standby
-  % Invalid input detected at '^' marker.
-  debug standby
-        ^
+  HSRP debugging is on
 
 [73/413] r1 R1# debug standby events
-  % Invalid input detected at '^' marker.
-  debug standby events
-        ^
+  HSRP debugging is on
 
 [74/413] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1029,9 +1025,7 @@ Total steps: 413
 <empty>
 
 [199/413] r1 R1(config-if)# no bfd echo
-  % Invalid input detected at '^' marker.
-  no bfd echo
-         ^
+<empty>
 
 [200/413] r1 R1(config-if)# exit
 <empty>
@@ -1146,9 +1140,7 @@ Total steps: 413
 <empty>
 
 [236/413] r1 R1(config-pmap-c)# priority percent 20
-  % Invalid input detected at '^' marker.
-  priority percent 20
-  ^
+<empty>
 
 [237/413] r1 R1(config-pmap-c)# set dscp ef
 <empty>
@@ -1160,14 +1152,10 @@ Total steps: 413
 <empty>
 
 [240/413] r1 R1(config-pmap-c)# bandwidth percent 25
-  % Invalid input detected at '^' marker.
-  bandwidth percent 25
-  ^
+<empty>
 
 [241/413] r1 R1(config-pmap-c)# random-detect dscp-based
-  % Invalid input detected at '^' marker.
-  random-detect dscp-based
-  ^
+<empty>
 
 [242/413] r1 R1(config-pmap-c)# set dscp af41
 <empty>
@@ -1179,9 +1167,7 @@ Total steps: 413
 <empty>
 
 [245/413] r1 R1(config-pmap-c)# bandwidth percent 15
-  % Invalid input detected at '^' marker.
-  bandwidth percent 15
-  ^
+<empty>
 
 [246/413] r1 R1(config-pmap-c)# exit
 <empty>
@@ -1190,9 +1176,7 @@ Total steps: 413
 <empty>
 
 [248/413] r1 R1(config-pmap-c)# bandwidth percent 1
-  % Invalid input detected at '^' marker.
-  bandwidth percent 1
-  ^
+<empty>
 
 [249/413] r1 R1(config-pmap-c)# set dscp cs1
 <empty>
@@ -1204,19 +1188,13 @@ Total steps: 413
 <empty>
 
 [252/413] r1 R1(config-pmap-c)# fair-queue
-  % Invalid input detected at '^' marker.
-  fair-queue
-  ^
+<empty>
 
 [253/413] r1 R1(config-pmap-c)# random-detect
-  % Invalid input detected at '^' marker.
-  random-detect
-  ^
+<empty>
 
 [254/413] r1 R1(config-pmap-c)# shape average 50000000
-  % Invalid input detected at '^' marker.
-  shape average 50000000
-  ^
+<empty>
 
 [255/413] r1 R1(config-pmap-c)# exit
 <empty>
@@ -1231,14 +1209,10 @@ Total steps: 413
 <empty>
 
 [259/413] r1 R1(config-pmap-c)# shape average 100000000 1000000
-  % Invalid input detected at '^' marker.
-  shape average 100000000 1000000
-  ^
+<empty>
 
 [260/413] r1 R1(config-pmap-c)# service-policy PM-WAN-OUT
-  % Invalid input detected at '^' marker.
-  service-policy PM-WAN-OUT
-  ^
+<empty>
 
 [261/413] r1 R1(config-pmap-c)# exit
 <empty>
@@ -1283,9 +1257,7 @@ Total steps: 413
 <empty>
 
 [275/413] r1 R1(config-if)# max-reserved-bandwidth 90
-  % Invalid input detected at '^' marker.
-  max-reserved-bandwidth 90
-  ^
+<empty>
 
 [276/413] r1 R1(config-if)# exit
 <empty>
@@ -1296,15 +1268,25 @@ Total steps: 413
 [278/413] r1 R1# show policy-map
   Policy Map PM-WAN-OUT
     Class CM-VOICE
+      priority percent 20
       set-dscp ef
     Class CM-VIDEO
+      bandwidth percent 25
+      random-detect dscp-based
       set-dscp af41
     Class CM-CRITICAL
+      bandwidth percent 15
     Class CM-SCAVENGER
+      bandwidth percent 1
       set-dscp cs1
     Class class-default
+      fair-queue
+      random-detect
+      shape average 50000000
   Policy Map PM-SHAPER
     Class class-default
+      shape average 100000000 1000000
+      service-policy PM-WAN-OUT
   Policy Map PM-POLICE-IN
     Class CM-SCAVENGER
       police 1000000 conform-action transmit exceed-action drop
@@ -1314,13 +1296,21 @@ Total steps: 413
 [279/413] r1 R1# show policy-map PM-WAN-OUT
   Policy Map PM-WAN-OUT
     Class CM-VOICE
+      priority percent 20
       set-dscp ef
     Class CM-VIDEO
+      bandwidth percent 25
+      random-detect dscp-based
       set-dscp af41
     Class CM-CRITICAL
+      bandwidth percent 15
     Class CM-SCAVENGER
+      bandwidth percent 1
       set-dscp cs1
     Class class-default
+      fair-queue
+      random-detect
+      shape average 50000000
 
 [280/413] r1 R1# show policy-map interface GigabitEthernet0/1
 <empty>
@@ -1362,52 +1352,34 @@ Total steps: 413
 <empty>
 
 [287/413] r1 R1(config-if)# rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-  % Invalid input detected at '^' marker.
-  rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-  ^
+<empty>
 
 [288/413] r1 R1(config-if)# ip nbar protocol-discovery
-  % Invalid input detected at '^' marker.
-  ip nbar protocol-discovery
-     ^
+<empty>
 
 [289/413] r1 R1(config-if)# priority-group 1
-  % Invalid input detected at '^' marker.
-  priority-group 1
-  ^
+<empty>
 
 [290/413] r1 R1(config-if)# custom-queue-list 1
-  % Invalid input detected at '^' marker.
-  custom-queue-list 1
-  ^
+<empty>
 
 [291/413] r1 R1(config-if)# fair-queue 64 256 8
-  % Invalid input detected at '^' marker.
-  fair-queue 64 256 8
-  ^
+<empty>
 
 [292/413] r1 R1(config-if)# random-detect
-  % Invalid input detected at '^' marker.
-  random-detect
-  ^
+<empty>
 
 [293/413] r1 R1(config-if)# tx-ring-limit 3
-  % Invalid input detected at '^' marker.
-  tx-ring-limit 3
-  ^
+<empty>
 
 [294/413] r1 R1(config-if)# exit
 <empty>
 
 [295/413] r1 R1(config)# priority-list 1 protocol ip high tcp telnet
-  % Invalid input detected at '^' marker.
-  priority-list 1 protocol ip high tcp telnet
-  ^
+<empty>
 
 [296/413] r1 R1(config)# queue-list 1 protocol ip 1 tcp www
-  % Invalid input detected at '^' marker.
-  queue-list 1 protocol ip 1 tcp www
-  ^
+<empty>
 
 [297/413] r1 R1(config)# access-list rate-limit 10 5
   % Invalid access-list number.
@@ -1492,6 +1464,9 @@ Total steps: 413
    permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  priority-list 1 protocol ip high tcp telnet
+  queue-list 1 protocol ip 1 tcp www
   !
   class-map match-any CM-VOICE
    match access-group name VOICE
@@ -1758,7 +1733,7 @@ Total steps: 413
 [341/413] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBFBEF.26E978D4 (13:28:15.152 UTC Thu Jun 4 2026)
+  reference time is EDCC2E71.CF5C28F5 (17:03:45.810 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1(config)# show ntp associations
@@ -1767,7 +1742,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1(config)# show clock
-  *13:28:15.000 UTC Thu Jun 4 2026
+  *17:03:45.000 UTC Thu Jun 4 2026
 
 [344/413] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1937,6 +1912,9 @@ Total steps: 413
    permit tcp any any eq 1720
   !
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  !
+  priority-list 1 protocol ip high tcp telnet
+  queue-list 1 protocol ip 1 tcp www
   !
   class-map match-any CM-VOICE
    match access-group name VOICE
@@ -2140,6 +2118,8 @@ Total steps: 413
   ip access-list extended VIDEO
    permit tcp any any eq 1720
   ip route 192.168.9.0 255.255.255.0 10.0.0.2
+  priority-list 1 protocol ip high tcp telnet
+  queue-list 1 protocol ip 1 tcp www
   class-map match-any CM-VOICE
    match access-group name VOICE
    match protocol rtp
@@ -2297,6 +2277,8 @@ Total steps: 413
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
+    community-list   Define BGP community list
+    as-path          as-path
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
@@ -2353,7 +2335,7 @@ Total steps: 413
 <empty>
 
 [412/413] r1 R1# show running-config | count !
-  12
+  13
 
 [413/413] r1 R1# write memory
   Building configuration...

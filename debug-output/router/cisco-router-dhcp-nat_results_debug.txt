@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-04T13:28:13.649Z
+Generated: 2026-06-04T17:03:51.294Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -715,7 +715,21 @@ Total steps: 369
 <empty>
 
 [164/369] r1 R1# show ip dhcp relay statistics
-  DHCP relay: forwarded 0 packets, dropped 0.
+  Memory usage         36028
+  Address pools        11
+  Automatic bindings   0
+  
+  Message              Received
+  DHCPDISCOVER         0
+  DHCPREQUEST          0
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            0
+  DHCPACK              0
+  DHCPNAK              0
 
 
 --- [165] § DHCP snooping ---
@@ -752,8 +766,8 @@ Total steps: 369
   Insertion of option-82 information: yes
 
 [175/369] r1 R1# show ip dhcp snooping binding
-  MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface
-  (no bindings)
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
 
 
 --- [176] § DHCPv6 ---
@@ -815,10 +829,13 @@ Total steps: 369
     Domain: v6.lab
 
 [194/369] r1 R1# show ipv6 dhcp binding
-  No IPv6 DHCP bindings.
+  % Invalid input detected at '^' marker.
+  show ipv6 dhcp binding
+                 ^
 
 [195/369] r1 R1# show ipv6 dhcp interface
-  No IPv6 DHCP interface state.
+  GigabitEthernet0/0 is in DHCPv6 server mode, pool V6POOL
+  GigabitEthernet0/1 is in DHCPv6 relay mode, destinations: 2001:db8:ff::1
 
 
 --- [196] § DHCP client ---
@@ -850,10 +867,14 @@ Total steps: 369
 <empty>
 
 [205/369] r1 R1# show dhcp lease
-  No DHCP client lease.
+  % Invalid input detected at '^' marker.
+  show dhcp lease
+       ^
 
 [206/369] r1 R1# show dhcp server
-  No DHCP server known.
+  % Invalid input detected at '^' marker.
+  show dhcp server
+       ^
 
 
 --- [207] § NAT static ---
@@ -1604,7 +1625,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBFBED.AE147AE1 (13:28:13.680 UTC Thu Jun 4 2026)
+  reference time is EDCC2E77.53F7CED9 (17:03:51.328 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1613,7 +1634,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *13:28:13.000 UTC Thu Jun 4 2026
+  *17:03:51.000 UTC Thu Jun 4 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2254,6 +2275,8 @@ Total steps: 369
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
+    community-list   Define BGP community list
+    as-path          as-path
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry

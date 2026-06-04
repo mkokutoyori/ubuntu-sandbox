@@ -23,6 +23,9 @@ export interface HuaweiHardwareProfile {
   readonly memoryBytes: number;
   readonly flashBytes: number;
   readonly defaultInterfaceNames: readonly string[];
+  readonly temperatureSensors: ReadonlyArray<{ slot: string; cpu: string; valueC: number; threshold: number }>;
+  readonly fans: ReadonlyArray<{ slot: string; id: string; redundant: boolean }>;
+  readonly powerSupplies: ReadonlyArray<{ slot: string; id: string; wattage: number }>;
 }
 
 export const AR2220_HARDWARE_PROFILE: HuaweiHardwareProfile = {
@@ -51,6 +54,17 @@ export const AR2220_HARDWARE_PROFILE: HuaweiHardwareProfile = {
   defaultInterfaceNames: [
     'GigabitEthernet0/0/0', 'GigabitEthernet0/0/1', 'GigabitEthernet0/0/2',
   ],
+  temperatureSensors: [
+    { slot: '0', cpu: '1', valueC: 45, threshold: 95 },
+    { slot: '0', cpu: '2', valueC: 46, threshold: 95 },
+  ],
+  fans: [
+    { slot: '0', id: '1', redundant: false },
+    { slot: '0', id: '2', redundant: true },
+  ],
+  powerSupplies: [
+    { slot: '0', id: '1', wattage: 150 },
+  ],
 };
 
 export const S5720_HARDWARE_PROFILE: HuaweiHardwareProfile = {
@@ -74,6 +88,15 @@ export const S5720_HARDWARE_PROFILE: HuaweiHardwareProfile = {
   memoryBytes: 536870912,
   flashBytes: 134217728,
   defaultInterfaceNames: [],
+  temperatureSensors: [
+    { slot: '1', cpu: '1', valueC: 42, threshold: 95 },
+  ],
+  fans: [
+    { slot: '1', id: '1', redundant: false },
+  ],
+  powerSupplies: [
+    { slot: '1', id: '1', wattage: 80 },
+  ],
 };
 
 export function renderHardwareDevice(
@@ -133,5 +156,51 @@ export function renderHardwareVersion(
     `BOARD TYPE:          ${profile.boardType}`,
     'BootROM Version:     1.0',
     `${hostname} uptime is ${uptime}`,
+  ].join('\n');
+}
+
+export function renderTemperature(profile: HuaweiHardwareProfile): string {
+  const lines = [' Slot CPU  Temperature(C)  Threshold(C)  Status'];
+  for (const s of profile.temperatureSensors) {
+    const status = s.valueC >= s.threshold ? 'Critical' : 'Normal';
+    lines.push(` ${s.slot.padEnd(5)}${s.cpu.padEnd(5)}${String(s.valueC).padEnd(16)}${String(s.threshold).padEnd(14)}${status}`);
+  }
+  return lines.join('\n');
+}
+
+export function renderFans(profile: HuaweiHardwareProfile): string {
+  const lines = [' Slot  FAN  Status     Redundancy'];
+  for (const f of profile.fans) {
+    lines.push(` ${f.slot.padEnd(6)}${f.id.padEnd(5)}Normal     ${f.redundant ? 'Yes' : 'No'}`);
+  }
+  return lines.join('\n');
+}
+
+export function renderPower(profile: HuaweiHardwareProfile): string {
+  const lines = [' Slot  PWR  Wattage  Status'];
+  for (const p of profile.powerSupplies) {
+    lines.push(` ${p.slot.padEnd(6)}${p.id.padEnd(5)}${(p.wattage + 'W').padEnd(9)}Normal`);
+  }
+  return lines.join('\n');
+}
+
+export function renderEnvironment(profile: HuaweiHardwareProfile): string {
+  return [
+    renderTemperature(profile),
+    '',
+    renderFans(profile),
+    '',
+    renderPower(profile),
+  ].join('\n');
+}
+
+export function renderHealth(hostname: string, profile: HuaweiHardwareProfile): string {
+  const tempOk = profile.temperatureSensors.every((s) => s.valueC < s.threshold);
+  return [
+    `${hostname} system health:`,
+    `  Hardware status   : ${tempOk ? 'Normal' : 'Alarm'}`,
+    `  Temperature       : ${tempOk ? 'Normal' : 'Critical'}`,
+    `  Fans              : ${profile.fans.length} present`,
+    `  Power supplies    : ${profile.powerSupplies.length} present`,
   ].join('\n');
 }

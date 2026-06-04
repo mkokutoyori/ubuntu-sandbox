@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-04T13:28:21.483Z
+Generated: 2026-06-04T17:03:46.610Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -137,24 +137,16 @@ Total steps: 355
 <empty>
 
 [43/355] r1 R1(config)# key 1
-  % Invalid input detected at '^' marker.
-  key 1
-      ^
+<empty>
 
 [44/355] r1 R1(config)# key-string secretrip
-  % Invalid input detected at '^' marker.
-  key-string secretrip
-  ^
+<empty>
 
 [45/355] r1 R1(config)# accept-lifetime 00:00:00 Jan 1 2020 infinite
-  % Invalid input detected at '^' marker.
-  accept-lifetime 00:00:00 Jan 1 2020 infinite
-  ^
+<empty>
 
 [46/355] r1 R1(config)# send-lifetime 00:00:00 Jan 1 2020 infinite
-  % Invalid input detected at '^' marker.
-  send-lifetime 00:00:00 Jan 1 2020 infinite
-  ^
+<empty>
 
 [47/355] r1 R1(config)# exit
 <empty>
@@ -361,39 +353,25 @@ Total steps: 355
 <empty>
 
 [92/355] r1 R1(config-if)# ip summary-address eigrp 100 172.16.0.0 255.255.0.0
-  % Invalid input detected at '^' marker.
-  ip summary-address eigrp 100 172.16.0.0 255.255.0.0
-     ^
+<empty>
 
 [93/355] r1 R1(config-if)# ip bandwidth-percent eigrp 100 50
-  % Invalid input detected at '^' marker.
-  ip bandwidth-percent eigrp 100 50
-     ^
+<empty>
 
 [94/355] r1 R1(config-if)# ip hello-interval eigrp 100 5
-  % Invalid input detected at '^' marker.
-  ip hello-interval eigrp 100 5
-     ^
+<empty>
 
 [95/355] r1 R1(config-if)# ip hold-time eigrp 100 15
-  % Invalid input detected at '^' marker.
-  ip hold-time eigrp 100 15
-     ^
+<empty>
 
 [96/355] r1 R1(config-if)# ip authentication mode eigrp 100 md5
-  % Invalid input detected at '^' marker.
-  ip authentication mode eigrp 100 md5
-     ^
+<empty>
 
 [97/355] r1 R1(config-if)# ip authentication key-chain eigrp 100 RIP-KEY
-  % Invalid input detected at '^' marker.
-  ip authentication key-chain eigrp 100 RIP-KEY
-     ^
+<empty>
 
 [98/355] r1 R1(config-if)# no ip split-horizon eigrp 100
-  % Invalid input detected at '^' marker.
-  no ip split-horizon eigrp 100
-        ^
+<empty>
 
 [99/355] r1 R1(config-if)# exit
 <empty>
@@ -505,9 +483,7 @@ Total steps: 355
            ^
 
 [112/355] r1 R1# debug eigrp packets
-  % Invalid input detected at '^' marker.
-  debug eigrp packets
-        ^
+  EIGRP debugging is on
 
 [113/355] r1 R1# debug ip eigrp
   EIGRP debugging is on
@@ -837,14 +813,10 @@ Total steps: 355
 <empty>
 
 [216/355] r1 R1(config)# ip community-list 1 permit 65000:100
-  % Invalid input detected at '^' marker.
-  ip community-list 1 permit 65000:100
-     ^
+<empty>
 
 [217/355] r1 R1(config)# ip as-path access-list 1 permit ^65001$
-  % Invalid input detected at '^' marker.
-  ip as-path access-list 1 permit ^65001$
-     ^
+<empty>
 
 [218/355] r1 R1(config)# route-map RM-IN permit 10
 <empty>
@@ -1096,19 +1068,13 @@ Total steps: 355
   *>   10.0.0.0/30      0.0.0.0               0         32768 i
 
 [240/355] r1 R1# clear ip bgp *
-  % Invalid input detected at '^' marker.
-  clear ip bgp *
-           ^
+<empty>
 
 [241/355] r1 R1# clear ip bgp 10.0.0.2 soft in
-  % Invalid input detected at '^' marker.
-  clear ip bgp 10.0.0.2 soft in
-           ^
+<empty>
 
 [242/355] r1 R1# clear ip bgp * soft out
-  % Invalid input detected at '^' marker.
-  clear ip bgp * soft out
-           ^
+<empty>
 
 [243/355] r1 R1# debug ip bgp
   BGP debugging is on
@@ -1177,6 +1143,12 @@ Total steps: 355
    network 10.0.0.0
   !
   key chain RIP-KEY
+  key 1
+  key-string secretrip
+  accept-lifetime 00:00:00 Jan 1 2020 infinite
+  send-lifetime 00:00:00 Jan 1 2020 infinite
+  ip community-list 1 permit 65000:100
+  ip as-path access-list 1 permit ^65001$
   end
 
 [249/355] r1 R1# show startup-config
@@ -1462,7 +1434,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBFBF5.84189374 (13:28:21.516 UTC Thu Jun 4 2026)
+  reference time is EDCC2E72.A5E353F7 (17:03:46.648 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1471,7 +1443,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *13:28:21.000 UTC Thu Jun 4 2026
+  *17:03:46.000 UTC Thu Jun 4 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1647,6 +1619,12 @@ Total steps: 355
    network 10.0.0.0
   !
   key chain RIP-KEY
+  key 1
+  key-string secretrip
+  accept-lifetime 00:00:00 Jan 1 2020 infinite
+  send-lifetime 00:00:00 Jan 1 2020 infinite
+  ip community-list 1 permit 65000:100
+  ip as-path access-list 1 permit ^65001$
   end
   
   ------------------ show ip interface brief ------------------
@@ -1833,6 +1811,12 @@ Total steps: 355
    network 192.168.1.0
    network 10.0.0.0
   key chain RIP-KEY
+  key 1
+  key-string secretrip
+  accept-lifetime 00:00:00 Jan 1 2020 infinite
+  send-lifetime 00:00:00 Jan 1 2020 infinite
+  ip community-list 1 permit 65000:100
+  ip as-path access-list 1 permit ^65001$
   end
 
 [313/355] r1 R1# show ip route | include via
@@ -2034,6 +2018,8 @@ Total steps: 355
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
+    community-list   Define BGP community list
+    as-path          as-path
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry

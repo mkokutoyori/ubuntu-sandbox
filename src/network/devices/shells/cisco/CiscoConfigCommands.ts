@@ -498,6 +498,135 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port) (port as any).ipv6NdOtherFlag = true;
     return '';
   });
+  trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.ripAuth ??= []).push(raw ?? `ip rip authentication ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip rip send version', 'Set RIP send version', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.ripSendVersion = args.join(' ');
+    return '';
+  });
+  trie.registerGreedy('ip rip receive version', 'Set RIP receive version', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.ripRecvVersion = args.join(' ');
+    return '';
+  });
+  trie.register('ip rip v2-broadcast', 'Broadcast RIPv2 instead of multicast', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.ripV2Broadcast = true;
+    return '';
+  });
+  trie.registerGreedy('ip summary-address rip', 'Summarize RIP routes', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.ripSummaries ??= []).push(raw ?? `ip summary-address rip ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip summary-address eigrp', 'Summarize EIGRP routes', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpSummaries ??= []).push(raw ?? `ip summary-address eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip bandwidth-percent eigrp', 'EIGRP bandwidth %', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip bandwidth-percent eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip hello-interval eigrp', 'EIGRP hello interval', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip hello-interval eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip hold-time eigrp', 'EIGRP hold time', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip hold-time eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip authentication mode eigrp', 'EIGRP auth mode', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip authentication mode eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('ip authentication key-chain eigrp', 'EIGRP auth key-chain', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip authentication key-chain eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('no ip split-horizon eigrp', 'Disable EIGRP split-horizon', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.eigrpExtras ??= []).push(raw ?? `no ip split-horizon eigrp ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('no bfd echo', 'Disable BFD echo on interface', (_args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.bfdEcho = false;
+    return '';
+  });
+  trie.registerGreedy('max-reserved-bandwidth', 'Max reservable bandwidth %', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.maxReservedBandwidth = n;
+    return '';
+  });
+  trie.registerGreedy('rate-limit', 'Rate-limit (legacy CAR)', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) (port.rateLimits ??= []).push(raw ?? `rate-limit ${args.join(' ')}`);
+    return '';
+  });
+  trie.register('ip nbar protocol-discovery', 'Enable NBAR protocol discovery', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.nbarProtocolDiscovery = true;
+    return '';
+  });
+  trie.registerGreedy('priority-group', 'Apply priority queueing group', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.priorityGroup = parseInt(args[0] ?? '', 10) || 0;
+    return '';
+  });
+  trie.registerGreedy('custom-queue-list', 'Apply custom queue list', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.customQueueList = parseInt(args[0] ?? '', 10) || 0;
+    return '';
+  });
+  trie.registerGreedy('fair-queue', 'Enable WFQ', (args, raw) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.fairQueueConfig = raw ?? `fair-queue ${args.join(' ')}`;
+    return '';
+  });
+  trie.register('random-detect', 'Enable WRED', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    if (port) port.wredEnabled = true;
+    return '';
+  });
+  trie.registerGreedy('tx-ring-limit', 'Configure TX-ring limit', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName) as any;
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.txRingLimit = n;
+    return '';
+  });
+
   trie.registerGreedy('ip address dhcp', 'Configure IP via DHCP', (args, raw) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';

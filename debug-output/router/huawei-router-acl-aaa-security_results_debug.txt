@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-06-04T13:28:24.410Z
+Generated: 2026-06-04T17:03:52.953Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -465,15 +465,11 @@ Total steps: 274
   Info: The name of the key pair will be: R1_Host
   The range of public key size is (512 ~ 2048).
   Input the bits in the modulus[default = 2048]: 2048
-  Generating keys...
-  ...........+...+
-  .............+++++
-  Info: The keys are generated.
+  Info: Keys are generated. Fingerprint: e9:33:c5:8d:a9:7f:fc:f7:cb:7b:38:d5:27:fa:77:4f
 
 [127/274] r1 [R1] dsa local-key-pair create
-  Info: The DSA key pair will be: R1_Host
-  Generating keys...
-  Info: The keys are generated.
+  Info: The name of the key pair will be: R1_Host
+  Info: Keys are generated. Fingerprint: 0a:4c:0b:8d:c2:b6:2e:f7:7b:cb:ee:d5:b7:08:f9:4f
 
 [128/274] r1 [R1] ssh server enable
 <empty>
@@ -856,7 +852,7 @@ Total steps: 274
   No NTP associations
 
 [205/274] r1 [R1] display clock
-  2026-06-04 13:28:24
+  2026-06-04 17:03:52
   Thursday
   Time Zone(UTC) : UTC
 
@@ -869,13 +865,13 @@ Total steps: 274
 [208/274] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:28:24
+  CPU Usage Stat. Time : 2026-06-04 17:03:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 13:28:24
+  Memory utilization statistics at 2026-06-04 17:03:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
