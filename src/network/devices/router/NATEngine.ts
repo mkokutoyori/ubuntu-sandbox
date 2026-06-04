@@ -509,6 +509,7 @@ export class NATEngine {
   getStaticEntries(): NatStaticEntry[] { return [...this.staticEntries]; }
   getDynamicRules(): NatDynamicRule[] { return [...this.dynamicRules]; }
   getPools(): Map<string, NatPool> { return new Map(this.pools); }
+  getSessions(): readonly NatSession[] { return [...this.sessions.values()]; }
   getInsideInterfaces(): Set<string> { return new Set(this.insideIfaces); }
   getOutsideInterfaces(): Set<string> { return new Set(this.outsideIfaces); }
 

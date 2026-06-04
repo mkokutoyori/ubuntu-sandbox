@@ -894,7 +894,11 @@ export function registerDisplayCommands(
   });
 
   trie.registerGreedy('display history-command', 'Display CLI history', () => {
-    return 'Info: No history command.';
+    const dev = getRouter() as unknown as { getShell?: () => { getCmdHistory?: () => readonly string[] } };
+    const shell = dev.getShell?.();
+    const history = shell?.getCmdHistory?.() ?? [];
+    if (history.length === 0) return 'Info: No history command.';
+    return history.join('\n');
   });
 
   trie.registerGreedy('display alarm', 'Display alarm records', () =>
@@ -997,43 +1001,174 @@ export function registerDisplayCommands(
   trie.register('display dhcp server statistics', 'Display DHCP server statistics', () => {
     const dhcp = getRouter()._getDHCPServerInternal();
     const pools = dhcp.getAllPools();
+    const s = (dhcp as unknown as { getStats?: () => { discovers: number; offers: number; requests: number; acks: number; naks: number; releases: number; informs: number; declines: number } }).getStats?.() ?? {
+      discovers: 0, offers: 0, requests: 0, acks: 0, naks: 0, releases: 0, informs: 0, declines: 0,
+    };
+    const total = s.discovers + s.requests + s.releases + s.informs + s.declines;
+    const sent = s.offers + s.acks + s.naks;
     return [
       'DHCP server packets statistics:',
-      '  Receive total: 0',
-      '  Send total: 0',
-      '  Discover: 0      Offer: 0',
-      '  Request: 0       Ack: 0',
-      '  Nak: 0           Release: 0',
-      '  Inform: 0        Decline: 0',
+      `  Receive total: ${total}`,
+      `  Send total: ${sent}`,
+      `  Discover: ${s.discovers}      Offer: ${s.offers}`,
+      `  Request: ${s.requests}       Ack: ${s.acks}`,
+      `  Nak: ${s.naks}           Release: ${s.releases}`,
+      `  Inform: ${s.informs}        Decline: ${s.declines}`,
       `Pool number: ${pools.size}`,
     ].join('\n');
   });
 
   trie.register('display nat session all', 'Display NAT session table', () => {
-    return 'Info: No NAT session is found.';
+    const nat = (getRouter() as unknown as { _getNATEngine?: () => { getSessions?: () => readonly { localIP: string; localPort: number; outsideGlobal?: string; outsideGlobalPort?: number; protocol: number }[] } })._getNATEngine?.();
+    const sessions = nat?.getSessions?.() ?? [];
+    if (sessions.length === 0) return 'Info: No NAT session is found.';
+    const lines = ['Protocol  Local                         Global                        Outside'];
+    for (const s of sessions) {
+      lines.push(`${String(s.protocol).padEnd(10)}${(s.localIP + ':' + s.localPort).padEnd(30)}${(s.outsideGlobal ?? '-') + ':' + (s.outsideGlobalPort ?? 0)}`);
+    }
+    return lines.join('\n');
   });
 
   trie.register('display nat address-group', 'Display NAT address groups', () => {
-    return 'Info: No NAT address-group is configured.';
+    const nat = (getRouter() as unknown as { _getNATEngine?: () => { getPools?: () => Map<string, { name: string; startIP: string; endIP: string }> } })._getNATEngine?.();
+    const pools = nat?.getPools?.();
+    if (!pools || pools.size === 0) return 'Info: No NAT address-group is configured.';
+    return [...pools.values()].map(p => `${p.name}: ${p.startIP} - ${p.endIP}`).join('\n');
   });
 
   trie.register('display vrrp', 'Display VRRP groups', () => {
-    return 'Info: No VRRP backup group is configured.';
+    const shell = (getRouter() as unknown as { getShell?: () => { _getFhrpRepository?: () => { allVrrp: () => Array<{ group: number; iface: string; virtualIp: string; state: string; priority: number }> } } }).getShell?.();
+    const groups = shell?._getFhrpRepository?.().allVrrp() ?? [];
+    if (groups.length === 0) return 'Info: No VRRP backup group is configured.';
+    return groups.map(g => `VRID ${g.group} on ${g.iface}: state=${g.state} priority=${g.priority} virtual-ip=${g.virtualIp}`).join('\n');
   });
 
   trie.register('display vrrp brief', 'Display VRRP brief', () => {
-    return [
-      'Total: 0     Master: 0     Backup: 0     Non-active: 0',
+    const shell = (getRouter() as unknown as { getShell?: () => { _getFhrpRepository?: () => { allVrrp: () => Array<{ group: number; iface: string; virtualIp: string; state: string; priority: number }> } } }).getShell?.();
+    const groups = shell?._getFhrpRepository?.().allVrrp() ?? [];
+    const master = groups.filter(g => g.state?.toLowerCase() === 'master').length;
+    const backup = groups.filter(g => g.state?.toLowerCase() === 'backup').length;
+    const total = groups.length;
+    const lines = [
+      `Total: ${total}     Master: ${master}     Backup: ${backup}     Non-active: ${total - master - backup}`,
       'VRID  State        Interface                Type     Virtual IP',
+    ];
+    for (const g of groups) lines.push(`${String(g.group).padEnd(6)}${(g.state ?? '').padEnd(13)}${g.iface.padEnd(25)}Normal   ${g.virtualIp}`);
+    return lines.join('\n');
+  });
+
+  trie.register('display ssh server status', 'Display SSH server status', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const ssh = mgmt?.getSsh();
+    if (!ssh || !ssh.enabled) return 'SSH server: Disabled';
+    return [
+      `SSH version: ${ssh.version}`,
+      `SSH authentication retries: ${ssh.retries}`,
+      `SSH server timeout (sec): ${ssh.timeout}`,
+      `SSH server port: ${ssh.port}`,
+    ].join('\n');
+  });
+
+  trie.register('display stelnet server', 'Display STelnet server status', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const st = mgmt?.getStelnet();
+    if (!st || !st.enabled) return 'STelnet server: Disabled';
+    return `STelnet server: Enabled\nSTelnet server port: ${st.port}`;
+  });
+
+  trie.register('display telnet server status', 'Display Telnet server status', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const tn = mgmt?.getTelnet();
+    if (!tn || !tn.enabled) return 'Telnet server: Disabled';
+    return `Telnet server: Enabled\nTelnet server port: ${tn.port}`;
+  });
+
+  trie.register('display snmp-agent local-engineid', 'Display SNMP engine ID', () => {
+    const snmp = (getRouter() as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();
+    return snmp ? `SNMP local EngineID: ${snmp.getEngineId()}` : 'SNMP is not enabled';
+  });
+
+  trie.register('display snmp-agent sys-info', 'Display SNMP system info', () => {
+    const snmp = (getRouter() as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();
+    if (!snmp) return 'SNMP is not enabled';
+    return [
+      `Contact: ${snmp.getContact() || '<not set>'}`,
+      `Location: ${snmp.getLocation() || '<not set>'}`,
+      `Chassis-id: ${snmp.getChassisId() || '<not set>'}`,
+    ].join('\n');
+  });
+
+  trie.register('display ntp-service status', 'Display NTP service status', () => {
+    const ntp = (getRouter() as unknown as { getNtpAgent?: () => { isSynced: () => boolean; getConfig: () => { localStratum: number; sourceInterface: string; refIdentifier: string } } }).getNtpAgent?.();
+    if (!ntp) return 'Clock is unsynchronized';
+    const synced = ntp.isSynced();
+    const cfg = ntp.getConfig();
+    return [
+      `Clock status: ${synced ? 'synchronized' : 'unsynchronized'}`,
+      `Clock stratum: ${cfg.localStratum}`,
+      `Reference clock ID: ${cfg.refIdentifier || '.INIT.'}`,
+      cfg.sourceInterface ? `Source interface: ${cfg.sourceInterface}` : '',
+    ].filter(Boolean).join('\n');
+  });
+
+  trie.register('display ntp-service sessions', 'Display NTP sessions', () => {
+    const ntp = (getRouter() as unknown as { getNtpAgent?: () => { getConfig: () => { associations: Map<string, { serverIp: string; stratum: number; pollSec: number; preferred: boolean }> } } }).getNtpAgent?.();
+    const assocs = ntp?.getConfig().associations;
+    if (!assocs || assocs.size === 0) return 'No NTP associations';
+    const lines = ['  address         stratum poll reach   delay   offset    disp'];
+    for (const [, a] of assocs) {
+      lines.push(`  ${a.serverIp.padEnd(15)} ${String(a.stratum).padEnd(7)} ${String(a.pollSec).padEnd(4)} 377     0.0     0.0       0.0${a.preferred ? '  *' : ''}`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display info-center', 'Display info-center configuration', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const ic = mgmt?.getInfoCenter();
+    if (!ic) return 'Info-center: Disabled';
+    return [
+      `Info-center: ${ic.enabled ? 'Enabled' : 'Disabled'}`,
+      `Timestamp format: ${ic.timestamp}`,
+      `Configured sources: ${ic.sources.length}`,
+      `Configured loghosts: ${ic.loghosts.length}`,
+    ].join('\n');
+  });
+
+  trie.register('display sflow', 'Display sFlow configuration', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const sf = mgmt?.getSflow();
+    if (!sf || !sf.enabled) return 'sFlow: Disabled';
+    return [
+      `sFlow: Enabled`,
+      `Agent IP: ${sf.agentIp || '<not set>'}`,
+      `Collectors: ${sf.collectors.length}`,
+      `Samplers: ${sf.samplers.length}`,
     ].join('\n');
   });
 
   trie.register('display lldp neighbor', 'Display LLDP neighbors', () => {
-    return 'Info: No LLDP neighbor is found.';
+    const agent = (getRouter() as unknown as { getLldpAgent?: () => { getNeighbors: () => readonly { localPort: string; chassisId: string; portId: string; systemName: string; portDescription: string; expiresAtMs: number }[] } }).getLldpAgent?.();
+    const neighbors = agent?.getNeighbors() ?? [];
+    if (neighbors.length === 0) return 'Info: No LLDP neighbor is found.';
+    return neighbors.map(n => [
+      `Local Intf: ${n.localPort}`,
+      `Chassis id: ${n.chassisId}`,
+      `Port id: ${n.portId}`,
+      `Port description: ${n.portDescription}`,
+      `System name: ${n.systemName}`,
+      `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
+    ].join('\n')).join('\n\n');
   });
 
   trie.register('display lldp neighbor brief', 'Display LLDP brief', () => {
-    return 'Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)';
+    const agent = (getRouter() as unknown as { getLldpAgent?: () => { getNeighbors: () => readonly { localPort: string; systemName: string; portId: string; expiresAtMs: number }[] } }).getLldpAgent?.();
+    const neighbors = agent?.getNeighbors() ?? [];
+    const lines = ['Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)'];
+    for (const n of neighbors) {
+      const exp = Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000));
+      lines.push(`${n.localPort.padEnd(14)}${n.systemName.padEnd(16)}${n.portId.padEnd(17)}${exp}`);
+    }
+    return lines.join('\n');
   });
 
   trie.registerGreedy('display bgp peer', 'Display BGP peers', () => {

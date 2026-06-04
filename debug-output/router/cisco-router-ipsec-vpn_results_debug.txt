@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-04T08:32:26.967Z
+Generated: 2026-06-04T12:02:01.537Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1000,7 +1000,14 @@ Total steps: 370
     Status: Pending enrollment
 
 [248/370] r1 R1# show crypto pki certificates verbose
-  No PKI certificates installed
+  Trustpoint CA1 (verbose):
+    Subject Name: CN=R1.lab.local
+    Enrollment URL: http://10.0.0.5:80
+    Revocation Check: crl
+    RSA Keypair: SSH-KEY
+    Certificate: pending enrollment
+    Validity: 365 days
+    Certificate fingerprint (SHA1): AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB
 
 
 --- [249] § crypto clear / debug ---
@@ -1063,8 +1070,10 @@ Total steps: 370
   Number of IKEv2 SAs: 0
 
 [260/370] r1 R1(config)# show crypto eli
-  Hardware Encryption Layer: not available
-  Cryptographic API library: software
+  Hardware Encryption Layer: not available (software-only sim)
+  Cryptographic API library: software (Node crypto fallback)
+  Active IKE/IKEv2 SAs: 0
+  Active IPSec SAs: 0
 
 
 --- [261] § regression: show family ---
@@ -1490,7 +1499,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBB69A.FDF3B645 (08:32:26.992 UTC Thu Jun 4 2026)
+  reference time is EDCBE7B9.916872B0 (12:02:01.568 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1499,7 +1508,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *08:32:26.000 UTC Thu Jun 4 2026
+  *12:02:01.000 UTC Thu Jun 4 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

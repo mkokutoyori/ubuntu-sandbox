@@ -84,6 +84,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.logging.attachToBus(bus, deviceId);
   }
   private mode: HuaweiShellMode | string = 'user';
+  private readonly cmdHistory: string[] = [];
+  private historyMax: number = 10;
+
+  getCmdHistory(): readonly string[] { return [...this.cmdHistory]; }
+  setHistoryMax(n: number): void { if (n > 0) this.historyMax = n; this.trimHistory(); }
+  private recordHistory(line: string): void {
+    if (!line || line.startsWith('?')) return;
+    this.cmdHistory.push(line);
+    this.trimHistory();
+  }
+  private trimHistory(): void {
+    while (this.cmdHistory.length > this.historyMax) this.cmdHistory.shift();
+  }
+
   private selectedInterface: string | null = null;
   private selectedPool: string | null = null;
   private dhcpEnabled: boolean = false;
@@ -266,8 +280,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       terminalLength: this.screenLength,
       terminalWidth: this.screenWidth,
       privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
-      historySize: 10,
-      cmdHistory: [],
+      historySize: this.historyMax,
+      cmdHistory: [...this.cmdHistory],
     };
   }
 
@@ -351,11 +365,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
 
-    // Handle ? for help (preserve trailing space for "display ?" vs "display?")
     if (trimmed.endsWith('?')) {
       const helpInput = trimmed.slice(0, -1);
       return this.getHelp(helpInput);
     }
+
+    this.recordHistory(trimmed);
 
     // Split off an output pipe filter (| include/exclude/begin …) — shared
     // with the switch shell + Cisco shells via cli-utils (DRY).

@@ -442,6 +442,8 @@ export abstract class Router extends Equipment {
   /** Create the vendor-specific CLI shell */
   protected abstract createShell(): IRouterShell;
 
+  getShell(): IRouterShell { return this.shell; }
+
   /** Get the vendor-specific boot sequence */
   abstract getBootSequence(): string;
 

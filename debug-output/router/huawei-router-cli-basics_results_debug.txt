@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T08:32:30.343Z
+Generated: 2026-06-04T12:02:06.374Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 08:32:30
+  2026-06-04 12:02:06
   Thursday
   Time Zone(UTC) : UTC
 
@@ -49,18 +49,23 @@ Total steps: 304
   Wait     : Wait for the user to press ENTER.
 
 [6/304] r1 <R1> display history-command
-  Info: No history command.
+  display version
+  display version
+  display clock
+  display device
+  display users
+  display history-command
 
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:32:30
+  CPU Usage Stat. Time : 2026-06-04 12:02:06
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 08:32:30
+  Memory utilization statistics at 2026-06-04 12:02:06
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -276,18 +281,14 @@ Total steps: 304
   Info: No IPSec configuration.
 
 [34/304] r1 <R1> display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [35/304] r1 <R1> display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [36/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
@@ -337,12 +338,7 @@ Total steps: 304
   Info: No patch exists.
 
 [44/304] r1 <R1> display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [45/304] r1 <R1> display ssh user-information
   SSH version                     : 2.0
@@ -460,6 +456,13 @@ Total steps: 304
     dhcp                    Display DHCP snooping
     nat                     nat
     vrrp                    Display VRRP groups
+    ssh                     Display SSH server status
+    stelnet                 stelnet
+    telnet                  telnet
+    snmp-agent              Display SNMP agent info
+    ntp-service             Display NTP status
+    info-center             Display info-center configuration
+    sflow                   Display sFlow configuration
     lldp                    lldp
     bgp                     bgp
     ospf                    ospf
@@ -482,9 +485,6 @@ Total steps: 304
     patch-information       Display patch information
     diagnostic-information  Collect diagnostic information
     local-user              Display local users
-    ssh                     Display SSH server status
-    snmp-agent              Display SNMP agent info
-    ntp-service             Display NTP status
     port-security           Display port security
     ospfv3                  ospfv3
     ike                     ike
@@ -1720,30 +1720,20 @@ Total steps: 304
   Info: No IKE peers configured.
 
 [232/304] r1 <Huawei> display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [233/304] r1 <Huawei> display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [234/304] r1 <Huawei> display ntp session
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 08:32:30
+  2026-06-04 12:02:06
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1756,13 +1746,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:32:30
+  CPU Usage Stat. Time : 2026-06-04 12:02:06
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 08:32:30
+  Memory utilization statistics at 2026-06-04 12:02:06
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1785,7 +1775,16 @@ Total steps: 304
   Wait     : Wait for the user to press ENTER.
 
 [242/304] r1 <Huawei> display history-command
-  Info: No history command.
+  display ntp status
+  display ntp session
+  display clock
+  display lldp neighbor
+  display lldp neighbor brief
+  display cpu-usage
+  display memory-usage
+  display device
+  display users
+  display history-command
 
 [243/304] r1 <Huawei> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1916,12 +1915,7 @@ Total steps: 304
   Info: No online-fail record.
 
 [257/304] r1 <Huawei> display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [258/304] r1 <Huawei> display ssh user-information
   SSH version                     : 2.0
