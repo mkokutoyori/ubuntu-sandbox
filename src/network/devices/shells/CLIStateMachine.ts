@@ -137,6 +137,12 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-tacacs-server':      { parent: 'config', clearOnExit: ['selectedTacacsServer'] },
   'config-aaa-group':          { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
   'config-ca-trustpoint':      { parent: 'config', clearOnExit: ['selectedPkiTrustpoint'] },
+  'config-applet':             { parent: 'config', clearOnExit: ['selectedApplet'] },
+  'config-flow-exporter':      { parent: 'config', clearOnExit: ['selectedFlowExporter'] },
+  'config-flow-record':        { parent: 'config', clearOnExit: ['selectedFlowRecord'] },
+  'config-flow-monitor':       { parent: 'config', clearOnExit: ['selectedFlowMonitor'] },
+  'config-archive':            { parent: 'config' },
+  'config-archive-log':        { parent: 'config-archive' },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────

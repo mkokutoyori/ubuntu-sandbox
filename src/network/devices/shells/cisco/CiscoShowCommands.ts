@@ -236,6 +236,8 @@ export function showRunningConfig(router: Router): string {
     if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
     const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
     if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+    const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
+    if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
     const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
     const pending = ospfExtra?.pendingIfConfig.get(name);
     if (pending) {
@@ -401,6 +403,24 @@ export function showRunningConfig(router: Router): string {
   if (snmp) {
     const sl = snmp.asRunningConfigLines();
     if (sl.length > 0) { lines.push('!'); lines.push(...sl); }
+  }
+
+  const netflow = (router as unknown as { getNetflowService?: () => import('../../router/netflow/NetflowService').NetflowService }).getNetflowService?.();
+  if (netflow) {
+    const nl = netflow.asRunningConfigLines();
+    if (nl.length > 0) { lines.push('!'); lines.push(...nl); }
+  }
+
+  const archive = (router as unknown as { getArchiveService?: () => import('../../router/archive/ArchiveService').ArchiveService }).getArchiveService?.();
+  if (archive) {
+    const al = archive.asRunningConfigLines();
+    if (al.length > 0) { lines.push('!'); lines.push(...al); }
+  }
+
+  const eem = (router as unknown as { getEemService?: () => import('../../router/eem/EemService').EemService }).getEemService?.();
+  if (eem) {
+    const el = eem.asRunningConfigLines();
+    if (el.length > 0) { lines.push('!'); lines.push(...el); }
   }
 
   const securityLines = (router as unknown as {

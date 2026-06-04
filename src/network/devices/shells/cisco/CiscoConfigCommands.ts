@@ -29,7 +29,9 @@ export type CiscoShellMode =
   | 'config-time-range' | 'config-cmap' | 'config-pmap' | 'config-pmap-c'
   | 'config-cp' | 'config-zone' | 'config-zone-pair'
   | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group'
-  | 'config-ca-trustpoint';
+  | 'config-ca-trustpoint'
+  | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
+  | 'config-archive' | 'config-archive-log';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */

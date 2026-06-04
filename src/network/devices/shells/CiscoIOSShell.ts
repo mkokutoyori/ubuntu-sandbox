@@ -90,6 +90,12 @@ import {
   buildSecuritySubmodeCommands, buildSecurityShowCommands,
 } from './cisco/CiscoSecurityCommands';
 import {
+  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
+  buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
+  buildArchiveSubmode, buildArchiveLogSubmode,
+  buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
+} from './cisco/CiscoEemNetflowArchiveCommands';
+import {
   buildNATConfigCommands, buildNATInterfaceCommands,
   registerNATPrivilegedCommands, registerNATShowCommands,
 } from './cisco/CiscoNATCommands';
@@ -172,6 +178,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configTacacsServerTrie = new CommandTrie();
   private configAaaGroupTrie = new CommandTrie();
   private configCaTrustpointTrie = new CommandTrie();
+  private configAppletTrie = new CommandTrie();
+  private configFlowExporterTrie = new CommandTrie();
+  private configFlowRecordTrie = new CommandTrie();
+  private configFlowMonitorTrie = new CommandTrie();
+  private configArchiveTrie = new CommandTrie();
+  private configArchiveLogTrie = new CommandTrie();
 
   private selectedTimeRange: string | null = null;
   private selectedClassMap: string | null = null;
@@ -184,6 +196,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedTacacsServer: string | null = null;
   private selectedAaaGroup: string | null = null;
   private selectedPkiTrustpoint: string | null = null;
+  private selectedApplet: string | null = null;
+  private selectedFlowExporter: string | null = null;
+  private selectedFlowRecord: string | null = null;
+  private selectedFlowMonitor: string | null = null;
 
   getTimeRange(): string | null { return this.selectedTimeRange; }
   setTimeRange(n: string | null): void { this.selectedTimeRange = n; }
@@ -207,6 +223,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setAaaGroup(n: string | null): void { this.selectedAaaGroup = n; }
   getPkiTrustpoint(): string | null { return this.selectedPkiTrustpoint; }
   setPkiTrustpoint(n: string | null): void { this.selectedPkiTrustpoint = n; }
+  getApplet(): string | null { return this.selectedApplet; }
+  setApplet(n: string | null): void { this.selectedApplet = n; }
+  getFlowExporter(): string | null { return this.selectedFlowExporter; }
+  setFlowExporter(n: string | null): void { this.selectedFlowExporter = n; }
+  getFlowRecord(): string | null { return this.selectedFlowRecord; }
+  setFlowRecord(n: string | null): void { this.selectedFlowRecord = n; }
+  getFlowMonitor(): string | null { return this.selectedFlowMonitor; }
+  setFlowMonitor(n: string | null): void { this.selectedFlowMonitor = n; }
 
   constructor() {
     super();
@@ -408,6 +432,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-tacacs-server': return this.configTacacsServerTrie;
       case 'config-aaa-group': return this.configAaaGroupTrie;
       case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
+      case 'config-applet': return this.configAppletTrie;
+      case 'config-flow-exporter': return this.configFlowExporterTrie;
+      case 'config-flow-record': return this.configFlowRecordTrie;
+      case 'config-flow-monitor': return this.configFlowMonitorTrie;
+      case 'config-archive': return this.configArchiveTrie;
+      case 'config-archive-log': return this.configArchiveLogTrie;
       default: return this.userTrie;
     }
   }
@@ -442,6 +472,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedTacacsServer') this.selectedTacacsServer = null;
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
       if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
+      if (f === 'selectedApplet') this.selectedApplet = null;
+      if (f === 'selectedFlowExporter') this.selectedFlowExporter = null;
+      if (f === 'selectedFlowRecord') this.selectedFlowRecord = null;
+      if (f === 'selectedFlowMonitor') this.selectedFlowMonitor = null;
     }
   }
 
@@ -529,6 +563,17 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     );
     buildSecurityShowCommands(this.userTrie, () => this.d());
     buildSecurityShowCommands(this.privilegedTrie, () => this.d());
+
+    buildEemNetflowArchiveConfigCommands(this.configTrie, this);
+    buildEemAppletSubmode(this.configAppletTrie, this);
+    buildFlowExporterSubmode(this.configFlowExporterTrie, this);
+    buildFlowRecordSubmode(this.configFlowRecordTrie, this);
+    buildFlowMonitorSubmode(this.configFlowMonitorTrie, this);
+    buildArchiveSubmode(this.configArchiveTrie, this);
+    buildArchiveLogSubmode(this.configArchiveLogTrie, this);
+    buildEemNetflowArchiveInterfaceCommands(this.configIfTrie, this);
+    buildEemNetflowArchiveShowCommands(this.userTrie, () => this.d());
+    buildEemNetflowArchiveShowCommands(this.privilegedTrie, () => this.d());
   }
 
   // ─── Show Commands (Router-specific) ──────────────────────────────

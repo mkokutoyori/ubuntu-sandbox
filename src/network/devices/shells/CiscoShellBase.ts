@@ -394,6 +394,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showInventory(this.d().getHostname(), this.getChassisProfile()));
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
+    trie.registerGreedy('show processes cpu sorted', 'Display CPU utilisation sorted', () =>
+      showProcessesCpu());
+    trie.registerGreedy('show processes cpu history', 'Display CPU history', () =>
+      showProcessesCpu());
+    trie.register('show clock detail', 'Display clock with source', () => {
+      const dev = this.cs() as unknown as { getNtpAgent?: () => { isSynced: () => boolean; getConfig: () => { sourceInterface: string; refIdentifier: string } } };
+      const ntp = dev.getNtpAgent?.();
+      const synced = ntp?.isSynced() ?? false;
+      const source = synced ? `NTP (${ntp?.getConfig().refIdentifier})` : 'No time source';
+      return [
+        showClock(this.cs()),
+        `Time source is ${source}`,
+      ].join('\n');
+    });
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
@@ -570,6 +584,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.register('write memory', 'Save configuration', () => {
       return this.onSave();
     });
+    this.privilegedTrie.register('write-memory', 'Save configuration (alias)', () => this.onSave());
+    this.privilegedTrie.register('write', 'Save configuration', () => this.onSave());
+    this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
+      this.attachLoggingToDevice(this.d());
+      (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const target = this.resolveNtpTarget(args[0]);
+      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      return '';
+    });
+    this.configTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const target = this.resolveNtpTarget(args[0]);
+      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      return '';
+    });
 
     this.registerCommonShowCommands(this.privilegedTrie);
     // ARP commands (shared between router and switch)
@@ -722,6 +759,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const n = parseInt(args[0] ?? '', 10);
       if (isNaN(n) || n < 10 || n > 255) return '% Invalid holdtime value (10-255)';
       this.applyToCdpAgent(a => a.setHoldtimeSec(n));
+      return '';
+    });
+    this.configTrie.register('cdp advertise-v2', 'Advertise CDPv2 PDUs', () => {
+      this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(true));
+      return '';
+    });
+    this.configTrie.register('no cdp advertise-v2', 'Use CDPv1 PDUs', () => {
+      this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(false));
       return '';
     });
     this.configTrie.registerGreedy('lldp run', 'Enable LLDP globally', () => {

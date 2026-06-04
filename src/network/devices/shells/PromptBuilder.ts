@@ -85,6 +85,12 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-tacacs-server':      '{host}(config-tacacs-server)#',
   'config-aaa-group':          '{host}(config-sg-radius)#',
   'config-ca-trustpoint':      '{host}(ca-trustpoint)#',
+  'config-applet':             '{host}(config-applet)#',
+  'config-flow-exporter':      '{host}(config-flow-exporter)#',
+  'config-flow-record':        '{host}(config-flow-record)#',
+  'config-flow-monitor':       '{host}(config-flow-monitor)#',
+  'config-archive':            '{host}(config-archive)#',
+  'config-archive-log':        '{host}(config-archive-log-cfg)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

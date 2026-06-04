@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-04T12:05:09.876Z
+Generated: 2026-06-04T12:13:36.283Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -122,56 +122,42 @@ Total steps: 322
 <empty>
 
 [38/322] r1 R1(config)# archive
-  % Invalid input detected at '^' marker.
-  archive
-  ^
-
-[39/322] r1 R1(config)# log config
-  % Ambiguous command: "log" (matches: logging, login)
-
-[40/322] r1 R1(config)# logging enable
 <empty>
 
-[41/322] r1 R1(config)# logging size 200
+[39/322] r1 R1(config-archive)# log config
 <empty>
 
-[42/322] r1 R1(config)# notify syslog contenttype plaintext
-  % Invalid input detected at '^' marker.
-  notify syslog contenttype plaintext
-  ^
-
-[43/322] r1 R1(config)# hidekeys
-  % Invalid input detected at '^' marker.
-  hidekeys
-  ^
-
-[44/322] r1 R1(config)# exit
+[40/322] r1 R1(config-archive-log-cfg)# logging enable
 <empty>
 
-[45/322] r1 R1# path flash:archive-config
-  % Invalid input detected at '^' marker.
-  path flash:archive-config
-  ^
-
-[46/322] r1 R1# maximum 14
-  % Invalid input detected at '^' marker.
-  maximum 14
-  ^
-
-[47/322] r1 R1# time-period 1440
-  % Invalid input detected at '^' marker.
-  time-period 1440
-  ^
-
-[48/322] r1 R1# write-memory
-  % Invalid input detected at '^' marker.
-  write-memory
-  ^
-
-[49/322] r1 R1# exit
+[41/322] r1 R1(config-archive-log-cfg)# logging size 200
 <empty>
 
-[50/322] r1 R1# exit
+[42/322] r1 R1(config-archive-log-cfg)# notify syslog contenttype plaintext
+<empty>
+
+[43/322] r1 R1(config-archive-log-cfg)# hidekeys
+<empty>
+
+[44/322] r1 R1(config-archive-log-cfg)# exit
+<empty>
+
+[45/322] r1 R1(config-archive)# path flash:archive-config
+<empty>
+
+[46/322] r1 R1(config-archive)# maximum 14
+<empty>
+
+[47/322] r1 R1(config-archive)# time-period 1440
+<empty>
+
+[48/322] r1 R1(config-archive)# write-memory
+<empty>
+
+[49/322] r1 R1(config-archive)# exit
+<empty>
+
+[50/322] r1 R1(config)# exit
 <empty>
 
 [51/322] r1 R1# end
@@ -212,19 +198,13 @@ Total steps: 322
       Logging to 10.0.0.11
 
 [54/322] r1 R1# show archive
-  % Invalid input detected at '^' marker.
-  show archive
-       ^
+  No archives configured / no revisions captured.
 
 [55/322] r1 R1# show archive config differences
-  % Invalid input detected at '^' marker.
-  show archive config differences
-       ^
+  No archive differences available.
 
 [56/322] r1 R1# clear logging
-  % Invalid input detected at '^' marker.
-  clear logging
-        ^
+<empty>
 
 
 --- [57] § SNMP v1/v2c ---
@@ -499,9 +479,7 @@ Total steps: 322
 <empty>
 
 [122/322] r1 R1(config)# sntp server 10.0.0.40
-  % Invalid input detected at '^' marker.
-  sntp server 10.0.0.40
-  ^
+<empty>
 
 [123/322] r1 R1(config)# end
 <empty>
@@ -509,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBE875.E5A1CAC0 (12:05:09.897 UTC Thu Jun 4 2026)
+  reference time is EDCBEA70.4DD2F1A9 (12:13:36.304 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -519,6 +497,7 @@ Total steps: 322
    ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [126/322] r1 R1# show ntp associations detail
     address         ref clock     st  when poll reach delay offset disp
@@ -527,17 +506,17 @@ Total steps: 322
    ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  13:05:09.000 CET Thu Jun 4 2026
+  13:13:36.000 CET Thu Jun 4 2026
 
 [128/322] r1 R1# show clock detail
-  % Invalid input detected at '^' marker.
-  show clock detail
-             ^
+  13:13:36.000 CET Thu Jun 4 2026
+  Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  12:05:09 UTC Thu Jun 4 2026
+  12:13:36 UTC Thu Jun 4 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -545,175 +524,137 @@ Total steps: 322
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [131/322] r1 R1(config)# ip flow-export version 9
-  % Invalid input detected at '^' marker.
-  ip flow-export version 9
-     ^
+<empty>
 
 [132/322] r1 R1(config)# ip flow-export destination 10.0.0.50 9996
-  % Invalid input detected at '^' marker.
-  ip flow-export destination 10.0.0.50 9996
-     ^
+<empty>
 
 [133/322] r1 R1(config)# ip flow-export source Loopback0
-  % Invalid input detected at '^' marker.
-  ip flow-export source Loopback0
-     ^
+<empty>
 
 [134/322] r1 R1(config)# ip flow-cache timeout active 1
-  % Invalid input detected at '^' marker.
-  ip flow-cache timeout active 1
-     ^
+<empty>
 
 [135/322] r1 R1(config)# ip flow-cache timeout inactive 15
-  % Invalid input detected at '^' marker.
-  ip flow-cache timeout inactive 15
-     ^
+<empty>
 
 [136/322] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
 
 [137/322] r1 R1(config-if)# ip flow ingress
-  % Invalid input detected at '^' marker.
-  ip flow ingress
-     ^
+<empty>
 
 [138/322] r1 R1(config-if)# ip flow egress
-  % Invalid input detected at '^' marker.
-  ip flow egress
-     ^
+<empty>
 
 [139/322] r1 R1(config-if)# ip route-cache flow
-  % Invalid input detected at '^' marker.
-  ip route-cache flow
-     ^
+<empty>
 
 [140/322] r1 R1(config-if)# exit
 <empty>
 
 [141/322] r1 R1(config)# flow record FR1
-  % Invalid input detected at '^' marker.
-  flow record FR1
-  ^
-
-[142/322] r1 R1(config)# match ipv4 source address
-  % Invalid input detected at '^' marker.
-  match ipv4 source address
-  ^
-
-[143/322] r1 R1(config)# match ipv4 destination address
-  % Invalid input detected at '^' marker.
-  match ipv4 destination address
-  ^
-
-[144/322] r1 R1(config)# match transport source-port
-  % Invalid input detected at '^' marker.
-  match transport source-port
-  ^
-
-[145/322] r1 R1(config)# collect counter bytes
-  % Invalid input detected at '^' marker.
-  collect counter bytes
-  ^
-
-[146/322] r1 R1(config)# collect counter packets
-  % Invalid input detected at '^' marker.
-  collect counter packets
-  ^
-
-[147/322] r1 R1(config)# exit
 <empty>
 
-[148/322] r1 R1# flow exporter FE1
-  % Invalid input detected at '^' marker.
-  flow exporter FE1
-  ^
-
-[149/322] r1 R1# destination 10.0.0.50
-  % Invalid input detected at '^' marker.
-  destination 10.0.0.50
-  ^
-
-[150/322] r1 R1# transport udp 2055
-  % Invalid input detected at '^' marker.
-  transport udp 2055
-  ^
-
-[151/322] r1 R1# export-protocol netflow-v9
-  % Invalid input detected at '^' marker.
-  export-protocol netflow-v9
-  ^
-
-[152/322] r1 R1# exit
+[142/322] r1 R1(config-flow-record)# match ipv4 source address
 <empty>
 
-[153/322] r1 R1# flow monitor FM1
-  % Invalid input detected at '^' marker.
-  flow monitor FM1
-  ^
-
-[154/322] r1 R1# record FR1
-  % Invalid input detected at '^' marker.
-  record FR1
-  ^
-
-[155/322] r1 R1# exporter FE1
-  % Invalid input detected at '^' marker.
-  exporter FE1
-  ^
-
-[156/322] r1 R1# cache timeout active 60
-  % Invalid input detected at '^' marker.
-  cache timeout active 60
-  ^
-
-[157/322] r1 R1# exit
+[143/322] r1 R1(config-flow-record)# match ipv4 destination address
 <empty>
 
-[158/322] r1 R1# interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/1
-  ^
-
-[159/322] r1 R1# ip flow monitor FM1 input
-  % Invalid input detected at '^' marker.
-  ip flow monitor FM1 input
-  ^
-
-[160/322] r1 R1# exit
+[144/322] r1 R1(config-flow-record)# match transport source-port
 <empty>
 
-[161/322] r1 R1# end
+[145/322] r1 R1(config-flow-record)# collect counter bytes
+<empty>
+
+[146/322] r1 R1(config-flow-record)# collect counter packets
+<empty>
+
+[147/322] r1 R1(config-flow-record)# exit
+<empty>
+
+[148/322] r1 R1(config)# flow exporter FE1
+<empty>
+
+[149/322] r1 R1(config-flow-exporter)# destination 10.0.0.50
+<empty>
+
+[150/322] r1 R1(config-flow-exporter)# transport udp 2055
+<empty>
+
+[151/322] r1 R1(config-flow-exporter)# export-protocol netflow-v9
+<empty>
+
+[152/322] r1 R1(config-flow-exporter)# exit
+<empty>
+
+[153/322] r1 R1(config)# flow monitor FM1
+<empty>
+
+[154/322] r1 R1(config-flow-monitor)# record FR1
+<empty>
+
+[155/322] r1 R1(config-flow-monitor)# exporter FE1
+<empty>
+
+[156/322] r1 R1(config-flow-monitor)# cache timeout active 60
+<empty>
+
+[157/322] r1 R1(config-flow-monitor)# exit
+<empty>
+
+[158/322] r1 R1(config)# interface GigabitEthernet0/1
+<empty>
+
+[159/322] r1 R1(config-if)# ip flow monitor FM1 input
+<empty>
+
+[160/322] r1 R1(config-if)# exit
+<empty>
+
+[161/322] r1 R1(config)# end
 <empty>
 
 [162/322] r1 R1# show ip flow export
-  % Invalid input detected at '^' marker.
-  show ip flow export
-          ^
+  Flow export v9 is enabled
+    Destination 10.0.0.50:9996
+    Source Loopback0
 
 [163/322] r1 R1# show ip cache flow
-  % Invalid input detected at '^' marker.
-  show ip cache flow
-          ^
+  IP packet size distribution (1 total packets):
+    (sim: cache empty)
 
 [164/322] r1 R1# show flow monitor FM1
-  % Invalid input detected at '^' marker.
-  show flow monitor FM1
-       ^
+  Flow Monitor FM1:
+    Record: FR1
+    Exporters: FE1
+    Cache active timeout: 60s
+    Cache inactive timeout: 15s
+    Maximum flows: 4096
 
 [165/322] r1 R1# show flow exporter FE1
-  % Invalid input detected at '^' marker.
-  show flow exporter FE1
-       ^
+  Flow Exporter FE1:
+    Destination IP: 10.0.0.50
+    Source: unspecified
+    Transport: udp/2055
+    Export protocol: netflow-v9
 
 [166/322] r1 R1# show flow record FR1
-  % Invalid input detected at '^' marker.
-  show flow record FR1
-       ^
+  Flow Record FR1:
+    match ipv4 source address
+    match ipv4 destination address
+    match transport source-port
+    collect counter bytes
+    collect counter packets
 
 [167/322] r1 R1# show flow monitor FM1 cache
-  % Invalid input detected at '^' marker.
-  show flow monitor FM1 cache
-       ^
+  Flow Monitor FM1:
+    Record: FR1
+    Exporters: FE1
+    Cache active timeout: 60s
+    Cache inactive timeout: 15s
+    Maximum flows: 4096
 
 
 --- [168] § EEM / scripting ---
@@ -721,73 +662,50 @@ Total steps: 322
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [169/322] r1 R1(config)# event manager applet IF-DOWN
-  % Invalid input detected at '^' marker.
-  event manager applet IF-DOWN
-  ^
-
-[170/322] r1 R1(config)# event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
-  % Invalid input detected at '^' marker.
-  event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
-  ^
-
-[171/322] r1 R1(config)# action 1.0 syslog msg "WAN interface changed state"
-  % Invalid input detected at '^' marker.
-  action 1.0 syslog msg "WAN interface changed state"
-  ^
-
-[172/322] r1 R1(config)# action 2.0 cli command "enable"
-  % Invalid input detected at '^' marker.
-  action 2.0 cli command "enable"
-  ^
-
-[173/322] r1 R1(config)# action 3.0 cli command "show ip interface brief"
-  % Invalid input detected at '^' marker.
-  action 3.0 cli command "show ip interface brief"
-  ^
-
-[174/322] r1 R1(config)# exit
 <empty>
 
-[175/322] r1 R1# event manager applet CRON-BACKUP
-  % Invalid input detected at '^' marker.
-  event manager applet CRON-BACKUP
-  ^
-
-[176/322] r1 R1# event timer cron cron-entry "0 2 * * *"
-  % Invalid input detected at '^' marker.
-  event timer cron cron-entry "0 2 * * *"
-  ^
-
-[177/322] r1 R1# action 1.0 cli command "enable"
-  % Invalid input detected at '^' marker.
-  action 1.0 cli command "enable"
-  ^
-
-[178/322] r1 R1# action 2.0 cli command "copy running-config flash:nightly.cfg"
-  % Invalid input detected at '^' marker.
-  action 2.0 cli command "copy running-config flash:nightly.cfg"
-  ^
-
-[179/322] r1 R1# exit
+[170/322] r1 R1(config-applet)# event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
 <empty>
 
-[180/322] r1 R1# event manager environment _email noc@lab.local
-  % Invalid input detected at '^' marker.
-  event manager environment _email noc@lab.local
-  ^
+[171/322] r1 R1(config-applet)# action 1.0 syslog msg "WAN interface changed state"
+<empty>
 
-[181/322] r1 R1# end
+[172/322] r1 R1(config-applet)# action 2.0 cli command "enable"
+<empty>
+
+[173/322] r1 R1(config-applet)# action 3.0 cli command "show ip interface brief"
+<empty>
+
+[174/322] r1 R1(config-applet)# exit
+<empty>
+
+[175/322] r1 R1(config)# event manager applet CRON-BACKUP
+<empty>
+
+[176/322] r1 R1(config-applet)# event timer cron cron-entry "0 2 * * *"
+<empty>
+
+[177/322] r1 R1(config-applet)# action 1.0 cli command "enable"
+<empty>
+
+[178/322] r1 R1(config-applet)# action 2.0 cli command "copy running-config flash:nightly.cfg"
+<empty>
+
+[179/322] r1 R1(config-applet)# exit
+<empty>
+
+[180/322] r1 R1(config)# event manager environment _email noc@lab.local
+<empty>
+
+[181/322] r1 R1(config)# end
 <empty>
 
 [182/322] r1 R1# show event manager policy registered
-  % Invalid input detected at '^' marker.
-  show event manager policy registered
-       ^
+    applet IF-DOWN  triggers=1  actions=3  hits=0
+    applet CRON-BACKUP  triggers=1  actions=2  hits=0
 
 [183/322] r1 R1# show event manager environment
-  % Invalid input detected at '^' marker.
-  show event manager environment
-       ^
+    _email : noc@lab.local
 
 
 --- [184] § CDP / LLDP / discovery ---
@@ -804,9 +722,7 @@ Total steps: 322
 <empty>
 
 [188/322] r1 R1(config)# cdp advertise-v2
-  % Invalid input detected at '^' marker.
-  cdp advertise-v2
-      ^
+<empty>
 
 [189/322] r1 R1(config)# lldp run
 <empty>
@@ -1002,6 +918,7 @@ Total steps: 322
   ntp server 10.0.0.22
   ntp server 10.0.0.23
   ntp server 10.0.0.30
+  ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
   ntp authentication-key 1 md5 ntpkey123
@@ -1011,9 +928,10 @@ Total steps: 322
   ntp access-group serve-only 10
 
 [211/322] r1 R1# show processes cpu sorted
-  % Invalid input detected at '^' marker.
-  show processes cpu sorted
-                     ^
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [212/322] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
@@ -1057,6 +975,9 @@ Total steps: 322
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip flow ingress
+   ip flow egress
+   ip flow monitor FM1 input
   !
   interface GigabitEthernet0/2
    no shutdown
@@ -1093,6 +1014,7 @@ Total steps: 322
   ntp server 10.0.0.22
   ntp server 10.0.0.23
   ntp server 10.0.0.30
+  ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
   ntp authentication-key 1 md5 ntpkey123
@@ -1136,6 +1058,47 @@ Total steps: 322
   snmp-server enable traps cpu threshold
   snmp-server enable traps threshold
   snmp-server enable traps envmon
+  !
+  flow exporter FE1
+   destination 10.0.0.50
+   transport udp 2055
+   export-protocol netflow-v9
+  flow record FR1
+   match ipv4 source address
+   match ipv4 destination address
+   match transport source-port
+   collect counter bytes
+   collect counter packets
+  flow monitor FM1
+   record FR1
+   exporter FE1
+   cache timeout active 60
+  ip flow-export version 9
+  ip flow-export source Loopback0
+  ip flow-export destination 10.0.0.50 9996
+  ip flow-cache timeout active 1
+  ip flow-cache timeout inactive 15
+  !
+  archive
+   path flash:archive-config
+   time-period 1440
+   maximum 14
+   write-memory
+   log config
+    logging enable
+    hidekeys
+    notify syslog contenttype plaintext
+  !
+  event manager environment _email noc@lab.local
+  event manager applet IF-DOWN
+   event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+   action 1.0 syslog msg "WAN interface changed state"
+   action 2.0 cli command "enable"
+   action 3.0 cli command "show ip interface brief"
+  event manager applet CRON-BACKUP
+   event timer cron cron-entry "0 2 * * *"
+   action 1.0 cli command "enable"
+   action 2.0 cli command "copy running-config flash:nightly.cfg"
   end
 
 [216/322] r1 R1(config)# show startup-config
@@ -1342,7 +1305,7 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBE875.E8F5C28F (12:05:09.910 UTC Thu Jun 4 2026)
+  reference time is EDCBEA70.51EB851E (12:13:36.320 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1352,9 +1315,10 @@ Total steps: 322
    ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  13:05:09.000 CET Thu Jun 4 2026
+  13:13:36.000 CET Thu Jun 4 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1514,6 +1478,9 @@ Total steps: 322
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip flow ingress
+   ip flow egress
+   ip flow monitor FM1 input
   !
   interface GigabitEthernet0/2
    no shutdown
@@ -1550,6 +1517,7 @@ Total steps: 322
   ntp server 10.0.0.22
   ntp server 10.0.0.23
   ntp server 10.0.0.30
+  ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
   ntp authentication-key 1 md5 ntpkey123
@@ -1593,6 +1561,47 @@ Total steps: 322
   snmp-server enable traps cpu threshold
   snmp-server enable traps threshold
   snmp-server enable traps envmon
+  !
+  flow exporter FE1
+   destination 10.0.0.50
+   transport udp 2055
+   export-protocol netflow-v9
+  flow record FR1
+   match ipv4 source address
+   match ipv4 destination address
+   match transport source-port
+   collect counter bytes
+   collect counter packets
+  flow monitor FM1
+   record FR1
+   exporter FE1
+   cache timeout active 60
+  ip flow-export version 9
+  ip flow-export source Loopback0
+  ip flow-export destination 10.0.0.50 9996
+  ip flow-cache timeout active 1
+  ip flow-cache timeout inactive 15
+  !
+  archive
+   path flash:archive-config
+   time-period 1440
+   maximum 14
+   write-memory
+   log config
+    logging enable
+    hidekeys
+    notify syslog contenttype plaintext
+  !
+  event manager environment _email noc@lab.local
+  event manager applet IF-DOWN
+   event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+   action 1.0 syslog msg "WAN interface changed state"
+   action 2.0 cli command "enable"
+   action 3.0 cli command "show ip interface brief"
+  event manager applet CRON-BACKUP
+   event timer cron cron-entry "0 2 * * *"
+   action 1.0 cli command "enable"
+   action 2.0 cli command "copy running-config flash:nightly.cfg"
   end
   
   ------------------ show ip interface brief ------------------
@@ -1734,6 +1743,9 @@ Total steps: 322
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip flow ingress
+   ip flow egress
+   ip flow monitor FM1 input
   interface GigabitEthernet0/2
    no shutdown
   interface GigabitEthernet0/3
@@ -1757,6 +1769,9 @@ Total steps: 322
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   ip flow ingress
+   ip flow egress
+   ip flow monitor FM1 input
   interface GigabitEthernet0/2
    no shutdown
   interface GigabitEthernet0/3
@@ -1786,6 +1801,7 @@ Total steps: 322
   ntp server 10.0.0.22
   ntp server 10.0.0.23
   ntp server 10.0.0.30
+  ntp server 10.0.0.40
   ntp source loopback0
   ntp authenticate
   ntp authentication-key 1 md5 ntpkey123
@@ -1826,6 +1842,44 @@ Total steps: 322
   snmp-server enable traps cpu threshold
   snmp-server enable traps threshold
   snmp-server enable traps envmon
+  flow exporter FE1
+   destination 10.0.0.50
+   transport udp 2055
+   export-protocol netflow-v9
+  flow record FR1
+   match ipv4 source address
+   match ipv4 destination address
+   match transport source-port
+   collect counter bytes
+   collect counter packets
+  flow monitor FM1
+   record FR1
+   exporter FE1
+   cache timeout active 60
+  ip flow-export version 9
+  ip flow-export source Loopback0
+  ip flow-export destination 10.0.0.50 9996
+  ip flow-cache timeout active 1
+  ip flow-cache timeout inactive 15
+  archive
+   path flash:archive-config
+   time-period 1440
+   maximum 14
+   write-memory
+   log config
+    logging enable
+    hidekeys
+    notify syslog contenttype plaintext
+  event manager environment _email noc@lab.local
+  event manager applet IF-DOWN
+   event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+   action 1.0 syslog msg "WAN interface changed state"
+   action 2.0 cli command "enable"
+   action 3.0 cli command "show ip interface brief"
+  event manager applet CRON-BACKUP
+   event timer cron cron-entry "0 2 * * *"
+   action 1.0 cli command "enable"
+   action 2.0 cli command "copy running-config flash:nightly.cfg"
   end
 
 [280/322] r1 R1(config)# show ip route | include via
@@ -1964,6 +2018,9 @@ Total steps: 322
     access-list    access-list
     nat            nat
     routing        Enable IP routing
+    flow-export    Legacy NetFlow export
+    flow-cache     NetFlow cache timeout
+    route-cache    route-cache
 
 [317/322] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -1999,12 +2056,13 @@ Total steps: 322
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [320/322] r1 R1(config)# end
 <empty>
 
 [321/322] r1 R1# show running-config | count !
-  17
+  20
 
 [322/322] r1 R1# write memory
   Building configuration...

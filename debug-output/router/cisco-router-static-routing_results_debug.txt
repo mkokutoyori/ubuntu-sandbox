@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-06-04T12:05:08.479Z
+Generated: 2026-06-04T12:13:34.759Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1627,7 +1627,7 @@ Total steps: 325
 [253/325] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBE874.851EB851 (12:05:08.520 UTC Thu Jun 4 2026)
+  reference time is EDCBEA6E.D0624DD2 (12:13:34.814 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1(config)# show ntp associations
@@ -1636,7 +1636,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1(config)# show clock
-  *12:05:08.000 UTC Thu Jun 4 2026
+  *12:13:34.000 UTC Thu Jun 4 2026
 
 [256/325] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2337,6 +2337,9 @@ Total steps: 325
     access-list    access-list
     nat            nat
     routing        Enable IP routing
+    flow-export    Legacy NetFlow export
+    flow-cache     NetFlow cache timeout
+    route-cache    route-cache
 
 [320/325] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2372,6 +2375,7 @@ Total steps: 325
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [323/325] r1 R1(config)# end
 <empty>

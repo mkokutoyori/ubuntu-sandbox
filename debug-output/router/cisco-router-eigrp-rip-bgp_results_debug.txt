@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-04T12:05:11.458Z
+Generated: 2026-06-04T12:13:33.239Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -1474,7 +1474,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBE877.7D2F1A9F (12:05:11.489 UTC Thu Jun 4 2026)
+  reference time is EDCBEA6D.4624DD2F (12:13:33.274 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1483,7 +1483,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *12:05:11.000 UTC Thu Jun 4 2026
+  *12:13:33.000 UTC Thu Jun 4 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2050,6 +2050,9 @@ Total steps: 355
     access-list    access-list
     nat            nat
     routing        Enable IP routing
+    flow-export    Legacy NetFlow export
+    flow-cache     NetFlow cache timeout
+    route-cache    route-cache
 
 [350/355] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2085,6 +2088,7 @@ Total steps: 355
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [353/355] r1 R1(config)# end
 <empty>

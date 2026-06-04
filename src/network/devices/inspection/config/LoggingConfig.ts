@@ -33,6 +33,8 @@ export class LoggingConfig {
   timestamps = false;
   readonly hosts: string[] = [];
   private readonly messages: Array<{ ts: number; severity: Severity; tag: string; text: string }> = [];
+
+  clearBuffer(): void { this.messages.length = 0; }
   private nextSeq = 0;
   private attachedBus: import('@/events/EventBus').IEventBus | null = null;
   private attachedDeviceId: string | null = null;

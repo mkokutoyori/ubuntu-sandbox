@@ -91,6 +91,9 @@ import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import { SnmpService } from './router/management/SnmpService';
+import { EemService } from './router/eem/EemService';
+import { NetflowService } from './router/netflow/NetflowService';
+import { ArchiveService } from './router/archive/ArchiveService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1649,6 +1652,23 @@ export abstract class Router extends Equipment {
       this._snmpService = new SnmpService();
     }
     return this._snmpService;
+  }
+
+  private _eemService: EemService | null = null;
+  private _netflowService: NetflowService | null = null;
+  private _archiveService: ArchiveService | null = null;
+
+  getEemService(): EemService {
+    if (!this._eemService) this._eemService = new EemService();
+    return this._eemService;
+  }
+  getNetflowService(): NetflowService {
+    if (!this._netflowService) this._netflowService = new NetflowService();
+    return this._netflowService;
+  }
+  getArchiveService(): ArchiveService {
+    if (!this._archiveService) this._archiveService = new ArchiveService();
+    return this._archiveService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;
