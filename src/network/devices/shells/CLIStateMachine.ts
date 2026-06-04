@@ -171,4 +171,6 @@ export const HUAWEI_VRP_MODES: ModeHierarchy = {
   'ike-peer':        { parent: 'system', clearOnExit: ['selectedIKEPeer'] },
   'ipsec-proposal':  { parent: 'system', clearOnExit: ['selectedIPSecProposal'] },
   'ipsec-policy':    { parent: 'system', clearOnExit: ['selectedIPSecPolicy', 'selectedIPSecPolicySeq'] },
+  'bgp':             { parent: 'system' },
+  'isis':            { parent: 'system' },
 };

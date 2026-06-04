@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-04T12:27:29.237Z
+Generated: 2026-06-04T12:36:11.531Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1506,7 +1506,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBEDB1.44DD2F1A (12:27:29.269 UTC Thu Jun 4 2026)
+  reference time is EDCBEFBB.90624DD2 (12:36:11.564 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1515,7 +1515,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *12:27:29.000 UTC Thu Jun 4 2026
+  *12:36:11.000 UTC Thu Jun 4 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

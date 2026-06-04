@@ -84,6 +84,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.logging.attachToBus(bus, deviceId);
   }
   private mode: HuaweiShellMode | string = 'user';
+  private bgpAsn: number | null = null;
+  private isisProcessId: number | null = null;
+  private readonly bgpTrie = new CommandTrie();
+  private readonly isisTrie = new CommandTrie();
+
+  getBgpAsn(): number | null { return this.bgpAsn; }
+  getIsisProcessId(): number | null { return this.isisProcessId; }
+
   private readonly cmdHistory: string[] = [];
   private historyMax: number = 10;
 
@@ -207,6 +215,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildACLSubViewCommands();
     this.buildUserInterfaceCommands();
     this.buildRIPViewCommands();
+    this.buildBgpViewCommands();
+    this.buildIsisViewCommands();
     buildRoutePolicyView(this.routePolicyTrie, this);
     buildTrafficClassifierView(this.trafficClassifierTrie, this);
     buildTrafficBehaviorView(this.trafficBehaviorTrie, this);
@@ -355,6 +365,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'traffic-behavior': return `[${host}-behavior-${this.selectedBehavior}]`;
       case 'traffic-policy': return `[${host}-trafficpolicy-${this.selectedTrafficPolicy}]`;
       case 'nqa-test': return `[${host}-nqa-${this.selectedNqa?.admin}-${this.selectedNqa?.name}]`;
+      case 'bgp':        return `[${host}-bgp${this.bgpAsn !== null ? '-' + this.bgpAsn : ''}]`;
+      case 'isis':       return `[${host}-isis-${this.isisProcessId ?? '1'}]`;
       default:           return `<${host}>`;
     }
   }
@@ -517,6 +529,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf':
         this.mode = 'system';
         return '';
+      case 'bgp':
+        this.mode = 'system';
+        this.bgpAsn = null;
+        return '';
+      case 'isis':
+        this.mode = 'system';
+        this.isisProcessId = null;
+        return '';
       case 'ospfv3':
         this.mode = 'system';
         return '';
@@ -623,6 +643,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'dhcp-pool': return this.dhcpPoolTrie;
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
+      case 'bgp': return this.bgpTrie;
+      case 'isis': return this.isisTrie;
       case 'ospfv3': return this.ospfv3Trie;
       case 'rip': return this.ripTrie;
       case 'ike-proposal': return this.ikeProposalTrie;
@@ -909,6 +931,33 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return cmdRip(getRouter(), args);
     });
 
+    t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
+      const asn = parseInt(args[0] ?? '', 10);
+      if (isNaN(asn)) return 'Error: Invalid AS number';
+      getRouter().getHuaweiRoutingExtras().ensureBgp(asn);
+      this.bgpAsn = asn;
+      this.mode = 'bgp';
+      return '';
+    });
+    t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
+      const asn = parseInt(args[0] ?? '', 10);
+      if (!isNaN(asn)) getRouter().getHuaweiRoutingExtras().removeBgp();
+      return '';
+    });
+    t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
+      const pid = args[0] ? parseInt(args[0], 10) : 1;
+      const id = isNaN(pid) ? 1 : pid;
+      getRouter().getHuaweiRoutingExtras().ensureIsis(id);
+      this.isisProcessId = id;
+      this.mode = 'isis';
+      return '';
+    });
+    t.registerGreedy('undo isis', 'Remove IS-IS', (args) => {
+      const pid = parseInt(args[0] ?? '', 10);
+      if (!isNaN(pid)) getRouter().getHuaweiRoutingExtras().removeIsis(pid);
+      return '';
+    });
+
     t.registerGreedy('undo', 'Undo configuration', (args) => {
       return cmdUndo(getRouter(), this, args);
     });
@@ -1114,6 +1163,33 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // OSPF system-mode commands
     registerOSPFSystemCommands(t, this as any, (area) => { this.ospfArea = area; });
 
+    t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
+      const asn = parseInt(args[0] ?? '', 10);
+      if (isNaN(asn)) return 'Error: Invalid AS number';
+      this.r().getHuaweiRoutingExtras().ensureBgp(asn);
+      this.bgpAsn = asn;
+      this.mode = 'bgp';
+      return '';
+    });
+    t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
+      const asn = parseInt(args[0] ?? '', 10);
+      if (!isNaN(asn)) this.r().getHuaweiRoutingExtras().removeBgp();
+      return '';
+    });
+    t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
+      const pid = args[0] ? parseInt(args[0], 10) : 1;
+      const id = isNaN(pid) ? 1 : pid;
+      this.r().getHuaweiRoutingExtras().ensureIsis(id);
+      this.isisProcessId = id;
+      this.mode = 'isis';
+      return '';
+    });
+    t.registerGreedy('undo isis', 'Remove IS-IS', (args) => {
+      const pid = parseInt(args[0] ?? '', 10);
+      if (!isNaN(pid)) this.r().getHuaweiRoutingExtras().removeIsis(pid);
+      return '';
+    });
+
     // OSPF display commands
     registerOSPFDisplayCommands(t, () => this.r());
 
@@ -1280,6 +1356,108 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   }
 
   // ─── RIP View ([hostname-rip-1]) ────────────────────────────────
+
+  private buildBgpViewCommands(): void {
+    const t = this.bgpTrie;
+    const ex = () => this.r().getHuaweiRoutingExtras();
+    const bgp = () => this.bgpAsn !== null ? ex().ensureBgp(this.bgpAsn) : null;
+    t.registerGreedy('router-id', 'Set BGP router-id', (args) => {
+      const b = bgp(); if (b && args[0]) b.routerId = args[0];
+      return '';
+    });
+    t.registerGreedy('network', 'Advertise a network', (args) => {
+      const b = bgp(); if (!b || !args[0]) return '';
+      b.networks.push({ ip: args[0], mask: args[1] ?? '255.255.255.0' });
+      return '';
+    });
+    t.registerGreedy('aggregate', 'Aggregate routes', (args) => {
+      const b = bgp(); if (!b || !args[0] || !args[1]) return '';
+      b.aggregates.push({ ip: args[0], mask: args[1], flags: args.slice(2) });
+      return '';
+    });
+    t.registerGreedy('group', 'Define a peer group', (args) => {
+      const b = bgp(); if (!b || !args[0]) return '';
+      const kind = (args[1] === 'internal' || args[1] === 'external') ? args[1] : undefined;
+      b.groups.set(args[0], { name: args[0], kind, rawLines: [] });
+      return '';
+    });
+    t.registerGreedy('peer', 'Configure a BGP peer', (args, raw) => {
+      const b = bgp(); if (!b || !args[0]) return '';
+      const peer = b.peers.get(args[0]) ?? { ip: args[0], rawLines: [] };
+      for (let i = 1; i < args.length; i++) {
+        const a = args[i];
+        if (a === 'as-number' && args[i + 1]) { peer.asNumber = parseInt(args[i + 1], 10); i++; }
+        else if (a === 'description' && args[i + 1]) { peer.description = args.slice(i + 1).join(' '); i = args.length; }
+        else if (a === 'group' && args[i + 1]) { peer.groupName = args[i + 1]; i++; }
+        else if (a === 'connect-interface' && args[i + 1]) { peer.connectInterface = args[i + 1]; i++; }
+        else if (a === 'password' && args[i + 1]) { peer.passwordHash = args[i + 1]; i++; }
+      }
+      const line = raw ?? `peer ${args.join(' ')}`;
+      if (!peer.rawLines.includes(line)) peer.rawLines.push(line);
+      b.peers.set(args[0], peer);
+      return '';
+    });
+    t.registerGreedy('import-route', 'Import routes', (args) => {
+      const b = bgp(); if (!b) return '';
+      b.rawLines.push(`import-route ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('default-route', 'Default-route advertise', (args, raw) => {
+      const b = bgp(); if (!b) return '';
+      b.rawLines.push(raw ?? `default-route ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('graceful-restart', 'Enable graceful restart', () => {
+      const b = bgp(); if (!b) return '';
+      b.rawLines.push('graceful-restart');
+      return '';
+    });
+  }
+
+  private buildIsisViewCommands(): void {
+    const t = this.isisTrie;
+    const ex = () => this.r().getHuaweiRoutingExtras();
+    const isis = () => this.isisProcessId !== null ? ex().ensureIsis(this.isisProcessId) : null;
+    t.registerGreedy('network-entity', 'Set IS-IS NET', (args) => {
+      const i = isis(); if (i && args[0]) i.netAddress = args[0];
+      return '';
+    });
+    t.registerGreedy('net', 'Set IS-IS NET (alias)', (args) => {
+      const i = isis(); if (i && args[0]) i.netAddress = args[0];
+      return '';
+    });
+    t.registerGreedy('is-level', 'Set IS-IS level', (args) => {
+      const i = isis(); if (!i || !args[0]) return '';
+      const v = args[0].toLowerCase();
+      if (v === 'level-1' || v === 'level-2' || v === 'level-1-2') i.isLevel = v;
+      return '';
+    });
+    t.registerGreedy('cost-style', 'Set IS-IS cost style', (args) => {
+      const i = isis(); if (!i || !args[0]) return '';
+      if (args[0] === 'narrow' || args[0] === 'wide' || args[0] === 'compatible') i.costStyle = args[0];
+      return '';
+    });
+    t.register('checkzero', 'Enable IS-IS checkzero', () => {
+      const i = isis(); if (i) i.checkzero = true;
+      return '';
+    });
+    t.register('undo checkzero', 'Disable IS-IS checkzero', () => {
+      const i = isis(); if (i) i.checkzero = false;
+      return '';
+    });
+    t.register('default-route-advertise', 'Advertise default route', () => {
+      const i = isis(); if (i) i.defaultRouteAdvertise = true;
+      return '';
+    });
+    t.register('graceful-restart', 'Enable graceful restart', () => {
+      const i = isis(); if (i) i.gracefulRestart = true;
+      return '';
+    });
+    t.registerGreedy('import-route', 'Import routes', (args) => {
+      const i = isis(); if (i) i.importedRoutes.push(args.join(' '));
+      return '';
+    });
+  }
 
   private buildRIPViewCommands(): void {
     const getRouter = () => this.r();

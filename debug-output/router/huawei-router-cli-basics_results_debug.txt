@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T12:27:32.379Z
+Generated: 2026-06-04T12:36:13.142Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 12:27:32
+  2026-06-04 12:36:13
   Thursday
   Time Zone(UTC) : UTC
 
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:27:32
+  CPU Usage Stat. Time : 2026-06-04 12:36:13
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 12:27:32
+  Memory utilization statistics at 2026-06-04 12:36:13
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -439,6 +439,8 @@ Total steps: 304
     debugging      debugging
     ip             ip
     rip            Configure RIP routing
+    bgp            Configure BGP routing
+    isis           Configure IS-IS routing
     tracert        Trace route to destination
     ping           Send ICMP echo messages
 
@@ -465,6 +467,7 @@ Total steps: 304
     sflow                   Display sFlow configuration
     lldp                    lldp
     bgp                     bgp
+    isis                    isis
     ospf                    ospf
     rip                     Display RIP information
     counters                Display traffic counters
@@ -641,107 +644,31 @@ Total steps: 304
 <empty>
 
 [84/304] r1 <R1-CORE> bgp 65000
-  % Invalid input detected at '^' marker.
-  bgp 65000
-  ^
-
-[85/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-
-[86/304] r1 <R1-CORE> quit
 <empty>
 
-[87/304] r1 <R1-CORE> isis 1
+[85/304] r1 [R1-CORE-bgp-65000] display this
   % Invalid input detected at '^' marker.
-  isis 1
+  display this
   ^
 
-[88/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-
-[89/304] r1 <R1-CORE> quit
+[86/304] r1 [R1-CORE-bgp-65000] quit
 <empty>
 
-[90/304] r1 <R1-CORE> acl 2000
-  % Invalid input detected at '^' marker.
-  acl 2000
-  ^
-
-[91/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-
-[92/304] r1 <R1-CORE> quit
+[87/304] r1 [R1-CORE] isis 1
 <empty>
 
-[93/304] r1 <R1-CORE> acl name MGMT
+[88/304] r1 [R1-CORE-isis-1] display this
   % Invalid input detected at '^' marker.
-  acl name MGMT
+  display this
   ^
 
-[94/304] r1 <R1-CORE> display this
+[89/304] r1 [R1-CORE-isis-1] quit
+<empty>
+
+[90/304] r1 [R1-CORE] acl 2000
+<empty>
+
+[91/304] r1 [R1-CORE-acl-basic-2000] display this
   #
   sysname R1-CORE
   #
@@ -765,7 +692,37 @@ Total steps: 304
    version 2
   #
 
-[95/304] r1 <R1-CORE> quit
+[92/304] r1 [R1-CORE-acl-basic-2000] quit
+<empty>
+
+[93/304] r1 [R1-CORE] acl name MGMT
+  Error: Incomplete command.
+
+[94/304] r1 [R1-CORE] display this
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+
+[95/304] r1 [R1-CORE] quit
 <empty>
 
 [96/304] r1 <R1-CORE> ip pool LAN
@@ -1172,6 +1129,8 @@ Total steps: 304
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    isis           Remove IS-IS
     ike            ike
     ipsec          ipsec
     debugging      debugging
@@ -1201,7 +1160,8 @@ Total steps: 304
     <cr>  
 
 [141/304] r1 [R1-EDGE] bgp ?
-  Error: Unrecognized command
+    WORD  Configure BGP routing
+    <cr>  
 
 [142/304] r1 [R1-EDGE] interface GigabitEthernet0/0/0
 <empty>
@@ -1654,6 +1614,9 @@ Total steps: 304
     Networks:
   
     Routes: 0
+  #
+  bgp 65000
+  isis 1
 
 [216/304] r1 <Huawei> display rip 1 route
   RIP process 1
@@ -1665,12 +1628,20 @@ Total steps: 304
     Networks:
   
     Routes: 0
+  #
+  bgp 65000
+  isis 1
 
 [217/304] r1 <Huawei> display bgp peer
-  Info: BGP is not running.
+  BGP local router ID : 0.0.0.0
+  Local AS number : 65000
+  Total number of peers : 0              Peers in established state : 0
+    Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
 
 [218/304] r1 <Huawei> display bgp routing-table
-  Info: BGP is not running.
+  BGP Local router ID : 0.0.0.0
+   Total Number of Routes: 0
+   Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
 
 [219/304] r1 <Huawei> display nat session all
   Info: No NAT session is found.
@@ -1733,7 +1704,7 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 12:27:32
+  2026-06-04 12:36:13
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1746,13 +1717,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 12:27:32
+  CPU Usage Stat. Time : 2026-06-04 12:36:13
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 12:27:32
+  Memory utilization statistics at 2026-06-04 12:36:13
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2121,6 +2092,8 @@ Total steps: 304
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    isis           Remove IS-IS
     ike            ike
     ipsec          ipsec
     debugging      debugging

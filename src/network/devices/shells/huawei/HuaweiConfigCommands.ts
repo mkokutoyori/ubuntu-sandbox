@@ -18,7 +18,16 @@ import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
-export type HuaweiShellMode = 'user' | 'system' | 'interface' | 'dhcp-pool' | 'ospf' | 'ospf-area';
+export type HuaweiShellMode =
+  | 'user' | 'system' | 'interface' | 'dhcp-pool' | 'ospf' | 'ospf-area'
+  | 'bgp' | 'isis'
+  | 'ospfv3' | 'rip' | 'ui' | 'ike-proposal' | 'ike-peer'
+  | 'ipsec-proposal' | 'ipsec-policy'
+  | 'acl-basic' | 'acl-advanced'
+  | 'ikev2-proposal' | 'ikev2-policy' | 'ikev2-profile'
+  | 'ikev2-keyring' | 'ikev2-keyring-peer'
+  | 'route-policy' | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy'
+  | 'nqa-test';
 
 export interface HuaweiShellContext {
   r(): Router;

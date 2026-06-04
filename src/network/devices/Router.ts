@@ -94,6 +94,7 @@ import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
 import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
+import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1693,6 +1694,12 @@ export abstract class Router extends Equipment {
   getArchiveService(): ArchiveService {
     if (!this._archiveService) this._archiveService = new ArchiveService();
     return this._archiveService;
+  }
+
+  private _huaweiRoutingExtras: HuaweiRoutingExtras | null = null;
+  getHuaweiRoutingExtras(): HuaweiRoutingExtras {
+    if (!this._huaweiRoutingExtras) this._huaweiRoutingExtras = new HuaweiRoutingExtras();
+    return this._huaweiRoutingExtras;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;

@@ -119,4 +119,6 @@ export const HUAWEI_VRP_PROMPTS: PromptMap = {
   'ike-peer':        (host, f) => `[${host}-ike-peer-${f.selectedIKEPeer ?? ''}]`,
   'ipsec-proposal':  (host, f) => `[${host}-ipsec-proposal-${f.selectedIPSecProposal ?? ''}]`,
   'ipsec-policy':    (host, f) => `[${host}-ipsec-policy-${f.selectedIPSecPolicy ?? ''}-${f.selectedIPSecPolicySeq ?? ''}]`,
+  'bgp':             (host, f) => `[${host}-bgp${f.bgpAsn ? '-' + f.bgpAsn : ''}]`,
+  'isis':            (host, f) => `[${host}-isis-${f.isisProcessId ?? '1'}]`,
 };

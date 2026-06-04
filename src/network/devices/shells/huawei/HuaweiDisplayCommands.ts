@@ -737,6 +737,16 @@ export function displayRip(router: Router): string {
   }
 
   appendManagementConfig(lines, router);
+
+  const routingExtras = (router as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+  if (routingExtras) {
+    const rl = routingExtras.asRunningConfigLines();
+    if (rl.length > 0) {
+      lines.push('#');
+      lines.push(...rl);
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -1172,11 +1182,81 @@ export function registerDisplayCommands(
   });
 
   trie.registerGreedy('display bgp peer', 'Display BGP peers', () => {
-    return 'Info: BGP is not running.';
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const bgp = ex?.getBgp();
+    if (!bgp) return 'Info: BGP is not running.';
+    const lines = [
+      `BGP local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
+      `Local AS number : ${bgp.asn}`,
+      `Total number of peers : ${bgp.peers.size}              Peers in established state : 0`,
+      '  Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv',
+    ];
+    for (const [, p] of bgp.peers) {
+      lines.push(`  ${p.ip.padEnd(15)}  4    ${String(p.asNumber ?? bgp.asn).padEnd(5)}     0        0     0  00:00:00          Idle       0`);
+    }
+    return lines.join('\n');
   });
 
   trie.registerGreedy('display bgp routing-table', 'Display BGP routing table', () => {
-    return 'Info: BGP is not running.';
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const bgp = ex?.getBgp();
+    if (!bgp) return 'Info: BGP is not running.';
+    const lines = [
+      `BGP Local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
+      ' Total Number of Routes: ' + bgp.networks.length,
+      ' Network            NextHop         MED        LocPrf    PrefVal Path/Ogn',
+    ];
+    for (const n of bgp.networks) {
+      lines.push(` ${(n.ip + '/' + n.mask).padEnd(19)}0.0.0.0         0          100       0       i`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display bgp group', 'Display BGP peer groups', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const bgp = ex?.getBgp();
+    if (!bgp || bgp.groups.size === 0) return 'Info: No BGP peer groups configured.';
+    return [...bgp.groups.values()].map(g => `Group ${g.name}: kind=${g.kind ?? 'unspecified'} AS=${bgp.asn}`).join('\n');
+  });
+  trie.register('display bgp network', 'Display BGP advertised networks', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const bgp = ex?.getBgp();
+    if (!bgp || bgp.networks.length === 0) return 'Info: No BGP advertised networks.';
+    return bgp.networks.map(n => `  ${n.ip}/${n.mask}`).join('\n');
+  });
+  trie.register('display bgp paths', 'Display BGP AS-paths', () => 'Info: No BGP paths.');
+  trie.register('display bgp ipv6 peer', 'Display BGP IPv6 peers', () => 'Info: IPv6 BGP not running.');
+
+  trie.register('display isis brief', 'Display IS-IS brief', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const all = ex?.listIsis() ?? [];
+    if (all.length === 0) return 'Info: IS-IS is not enabled.';
+    return all.map(p => [
+      `ISIS protocol information for system instance: ${p.processId}`,
+      `  System Id : ${(p.netAddress ?? '').split('.').slice(3, 6).join('.') || '<unset>'}`,
+      `  Level     : ${p.isLevel ?? 'Level-1-2'}`,
+      `  Cost-style: ${p.costStyle ?? 'narrow'}`,
+    ].join('\n')).join('\n');
+  });
+  trie.register('display isis interface', 'Display IS-IS interfaces', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
+    return 'Interface           Type   IPv4 State Level     Cost                MTU\n(no IS-IS-enabled interfaces)';
+  });
+  trie.register('display isis lsdb', 'Display IS-IS LSDB', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
+    return 'LSPID                 Seq Num     Checksum    Holdtime   Length   ATT/P/OL\n(no LSPs)';
+  });
+  trie.register('display isis peer', 'Display IS-IS peers', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
+    return 'System ID         Interface          Circuit ID         State HoldTime Type     PRI\n(no peers established)';
+  });
+  trie.register('display isis route', 'Display IS-IS routing table', () => {
+    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
+    return 'Route information for ISIS\n  No routes installed';
   });
 
   trie.register('display ospf routing', 'Display OSPF routing', () => {
