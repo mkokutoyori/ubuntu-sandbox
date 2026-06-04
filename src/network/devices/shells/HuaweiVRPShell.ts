@@ -233,6 +233,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.ikev2KeyringPeerTrie, this.ikev2ProfileTrie,
       this.routePolicyTrie, this.trafficClassifierTrie, this.trafficBehaviorTrie,
       this.trafficPolicyTrie, this.nqaTestTrie,
+      this.bgpTrie, this.isisTrie,
     ]) {
       this.registerDisplayThis(t);
     }
@@ -1040,6 +1041,51 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
     });
 
+    t.registerGreedy('telnet', 'Open Telnet session', (args) => {
+      if (!args[0]) return 'Error: Incomplete command.';
+      return `Trying ${args[0]} ...\nError: Failed to connect to the remote host.`;
+    });
+
+    t.register('compare configuration', 'Compare running vs saved configuration', () => {
+      return 'Info: The current configuration is the same as the saved configuration.';
+    });
+
+    t.registerGreedy('startup saved-configuration', 'Set startup configuration file', (_args) => {
+      return 'Info: Succeeded in setting the file for booting system.';
+    });
+
+    t.registerGreedy('reboot', 'Reboot device', (_args) => {
+      return 'Info: This operation will reboot the system. Continue? [Y/N]:';
+    });
+
+    t.register('display health', 'Display device health', () => {
+      const host = this.r().getHostname();
+      return [
+        `${host} system health:`,
+        '  Status: normal',
+        '  CPU usage: 5%',
+        '  Memory usage: 20%',
+      ].join('\n');
+    });
+    t.register('display temperature all', 'Display temperature sensors', () =>
+      ' Slot CPU 1 : 45 C (Normal)\n Slot CPU 2 : 46 C (Normal)');
+    t.register('display fan', 'Display fan status', () =>
+      ' Slot No  FAN No  Status\n 0        1       Normal\n 0        2       Normal');
+    t.register('display power', 'Display power supply status', () =>
+      ' Slot No  PWR No  Status\n 0        1       Normal');
+    t.register('display environment', 'Display environment status', () =>
+      ' All sensors normal.');
+    t.register('display tcp status', 'Display TCP sockets', () =>
+      'TCPCB       Local Address                Foreign Address           State\n(none)');
+    t.register('display sockets', 'Display socket list', () =>
+      ' Active sockets: 0');
+    t.register('display dns server', 'Display DNS servers', () => {
+      const mgmt = this.r().getManagementService?.();
+      const servers = (mgmt as any)?.nameServers ?? [];
+      if (servers.length === 0) return 'No DNS server configured.';
+      return ` DNS Server(s): ${servers.join(', ')}`;
+    });
+
     registerDhcpDisplayCommands(t, getRouter);
     registerDhcpDebugCommands(t, getRouter);
     registerHuaweiPolicyDisplayCommands(t, getRouter);
@@ -1301,6 +1347,154 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
+
+    const aaaState = () => {
+      const r = this.r() as any;
+      return r._huaweiAaaState ?? (r._huaweiAaaState = {
+        authenticationSchemes: new Map<string, any>(),
+        authorizationSchemes: new Map<string, any>(),
+        accountingSchemes: new Map<string, any>(),
+        domains: new Map<string, any>(),
+        radiusTemplates: new Map<string, any>(),
+        hwtacacsTemplates: new Map<string, any>(),
+        rawLines: [] as string[],
+      });
+    };
+    t.register('aaa', 'Enter AAA view', () => '');
+    t.registerGreedy('idle-timeout', 'Set idle timeout (system-level no-op)', (_args) => '');
+    t.registerGreedy('set authentication password', 'Set authentication password', (_args) => '');
+    t.registerGreedy('protocol inbound', 'Set inbound protocol (system-level no-op)', (_args) => '');
+    t.registerGreedy('user privilege', 'Set user privilege', (_args) => '');
+    t.registerGreedy('authentication-scheme', 'Define authentication scheme', (args, raw) => {
+      if (args[0]) aaaState().authenticationSchemes.set(args[0], { name: args[0], lines: [] });
+      aaaState().rawLines.push(raw ?? `authentication-scheme ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('authentication-mode', 'Set authentication mode', (args, raw) => {
+      aaaState().rawLines.push(raw ?? `authentication-mode ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('authorization-scheme', 'Define authorization scheme', (args, raw) => {
+      if (args[0]) aaaState().authorizationSchemes.set(args[0], { name: args[0], lines: [] });
+      aaaState().rawLines.push(raw ?? `authorization-scheme ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('authorization-mode', 'Set authorization mode', (args, raw) => {
+      aaaState().rawLines.push(raw ?? `authorization-mode ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('accounting-scheme', 'Define accounting scheme', (args, raw) => {
+      if (args[0]) aaaState().accountingSchemes.set(args[0], { name: args[0], lines: [] });
+      aaaState().rawLines.push(raw ?? `accounting-scheme ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('accounting-mode', 'Set accounting mode', (args, raw) => {
+      aaaState().rawLines.push(raw ?? `accounting-mode ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('domain', 'Define AAA domain', (args, raw) => {
+      if (args[0]) aaaState().domains.set(args[0], { name: args[0], lines: [] });
+      aaaState().rawLines.push(raw ?? `domain ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('radius-server', 'Configure RADIUS server', (args, raw) => {
+      if (args[0] === 'template' && args[1]) aaaState().radiusTemplates.set(args[1], { name: args[1], lines: [] });
+      aaaState().rawLines.push(raw ?? `radius-server ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('hwtacacs-server', 'Configure HWTACACS server', (args, raw) => {
+      if (args[0] === 'template' && args[1]) aaaState().hwtacacsTemplates.set(args[1], { name: args[1], lines: [] });
+      aaaState().rawLines.push(raw ?? `hwtacacs-server ${args.join(' ')}`);
+      return '';
+    });
+
+    t.registerGreedy('time-range', 'Define a time-range', (args, raw) => {
+      const r = this.r() as any;
+      const trs = r._huaweiTimeRanges ?? (r._huaweiTimeRanges = new Map<string, any>());
+      if (args[0]) trs.set(args[0], { name: args[0], spec: raw ?? args.join(' ') });
+      return '';
+    });
+
+    t.register('rsa local-key-pair create', 'Generate RSA key pair', () =>
+      'Info: The name of the key pair will be: ' + this.r().getHostname() + '_Host\nThe range of public key size is (512 ~ 2048).\nInput the bits in the modulus[default = 2048]: 2048\nGenerating keys...\n...........+...+\n.............+++++\nInfo: The keys are generated.');
+    t.register('dsa local-key-pair create', 'Generate DSA key pair', () =>
+      'Info: The DSA key pair will be: ' + this.r().getHostname() + '_Host\nGenerating keys...\nInfo: The keys are generated.');
+
+    t.registerGreedy('cpu-defend policy', 'Enter CPU-defend policy', (args, raw) => {
+      const r = this.r() as any;
+      const ps = r._huaweiCpuDefendPolicies ?? (r._huaweiCpuDefendPolicies = new Map<string, any>());
+      if (args[0]) ps.set(args[0], { name: args[0], lines: [] });
+      r._huaweiCpuDefendCurrent = args[0];
+      r._huaweiCpuDefendLines = r._huaweiCpuDefendLines || [];
+      r._huaweiCpuDefendLines.push(raw ?? `cpu-defend policy ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('car', 'Configure CAR rate-limit', (args, raw) => {
+      const r = this.r() as any;
+      (r._huaweiCpuDefendLines ??= []).push(raw ?? `car ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('cpu-defend-policy', 'Apply CPU-defend policy globally', (args, raw) => {
+      const r = this.r() as any;
+      r._huaweiCpuDefendGlobal = args[0];
+      (r._huaweiCpuDefendLines ??= []).push(raw ?? `cpu-defend-policy ${args.join(' ')}`);
+      return '';
+    });
+
+    const fwState = () => {
+      const r = this.r() as any;
+      return r._huaweiFirewall ?? (r._huaweiFirewall = { enabled: false, defenses: new Set<string>() });
+    };
+    t.register('firewall enable', 'Enable firewall', () => { fwState().enabled = true; return ''; });
+    t.register('undo firewall enable', 'Disable firewall', () => { fwState().enabled = false; return ''; });
+    t.registerGreedy('firewall defend', 'Enable firewall defense', (args) => {
+      const kind = args[0]?.toLowerCase();
+      if (kind && args[1] === 'enable') fwState().defenses.add(kind);
+      return '';
+    });
+    t.registerGreedy('undo firewall defend', 'Disable firewall defense', (args) => {
+      const kind = args[0]?.toLowerCase();
+      if (kind) fwState().defenses.delete(kind);
+      return '';
+    });
+
+    t.register('display domain', 'Display AAA domains', () => {
+      const s = aaaState();
+      if (s.domains.size === 0) return ' No AAA domain configured.';
+      return [...s.domains.keys()].map(d => ` Domain: ${d}`).join('\n');
+    });
+    t.register('display radius-server configuration', 'Display RADIUS templates', () => {
+      const s = aaaState();
+      if (s.radiusTemplates.size === 0) return ' No RADIUS template configured.';
+      return [...s.radiusTemplates.keys()].map(n => ` RADIUS template: ${n}`).join('\n');
+    });
+    t.register('display hwtacacs-server template', 'Display HWTACACS templates', () => {
+      const s = aaaState();
+      if (s.hwtacacsTemplates.size === 0) return ' No HWTACACS template configured.';
+      return [...s.hwtacacsTemplates.keys()].map(n => ` HWTACACS template: ${n}`).join('\n');
+    });
+    t.register('display ssh server session', 'Display SSH server sessions', () => 'No SSH user logged in.');
+    t.register('display rsa local-key-pair public', 'Display RSA public key', () =>
+      `Time of Key pair created: ${new Date().toUTCString()}\nKey size : 2048\nKey code : (omitted)`);
+    t.register('display time-range all', 'Display time-ranges', () => {
+      const r = this.r() as any;
+      const trs = r._huaweiTimeRanges as Map<string, any> | undefined;
+      if (!trs || trs.size === 0) return 'No time-range configured.';
+      return [...trs.values()].map(t => ` Name: ${t.name}, spec: ${t.spec}`).join('\n');
+    });
+    t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () =>
+      'No traffic-filter applications.');
+    t.registerGreedy('display cpu-defend policy', 'Display CPU-defend policies', (_args) => {
+      const r = this.r() as any;
+      const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
+      if (!ps || ps.size === 0) return 'No CPU-defend policy configured.';
+      return [...ps.keys()].map(n => ` Policy: ${n}`).join('\n');
+    });
+    t.register('display firewall defend flag', 'Display firewall defenses', () => {
+      const s = fwState();
+      if (s.defenses.size === 0) return 'No firewall defenses enabled.';
+      return [...s.defenses].map(d => ` ${d}: enabled`).join('\n');
+    });
 
     for (const kw of ['ftp server enable', 'snmp-agent', 'info-center enable',
       'ntp-service enable', 'telnet server enable', 'http server',

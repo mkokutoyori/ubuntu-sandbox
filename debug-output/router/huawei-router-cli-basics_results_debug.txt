@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T13:15:49.662Z
+Generated: 2026-06-04T13:23:01.703Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 13:15:49
+  2026-06-04 13:23:01
   Thursday
   Time Zone(UTC) : UTC
 
@@ -59,13 +59,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:15:49
+  CPU Usage Stat. Time : 2026-06-04 13:23:01
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 13:15:49
+  Memory utilization statistics at 2026-06-04 13:23:01
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -379,29 +379,26 @@ Total steps: 304
   GE0/0/3                       down    down     
 
 [50/304] r1 <R1> display health
-  % Invalid input detected at '^' marker.
-  display health
-          ^
+  R1 system health:
+    Status: normal
+    CPU usage: 5%
+    Memory usage: 20%
 
 [51/304] r1 <R1> display temperature all
-  % Invalid input detected at '^' marker.
-  display temperature all
-          ^
+   Slot CPU 1 : 45 C (Normal)
+   Slot CPU 2 : 46 C (Normal)
 
 [52/304] r1 <R1> display fan
-  % Invalid input detected at '^' marker.
-  display fan
-          ^
+   Slot No  FAN No  Status
+   0        1       Normal
+   0        2       Normal
 
 [53/304] r1 <R1> display power
-  % Invalid input detected at '^' marker.
-  display power
-          ^
+   Slot No  PWR No  Status
+   0        1       Normal
 
 [54/304] r1 <R1> display environment
-  % Invalid input detected at '^' marker.
-  display environment
-          ^
+   All sensors normal.
 
 [55/304] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -409,19 +406,14 @@ Total steps: 304
   Info: Diagnostic information collected.
 
 [56/304] r1 <R1> display tcp status
-  % Invalid input detected at '^' marker.
-  display tcp status
-          ^
+  TCPCB       Local Address                Foreign Address           State
+  (none)
 
 [57/304] r1 <R1> display sockets
-  % Invalid input detected at '^' marker.
-  display sockets
-          ^
+   Active sockets: 0
 
 [58/304] r1 <R1> display dns server
-  % Invalid input detected at '^' marker.
-  display dns server
-          ^
+  No DNS server configured.
 
 [59/304] r1 <R1> ?
     system-view    Enter system view
@@ -429,7 +421,7 @@ Total steps: 304
     ssh            ssh client
     display        display
     save           Save current configuration
-    reboot         Reboot the device
+    reboot         Reboot device
     reset          reset
     commit         Commit candidate configuration
     screen-length  Set terminal screen length
@@ -443,6 +435,9 @@ Total steps: 304
     isis           Configure IS-IS routing
     tracert        Trace route to destination
     ping           Send ICMP echo messages
+    telnet         Open Telnet session
+    compare        compare
+    startup        startup
 
 [60/304] r1 <R1> display ?
     version                 Display version information
@@ -496,6 +491,14 @@ Total steps: 304
     ike                     ike
     ipsec                   ipsec
     acl                     Display ACL configuration
+    health                  Display device health
+    temperature             temperature
+    fan                     Display fan status
+    power                   Display power supply status
+    environment             Display environment status
+    tcp                     tcp
+    sockets                 Display socket list
+    dns                     dns
     dhcp-server             dhcp-server
     dhcp-snooping           dhcp-snooping
     dhcpv6                  dhcpv6
@@ -515,9 +518,8 @@ Total steps: 304
    Network is unreachable
 
 [63/304] r1 <R1> telnet 10.0.0.2
-  % Invalid input detected at '^' marker.
-  telnet 10.0.0.2
-  ^
+  Trying 10.0.0.2 ...
+  Error: Failed to connect to the remote host.
 
 [64/304] r1 <R1> ssh client 10.0.0.2
   Error: no usable interface IP for outbound SSH
@@ -599,9 +601,33 @@ Total steps: 304
 <empty>
 
 [85/304] r1 [R1-CORE-bgp-65000] display this
-  % Invalid input detected at '^' marker.
-  display this
-  ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  interface Tunnel0/0/0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+  ospf 1
+  #
 
 [86/304] r1 [R1-CORE-bgp-65000] quit
 <empty>
@@ -610,9 +636,33 @@ Total steps: 304
 <empty>
 
 [88/304] r1 [R1-CORE-isis-1] display this
-  % Invalid input detected at '^' marker.
-  display this
-  ^
+  #
+  sysname R1-CORE
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   shutdown
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
+  #
+  interface LoopBack0
+   shutdown
+  #
+  interface Tunnel0/0/0
+   shutdown
+  #
+  #
+  rip 1
+   version 2
+  #
+  ospf 1
+  #
 
 [89/304] r1 [R1-CORE-isis-1] quit
 <empty>
@@ -1158,6 +1208,7 @@ Total steps: 304
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
@@ -1165,7 +1216,7 @@ Total steps: 304
     <cr>  
 
 [137/304] r1 [R1-EDGE] aaa ?
-  Error: Unrecognized command
+    <cr>  
 
 [138/304] r1 [R1-EDGE] snmp-agent ?
     WORD  Toggle: snmp-agent
@@ -1190,6 +1241,7 @@ Total steps: 304
     address           Configure IP address
     helper-address    Set DHCP relay helper address
     forward-protocol  forward-protocol
+    urpf              Configure URPF mode
 
 [144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
     WORD  Configure IP address
@@ -1360,19 +1412,13 @@ Total steps: 304
 <empty>
 
 [181/304] r1 [Huawei] idle-timeout 0 0
-  % Invalid input detected at '^' marker.
-  idle-timeout 0 0
-  ^
+<empty>
 
 [182/304] r1 [Huawei] authentication-mode password
-  % Invalid input detected at '^' marker.
-  authentication-mode password
-  ^
+<empty>
 
 [183/304] r1 [Huawei] set authentication password cipher Huawei@123
-  % Invalid input detected at '^' marker.
-  set authentication password cipher Huawei@123
-  ^
+<empty>
 
 [184/304] r1 [Huawei] quit
 <empty>
@@ -1458,23 +1504,16 @@ Total steps: 304
   Info: Succeeded in clearing the configuration in the device.
 
 [196/304] r1 <Huawei> compare configuration
-  % Invalid input detected at '^' marker.
-  compare configuration
-  ^
+  Info: The current configuration is the same as the saved configuration.
 
 [197/304] r1 <Huawei> startup saved-configuration vrpcfg.zip
-  % Invalid input detected at '^' marker.
-  startup saved-configuration vrpcfg.zip
-  ^
+  Info: Succeeded in setting the file for booting system.
 
 [198/304] r1 <Huawei> reboot fast
-  % Invalid input detected at '^' marker.
-  reboot fast
-         ^
+  Info: This operation will reboot the system. Continue? [Y/N]:
 
 [199/304] r1 <Huawei> reboot
-  Info: The system is now comparing the configuration, please wait.
-  Info: System will reboot.
+  Info: This operation will reboot the system. Continue? [Y/N]:
 
 
 --- [200] § regression: display family ---
@@ -1765,7 +1804,7 @@ Total steps: 304
   No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 13:15:49
+  2026-06-04 13:23:01
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1778,13 +1817,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:15:49
+  CPU Usage Stat. Time : 2026-06-04 13:23:01
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 13:15:49
+  Memory utilization statistics at 2026-06-04 13:23:01
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2178,6 +2217,7 @@ Total steps: 304
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [302/304] r1 [Huawei] acl ?

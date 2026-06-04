@@ -94,11 +94,32 @@ export function registerHuaweiACLSystemCommands(
   });
 }
 
+function registerAclCommonExtras(trie: CommandTrie, ctx: HuaweiACLContext): void {
+  trie.registerGreedy('step', 'Set ACL rule renumbering step', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    const r = ctx.r() as any;
+    const stepMap = r._huaweiAclStep ?? (r._huaweiAclStep = new Map<number | string, number>());
+    if (!isNaN(n)) {
+      const key = ctx.getSelectedACLNumber() ?? ctx.getSelectedACLName();
+      if (key !== null) stepMap.set(key, n);
+    }
+    return '';
+  });
+  trie.registerGreedy('description', 'Set ACL description', (args) => {
+    const r = ctx.r() as any;
+    const descs = r._huaweiAclDesc ?? (r._huaweiAclDesc = new Map<number | string, string>());
+    const key = ctx.getSelectedACLNumber() ?? ctx.getSelectedACLName();
+    if (key !== null) descs.set(key, args.join(' '));
+    return '';
+  });
+}
+
 export function buildHuaweiBasicACLCommands(
   trie: CommandTrie,
   ctx: HuaweiACLContext,
 ): void {
   const getRouter = () => ctx.r();
+  registerAclCommonExtras(trie, ctx);
 
   trie.registerGreedy('rule', 'Add ACL rule', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -144,6 +165,7 @@ export function buildHuaweiAdvancedACLCommands(
   ctx: HuaweiACLContext,
 ): void {
   const getRouter = () => ctx.r();
+  registerAclCommonExtras(trie, ctx);
 
   trie.registerGreedy('rule', 'Add ACL rule', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';

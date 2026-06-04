@@ -786,6 +786,21 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   });
 
   // IPv6 interface commands
+  trie.registerGreedy('ip urpf', 'Configure URPF mode', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).urpfMode = args[0] ?? 'strict';
+    return '';
+  });
+  trie.register('undo ip urpf', 'Disable URPF', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).urpfMode = null;
+    return '';
+  });
+
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
     const ifName = ctx.getSelectedInterface();
     if (ifName) {

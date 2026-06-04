@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-04T13:15:52.824Z
+Generated: 2026-06-04T13:23:03.261Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -68,9 +68,7 @@ Total steps: 279
 <empty>
 
 [20/279] r1 [R1-ike-proposal-1] integrity-algorithm hmac-sha2-256
-  % Invalid input detected at '^' marker.
-  integrity-algorithm hmac-sha2-256
-  ^
+<empty>
 
 [21/279] r1 [R1-ike-proposal-1] sa duration 3600
 <empty>
@@ -94,9 +92,7 @@ Total steps: 279
 <empty>
 
 [28/279] r1 [R1-ike-proposal-2] integrity-algorithm hmac-sha2-256
-  % Invalid input detected at '^' marker.
-  integrity-algorithm hmac-sha2-256
-  ^
+<empty>
 
 [29/279] r1 [R1-ike-proposal-2] sa duration 7200
 <empty>
@@ -120,9 +116,7 @@ Total steps: 279
 <empty>
 
 [36/279] r1 [R1-ike-proposal-3] integrity-algorithm hmac-sha2-256
-  % Invalid input detected at '^' marker.
-  integrity-algorithm hmac-sha2-256
-  ^
+<empty>
 
 [37/279] r1 [R1-ike-proposal-3] sa duration 10800
 <empty>
@@ -146,9 +140,7 @@ Total steps: 279
 <empty>
 
 [44/279] r1 [R1-ike-proposal-4] integrity-algorithm hmac-sha2-256
-  % Invalid input detected at '^' marker.
-  integrity-algorithm hmac-sha2-256
-  ^
+<empty>
 
 [45/279] r1 [R1-ike-proposal-4] sa duration 14400
 <empty>
@@ -172,9 +164,7 @@ Total steps: 279
 <empty>
 
 [52/279] r1 [R1-ike-peer-PEER1] remote-id-type ip
-  % Invalid input detected at '^' marker.
-  remote-id-type ip
-  ^
+<empty>
 
 [53/279] r1 [R1-ike-peer-PEER1] dpd type periodic
 <empty>
@@ -354,29 +344,19 @@ Total steps: 279
 <empty>
 
 [97/279] r1 [R1-ipsec-policy-MAP1-20] tunnel local 10.0.0.1 remote 10.0.0.2
-  % Invalid input detected at '^' marker.
-  tunnel local 10.0.0.1 remote 10.0.0.2
-  ^
+<empty>
 
 [98/279] r1 [R1-ipsec-policy-MAP1-20] sa spi inbound esp 12345
-  % Invalid input detected at '^' marker.
-  sa spi inbound esp 12345
-     ^
+<empty>
 
 [99/279] r1 [R1-ipsec-policy-MAP1-20] sa spi outbound esp 54321
-  % Invalid input detected at '^' marker.
-  sa spi outbound esp 54321
-     ^
+<empty>
 
 [100/279] r1 [R1-ipsec-policy-MAP1-20] sa string-key inbound esp cipher InKey123
-  % Invalid input detected at '^' marker.
-  sa string-key inbound esp cipher InKey123
-     ^
+<empty>
 
 [101/279] r1 [R1-ipsec-policy-MAP1-20] sa string-key outbound esp cipher OutKey123
-  % Invalid input detected at '^' marker.
-  sa string-key outbound esp cipher OutKey123
-     ^
+<empty>
 
 [102/279] r1 [R1-ipsec-policy-MAP1-20] quit
 <empty>
@@ -1181,7 +1161,7 @@ Total steps: 279
   No NTP associations
 
 [210/279] r1 [R1] display clock
-  2026-06-04 13:15:52
+  2026-06-04 13:23:03
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1194,13 +1174,13 @@ Total steps: 279
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:15:52
+  CPU Usage Stat. Time : 2026-06-04 13:23:03
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 13:15:52
+  Memory utilization statistics at 2026-06-04 13:23:03
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1780,6 +1760,7 @@ Total steps: 279
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [277/279] r1 [Huawei] acl ?

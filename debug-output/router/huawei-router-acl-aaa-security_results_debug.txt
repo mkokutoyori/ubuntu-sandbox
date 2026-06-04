@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-06-04T13:15:52.840Z
+Generated: 2026-06-04T13:23:04.596Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -98,9 +98,7 @@ Total steps: 274
   Error: Expected permit or deny.
 
 [30/274] r1 [R1-acl-basic-2000] step 10
-  % Invalid input detected at '^' marker.
-  step 10
-  ^
+<empty>
 
 [31/274] r1 [R1-acl-basic-2000] quit
 <empty>
@@ -245,14 +243,10 @@ Total steps: 274
   Enter system view, return user view with return command.
 
 [75/274] r1 [R1] time-range BUSINESS 08:00 to 18:00 working-day
-  % Invalid input detected at '^' marker.
-  time-range BUSINESS 08:00 to 18:00 working-day
-  ^
+<empty>
 
 [76/274] r1 [R1] time-range OFF 00:00 to 23:59 off-day
-  % Invalid input detected at '^' marker.
-  time-range OFF 00:00 to 23:59 off-day
-  ^
+<empty>
 
 [77/274] r1 [R1] acl 3001
 <empty>
@@ -294,19 +288,13 @@ Total steps: 274
   Enter system view, return user view with return command.
 
 [88/274] r1 [R1] aaa
-  % Invalid input detected at '^' marker.
-  aaa
-  ^
+<empty>
 
 [89/274] r1 [R1] authentication-scheme sch1
-  % Invalid input detected at '^' marker.
-  authentication-scheme sch1
-  ^
+<empty>
 
 [90/274] r1 [R1] authentication-mode radius local
-  % Invalid input detected at '^' marker.
-  authentication-mode radius local
-  ^
+<empty>
 
 [91/274] r1 [R1] quit
 <empty>
@@ -474,14 +462,18 @@ Total steps: 274
 <empty>
 
 [126/274] r1 [R1] rsa local-key-pair create
-  % Invalid input detected at '^' marker.
-  rsa local-key-pair create
-  ^
+  Info: The name of the key pair will be: R1_Host
+  The range of public key size is (512 ~ 2048).
+  Input the bits in the modulus[default = 2048]: 2048
+  Generating keys...
+  ...........+...+
+  .............+++++
+  Info: The keys are generated.
 
 [127/274] r1 [R1] dsa local-key-pair create
-  % Invalid input detected at '^' marker.
-  dsa local-key-pair create
-  ^
+  Info: The DSA key pair will be: R1_Host
+  Generating keys...
+  Info: The keys are generated.
 
 [128/274] r1 [R1] ssh server enable
 <empty>
@@ -567,19 +559,13 @@ Total steps: 274
   Enter system view, return user view with return command.
 
 [152/274] r1 [R1] cpu-defend policy P1
-  % Invalid input detected at '^' marker.
-  cpu-defend policy P1
-  ^
+<empty>
 
 [153/274] r1 [R1] car packet-type arp-request cir 64
-  % Invalid input detected at '^' marker.
-  car packet-type arp-request cir 64
-  ^
+<empty>
 
 [154/274] r1 [R1] car packet-type icmp cir 32
-  % Invalid input detected at '^' marker.
-  car packet-type icmp cir 32
-  ^
+<empty>
 
 [155/274] r1 [R1] quit
 <empty>
@@ -870,7 +856,7 @@ Total steps: 274
   No NTP associations
 
 [205/274] r1 [R1] display clock
-  2026-06-04 13:15:52
+  2026-06-04 13:23:04
   Thursday
   Time Zone(UTC) : UTC
 
@@ -883,13 +869,13 @@ Total steps: 274
 [208/274] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:15:52
+  CPU Usage Stat. Time : 2026-06-04 13:23:04
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 13:15:52
+  Memory utilization statistics at 2026-06-04 13:23:04
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1272,6 +1258,7 @@ Total steps: 274
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [272/274] r1 [Huawei] acl ?
