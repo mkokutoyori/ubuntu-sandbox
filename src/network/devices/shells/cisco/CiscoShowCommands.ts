@@ -551,6 +551,75 @@ export function showIpProtocols(router: Router): string {
 }
 
 /** `show interfaces` (all) — real per-port detail for every interface. */
+export function showInterfaceAccounting(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const c = port.getCounters();
+  return [
+    `${ifName}`,
+    `                Protocol    Pkts In    Chars In    Pkts Out   Chars Out`,
+    `                    IP    ${String(c.framesIn).padStart(8)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+  ].join('\n');
+}
+
+export function showInterfaceStats(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const c = port.getCounters();
+  return [
+    `${ifName}`,
+    `          Switching path    Pkts In    Chars In    Pkts Out   Chars Out`,
+    `               Processor ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+    `             Route cache          0           0           0           0`,
+    `      Distributed cache          0           0           0           0`,
+    `                  Total ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+  ].join('\n');
+}
+
+export function showInterfaceSwitchport(router: Router, ifName: string): string {
+  void router;
+  return [
+    `Name: ${ifName}`,
+    `Switchport: Disabled (router interface)`,
+  ].join('\n');
+}
+
+export function showInterfacesTrunk(router: Router): string {
+  void router;
+  return 'Port        Mode             Encapsulation  Status        Native vlan\n(none — this is a router, no L2 trunks)';
+}
+
+export function showVlansRouter(router: Router): string {
+  void router;
+  return 'No Virtual LAN sub-interfaces are configured';
+}
+
+export function showIpv6InterfaceBrief(router: Router): string {
+  const ports = router._getPortsInternal();
+  const lines: string[] = [];
+  for (const [name, port] of ports) {
+    const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
+    const up = port.getIsUp() ? 'up' : 'administratively down';
+    const proto = (port.getIsUp() && (port.isConnected() || /^(Tunnel|Loopback|Vlan)/i.test(name))) ? 'up' : 'down';
+    lines.push(`${name.padEnd(27)}[${up}/${proto}]`);
+    if (v6.length === 0) lines.push(`    unassigned`);
+    else for (const a of v6) lines.push(`    ${a}`);
+  }
+  return lines.join('\n');
+}
+
+export function showIpv6Interface(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
+  return [
+    `${ifName} is ${port.getIsUp() ? 'up' : 'administratively down'}, line protocol is ${port.getIsUp() && port.isConnected() ? 'up' : 'down'}`,
+    `  IPv6 is ${v6.length > 0 ? 'enabled' : 'disabled'}`,
+    ...v6.map(a => `  Address: ${a}`),
+    `  MTU is ${port.getMTU()} bytes`,
+  ].join('\n');
+}
+
 export function showInterfacesAll(router: Router): string {
   const names = [...router._getPortsInternal().keys()];
   if (!names.length) return 'No interfaces present.';

@@ -591,6 +591,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
       return '';
     });
+    this.privilegedTrie.registerGreedy('clear counters', 'Clear interface counters', (args) => {
+      const ports = this.d()._getPortsInternal();
+      const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
+      let count = 0;
+      for (const [name, port] of ports) {
+        if (target && name.toLowerCase() !== target.toLowerCase()) continue;
+        (port as unknown as { resetCounters?: () => void }).resetCounters?.();
+        count++;
+      }
+      return count === 0 ? '% No matching interface' : '';
+    });
+    this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
+      const dev = this.d() as unknown as { _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown> };
+      if (args[0]) {
+        const n = dev._clearArpEntry?.(args[0]) ?? 0;
+        return n === 0 ? '% No matching ARP entry' : '';
+      }
+      dev.arpTable?.clear();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('clear ip route', 'Clear routes (dynamic)', () => {
+      const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
+      dev._clearDynamicRoutes?.();
+      return '';
+    });
     this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);

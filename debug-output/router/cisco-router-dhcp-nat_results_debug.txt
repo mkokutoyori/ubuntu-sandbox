@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-04T12:13:37.857Z
+Generated: 2026-06-04T12:22:49.529Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -712,9 +712,7 @@ Total steps: 369
 <empty>
 
 [157/369] r1 R1(config-if)# ip dhcp relay information trusted
-  % Invalid input detected at '^' marker.
-  ip dhcp relay information trusted
-     ^
+<empty>
 
 [158/369] r1 R1(config-if)# exit
 <empty>
@@ -773,12 +771,12 @@ Total steps: 369
 [170/369] r1 R1(config-if)# ip dhcp snooping trust
   % Invalid input detected at '^' marker.
   ip dhcp snooping trust
-     ^
+          ^
 
 [171/369] r1 R1(config-if)# ip dhcp snooping limit rate 100
   % Invalid input detected at '^' marker.
   ip dhcp snooping limit rate 100
-     ^
+          ^
 
 [172/369] r1 R1(config-if)# exit
 <empty>
@@ -1664,7 +1662,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBEA71.E24DD2F1 (12:13:37.884 UTC Thu Jun 4 2026)
+  reference time is EDCBEC99.8E560418 (12:22:49.556 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1673,7 +1671,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *12:13:37.000 UTC Thu Jun 4 2026
+  *12:22:49.000 UTC Thu Jun 4 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

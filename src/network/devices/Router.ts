@@ -164,6 +164,14 @@ export abstract class Router extends Equipment {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
+
+  _clearArpEntry(ip: string): number {
+    return this.arpTable.delete(ip) ? 1 : 0;
+  }
+  _clearDynamicRoutes(): void {
+    this.routingTable = this.routingTable.filter(r =>
+      r.type === 'connected' || r.type === 'static' || r.type === 'default');
+  }
   private packetQueue: QueuedPacket[] = [];
   private readonly defaultTTL = 255; // Cisco/Huawei default
   private readonly interfaceMTU = 1500; // Standard Ethernet MTU
