@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-04T17:03:47.959Z
+Generated: 2026-06-04T18:35:16.531Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCC2E73.FBA5E353 (17:03:47.983 UTC Thu Jun 4 2026)
+  reference time is EDCC43E4.8C49BA5E (18:35:16.548 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +509,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  18:03:47.000 CET Thu Jun 4 2026
+  19:35:16.000 CET Thu Jun 4 2026
 
 [128/322] r1 R1# show clock detail
-  18:03:47.000 CET Thu Jun 4 2026
+  19:35:16.000 CET Thu Jun 4 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  17:03:47 UTC Thu Jun 4 2026
+  18:35:16 UTC Thu Jun 4 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -830,35 +830,9 @@ Total steps: 322
   Total entries displayed: 2
 
 [206/322] r1 R1# show lldp neighbors detail
-  ------------------------------------------------
-  Local Intf: GigabitEthernet0/0
-  Chassis id: L1
-  Port id: eth0
-  Port Description: eth0
-  System Name: L1
-  System Description:
-  Linux Host
-  Time remaining: 120 seconds
-  System Capabilities: Host
-  Enabled Capabilities: Host
-  Management Addresses:
-      not advertised
   
-  ------------------------------------------------
-  Local Intf: GigabitEthernet0/1
-  Chassis id: R2
-  Port id: GigabitEthernet0/1
-  Port Description: GigabitEthernet0/1
-  System Name: R2
-  System Description:
-  Cisco 2911
-  Time remaining: 120 seconds
-  System Capabilities: Router
-  Enabled Capabilities: Router
-  Management Addresses:
-      not advertised
   
-  Total entries displayed: 2
+  Total entries displayed: 0
 
 [207/322] r1 R1# show lldp traffic
   Global LLDP Information:
@@ -1305,7 +1279,7 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCC2E74.00C49BA5 (17:03:48.003 UTC Thu Jun 4 2026)
+  reference time is EDCC43E4.9126E978 (18:35:16.567 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1318,7 +1292,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  18:03:48.000 CET Thu Jun 4 2026
+  19:35:16.000 CET Thu Jun 4 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

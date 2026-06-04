@@ -704,8 +704,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sec = Math.max(0, Math.floor((t - Date.now()) / 1000));
       return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
     });
-    this.privilegedTrie.register('write-memory', 'Save configuration (alias)', () => this.onSave());
-    this.privilegedTrie.register('write', 'Save configuration', () => this.onSave());
 
     const debugSvc = () => {
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
