@@ -19,6 +19,14 @@ import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import {
+  DeviceSignalStore,
+  makeReadonlyDeviceObservables,
+  projectDeviceDetail,
+  projectPorts,
+  type DeviceObservables,
+} from './observables';
+import { EquipmentSignalRefreshActor } from './EquipmentSignalRefreshActor';
 
 export abstract class Equipment {
   /**
@@ -48,6 +56,13 @@ export abstract class Equipment {
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;
 
+  /** Engine-private writable store for the device read-models. */
+  private readonly deviceSignalStore = new DeviceSignalStore();
+  /** Read-only device observables (identity/power detail + ports). Named
+   *  `deviceObservables` so it never collides with `EndHost.observables`. */
+  readonly deviceObservables: DeviceObservables = makeReadonlyDeviceObservables(this.deviceSignalStore);
+  private deviceSignalRefreshActor: EquipmentSignalRefreshActor | null = null;
+
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
     this.deviceType = deviceType;
@@ -56,6 +71,8 @@ export abstract class Equipment {
     this.x = x;
     this.y = y;
     EquipmentRegistry.getInstance().register(this);
+    this.attachEquipmentActors();
+    this.refreshDeviceSignals();
   }
 
   /** Inject a custom bus (test-only / multi-topology scenarios). */
@@ -65,6 +82,9 @@ export abstract class Equipment {
     // (port.frame.*, port.security.*) reach the same observer the
     // equipment's events reach.
     for (const port of this.ports.values()) port.setEventBus(bus);
+    // Rebind the read-model refresh actor to the new bus.
+    this.attachEquipmentActors();
+    this.refreshDeviceSignals();
   }
 
   protected getBus(): IEventBus {
@@ -144,8 +164,13 @@ export abstract class Equipment {
       topic: 'device.renamed',
       payload: { id: this.id, oldName, newName: name },
     });
+    this._refreshDetailSignal();
   }
-  setHostname(hostname: string): void { this.hostname = hostname; }
+  setHostname(hostname: string): void {
+    if (this.hostname === hostname) return;
+    this.hostname = hostname;
+    this._refreshDetailSignal();
+  }
 
   // ─── Position ──────────────────────────────────────────────────
 
@@ -199,6 +224,7 @@ export abstract class Equipment {
         payload: { id: this.id },
       });
     }
+    this._refreshDetailSignal();
   }
 
   powerOff(): void {
@@ -213,6 +239,7 @@ export abstract class Equipment {
         payload: { id: this.id },
       });
     }
+    this._refreshDetailSignal();
   }
 
   // ─── Ports ─────────────────────────────────────────────────────
@@ -244,6 +271,7 @@ export abstract class Equipment {
       this.handleFrame(portName, frame);
     });
     this.ports.set(port.getName(), port);
+    this.refreshDeviceSignals();
   }
 
   /**
@@ -262,6 +290,42 @@ export abstract class Equipment {
     }
 
     return port.sendFrame(frame);
+  }
+
+  // ─── Reactive read-models (device detail + ports) ──────────────
+
+  /** Attach (or rebind) the device signal-refresh actor to the current bus. */
+  protected attachEquipmentActors(): void {
+    this.deviceSignalRefreshActor?.stop();
+    this.deviceSignalRefreshActor = new EquipmentSignalRefreshActor(this.getBus(), {
+      getId: () => this.id,
+      _refreshDetailSignal: () => this._refreshDetailSignal(),
+      _refreshPortsSignal: () => this._refreshPortsSignal(),
+    });
+    this.deviceSignalRefreshActor.start();
+  }
+
+  /** [actor-API] Refresh the device-detail signal from the current state. */
+  _refreshDetailSignal(): void {
+    this.deviceSignalStore.detail.set(projectDeviceDetail({
+      id: this.id,
+      name: this.name,
+      hostname: this.hostname,
+      type: String(this.deviceType),
+      poweredOn: this.isPoweredOn,
+      uptimeMs: this.getUptimeMs(),
+      portCount: this.ports.size,
+    }));
+  }
+
+  /** [actor-API] Refresh the ports signal from the current ports. */
+  _refreshPortsSignal(): void {
+    this.deviceSignalStore.ports.set(projectPorts(this.ports.values()));
+  }
+
+  private refreshDeviceSignals(): void {
+    this._refreshDetailSignal();
+    this._refreshPortsSignal();
   }
 
   // ─── Abstract ──────────────────────────────────────────────────

@@ -63,21 +63,25 @@ VM via un `observables.ts` co-localisé. Carte cible :
 lit l'instance mutable par getters. **C'est la fuite domaine→UI la plus large du projet**
 (viole O5), parce qu'elle concerne *tous* les équipements, pas un protocole.
 
-**Cible.** Donner à `Equipment` le même moule que `EndHost` :
+**Fondation — FAITE ✅** (la couche réactive de base existe, vérifiée par tests) :
 
-1. Créer `src/network/equipment/observables.ts` :
-   - `DeviceDetailVM` (`id`, `name`, `hostname`, `type`, `poweredOn`, `uptimeMs`, `portCount`) ;
-   - `PortVM` (`name`, `type`, `isUp`, `ipAddress?`, `mask?`, `mac`, `linkedTo?`) ;
-   - `EquipmentSignalStore` + `makeReadonlyEquipmentObservables` ;
-   - projections pures `projectDeviceDetail(eq)` et `projectPorts(ports)`.
-2. Dans `Equipment` : `signalStore` privé, `readonly observables`, un `EquipmentSignalRefreshActor`
-   abonné à `device.*` / `port.*`, et `_refreshXxxSignal()` délégant aux projections.
-3. Ajouter un hook `useDeviceDetail(id)` / `usePorts(id)` (au-dessus de `useEngineSignal` ou via
-   le registry, comme `useDevices`).
-4. Migrer `NetworkDevice`, `PropertiesPanel`, `ConnectionLine` pour consommer ces VM, puis
-   **retirer** `instance: Equipment` de `NetworkDeviceUI`.
+1. ✅ `src/network/equipment/observables.ts` : `DeviceDetailVM` (`id`, `name`, `hostname`,
+   `type`, `poweredOn`, `uptimeMs`, `portCount`), `PortVM` (`name`, `type`, `isUp`, `mac`,
+   `ipAddress`, `mask`, `connected`), `DeviceSignalStore`, `makeReadonlyDeviceObservables`, et
+   les projections pures `projectDeviceDetail(input)` / `projectPorts(ports)`.
+2. ✅ `Equipment` expose `readonly deviceObservables` (nommé ainsi pour **ne pas** entrer en
+   collision avec `EndHost.observables`), alimenté par un `EquipmentSignalRefreshActor` abonné
+   à `device.*` / `port.*` + des `_refreshDetailSignal()` / `_refreshPortsSignal()` qui délèguent
+   aux projections (rafraîchis aussi inline dans `setName`/`powerOn`/`powerOff`/`addPort`).
+3. ✅ Hooks `useDeviceDetail(id)` / `usePorts(id)` (`src/react/hooks/useEquipment.ts`, au-dessus
+   de `useEngineSignal`), exportés depuis `react/hooks/index.ts`.
 
-Faire ça **résout d'un coup** la majorité des `[ERROR]` de l'audit CHECK 1.
+**Reste à faire — la migration des consommateurs (recette B, incrémentale)** :
+
+4. Migrer `NetworkDevice`, `PropertiesPanel`, `ConnectionLine` pour consommer ces VM via les
+   hooks, **rerouter l'ouverture de terminal** (qui a encore besoin de l'instance) pour résoudre
+   le device par `id` côté couche terminal, puis **retirer** `instance: Equipment` de
+   `NetworkDeviceUI`. C'est ce qui résoudra les `[ERROR]` de l'audit CHECK 1.
 
 ---
 
