@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-06-04T06:57:28.051Z
+Generated: 2026-06-04T07:09:16.207Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -910,11 +910,16 @@ Total steps: 413
 <empty>
 
 [190/413] r1 R1# show ip sla configuration
+  IP SLA global state: enabled
+  IP SLA logging traps: enabled
   IP SLA Operation 1
     Type of operation: icmp-echo
     Target: 10.0.0.2
     Frequency: 5 sec
     Schedule: Active
+    Threshold: 200ms
+    Timeout: 1000ms
+    Tag: WAN-PROBE
   IP SLA Operation 2
     Type of operation: udp-jitter
     Target: 10.0.0.2
@@ -935,6 +940,8 @@ Total steps: 413
     Target: 8.8.8.8
     Frequency: 60 sec
     Schedule: Pending
+  Reactions:
+    Op 1 react=timeout thresh-type=immediate thresh=--- action=trapAndTrigger
 
 [191/413] r1 R1# show ip sla statistics
   IPSLA operation id: 1
@@ -974,11 +981,16 @@ Total steps: 413
   IP SLA Responder is: Enabled
 
 [194/413] r1 R1# show ip sla application
+  IP SLA global state: enabled
+  IP SLA logging traps: enabled
   IP SLA Operation 1
     Type of operation: icmp-echo
     Target: 10.0.0.2
     Frequency: 5 sec
     Schedule: Active
+    Threshold: 200ms
+    Timeout: 1000ms
+    Tag: WAN-PROBE
   IP SLA Operation 2
     Type of operation: udp-jitter
     Target: 10.0.0.2
@@ -999,6 +1011,8 @@ Total steps: 413
     Target: 8.8.8.8
     Frequency: 60 sec
     Schedule: Pending
+  Reactions:
+    Op 1 react=timeout thresh-type=immediate thresh=--- action=trapAndTrigger
 
 
 --- [195] § BFD ---
@@ -1470,6 +1484,7 @@ Total steps: 413
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   bfd echo
   !
   interface GigabitEthernet0/2
    no shutdown
@@ -1749,7 +1764,7 @@ Total steps: 413
 [341/413] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA058.174BC6A7 (06:57:28.091 UTC Thu Jun 4 2026)
+  reference time is EDCBA31C.4083126E (07:09:16.252 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [342/413] r1 R1(config)# show ntp associations
@@ -1758,7 +1773,7 @@ Total steps: 413
   No NTP associations configured.
 
 [343/413] r1 R1(config)# show clock
-  *06:57:28.000 UTC Thu Jun 4 2026
+  *07:09:16.000 UTC Thu Jun 4 2026
 
 [344/413] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1914,6 +1929,7 @@ Total steps: 413
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   bfd echo
   !
   interface GigabitEthernet0/2
    no shutdown
@@ -2099,6 +2115,7 @@ Total steps: 413
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   bfd echo
   interface GigabitEthernet0/2
    no shutdown
   interface GigabitEthernet0/3
@@ -2119,6 +2136,7 @@ Total steps: 413
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    no shutdown
+   bfd echo
   interface GigabitEthernet0/2
    no shutdown
   interface GigabitEthernet0/3

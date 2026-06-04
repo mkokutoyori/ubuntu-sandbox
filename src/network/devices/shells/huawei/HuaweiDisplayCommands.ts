@@ -735,7 +735,86 @@ export function displayRip(router: Router): string {
   for (const [key, info] of ripRoutes) {
     lines.push(`    ${key} cost ${info.metric} via ${info.learnedFrom} age ${info.age}s${info.garbageCollect ? ' [garbage-collect]' : ''}`);
   }
+
+  appendManagementConfig(lines, router);
   return lines.join('\n');
+}
+
+function appendManagementConfig(lines: string[], router: Router): void {
+  const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+  if (!mgmt) return;
+
+  const stelnet = mgmt.getStelnet();
+  if (stelnet.enabled) { lines.push('#'); lines.push('stelnet server enable'); }
+  const telnet = mgmt.getTelnet();
+  if (telnet.enabled) { lines.push('#'); lines.push('telnet server enable'); }
+  const ssh = mgmt.getSsh();
+  if (ssh.enabled) {
+    lines.push('#');
+    lines.push('ssh server enable');
+    if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
+  }
+  const snmp = mgmt.getSnmp();
+  if (snmp.enabled) {
+    lines.push('#');
+    if (snmp.sysContact) lines.push(`snmp-agent sys-info contact ${snmp.sysContact}`);
+    if (snmp.sysLocation) lines.push(`snmp-agent sys-info location ${snmp.sysLocation}`);
+    for (const [, c] of snmp.communities) {
+      lines.push(`snmp-agent community ${c.access} ${c.name}${c.aclName ? ' acl ' + c.aclName : ''}`);
+    }
+    for (const t of snmp.trapHosts) {
+      lines.push(`snmp-agent target-host ${t.host} params securityname ${t.community} ${t.version}`);
+    }
+    for (const r of mgmt.getRawEntries('snmp')) lines.push(`snmp-agent ${r.line}`);
+  }
+  const ntp = mgmt.getNtp();
+  const ntpRaw = mgmt.getRawEntries('ntp');
+  if (ntpRaw.length > 0 || ntp.sourceInterface || ntp.authentication || ntp.masterStratum) {
+    lines.push('#');
+    if (ntp.sourceInterface) lines.push(`ntp-service source-interface ${ntp.sourceInterface}`);
+    if (ntp.authentication) lines.push('ntp-service authentication enable');
+    for (const [id, k] of ntp.authKeys) {
+      lines.push(`ntp-service authentication-keyid ${id} authentication-mode ${k.algo} ${k.key}`);
+    }
+    for (const id of ntp.trustedKeys) {
+      lines.push(`ntp-service reliable authentication-keyid ${id}`);
+    }
+    if (ntp.accessAcl) lines.push(`ntp-service access-acl ${ntp.accessAcl}`);
+    if (ntp.masterStratum !== undefined) lines.push(`ntp-service refclock-master ${ntp.masterStratum}`);
+    for (const r of ntpRaw) lines.push(`ntp-service ${r.line}`);
+  }
+  const clock = mgmt.getClock();
+  if (clock.timezone !== 'UTC' || clock.summerTimezone) {
+    lines.push('#');
+    if (clock.timezone !== 'UTC') {
+      const sign = clock.offsetMin >= 0 ? 'add' : 'minus';
+      const abs = Math.abs(clock.offsetMin);
+      lines.push(`clock timezone ${clock.timezone} ${sign} ${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`);
+    }
+    if (clock.summerTimezone) {
+      lines.push(`clock daylight-saving-time ${clock.summerTimezone} repeating ${clock.daylightStart} ${clock.daylightEnd}`);
+    }
+  }
+  const info = mgmt.getInfoCenter();
+  if (info.enabled && (info.sources.length > 0 || info.loghosts.length > 0)) {
+    lines.push('#');
+    lines.push(`info-center enable`);
+    if (info.timestamp !== 'date') lines.push(`info-center timestamp ${info.timestamp}`);
+    for (const s of info.sources) lines.push(`info-center source ${s.source} channel ${s.channel} level ${s.severity}`);
+    for (const h of info.loghosts) lines.push(`info-center loghost ${h.ip} channel ${h.channel} facility ${h.facility}`);
+  }
+  const sflow = mgmt.getSflow();
+  if (sflow.enabled) {
+    lines.push('#');
+    if (sflow.agentIp) lines.push(`sflow agent ip ${sflow.agentIp}`);
+    for (const c of sflow.collectors) lines.push(`sflow collector ${c.id} ip ${c.ip} port ${c.port}`);
+    for (const s of sflow.samplers) lines.push(`sflow sampling rate ${s.rate}`);
+  }
+  const routingLimit = (router as unknown as { getRoutingTableLimit?: () => { max: number; thresholdPct?: number } | null }).getRoutingTableLimit?.();
+  if (routingLimit) {
+    lines.push('#');
+    lines.push(`ip routing-table limit ${routingLimit.max}${routingLimit.thresholdPct !== undefined ? ' ' + routingLimit.thresholdPct : ''}`);
+  }
 }
 
 export function displayCurrentConfigInterface(router: Router, ifName: string): string {
@@ -822,16 +901,33 @@ export function registerDisplayCommands(
     commonDisplayAlarm());
 
   trie.register('display aaa configuration', 'Display AAA configuration', () => {
-    return [
-      '  Domain Name           : default',
-      '  Domain State          : Active',
-      '  Authentication-scheme : default',
-      '  Authorization-scheme  : default',
-      '  Accounting-scheme     : default',
-      '  Service-scheme        : -',
-      '  RADIUS-server-template: -',
-      '  HWTACACS-server-template: -',
-    ].join('\n');
+    const aaa = (getRouter() as unknown as { getShell?: () => { getAaaExtraConfig?: () => { authenticationSchemes: string[]; authorizationSchemes: string[]; accountingSchemes: string[]; domains: string[] } | null } }).getShell?.();
+    const cfg = aaa?.getAaaExtraConfig?.();
+    if (!cfg) {
+      return [
+        '  Domain Name           : default',
+        '  Domain State          : Active',
+        '  Authentication-scheme : default',
+        '  Authorization-scheme  : default',
+        '  Accounting-scheme     : default',
+        '  Service-scheme        : -',
+        '  RADIUS-server-template: -',
+        '  HWTACACS-server-template: -',
+      ].join('\n');
+    }
+    const lines: string[] = [];
+    const domains = cfg.domains.length > 0 ? cfg.domains : ['default'];
+    for (const d of domains) {
+      lines.push(`  Domain Name           : ${d}`);
+      lines.push('  Domain State          : Active');
+      lines.push(`  Authentication-scheme : ${cfg.authenticationSchemes[0] ?? 'default'}`);
+      lines.push(`  Authorization-scheme  : ${cfg.authorizationSchemes[0] ?? 'default'}`);
+      lines.push(`  Accounting-scheme     : ${cfg.accountingSchemes[0] ?? 'default'}`);
+      lines.push('  Service-scheme        : -');
+      lines.push('  RADIUS-server-template: -');
+      lines.push('  HWTACACS-server-template: -');
+    }
+    return lines.join('\n');
   });
 
   trie.register('display aaa online-fail-record', 'Display AAA failed login attempts', () => {
@@ -851,6 +947,50 @@ export function registerDisplayCommands(
       '  38     VTY 4           -        -      0      0            N      -',
     ];
     if (cfg.length > 0) { lines.push(''); lines.push(...cfg); }
+    return lines.join('\n');
+  });
+
+  trie.register('display dhcp snooping configuration', 'Display DHCP snooping configuration', () => {
+    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    if (!sw) return 'Info: DHCP snooping is not configured';
+    const enabled = sw.isDhcpSnoopingEnabled();
+    const vlans = sw.getDhcpSnoopingVlans();
+    const trust = sw.getDhcpSnoopingTrust();
+    const lines = [
+      `DHCP snooping global status : ${enabled ? 'enabled' : 'disabled'}`,
+      `DHCP snooping enabled VLANs : ${vlans.length === 0 ? 'none' : vlans.join(',')}`,
+    ];
+    if (trust.length > 0) {
+      lines.push('Trusted interfaces:');
+      for (const t of trust) lines.push(`  ${t.ifName}`);
+    }
+    return lines.join('\n');
+  });
+
+  trie.register('display arp anti-attack configuration', 'Display ARP anti-attack configuration', () => {
+    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    if (!sw) return 'Info: ARP anti-attack is not configured';
+    const policies = sw.getArpAntiAttackPolicies();
+    if (policies.length === 0) return 'Info: ARP anti-attack is not configured';
+    return policies.map(p =>
+      `ARP anti-attack: validateSource=${!!p.validateSource}, rateLimit=${p.rateLimit ?? 'none'}, detectionMode=${p.detectionMode ?? 'none'}`
+    ).join('\n');
+  });
+
+  trie.register('display ip source check user-bind configuration', 'Display IP source guard configuration', () => {
+    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    if (!sw) return 'Info: IP source guard is not configured';
+    const enabled = sw.isIpSourceGuardEnabled();
+    const bindings = sw.getIpSourceGuardBindings();
+    const lines = [`IP source guard global status: ${enabled ? 'enabled' : 'disabled'}`];
+    if (bindings.length === 0) {
+      lines.push('Info: No static user bindings configured');
+    } else {
+      lines.push('Static bindings:');
+      for (const b of bindings) {
+        lines.push(`  ip=${b.ipAddress ?? '-'} mac=${b.macAddress ?? '-'} interface=${b.ifName ?? '-'} vlan=${b.vlan ?? '-'} type=${b.type}`);
+      }
+    }
     return lines.join('\n');
   });
 

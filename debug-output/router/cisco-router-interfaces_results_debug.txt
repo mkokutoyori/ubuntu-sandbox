@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-04T06:57:32.535Z
+Generated: 2026-06-04T07:09:21.216Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1284,13 +1284,21 @@ Total steps: 343
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+   tunnel key 1234
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode ipip
+   tunnel source Loopback0
+   tunnel destination 10.0.0.2
   !
   interface Tunnel2
    no shutdown
+   tunnel mode ipv6ip
   !
   end
 
@@ -1535,7 +1543,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA05C.90E56041 (06:57:32.566 UTC Thu Jun 4 2026)
+  reference time is EDCBA321.3F3B645A (07:09:21.247 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1544,7 +1552,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *06:57:32.000 UTC Thu Jun 4 2026
+  *07:09:21.000 UTC Thu Jun 4 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1808,13 +1816,21 @@ Total steps: 343
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+   tunnel key 1234
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode ipip
+   tunnel source Loopback0
+   tunnel destination 10.0.0.2
   !
   interface Tunnel2
    no shutdown
+   tunnel mode ipv6ip
   !
   end
   
@@ -2059,11 +2075,19 @@ Total steps: 343
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+   tunnel key 1234
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode ipip
+   tunnel source Loopback0
+   tunnel destination 10.0.0.2
   interface Tunnel2
    no shutdown
+   tunnel mode ipv6ip
 
 [299/343] r1 R1# show running-config | begin line
 <empty>
@@ -2128,11 +2152,19 @@ Total steps: 343
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+   tunnel key 1234
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode ipip
+   tunnel source Loopback0
+   tunnel destination 10.0.0.2
   interface Tunnel2
    no shutdown
+   tunnel mode ipv6ip
   end
 
 [301/343] r1 R1# show ip route | include via

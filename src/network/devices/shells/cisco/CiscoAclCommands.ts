@@ -666,6 +666,8 @@ export function showIPv6AccessLists(router: Router, name?: string): string {
   for (const acl of filtered) {
     lines.push(`IPv6 access list ${acl.name}`);
     for (const e of acl.entries) {
+      if (e.remark) { lines.push(`    remark ${e.remark}`); continue; }
+      if (e.evaluate) { lines.push(`    evaluate ${e.evaluate}`); continue; }
       const proto = e.protocol ?? 'ipv6';
       const src = e.srcPrefix === 'any' || !e.srcPrefix ? 'any' : (e.srcPrefixLength !== undefined ? `${e.srcPrefix}/${e.srcPrefixLength}` : e.srcPrefix);
       const dst = e.dstPrefix === 'any' || !e.dstPrefix ? 'any' : (e.dstPrefixLength !== undefined ? `${e.dstPrefix}/${e.dstPrefixLength}` : e.dstPrefix);

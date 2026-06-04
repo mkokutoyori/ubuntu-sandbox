@@ -236,6 +236,36 @@ export function showRunningConfig(router: Router): string {
     if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
     const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
     if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+    const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
+    const pending = ospfExtra?.pendingIfConfig.get(name);
+    if (pending) {
+      if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
+      if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
+      if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);
+      if (pending.tunnelKey) lines.push(` tunnel key ${pending.tunnelKey}`);
+      if (pending.tunnelVrf) lines.push(` tunnel vrf ${pending.tunnelVrf}`);
+      const pmtud = pending.tunnelPathMtuDiscovery as { enabled: boolean; ageTimer?: number; minMtu?: number } | undefined;
+      if (pmtud?.enabled) {
+        let s = ' tunnel path-mtu-discovery';
+        if (pmtud.ageTimer !== undefined) s += ` age-timer ${pmtud.ageTimer}`;
+        if (pmtud.minMtu !== undefined) s += ` min-mtu ${pmtud.minMtu}`;
+        lines.push(s);
+      }
+      if (pending.bfdInterval !== undefined) {
+        lines.push(` bfd interval ${pending.bfdInterval}${pending.bfdMinRx !== undefined ? ' min_rx ' + pending.bfdMinRx : ''}${pending.bfdMultiplier !== undefined ? ' multiplier ' + pending.bfdMultiplier : ''}`);
+      }
+      if (pending.bfdTemplate) lines.push(` bfd template ${pending.bfdTemplate}`);
+      if (pending.bfdEcho) lines.push(' bfd echo');
+      const fr = pending.frameRelay as Record<string, unknown> | undefined;
+      if (fr) {
+        if (fr.dlci !== undefined) lines.push(` frame-relay interface-dlci ${fr.dlci}`);
+        if (fr.lmiType) lines.push(` frame-relay lmi-type ${fr.lmiType}`);
+        if (fr.inverseArp) lines.push(' frame-relay inverse-arp');
+        for (const m of (fr.maps as Array<{ ip: string; dlci: number }>) ?? []) {
+          lines.push(` frame-relay map ip ${m.ip} ${m.dlci}`);
+        }
+      }
+    }
     lines.push('!');
   }
 
@@ -262,7 +292,7 @@ export function showRunningConfig(router: Router): string {
   if (router.isRIPEnabled()) {
     lines.push('!');
     lines.push('router rip');
-    lines.push(' version 2');
+    lines.push(` version ${router.getRipVersion()}`);
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
@@ -290,6 +320,11 @@ export function showRunningConfig(router: Router): string {
     if (vtyLines.length > 0) {
       lines.push(...vtyLines);
     }
+  }
+
+  if (!router.isIpRoutingEnabled()) {
+    lines.push('no ip routing');
+    lines.push('!');
   }
 
   const securityLines = (router as unknown as {

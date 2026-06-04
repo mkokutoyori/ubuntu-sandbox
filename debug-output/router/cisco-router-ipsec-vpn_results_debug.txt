@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-04T06:57:29.489Z
+Generated: 2026-06-04T07:09:19.043Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -1118,10 +1118,16 @@ Total steps: 370
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
@@ -1134,6 +1140,9 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
@@ -1481,7 +1490,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA059.851EB851 (06:57:29.520 UTC Thu Jun 4 2026)
+  reference time is EDCBA31F.14395810 (07:09:19.079 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1490,7 +1499,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *06:57:29.000 UTC Thu Jun 4 2026
+  *07:09:19.000 UTC Thu Jun 4 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1676,10 +1685,16 @@ Total steps: 370
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
@@ -1692,6 +1707,9 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
@@ -1954,9 +1972,15 @@ Total steps: 370
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
@@ -1968,6 +1992,9 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
 
 [326/370] r1 R1(config)# show running-config | begin line
 <empty>
@@ -1994,9 +2021,15 @@ Total steps: 370
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
@@ -2008,6 +2041,9 @@ Total steps: 370
    ip nhrp map 172.20.0.2 10.0.0.2
    ip nhrp map multicast 224.0.0.0 10.0.0.2
    ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   crypto pki trustpoint CA1

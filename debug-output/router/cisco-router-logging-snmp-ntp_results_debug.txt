@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-04T06:57:28.077Z
+Generated: 2026-06-04T07:09:20.769Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -456,7 +456,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA058.189374BC (06:57:28.096 UTC Thu Jun 4 2026)
+  reference time is EDCBA320.C9BA5E35 (07:09:20.788 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -476,7 +476,7 @@ Total steps: 322
    ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  *06:57:28.000 UTC Thu Jun 4 2026
+  *07:09:20.000 UTC Thu Jun 4 2026
 
 [128/322] r1 R1# show clock detail
   % Invalid input detected at '^' marker.
@@ -484,7 +484,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1# show calendar
-  06:57:28 UTC Thu Jun 4 2026
+  07:09:20 UTC Thu Jun 4 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1134,7 +1134,7 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA058.1B645A1C (06:57:28.107 UTC Thu Jun 4 2026)
+  reference time is EDCBA320.CCCCCCCC (07:09:20.800 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1146,7 +1146,7 @@ Total steps: 322
    ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  *06:57:28.000 UTC Thu Jun 4 2026
+  *07:09:20.000 UTC Thu Jun 4 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

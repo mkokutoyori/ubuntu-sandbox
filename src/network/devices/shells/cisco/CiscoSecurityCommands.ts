@@ -880,7 +880,19 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   trie.register('show zone security', 'Display zones', () => {
     const s = sec();
     if (s.zones.size === 0) return 'No zones configured';
-    return [...s.zones.values()].map(z => `Zone: ${z.name}\n  Description: ${z.name} security zone\n  Member Interfaces:`).join('\n');
+    return [...s.zones.values()].map(z => {
+      const description = (z as unknown as { description?: string }).description ?? `${z.name} security zone`;
+      const members: string[] = [];
+      for (const [iface, f] of s.interfaceFlags) {
+        if (f.zoneMember === z.name) members.push(`    ${iface}`);
+      }
+      return [
+        `Zone: ${z.name}`,
+        `  Description: ${description}`,
+        '  Member Interfaces:',
+        ...(members.length === 0 ? ['    None'] : members),
+      ].join('\n');
+    }).join('\n');
   });
 
   trie.register('show zone-pair security', 'Display zone-pairs', () => {

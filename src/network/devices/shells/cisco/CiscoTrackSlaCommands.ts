@@ -255,13 +255,33 @@ export function registerTrackSlaShow(
 
   const slaConfig = () => {
     const ops = sla.all();
-    if (!ops.length) return 'No IP SLA operations configured.';
-    return ops.map((o) =>
-      `IP SLA Operation ${o.id}\n` +
-      `  Type of operation: ${o.type}\n` +
-      `  Target: ${o.target ?? 'not set'}\n` +
-      `  Frequency: ${o.frequency} sec\n` +
-      `  Schedule: ${o.scheduled ? 'Active' : 'Pending'}`).join('\n');
+    const reactions = sla.getReactions();
+    const lines: string[] = [];
+    lines.push(`IP SLA global state: ${sla.globalEnabled ? 'enabled' : 'disabled'}`);
+    lines.push(`IP SLA logging traps: ${sla.loggingTrapsEnabled ? 'enabled' : 'disabled'}`);
+    if (!ops.length && !reactions.length) return lines.concat('No IP SLA operations configured.').join('\n');
+    for (const o of ops) {
+      const extra = o as unknown as Record<string, unknown>;
+      lines.push(`IP SLA Operation ${o.id}`);
+      lines.push(`  Type of operation: ${o.type}`);
+      lines.push(`  Target: ${o.target ?? 'not set'}`);
+      lines.push(`  Frequency: ${o.frequency} sec`);
+      lines.push(`  Schedule: ${o.scheduled ? 'Active' : 'Pending'}`);
+      if (extra.thresholdMs !== undefined) lines.push(`  Threshold: ${extra.thresholdMs}ms`);
+      if (extra.timeoutMs !== undefined) lines.push(`  Timeout: ${extra.timeoutMs}ms`);
+      if (extra.tag) lines.push(`  Tag: ${extra.tag}`);
+      if (extra.owner) lines.push(`  Owner: ${extra.owner}`);
+      if (extra.requestDataSize !== undefined) lines.push(`  Request data size: ${extra.requestDataSize}`);
+      if (extra.tos !== undefined) lines.push(`  Type of Service: ${extra.tos}`);
+      if (extra.verifyData) lines.push('  Verify data: enabled');
+    }
+    if (reactions.length > 0) {
+      lines.push('Reactions:');
+      for (const r of reactions) {
+        lines.push(`  Op ${r.opId} react=${r.reactionType} thresh-type=${r.thresholdType ?? 'none'} thresh=${r.thresholdValueLow ?? '-'}-${r.thresholdValueHigh ?? '-'} action=${r.actionType ?? 'none'}`);
+      }
+    }
+    return lines.join('\n');
   };
   trie.registerGreedy('show ip sla configuration', 'Display IP SLA config', slaConfig);
   trie.registerGreedy('show ip sla statistics', 'Display IP SLA stats', () => {

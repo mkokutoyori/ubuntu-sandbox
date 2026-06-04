@@ -229,6 +229,7 @@ export abstract class Router extends Equipment {
       setRoutingTable: (table) => { this.routingTable = table; },
       pushRoute: (route) => { this.routingTable.push(route); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      getRipVersion: () => this._ripVersion,
     });
     this.ipv6Engine = new IPv6DataPlane({
       id: this.id,
@@ -509,6 +510,11 @@ export abstract class Router extends Equipment {
     network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 0,
     opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'track' | 'vpnInstance' | 'permanent' | 'iface'>>,
   ): boolean {
+    if (this._routingTableLimit && this.routingTable.length >= this._routingTableLimit.max) {
+      Logger.warn(this.id, 'router:routing-table-limit',
+        `${this.name}: routing-table limit ${this._routingTableLimit.max} reached, refusing static route to ${network}`);
+      return false;
+    }
     const iface = this.findInterfaceForIP(nextHop);
     const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
@@ -1034,7 +1040,12 @@ export abstract class Router extends Equipment {
    * Implements the full RFC 1812 forwarding pipeline.
    */
   private forwardPacket(inPort: string, ipPkt: IPv4Packet): void {
-    // Phase D.1: TTL Decrement
+    if (!this._ipRoutingEnabled) {
+      Logger.info(this.id, 'router:ip-routing-disabled',
+        `${this.name}: IP routing is disabled, dropping packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
+      this.counters.ipForwDatagrams++;
+      return;
+    }
     const newTTL = ipPkt.ttl - 1;
     if (newTTL <= 0) {
       Logger.info(this.id, 'router:ttl-expired',
