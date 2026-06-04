@@ -83,9 +83,19 @@ export function registerIPSecShowCommands(
   trie.register('show crypto ikev2 stats', 'IKEv2 statistics', () => {
     const e = eng();
     if (!e) return 'IPSec not configured.';
-    const stats = (e as unknown as { getIKEv2Stats?: () => Record<string, number> }).getIKEv2Stats?.();
-    if (!stats) return 'Crypto IKEv2 stats not available';
-    return Object.entries(stats).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+    const v = e.stats.get();
+    const dbg = e as unknown as { ikev2SADB: Map<string, unknown> };
+    const ikev2Count = dbg.ikev2SADB.size;
+    return [
+      `Crypto IKEv2 statistics:`,
+      `  Active SAs: ${ikev2Count}`,
+      `  Inbound packets processed: ${v.inboundProcessed}`,
+      `  Inbound packets dropped: ${v.inboundDropped}`,
+      `  Inbound packets rejected: ${v.inboundRejected}`,
+      `  Outbound packets processed: ${v.outboundProcessed ?? 0}`,
+      `  Outbound packets dropped: ${v.outboundDropped ?? 0}`,
+      `  Outbound packets rejected: ${v.outboundRejected ?? 0}`,
+    ].join('\n');
   });
   trie.register('show crypto eli', 'Encryption Library Information', () => {
     const e = eng();

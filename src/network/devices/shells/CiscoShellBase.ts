@@ -668,7 +668,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.configTrie.register('no hostname', 'Reset hostname', () => '');
+    this.configTrie.register('no hostname', 'Reset hostname', () => {
+      this.d()._setHostnameInternal('Router');
+      return '';
+    });
 
     // `alias <mode> <name> <command…>` — real, working aliases.
     this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
