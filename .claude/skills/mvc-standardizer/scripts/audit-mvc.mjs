@@ -127,16 +127,41 @@ function checkUnprojectedModels() {
   return findings;
 }
 
+// ── CHECK 4 — Equipment domain read-model coverage (O5) ──────────────────────
+// The business layer (the equipment) is the priority. Each curated domain area
+// should expose a read-model (an observables.ts somewhere in its subtree).
+const DOMAIN_AREAS = [
+  { label: 'Equipment base (all devices)', dir: 'network/equipment' },
+  { label: 'Hardware — Port / Cable', dir: 'network/hardware' },
+  { label: 'Hosts — PC / Server', dir: 'network/devices/host' },
+  { label: 'Switches', dir: 'network/devices/switch' },
+  { label: 'Routers', dir: 'network/devices/router' },
+  { label: 'OS — Linux', dir: 'network/devices/linux' },
+  { label: 'OS — Windows', dir: 'network/devices/windows' },
+  { label: 'Database — Oracle', dir: 'database/oracle' },
+];
+
+function hasReadModel(absDir) {
+  if (!existsSync(absDir)) return null; // area not present in this checkout
+  return listFiles(absDir).some((f) => basename(f) === 'observables.ts');
+}
+
+function checkDomainCoverage() {
+  return DOMAIN_AREAS.map((a) => ({ ...a, covered: hasReadModel(join(SRC, a.dir)) }));
+}
+
 // ── Run ──────────────────────────────────────────────────────────────────────
 const coupling = checkViewModelCoupling();
 const timers = checkTimerDiscipline();
 const unprojected = checkUnprojectedModels();
+const domain = checkDomainCoverage();
+const domainGaps = domain.filter((d) => d.covered === false);
 
 const couplingErrors = coupling.filter((f) => f.severity === 'ERROR');
 const couplingWarns = coupling.filter((f) => f.severity === 'WARN');
 const couplingInfos = coupling.filter((f) => f.severity === 'INFO');
 
-const totalViolations = couplingErrors.length + couplingWarns.length + timers.length + unprojected.length;
+const totalViolations = couplingErrors.length + couplingWarns.length + timers.length + unprojected.length + domainGaps.length;
 
 if (asJson) {
   console.log(JSON.stringify(
@@ -146,6 +171,7 @@ if (asJson) {
         viewModelCoupling: coupling,
         timerDiscipline: timers,
         unprojectedModels: unprojected,
+        domainCoverage: domain,
       },
       totals: {
         couplingErrors: couplingErrors.length,
@@ -153,6 +179,7 @@ if (asJson) {
         couplingInfo: couplingInfos.length,
         nativeTimers: timers.length,
         unprojectedEngines: unprojected.length,
+        domainGaps: domainGaps.length,
         violations: totalViolations,
       },
     },
@@ -198,11 +225,26 @@ if (unprojected.length === 0) {
   sample(unprojected, (f) => `${f.file}   (add ${f.dir}/observables.ts)`);
 }
 
+section('CHECK 4 · Equipment domain coverage (O5)  — the business layer must expose read-models');
+{
+  for (const d of domain.filter((x) => x.covered !== null)) {
+    const mark = d.covered ? '✓' : '✗';
+    const status = d.covered ? 'read-model present' : `NO observables.ts (src/${d.dir})`;
+    console.log(`   ${mark} ${d.label.padEnd(30)} ${status}`);
+  }
+  if (domainGaps.length > 0) {
+    console.log(`   → ${domainGaps.length} domain area(s) without a read-model — these are the priority (see references/domain-layer.md).`);
+  } else {
+    console.log('   ✓ Every curated domain area exposes a read-model.');
+  }
+}
+
 // ── Score ────────────────────────────────────────────────────────────────────
 section('SUMMARY');
 console.log(`   View↔Model coupling : ${couplingErrors.length} errors, ${couplingWarns.length} warnings (${couplingInfos.length} type-only)`);
 console.log(`   Native timers       : ${timers.length}`);
 console.log(`   Un-projected engines: ${unprojected.length}`);
+console.log(`   Domain coverage gaps: ${domainGaps.length}`);
 console.log(`   ─────────────────────────────────────────`);
 console.log(`   Total violations    : ${totalViolations}`);
 

@@ -28,8 +28,13 @@ description: >-
 
 Ce projet **a déjà** une architecture MVC réactive de classe production (voir
 `docs/REFONTE-REACTIVE-EVENT-DRIVEN.md`). Ce skill n'invente rien : il **nomme**, **outille**
-et **rend répétable** ce qui existe déjà dans `src/network/ospf/`, pour qu'on l'applique
-partout sans dériver.
+et **rend répétable** ce moule, pour qu'on l'applique partout sans dériver.
+
+> **La priorité, c'est la couche métier — l'équipement.** Le produit est un simulateur
+> d'infrastructure : **PC, switch, routeur, câble, firewall, base de données, OS**. Ce sont eux
+> le Model à standardiser en premier. OSPF est la *référence de pattern* la plus mature, mais
+> le domaine se standardise pareil — et c'est là que vit la dette la plus large. Détails et
+> backlog : **`references/domain-layer.md`**.
 
 ---
 
@@ -85,17 +90,19 @@ réactive** entre le domaine et React. Le flux est **unidirectionnel** :
 
 | Couche MVC | Rôle dans le projet | Où ça vit |
 |---|---|---|
-| **Model** | *Actors* : `Equipment`, `Port`, `Cable`, devices, **moteurs de protocole** (`OSPFEngine`, `DHCPServer`…). Détiennent l'état mutable + la logique métier. Mutent leur état et **publient** des events. Ne s'appellent jamais entre eux. | `src/network/`, `src/database/` |
+| **Model** | *Actors* — d'abord les **équipements** : `Equipment` (base de tous les devices), `Port`/`Cable`, PC/switch/routeur/hub/serveur, **firewall** (à créer), **base de données** Oracle, **OS** ; puis les **moteurs de protocole** (`OSPFEngine`, `DHCPServer`…). Détiennent l'état mutable + la logique métier, le mutent et **publient** des events. Ne s'appellent jamais entre eux. | `src/network/`, `src/database/` |
 | **Controller** | *Projectors* : `observables.ts` (types **VM**, fonctions pures `projectXxx`, `SignalStore`) ; **hooks** React (`react/hooks/useXxx.ts`) ; le **store Zustand** (`store/networkStore.ts`, commandes/topologie) ; la logique de vue extraite (`*-logic.ts`). | `src/network/**/observables.ts`, `src/react/hooks/`, `src/store/`, `src/components/**/*-logic.ts` |
 | **View** | Composants React : présentation pure. Consomment des **VM** via des hooks. **N'importent jamais** le domaine mutable. | `src/components/` |
 
-**La référence absolue, c'est OSPF.** Avant d'écrire quoi que ce soit, lis ces quatre
-fichiers — ils sont l'incarnation canonique du moule :
+**Trois implémentations de référence** incarnent le moule. Lis celle qui colle à ta tâche
+**avant** d'écrire :
 
-1. `src/network/ospf/observables.ts` — VM + `projectXxx` purs + `OspfSignalStore` + `makeReadonlyObservables`.
-2. `src/network/ospf/OSPFEngine.ts` — l'Actor : `signalStore` privé, `observables` en lecture seule, `SignalRefreshActor`, `_refreshXxxSignal()` qui délèguent aux projections pures.
-3. `src/react/hooks/useOspf.ts` + `useEngineSignal.ts` — les hooks Controller.
-4. Un composant qui consomme un hook (`src/components/network/devtools/LiveDeviceStats.tsx`).
+- **Équipement** (le domaine métier, à imiter en priorité) : `src/network/devices/host/observables.ts` — read-model d'un hôte (ARP, routes, TCP, stats). C'est OSPF appliqué à un *device*.
+- **Base de données** : `src/database/oracle/observables.ts` — read-model d'une DB.
+- **Protocole** (pattern le plus mature) : `src/network/ospf/observables.ts` (VM + `projectXxx` + `OspfSignalStore`), `src/network/ospf/OSPFEngine.ts` (l'Actor : `signalStore` privé, `observables`, `SignalRefreshActor`, `_refreshXxxSignal()`), `src/react/hooks/useOspf.ts` + `useEngineSignal.ts` (hooks), et un composant consommateur (`src/components/network/devtools/LiveDeviceStats.tsx`).
+
+Tous suivent **exactement** la même forme. Pour la couche métier (Equipment, Port/Cable, switch,
+routeur, firewall, OS), va d'abord lire **`references/domain-layer.md`**.
 
 ---
 
@@ -160,12 +167,13 @@ ton travail pour prouver que tu as réduit la dette, jamais augmentée.
 
 Charge ces fichiers à la demande, selon le besoin :
 
-- `references/architecture-map.md` — la carte complète MVC ↔ couches, le glossaire (Actor, Projector, Signal, VM, read-model), et la lecture commentée de la référence OSPF.
+- **`references/domain-layer.md`** — **la couche métier (équipements)** : taxonomie PC/switch/routeur/câble/firewall/DB/OS ↔ MVC, ce que chaque famille doit projeter, la dette n°1 (`instance: Equipment`), le backlog priorisé, et « ajouter un device au standard ».
+- `references/architecture-map.md` — la carte complète MVC ↔ couches, le glossaire (Actor, Projector, Signal, VM, read-model), et la lecture commentée des références.
 - `references/feature-recipe.md` — la recette pas-à-pas (new feature **et** migration) + la **Definition of Done** standardisée.
 - `references/layer-boundaries.md` — les règles d'import autorisé/interdit par couche, avec exemples ✅/❌ et exceptions documentées.
 - `references/naming-conventions.md` — nommage des fichiers/types/fonctions/topics et emplacement des tests.
-- `templates/` — squelettes prêts à copier : `model-engine.template.ts`, `observables.template.ts`, `use-feature.template.ts`, `feature-view.template.tsx`, `projection.test.template.ts`.
-- `scripts/audit-mvc.mjs` — l'audit de conformité.
+- `templates/` — squelettes prêts à copier : `device-actor.template.ts` (**équipement**, ex. Firewall), `model-engine.template.ts` (moteur de protocole), `observables.template.ts`, `use-feature.template.ts`, `feature-view.template.tsx`, `projection.test.template.ts`.
+- `scripts/audit-mvc.mjs` — l'audit de conformité (dont la **couverture read-model du domaine**).
 
 Garde l'invariant en tête : **un seul moule, appliqué partout.** Quand tu hésites, demande-toi
 « comment OSPF le fait-il ? » et reproduis-le.
