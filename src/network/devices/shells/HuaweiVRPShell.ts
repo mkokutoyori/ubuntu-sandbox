@@ -1025,6 +1025,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
+    t.registerGreedy('reset rip', 'Reset RIP counters/process', (_args) => '');
+    t.registerGreedy('reset isis', 'Reset IS-IS data', (_args) => '');
+    t.registerGreedy('reset bgp', 'Reset BGP data', (_args) => '');
+    t.registerGreedy('debugging rip', 'Enable RIP debugging', (_args) => '');
+    t.registerGreedy('debugging isis', 'Enable IS-IS debugging', (_args) => '');
+    t.registerGreedy('debugging bgp', 'Enable BGP debugging', (_args) => '');
+    t.registerGreedy('undo debugging rip', 'Disable RIP debugging', (_args) => '');
+    t.registerGreedy('undo debugging isis', 'Disable IS-IS debugging', (_args) => '');
+    t.registerGreedy('undo debugging bgp', 'Disable BGP debugging', (_args) => '');
+
     // save — persist configuration (Huawei equivalent of write memory)
     t.register('save', 'Save current configuration', () => {
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
@@ -1349,6 +1359,42 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiNATInterfaceCommands(t, this);
     registerDhcpInterfaceCommands(t, this);
 
+    const ripIf = (key: string) => (args: string[]) => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const ext = r._huaweiRipIfExtras ?? (r._huaweiRipIfExtras = new Map<string, any>());
+      const entry = ext.get(ifName) || {};
+      entry[key] = args.join(' ');
+      ext.set(ifName, entry);
+      return '';
+    };
+    t.registerGreedy('rip version', 'RIP version on interface', ripIf('version'));
+    t.registerGreedy('rip authentication-mode', 'RIP authentication mode', ripIf('auth'));
+    t.registerGreedy('rip metricin', 'Add incoming RIP metric', ripIf('metricIn'));
+    t.registerGreedy('rip metricout', 'Add outgoing RIP metric', ripIf('metricOut'));
+    t.register('rip split-horizon', 'Enable split horizon', () => { ripIf('splitHorizon')(['on']); return ''; });
+    t.register('rip poison-reverse', 'Enable poison reverse', () => { ripIf('poisonReverse')(['on']); return ''; });
+    t.registerGreedy('rip summary-address', 'RIP summary address', ripIf('summaryAddress'));
+
+    const isisIf = (key: string) => (args: string[]) => {
+      const r = this.r() as any;
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const ext = r._huaweiIsisIfExtras ?? (r._huaweiIsisIfExtras = new Map<string, any>());
+      const entry = ext.get(ifName) || {};
+      entry[key] = args.join(' ');
+      ext.set(ifName, entry);
+      return '';
+    };
+    t.registerGreedy('isis enable', 'Enable IS-IS on interface', isisIf('processId'));
+    t.registerGreedy('isis circuit-level', 'Set IS-IS circuit level', isisIf('circuitLevel'));
+    t.registerGreedy('isis cost', 'Set IS-IS cost', isisIf('cost'));
+    t.registerGreedy('isis circuit-type', 'Set IS-IS circuit type', isisIf('circuitType'));
+    t.registerGreedy('isis timer hello', 'IS-IS hello timer', isisIf('helloTimer'));
+    t.registerGreedy('isis timer holding-multiplier', 'IS-IS holding multiplier', isisIf('holdMultiplier'));
+    t.registerGreedy('isis authentication-mode', 'IS-IS authentication mode', isisIf('auth'));
+
     t.registerGreedy('traffic-policy', 'Apply traffic policy on interface', (args) => {
       const name = args[0]; const dir = (args[1] || 'inbound').toLowerCase();
       if (!name || !this.selectedInterface) return '';
@@ -1537,6 +1583,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       b.rawLines.push('graceful-restart');
       return '';
     });
+    t.registerGreedy('timer', 'BGP timers (keepalive/hold)', (args, raw) => {
+      const b = bgp(); if (!b) return '';
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === 'keepalive' && args[i + 1]) (b as any).keepaliveSec = parseInt(args[++i], 10);
+        else if (args[i] === 'hold' && args[i + 1]) (b as any).holdSec = parseInt(args[++i], 10);
+      }
+      b.rawLines.push(raw ?? `timer ${args.join(' ')}`);
+      return '';
+    });
+    t.registerGreedy('maximum load-balancing', 'BGP ECMP', (args) => {
+      const b = bgp(); const n = parseInt(args[0] ?? '', 10);
+      if (b && !isNaN(n)) (b as any).maximumPaths = n;
+      return '';
+    });
+    t.registerGreedy('ipv4-family', 'Enter IPv4 address family', (_args) => {
+      const b = bgp(); if (b) (b as any).ipv4Family = true; return '';
+    });
+    t.registerGreedy('ipv6-family', 'Enter IPv6 address family', (_args) => {
+      const b = bgp(); if (b) (b as any).ipv6Family = true; return '';
+    });
+    t.registerGreedy('undo ipv4-family', 'Leave IPv4 family', (_args) => '');
+    t.registerGreedy('undo ipv6-family', 'Leave IPv6 family', (_args) => '');
   }
 
   private buildIsisViewCommands(): void {
@@ -1582,6 +1650,31 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const i = isis(); if (i) i.importedRoutes.push(args.join(' '));
       return '';
     });
+    t.registerGreedy('is-name', 'Set IS-IS dynamic hostname', (args) => {
+      const i = isis(); if (i && args[0]) (i as any).hostname = args[0];
+      return '';
+    });
+    t.registerGreedy('timer lsp-refresh', 'Set LSP refresh interval', (args) => {
+      const i = isis(); const n = parseInt(args[0] ?? '', 10);
+      if (i && !isNaN(n)) (i as any).lspRefreshSec = n;
+      return '';
+    });
+    t.register('set-overload', 'Set IS-IS overload bit', () => {
+      const i = isis(); if (i) (i as any).overload = true; return '';
+    });
+    t.register('undo set-overload', 'Clear IS-IS overload bit', () => {
+      const i = isis(); if (i) (i as any).overload = false; return '';
+    });
+    t.registerGreedy('maximum load-balancing', 'IS-IS ECMP paths', (args) => {
+      const i = isis(); const n = parseInt(args[0] ?? '', 10);
+      if (i && !isNaN(n)) (i as any).maximumPaths = n;
+      return '';
+    });
+    t.registerGreedy('preference', 'Set IS-IS preference', (args) => {
+      const i = isis(); const n = parseInt(args[0] ?? '', 10);
+      if (i && !isNaN(n)) (i as any).preference = n;
+      return '';
+    });
   }
 
   private buildRIPViewCommands(): void {
@@ -1607,6 +1700,44 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('undo network', 'Remove advertised network', (_args) => {
       return '';
     });
+
+    const ripExtras = () => {
+      const r = this.r() as any;
+      return r._huaweiRipExtras ?? (r._huaweiRipExtras = {});
+    };
+    t.register('summary', 'Enable RIP auto-summary', () => { ripExtras().autoSummary = true; return ''; });
+    t.register('undo summary', 'Disable RIP auto-summary', () => { ripExtras().autoSummary = false; return ''; });
+    t.registerGreedy('timers rip', 'Set RIP timers (update/timeout/garbage)', (args) => {
+      const e = ripExtras();
+      e.updateSec = parseInt(args[0] ?? '', 10);
+      e.timeoutSec = parseInt(args[1] ?? '', 10);
+      e.gcSec = parseInt(args[2] ?? '', 10);
+      return '';
+    });
+    t.register('default-route originate', 'Originate default route via RIP', () => { ripExtras().defaultOriginate = true; return ''; });
+    t.registerGreedy('import-route', 'Redistribute routes into RIP', (args) => {
+      const e = ripExtras();
+      (e.importRoute ??= []).push(args.join(' '));
+      return '';
+    });
+    t.registerGreedy('maximum load-balancing', 'Set ECMP for RIP', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (!isNaN(n)) ripExtras().maximumPaths = n;
+      return '';
+    });
+    t.registerGreedy('silent-interface', 'Suppress RIP on an interface', (args) => {
+      const e = ripExtras();
+      (e.silentInterfaces ??= new Set<string>()).add(args[0] ?? '');
+      return '';
+    });
+    t.registerGreedy('undo silent-interface', 'Resume RIP on an interface', (args) => {
+      const set = ripExtras().silentInterfaces as Set<string> | undefined;
+      set?.delete(args[0] ?? '');
+      return '';
+    });
+    t.register('checkzero', 'Enable RIP checkzero validation', () => { ripExtras().checkZero = true; return ''; });
+    t.register('undo checkzero', 'Disable RIP checkzero validation', () => { ripExtras().checkZero = false; return ''; });
+    t.register('verify-source', 'Enable RIP source-validation', () => { ripExtras().verifySource = true; return ''; });
   }
 
   // ─── Tracert command ──────────────────────────────────────────────

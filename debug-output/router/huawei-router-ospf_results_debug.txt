@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-06-04T13:10:49.217Z
+Generated: 2026-06-04T13:15:49.889Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -89,9 +89,7 @@ Total steps: 247
 <empty>
 
 [27/247] r1 [R1-ospf-1] lsa-arrival-interval 100
-  % Invalid input detected at '^' marker.
-  lsa-arrival-interval 100
-  ^
+<empty>
 
 [28/247] r1 [R1-ospf-1] opaque-capability enable
 <empty>
@@ -100,14 +98,10 @@ Total steps: 247
 <empty>
 
 [30/247] r1 [R1-ospf-1] default-route-advertise always
-  % Invalid input detected at '^' marker.
-  default-route-advertise always
-                          ^
+<empty>
 
 [31/247] r1 [R1-ospf-1] default-route-advertise cost 10 type 1
-  % Invalid input detected at '^' marker.
-  default-route-advertise cost 10 type 1
-                          ^
+<empty>
 
 [32/247] r1 [R1-ospf-1] import-route direct
 <empty>
@@ -122,14 +116,10 @@ Total steps: 247
 <empty>
 
 [36/247] r1 [R1-ospf-1] maximum load-balancing 4
-  % Invalid input detected at '^' marker.
-  maximum load-balancing 4
-  ^
+<empty>
 
 [37/247] r1 [R1-ospf-1] preference 150
-  % Invalid input detected at '^' marker.
-  preference 150
-  ^
+<empty>
 
 [38/247] r1 [R1-ospf-1] silent-interface GigabitEthernet0/0/0
 <empty>
@@ -180,9 +170,13 @@ Total steps: 247
    0       normal 0       0     0
 
 [53/247] r1 <R1> display ospf cumulative
-  % Invalid input detected at '^' marker.
-  display ospf cumulative
-               ^
+  OSPF statistics:
+    LSA: 1 total
+    SPF: 1 runs
+    Neighbors: 0, Adjacent: 0
+  
+    Area statistics:
+      Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 
 --- [54] § area types / auth ---
@@ -202,9 +196,7 @@ Total steps: 247
 <empty>
 
 [59/247] r1 [R1-ospf-1-area-1] default-cost 10
-  % Invalid input detected at '^' marker.
-  default-cost 10
-  ^
+<empty>
 
 [60/247] r1 [R1-ospf-1-area-1] quit
 <empty>
@@ -216,9 +208,7 @@ Total steps: 247
 <empty>
 
 [63/247] r1 [R1-ospf-1-area-2] nssa default-route-advertise no-summary
-  % Invalid input detected at '^' marker.
-  nssa default-route-advertise no-summary
-       ^
+<empty>
 
 [64/247] r1 [R1-ospf-1-area-2] quit
 <empty>
@@ -236,27 +226,19 @@ Total steps: 247
 <empty>
 
 [69/247] r1 [R1-ospf-1-area-0] authentication-mode md5 1 cipher Huawei@123
-  % Invalid input detected at '^' marker.
-  authentication-mode md5 1 cipher Huawei@123
-  ^
+<empty>
 
 [70/247] r1 [R1-ospf-1-area-0] authentication-mode simple plain Huawei
-  % Invalid input detected at '^' marker.
-  authentication-mode simple plain Huawei
-  ^
+<empty>
 
 [71/247] r1 [R1-ospf-1-area-0] quit
 <empty>
 
 [72/247] r1 [R1-ospf-1] vlink-peer 2.2.2.2
-  % Invalid input detected at '^' marker.
-  vlink-peer 2.2.2.2
-  ^
+<empty>
 
 [73/247] r1 [R1-ospf-1] sham-link 1.1.1.1 2.2.2.2
-  % Invalid input detected at '^' marker.
-  sham-link 1.1.1.1 2.2.2.2
-  ^
+<empty>
 
 [74/247] r1 [R1-ospf-1] quit
 <empty>
@@ -268,7 +250,7 @@ Total steps: 247
   OSPF Process 1 with Router ID 192.168.1.1
   
    Area    Type   Intf    Adj   LSA
-   0       normal 0       0     0
+   0       normal 6       0     1
    1       totally-stubby0       0     0
    2       nssa   0       0     0
 
@@ -298,14 +280,10 @@ Total steps: 247
 <empty>
 
 [84/247] r1 [R1-GE0/0/1] ospf timer retransmit 10
-  % Invalid input detected at '^' marker.
-  ospf timer retransmit 10
-             ^
+<empty>
 
 [85/247] r1 [R1-GE0/0/1] ospf trans-delay 2
-  % Invalid input detected at '^' marker.
-  ospf trans-delay 2
-       ^
+<empty>
 
 [86/247] r1 [R1-GE0/0/1] ospf network-type p2p
 <empty>
@@ -332,14 +310,10 @@ Total steps: 247
 <empty>
 
 [94/247] r1 [R1-GE0/0/1] ospf bfd min-tx-interval 100 min-rx-interval 100
-  % Invalid input detected at '^' marker.
-  ospf bfd min-tx-interval 100 min-rx-interval 100
-           ^
+<empty>
 
 [95/247] r1 [R1-GE0/0/1] ospf silent-interface
-  % Invalid input detected at '^' marker.
-  ospf silent-interface
-       ^
+<empty>
 
 [96/247] r1 [R1-GE0/0/1] quit
 <empty>
@@ -348,14 +322,94 @@ Total steps: 247
 <empty>
 
 [98/247] r1 <R1> display ospf interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display ospf interface GigabitEthernet0/0/1
-                         ^
+   GE0/0/0 (192.168.1.1)
+     Area: 0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0  Cost: 100  State: DR
+     Type: p2mp  Priority: 200
+     DR: 10.0.0.1  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+     (Passive interface)
+  
+   LoopBack1 (10.10.1.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack2 (10.10.2.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack3 (10.10.3.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.3.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack4 (10.10.4.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.4.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
 
 [99/247] r1 <R1> display ospf interface all
-  % Invalid input detected at '^' marker.
-  display ospf interface all
-                         ^
+   GE0/0/0 (192.168.1.1)
+     Area: 0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 192.168.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (10.0.0.1)
+     Area: 0  Cost: 100  State: DR
+     Type: p2mp  Priority: 200
+     DR: 10.0.0.1  BDR: 0.0.0.0
+     Hello: 5s  Dead: 20s
+     Neighbors: 0
+     (Passive interface)
+  
+   LoopBack1 (10.10.1.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.1.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack2 (10.10.2.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack3 (10.10.3.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.3.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   LoopBack4 (10.10.4.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.10.4.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
 
 
 --- [100] § OSPFv3 ---
@@ -430,9 +484,7 @@ Total steps: 247
 <empty>
 
 [118/247] r1 <R1> display ospfv3 routing-table
-  % Invalid input detected at '^' marker.
-  display ospfv3 routing-table
-                 ^
+  OSPFv3 routes: (none)
 
 
 --- [119] § OSPF display / reset / debug ---
@@ -443,9 +495,10 @@ Total steps: 247
    Area ID    Interface       Neighbor ID     State
 
 [120/247] r1 <R1> display ospf peer brief
-  % Invalid input detected at '^' marker.
-  display ospf peer brief
-                    ^
+  OSPF Process with Router ID 192.168.1.1
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
 
 [121/247] r1 <R1> display ospf interface
    GE0/0/0 (192.168.1.1)
@@ -461,6 +514,7 @@ Total steps: 247
      DR: 10.0.0.1  BDR: 0.0.0.0
      Hello: 5s  Dead: 20s
      Neighbors: 0
+     (Passive interface)
   
    LoopBack1 (10.10.1.1)
      Area: 0  Cost: 1  State: DR
@@ -497,15 +551,15 @@ Total steps: 247
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x80000010
+   Router    192.168.1.1     192.168.1.1     0     96    0x80000017
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000011
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000018
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000012
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000019
   
 
 [123/247] r1 <R1> display ospf lsdb router
@@ -514,9 +568,9 @@ Total steps: 247
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x80000013
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000014
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000015
+   Router    192.168.1.1     192.168.1.1     0     96    0x8000001a
+   Router    192.168.1.1     192.168.1.1     0     24    0x8000001b
+   Router    192.168.1.1     192.168.1.1     0     24    0x8000001c
 
 [124/247] r1 <R1> display ospf lsdb network
            OSPF Process 1 with Router ID 192.168.1.1
@@ -540,9 +594,11 @@ Total steps: 247
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [127/247] r1 <R1> display ospf lsdb nssa
-  % Invalid input detected at '^' marker.
-  display ospf lsdb nssa
-                    ^
+           OSPF Process 1 with Router ID 192.168.1.1
+                    Link State Database
+  
+                       Type: 7
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [128/247] r1 <R1> display ospf routing
   OSPF Process 1 with Router ID 0.0.0.0
@@ -556,24 +612,23 @@ Total steps: 247
    (No border routers known)
 
 [130/247] r1 <R1> display ospf nexthop
-  % Invalid input detected at '^' marker.
-  display ospf nexthop
-               ^
+   OSPF nexthop information: (computed from RIB)
 
 [131/247] r1 <R1> display ospf vlink
-  OSPF Process with Router ID 192.168.1.1
+  Virtual Link to router 2.2.2.2 is down
+    Transit area 0, Cost 1
+    State: DOWN
+    Timer: Hello 10, Dead 40
   
-   No virtual links configured
 
 [132/247] r1 <R1> display ospf sham-link
-  % Invalid input detected at '^' marker.
-  display ospf sham-link
-               ^
+  Sham-Link  Area  Source           Destination
+   0          1.1.1.1          2.2.2.2
 
 [133/247] r1 <R1> display ospf statistics
   OSPF statistics:
     LSA: 3 total
-    SPF: 11 runs
+    SPF: 15 runs
     Neighbors: 0, Adjacent: 0
   
     Area statistics:
@@ -582,43 +637,30 @@ Total steps: 247
       Area 2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 [134/247] r1 <R1> display ospf error
-  % Invalid input detected at '^' marker.
-  display ospf error
-               ^
+  OSPF errors: 0
 
 [135/247] r1 <R1> display ospf request-queue
-  % Invalid input detected at '^' marker.
-  display ospf request-queue
-               ^
+  OSPF request queue is empty.
 
 [136/247] r1 <R1> display ospf retrans-queue
-  % Invalid input detected at '^' marker.
-  display ospf retrans-queue
-               ^
+  OSPF retransmission queue is empty.
 
 [137/247] r1 <R1> display ip routing-table protocol ospf
   OSPF Routing Table:
     (No OSPF routes)
 
 [138/247] r1 <R1> reset ospf process
-  % Invalid input detected at '^' marker.
-  reset ospf process
-        ^
+  Warning: The OSPF process will be reset. Continue? [Y/N]: Y
+  OSPF process reset.
 
 [139/247] r1 <R1> reset ospf 1 counters
-  % Invalid input detected at '^' marker.
-  reset ospf 1 counters
-        ^
+  OSPF counters reset.
 
 [140/247] r1 <R1> debugging ospf event
-  % Invalid input detected at '^' marker.
-  debugging ospf event
-            ^
+<empty>
 
 [141/247] r1 <R1> debugging ospf packet
-  % Invalid input detected at '^' marker.
-  debugging ospf packet
-            ^
+<empty>
 
 [142/247] r1 <R1> undo debugging all
   Info: All debugging turned off.
@@ -846,6 +888,7 @@ Total steps: 247
      DR: 10.0.0.1  BDR: 0.0.0.0
      Hello: 5s  Dead: 20s
      Neighbors: 0
+     (Passive interface)
   
    LoopBack1 (10.10.1.1)
      Area: 0  Cost: 1  State: DR
@@ -888,15 +931,15 @@ Total steps: 247
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x8000002b
+   Router    192.168.1.1     192.168.1.1     0     96    0x80000035
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000002c
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000036
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000002d
+   Router    192.168.1.1     192.168.1.1     0     24    0x80000037
   
 
 [157/247] r1 <R1> display ospf brief
@@ -980,7 +1023,7 @@ Total steps: 247
   No NTP associations
 
 [178/247] r1 <R1> display clock
-  2026-06-04 13:10:49
+  2026-06-04 13:15:49
   Thursday
   Time Zone(UTC) : UTC
 
@@ -993,13 +1036,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 13:10:49
+  CPU Usage Stat. Time : 2026-06-04 13:15:49
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 13:10:49
+  Memory utilization statistics at 2026-06-04 13:15:49
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1434,9 +1477,9 @@ Total steps: 247
     bgp            Remove BGP
     bfd            Disable BFD globally
     isis           Remove IS-IS
+    debugging      debugging
     ike            ike
     ipsec          ipsec
-    debugging      debugging
     acl            Delete Access Control List
     nat            nat
     route-policy   Remove a route-policy
