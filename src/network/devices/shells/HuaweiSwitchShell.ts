@@ -734,9 +734,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // VLAN-view features the L2 sim accepts (recognised, no datapath model).
     for (const kw of ['mux-vlan', 'aggregate-vlan', 'access-vlan',
       'vlan-type', 'mac-vlan', 'ip', 'igmp-snooping', 'arp']) {
-      // `ip`/`arp` here are VLAN-view sub-features (e.g. `ip binding`),
-      // NOT an L3 Vlanif address — those remain rejected (L2 switch).
-      this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, () => '');
+      this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, (args, raw) => {
+        if (this.selectedVlan === null) return '';
+        const v = this.swRef.getVLAN(this.selectedVlan);
+        if (!v) return '';
+        const extra = (v as unknown as { extras?: Record<string, string[]> }).extras ?? {};
+        const line = raw ?? `${kw} ${args.join(' ')}`.trim();
+        if (!extra[kw]) extra[kw] = [];
+        extra[kw].push(line);
+        (v as unknown as { extras: Record<string, string[]> }).extras = extra;
+        return '';
+      });
     }
   }
 
@@ -773,9 +781,43 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     for (const kw of ['authentication-scheme', 'authorization-scheme',
       'accounting-scheme', 'domain', 'undo']) {
-      t.registerGreedy(kw, `aaa ${kw}`, () => '');
+      t.registerGreedy(kw, `aaa ${kw}`, (args, raw) => {
+        const cfg = this.aaaExtraConfig ?? (this.aaaExtraConfig = {
+          authenticationSchemes: [], authorizationSchemes: [],
+          accountingSchemes: [], domains: [], rawLines: [],
+        });
+        const line = raw ?? `${kw} ${args.join(' ')}`.trim();
+        if (kw === 'authentication-scheme' && args[0]) cfg.authenticationSchemes.push(args[0]);
+        else if (kw === 'authorization-scheme' && args[0]) cfg.authorizationSchemes.push(args[0]);
+        else if (kw === 'accounting-scheme' && args[0]) cfg.accountingSchemes.push(args[0]);
+        else if (kw === 'domain' && args[0]) cfg.domains.push(args[0]);
+        else cfg.rawLines.push(line);
+        return '';
+      });
     }
   }
+
+  private userInterfaceExtraConfig: Map<string, {
+    authMode?: string;
+    idleTimeoutMin?: number;
+    screenLength?: number;
+    historySize?: number;
+    shellEnabled: boolean;
+    acl?: string;
+    authorizationMode?: string;
+    users: string[];
+    rawLines: string[];
+  }> = new Map();
+  getUserInterfaceExtraConfig() { return this.userInterfaceExtraConfig; }
+
+  private aaaExtraConfig: {
+    authenticationSchemes: string[];
+    authorizationSchemes: string[];
+    accountingSchemes: string[];
+    domains: string[];
+    rawLines: string[];
+  } | null = null;
+  getAaaExtraConfig() { return this.aaaExtraConfig; }
 
   /** user-interface sub-view ([host-ui-…]) — auth-mode / protocol / etc. */
   private buildUserInterfaceCommands(): void {
@@ -783,7 +825,32 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const kw of ['authentication-mode', 'user',
       'idle-timeout', 'screen-length', 'history-command', 'shell',
       'acl', 'set', 'authorization-mode']) {
-      t.registerGreedy(kw, `user-interface ${kw}`, () => '');
+      t.registerGreedy(kw, `user-interface ${kw}`, (args, raw) => {
+        const label = this.uiLabel;
+        const cfg = this.userInterfaceExtraConfig.get(label) ?? {
+          authMode: undefined as string | undefined,
+          idleTimeoutMin: undefined as number | undefined,
+          screenLength: undefined as number | undefined,
+          historySize: undefined as number | undefined,
+          shellEnabled: true,
+          acl: undefined as string | undefined,
+          authorizationMode: undefined as string | undefined,
+          users: [] as string[],
+          rawLines: [] as string[],
+        };
+        const line = raw ?? `${kw} ${args.join(' ')}`.trim();
+        if (kw === 'authentication-mode' && args[0]) cfg.authMode = args[0];
+        else if (kw === 'idle-timeout' && args[0]) cfg.idleTimeoutMin = parseInt(args[0], 10);
+        else if (kw === 'screen-length' && args[0]) cfg.screenLength = parseInt(args[0], 10);
+        else if (kw === 'history-command' && args[0] === 'max-size' && args[1]) cfg.historySize = parseInt(args[1], 10);
+        else if (kw === 'shell') cfg.shellEnabled = true;
+        else if (kw === 'acl' && args[0]) cfg.acl = args[0];
+        else if (kw === 'authorization-mode' && args[0]) cfg.authorizationMode = args[0];
+        else if (kw === 'user' && args[0]) cfg.users.push(args.join(' '));
+        else if (kw === 'set') cfg.rawLines.push(line);
+        this.userInterfaceExtraConfig.set(label, cfg);
+        return '';
+      });
     }
     // `protocol inbound {ssh|telnet|all|none}` toggles VTY transports
     // exactly like Cisco's `transport input`. Routes through the device
@@ -821,9 +888,30 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.acls.get(this.selectedAcl)?.rules.push(`rule ${args.join(' ')}`.trim());
       return '';
     });
-    for (const kw of ['description', 'step', 'undo']) {
-      t.registerGreedy(kw, `acl ${kw}`, () => '');
-    }
+    t.registerGreedy('description', 'ACL description', (args) => {
+      if (!this.selectedAcl) return '';
+      const acl = this.acls.get(this.selectedAcl);
+      if (acl) (acl as unknown as { description?: string }).description = args.join(' ');
+      return '';
+    });
+    t.registerGreedy('step', 'Set ACL rule step', (args) => {
+      if (!this.selectedAcl) return '';
+      const acl = this.acls.get(this.selectedAcl);
+      if (acl) (acl as unknown as { step?: number }).step = parseInt(args[0] ?? '5', 10);
+      return '';
+    });
+    t.registerGreedy('undo', 'ACL undo', (args) => {
+      if (!this.selectedAcl) return '';
+      const acl = this.acls.get(this.selectedAcl);
+      if (!acl) return '';
+      if (args[0] === 'rule' && args[1]) {
+        const seq = parseInt(args[1], 10);
+        if (!isNaN(seq)) {
+          acl.rules = acl.rules.filter(r => !new RegExp(`^rule\\s+${seq}\\b`).test(r));
+        }
+      }
+      return '';
+    });
     t.register('display this', 'Display ACL configuration', () =>
       this.renderAcl(this.selectedAcl));
   }
@@ -1170,8 +1258,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!isNaN(n)) this.mstRegion.revision = n;
       return '';
     });
-    t.register('active region-configuration', 'Activate MST region', () => '');
-    t.register('check region-configuration', 'Check MST region', () => '');
+    t.register('active region-configuration', 'Activate MST region', () => {
+      (this.mstRegion as unknown as { activated?: boolean; activatedAtMs?: number }).activated = true;
+      (this.mstRegion as unknown as { activatedAtMs?: number }).activatedAtMs = Date.now();
+      return 'Info: This operation may take a few seconds. Please wait for a moment...done.';
+    });
+    t.register('check region-configuration', 'Check MST region', () => {
+      const region = this.mstRegion as unknown as { name?: string; revision?: number; vlanMap?: Map<number, number> };
+      const lines = [
+        `Region Name: ${region.name ?? ''}`,
+        `Revision Level: ${region.revision ?? 0}`,
+        `Instance Vlans Mapped`,
+      ];
+      if (region.vlanMap) {
+        for (const [instance, vlans] of region.vlanMap as unknown as Map<number, number[]>) {
+          lines.push(`${String(instance).padEnd(8)} ${Array.isArray(vlans) ? vlans.join(',') : vlans}`);
+        }
+      }
+      return lines.join('\n');
+    });
     t.register('display this', 'Display MST region configuration', () => {
       const lines = ['stp region-configuration'];
       if (this.mstRegion.name) lines.push(` region-name ${this.mstRegion.name}`);

@@ -762,7 +762,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // No-op keywords accepted at the user-interface view.
     for (const kw of ['user', 'screen-length', 'history-command', 'shell',
       'set', 'authorization-mode']) {
-      t.registerGreedy(kw, `user-interface ${kw}`, () => '');
+      t.registerGreedy(kw, `user-interface ${kw}`, (args, raw) => {
+        const r = this.selectedUiRange;
+        if (!r) return '';
+        const lc = this.routerRef?._getVtyLineConfig?.();
+        if (!lc) return '';
+        const update: Record<string, unknown> = { first: r.first, last: r.last };
+        if (kw === 'screen-length' && args[0]) {
+          update.screenLength = parseInt(args[0], 10);
+        } else if (kw === 'history-command' && args[0] === 'max-size' && args[1]) {
+          update.historyCommandMaxSize = parseInt(args[1], 10);
+        } else if (kw === 'shell') {
+          update.shellEnabled = true;
+        } else if (kw === 'authorization-mode' && args[0]) {
+          update.authorizationMode = args[0];
+        } else if (kw === 'user' && args[0] === 'privilege' && args[1] === 'level' && args[2]) {
+          update.privilegeLevel = parseInt(args[2], 10);
+        } else {
+          update.rawLine = raw ?? `${kw} ${args.join(' ')}`.trim();
+        }
+        lc.upsert(update as Parameters<typeof lc.upsert>[0]);
+        return '';
+      });
     }
     t.registerGreedy('idle-timeout', 'Set idle-timeout', (args) => {
       const r = this.selectedUiRange; if (!r) return '';
@@ -1117,8 +1138,19 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         return '';
       });
     }
-    t.registerGreedy('ip routing-table limit', 'Configure IPv4 routing-table limit', () => '');
-    t.registerGreedy('undo ip routing-table limit', 'Remove routing-table limit', () => '');
+    t.registerGreedy('ip routing-table limit', 'Configure IPv4 routing-table limit', (args) => {
+      const r = this.routerRef as unknown as { _setRoutingTableLimit?: (max: number, thresholdPct?: number) => void } | null;
+      if (!r) return '';
+      const max = parseInt(args[0] ?? '', 10);
+      const threshold = parseInt(args[1] ?? '', 10);
+      if (!isNaN(max)) r._setRoutingTableLimit?.(max, isNaN(threshold) ? undefined : threshold);
+      return '';
+    });
+    t.registerGreedy('undo ip routing-table limit', 'Remove routing-table limit', () => {
+      const r = this.routerRef as unknown as { _setRoutingTableLimit?: (max: number | null) => void } | null;
+      r?._setRoutingTableLimit?.(null);
+      return '';
+    });
     t.registerGreedy('ftp', 'FTP server config', (args) => {
       if (args[0] === 'server' && (args[1] === 'enable' || !args[1])) {
         this.r()._setGlobalToggle?.('ftp', true);

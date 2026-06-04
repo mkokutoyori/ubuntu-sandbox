@@ -946,7 +946,16 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     // trie, so `show current` must also resolve there.
     this.privilegedTrie.register('show current', 'Show pending MST config', () =>
       this.showMstConfig());
-    this.configMstTrie.registerGreedy('no', 'Negate', () => '');
+    this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
+      const head = args[0]?.toLowerCase();
+      if (head === 'name') this.mstRegion.name = '';
+      else if (head === 'revision') this.mstRegion.revision = 0;
+      else if (head === 'instance' && args[1]) {
+        const inst = parseInt(args[1], 10);
+        if (!isNaN(inst)) this.mstRegion.instances.delete(inst);
+      }
+      return '';
+    });
     this.configMstTrie.registerGreedy('abort', 'Abort MST changes', () => {
       this.mode = 'config'; return '';
     });

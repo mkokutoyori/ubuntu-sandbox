@@ -1562,6 +1562,12 @@ export abstract class Router extends Equipment {
   getRipVersion(): 1 | 2 { return this._ripVersion; }
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
+  private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
+  getRoutingTableLimit(): { max: number; thresholdPct?: number } | null { return this._routingTableLimit; }
+  _setRoutingTableLimit(max: number | null, thresholdPct?: number): void {
+    this._routingTableLimit = max === null ? null : { max, thresholdPct };
+  }
+
   getDebugService(): RouterDebugService {
     if (!this._debugService) this._debugService = new RouterDebugService();
     return this._debugService;
