@@ -346,20 +346,23 @@ export function buildHuaweiIKEProposalCommands(
     return '';
   });
 
-  trie.registerGreedy('authentication-algorithm', 'Set authentication (hash) algorithm', (args) => {
+  const setIkeHash = (args: string[]): string => {
     const n = ctx.getSelectedIKEProposal();
     if (n === null) return 'Error: No IKE proposal selected.';
     const policy = eng(ctx).getOrCreateISAKMPPolicy(n);
     const algoMap: Record<string, string> = {
       'md5': 'md5', 'sha1': 'sha', 'sha-1': 'sha',
-      'sha2-256': 'sha256', 'sha-256': 'sha256',
-      'sha2-384': 'sha384', 'sha-384': 'sha384',
-      'sha2-512': 'sha512', 'sha-512': 'sha512',
+      'sha2-256': 'sha256', 'sha-256': 'sha256', 'hmac-sha2-256': 'sha256',
+      'sha2-384': 'sha384', 'sha-384': 'sha384', 'hmac-sha2-384': 'sha384',
+      'sha2-512': 'sha512', 'sha-512': 'sha512', 'hmac-sha2-512': 'sha512',
+      'hmac-md5': 'md5', 'hmac-sha1': 'sha', 'hmac-sha': 'sha',
     };
     const raw = args[0]?.toLowerCase() || 'sha1';
     policy.hash = algoMap[raw] || raw;
     return '';
-  });
+  };
+  trie.registerGreedy('authentication-algorithm', 'Set authentication (hash) algorithm', setIkeHash);
+  trie.registerGreedy('integrity-algorithm', 'Set integrity (hash) algorithm', setIkeHash);
 
   trie.registerGreedy('authentication-method', 'Set authentication method', (args) => {
     const n = ctx.getSelectedIKEProposal();
@@ -444,6 +447,23 @@ export function buildHuaweiIKEPeerCommands(
   });
 
   trie.registerGreedy('local-address', 'Set local address for IKE', (_args) => {
+    return '';
+  });
+
+  trie.registerGreedy('remote-id-type', 'Set remote identity type (ip/name/fqdn/user-fqdn)', (args) => {
+    const peerName = ctx.getSelectedIKEPeer();
+    if (!peerName) return '';
+    const kr = eng(ctx).getOrCreateIKEv2Keyring('default');
+    const peer = kr.peers.get(peerName);
+    if (peer && args[0]) (peer as any).remoteIdType = args[0].toLowerCase();
+    return '';
+  });
+  trie.registerGreedy('remote-id', 'Set remote identity', (args) => {
+    const peerName = ctx.getSelectedIKEPeer();
+    if (!peerName) return '';
+    const kr = eng(ctx).getOrCreateIKEv2Keyring('default');
+    const peer = kr.peers.get(peerName);
+    if (peer && args[0]) (peer as any).remoteId = args[0];
     return '';
   });
 
@@ -617,6 +637,58 @@ export function buildHuaweiIPSecPolicyCommands(
   trie.registerGreedy('sa duration traffic-based', 'Set SA lifetime (kilobytes)', (args) => {
     const kb = parseInt(args[0] ?? '4608000', 10);
     if (!isNaN(kb)) eng(ctx).setGlobalSALifetimeKB(kb);
+    return '';
+  });
+
+  trie.registerGreedy('tunnel local', 'Set IPSec tunnel local endpoint', (args) => {
+    const name = ctx.getSelectedIPSecPolicy();
+    const seq = ctx.getSelectedIPSecPolicySeq();
+    if (!name || seq === null || !args[0]) return '';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    (entry as any).tunnelLocal = args[0];
+    if (args[1]?.toLowerCase() === 'remote' && args[2]) {
+      (entry as any).tunnelRemote = args[2];
+    }
+    return '';
+  });
+
+  trie.registerGreedy('tunnel remote', 'Set IPSec tunnel remote endpoint', (args) => {
+    const name = ctx.getSelectedIPSecPolicy();
+    const seq = ctx.getSelectedIPSecPolicySeq();
+    if (!name || seq === null || !args[0]) return '';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    (entry as any).tunnelRemote = args[0];
+    return '';
+  });
+
+  trie.registerGreedy('sa spi', 'Set IPSec manual SPI', (args) => {
+    const name = ctx.getSelectedIPSecPolicy();
+    const seq = ctx.getSelectedIPSecPolicySeq();
+    if (!name || seq === null) return '';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    const direction = args[0]?.toLowerCase();
+    const proto = args[1]?.toLowerCase();
+    const spi = parseInt(args[2] ?? '', 10);
+    if (direction && proto && !isNaN(spi)) {
+      (entry as any).manualSa = (entry as any).manualSa || {};
+      (entry as any).manualSa[`${direction}_${proto}_spi`] = spi;
+    }
+    return '';
+  });
+
+  trie.registerGreedy('sa string-key', 'Set IPSec manual string-key', (args) => {
+    const name = ctx.getSelectedIPSecPolicy();
+    const seq = ctx.getSelectedIPSecPolicySeq();
+    if (!name || seq === null) return '';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
+    const direction = args[0]?.toLowerCase();
+    const proto = args[1]?.toLowerCase();
+    const cipherIdx = args.indexOf('cipher');
+    const key = cipherIdx >= 0 ? args[cipherIdx + 1] : args[2];
+    if (direction && proto && key) {
+      (entry as any).manualSa = (entry as any).manualSa || {};
+      (entry as any).manualSa[`${direction}_${proto}_key`] = key;
+    }
     return '';
   });
 }

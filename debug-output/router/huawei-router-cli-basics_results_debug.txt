@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-04T08:20:04.684Z
+Generated: 2026-06-04T13:28:13.638Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-04 08:20:04
+  2026-06-04 13:28:13
   Thursday
   Time Zone(UTC) : UTC
 
@@ -49,18 +49,23 @@ Total steps: 304
   Wait     : Wait for the user to press ENTER.
 
 [6/304] r1 <R1> display history-command
-  Info: No history command.
+  display version
+  display version
+  display clock
+  display device
+  display users
+  display history-command
 
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:20:04
+  CPU Usage Stat. Time : 2026-06-04 13:28:13
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 08:20:04
+  Memory utilization statistics at 2026-06-04 13:28:13
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -276,18 +281,14 @@ Total steps: 304
   Info: No IPSec configuration.
 
 [34/304] r1 <R1> display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [35/304] r1 <R1> display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [36/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
@@ -337,12 +338,7 @@ Total steps: 304
   Info: No patch exists.
 
 [44/304] r1 <R1> display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [45/304] r1 <R1> display ssh user-information
   SSH version                     : 2.0
@@ -383,29 +379,26 @@ Total steps: 304
   GE0/0/3                       down    down     
 
 [50/304] r1 <R1> display health
-  % Invalid input detected at '^' marker.
-  display health
-          ^
+  R1 system health:
+    Status: normal
+    CPU usage: 5%
+    Memory usage: 20%
 
 [51/304] r1 <R1> display temperature all
-  % Invalid input detected at '^' marker.
-  display temperature all
-          ^
+   Slot CPU 1 : 45 C (Normal)
+   Slot CPU 2 : 46 C (Normal)
 
 [52/304] r1 <R1> display fan
-  % Invalid input detected at '^' marker.
-  display fan
-          ^
+   Slot No  FAN No  Status
+   0        1       Normal
+   0        2       Normal
 
 [53/304] r1 <R1> display power
-  % Invalid input detected at '^' marker.
-  display power
-          ^
+   Slot No  PWR No  Status
+   0        1       Normal
 
 [54/304] r1 <R1> display environment
-  % Invalid input detected at '^' marker.
-  display environment
-          ^
+   All sensors normal.
 
 [55/304] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
@@ -413,19 +406,14 @@ Total steps: 304
   Info: Diagnostic information collected.
 
 [56/304] r1 <R1> display tcp status
-  % Invalid input detected at '^' marker.
-  display tcp status
-          ^
+  TCPCB       Local Address                Foreign Address           State
+  (none)
 
 [57/304] r1 <R1> display sockets
-  % Invalid input detected at '^' marker.
-  display sockets
-          ^
+   Active sockets: 0
 
 [58/304] r1 <R1> display dns server
-  % Invalid input detected at '^' marker.
-  display dns server
-          ^
+  No DNS server configured.
 
 [59/304] r1 <R1> ?
     system-view    Enter system view
@@ -433,7 +421,7 @@ Total steps: 304
     ssh            ssh client
     display        display
     save           Save current configuration
-    reboot         Reboot the device
+    reboot         Reboot device
     reset          reset
     commit         Commit candidate configuration
     screen-length  Set terminal screen length
@@ -443,8 +431,13 @@ Total steps: 304
     debugging      debugging
     ip             ip
     rip            Configure RIP routing
+    bgp            Configure BGP routing
+    isis           Configure IS-IS routing
     tracert        Trace route to destination
     ping           Send ICMP echo messages
+    telnet         Open Telnet session
+    compare        compare
+    startup        startup
 
 [60/304] r1 <R1> display ?
     version                 Display version information
@@ -460,8 +453,19 @@ Total steps: 304
     dhcp                    Display DHCP snooping
     nat                     nat
     vrrp                    Display VRRP groups
+    bfd                     bfd
+    qos                     qos
+    traffic                 traffic
+    ssh                     Display SSH server status
+    stelnet                 stelnet
+    telnet                  telnet
+    snmp-agent              Display SNMP agent info
+    ntp-service             Display NTP status
+    info-center             Display info-center configuration
+    sflow                   Display sFlow configuration
     lldp                    lldp
     bgp                     bgp
+    isis                    isis
     ospf                    ospf
     rip                     Display RIP information
     counters                Display traffic counters
@@ -482,18 +486,23 @@ Total steps: 304
     patch-information       Display patch information
     diagnostic-information  Collect diagnostic information
     local-user              Display local users
-    ssh                     Display SSH server status
-    snmp-agent              Display SNMP agent info
-    ntp-service             Display NTP status
     port-security           Display port security
     ospfv3                  ospfv3
     ike                     ike
     ipsec                   ipsec
     acl                     Display ACL configuration
+    health                  Display device health
+    temperature             temperature
+    fan                     Display fan status
+    power                   Display power supply status
+    environment             Display environment status
+    tcp                     tcp
+    sockets                 Display socket list
+    dns                     dns
     dhcp-server             dhcp-server
     dhcp-snooping           dhcp-snooping
+    dhcpv6                  dhcpv6
     route-policy            Display a route-policy
-    traffic                 traffic
     traffic-policy          traffic-policy
     nqa                     nqa
     this                    Display current view configuration
@@ -509,9 +518,8 @@ Total steps: 304
    Network is unreachable
 
 [63/304] r1 <R1> telnet 10.0.0.2
-  % Invalid input detected at '^' marker.
-  telnet 10.0.0.2
-  ^
+  Trying 10.0.0.2 ...
+  Error: Failed to connect to the remote host.
 
 [64/304] r1 <R1> ssh client 10.0.0.2
   Error: no usable interface IP for outbound SSH
@@ -555,38 +563,44 @@ Total steps: 304
 <empty>
 
 [75/304] r1 [R1-CORE] interface Tunnel0/0/0
-  Error: Wrong parameter found at '^' position.
-
-[76/304] r1 [R1-CORE] display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  #
-
-[77/304] r1 [R1-CORE] quit
 <empty>
 
-[78/304] r1 <R1-CORE> ospf 1
-  % Invalid input detected at '^' marker.
+[76/304] r1 [R1-CORE-Tunnel0/0/0] display this
+  #
+  interface Tunnel0/0/0
+   shutdown
+  #
+
+[77/304] r1 [R1-CORE-Tunnel0/0/0] quit
+<empty>
+
+[78/304] r1 [R1-CORE] ospf 1
+<empty>
+
+[79/304] r1 [R1-CORE-ospf-1] display this
+  #
   ospf 1
-  ^
+  #
 
-[79/304] r1 <R1-CORE> display this
+[80/304] r1 [R1-CORE-ospf-1] quit
+<empty>
+
+[81/304] r1 [R1-CORE] rip 1
+<empty>
+
+[82/304] r1 [R1-CORE-rip-1] display this
+  #
+  rip 1
+   version 2
+  #
+
+[83/304] r1 [R1-CORE-rip-1] quit
+<empty>
+
+[84/304] r1 [R1-CORE] bgp 65000
+<empty>
+
+[85/304] r1 [R1-CORE-bgp-65000] display this
   #
   sysname R1-CORE
   #
@@ -605,47 +619,23 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
-  #
-
-[80/304] r1 <R1-CORE> quit
-<empty>
-
-[81/304] r1 <R1-CORE> rip 1
-<empty>
-
-[82/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
+  interface Tunnel0/0/0
    shutdown
   #
   #
   rip 1
    version 2
   #
+  ospf 1
+  #
 
-[83/304] r1 <R1-CORE> quit
+[86/304] r1 [R1-CORE-bgp-65000] quit
 <empty>
 
-[84/304] r1 <R1-CORE> bgp 65000
-  % Invalid input detected at '^' marker.
-  bgp 65000
-  ^
+[87/304] r1 [R1-CORE] isis 1
+<empty>
 
-[85/304] r1 <R1-CORE> display this
+[88/304] r1 [R1-CORE-isis-1] display this
   #
   sysname R1-CORE
   #
@@ -664,20 +654,23 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
   #
+  ospf 1
+  #
 
-[86/304] r1 <R1-CORE> quit
+[89/304] r1 [R1-CORE-isis-1] quit
 <empty>
 
-[87/304] r1 <R1-CORE> isis 1
-  % Invalid input detected at '^' marker.
-  isis 1
-  ^
+[90/304] r1 [R1-CORE] acl 2000
+<empty>
 
-[88/304] r1 <R1-CORE> display this
+[91/304] r1 [R1-CORE-acl-basic-2000] display this
   #
   sysname R1-CORE
   #
@@ -696,20 +689,23 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
   #
+  ospf 1
+  #
 
-[89/304] r1 <R1-CORE> quit
+[92/304] r1 [R1-CORE-acl-basic-2000] quit
 <empty>
 
-[90/304] r1 <R1-CORE> acl 2000
-  % Invalid input detected at '^' marker.
-  acl 2000
-  ^
+[93/304] r1 [R1-CORE] acl name MGMT
+  Error: Incomplete command.
 
-[91/304] r1 <R1-CORE> display this
+[94/304] r1 [R1-CORE] display this
   #
   sysname R1-CORE
   #
@@ -728,44 +724,17 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
-  #
-  rip 1
-   version 2
-  #
-
-[92/304] r1 <R1-CORE> quit
-<empty>
-
-[93/304] r1 <R1-CORE> acl name MGMT
-  % Invalid input detected at '^' marker.
-  acl name MGMT
-  ^
-
-[94/304] r1 <R1-CORE> display this
-  #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
+  interface Tunnel0/0/0
    shutdown
   #
   #
   rip 1
    version 2
   #
+  ospf 1
+  #
 
-[95/304] r1 <R1-CORE> quit
+[95/304] r1 [R1-CORE] quit
 <empty>
 
 [96/304] r1 <R1-CORE> ip pool LAN
@@ -792,9 +761,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [98/304] r1 <R1-CORE> quit
@@ -824,9 +798,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [101/304] r1 <R1-CORE> quit
@@ -856,9 +835,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [104/304] r1 <R1-CORE> quit
@@ -888,9 +872,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [107/304] r1 <R1-CORE> quit
@@ -920,9 +909,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [110/304] r1 <R1-CORE> quit
@@ -952,9 +946,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [113/304] r1 <R1-CORE> quit
@@ -984,9 +983,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [116/304] r1 <R1-CORE> quit
@@ -1022,9 +1026,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 
@@ -1054,9 +1063,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
@@ -1081,9 +1095,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [126/304] r1 [R1-EDGE] q
@@ -1111,9 +1130,14 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
@@ -1132,6 +1156,7 @@ Total steps: 304
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
   LoopBack0                         unassigned           DOWN       DOWN
+  Tunnel0/0/0                       unassigned           DOWN       DOWN
 
 [130/304] r1 <R1-EDGE> dis ip rou
   Route Flags: R - relay, D - download to fib
@@ -1172,13 +1197,18 @@ Total steps: 304
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    bfd            Disable BFD globally
+    isis           Remove IS-IS
+    debugging      debugging
     ike            ike
     ipsec          ipsec
-    debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
@@ -1186,7 +1216,7 @@ Total steps: 304
     <cr>  
 
 [137/304] r1 [R1-EDGE] aaa ?
-  Error: Unrecognized command
+    <cr>  
 
 [138/304] r1 [R1-EDGE] snmp-agent ?
     WORD  Toggle: snmp-agent
@@ -1201,7 +1231,8 @@ Total steps: 304
     <cr>  
 
 [141/304] r1 [R1-EDGE] bgp ?
-  Error: Unrecognized command
+    WORD  Configure BGP routing
+    <cr>  
 
 [142/304] r1 [R1-EDGE] interface GigabitEthernet0/0/0
 <empty>
@@ -1210,6 +1241,7 @@ Total steps: 304
     address           Configure IP address
     helper-address    Set DHCP relay helper address
     forward-protocol  forward-protocol
+    urpf              Configure URPF mode
 
 [144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
     WORD  Configure IP address
@@ -1314,9 +1346,12 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+  interface Tunnel0/0/0
+   shutdown
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
+  ospf 1
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1334,10 +1369,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [174/304] r1 <Huawei> display ip routing-table | include Direct
@@ -1355,6 +1395,7 @@ Total steps: 304
   Line protocol current state : DOWN
   Line protocol current state : DOWN
   Line protocol current state : UP
+  Line protocol current state : UP
 
 
 --- [177] § user-interface / screen ---
@@ -1371,19 +1412,13 @@ Total steps: 304
 <empty>
 
 [181/304] r1 [Huawei] idle-timeout 0 0
-  % Invalid input detected at '^' marker.
-  idle-timeout 0 0
-  ^
+<empty>
 
 [182/304] r1 [Huawei] authentication-mode password
-  % Invalid input detected at '^' marker.
-  authentication-mode password
-  ^
+<empty>
 
 [183/304] r1 [Huawei] set authentication password cipher Huawei@123
-  % Invalid input detected at '^' marker.
-  set authentication password cipher Huawei@123
-  ^
+<empty>
 
 [184/304] r1 [Huawei] quit
 <empty>
@@ -1454,33 +1489,31 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [195/304] r1 <Huawei> reset saved-configuration
   Info: Succeeded in clearing the configuration in the device.
 
 [196/304] r1 <Huawei> compare configuration
-  % Invalid input detected at '^' marker.
-  compare configuration
-  ^
+  Info: The current configuration is the same as the saved configuration.
 
 [197/304] r1 <Huawei> startup saved-configuration vrpcfg.zip
-  % Invalid input detected at '^' marker.
-  startup saved-configuration vrpcfg.zip
-  ^
+  Info: Succeeded in setting the file for booting system.
 
 [198/304] r1 <Huawei> reboot fast
-  % Invalid input detected at '^' marker.
-  reboot fast
-         ^
+  Info: This operation will reboot the system. Continue? [Y/N]:
 
 [199/304] r1 <Huawei> reboot
-  Info: The system is now comparing the configuration, please wait.
-  Info: System will reboot.
+  Info: This operation will reboot the system. Continue? [Y/N]:
 
 
 --- [200] § regression: display family ---
@@ -1523,10 +1556,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [203/304] r1 <Huawei> display saved-configuration
@@ -1550,10 +1588,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [204/304] r1 <Huawei> display ip interface brief
@@ -1572,6 +1615,7 @@ Total steps: 304
   GE0/0/2                           unassigned           DOWN       DOWN
   GE0/0/3                           unassigned           DOWN       DOWN
   LoopBack0                         unassigned           DOWN       DOWN
+  Tunnel0/0/0                       unassigned           DOWN       DOWN
 
 [205/304] r1 <Huawei> display interface
   GE0/0/0 current state : UP
@@ -1604,6 +1648,12 @@ Total steps: 304
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
+  Tunnel0/0/0 current state : UP
+  Line protocol current state : UP
+  Internet Address is not configured
+  The Maximum Transmit Unit is 1500
+  Input:  0 packets, 0 bytes
+  Output: 0 packets, 0 bytes
 
 [206/304] r1 <Huawei> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1630,19 +1680,29 @@ Total steps: 304
   No ARP entries found.
 
 [210/304] r1 <Huawei> display ospf peer
-  Error: OSPF is not configured.
+  OSPF Process with Router ID 0.0.0.0
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
 
 [211/304] r1 <Huawei> display ospf interface
-  Error: OSPF is not configured.
+<empty>
 
 [212/304] r1 <Huawei> display ospf routing
-  Info: OSPF is not running.
+  OSPF Process 1 with Router ID 0.0.0.0
+    Routing Tables
+  
+    Routing for Network
 
 [213/304] r1 <Huawei> display ospf lsdb
-  Error: OSPF is not configured.
+           OSPF Process 1 with Router ID 0.0.0.0
+                    Link State Database
+  
 
 [214/304] r1 <Huawei> display ospf brief
-  Error: OSPF is not configured.
+  OSPF Process 1 with Router ID 0.0.0.0
+  
+   Area    Type   Intf    Adj   LSA
 
 [215/304] r1 <Huawei> display rip
   RIP process 1
@@ -1654,6 +1714,9 @@ Total steps: 304
     Networks:
   
     Routes: 0
+  #
+  bgp 65000
+  isis 1
 
 [216/304] r1 <Huawei> display rip 1 route
   RIP process 1
@@ -1665,18 +1728,26 @@ Total steps: 304
     Networks:
   
     Routes: 0
+  #
+  bgp 65000
+  isis 1
 
 [217/304] r1 <Huawei> display bgp peer
-  Info: BGP is not running.
+  BGP local router ID : 0.0.0.0
+  Local AS number : 65000
+  Total number of peers : 0              Peers in established state : 0
+    Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
 
 [218/304] r1 <Huawei> display bgp routing-table
-  Info: BGP is not running.
+  BGP Local router ID : 0.0.0.0
+   Total Number of Routes: 0
+   Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
 
 [219/304] r1 <Huawei> display nat session all
   Info: No NAT session is found.
 
 [220/304] r1 <Huawei> display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [221/304] r1 <Huawei> display ip pool
   No DHCP pools configured.
@@ -1720,30 +1791,20 @@ Total steps: 304
   Info: No IKE peers configured.
 
 [232/304] r1 <Huawei> display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [233/304] r1 <Huawei> display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [234/304] r1 <Huawei> display ntp session
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  No NTP associations
 
 [235/304] r1 <Huawei> display clock
-  2026-06-04 08:20:04
+  2026-06-04 13:28:13
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1756,13 +1817,13 @@ Total steps: 304
 [238/304] r1 <Huawei> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:20:04
+  CPU Usage Stat. Time : 2026-06-04 13:28:13
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-04 08:20:04
+  Memory utilization statistics at 2026-06-04 13:28:13
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1785,7 +1846,16 @@ Total steps: 304
   Wait     : Wait for the user to press ENTER.
 
 [242/304] r1 <Huawei> display history-command
-  Info: No history command.
+  display ntp status
+  display ntp session
+  display clock
+  display lldp neighbor
+  display lldp neighbor brief
+  display cpu-usage
+  display memory-usage
+  display device
+  display users
+  display history-command
 
 [243/304] r1 <Huawei> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1848,6 +1918,7 @@ Total steps: 304
   GE0/0/2                     down    down      0%    0%       0          0
   GE0/0/3                     down    down      0%    0%       0          0
   LoopBack0                   down    down      0%    0%       0          0
+  Tunnel0/0/0                 down    down      0%    0%       0          0
 
 [251/304] r1 <Huawei> display ip interface GigabitEthernet0/0/0
   GE0/0/0 current state : UP
@@ -1891,10 +1962,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [254/304] r1 <Huawei> display diagnostic-information
@@ -1916,12 +1992,7 @@ Total steps: 304
   Info: No online-fail record.
 
 [257/304] r1 <Huawei> display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [258/304] r1 <Huawei> display ssh user-information
   SSH version                     : 2.0
@@ -1947,7 +2018,7 @@ Total steps: 304
 
 --- [261] § regression: pipe filters ---
 [261/304] r1 <Huawei> display current-configuration | include ospf
-<empty>
+  ospf 1
 
 [262/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1965,10 +2036,15 @@ Total steps: 304
   interface LoopBack0
    shutdown
   #
+  interface Tunnel0/0/0
+   shutdown
+  #
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
    version 2
+  #
+  ospf 1
   #
 
 [263/304] r1 <Huawei> display current-configuration | exclude #
@@ -1984,9 +2060,12 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+  interface Tunnel0/0/0
+   shutdown
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
+  ospf 1
 
 [264/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
@@ -2127,13 +2206,18 @@ Total steps: 304
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    bfd            Disable BFD globally
+    isis           Remove IS-IS
+    debugging      debugging
     ike            ike
     ipsec          ipsec
-    debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [302/304] r1 [Huawei] acl ?

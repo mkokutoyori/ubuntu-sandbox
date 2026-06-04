@@ -911,6 +911,16 @@ export class DHCPServer implements IProtocolEngine {
     }
   }
 
+  removeHelperAddress(iface: string, address: string): boolean {
+    const existing = this.relay.helperAddresses.get(iface);
+    if (!existing) return false;
+    const idx = existing.indexOf(address);
+    if (idx < 0) return false;
+    existing.splice(idx, 1);
+    if (existing.length === 0) this.relay.helperAddresses.delete(iface);
+    return true;
+  }
+
   private readonly interfaceModes: Map<string, 'server' | 'relay' | 'none'> = new Map();
   private readonly snoopingEnabledIfaces: Set<string> = new Set();
   private readonly forwardProtocolPorts: Map<string, Set<number>> = new Map();

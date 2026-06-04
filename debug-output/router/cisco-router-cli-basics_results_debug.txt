@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-06-04T08:20:00.382Z
+Generated: 2026-06-04T13:28:16.541Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [4/482] r1 R1> show calendar
-  08:20:00 UTC Thu Jun 4 2026
+  13:28:16 UTC Thu Jun 4 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -73,9 +73,10 @@ Total steps: 482
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [9/482] r1 R1> show processes cpu history
-  % Invalid input detected at '^' marker.
-  show processes cpu history
-                     ^
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [10/482] r1 R1> show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -118,9 +119,7 @@ Total steps: 482
   % startup-config is not present
 
 [15/482] r1 R1> show running-config all
-  % Invalid input detected at '^' marker.
-  show running-config all
-                      ^
+  Building configuration...
 
 [16/482] r1 R1> show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -243,9 +242,9 @@ Total steps: 482
   No ARP entries.
 
 [28/482] r1 R1> show mac address-table
-  % Invalid input detected at '^' marker.
-  show mac address-table
-       ^
+  Mac Address Table
+  --------------------------------
+  No entries
 
 [29/482] r1 R1> show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -372,7 +371,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBB3B0.651EB851 (08:20:00.395 UTC Thu Jun 4 2026)
+  reference time is EDCBFBF0.8F9DB22D (13:28:16.561 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -417,19 +416,18 @@ Total steps: 482
   Environmental monitoring is not instrumented on this platform.
 
 [49/482] r1 R1> show platform
-  % Invalid input detected at '^' marker.
-  show platform
-       ^
+  Cisco ISR 2911
+    PID: CISCO2911/K9
+    S/N: FTX1234567A
 
 [50/482] r1 R1> show license
-  % Invalid input detected at '^' marker.
-  show license
-       ^
+  Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority
+  1     ipbasek9                 Lifetime       0              Permanent       Active, In Use   N/A              Medium
 
 [51/482] r1 R1> show license udi
-  % Invalid input detected at '^' marker.
-  show license udi
-       ^
+  Device# PID                   SN                              UDI
+  *0    CISCO2911/K9      FTX1234567A                  CISCO2911/K9:FTX1234567A
+    (hostname: R1)
 
 [52/482] r1 R1> show boot
   BOOT variable does not exist
@@ -603,14 +601,12 @@ Total steps: 482
       No active syslog hosts
 
 [69/482] r1 R1> show diag
-  % Invalid input detected at '^' marker.
-  show diag
-       ^
+  Slot 0:  Built-in PID (real)
+    Power: OK
+    Temperature: nominal
 
 [70/482] r1 R1> show idprom backplane
-  % Invalid input detected at '^' marker.
-  show idprom backplane
-       ^
+  IDPROM for backplane: serial number, PID match show inventory
 
 [71/482] r1 R1> ?
     enable      Enter privileged EXEC mode
@@ -630,6 +626,12 @@ Total steps: 482
     processes       processes
     memory          Display memory statistics
     flash           Display flash filesystem
+    platform        Display platform information
+    license         Display licenses
+    diag            Display chassis diagnostics
+    idprom          idprom
+    mac             mac
+    running-config  Display running configuration
     privilege       Display current privilege level
     history         Display command history
     ntp             Display NTP associations
@@ -666,11 +668,11 @@ Total steps: 482
     route-map       Display route-maps
     logging         Display syslog state
     tech-support    Aggregate diagnostic output
-    running-config  Display running configuration
     startup-config  Display saved configuration
     configuration   Display saved configuration
     counters        Display traffic counters
     debug           Display debugging flags
+    dhcp            dhcp
     access-lists    Display all access lists
     crypto          crypto
     debugging       Display active debug flags
@@ -678,6 +680,7 @@ Total steps: 482
     version         Display system hardware and software status
     interface       Display interface status
     interfaces      Display interface status
+    vlans           Display VLANs (router)
     radius          radius
     tacacs          Display TACACS
     login           Display login config
@@ -687,6 +690,9 @@ Total steps: 482
     zone-pair       zone-pair
     class-map       Show class-map
     time-range      Show time-range
+    event           event
+    flow            flow
+    archive         Display archive status
 
 [73/482] r1 R1> ping
   % Ping requires a target IP address.
@@ -730,10 +736,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [81/482] r1 R1# show calendar
-  08:20:00 UTC Thu Jun 4 2026
+  13:28:16 UTC Thu Jun 4 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -774,9 +780,10 @@ Total steps: 482
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [86/482] r1 R1# show processes cpu history
-  % Invalid input detected at '^' marker.
-  show processes cpu history
-                     ^
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [87/482] r1 R1# show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -819,9 +826,7 @@ Total steps: 482
   % startup-config is not present
 
 [92/482] r1 R1# show running-config all
-  % Invalid input detected at '^' marker.
-  show running-config all
-                      ^
+  Building configuration...
 
 [93/482] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
@@ -944,9 +949,9 @@ Total steps: 482
   No ARP entries.
 
 [105/482] r1 R1# show mac address-table
-  % Invalid input detected at '^' marker.
-  show mac address-table
-       ^
+  Mac Address Table
+  --------------------------------
+  No entries
 
 [106/482] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1073,7 +1078,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBB3B0.65E353F7 (08:20:00.398 UTC Thu Jun 4 2026)
+  reference time is EDCBFBF0.90A3D70A (13:28:16.565 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1118,19 +1123,18 @@ Total steps: 482
   Environmental monitoring is not instrumented on this platform.
 
 [126/482] r1 R1# show platform
-  % Invalid input detected at '^' marker.
-  show platform
-       ^
+  Cisco ISR 2911
+    PID: CISCO2911/K9
+    S/N: FTX1234567A
 
 [127/482] r1 R1# show license
-  % Invalid input detected at '^' marker.
-  show license
-       ^
+  Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority
+  1     ipbasek9                 Lifetime       0              Permanent       Active, In Use   N/A              Medium
 
 [128/482] r1 R1# show license udi
-  % Invalid input detected at '^' marker.
-  show license udi
-       ^
+  Device# PID                   SN                              UDI
+  *0    CISCO2911/K9      FTX1234567A                  CISCO2911/K9:FTX1234567A
+    (hostname: R1)
 
 [129/482] r1 R1# show boot
   BOOT variable does not exist
@@ -1304,14 +1308,12 @@ Total steps: 482
       No active syslog hosts
 
 [146/482] r1 R1# show diag
-  % Invalid input detected at '^' marker.
-  show diag
-       ^
+  Slot 0:  Built-in PID (real)
+    Power: OK
+    Temperature: nominal
 
 [147/482] r1 R1# show idprom backplane
-  % Invalid input detected at '^' marker.
-  show idprom backplane
-       ^
+  IDPROM for backplane: serial number, PID match show inventory
 
 [148/482] r1 R1# show controllers GigabitEthernet0/0
   GigabitEthernet0/0 -
@@ -1330,9 +1332,12 @@ Total steps: 482
     ARP type: ARPA, ARP Timeout 04:00:00
 
 [150/482] r1 R1# show interfaces GigabitEthernet0/0 stats
-  % Invalid input detected at '^' marker.
-  show interface GigabitEthernet0/0 stats
-       ^
+  GigabitEthernet0/0
+            Switching path    Pkts In    Chars In    Pkts Out   Chars Out
+                 Processor          0           0           1           0
+               Route cache          0           0           0           0
+        Distributed cache          0           0           0           0
+                    Total          0           0           1           0
 
 [151/482] r1 R1# show interfaces accounting
   % Invalid input detected at '^' marker.
@@ -1340,15 +1345,13 @@ Total steps: 482
        ^
 
 [152/482] r1 R1# debug ip packet
-  % Invalid input detected at '^' marker.
-  debug ip packet
-           ^
+  IP packet debugging is on
 
 [153/482] r1 R1# undebug all
   All possible debugging has been turned off
 
 [154/482] r1 R1# show debugging
-  No debug flags are enabled
+  IP packet debugging is on
 
 
 --- [155] § config sub-mode navigation ---
@@ -1359,7 +1362,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1368,7 +1371,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1377,7 +1380,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1386,7 +1389,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1395,7 +1398,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1404,7 +1407,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1413,7 +1416,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1422,7 +1425,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1431,7 +1434,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1440,7 +1443,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1449,7 +1452,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1458,7 +1461,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1467,7 +1470,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1476,7 +1479,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1485,7 +1488,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1494,7 +1497,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1503,7 +1506,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1512,7 +1515,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1521,18 +1524,16 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
 
 [213/482] r1 R1(config)# key chain KC1
-  % Invalid input detected at '^' marker.
-  key chain KC1
-  ^
+<empty>
 
 [214/482] r1 R1(config)# do show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [215/482] r1 R1(config)# exit
 <empty>
@@ -1584,14 +1585,10 @@ Total steps: 482
 <empty>
 
 [228/482] r1 R1-CORE(config)# ip name-server 8.8.8.8
-  % Invalid input detected at '^' marker.
-  ip name-server 8.8.8.8
-     ^
+<empty>
 
 [229/482] r1 R1-CORE(config)# ip name-server 8.8.4.4 1.1.1.1
-  % Invalid input detected at '^' marker.
-  ip name-server 8.8.4.4 1.1.1.1
-     ^
+<empty>
 
 [230/482] r1 R1-CORE(config)# banner motd # Authorized access only #
 <empty>
@@ -1609,9 +1606,7 @@ Total steps: 482
 <empty>
 
 [235/482] r1 R1-CORE(config)# no banner motd
-  % Invalid input detected at '^' marker.
-  no banner motd
-     ^
+<empty>
 
 [236/482] r1 R1-CORE(config)# end
 <empty>
@@ -1697,7 +1692,7 @@ Total steps: 482
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
 [253/482] r1 R1-EDGE# wr
-  % Incomplete command.
+  % Ambiguous command: "wr" (matches: write, write-memory)
 
 
 --- [254] § context help (?) ---
@@ -1709,21 +1704,28 @@ Total steps: 482
     <cr>  
 
 [256/482] r1 R1-EDGE(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [257/482] r1 R1-EDGE(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -1738,6 +1740,7 @@ Total steps: 482
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service
@@ -1749,6 +1752,7 @@ Total steps: 482
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [259/482] r1 R1-EDGE(config)# crypto ?
     isakmp       isakmp
@@ -1810,17 +1814,26 @@ Total steps: 482
 <empty>
 
 [272/482] r1 R1-EDGE(config-if)# ip ?
-    address           Set interface IP address
-    helper-address    Set DHCP relay agent address
-    forward-protocol  forward-protocol
-    access-group      Set access group on interface
-    nat               nat
-    ospf              OSPF interface configuration
-    nhrp              NHRP configuration
-    verify            verify
+    address             Set interface IP address
+    directed-broadcast  Enable directed broadcast
+    unnumbered          Borrow IP from another interface
+    mtu                 Set IP MTU
+    proxy-arp           Enable proxy-ARP
+    redirects           Enable ICMP redirects
+    accounting          Enable IP accounting
+    dhcp                dhcp
+    helper-address      Set DHCP relay agent address
+    forward-protocol    forward-protocol
+    access-group        Set access group on interface
+    nat                 nat
+    ospf                OSPF interface configuration
+    nhrp                NHRP configuration
+    verify              verify
+    route-cache         route-cache
+    flow                flow
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
-    WORD  Set interface IP address
+    dhcp  Configure IP via DHCP
     <cr>  
 
 [274/482] r1 R1-EDGE(config-if)# ip ospf ?
@@ -1924,24 +1937,16 @@ Total steps: 482
 <empty>
 
 [301/482] r1 R1-EDGE(config)# ip bootp server
-  % Invalid input detected at '^' marker.
-  ip bootp server
-     ^
+<empty>
 
 [302/482] r1 R1-EDGE(config)# no ip bootp server
-  % Invalid input detected at '^' marker.
-  no ip bootp server
-        ^
+<empty>
 
 [303/482] r1 R1-EDGE(config)# ip finger
-  % Invalid input detected at '^' marker.
-  ip finger
-     ^
+<empty>
 
 [304/482] r1 R1-EDGE(config)# no ip finger
-  % Invalid input detected at '^' marker.
-  no ip finger
-        ^
+<empty>
 
 [305/482] r1 R1-EDGE(config)# service config
 <empty>
@@ -1956,14 +1961,10 @@ Total steps: 482
 <empty>
 
 [309/482] r1 R1-EDGE(config)# ip gratuitous-arps
-  % Invalid input detected at '^' marker.
-  ip gratuitous-arps
-     ^
+<empty>
 
 [310/482] r1 R1-EDGE(config)# no ip gratuitous-arps
-  % Invalid input detected at '^' marker.
-  no ip gratuitous-arps
-        ^
+<empty>
 
 [311/482] r1 R1-EDGE(config)# end
 <empty>
@@ -1997,9 +1998,9 @@ Total steps: 482
    version 2
   line vty 0 4
   no ip routing
+  key chain KC1
   clock summer-time CEST recurring  
   no cdp run
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2040,11 +2041,12 @@ Total steps: 482
   !
   no ip routing
   !
+  !
+  key chain KC1
   clock summer-time CEST recurring  
   !
   no cdp run
   !
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2145,11 +2147,12 @@ Total steps: 482
   !
   no ip routing
   !
+  !
+  key chain KC1
   clock summer-time CEST recurring  
   !
   no cdp run
   !
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2202,11 +2205,12 @@ Total steps: 482
   !
   no ip routing
   !
+  !
+  key chain KC1
   clock summer-time CEST recurring  
   !
   no cdp run
   !
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2259,11 +2263,12 @@ Total steps: 482
   !
   no ip routing
   !
+  !
+  key chain KC1
   clock summer-time CEST recurring  
   !
   no cdp run
   !
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2362,9 +2367,7 @@ Total steps: 482
 <empty>
 
 [352/482] r1 R1-EDGE(config)# privilege exec level 5 show running-config
-  % Invalid input detected at '^' marker.
-  privilege exec level 5 show running-config
-  ^
+<empty>
 
 [353/482] r1 R1-EDGE(config)# enable secret cisco123
 <empty>
@@ -2427,14 +2430,18 @@ Total steps: 482
   !
   no ip routing
   !
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  !
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2483,9 +2490,8 @@ Total steps: 482
   [OK]
 
 [364/482] r1 R1-EDGE# copy startup-config running-config
-  % Invalid input detected at '^' marker.
-  copy startup-config running-config
-       ^
+  Destination filename [running-config]?
+  [OK]
 
 [365/482] r1 R1-EDGE# copy running-config tftp:
   % Invalid input detected at '^' marker.
@@ -2498,14 +2504,12 @@ Total steps: 482
                       ^
 
 [367/482] r1 R1-EDGE# write erase
-  % Invalid input detected at '^' marker.
-  write erase
-        ^
+  Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
+  [OK]
 
 [368/482] r1 R1-EDGE# erase startup-config
-  % Invalid input detected at '^' marker.
-  erase startup-config
-  ^
+  Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
+  [OK]
 
 [369/482] r1 R1-EDGE# show startup-config
   Building configuration...
@@ -2550,14 +2554,18 @@ Total steps: 482
   !
   no ip routing
   !
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  !
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2574,19 +2582,14 @@ Total steps: 482
   end
 
 [370/482] r1 R1-EDGE# reload in 5
-  % Invalid input detected at '^' marker.
-  reload in 5
-  ^
+  Reload scheduled in 5 minutes
 
 [371/482] r1 R1-EDGE# reload cancel
-  % Invalid input detected at '^' marker.
-  reload cancel
-  ^
+  Reload cancelled.
 
 [372/482] r1 R1-EDGE# reload
-  % Invalid input detected at '^' marker.
-  reload
-  ^
+  Proceed with reload? [confirm]
+  Reload requested.
 
 
 --- [373] § regression: show family ---
@@ -2653,14 +2656,18 @@ Total steps: 482
   !
   no ip routing
   !
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  !
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2719,14 +2726,18 @@ Total steps: 482
   !
   no ip routing
   !
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  !
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -2971,7 +2982,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBB3B0.6C49BA5E (08:20:00.423 UTC Thu Jun 4 2026)
+  reference time is EDCBFBF0.99581062 (13:28:16.599 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -2980,7 +2991,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *08:20:00.000 UTC Thu Jun 4 2026
+  *13:28:16.000 UTC Thu Jun 4 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3168,14 +3179,18 @@ Total steps: 482
   !
   no ip routing
   !
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  !
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -3366,14 +3381,18 @@ Total steps: 482
   !
   no ip routing
   !
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  !
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   !
   no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -3418,12 +3437,15 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   no ip routing
+  enable secret 5 cisco123
+  enable password 0 weakpass
+  service password-encryption
+  key chain KC1
+  privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   no cdp run
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
-  enable secret weakpass
-  service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
@@ -3584,21 +3606,28 @@ Total steps: 482
     <cr>  
 
 [476/482] r1 R1-EDGE(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [477/482] r1 R1-EDGE(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -3623,6 +3652,7 @@ Total steps: 482
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service
@@ -3634,12 +3664,13 @@ Total steps: 482
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [480/482] r1 R1-EDGE(config)# end
 <empty>
 
 [481/482] r1 R1-EDGE# show running-config | count !
-  17
+  18
 
 [482/482] r1 R1-EDGE# write memory
   Building configuration...

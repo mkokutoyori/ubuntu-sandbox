@@ -61,6 +61,40 @@ export class Port {
 
   // ─── MTU ───────────────────────────────────────────────────────────
   private mtu: number = 1500;
+  private bandwidthKbps: number = 0;
+  private delayUs: number = 10;
+  private arpTimeoutSec: number = 4 * 60 * 60;
+  private keepaliveSec: number = 10;
+  private keepaliveEnabled: boolean = true;
+  private directedBroadcast: boolean = false;
+  private negotiationAuto: boolean = true;
+  private inputServicePolicy: string | null = null;
+  private outputServicePolicy: string | null = null;
+  private description: string = '';
+
+  getBandwidthKbps(): number { return this.bandwidthKbps; }
+  setBandwidthKbps(v: number): void { this.bandwidthKbps = v; }
+  getDelayUs(): number { return this.delayUs; }
+  setDelayUs(v: number): void { this.delayUs = v; }
+  getArpTimeoutSec(): number { return this.arpTimeoutSec; }
+  setArpTimeoutSec(v: number): void { this.arpTimeoutSec = v; }
+  getKeepaliveSec(): number { return this.keepaliveSec; }
+  setKeepalive(seconds: number | null): void {
+    if (seconds === null) { this.keepaliveEnabled = false; return; }
+    this.keepaliveSec = seconds;
+    this.keepaliveEnabled = true;
+  }
+  isKeepaliveEnabled(): boolean { return this.keepaliveEnabled; }
+  isDirectedBroadcastEnabled(): boolean { return this.directedBroadcast; }
+  setDirectedBroadcast(on: boolean): void { this.directedBroadcast = on; }
+  isNegotiationAuto(): boolean { return this.negotiationAuto; }
+  setNegotiationAuto(on: boolean): void { this.negotiationAuto = on; }
+  getInputServicePolicy(): string | null { return this.inputServicePolicy; }
+  setInputServicePolicy(name: string | null): void { this.inputServicePolicy = name; }
+  getOutputServicePolicy(): string | null { return this.outputServicePolicy; }
+  setOutputServicePolicy(name: string | null): void { this.outputServicePolicy = name; }
+  getDescriptionText(): string { return this.description; }
+  setDescriptionText(s: string): void { this.description = s; }
 
   // ─── Port Security (delegated to PortSecurity class) ──────────────
   private _security: PortSecurity | null = null;

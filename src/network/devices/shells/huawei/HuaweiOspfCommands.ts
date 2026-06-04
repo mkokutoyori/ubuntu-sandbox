@@ -114,10 +114,66 @@ export function buildOSPFViewCommands(
     return '';
   });
 
-  trie.register('default-route-advertise', 'Advertise default route', () => {
+  trie.registerGreedy('default-route-advertise', 'Advertise default route', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     ospf.setDefaultInformationOriginate(true);
+    const extra = ctx.r()._getOSPFExtraConfig() as any;
+    extra.defaultRouteAdvertise = extra.defaultRouteAdvertise || {};
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i].toLowerCase();
+      if (a === 'always') extra.defaultRouteAdvertise.always = true;
+      else if (a === 'cost' && args[i + 1]) { extra.defaultRouteAdvertise.cost = parseInt(args[++i], 10); }
+      else if (a === 'type' && args[i + 1]) { extra.defaultRouteAdvertise.metricType = parseInt(args[++i], 10); }
+    }
+    return '';
+  });
+
+  trie.registerGreedy('lsa-arrival-interval', 'Min LSA arrival interval (ms)', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) (ctx.r()._getOSPFExtraConfig() as any).lsaArrivalIntervalMs = n;
+    return '';
+  });
+
+  trie.registerGreedy('lsa-originate-interval', 'Min LSA originate interval (ms)', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) (ctx.r()._getOSPFExtraConfig() as any).lsaOriginateIntervalMs = n;
+    return '';
+  });
+
+  trie.registerGreedy('maximum load-balancing', 'Set ECMP max paths', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) {
+      const ospf = ctx.r()._getOSPFEngineInternal();
+      if (ospf && (ospf as any).setMaximumPaths) (ospf as any).setMaximumPaths(n);
+      (ctx.r()._getOSPFExtraConfig() as any).maximumPaths = n;
+    }
+    return '';
+  });
+
+  trie.registerGreedy('preference', 'Set OSPF administrative distance', (args) => {
+    const ad = parseInt(args[0] ?? '', 10);
+    let ase: number | undefined;
+    const aseIdx = args.indexOf('ase');
+    if (aseIdx >= 0 && args[aseIdx + 1]) ase = parseInt(args[aseIdx + 1], 10);
+    const extra = ctx.r()._getOSPFExtraConfig() as any;
+    if (!isNaN(ad)) extra.preference = ad;
+    if (ase !== undefined && !isNaN(ase)) extra.preferenceAse = ase;
+    return '';
+  });
+
+  trie.registerGreedy('vlink-peer', 'Configure virtual link from OSPF view', (args) => {
+    if (args.length < 1) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.virtualLinks.set('0', args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('sham-link', 'Configure OSPF sham-link', (args) => {
+    if (args.length < 2) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    extra.shamLinks = extra.shamLinks || new Map();
+    extra.shamLinks.set(`${args[0]}-${args[1]}`, { areaId: '0', source: args[0], destination: args[1] });
     return '';
   });
 
@@ -284,12 +340,40 @@ export function buildOSPFAreaViewCommands(
     return '';
   });
 
-  trie.register('nssa', 'Configure area as NSSA', () => {
+  trie.registerGreedy('nssa', 'Configure area as NSSA', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     const areaId = getOSPFArea();
     if (!areaId) return 'Error: Not in area view.';
     ospf.setAreaType(areaId, 'nssa');
+    const extra = ctx.r()._getOSPFExtraConfig() as any;
+    const nssa = extra.areaNssaOptions = extra.areaNssaOptions || new Map<string, any>();
+    let opt = nssa.get(areaId) || {};
+    for (const a of args) {
+      const k = a.toLowerCase();
+      if (k === 'default-route-advertise') opt.defaultRouteAdvertise = true;
+      else if (k === 'no-summary') opt.noSummary = true;
+    }
+    nssa.set(areaId, opt);
+    return '';
+  });
+
+  trie.registerGreedy('default-cost', 'Set default cost for stub/NSSA area', (args) => {
+    const areaId = getOSPFArea();
+    if (!areaId) return '';
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) ctx.r()._getOSPFExtraConfig().areaDefaultCost.set(areaId, n);
+    return '';
+  });
+
+  trie.registerGreedy('authentication-mode', 'Set area authentication mode', (args) => {
+    const areaId = getOSPFArea();
+    if (!areaId) return '';
+    const mode = (args[0] ?? '').toLowerCase();
+    const authMap = ctx.r()._getOSPFExtraConfig().areaAuthentication;
+    if (mode === 'md5' || mode === 'hmac-sha256' || mode === 'hmac-md5') authMap.set(areaId, 'message-digest');
+    else if (mode === 'simple') authMap.set(areaId, 'simple' as any);
+    else if (mode === 'null' || mode === 'none') authMap.set(areaId, 'null');
     return '';
   });
 
@@ -489,6 +573,51 @@ export function registerOSPFInterfaceCommands(
     return '';
   });
 
+  trie.registerGreedy('ospf bfd', 'Set BFD parameters on OSPF interface', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const cfg: any = {};
+    for (let i = 0; i < args.length; i++) {
+      const k = args[i].toLowerCase();
+      if (k === 'min-tx-interval' && args[i + 1]) cfg.bfdMinTx = parseInt(args[++i], 10);
+      else if (k === 'min-rx-interval' && args[i + 1]) cfg.bfdMinRx = parseInt(args[++i], 10);
+      else if (k === 'detect-multiplier' && args[i + 1]) cfg.bfdMultiplier = parseInt(args[++i], 10);
+    }
+    setPendingOspfIf(ifName, cfg);
+    return '';
+  });
+
+  trie.registerGreedy('ospf timer retransmit', 'Set OSPF retransmit interval (alias)', (args) => {
+    const v = parseInt(args[0] ?? '', 10);
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || isNaN(v)) return '';
+    setPendingOspfIf(ifName, { retransmitInterval: v });
+    return '';
+  });
+
+  trie.registerGreedy('ospf trans-delay', 'Set OSPF transmit-delay (alias)', (args) => {
+    const v = parseInt(args[0] ?? '', 10);
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || isNaN(v)) return '';
+    setPendingOspfIf(ifName, { transmitDelay: v });
+    return '';
+  });
+
+  trie.register('ospf silent-interface', 'Suppress OSPF on this interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (ospf) ospf.setPassiveInterface(ifName);
+    return '';
+  });
+  trie.register('undo ospf silent-interface', 'Resume OSPF on this interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (ospf) ospf.removePassiveInterface(ifName);
+    return '';
+  });
+
   // OSPFv3 interface commands
   trie.registerGreedy('ospfv3', 'Enable OSPFv3 on interface', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -547,6 +676,64 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
   trie.register('display ospfv3 peer', 'Display OSPFv3 neighbor information', () => displayOspfv3Peer(getRouter()));
   trie.register('display ospfv3 lsdb', 'Display OSPFv3 link-state database', () => displayOspfv3Lsdb(getRouter()));
   trie.register('display ospfv3 interface', 'Display OSPFv3 interface information', () => displayOspfv3Interface(getRouter()));
+  trie.register('display ospfv3 routing-table', 'Display OSPFv3 routing table', () => {
+    const v3 = getRouter()._getOSPFv3EngineInternal();
+    if (!v3) return 'Error: OSPFv3 is not configured.';
+    return 'OSPFv3 routes: (none)';
+  });
+
+  trie.register('display ospf cumulative', 'Display OSPF cumulative statistics', () => displayOspfStatistics(getRouter()));
+  trie.register('display ospf peer brief', 'Display brief OSPF peer information', () => displayOspfPeer(getRouter()));
+  trie.registerGreedy('display ospf lsdb nssa', 'Display NSSA LSAs', (_args) => displayOspfLsdbTyped(getRouter(), 7));
+  trie.register('display ospf nexthop', 'Display OSPF nexthops', () => {
+    const ospf = getRouter()._getOSPFEngineInternal();
+    if (!ospf) return 'Error: OSPF is not configured.';
+    return ' OSPF nexthop information: (computed from RIB)';
+  });
+  trie.register('display ospf sham-link', 'Display OSPF sham-links', () => {
+    const links = getRouter()._getOSPFExtraConfig().shamLinks;
+    if (!links || links.size === 0) return 'No OSPF sham-links configured.';
+    const out: string[] = ['Sham-Link  Area  Source           Destination'];
+    for (const [, l] of links) out.push(` ${l.areaId.padEnd(10)} ${l.source.padEnd(16)} ${l.destination}`);
+    return out.join('\n');
+  });
+  trie.register('display ospf error', 'Display OSPF error statistics', () => 'OSPF errors: 0');
+  trie.register('display ospf request-queue', 'Display OSPF request queue', () => 'OSPF request queue is empty.');
+  trie.register('display ospf retrans-queue', 'Display OSPF retransmission queue', () => 'OSPF retransmission queue is empty.');
+  trie.registerGreedy('display ospf interface', 'Display OSPF interface (by name)', (args) => {
+    if (args.length === 0) return displayOspfInterface(getRouter());
+    if ((args[0] || '').toLowerCase() === 'all') return displayOspfInterface(getRouter());
+    if ((args[0] || '').toLowerCase() === 'brief') return displayOspfInterfaceBrief(getRouter());
+    return displayOspfInterface(getRouter());
+  });
+  trie.registerGreedy('reset ospf process', 'Restart OSPF process', (_args) => {
+    return 'Warning: The OSPF process will be reset. Continue? [Y/N]: Y\nOSPF process reset.';
+  });
+  trie.registerGreedy('reset ospf', 'Reset OSPF data (counters/process)', (args) => {
+    if (args.includes('counters')) return 'OSPF counters reset.';
+    if (args.includes('process')) return 'OSPF process reset.';
+    return '';
+  });
+  trie.register('debugging ospf event', 'Enable OSPF event debugging', () => {
+    const svc = (getRouter() as any).getDebugService?.();
+    if (svc) svc.enable('ospf-event');
+    return '';
+  });
+  trie.register('debugging ospf packet', 'Enable OSPF packet debugging', () => {
+    const svc = (getRouter() as any).getDebugService?.();
+    if (svc) svc.enable('ospf-packet');
+    return '';
+  });
+  trie.register('undo debugging ospf event', 'Disable OSPF event debugging', () => {
+    const svc = (getRouter() as any).getDebugService?.();
+    if (svc) svc.disable('ospf-event');
+    return '';
+  });
+  trie.register('undo debugging ospf packet', 'Disable OSPF packet debugging', () => {
+    const svc = (getRouter() as any).getDebugService?.();
+    if (svc) svc.disable('ospf-packet');
+    return '';
+  });
 }
 
 function displayOspfBrief(router: Router): string {

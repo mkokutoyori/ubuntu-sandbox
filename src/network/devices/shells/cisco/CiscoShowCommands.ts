@@ -236,6 +236,8 @@ export function showRunningConfig(router: Router): string {
     if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
     const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
     if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+    const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
+    if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
     const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
     const pending = ospfExtra?.pendingIfConfig.get(name);
     if (pending) {
@@ -327,6 +329,39 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
+  const enableSecret = router.getEnableSecret();
+  if (enableSecret) {
+    const algoNum = enableSecret.algo === 'md5' ? 5 : enableSecret.algo === 'sha256' ? 8 : enableSecret.algo === 'type-7' ? 7 : 0;
+    lines.push(`enable secret ${algoNum} ${enableSecret.value}`);
+  }
+  const enablePassword = router.getEnablePassword();
+  if (enablePassword) {
+    const algoNum = enablePassword.algo === 'type-7' ? 7 : 0;
+    lines.push(`enable password ${algoNum} ${enablePassword.value}`);
+  }
+  for (const [name, on] of router.getServiceFlags()) {
+    lines.push(`${on ? '' : 'no '}service ${name}`);
+  }
+
+  const mgmtForSsh = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+  if (mgmtForSsh) {
+    if (mgmtForSsh.domainName) lines.push(`ip domain-name ${mgmtForSsh.domainName}`);
+    const ssh = mgmtForSsh.getSsh();
+    if (ssh.enabled) {
+      if (ssh.version !== 2) lines.push(`ip ssh version ${ssh.version}`);
+      if (ssh.timeout !== 60) lines.push(`ip ssh time-out ${ssh.timeout}`);
+      if (ssh.retries !== 3) lines.push(`ip ssh authentication-retries ${ssh.retries}`);
+      const port = (ssh as unknown as { port?: number }).port ?? 22;
+      if (port !== 22) lines.push(`ip ssh port ${port}`);
+    }
+  }
+
+  const unhandled = router.getUnhandledConfigLines();
+  if (unhandled.length > 0) {
+    lines.push('!');
+    lines.push(...unhandled);
+  }
+
   const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (mgmt) {
     const clock = mgmt.getClock();
@@ -368,6 +403,24 @@ export function showRunningConfig(router: Router): string {
   if (snmp) {
     const sl = snmp.asRunningConfigLines();
     if (sl.length > 0) { lines.push('!'); lines.push(...sl); }
+  }
+
+  const netflow = (router as unknown as { getNetflowService?: () => import('../../router/netflow/NetflowService').NetflowService }).getNetflowService?.();
+  if (netflow) {
+    const nl = netflow.asRunningConfigLines();
+    if (nl.length > 0) { lines.push('!'); lines.push(...nl); }
+  }
+
+  const archive = (router as unknown as { getArchiveService?: () => import('../../router/archive/ArchiveService').ArchiveService }).getArchiveService?.();
+  if (archive) {
+    const al = archive.asRunningConfigLines();
+    if (al.length > 0) { lines.push('!'); lines.push(...al); }
+  }
+
+  const eem = (router as unknown as { getEemService?: () => import('../../router/eem/EemService').EemService }).getEemService?.();
+  if (eem) {
+    const el = eem.asRunningConfigLines();
+    if (el.length > 0) { lines.push('!'); lines.push(...el); }
   }
 
   const securityLines = (router as unknown as {
@@ -498,6 +551,75 @@ export function showIpProtocols(router: Router): string {
 }
 
 /** `show interfaces` (all) — real per-port detail for every interface. */
+export function showInterfaceAccounting(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const c = port.getCounters();
+  return [
+    `${ifName}`,
+    `                Protocol    Pkts In    Chars In    Pkts Out   Chars Out`,
+    `                    IP    ${String(c.framesIn).padStart(8)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+  ].join('\n');
+}
+
+export function showInterfaceStats(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const c = port.getCounters();
+  return [
+    `${ifName}`,
+    `          Switching path    Pkts In    Chars In    Pkts Out   Chars Out`,
+    `               Processor ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+    `             Route cache          0           0           0           0`,
+    `      Distributed cache          0           0           0           0`,
+    `                  Total ${String(c.framesIn).padStart(10)} ${String(c.bytesIn).padStart(11)} ${String(c.framesOut).padStart(11)} ${String(c.bytesOut).padStart(11)}`,
+  ].join('\n');
+}
+
+export function showInterfaceSwitchport(router: Router, ifName: string): string {
+  void router;
+  return [
+    `Name: ${ifName}`,
+    `Switchport: Disabled (router interface)`,
+  ].join('\n');
+}
+
+export function showInterfacesTrunk(router: Router): string {
+  void router;
+  return 'Port        Mode             Encapsulation  Status        Native vlan\n(none — this is a router, no L2 trunks)';
+}
+
+export function showVlansRouter(router: Router): string {
+  void router;
+  return 'No Virtual LAN sub-interfaces are configured';
+}
+
+export function showIpv6InterfaceBrief(router: Router): string {
+  const ports = router._getPortsInternal();
+  const lines: string[] = [];
+  for (const [name, port] of ports) {
+    const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
+    const up = port.getIsUp() ? 'up' : 'administratively down';
+    const proto = (port.getIsUp() && (port.isConnected() || /^(Tunnel|Loopback|Vlan)/i.test(name))) ? 'up' : 'down';
+    lines.push(`${name.padEnd(27)}[${up}/${proto}]`);
+    if (v6.length === 0) lines.push(`    unassigned`);
+    else for (const a of v6) lines.push(`    ${a}`);
+  }
+  return lines.join('\n');
+}
+
+export function showIpv6Interface(router: Router, ifName: string): string {
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return `% Invalid interface ${ifName}`;
+  const v6 = (port as unknown as { getIPv6Addresses?: () => string[] }).getIPv6Addresses?.() ?? [];
+  return [
+    `${ifName} is ${port.getIsUp() ? 'up' : 'administratively down'}, line protocol is ${port.getIsUp() && port.isConnected() ? 'up' : 'down'}`,
+    `  IPv6 is ${v6.length > 0 ? 'enabled' : 'disabled'}`,
+    ...v6.map(a => `  Address: ${a}`),
+    `  MTU is ${port.getMTU()} bytes`,
+  ].join('\n');
+}
+
 export function showInterfacesAll(router: Router): string {
   const names = [...router._getPortsInternal().keys()];
   if (!names.length) return 'No interfaces present.';

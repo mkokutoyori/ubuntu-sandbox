@@ -128,6 +128,76 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
     dhcp().configurePoolManual(pool()!, 'clientName', args[0]);
     return '';
   });
+
+  trie.registerGreedy('class', 'Bind a DHCP class to this pool', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const p = pool(); if (!p) return '';
+    const r = ctx.r() as any;
+    const classes = r._ciscoDhcpPoolClasses ?? (r._ciscoDhcpPoolClasses = new Map<string, any>());
+    const list = classes.get(p) ?? [];
+    list.push({ className: args[0], ranges: [] });
+    classes.set(p, list);
+    r._ciscoDhcpPoolCurrentClass = args[0];
+    return '';
+  });
+
+  trie.registerGreedy('address range', 'DHCP class address range', (args) => {
+    const r = ctx.r() as any;
+    const p = pool(); const className = r._ciscoDhcpPoolCurrentClass;
+    if (!p || !className) return '';
+    const classes = r._ciscoDhcpPoolClasses as Map<string, any[]> | undefined;
+    const list = classes?.get(p) ?? [];
+    const entry = list.find((c) => c.className === className);
+    if (entry && args.length >= 2) entry.ranges.push({ start: args[0], end: args[1] });
+    return '';
+  });
+}
+
+export function buildConfigDhcpClassCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  trie.registerGreedy('option', 'DHCP class option matcher', (args, raw) => {
+    const r = ctx.r() as any;
+    const cur = r._ciscoDhcpCurrentClass;
+    const classes = r._ciscoDhcpClasses as Map<string, any> | undefined;
+    const c = cur ? classes?.get(cur) : null;
+    if (c) c.options.push(raw ?? `option ${args.join(' ')}`);
+    return '';
+  });
+  trie.registerGreedy('description', 'Set DHCP class description', (args) => {
+    const r = ctx.r() as any;
+    const cur = r._ciscoDhcpCurrentClass;
+    const c = cur ? (r._ciscoDhcpClasses as Map<string, any> | undefined)?.get(cur) : null;
+    if (c) c.description = args.join(' ');
+    return '';
+  });
+}
+
+export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  const cur = () => {
+    const r = ctx.r() as any;
+    const name = r._ciscoIpv6DhcpCurrent;
+    if (!name) return null;
+    return (r._ciscoIpv6DhcpPools as Map<string, any> | undefined)?.get(name) ?? null;
+  };
+  trie.registerGreedy('address prefix', 'IPv6 DHCP pool prefix', (args, raw) => {
+    const p = cur(); if (p) { p.prefix = args[0]; p.prefixLine = raw; }
+    return '';
+  });
+  trie.registerGreedy('dns-server', 'IPv6 DNS server', (args) => {
+    const p = cur(); if (p && args[0]) (p.dnsServers ??= []).push(args[0]);
+    return '';
+  });
+  trie.registerGreedy('domain-name', 'IPv6 domain name', (args) => {
+    const p = cur(); if (p && args[0]) p.domainName = args[0];
+    return '';
+  });
+  trie.registerGreedy('link-address', 'IPv6 DHCP link-address', (args) => {
+    const p = cur(); if (p && args[0]) p.linkAddress = args[0];
+    return '';
+  });
+  trie.registerGreedy('description', 'Pool description', (args) => {
+    const p = cur(); if (p) p.description = args.join(' ');
+    return '';
+  });
 }
 
 // ─── DHCP Show Commands (registered on user/privileged show tries) ───
@@ -145,6 +215,39 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
     getRouter()._getDHCPServerInternal().formatExcludedShow());
   trie.register('show debug', 'Display debugging flags', () =>
     getRouter()._getDHCPServerInternal().formatDebugShow());
+
+  trie.register('show ip dhcp snooping', 'Display DHCP snooping global state', () => {
+    const r = getRouter() as any;
+    if (!r._ciscoDhcpSnooping) return 'DHCP snooping is not enabled.';
+    const vlans = r._ciscoDhcpSnoopingVlans ?? '(none)';
+    return [
+      'Switch DHCP snooping is enabled',
+      `DHCP snooping VLAN configuration: ${vlans}`,
+      `Insertion of option-82 information: ${r._ciscoDhcpSnoopingInfoOption ? 'yes' : 'no'}`,
+    ].join('\n');
+  });
+  trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
+    'MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface\n(no bindings)');
+  trie.register('show ip dhcp relay statistics', 'Display DHCP relay statistics', () =>
+    'DHCP relay: forwarded 0 packets, dropped 0.');
+
+  trie.register('show ipv6 dhcp pool', 'Display IPv6 DHCP pools', () => {
+    const r = getRouter() as any;
+    const pools = r._ciscoIpv6DhcpPools as Map<string, any> | undefined;
+    if (!pools || pools.size === 0) return 'No IPv6 DHCP pools configured.';
+    const out: string[] = [];
+    for (const [, p] of pools) {
+      out.push(`DHCPv6 pool: ${p.name}`);
+      if (p.prefix) out.push(`  Prefix: ${p.prefix}`);
+      if (p.dnsServers) out.push(`  DNS servers: ${p.dnsServers.join(', ')}`);
+      if (p.domainName) out.push(`  Domain: ${p.domainName}`);
+    }
+    return out.join('\n');
+  });
+  trie.register('show ipv6 dhcp binding', 'Display IPv6 DHCP bindings', () => 'No IPv6 DHCP bindings.');
+  trie.register('show ipv6 dhcp interface', 'Display IPv6 DHCP interface state', () => 'No IPv6 DHCP interface state.');
+  trie.register('show dhcp lease', 'Display DHCP client lease', () => 'No DHCP client lease.');
+  trie.register('show dhcp server', 'Display DHCP client server learn', () => 'No DHCP server known.');
 }
 
 // ─── DHCP Privileged Commands (debug, clear) ─────────────────────────

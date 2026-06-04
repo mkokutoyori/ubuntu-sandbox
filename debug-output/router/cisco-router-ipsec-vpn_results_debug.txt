@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-04T08:19:57.647Z
+Generated: 2026-06-04T13:28:21.282Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -766,7 +766,14 @@ Total steps: 370
   
 
 [186/370] r1 R1# show crypto ikev2 stats
-  Crypto IKEv2 stats not available
+  Crypto IKEv2 statistics:
+    Active SAs: 0
+    Inbound packets processed: 0
+    Inbound packets dropped: 0
+    Inbound packets rejected: 0
+    Outbound packets processed: 0
+    Outbound packets dropped: 0
+    Outbound packets rejected: 0
 
 
 --- [187] § sVTI / dVTI / GRE-over-IPsec ---
@@ -1000,7 +1007,14 @@ Total steps: 370
     Status: Pending enrollment
 
 [248/370] r1 R1# show crypto pki certificates verbose
-  No PKI certificates installed
+  Trustpoint CA1 (verbose):
+    Subject Name: CN=R1.lab.local
+    Enrollment URL: http://10.0.0.5:80
+    Revocation Check: crl
+    RSA Keypair: SSH-KEY
+    Certificate: pending enrollment
+    Validity: 365 days
+    Certificate fingerprint (SHA1): AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB
 
 
 --- [249] § crypto clear / debug ---
@@ -1063,8 +1077,10 @@ Total steps: 370
   Number of IKEv2 SAs: 0
 
 [260/370] r1 R1(config)# show crypto eli
-  Hardware Encryption Layer: not available
-  Cryptographic API library: software
+  Hardware Encryption Layer: not available (software-only sim)
+  Cryptographic API library: software (Node crypto fallback)
+  Active IKE/IKEv2 SAs: 0
+  Active IPSec SAs: 0
 
 
 --- [261] § regression: show family ---
@@ -1490,7 +1506,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBB3AD.AF9DB22D (08:19:57.686 UTC Thu Jun 4 2026)
+  reference time is EDCBFBF5.50E56041 (13:28:21.316 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1499,7 +1515,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *08:19:57.000 UTC Thu Jun 4 2026
+  *13:28:21.000 UTC Thu Jun 4 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2262,21 +2278,28 @@ Total steps: 370
     <cr>  
 
 [364/370] r1 R1(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [365/370] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2301,6 +2324,7 @@ Total steps: 370
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service
@@ -2312,6 +2336,7 @@ Total steps: 370
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [368/370] r1 R1(config)# end
 <empty>

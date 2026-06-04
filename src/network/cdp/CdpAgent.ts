@@ -94,11 +94,16 @@ export class CdpAgent {
 
   getConfig(): Readonly<CdpConfig> { return this.config; }
 
+  private _advertiseV2: boolean = true;
+  setAdvertiseV2(on: boolean): void { this._advertiseV2 = on; }
+  isAdvertiseV2(): boolean { return this._advertiseV2; }
+
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     if (!this.config.enabled) lines.push('no cdp run');
     if (this.config.timerSec !== 60) lines.push(`cdp timer ${this.config.timerSec}`);
     if (this.config.holdtimeSec !== 180) lines.push(`cdp holdtime ${this.config.holdtimeSec}`);
+    if (!this._advertiseV2) lines.push('no cdp advertise-v2');
     return lines;
   }
 

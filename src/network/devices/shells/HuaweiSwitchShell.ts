@@ -72,6 +72,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
   private history: string[] = [];
 
+  getCmdHistory(): readonly string[] { return [...this.history]; }
+
   // STP/RSTP/MSTP global config (switch-only, L2). Default: VRP MSTP.
   private stp: {
     enabled: boolean;

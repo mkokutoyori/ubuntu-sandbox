@@ -69,14 +69,36 @@ function cdpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
   return Array.from(byKey.values());
 }
 
-/** `show clock` — IOS format: HH:MM:SS.mmm zone day mon dd yyyy */
-export function showClock(now: Date = new Date()): string {
-  const t = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}.000`;
+export function showClock(arg: Date | ShowStateDevice = new Date()): string {
+  let now: Date;
+  let timezone = 'UTC';
+  let offsetMin = 0;
+  let synced = false;
+  if (arg instanceof Date) {
+    now = arg;
+  } else {
+    const dev = arg as unknown as {
+      getSystemClockMs?: () => number;
+      getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
+      getNtpAgent?: () => { isSynced?: () => boolean };
+    };
+    now = new Date(dev.getSystemClockMs?.() ?? Date.now());
+    const mgmt = dev.getManagementService?.();
+    if (mgmt) {
+      const clock = mgmt.getClock();
+      timezone = clock.timezone;
+      offsetMin = clock.offsetMin;
+    }
+    synced = dev.getNtpAgent?.().isSynced?.() ?? false;
+  }
+  const local = new Date(now.getTime() + offsetMin * 60_000);
+  const t = `${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}:${pad2(local.getUTCSeconds())}.000`;
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
     'Sep', 'Oct', 'Nov', 'Dec'];
-  return `*${t} UTC ${days[now.getDay()]} ${mons[now.getMonth()]} ` +
-    `${now.getDate()} ${now.getFullYear()}`;
+  const marker = synced ? '' : '*';
+  return `${marker}${t} ${timezone} ${days[local.getUTCDay()]} ${mons[local.getUTCMonth()]} ` +
+    `${local.getUTCDate()} ${local.getUTCFullYear()}`;
 }
 
 /** `show users` — active lines (console only in the sim). */

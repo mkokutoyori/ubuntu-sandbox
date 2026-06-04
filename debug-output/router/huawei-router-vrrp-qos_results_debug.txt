@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-04T08:20:03.459Z
+Generated: 2026-06-04T13:28:22.892Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -47,209 +47,127 @@ Total steps: 257
 <empty>
 
 [13/257] r1 [R1-GE0/0/0] vrrp vrid 1 virtual-ip 192.168.1.1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 virtual-ip 192.168.1.1
-  ^
+<empty>
 
 [14/257] r1 [R1-GE0/0/0] vrrp vrid 1 virtual-ip 192.168.1.101
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 virtual-ip 192.168.1.101
-  ^
+<empty>
 
 [15/257] r1 [R1-GE0/0/0] vrrp vrid 1 priority 110
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 priority 110
-  ^
+<empty>
 
 [16/257] r1 [R1-GE0/0/0] vrrp vrid 1 preempt-mode timer delay 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 preempt-mode timer delay 20
-  ^
+<empty>
 
 [17/257] r1 [R1-GE0/0/0] vrrp vrid 1 timer advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 timer advertise 1
-  ^
+<empty>
 
 [18/257] r1 [R1-GE0/0/0] vrrp vrid 1 authentication-mode md5 Vrrp@Key1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 authentication-mode md5 Vrrp@Key1
-  ^
+<empty>
 
 [19/257] r1 [R1-GE0/0/0] vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
-  ^
+<empty>
 
 [20/257] r1 [R1-GE0/0/0] vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  ^
+<empty>
 
 [21/257] r1 [R1-GE0/0/0] vrrp vrid 1 description VRRP-GRP-1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 description VRRP-GRP-1
-  ^
+<empty>
 
 [22/257] r1 [R1-GE0/0/0] admin-vrrp vrid 1
-  % Invalid input detected at '^' marker.
-  admin-vrrp vrid 1
-  ^
+<empty>
 
 [23/257] r1 [R1-GE0/0/0] vrrp vrid 2 virtual-ip 192.168.1.2
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 virtual-ip 192.168.1.2
-  ^
+<empty>
 
 [24/257] r1 [R1-GE0/0/0] vrrp vrid 2 virtual-ip 192.168.1.102
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 virtual-ip 192.168.1.102
-  ^
+<empty>
 
 [25/257] r1 [R1-GE0/0/0] vrrp vrid 2 priority 120
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 priority 120
-  ^
+<empty>
 
 [26/257] r1 [R1-GE0/0/0] vrrp vrid 2 preempt-mode timer delay 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 preempt-mode timer delay 20
-  ^
+<empty>
 
 [27/257] r1 [R1-GE0/0/0] vrrp vrid 2 timer advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 timer advertise 1
-  ^
+<empty>
 
 [28/257] r1 [R1-GE0/0/0] vrrp vrid 2 authentication-mode md5 Vrrp@Key2
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 authentication-mode md5 Vrrp@Key2
-  ^
+<empty>
 
 [29/257] r1 [R1-GE0/0/0] vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
-  ^
+<empty>
 
 [30/257] r1 [R1-GE0/0/0] vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  ^
+<empty>
 
 [31/257] r1 [R1-GE0/0/0] vrrp vrid 2 description VRRP-GRP-2
-  % Invalid input detected at '^' marker.
-  vrrp vrid 2 description VRRP-GRP-2
-  ^
+<empty>
 
 [32/257] r1 [R1-GE0/0/0] admin-vrrp vrid 2
-  % Invalid input detected at '^' marker.
-  admin-vrrp vrid 2
-  ^
+<empty>
 
 [33/257] r1 [R1-GE0/0/0] vrrp vrid 3 virtual-ip 192.168.1.3
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 virtual-ip 192.168.1.3
-  ^
+<empty>
 
 [34/257] r1 [R1-GE0/0/0] vrrp vrid 3 virtual-ip 192.168.1.103
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 virtual-ip 192.168.1.103
-  ^
+<empty>
 
 [35/257] r1 [R1-GE0/0/0] vrrp vrid 3 priority 130
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 priority 130
-  ^
+<empty>
 
 [36/257] r1 [R1-GE0/0/0] vrrp vrid 3 preempt-mode timer delay 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 preempt-mode timer delay 20
-  ^
+<empty>
 
 [37/257] r1 [R1-GE0/0/0] vrrp vrid 3 timer advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 timer advertise 1
-  ^
+<empty>
 
 [38/257] r1 [R1-GE0/0/0] vrrp vrid 3 authentication-mode md5 Vrrp@Key3
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 authentication-mode md5 Vrrp@Key3
-  ^
+<empty>
 
 [39/257] r1 [R1-GE0/0/0] vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
-  ^
+<empty>
 
 [40/257] r1 [R1-GE0/0/0] vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  ^
+<empty>
 
 [41/257] r1 [R1-GE0/0/0] vrrp vrid 3 description VRRP-GRP-3
-  % Invalid input detected at '^' marker.
-  vrrp vrid 3 description VRRP-GRP-3
-  ^
+<empty>
 
 [42/257] r1 [R1-GE0/0/0] admin-vrrp vrid 3
-  % Invalid input detected at '^' marker.
-  admin-vrrp vrid 3
-  ^
+<empty>
 
 [43/257] r1 [R1-GE0/0/0] vrrp vrid 4 virtual-ip 192.168.1.4
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 virtual-ip 192.168.1.4
-  ^
+<empty>
 
 [44/257] r1 [R1-GE0/0/0] vrrp vrid 4 virtual-ip 192.168.1.104
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 virtual-ip 192.168.1.104
-  ^
+<empty>
 
 [45/257] r1 [R1-GE0/0/0] vrrp vrid 4 priority 140
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 priority 140
-  ^
+<empty>
 
 [46/257] r1 [R1-GE0/0/0] vrrp vrid 4 preempt-mode timer delay 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 preempt-mode timer delay 20
-  ^
+<empty>
 
 [47/257] r1 [R1-GE0/0/0] vrrp vrid 4 timer advertise 1
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 timer advertise 1
-  ^
+<empty>
 
 [48/257] r1 [R1-GE0/0/0] vrrp vrid 4 authentication-mode md5 Vrrp@Key4
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 authentication-mode md5 Vrrp@Key4
-  ^
+<empty>
 
 [49/257] r1 [R1-GE0/0/0] vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
-  ^
+<empty>
 
 [50/257] r1 [R1-GE0/0/0] vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
-  ^
+<empty>
 
 [51/257] r1 [R1-GE0/0/0] vrrp vrid 4 description VRRP-GRP-4
-  % Invalid input detected at '^' marker.
-  vrrp vrid 4 description VRRP-GRP-4
-  ^
+<empty>
 
 [52/257] r1 [R1-GE0/0/0] admin-vrrp vrid 4
-  % Invalid input detected at '^' marker.
-  admin-vrrp vrid 4
-  ^
+<empty>
 
 [53/257] r1 [R1-GE0/0/0] vrrp vrid 1 version 3
-  % Invalid input detected at '^' marker.
-  vrrp vrid 1 version 3
-  ^
+<empty>
 
 [54/257] r1 [R1-GE0/0/0] quit
 <empty>
@@ -258,21 +176,55 @@ Total steps: 257
 <empty>
 
 [56/257] r1 <R1> display vrrp
-  Info: No VRRP backup group is configured.
+  GE0/0/0 | Virtual Router 1
+      State : Initialize
+      Virtual IP : 192.168.1.1, 192.168.1.101
+      Priority : 110
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-1
+  GE0/0/0 | Virtual Router 2
+      State : Initialize
+      Virtual IP : 192.168.1.2, 192.168.1.102
+      Priority : 120
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-2
+  GE0/0/0 | Virtual Router 3
+      State : Initialize
+      Virtual IP : 192.168.1.3, 192.168.1.103
+      Priority : 130
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-3
+  GE0/0/0 | Virtual Router 4
+      State : Initialize
+      Virtual IP : 192.168.1.4, 192.168.1.104
+      Priority : 140
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-4
 
 [57/257] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  Total: 4     Master: 0     Backup: 0     Non-active: 4
   VRID  State        Interface                Type     Virtual IP
+  1     Initialize   GE0/0/0                  Normal   192.168.1.1,192.168.1.101
+  2     Initialize   GE0/0/0                  Normal   192.168.1.2,192.168.1.102
+  3     Initialize   GE0/0/0                  Normal   192.168.1.3,192.168.1.103
+  4     Initialize   GE0/0/0                  Normal   192.168.1.4,192.168.1.104
 
 [58/257] r1 <R1> display vrrp interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  display vrrp interface GigabitEthernet0/0/0
-               ^
+  Info: No VRRP group on GigabitEthernet0/0/0
 
 [59/257] r1 <R1> display vrrp statistics
-  % Invalid input detected at '^' marker.
-  display vrrp statistics
-               ^
+  GE0/0/0 | VRID 1 | Adv sent: 0 received: 0 | Track triggers: 2
+  GE0/0/0 | VRID 2 | Adv sent: 0 received: 0 | Track triggers: 2
+  GE0/0/0 | VRID 3 | Adv sent: 0 received: 0 | Track triggers: 2
+  GE0/0/0 | VRID 4 | Adv sent: 0 received: 0 | Track triggers: 2
 
 
 --- [60] § BFD for VRRP ---
@@ -280,9 +232,7 @@ Total steps: 257
   Enter system view, return user view with return command.
 
 [61/257] r1 [R1] bfd
-  % Invalid input detected at '^' marker.
-  bfd
-  ^
+<empty>
 
 [62/257] r1 [R1] quit
 <empty>
@@ -340,14 +290,10 @@ Total steps: 257
 <empty>
 
 [75/257] r1 <R1> display bfd configuration all
-  % Invalid input detected at '^' marker.
-  display bfd configuration all
-          ^
+  Info: BFD is not enabled
 
 [76/257] r1 <R1> display bfd session all
-  % Invalid input detected at '^' marker.
-  display bfd session all
-          ^
+  Info: No BFD sessions
 
 
 --- [77] § QoS — classifier/behavior/policy ---
@@ -480,14 +426,10 @@ Total steps: 257
 <empty>
 
 [117/257] r1 <R1> display traffic classifier user-defined
-  % Invalid input detected at '^' marker.
-  display traffic classifier user-defined
-                  ^
+  Info: No traffic classifiers configured
 
 [118/257] r1 <R1> display traffic behavior user-defined
-  % Invalid input detected at '^' marker.
-  display traffic behavior user-defined
-                  ^
+  Info: No traffic behaviors configured
 
 [119/257] r1 <R1> display traffic policy user-defined WAN-OUT
   % Invalid input detected at '^' marker.
@@ -508,27 +450,25 @@ Total steps: 257
 [123/257] r1 [R1-GE0/0/1] qos lr outbound cir 100000 cbs 1875000
   % Invalid input detected at '^' marker.
   qos lr outbound cir 100000 cbs 1875000
-  ^
+      ^
 
 [124/257] r1 [R1-GE0/0/1] qos gts dscp ef cir 2000 cbs 50000
   % Invalid input detected at '^' marker.
   qos gts dscp ef cir 2000 cbs 50000
-  ^
+      ^
 
 [125/257] r1 [R1-GE0/0/1] qos queue 5 length packets 100
-  % Invalid input detected at '^' marker.
-  qos queue 5 length packets 100
-  ^
+<empty>
 
 [126/257] r1 [R1-GE0/0/1] qos wfq
   % Invalid input detected at '^' marker.
   qos wfq
-  ^
+      ^
 
 [127/257] r1 [R1-GE0/0/1] qos wred dscp
   % Invalid input detected at '^' marker.
   qos wred dscp
-  ^
+      ^
 
 [128/257] r1 [R1-GE0/0/1] trust dscp
   % Invalid input detected at '^' marker.
@@ -543,7 +483,7 @@ Total steps: 257
 [130/257] r1 [R1-GE0/0/1] qos queue-profile QP1
   % Invalid input detected at '^' marker.
   qos queue-profile QP1
-  ^
+      ^
 
 [131/257] r1 [R1-GE0/0/1] quit
 <empty>
@@ -568,19 +508,13 @@ Total steps: 257
   traffic-policy WAN-OUT outbound on GE0/0/1
 
 [137/257] r1 <R1> display qos configuration interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display qos configuration interface GigabitEthernet0/0/1
-          ^
+  Info: No QoS policy configured
 
 [138/257] r1 <R1> display qos queue statistics interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display qos queue statistics interface GigabitEthernet0/0/1
-          ^
+  Info: No QoS statistics
 
 [139/257] r1 <R1> display qos map-table
-  % Invalid input detected at '^' marker.
-  display qos map-table
-          ^
+  Info: No QoS map tables
 
 
 --- [140] § legacy QoS ---
@@ -593,27 +527,27 @@ Total steps: 257
 [142/257] r1 [R1-GE0/0/1] qos car inbound cir 8000 cbs 1500000
   % Invalid input detected at '^' marker.
   qos car inbound cir 8000 cbs 1500000
-  ^
+      ^
 
 [143/257] r1 [R1-GE0/0/1] qos pq
   % Invalid input detected at '^' marker.
   qos pq
-  ^
+      ^
 
 [144/257] r1 [R1-GE0/0/1] qos cq
   % Invalid input detected at '^' marker.
   qos cq
-  ^
+      ^
 
 [145/257] r1 [R1-GE0/0/1] qos wrr
   % Invalid input detected at '^' marker.
   qos wrr
-  ^
+      ^
 
 [146/257] r1 [R1-GE0/0/1] qos priority 5
   % Invalid input detected at '^' marker.
   qos priority 5
-  ^
+      ^
 
 [147/257] r1 [R1-GE0/0/1] undo qos pq
 <empty>
@@ -625,19 +559,13 @@ Total steps: 257
 <empty>
 
 [150/257] r1 <R1> display qos pq interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display qos pq interface GigabitEthernet0/0/1
-          ^
+  Info: Priority queueing not configured
 
 [151/257] r1 <R1> display qos cq interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display qos cq interface GigabitEthernet0/0/1
-          ^
+  Info: Custom queueing not configured
 
 [152/257] r1 <R1> display qos car interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  display qos car interface GigabitEthernet0/0/1
-          ^
+  Info: No QoS CAR configured
 
 
 --- [153] § regression: display family ---
@@ -793,7 +721,7 @@ Total steps: 257
   Info: No NAT session is found.
 
 [173/257] r1 [R1] display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [174/257] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -812,11 +740,46 @@ Total steps: 257
   Pool number: 0
 
 [177/257] r1 [R1] display vrrp
-  Info: No VRRP backup group is configured.
+  GE0/0/0 | Virtual Router 1
+      State : Initialize
+      Virtual IP : 192.168.1.1, 192.168.1.101
+      Priority : 110
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-1
+  GE0/0/0 | Virtual Router 2
+      State : Initialize
+      Virtual IP : 192.168.1.2, 192.168.1.102
+      Priority : 120
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-2
+  GE0/0/0 | Virtual Router 3
+      State : Initialize
+      Virtual IP : 192.168.1.3, 192.168.1.103
+      Priority : 130
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-3
+  GE0/0/0 | Virtual Router 4
+      State : Initialize
+      Virtual IP : 192.168.1.4, 192.168.1.104
+      Priority : 140
+      Advertisement timer : 1 seconds
+      Preempt mode : Yes (delay 20s)
+      Authentication : md5
+      Description : VRRP-GRP-4
 
 [178/257] r1 [R1] display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
+  Total: 4     Master: 0     Backup: 0     Non-active: 4
   VRID  State        Interface                Type     Virtual IP
+  1     Initialize   GE0/0/0                  Normal   192.168.1.1,192.168.1.101
+  2     Initialize   GE0/0/0                  Normal   192.168.1.2,192.168.1.102
+  3     Initialize   GE0/0/0                  Normal   192.168.1.3,192.168.1.103
+  4     Initialize   GE0/0/0                  Normal   192.168.1.4,192.168.1.104
 
 [179/257] r1 [R1] display ike sa
   Info: No IPSec configuration.
@@ -837,30 +800,20 @@ Total steps: 257
   Info: No IKE peers configured.
 
 [185/257] r1 [R1] display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [186/257] r1 [R1] display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [187/257] r1 [R1] display ntp session
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  No NTP associations
 
 [188/257] r1 [R1] display clock
-  2026-06-04 08:20:03
+  2026-06-04 13:28:22
   Thursday
   Time Zone(UTC) : UTC
 
@@ -873,13 +826,13 @@ Total steps: 257
 [191/257] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:20:03
+  CPU Usage Stat. Time : 2026-06-04 13:28:22
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 08:20:03
+  Memory utilization statistics at 2026-06-04 13:28:22
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -902,7 +855,16 @@ Total steps: 257
   Wait     : Wait for the user to press ENTER.
 
 [195/257] r1 [R1] display history-command
-  Info: No history command.
+  display ntp status
+  display ntp session
+  display clock
+  display lldp neighbor
+  display lldp neighbor brief
+  display cpu-usage
+  display memory-usage
+  display device
+  display users
+  display history-command
 
 [196/257] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1023,12 +985,7 @@ Total steps: 257
   Info: No online-fail record.
 
 [210/257] r1 [R1] display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [211/257] r1 [R1] display ssh user-information
   SSH version                     : 2.0
@@ -1223,13 +1180,18 @@ Total steps: 257
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    bfd            Disable BFD globally
+    isis           Remove IS-IS
+    debugging      debugging
     ike            ike
     ipsec          ipsec
-    debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [255/257] r1 [Huawei] acl ?

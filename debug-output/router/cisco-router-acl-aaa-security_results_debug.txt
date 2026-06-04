@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-06-04T08:20:01.668Z
+Generated: 2026-06-04T13:28:19.625Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -874,43 +874,43 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-06-04 08:20:01
+  % Key pair was generated at: 2026-06-04 13:28:19
   Key name: default
    Storage Device: not specified
    Usage: Signature Key
    Key is not exportable.
    Key Data:
-   534A9D06B873B37E0EA973C442FE876CECA31B9760F2CEAB5B638BA3640952EB
-    B17F03C686F7D9A60FD757C0040ED0206A21BF9769DDA643A210A3EF585B5EF7
-    15630806C43AFDF6BADA3C4C4FAB3BEC1CA23C179D9E21030E6151AB9FA85ECB
-    EF8AE9C6268DD0DEF1832B485F4ADC1019667B1798FA6E1BC0825ED70053A5B7
-    49791CE6EDD5E33EDBD858B47B3AEDDC605D3A77F6893E8B56532973B4D69A9B
-    D6FAD586B9ACCFC6F44EB89078B7571016A664577537F8A39D6DB19F9D605327
-    898A13A603916336A12F80FCB6A46DDC29664EB72E1B4A636BA8373B3EE905FB
-    3E891746729C647E5CB9BBD85A1965E00FECE397611E4F7BD8BBF087754C1447
+   7BB75AB6537652EEC850CA7489C97C9CA11F3B47D15AD09B3EFFA45392F3749B
+    C5E745762750FA162FC8F270C378CA508E1AE3479D4941338E00809FD921FDA7
+    9F59CDB614170F66DAB91AFC34EA6B1CF4CB63C7B5D444F31D67F25BC5C62A7B
+    9AE33376B84A434E99324DF8070A7040E4B2A6C7A58B0B0B1A91F9A7B3A61F07
+    580EACD6D2491A6EE7EA17842BDF0A6C4171AE67621BC5FB6FC2F883111F472B
+    6986C5B61B9E2736DEF743A0F5A213A086485087623BA0137A43E4EFFD2E9FB7
+    A503941692C33966FF07084CA563256C237EE3274FDA58D3BFCEFECBD515D58B
+    488B57F60CDDEAEE17BC6F685B8A2EB0DE89504717EE32EB9C1246370DF35D77
   
-  % Key pair was generated at: 2026-06-04 08:20:01
+  % Key pair was generated at: 2026-06-04 13:28:19
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   DF67DBBCA071BA6C077DBC5E040E9F2679F2314D1AA6D4396E6E94793078B9B1
-    0D4745BC705CD284A5321F9A1F9BB98A9954108DEAC03C41618148F53337EFED
-    BC06923CB1D89974D9409D56698D6276F508C24DDEB020F168D607F17CB81971
-    E4E5A13CC1DB856C49B315922C22E7EA24C4268D3BE31FF95399E78D866EF20D
-    9665DEDC1D76D08C25006A6E6A17C616CE79B56D99F44699F3EBA9A965977D41
-    888E36FC87AF34A4DA8E91CACD755C7A3BFF4ECD51A61AA18D8B2E4534E4A01D
-    63E8899C2D25DA143C916BA62481CD466812D2ADC06FE7515CA0556158548101
-    B8E6B6BCB9EC1B8C1CA4D802D0258EDA0C5A210D02D012590AAA351DB456D6DD
-    4ABC2A7C4AA0F8ECBA51B8FEC39F4706905C45CD8AFE1C393FE677196BCB5111
-    C297CC7CD9BE8804BDE0D43A3C31D5AA04EF5D0D0FC4C8416578E39546B27C8D
-    419D50FCFD6E39342AF409F67A2810968FDF46CD7D3C28311A375A91462F8D11
-    D08C97FC6FD7282CDF153A32E6C7250AA85FE30D3998723934CEF22DFE545CAD
-    9F88A15CAF8A250C74669B0E5E077D36FA6C2A2DE4E05999BE0DEC49D91D2CE1
-    530B1DBC85EC6224304BA66AD9B52F5A49EAFB4DF538B9A1687528E5642D6A7D
-    28953C1C572E6D54F8C68C463AC19E262E89376DECB9DB11E86B88015DA27461
-    D2A18D7C1580FBCC12A4DCA2FB9F60BA1BFDBD8D09EA8B1996311FBDA55FE33D
+   92E1094808969AE895E1662A15AF87926AF0035908ACFC558084484DC4F52415
+    591801C8244E9C5079B59D6E03B3ACAE9D877699F6B291CDE8DA8341171CA159
+    EB99CCC8CEB42E9050CC4422193EE2025C4181595FEC8CADFEAE98C5CD417DA5
+    DFE62A486D067848E12850669046105ECF7039994F148815623888B96B211099
+    ADC5E428202206A88328361A6515EAA2DA469D39221E3BF5D5C7F11DB8EF09E5
+    08E26E88DC8149B072C9293E5304173E9758D6592D5CE64DC7A7DBF179047029
+    D0D7B36816DEE8F04271F3D208440D923B328EF911AD262DDCB2095507A12575
+    2BF372C882FD1F0834938BF6AC7C1A6EF433DD1924E98AB510AAE56982794569
+    FEFF8EC8AE0FEE68398469CA30031872E9AB5B19FFB9B015CDB4EA2DBFF0D775
+    F46B97887BA83C90D3771D4EF6E53E8EA1D0F699BEAF6BCDE41B3961FC9BB3F9
+    535DA2C859CBCB10604870424D580122C3C65999FD0BA7AD186D932502CEB405
+    34F97088A7EEC8C82E5F58C66224B37E09019A193F89371568C7F7597CA7CC39
+    4D8A36E8BF1270284552F6BAE53BE982AA5235B9222DB6F52571AB7D569E2045
+    DA0474C85742FA30BEF2F19ED625F91E1380F6D94393504D59320A91124B52C9
+    4CBAC628621136B0FE9F7472658921B273E4E77986288A2D986683B538BE48D5
+    054439089DC1908881D01456B125E28E4B12BD9948FA13F57B4FD40908244309
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1279,6 +1279,8 @@ Total steps: 388
    access-class 10 out
    transport input ssh
   !
+  enable secret 5 StrongEn@ble1
+  service password-encryption
   !
   aaa new-model
   aaa authentication login default local
@@ -1294,8 +1296,6 @@ Total steps: 388
   aaa accounting network default start-stop group radius
   aaa session-id common
   username admin privilege 15 secret StrongP@ss1
-  enable secret StrongEn@ble1
-  service password-encryption
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -1706,7 +1706,7 @@ Total steps: 388
 [316/388] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBB3B1.B26E978D (08:20:01.697 UTC Thu Jun 4 2026)
+  reference time is EDCBFBF3.A9FBE76C (13:28:19.664 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1(config)# show ntp associations
@@ -1715,7 +1715,7 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1(config)# show clock
-  *08:20:01.000 UTC Thu Jun 4 2026
+  *13:28:19.000 UTC Thu Jun 4 2026
 
 [319/388] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1982,6 +1982,8 @@ Total steps: 388
    access-class 10 out
    transport input ssh
   !
+  enable secret 5 StrongEn@ble1
+  service password-encryption
   !
   aaa new-model
   aaa authentication login default local
@@ -1997,8 +1999,6 @@ Total steps: 388
   aaa accounting network default start-stop group radius
   aaa session-id common
   username admin privilege 15 secret StrongP@ss1
-  enable secret StrongEn@ble1
-  service password-encryption
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2205,6 +2205,8 @@ Total steps: 388
    access-class 10 out
    transport input ssh
   !
+  enable secret 5 StrongEn@ble1
+  service password-encryption
   !
   aaa new-model
   aaa authentication login default local
@@ -2220,8 +2222,6 @@ Total steps: 388
   aaa accounting network default start-stop group radius
   aaa session-id common
   username admin privilege 15 secret StrongP@ss1
-  enable secret StrongEn@ble1
-  service password-encryption
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2390,6 +2390,8 @@ Total steps: 388
    access-class MGMT in
    access-class 10 out
    transport input ssh
+  enable secret 5 StrongEn@ble1
+  service password-encryption
   aaa new-model
   aaa authentication login default local
   aaa authentication login VTY group radius local
@@ -2404,8 +2406,6 @@ Total steps: 388
   aaa accounting network default start-stop group radius
   aaa session-id common
   username admin privilege 15 secret StrongP@ss1
-  enable secret StrongEn@ble1
-  service password-encryption
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2578,21 +2578,28 @@ Total steps: 388
     <cr>  
 
 [382/388] r1 R1(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [383/388] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2617,6 +2624,7 @@ Total steps: 388
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service
@@ -2628,6 +2636,7 @@ Total steps: 388
     track        Remove a tracked object
     access-list  Remove an access list
     crypto       crypto
+    event        event
 
 [386/388] r1 R1(config)# end
 <empty>

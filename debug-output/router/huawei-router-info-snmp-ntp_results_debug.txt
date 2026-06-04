@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-06-04T08:20:06.056Z
+Generated: 2026-06-04T13:28:24.313Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -95,9 +95,10 @@ Total steps: 233
 <empty>
 
 [29/233] r1 <R1> display info-center
-  % Invalid input detected at '^' marker.
-  display info-center
-          ^
+  Info-center: Enabled
+  Timestamp format: debugging
+  Configured sources: 2
+  Configured loghosts: 4
 
 [30/233] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -197,9 +198,9 @@ Total steps: 233
 <empty>
 
 [56/233] r1 <R1> display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [57/233] r1 <R1> display snmp-agent community
   The contact person for this managed node: R&D Beijing, Huawei
@@ -272,9 +273,7 @@ Total steps: 233
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [75/233] r1 <R1> display snmp-agent local-engineid
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  SNMP local EngineID: 800000090389BDC5FA
 
 
 --- [76] § NTP ---
@@ -333,22 +332,12 @@ Total steps: 233
 <empty>
 
 [94/233] r1 <R1> display ntp-service status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [95/233] r1 <R1> display ntp-service sessions
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  No NTP associations
 
 [96/233] r1 <R1> display ntp-service trace
    clock status: unsynchronized
@@ -360,7 +349,7 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-06-04 08:20:06
+  2026-06-04 13:28:24
   Thursday
   Time Zone(UTC) : UTC
 
@@ -479,9 +468,10 @@ Total steps: 233
     Packet loss: 0.0%
 
 [127/233] r1 <R1> display sflow
-  % Invalid input detected at '^' marker.
-  display sflow
-          ^
+  sFlow: Enabled
+  Agent IP: 1.1.1.1
+  Collectors: 1
+  Samplers: 0
 
 [128/233] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -660,7 +650,7 @@ Total steps: 233
   Info: No NAT session is found.
 
 [149/233] r1 [R1] display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [150/233] r1 [R1] display ip pool
   No DHCP pools configured.
@@ -704,30 +694,20 @@ Total steps: 233
   Info: No IKE peers configured.
 
 [161/233] r1 [R1] display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [162/233] r1 [R1] display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [163/233] r1 [R1] display ntp session
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  No NTP associations
 
 [164/233] r1 [R1] display clock
-  2026-06-04 08:20:06
+  2026-06-04 13:28:24
   Thursday
   Time Zone(UTC) : UTC
 
@@ -740,13 +720,13 @@ Total steps: 233
 [167/233] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:20:06
+  CPU Usage Stat. Time : 2026-06-04 13:28:24
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-04 08:20:06
+  Memory utilization statistics at 2026-06-04 13:28:24
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -769,7 +749,16 @@ Total steps: 233
   Wait     : Wait for the user to press ENTER.
 
 [171/233] r1 [R1] display history-command
-  Info: No history command.
+  display ntp status
+  display ntp session
+  display clock
+  display lldp neighbor
+  display lldp neighbor brief
+  display cpu-usage
+  display memory-usage
+  display device
+  display users
+  display history-command
 
 [172/233] r1 [R1] display logbuffer
   Logging buffer configuration and contents: enabled
@@ -894,12 +883,7 @@ Total steps: 233
   Info: No online-fail record.
 
 [186/233] r1 [R1] display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [187/233] r1 [R1] display ssh user-information
   SSH version                     : 2.0
@@ -1099,13 +1083,18 @@ Total steps: 233
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    bfd            Disable BFD globally
+    isis           Remove IS-IS
+    debugging      debugging
     ike            ike
     ipsec          ipsec
-    debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [231/233] r1 [Huawei] acl ?

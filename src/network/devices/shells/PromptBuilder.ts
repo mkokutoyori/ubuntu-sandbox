@@ -85,6 +85,14 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-tacacs-server':      '{host}(config-tacacs-server)#',
   'config-aaa-group':          '{host}(config-sg-radius)#',
   'config-ca-trustpoint':      '{host}(ca-trustpoint)#',
+  'config-applet':             '{host}(config-applet)#',
+  'config-flow-exporter':      '{host}(config-flow-exporter)#',
+  'config-flow-record':        '{host}(config-flow-record)#',
+  'config-flow-monitor':       '{host}(config-flow-monitor)#',
+  'config-archive':            '{host}(config-archive)#',
+  'config-archive-log':        '{host}(config-archive-log-cfg)#',
+  'config-dhcp-class':         '{host}(config-dhcp-class)#',
+  'config-ipv6-dhcp':          '{host}(config-dhcpv6)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────
@@ -113,4 +121,6 @@ export const HUAWEI_VRP_PROMPTS: PromptMap = {
   'ike-peer':        (host, f) => `[${host}-ike-peer-${f.selectedIKEPeer ?? ''}]`,
   'ipsec-proposal':  (host, f) => `[${host}-ipsec-proposal-${f.selectedIPSecProposal ?? ''}]`,
   'ipsec-policy':    (host, f) => `[${host}-ipsec-policy-${f.selectedIPSecPolicy ?? ''}-${f.selectedIPSecPolicySeq ?? ''}]`,
+  'bgp':             (host, f) => `[${host}-bgp${f.bgpAsn ? '-' + f.bgpAsn : ''}]`,
+  'isis':            (host, f) => `[${host}-isis-${f.isisProcessId ?? '1'}]`,
 };

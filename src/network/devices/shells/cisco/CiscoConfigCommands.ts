@@ -29,7 +29,9 @@ export type CiscoShellMode =
   | 'config-time-range' | 'config-cmap' | 'config-pmap' | 'config-pmap-c'
   | 'config-cp' | 'config-zone' | 'config-zone-pair'
   | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group'
-  | 'config-ca-trustpoint';
+  | 'config-ca-trustpoint'
+  | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
+  | 'config-archive' | 'config-archive-log';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */
@@ -97,14 +99,27 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     const raw = args.join(' ');
     let ifName = ctx.resolveInterfaceName(raw);
     if (!ifName) {
-      // Try creating virtual interface (Loopback, Tunnel, Serial subinterface)
       const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
+      const vMatch = combined.match(/^(loopback|tunnel|serial|virtual-template|port-channel|vlan)([\d/.]+)$/i);
       if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
+        const typeMap: Record<string, string> = {
+          'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial',
+          'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel', 'vlan': 'Vlan',
+        };
         const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;
+      }
+      if (!ifName) {
+        const subMatch = combined.match(/^([a-z]+\d+(?:\/\d+){1,2})\.(\d+)$/i);
+        if (subMatch) {
+          const baseName = ctx.resolveInterfaceName(subMatch[1]);
+          if (baseName) {
+            const fullName = `${baseName}.${subMatch[2]}`;
+            ctx.r()._createVirtualInterface(fullName);
+            ifName = fullName;
+          }
+        }
       }
       if (!ifName) return `% Invalid interface "${raw}"`;
     }
@@ -131,6 +146,70 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     const end = args[1] || start;
     ctx.r()._getDHCPServerInternal().addExcludedRange(start, end);
     return '';
+  });
+
+  trie.registerGreedy('ip dhcp class', 'Define DHCP class', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    const classes = r._ciscoDhcpClasses ?? (r._ciscoDhcpClasses = new Map<string, any>());
+    if (!classes.has(args[0])) classes.set(args[0], { name: args[0], options: [], lines: [] });
+    r._ciscoDhcpCurrentClass = args[0];
+    ctx.setMode('config-dhcp-class' as any);
+    return '';
+  });
+
+  trie.registerGreedy('ipv6 dhcp pool', 'Define an IPv6 DHCP pool', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    const pools = r._ciscoIpv6DhcpPools ?? (r._ciscoIpv6DhcpPools = new Map<string, any>());
+    if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
+    r._ciscoIpv6DhcpCurrent = args[0];
+    ctx.setMode('config-ipv6-dhcp' as any);
+    return '';
+  });
+
+  trie.register('ip dhcp use class', 'Enable DHCP class lookup', () => {
+    (ctx.r() as any)._ciscoDhcpUseClass = true;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp ping packets', 'Set DHCP ping packets', (args) => {
+    (ctx.r() as any)._ciscoDhcpPingPackets = parseInt(args[0] ?? '', 10) || 0;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp ping timeout', 'Set DHCP ping timeout (ms)', (args) => {
+    (ctx.r() as any)._ciscoDhcpPingTimeout = parseInt(args[0] ?? '', 10) || 0;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
+    (ctx.r() as any)._ciscoDhcpDatabase = raw ?? args.join(' ');
+    return '';
+  });
+  trie.register('ip dhcp bootp ignore', 'Ignore BOOTP requests', () => {
+    (ctx.r() as any)._ciscoDhcpBootpIgnore = true; return '';
+  });
+  trie.registerGreedy('ip dhcp compatibility', 'DHCP compatibility tweaks', (_args) => '');
+
+  trie.register('ip dhcp relay information option', 'Enable option-82 insertion', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoOption = true; return '';
+  });
+  trie.registerGreedy('ip dhcp relay information policy', 'Option-82 policy (keep/replace/drop)', (args) => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoPolicy = args[0]?.toLowerCase() ?? 'replace'; return '';
+  });
+  trie.register('ip dhcp relay information trust-all', 'Trust option-82 on all interfaces', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoTrustAll = true; return '';
+  });
+  trie.register('ip dhcp smart-relay', 'Enable DHCP smart relay', () => {
+    (ctx.r() as any)._ciscoDhcpSmartRelay = true; return '';
+  });
+
+  trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
+    (ctx.r() as any)._ciscoDhcpSnooping = true; return '';
+  });
+  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args, raw) => {
+    (ctx.r() as any)._ciscoDhcpSnoopingVlans = raw ?? args.join(' '); return '';
+  });
+  trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
+    (ctx.r() as any)._ciscoDhcpSnoopingInfoOption = true; return '';
   });
 
   trie.registerGreedy('ip route', 'Establish static routes', (args) => {
@@ -199,6 +278,17 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;
       }
+      if (!ifName) {
+        const subMatch = combined.match(/^([a-z]+\d+\/\d+(?:\/\d+)?)\.(\d+)$/i);
+        if (subMatch) {
+          const baseName = resolveInterfaceName(ctx.r(), subMatch[1]);
+          if (baseName) {
+            const fullName = `${baseName}.${subMatch[2]}`;
+            ctx.r()._createVirtualInterface(fullName);
+            ifName = fullName;
+          }
+        }
+      }
       if (!ifName) return `% Invalid interface "${raw}"`;
     }
     ctx.setSelectedInterface(ifName);
@@ -215,6 +305,226 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     } catch (e: any) {
       return `% Invalid input: ${e.message}`;
     }
+  });
+
+  trie.registerGreedy('mtu', 'Set MTU', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) { try { port.setMTU(n); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; } }
+    return '';
+  });
+  trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.setBandwidthKbps(n);
+    return '';
+  });
+  trie.registerGreedy('delay', 'Set interface delay (10us)', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.setDelayUs(n * 10);
+    return '';
+  });
+  trie.registerGreedy('arp timeout', 'Set ARP timeout (seconds)', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) port.setArpTimeoutSec(n);
+    return '';
+  });
+  trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const a = (args[0] ?? '').toLowerCase();
+    if (port && (a === 'full' || a === 'half' || a === 'auto')) port.setDuplex(a as 'full' | 'half' | 'auto');
+    return '';
+  });
+  trie.registerGreedy('speed', 'Set interface speed', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port) return '';
+    if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
+    const n = parseInt(args[0] ?? '', 10);
+    if (!isNaN(n)) { try { port.setSpeed(n); } catch { /* ignore */ } }
+    return '';
+  });
+  trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
+    if (!ctx.getSelectedInterface()) return '% No interface selected';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
+    return '';
+  });
+  trie.register('no keepalive', 'Disable keepalive', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    ctx.r().getPort(ctx.getSelectedInterface()!)?.setKeepalive(null);
+    return '';
+  });
+  trie.registerGreedy('keepalive', 'Set keepalive interval', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '10', 10);
+    if (port) port.setKeepalive(isNaN(n) ? 10 : n);
+    return '';
+  });
+  trie.register('ip directed-broadcast', 'Enable directed broadcast', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    ctx.r().getPort(ctx.getSelectedInterface()!)?.setDirectedBroadcast(true);
+    return '';
+  });
+  trie.register('no ip directed-broadcast', 'Disable directed broadcast', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    ctx.r().getPort(ctx.getSelectedInterface()!)?.setDirectedBroadcast(false);
+    return '';
+  });
+  trie.registerGreedy('no ip helper-address', 'Remove DHCP relay helper', (args) => {
+    if (!ctx.getSelectedInterface() || !args[0]) return '';
+    const dhcp = ctx.r()._getDHCPServerInternal() as unknown as { removeHelperAddress?: (iface: string, ip: string) => void };
+    dhcp.removeHelperAddress?.(ctx.getSelectedInterface()!, args[0]);
+    return '';
+  });
+  trie.registerGreedy('ip unnumbered', 'Borrow IP from another interface', (args) => {
+    if (!ctx.getSelectedInterface() || !args[0]) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { unnumberedSource?: string | null }).unnumberedSource = args[0];
+    return '';
+  });
+  trie.register('no ip unnumbered', 'Clear unnumbered', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { unnumberedSource?: string | null }).unnumberedSource = null;
+    return '';
+  });
+  trie.registerGreedy('service-policy', 'Apply QoS policy', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port || !args[0] || !args[1]) return '';
+    if (args[0].toLowerCase() === 'input') port.setInputServicePolicy(args[1]);
+    else if (args[0].toLowerCase() === 'output') port.setOutputServicePolicy(args[1]);
+    return '';
+  });
+  trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = true;
+    return '';
+  });
+  trie.register('no ipv6 enable', 'Disable IPv6 on interface', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { ipv6Enabled?: boolean }).ipv6Enabled = false;
+    return '';
+  });
+  trie.registerGreedy('ip mtu', 'Set IP MTU', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as unknown as { ipMtu?: number }).ipMtu = n;
+    return '';
+  });
+  trie.registerGreedy('ipv6 mtu', 'Set IPv6 MTU', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as unknown as { ipv6Mtu?: number }).ipv6Mtu = n;
+    return '';
+  });
+  trie.register('ip proxy-arp', 'Enable proxy-ARP', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { proxyArp?: boolean }).proxyArp = true;
+    return '';
+  });
+  trie.register('ip redirects', 'Enable ICMP redirects', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { ipRedirects?: boolean }).ipRedirects = true;
+    return '';
+  });
+  trie.register('ip accounting', 'Enable IP accounting', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { ipAccounting?: boolean }).ipAccounting = true;
+    return '';
+  });
+  trie.register('ip dhcp relay information trusted', 'Trust DHCP option-82', () => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (port) (port as unknown as { dhcpRelayInfoTrusted?: boolean }).dhcpRelayInfoTrusted = true;
+    return '';
+  });
+  trie.register('ip dhcp snooping trust', 'Trust DHCP snooping on interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).dhcpSnoopingTrust = true;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp snooping limit rate', 'Snooping rate-limit (pps)', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as any).dhcpSnoopingRateLimit = n;
+    return '';
+  });
+  trie.registerGreedy('ipv6 dhcp server', 'Bind IPv6 DHCP pool to interface', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6DhcpPool = args[0];
+    return '';
+  });
+  trie.registerGreedy('ipv6 dhcp relay destination', 'IPv6 DHCP relay destination', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName || !args[0]) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) ((port as any).ipv6DhcpRelayDestinations ??= []).push(args[0]);
+    return '';
+  });
+  trie.register('ipv6 nd managed-config-flag', 'Set IPv6 ND M flag', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6NdManagedFlag = true;
+    return '';
+  });
+  trie.register('ipv6 nd other-config-flag', 'Set IPv6 ND O flag', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) (port as any).ipv6NdOtherFlag = true;
+    return '';
+  });
+  trie.registerGreedy('ip address dhcp', 'Configure IP via DHCP', (args, raw) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (port) {
+      (port as any).ipAddressDhcp = true;
+      (port as any).ipAddressDhcpRaw = raw ?? `ip address dhcp ${args.join(' ')}`;
+    }
+    return '';
+  });
+  trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    const n = parseInt(args[0] ?? '', 10);
+    if (port && !isNaN(n)) (port as unknown as { loadIntervalSec?: number }).loadIntervalSec = n;
+    return '';
+  });
+  trie.registerGreedy('encapsulation', 'Set encapsulation', (args) => {
+    if (!ctx.getSelectedInterface()) return '';
+    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
+    if (!port) return '';
+    (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
+      type: args[0]?.toLowerCase() ?? '',
+      vlan: args[1] ? parseInt(args[1], 10) : undefined,
+      native: args.includes('native'),
+    };
+    return '';
   });
 
   trie.registerGreedy('description', 'Set interface description', (args) => {

@@ -6,6 +6,9 @@ export interface RawConfigEntry {
 }
 
 export class RouterManagementService {
+  domainName: string = '';
+  ipDomainLookupEnabled: boolean = true;
+  nameServers: string[] = [];
   private readonly stelnetServer = { enabled: false, port: 22, acl: undefined as string | undefined };
   private readonly telnetServer = { enabled: false, port: 23, acl: undefined as string | undefined };
   private readonly sshServer = { enabled: false, port: 22, version: 2, timeout: 60, retries: 3 };

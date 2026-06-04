@@ -83,11 +83,33 @@ export function registerIPSecShowCommands(
   trie.register('show crypto ikev2 stats', 'IKEv2 statistics', () => {
     const e = eng();
     if (!e) return 'IPSec not configured.';
-    const stats = (e as unknown as { getIKEv2Stats?: () => Record<string, number> }).getIKEv2Stats?.();
-    if (!stats) return 'Crypto IKEv2 stats not available';
-    return Object.entries(stats).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+    const v = e.stats.get();
+    const dbg = e as unknown as { ikev2SADB: Map<string, unknown> };
+    const ikev2Count = dbg.ikev2SADB.size;
+    return [
+      `Crypto IKEv2 statistics:`,
+      `  Active SAs: ${ikev2Count}`,
+      `  Inbound packets processed: ${v.inboundProcessed}`,
+      `  Inbound packets dropped: ${v.inboundDropped}`,
+      `  Inbound packets rejected: ${v.inboundRejected}`,
+      `  Outbound packets processed: ${v.outboundProcessed ?? 0}`,
+      `  Outbound packets dropped: ${v.outboundDropped ?? 0}`,
+      `  Outbound packets rejected: ${v.outboundRejected ?? 0}`,
+    ].join('\n');
   });
-  trie.register('show crypto eli', 'Encryption Library Information', () => 'Hardware Encryption Layer: not available\nCryptographic API library: software');
+  trie.register('show crypto eli', 'Encryption Library Information', () => {
+    const e = eng();
+    const sessions = e ? (e as unknown as { ikeSADB: Map<string, unknown>; ikev2SADB: Map<string, unknown>; ipsecSADB: Map<string, unknown[]> }) : null;
+    const ikeCount = (sessions?.ikeSADB.size ?? 0) + (sessions?.ikev2SADB.size ?? 0);
+    let ipsecCount = 0;
+    if (sessions) for (const arr of sessions.ipsecSADB.values()) ipsecCount += arr.length;
+    return [
+      'Hardware Encryption Layer: not available (software-only sim)',
+      'Cryptographic API library: software (Node crypto fallback)',
+      `Active IKE/IKEv2 SAs: ${ikeCount}`,
+      `Active IPSec SAs: ${ipsecCount}`,
+    ].join('\n');
+  });
   trie.register('show crypto engine connections active', 'Active crypto engine connections', () => {
     const e = eng();
     if (!e) return 'No crypto engine connections active.';
@@ -104,7 +126,23 @@ export function registerIPSecShowCommands(
   trie.registerGreedy('show crypto map interface', 'Crypto maps on an interface', () =>
     eng()?.showCryptoMap?.() ?? 'No crypto maps configured');
 
-  trie.register('show crypto pki certificates verbose', 'Detailed PKI certificates', () => 'No PKI certificates installed');
+  trie.register('show crypto pki certificates verbose', 'Detailed PKI certificates', () => {
+    const sec = (getRouter() as unknown as { [s: symbol]: { pkiTrustpoints?: Map<string, { name: string; subjectName?: string; enrollmentUrl?: string; revocationCheck?: string; rsaKeypair?: string; importedCertificate?: { format: string; importedAtMs: number } }> } | undefined })[Symbol.for('CiscoSecurityConfig')];
+    const tps = sec?.pkiTrustpoints;
+    if (!tps || tps.size === 0) return 'No PKI certificates installed';
+    return [...tps.values()].map(tp => [
+      `Trustpoint ${tp.name} (verbose):`,
+      `  Subject Name: ${tp.subjectName ?? '<not configured>'}`,
+      `  Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
+      `  Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
+      `  RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
+      tp.importedCertificate
+        ? `  Imported Certificate (${tp.importedCertificate.format}): ${new Date(tp.importedCertificate.importedAtMs).toISOString()}`
+        : '  Certificate: pending enrollment',
+      '  Validity: 365 days',
+      `  Certificate fingerprint (SHA1): ${'AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB'}`,
+    ].join('\n')).join('\n\n');
+  });
 
   trie.registerGreedy('clear crypto sa', 'Clear IPSec SAs', (args) => {
     const e = eng();

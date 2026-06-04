@@ -91,6 +91,12 @@ import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import { SnmpService } from './router/management/SnmpService';
+import { EemService } from './router/eem/EemService';
+import { NetflowService } from './router/netflow/NetflowService';
+import { ArchiveService } from './router/archive/ArchiveService';
+import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
+import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
+import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -161,6 +167,14 @@ export abstract class Router extends Equipment {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
   private arpTable: Map<string, ARPEntry> = new Map();
+
+  _clearArpEntry(ip: string): number {
+    return this.arpTable.delete(ip) ? 1 : 0;
+  }
+  _clearDynamicRoutes(): void {
+    this.routingTable = this.routingTable.filter(r =>
+      r.type === 'connected' || r.type === 'static' || r.type === 'default');
+  }
   private packetQueue: QueuedPacket[] = [];
   private readonly defaultTTL = 255; // Cisco/Huawei default
   private readonly interfaceMTU = 1500; // Standard Ethernet MTU
@@ -441,6 +455,8 @@ export abstract class Router extends Equipment {
 
   /** Create the vendor-specific CLI shell */
   protected abstract createShell(): IRouterShell;
+
+  getShell(): IRouterShell { return this.shell; }
 
   /** Get the vendor-specific boot sequence */
   abstract getBootSequence(): string;
@@ -1574,6 +1590,59 @@ export abstract class Router extends Equipment {
   getRipVersion(): 1 | 2 { return this._ripVersion; }
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
+  private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'type-7' } | null = null;
+  private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
+  private readonly _serviceFlags: Map<string, boolean> = new Map();
+  private readonly _unhandledConfigLines: string[] = [];
+  private _systemClockOverrideMs: number | null = null;
+  private _systemClockSetAtMs: number = 0;
+
+  getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'type-7' } | null { return this._enableSecret; }
+  _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'type-7'): void {
+    this._enableSecret = { value, algo };
+  }
+
+  getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
+  _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
+    this._enablePassword = { value, algo };
+  }
+
+  getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
+  _setServiceFlag(name: string, on: boolean): void {
+    if (on) this._serviceFlags.set(name, true);
+    else this._serviceFlags.delete(name);
+  }
+
+  getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
+  _recordUnhandledConfigLine(line: string): void {
+    if (this._unhandledConfigLines.length < 1024) this._unhandledConfigLines.push(line);
+  }
+
+  _setSystemClock(epochMs: number): void {
+    this._systemClockOverrideMs = epochMs;
+    this._systemClockSetAtMs = Date.now();
+  }
+  getSystemClockMs(): number {
+    if (this._systemClockOverrideMs === null) return Date.now();
+    return this._systemClockOverrideMs + (Date.now() - this._systemClockSetAtMs);
+  }
+
+  private _startupConfigSnapshot: string | null = null;
+  _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
+  _eraseStartupConfig(): void { this._startupConfigSnapshot = null; }
+  _restoreStartupConfig(): boolean {
+    return this._startupConfigSnapshot !== null;
+  }
+  getStartupConfigSnapshot(): string | null { return this._startupConfigSnapshot; }
+
+  private _scheduledReloadAtMs: number | null = null;
+  _scheduleReload(when: 'immediate' | { atMs: number } | 'cancel'): void {
+    if (when === 'cancel') { this._scheduledReloadAtMs = null; return; }
+    if (when === 'immediate') { this._scheduledReloadAtMs = Date.now(); return; }
+    this._scheduledReloadAtMs = when.atMs;
+  }
+  _getScheduledReloadMs(): number | null { return this._scheduledReloadAtMs; }
+
   private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
   getRoutingTableLimit(): { max: number; thresholdPct?: number } | null { return this._routingTableLimit; }
   _setRoutingTableLimit(max: number | null, thresholdPct?: number): void {
@@ -1610,6 +1679,41 @@ export abstract class Router extends Equipment {
       this._snmpService = new SnmpService();
     }
     return this._snmpService;
+  }
+
+  private _eemService: EemService | null = null;
+  private _netflowService: NetflowService | null = null;
+  private _archiveService: ArchiveService | null = null;
+
+  getEemService(): EemService {
+    if (!this._eemService) this._eemService = new EemService();
+    return this._eemService;
+  }
+  getNetflowService(): NetflowService {
+    if (!this._netflowService) this._netflowService = new NetflowService();
+    return this._netflowService;
+  }
+  getArchiveService(): ArchiveService {
+    if (!this._archiveService) this._archiveService = new ArchiveService();
+    return this._archiveService;
+  }
+
+  private _huaweiRoutingExtras: HuaweiRoutingExtras | null = null;
+  getHuaweiRoutingExtras(): HuaweiRoutingExtras {
+    if (!this._huaweiRoutingExtras) this._huaweiRoutingExtras = new HuaweiRoutingExtras();
+    return this._huaweiRoutingExtras;
+  }
+
+  private _huaweiVrrpService: HuaweiVrrpService | null = null;
+  getHuaweiVrrpService(): HuaweiVrrpService {
+    if (!this._huaweiVrrpService) this._huaweiVrrpService = new HuaweiVrrpService();
+    return this._huaweiVrrpService;
+  }
+
+  private _huaweiBfdService: HuaweiBfdService | null = null;
+  getHuaweiBfdService(): HuaweiBfdService {
+    if (!this._huaweiBfdService) this._huaweiBfdService = new HuaweiBfdService();
+    return this._huaweiBfdService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;

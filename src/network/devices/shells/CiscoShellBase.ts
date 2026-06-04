@@ -333,6 +333,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private static readonly IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
 
+  private static readonly MONTH_MAP: Record<string, number> = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  };
+
+  protected parseClockSetArgs(args: string[]): number | null {
+    if (args.length < 5) return null;
+    const hm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(args[0]);
+    if (!hm) return null;
+    const day = parseInt(args[1], 10);
+    const month = CiscoShellBase.MONTH_MAP[args[2]?.toLowerCase()];
+    const year = parseInt(args[3], 10);
+    if (isNaN(day) || !month || isNaN(year)) return null;
+    const date = new Date(Date.UTC(year, month - 1, day,
+      parseInt(hm[1], 10), parseInt(hm[2], 10), hm[3] ? parseInt(hm[3], 10) : 0));
+    return date.getTime();
+  }
+
   protected resolveNtpTarget(target: string): string | null {
     if (CiscoShellBase.IPV4_RE.test(target)) return target;
     const dev = this.d() as unknown as { _getHostsTable?: () => { resolve?: (n: string) => string | null } };
@@ -370,15 +388,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
   private registerCommonShowCommands(trie: CommandTrie): void {
-    trie.register('show clock', 'Display the system clock', () => showClock());
+    trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
     trie.register('show users', 'Display active lines', () => showUsers());
     trie.register('show inventory', 'Display hardware inventory', () =>
       showInventory(this.d().getHostname(), this.getChassisProfile()));
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
+    trie.registerGreedy('show processes cpu sorted', 'Display CPU utilisation sorted', () =>
+      showProcessesCpu());
+    trie.registerGreedy('show processes cpu history', 'Display CPU history', () =>
+      showProcessesCpu());
+    trie.register('show clock detail', 'Display clock with source', () => {
+      const dev = this.cs() as unknown as { getNtpAgent?: () => { isSynced: () => boolean; getConfig: () => { sourceInterface: string; refIdentifier: string } } };
+      const ntp = dev.getNtpAgent?.();
+      const synced = ntp?.isSynced() ?? false;
+      const source = synced ? `NTP (${ntp?.getConfig().refIdentifier})` : 'No time source';
+      return [
+        showClock(this.cs()),
+        `Time source is ${source}`,
+      ].join('\n');
+    });
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
+    trie.register('show platform', 'Display platform information', () => {
+      const profile = this.getChassisProfile();
+      return profile === 'router-isr2911'
+        ? 'Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: FTX1234567A'
+        : 'Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: FOC1234X56Y';
+    });
+    trie.register('show license', 'Display licenses', () => 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority\n1     ipbasek9                 Lifetime       0              Permanent       Active, In Use   N/A              Medium');
+    trie.register('show license udi', 'Display Unique Device Identifier', () => {
+      const hostname = this.d().getHostname();
+      const profile = this.getChassisProfile();
+      const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
+      const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
+      return `Device# PID                   SN                              UDI\n*0    ${pid}      ${sn}                  ${pid}:${sn}\n  (hostname: ${hostname})`;
+    });
+    trie.register('show diag', 'Display chassis diagnostics', () => 'Slot 0:  Built-in PID (real)\n  Power: OK\n  Temperature: nominal');
+    trie.register('show idprom backplane', 'Display IDPROM backplane', () => 'IDPROM for backplane: serial number, PID match show inventory');
+    trie.register('show mac address-table', 'Display MAC address table', () => {
+      const dev = this.d() as unknown as { getMacTable?: () => Map<string, { mac: string; ifName: string; vlan?: number; type?: string }> };
+      const table = dev.getMacTable?.();
+      if (!table || table.size === 0) return 'Mac Address Table\n--------------------------------\nNo entries';
+      const lines = ['Mac Address Table', '--------------------------------', 'Vlan    Mac Address       Type        Ports'];
+      for (const e of table.values()) lines.push(`${String(e.vlan ?? 1).padEnd(8)}${e.mac.padEnd(18)}${(e.type ?? 'DYNAMIC').padEnd(12)}${e.ifName}`);
+      return lines.join('\n');
+    });
+    trie.registerGreedy('show running-config all', 'Show running-config with defaults', () => {
+      const dev = this.d() as unknown as { _getRunningConfigText?: () => string };
+      const cfg = dev._getRunningConfigText?.() ?? '';
+      return cfg.length > 0 ? `Building configuration...\n${cfg}\nend` : 'Building configuration...';
+    });
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));
     trie.register('show history', 'Display command history', () =>
@@ -552,6 +613,145 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.register('write memory', 'Save configuration', () => {
       return this.onSave();
     });
+    this.privilegedTrie.register('write erase', 'Erase saved configuration', () => {
+      const dev = this.d() as unknown as { _eraseStartupConfig?: () => void };
+      dev._eraseStartupConfig?.();
+      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]';
+    });
+    this.privilegedTrie.register('erase startup-config', 'Erase saved configuration', () => {
+      const dev = this.d() as unknown as { _eraseStartupConfig?: () => void };
+      dev._eraseStartupConfig?.();
+      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]';
+    });
+    this.privilegedTrie.registerGreedy('copy', 'Copy a file', (args) => {
+      const src = args[0]?.toLowerCase();
+      const dst = args[1]?.toLowerCase();
+      if (!src || !dst) return '% Incomplete command.';
+      if (src === 'running-config' && dst === 'startup-config') return this.onSave();
+      if ((src === 'startup-config' || src.startsWith('flash:')) && dst === 'running-config') {
+        const dev = this.d() as unknown as { _restoreStartupConfig?: () => boolean };
+        dev._restoreStartupConfig?.();
+        return 'Destination filename [running-config]?\n[OK]';
+      }
+      if (src === 'running-config' && (dst.startsWith('flash:') || dst.startsWith('tftp:') || dst.startsWith('ftp:'))) {
+        return `Destination filename [${dst}]?\nWriting ${dst} ... [OK]`;
+      }
+      return `[OK]`;
+    });
+    this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
+      const dev = this.d() as unknown as { _scheduleReload?: (when: 'immediate' | { atMs: number } | 'cancel') => void };
+      if (args[0]?.toLowerCase() === 'cancel') {
+        dev._scheduleReload?.('cancel');
+        return 'Reload cancelled.';
+      }
+      if (args[0]?.toLowerCase() === 'in' && args[1]) {
+        const min = parseInt(args[1], 10);
+        if (!isNaN(min)) {
+          dev._scheduleReload?.({ atMs: Date.now() + min * 60_000 });
+          return `Reload scheduled in ${min} minutes`;
+        }
+      }
+      if (args[0]?.toLowerCase() === 'at' && args[1]) {
+        return `Reload scheduled for ${args[1]}`;
+      }
+      dev._scheduleReload?.('immediate');
+      return 'Proceed with reload? [confirm]\nReload requested.';
+    });
+    this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
+      const sub = args.join(' ').toLowerCase();
+      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp') => string } };
+      const svc = dev.getDebugService?.();
+      if (!svc) return 'IP debugging is on';
+      if (sub === 'packet') return svc.enable('ip.packet');
+      if (sub === 'icmp') return svc.enable('ip.icmp');
+      if (sub === 'tcp') return svc.enable('ip.tcp');
+      if (sub === 'udp') return svc.enable('ip.udp');
+      if (sub === 'nat') return svc.enable('ip.nat');
+      if (sub === 'arp') return svc.enable('ip.arp');
+      if (sub === 'routing') return svc.enable('ip.routing');
+      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.enable('ip.dhcp.server');
+      if (sub === 'ssh') return svc.enable('ip.ssh');
+      if (sub === 'rip') return svc.enable('ip.rip');
+      if (sub === 'eigrp') return svc.enable('ip.eigrp');
+      if (sub === 'bgp') return svc.enable('ip.bgp');
+      if (sub === 'nhrp') return svc.enable('ip.nhrp');
+      return svc.enable('ip.packet', sub);
+    });
+    this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
+      const sub = args.join(' ').toLowerCase();
+      const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp') => string } };
+      const svc = dev.getDebugService?.();
+      if (!svc) return 'IP debugging is off';
+      if (sub === 'packet') return svc.disable('ip.packet');
+      if (sub === 'icmp') return svc.disable('ip.icmp');
+      if (sub === 'tcp') return svc.disable('ip.tcp');
+      if (sub === 'udp') return svc.disable('ip.udp');
+      if (sub === 'nat') return svc.disable('ip.nat');
+      if (sub === 'arp') return svc.disable('ip.arp');
+      if (sub === 'routing') return svc.disable('ip.routing');
+      if (sub === 'dhcp server' || sub === 'dhcp server events') return svc.disable('ip.dhcp.server');
+      if (sub === 'ssh') return svc.disable('ip.ssh');
+      if (sub === 'rip') return svc.disable('ip.rip');
+      if (sub === 'eigrp') return svc.disable('ip.eigrp');
+      if (sub === 'bgp') return svc.disable('ip.bgp');
+      if (sub === 'nhrp') return svc.disable('ip.nhrp');
+      return svc.disable('ip.packet');
+    });
+    this.privilegedTrie.register('show reload', 'Show pending reload', () => {
+      const dev = this.d() as unknown as { _getScheduledReloadMs?: () => number | null };
+      const t = dev._getScheduledReloadMs?.();
+      if (t === null || t === undefined) return 'No reload is scheduled';
+      const sec = Math.max(0, Math.floor((t - Date.now()) / 1000));
+      return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
+    });
+    this.privilegedTrie.register('write-memory', 'Save configuration (alias)', () => this.onSave());
+    this.privilegedTrie.register('write', 'Save configuration', () => this.onSave());
+    this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
+      this.attachLoggingToDevice(this.d());
+      (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('clear counters', 'Clear interface counters', (args) => {
+      const ports = this.d()._getPortsInternal();
+      const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
+      let count = 0;
+      for (const [name, port] of ports) {
+        if (target && name.toLowerCase() !== target.toLowerCase()) continue;
+        (port as unknown as { resetCounters?: () => void }).resetCounters?.();
+        count++;
+      }
+      return count === 0 ? '% No matching interface' : '';
+    });
+    this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
+      const dev = this.d() as unknown as { _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown> };
+      if (args[0]) {
+        const n = dev._clearArpEntry?.(args[0]) ?? 0;
+        return n === 0 ? '% No matching ARP entry' : '';
+      }
+      dev.arpTable?.clear();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('clear ip route', 'Clear routes (dynamic)', () => {
+      const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
+      dev._clearDynamicRoutes?.();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const target = this.resolveNtpTarget(args[0]);
+      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      return '';
+    });
+    this.configTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const target = this.resolveNtpTarget(args[0]);
+      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+      const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer');
+      return '';
+    });
 
     this.registerCommonShowCommands(this.privilegedTrie);
     // ARP commands (shared between router and switch)
@@ -650,7 +850,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.configTrie.register('no hostname', 'Reset hostname', () => '');
+    this.configTrie.register('no hostname', 'Reset hostname', () => {
+      this.d()._setHostnameInternal('Router');
+      return '';
+    });
 
     // `alias <mode> <name> <command…>` — real, working aliases.
     this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
@@ -701,6 +904,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const n = parseInt(args[0] ?? '', 10);
       if (isNaN(n) || n < 10 || n > 255) return '% Invalid holdtime value (10-255)';
       this.applyToCdpAgent(a => a.setHoldtimeSec(n));
+      return '';
+    });
+    this.configTrie.register('cdp advertise-v2', 'Advertise CDPv2 PDUs', () => {
+      this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(true));
+      return '';
+    });
+    this.configTrie.register('no cdp advertise-v2', 'Use CDPv1 PDUs', () => {
+      this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(false));
       return '';
     });
     this.configTrie.registerGreedy('lldp run', 'Enable LLDP globally', () => {
@@ -792,9 +1003,111 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configState.set('ipv6 unicast-routing', false);
       return '';
     });
+    this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip name-server', 'Clear DNS name servers', (args) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) {
+        if (args.length === 0) mgmt.nameServers.length = 0;
+        else for (const s of args) {
+          const i = mgmt.nameServers.indexOf(s);
+          if (i >= 0) mgmt.nameServers.splice(i, 1);
+        }
+      }
+      return '';
+    });
+    this.configTrie.register('ip domain-lookup', 'Enable DNS lookups', () => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) mgmt.ipDomainLookupEnabled = true;
+      return '';
+    });
+    this.configTrie.register('no ip domain-lookup', 'Disable DNS lookups', () => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) mgmt.ipDomainLookupEnabled = false;
+      return '';
+    });
+    this.configTrie.register('ip bootp server', 'Enable BOOTP server', () => {
+      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+      r._setServiceFlag?.('bootp-server', true);
+      return '';
+    });
+    this.configTrie.register('no ip bootp server', 'Disable BOOTP server', () => {
+      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+      r._setServiceFlag?.('bootp-server', false);
+      return '';
+    });
+    this.configTrie.register('ip finger', 'Enable finger service', () => {
+      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+      r._setServiceFlag?.('finger', true);
+      return '';
+    });
+    this.configTrie.register('no ip finger', 'Disable finger service', () => {
+      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+      r._setServiceFlag?.('finger', false);
+      return '';
+    });
+    this.configTrie.register('ip gratuitous-arps', 'Enable gratuitous ARP', () => {
+      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+      r._setServiceFlag?.('gratuitous-arps', true);
+      return '';
+    });
+    this.configTrie.register('no ip gratuitous-arps', 'Disable gratuitous ARP', () => {
+      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
+      r._setServiceFlag?.('gratuitous-arps', false);
+      return '';
+    });
+    this.configTrie.register('no banner motd', 'Clear MOTD banner', () => {
+      const dev = this.d() as unknown as { _setSshBanner?: (b: string) => void };
+      dev._setSshBanner?.('');
+      return '';
+    });
+    this.configTrie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('vrf definition', 'Define a VRF', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `vrf definition ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('key chain', 'Define a key chain', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `key chain ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
+      return '';
+    });
 
-    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', () => '');
-    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', () => '');
+    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt && args[0]) (mgmt as unknown as { domainName: string }).domainName = args[0];
+      return '';
+    });
+    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
+      if (args[0]?.toLowerCase() !== 'name' || !args[1]) return '';
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[1];
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = '';
+      return '';
+    });
     // `ip host <name> <ip>` — static hostname → IP mapping consulted by
     // outbound ssh / stelnet / ping / traceroute before any DNS fallback.
     this.configTrie.registerGreedy('ip host', 'Configure a static host entry', (args) => {
@@ -902,14 +1215,50 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.register('clock set', 'Set system clock', () => '');
-    this.configTrie.registerGreedy('clock', 'Clock configuration', () => '');
+    this.configTrie.registerGreedy('clock set', 'Set system clock', (args) => {
+      const dev = this.d() as unknown as { _setSystemClock?: (epochMs: number) => void };
+      const parsedMs = this.parseClockSetArgs(args);
+      if (parsedMs !== null) dev._setSystemClock?.(parsedMs);
+      return '';
+    });
+    this.configTrie.registerGreedy('clock', 'Clock configuration (unhandled)', (args, raw) => {
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
+      return '';
+    });
 
     // Management commands missing on BOTH switch & router → shared here
     // (DRY). Recognised; the sim has no AAA/crypto datapath.
-    this.configTrie.registerGreedy('aaa', 'AAA configuration', () => '');
-    this.configTrie.registerGreedy('enable secret', 'Set enable secret', () => '');
-    this.configTrie.registerGreedy('enable password', 'Set enable password', () => '');
+    this.configTrie.registerGreedy('aaa', 'AAA configuration', (args, raw) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt) (mgmt as unknown as { recordRaw: (f: string, l: string) => void }).recordRaw('aaa', raw ?? `aaa ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
+      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'type-7') => void };
+      let algo: 'plain' | 'md5' | 'sha256' | 'type-7' = 'md5';
+      let secret = '';
+      if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
+      else if (args[0] === '8' || args[0] === '9') { algo = 'sha256'; secret = args.slice(1).join(' '); }
+      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
+        secret = args.slice(2).join(' ');
+      } else { secret = args.join(' '); }
+      dev._setEnableSecret?.(secret, algo);
+      return '';
+    });
+    this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
+      const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void };
+      let algo: 'plain' | 'type-7' = 'plain';
+      let password = '';
+      if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
+      else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
+      else { password = args.join(' '); }
+      dev._setEnablePassword?.(password, algo);
+      return '';
+    });
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
@@ -951,9 +1300,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._upsertCiscoUsername(name, kv);
       return '';
     });
-    this.configTrie.registerGreedy('crypto', 'Crypto configuration', () => '');
-    this.configTrie.registerGreedy('service', 'Service configuration', () => '');
-    this.configTrie.registerGreedy('no service', 'Disable a service', () => '');
+    this.configTrie.registerGreedy('crypto', 'Crypto configuration (unhandled keywords)', (args, raw) => {
+      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('service', 'Service configuration', (args) => {
+      const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
+      const name = args.join(' ');
+      if (name) dev._setServiceFlag?.(name, true);
+      return '';
+    });
+    this.configTrie.registerGreedy('no service', 'Disable a service', (args) => {
+      const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
+      const name = args.join(' ');
+      if (name) dev._setServiceFlag?.(name, false);
+      return '';
+    });
     this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {
       const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
       if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
@@ -978,7 +1341,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', () => '');
+    this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', (args, raw) => {
+      const dev = this.d() as unknown as {
+        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        _recordUnhandledConfigLine?: (l: string) => void;
+      };
+      const mgmt = dev.getManagementService?.();
+      const ssh = mgmt?.getSsh();
+      const head = args[0]?.toLowerCase();
+      if (!ssh) {
+        dev._recordUnhandledConfigLine?.(raw ?? `ip ssh ${args.join(' ')}`);
+        return '';
+      }
+      if (head === 'version' && args[1]) (ssh as unknown as { version: number }).version = parseInt(args[1], 10);
+      else if (head === 'time-out' && args[1]) (ssh as unknown as { timeout: number }).timeout = parseInt(args[1], 10);
+      else if (head === 'authentication-retries' && args[1]) (ssh as unknown as { retries: number }).retries = parseInt(args[1], 10);
+      else if (head === 'port' && args[1]) (ssh as unknown as { port: number }).port = parseInt(args[1], 10);
+      else dev._recordUnhandledConfigLine?.(raw ?? `ip ssh ${args.join(' ')}`);
+      (ssh as unknown as { enabled: boolean }).enabled = true;
+      return '';
+    });
 
     // `line {console|vty|aux} …` → shared config-line sub-mode.
     // We remember the selected VTY range so subsequent directives
@@ -1001,7 +1383,49 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       'logging', 'privilege', 'no', 'speed', 'stopbits',
       'session-timeout', 'history', 'length', 'width', 'authorization',
       'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec']) {
-      this.configLineTrie.registerGreedy(kw, `line ${kw}`, () => '');
+      this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
+        const range = this.selectedVtyRange;
+        if (!range) return '';
+        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+        const update: Record<string, unknown> = { first: range.first, last: range.last };
+        if (kw === 'login') {
+          update.loginMethod = args[0] === 'authentication' && args[1] ? `authentication ${args[1]}` : args[0] ?? 'local';
+        } else if (kw === 'password') {
+          update.password = args.slice(1).join(' ') || args[0];
+        } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+          update.loggingSynchronous = true;
+        } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
+          update.privilegeLevel = parseInt(args[1], 10);
+        } else if (kw === 'session-timeout' && args[0]) {
+          update.sessionTimeoutMinutes = parseInt(args[0], 10);
+        } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
+          update.historySize = parseInt(args[1], 10);
+        } else if (kw === 'length' && args[0]) {
+          update.terminalLength = parseInt(args[0], 10);
+        } else if (kw === 'width' && args[0]) {
+          update.terminalWidth = parseInt(args[0], 10);
+        } else if (kw === 'autocommand') {
+          update.autocommand = args.join(' ');
+        } else if (kw === 'motd-banner') {
+          update.motdBannerSuppressed = false;
+        } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
+          update.execBannerSuppressed = false;
+        } else if (kw === 'authorization' && args[0] && args[1]) {
+          update.authorizationList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'accounting' && args[0] && args[1]) {
+          update.accountingList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'speed' && args[0]) {
+          update.speedBaud = parseInt(args[0], 10);
+        } else if (kw === 'stopbits' && args[0]) {
+          update.stopbits = parseInt(args[0], 10);
+        } else if (kw === 'rotary' && args[0]) {
+          update.rotaryGroup = parseInt(args[0], 10);
+        } else if (kw === 'no' && args.length > 0) {
+          update.removed = (raw ?? `no ${args.join(' ')}`).trim();
+        }
+        dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        return '';
+      });
     }
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.

@@ -136,6 +136,51 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
     ctx.r()._getNATEngine().removeInsideInterface(ifName);
     return '';
   });
+
+  trie.registerGreedy('nat dns-map', 'Configure NAT DNS mapping', (args) => {
+    if (args.length < 4) return '';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const engine = ctx.r()._getNATEngine() as any;
+    (engine.dnsMappings ??= []).push({
+      domain: args[0], globalIP: args[1],
+      port: parseInt(args[2], 10), proto: args[3].toLowerCase(),
+    });
+    return '';
+  });
+}
+
+export function registerHuaweiNATSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
+  trie.registerGreedy('nat address-group', 'Configure NAT address pool', (args) => {
+    if (args.length < 3) return 'Error: Incomplete command.';
+    const name = args[0]; const start = args[1]; const end = args[2];
+    ctx.r()._getNATEngine().addPool({ name, startIP: start, endIP: end });
+    return '';
+  });
+
+  trie.registerGreedy('undo nat address-group', 'Remove NAT address pool', (args) => {
+    if (!args[0]) return '';
+    ctx.r()._getNATEngine().removePool(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('nat static global', 'Configure static NAT (system view)', (args) => {
+    if (args.length < 3) return 'Error: Incomplete command.';
+    const globalIP = args[0];
+    if (args[1]?.toLowerCase() !== 'inside') return 'Error: Expected "inside" keyword.';
+    const localIP = args[2];
+    ctx.r()._getNATEngine().addStaticEntry({ localIP, globalIP });
+    return '';
+  });
+
+  trie.register('nat static enable', 'Enable static NAT globally', () => {
+    (ctx.r()._getNATEngine() as any).staticEnabled = true;
+    return '';
+  });
+  trie.register('undo nat static enable', 'Disable static NAT', () => {
+    (ctx.r()._getNATEngine() as any).staticEnabled = false;
+    return '';
+  });
 }
 
 // ─── Display Commands ─────────────────────────────────────────────────────────
@@ -157,6 +202,30 @@ export function registerHuaweiNATDisplayCommands(trie: CommandTrie, getRouter: (
   trie.register('reset nat session', 'Clear all dynamic NAT sessions', () => {
     getRouter()._getNATEngine().clearTranslations();
     return 'NAT sessions cleared.';
+  });
+  trie.register('reset nat session all', 'Clear all NAT sessions', () => {
+    getRouter()._getNATEngine().clearTranslations();
+    return '';
+  });
+  trie.register('display nat server', 'Display NAT server entries', () => displayNATStatic(getRouter()));
+  trie.registerGreedy('display nat session protocol', 'Display NAT sessions filtered by protocol', (_args) => {
+    return displayNATSession(getRouter());
+  });
+  trie.register('display nat address-group', 'Display NAT address pools', () => {
+    const pools = getRouter()._getNATEngine().getPools();
+    if (pools.size === 0) return 'No NAT address pools configured.';
+    const lines = [' Index  Pool Name   Start IP         End IP'];
+    let i = 0;
+    for (const [, p] of pools) {
+      lines.push(` ${String(i++).padEnd(7)}${p.name.padEnd(12)}${p.startIP.padEnd(17)}${p.endIP}`);
+    }
+    return lines.join('\n');
+  });
+  trie.register('display nat dns-map', 'Display NAT DNS mappings', () => {
+    const engine = getRouter()._getNATEngine() as any;
+    const m = engine.dnsMappings as Array<{ domain: string; globalIP: string; port: number; proto: string }> | undefined;
+    if (!m || m.length === 0) return 'No NAT DNS mappings configured.';
+    return m.map(x => ` ${x.domain.padEnd(24)}${x.globalIP.padEnd(17)}${x.port}/${x.proto}`).join('\n');
   });
 }
 

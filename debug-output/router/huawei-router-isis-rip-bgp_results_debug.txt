@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-06-04T08:19:58.905Z
+Generated: 2026-06-04T13:28:18.020Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -50,9 +50,7 @@ Total steps: 260
 <empty>
 
 [14/260] r1 [R1-rip-1] undo summary
-  % Invalid input detected at '^' marker.
-  undo summary
-       ^
+<empty>
 
 [15/260] r1 [R1-rip-1] network 10.1.0.0
 <empty>
@@ -82,54 +80,34 @@ Total steps: 260
 <empty>
 
 [24/260] r1 [R1-rip-1] timers rip 30 180 120
-  % Invalid input detected at '^' marker.
-  timers rip 30 180 120
-  ^
+<empty>
 
 [25/260] r1 [R1-rip-1] default-route originate
-  % Invalid input detected at '^' marker.
-  default-route originate
-  ^
+<empty>
 
 [26/260] r1 [R1-rip-1] import-route direct
-  % Invalid input detected at '^' marker.
-  import-route direct
-  ^
+<empty>
 
 [27/260] r1 [R1-rip-1] import-route static cost 3
-  % Invalid input detected at '^' marker.
-  import-route static cost 3
-  ^
+<empty>
 
 [28/260] r1 [R1-rip-1] import-route ospf 1 cost 5
-  % Invalid input detected at '^' marker.
-  import-route ospf 1 cost 5
-  ^
+<empty>
 
 [29/260] r1 [R1-rip-1] maximum load-balancing 6
-  % Invalid input detected at '^' marker.
-  maximum load-balancing 6
-  ^
+<empty>
 
 [30/260] r1 [R1-rip-1] silent-interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  silent-interface GigabitEthernet0/0/0
-  ^
+<empty>
 
 [31/260] r1 [R1-rip-1] undo silent-interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
-  undo silent-interface GigabitEthernet0/0/0
-       ^
+<empty>
 
 [32/260] r1 [R1-rip-1] checkzero
-  % Invalid input detected at '^' marker.
-  checkzero
-  ^
+<empty>
 
 [33/260] r1 [R1-rip-1] verify-source
-  % Invalid input detected at '^' marker.
-  verify-source
-  ^
+<empty>
 
 [34/260] r1 [R1-rip-1] quit
 <empty>
@@ -138,39 +116,25 @@ Total steps: 260
 <empty>
 
 [36/260] r1 [R1-GE0/0/1] rip version 2 multicast
-  % Invalid input detected at '^' marker.
-  rip version 2 multicast
-  ^
+<empty>
 
 [37/260] r1 [R1-GE0/0/1] rip authentication-mode md5 usual cipher RipKey123
-  % Invalid input detected at '^' marker.
-  rip authentication-mode md5 usual cipher RipKey123
-  ^
+<empty>
 
 [38/260] r1 [R1-GE0/0/1] rip metricin 1
-  % Invalid input detected at '^' marker.
-  rip metricin 1
-  ^
+<empty>
 
 [39/260] r1 [R1-GE0/0/1] rip metricout 2
-  % Invalid input detected at '^' marker.
-  rip metricout 2
-  ^
+<empty>
 
 [40/260] r1 [R1-GE0/0/1] rip split-horizon
-  % Invalid input detected at '^' marker.
-  rip split-horizon
-  ^
+<empty>
 
 [41/260] r1 [R1-GE0/0/1] rip poison-reverse
-  % Invalid input detected at '^' marker.
-  rip poison-reverse
-  ^
+<empty>
 
 [42/260] r1 [R1-GE0/0/1] rip summary-address 10.0.0.0 255.0.0.0
-  % Invalid input detected at '^' marker.
-  rip summary-address 10.0.0.0 255.0.0.0
-  ^
+<empty>
 
 [43/260] r1 [R1-GE0/0/1] quit
 <empty>
@@ -263,14 +227,10 @@ Total steps: 260
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
 
 [50/260] r1 <R1> reset rip 1 statistics
-  % Invalid input detected at '^' marker.
-  reset rip 1 statistics
-        ^
+<empty>
 
 [51/260] r1 <R1> debugging rip 1
-  % Invalid input detected at '^' marker.
-  debugging rip 1
-            ^
+<empty>
 
 [52/260] r1 <R1> undo debugging all
   Info: All debugging turned off.
@@ -281,146 +241,101 @@ Total steps: 260
   Enter system view, return user view with return command.
 
 [54/260] r1 [R1] isis 1
-  % Invalid input detected at '^' marker.
-  isis 1
-  ^
-
-[55/260] r1 [R1] is-level level-2
-  % Invalid input detected at '^' marker.
-  is-level level-2
-  ^
-
-[56/260] r1 [R1] network-entity 49.0001.0000.0000.0001.00
-  % Invalid input detected at '^' marker.
-  network-entity 49.0001.0000.0000.0001.00
-  ^
-
-[57/260] r1 [R1] cost-style wide
-  % Invalid input detected at '^' marker.
-  cost-style wide
-  ^
-
-[58/260] r1 [R1] is-name R1
-  % Invalid input detected at '^' marker.
-  is-name R1
-  ^
-
-[59/260] r1 [R1] timer lsp-refresh 900
-  % Invalid input detected at '^' marker.
-  timer lsp-refresh 900
-  ^
-
-[60/260] r1 [R1] import-route direct
-  % Invalid input detected at '^' marker.
-  import-route direct
-  ^
-
-[61/260] r1 [R1] import-route static
-  % Invalid input detected at '^' marker.
-  import-route static
-  ^
-
-[62/260] r1 [R1] import-route ospf 1 cost 10 level-2
-  % Invalid input detected at '^' marker.
-  import-route ospf 1 cost 10 level-2
-  ^
-
-[63/260] r1 [R1] default-route-advertise
-  % Invalid input detected at '^' marker.
-  default-route-advertise
-  ^
-
-[64/260] r1 [R1] set-overload
-  % Invalid input detected at '^' marker.
-  set-overload
-  ^
-
-[65/260] r1 [R1] undo set-overload
 <empty>
 
-[66/260] r1 [R1] maximum load-balancing 4
-  % Invalid input detected at '^' marker.
-  maximum load-balancing 4
-  ^
-
-[67/260] r1 [R1] preference 15
-  % Invalid input detected at '^' marker.
-  preference 15
-  ^
-
-[68/260] r1 [R1] quit
+[55/260] r1 [R1-isis-1] is-level level-2
 <empty>
 
-[69/260] r1 <R1> interface GigabitEthernet0/0/1
-  % Invalid input detected at '^' marker.
-  interface GigabitEthernet0/0/1
-  ^
-
-[70/260] r1 <R1> isis enable 1
-  % Invalid input detected at '^' marker.
-  isis enable 1
-  ^
-
-[71/260] r1 <R1> isis circuit-level level-2
-  % Invalid input detected at '^' marker.
-  isis circuit-level level-2
-  ^
-
-[72/260] r1 <R1> isis cost 10 level-2
-  % Invalid input detected at '^' marker.
-  isis cost 10 level-2
-  ^
-
-[73/260] r1 <R1> isis circuit-type p2p
-  % Invalid input detected at '^' marker.
-  isis circuit-type p2p
-  ^
-
-[74/260] r1 <R1> isis timer hello 10 level-2
-  % Invalid input detected at '^' marker.
-  isis timer hello 10 level-2
-  ^
-
-[75/260] r1 <R1> isis timer holding-multiplier 3 level-2
-  % Invalid input detected at '^' marker.
-  isis timer holding-multiplier 3 level-2
-  ^
-
-[76/260] r1 <R1> isis authentication-mode md5 cipher IsisKey level-2
-  % Invalid input detected at '^' marker.
-  isis authentication-mode md5 cipher IsisKey level-2
-  ^
-
-[77/260] r1 <R1> quit
+[56/260] r1 [R1-isis-1] network-entity 49.0001.0000.0000.0001.00
 <empty>
 
-[78/260] r1 <R1> return
+[57/260] r1 [R1-isis-1] cost-style wide
+<empty>
+
+[58/260] r1 [R1-isis-1] is-name R1
+<empty>
+
+[59/260] r1 [R1-isis-1] timer lsp-refresh 900
+<empty>
+
+[60/260] r1 [R1-isis-1] import-route direct
+<empty>
+
+[61/260] r1 [R1-isis-1] import-route static
+<empty>
+
+[62/260] r1 [R1-isis-1] import-route ospf 1 cost 10 level-2
+<empty>
+
+[63/260] r1 [R1-isis-1] default-route-advertise
+<empty>
+
+[64/260] r1 [R1-isis-1] set-overload
+<empty>
+
+[65/260] r1 [R1-isis-1] undo set-overload
+<empty>
+
+[66/260] r1 [R1-isis-1] maximum load-balancing 4
+<empty>
+
+[67/260] r1 [R1-isis-1] preference 15
+<empty>
+
+[68/260] r1 [R1-isis-1] quit
+<empty>
+
+[69/260] r1 [R1] interface GigabitEthernet0/0/1
+<empty>
+
+[70/260] r1 [R1-GE0/0/1] isis enable 1
+<empty>
+
+[71/260] r1 [R1-GE0/0/1] isis circuit-level level-2
+<empty>
+
+[72/260] r1 [R1-GE0/0/1] isis cost 10 level-2
+<empty>
+
+[73/260] r1 [R1-GE0/0/1] isis circuit-type p2p
+<empty>
+
+[74/260] r1 [R1-GE0/0/1] isis timer hello 10 level-2
+<empty>
+
+[75/260] r1 [R1-GE0/0/1] isis timer holding-multiplier 3 level-2
+<empty>
+
+[76/260] r1 [R1-GE0/0/1] isis authentication-mode md5 cipher IsisKey level-2
+<empty>
+
+[77/260] r1 [R1-GE0/0/1] quit
+<empty>
+
+[78/260] r1 [R1] return
 <empty>
 
 [79/260] r1 <R1> display isis peer
-  % Invalid input detected at '^' marker.
-  display isis peer
-          ^
+  System ID         Interface          Circuit ID         State HoldTime Type     PRI
+  (no peers established)
 
 [80/260] r1 <R1> display isis interface
-  % Invalid input detected at '^' marker.
-  display isis interface
-          ^
+  Interface           Type   IPv4 State Level     Cost                MTU
+  (no IS-IS-enabled interfaces)
 
 [81/260] r1 <R1> display isis route
-  % Invalid input detected at '^' marker.
-  display isis route
-          ^
+  Route information for ISIS
+    No routes installed
 
 [82/260] r1 <R1> display isis lsdb
-  % Invalid input detected at '^' marker.
-  display isis lsdb
-          ^
+  LSPID                 Seq Num     Checksum    Holdtime   Length   ATT/P/OL
+  (no LSPs)
 
 [83/260] r1 <R1> display isis brief
-  % Invalid input detected at '^' marker.
-  display isis brief
-          ^
+  ISIS protocol information for system instance: 1
+    System Id : 0000.0001.00
+    Level     : level-2
+    Cost-style: wide
 
 [84/260] r1 <R1> display ip routing-table protocol isis
   Route Flags: R - relay, D - download to fib
@@ -431,14 +346,10 @@ Total steps: 260
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
 
 [85/260] r1 <R1> reset isis all
-  % Invalid input detected at '^' marker.
-  reset isis all
-        ^
+<empty>
 
 [86/260] r1 <R1> debugging isis adjacency
-  % Invalid input detected at '^' marker.
-  debugging isis adjacency
-            ^
+<empty>
 
 [87/260] r1 <R1> undo debugging all
   Info: All debugging turned off.
@@ -449,254 +360,160 @@ Total steps: 260
   Enter system view, return user view with return command.
 
 [89/260] r1 [R1] bgp 65000
-  % Invalid input detected at '^' marker.
-  bgp 65000
-  ^
-
-[90/260] r1 [R1] router-id 1.1.1.1
-  % Invalid input detected at '^' marker.
-  router-id 1.1.1.1
-  ^
-
-[91/260] r1 [R1] graceful-restart
-  % Invalid input detected at '^' marker.
-  graceful-restart
-  ^
-
-[92/260] r1 [R1] timer keepalive 10 hold 30
-  % Invalid input detected at '^' marker.
-  timer keepalive 10 hold 30
-  ^
-
-[93/260] r1 [R1] peer 10.0.0.2 as-number 65002
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.2 as-number 65002
-  ^
-
-[94/260] r1 [R1] peer 10.0.0.2 description PEER-1
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.2 description PEER-1
-  ^
-
-[95/260] r1 [R1] peer 10.0.0.2 connect-interface LoopBack0
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.2 connect-interface LoopBack0
-  ^
-
-[96/260] r1 [R1] peer 10.0.0.2 ebgp-max-hop 2
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.2 ebgp-max-hop 2
-  ^
-
-[97/260] r1 [R1] peer 10.0.0.2 password cipher BgpKey1
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.2 password cipher BgpKey1
-  ^
-
-[98/260] r1 [R1] peer 10.0.0.2 timer keepalive 10 hold 30
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.2 timer keepalive 10 hold 30
-  ^
-
-[99/260] r1 [R1] peer 10.0.0.3 as-number 65003
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.3 as-number 65003
-  ^
-
-[100/260] r1 [R1] peer 10.0.0.3 description PEER-2
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.3 description PEER-2
-  ^
-
-[101/260] r1 [R1] peer 10.0.0.3 connect-interface LoopBack0
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.3 connect-interface LoopBack0
-  ^
-
-[102/260] r1 [R1] peer 10.0.0.3 ebgp-max-hop 2
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.3 ebgp-max-hop 2
-  ^
-
-[103/260] r1 [R1] peer 10.0.0.3 password cipher BgpKey2
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.3 password cipher BgpKey2
-  ^
-
-[104/260] r1 [R1] peer 10.0.0.3 timer keepalive 10 hold 30
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.3 timer keepalive 10 hold 30
-  ^
-
-[105/260] r1 [R1] peer 10.0.0.4 as-number 65004
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.4 as-number 65004
-  ^
-
-[106/260] r1 [R1] peer 10.0.0.4 description PEER-3
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.4 description PEER-3
-  ^
-
-[107/260] r1 [R1] peer 10.0.0.4 connect-interface LoopBack0
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.4 connect-interface LoopBack0
-  ^
-
-[108/260] r1 [R1] peer 10.0.0.4 ebgp-max-hop 2
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.4 ebgp-max-hop 2
-  ^
-
-[109/260] r1 [R1] peer 10.0.0.4 password cipher BgpKey3
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.4 password cipher BgpKey3
-  ^
-
-[110/260] r1 [R1] peer 10.0.0.4 timer keepalive 10 hold 30
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.4 timer keepalive 10 hold 30
-  ^
-
-[111/260] r1 [R1] peer 10.0.0.5 as-number 65005
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.5 as-number 65005
-  ^
-
-[112/260] r1 [R1] peer 10.0.0.5 description PEER-4
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.5 description PEER-4
-  ^
-
-[113/260] r1 [R1] peer 10.0.0.5 connect-interface LoopBack0
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.5 connect-interface LoopBack0
-  ^
-
-[114/260] r1 [R1] peer 10.0.0.5 ebgp-max-hop 2
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.5 ebgp-max-hop 2
-  ^
-
-[115/260] r1 [R1] peer 10.0.0.5 password cipher BgpKey4
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.5 password cipher BgpKey4
-  ^
-
-[116/260] r1 [R1] peer 10.0.0.5 timer keepalive 10 hold 30
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.5 timer keepalive 10 hold 30
-  ^
-
-[117/260] r1 [R1] group IBGP internal
-  % Invalid input detected at '^' marker.
-  group IBGP internal
-  ^
-
-[118/260] r1 [R1] peer IBGP connect-interface LoopBack0
-  % Invalid input detected at '^' marker.
-  peer IBGP connect-interface LoopBack0
-  ^
-
-[119/260] r1 [R1] peer 10.0.0.10 group IBGP
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.10 group IBGP
-  ^
-
-[120/260] r1 [R1] ipv4-family unicast
-  % Invalid input detected at '^' marker.
-  ipv4-family unicast
-  ^
-
-[121/260] r1 [R1] network 192.168.1.0 255.255.255.0
-  % Invalid input detected at '^' marker.
-  network 192.168.1.0 255.255.255.0
-  ^
-
-[122/260] r1 [R1] network 10.0.0.0 255.255.255.252
-  % Invalid input detected at '^' marker.
-  network 10.0.0.0 255.255.255.252
-  ^
-
-[123/260] r1 [R1] aggregate 192.168.0.0 255.255.0.0 detail-suppressed
-  % Invalid input detected at '^' marker.
-  aggregate 192.168.0.0 255.255.0.0 detail-suppressed
-  ^
-
-[124/260] r1 [R1] import-route direct
-  % Invalid input detected at '^' marker.
-  import-route direct
-  ^
-
-[125/260] r1 [R1] import-route static
-  % Invalid input detected at '^' marker.
-  import-route static
-  ^
-
-[126/260] r1 [R1] import-route ospf 1
-  % Invalid input detected at '^' marker.
-  import-route ospf 1
-  ^
-
-[127/260] r1 [R1] peer 10.0.0.1 enable
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 enable
-  ^
-
-[128/260] r1 [R1] peer 10.0.0.1 next-hop-local
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 next-hop-local
-  ^
-
-[129/260] r1 [R1] peer 10.0.0.1 reflect-client
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 reflect-client
-  ^
-
-[130/260] r1 [R1] peer 10.0.0.1 route-policy RP import
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 route-policy RP import
-  ^
-
-[131/260] r1 [R1] peer 10.0.0.1 ip-prefix PL-IN import
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 ip-prefix PL-IN import
-  ^
-
-[132/260] r1 [R1] peer 10.0.0.1 advertise-community
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 advertise-community
-  ^
-
-[133/260] r1 [R1] peer 10.0.0.1 default-route-advertise
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 default-route-advertise
-  ^
-
-[134/260] r1 [R1] peer 10.0.0.1 route-limit 1000
-  % Invalid input detected at '^' marker.
-  peer 10.0.0.1 route-limit 1000
-  ^
-
-[135/260] r1 [R1] maximum load-balancing 4
-  % Invalid input detected at '^' marker.
-  maximum load-balancing 4
-  ^
-
-[136/260] r1 [R1] quit
 <empty>
 
-[137/260] r1 <R1> ipv6-family unicast
+[90/260] r1 [R1-bgp-65000] router-id 1.1.1.1
+<empty>
+
+[91/260] r1 [R1-bgp-65000] graceful-restart
+<empty>
+
+[92/260] r1 [R1-bgp-65000] timer keepalive 10 hold 30
+<empty>
+
+[93/260] r1 [R1-bgp-65000] peer 10.0.0.2 as-number 65002
+<empty>
+
+[94/260] r1 [R1-bgp-65000] peer 10.0.0.2 description PEER-1
+<empty>
+
+[95/260] r1 [R1-bgp-65000] peer 10.0.0.2 connect-interface LoopBack0
+<empty>
+
+[96/260] r1 [R1-bgp-65000] peer 10.0.0.2 ebgp-max-hop 2
+<empty>
+
+[97/260] r1 [R1-bgp-65000] peer 10.0.0.2 password cipher BgpKey1
+<empty>
+
+[98/260] r1 [R1-bgp-65000] peer 10.0.0.2 timer keepalive 10 hold 30
+<empty>
+
+[99/260] r1 [R1-bgp-65000] peer 10.0.0.3 as-number 65003
+<empty>
+
+[100/260] r1 [R1-bgp-65000] peer 10.0.0.3 description PEER-2
+<empty>
+
+[101/260] r1 [R1-bgp-65000] peer 10.0.0.3 connect-interface LoopBack0
+<empty>
+
+[102/260] r1 [R1-bgp-65000] peer 10.0.0.3 ebgp-max-hop 2
+<empty>
+
+[103/260] r1 [R1-bgp-65000] peer 10.0.0.3 password cipher BgpKey2
+<empty>
+
+[104/260] r1 [R1-bgp-65000] peer 10.0.0.3 timer keepalive 10 hold 30
+<empty>
+
+[105/260] r1 [R1-bgp-65000] peer 10.0.0.4 as-number 65004
+<empty>
+
+[106/260] r1 [R1-bgp-65000] peer 10.0.0.4 description PEER-3
+<empty>
+
+[107/260] r1 [R1-bgp-65000] peer 10.0.0.4 connect-interface LoopBack0
+<empty>
+
+[108/260] r1 [R1-bgp-65000] peer 10.0.0.4 ebgp-max-hop 2
+<empty>
+
+[109/260] r1 [R1-bgp-65000] peer 10.0.0.4 password cipher BgpKey3
+<empty>
+
+[110/260] r1 [R1-bgp-65000] peer 10.0.0.4 timer keepalive 10 hold 30
+<empty>
+
+[111/260] r1 [R1-bgp-65000] peer 10.0.0.5 as-number 65005
+<empty>
+
+[112/260] r1 [R1-bgp-65000] peer 10.0.0.5 description PEER-4
+<empty>
+
+[113/260] r1 [R1-bgp-65000] peer 10.0.0.5 connect-interface LoopBack0
+<empty>
+
+[114/260] r1 [R1-bgp-65000] peer 10.0.0.5 ebgp-max-hop 2
+<empty>
+
+[115/260] r1 [R1-bgp-65000] peer 10.0.0.5 password cipher BgpKey4
+<empty>
+
+[116/260] r1 [R1-bgp-65000] peer 10.0.0.5 timer keepalive 10 hold 30
+<empty>
+
+[117/260] r1 [R1-bgp-65000] group IBGP internal
+<empty>
+
+[118/260] r1 [R1-bgp-65000] peer IBGP connect-interface LoopBack0
+<empty>
+
+[119/260] r1 [R1-bgp-65000] peer 10.0.0.10 group IBGP
+<empty>
+
+[120/260] r1 [R1-bgp-65000] ipv4-family unicast
+<empty>
+
+[121/260] r1 [R1-bgp-65000] network 192.168.1.0 255.255.255.0
+<empty>
+
+[122/260] r1 [R1-bgp-65000] network 10.0.0.0 255.255.255.252
+<empty>
+
+[123/260] r1 [R1-bgp-65000] aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+<empty>
+
+[124/260] r1 [R1-bgp-65000] import-route direct
+<empty>
+
+[125/260] r1 [R1-bgp-65000] import-route static
+<empty>
+
+[126/260] r1 [R1-bgp-65000] import-route ospf 1
+<empty>
+
+[127/260] r1 [R1-bgp-65000] peer 10.0.0.1 enable
+<empty>
+
+[128/260] r1 [R1-bgp-65000] peer 10.0.0.1 next-hop-local
+<empty>
+
+[129/260] r1 [R1-bgp-65000] peer 10.0.0.1 reflect-client
+<empty>
+
+[130/260] r1 [R1-bgp-65000] peer 10.0.0.1 route-policy RP import
+<empty>
+
+[131/260] r1 [R1-bgp-65000] peer 10.0.0.1 ip-prefix PL-IN import
+<empty>
+
+[132/260] r1 [R1-bgp-65000] peer 10.0.0.1 advertise-community
+<empty>
+
+[133/260] r1 [R1-bgp-65000] peer 10.0.0.1 default-route-advertise
+<empty>
+
+[134/260] r1 [R1-bgp-65000] peer 10.0.0.1 route-limit 1000
+<empty>
+
+[135/260] r1 [R1-bgp-65000] maximum load-balancing 4
+<empty>
+
+[136/260] r1 [R1-bgp-65000] quit
+<empty>
+
+[137/260] r1 [R1] ipv6-family unicast
   % Invalid input detected at '^' marker.
   ipv6-family unicast
   ^
 
-[138/260] r1 <R1> network 2001:db8:: 32
+[138/260] r1 [R1] network 2001:db8:: 32
   % Invalid input detected at '^' marker.
   network 2001:db8:: 32
   ^
 
-[139/260] r1 <R1> quit
+[139/260] r1 [R1] quit
 <empty>
 
 [140/260] r1 <R1> quit
@@ -706,39 +523,64 @@ Total steps: 260
 <empty>
 
 [142/260] r1 <R1> display bgp peer
-  Info: BGP is not running.
+  BGP local router ID : 1.1.1.1
+  Local AS number : 65000
+  Total number of peers : 7              Peers in established state : 0
+    Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
+    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
+    IBGP             4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
 
 [143/260] r1 <R1> display bgp peer verbose
-  Info: BGP is not running.
+  BGP local router ID : 1.1.1.1
+  Local AS number : 65000
+  Total number of peers : 7              Peers in established state : 0
+    Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
+    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
+    IBGP             4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
 
 [144/260] r1 <R1> display bgp routing-table
-  Info: BGP is not running.
+  BGP Local router ID : 1.1.1.1
+   Total Number of Routes: 2
+   Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
+   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
+   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
 
 [145/260] r1 <R1> display bgp routing-table statistics
-  Info: BGP is not running.
+  BGP Local router ID : 1.1.1.1
+   Total Number of Routes: 2
+   Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
+   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
+   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
 
 [146/260] r1 <R1> display bgp network
-  % Invalid input detected at '^' marker.
-  display bgp network
-              ^
+    192.168.1.0/255.255.255.0
+    10.0.0.0/255.255.255.252
 
 [147/260] r1 <R1> display bgp group
-  % Invalid input detected at '^' marker.
-  display bgp group
-              ^
+  Group IBGP: kind=internal AS=65000
 
 [148/260] r1 <R1> display bgp routing-table community
-  Info: BGP is not running.
+  BGP Local router ID : 1.1.1.1
+   Total Number of Routes: 2
+   Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
+   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
+   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
 
 [149/260] r1 <R1> display bgp paths
-  % Invalid input detected at '^' marker.
-  display bgp paths
-              ^
+  Info: No BGP paths.
 
 [150/260] r1 <R1> display bgp ipv6 peer
-  % Invalid input detected at '^' marker.
-  display bgp ipv6 peer
-              ^
+  Info: IPv6 BGP not running.
 
 [151/260] r1 <R1> display ip routing-table protocol bgp
   Route Flags: R - relay, D - download to fib
@@ -749,19 +591,13 @@ Total steps: 260
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
 
 [152/260] r1 <R1> reset bgp all
-  % Invalid input detected at '^' marker.
-  reset bgp all
-        ^
+<empty>
 
 [153/260] r1 <R1> reset bgp 10.0.0.2 import
-  % Invalid input detected at '^' marker.
-  reset bgp 10.0.0.2 import
-        ^
+<empty>
 
 [154/260] r1 <R1> debugging bgp event
-  % Invalid input detected at '^' marker.
-  debugging bgp event
-            ^
+<empty>
 
 [155/260] r1 <R1> undo debugging all
   Info: All debugging turned off.
@@ -944,6 +780,67 @@ Total steps: 260
       10.0.0.0/255.0.0.0
   
     Routes: 0
+  #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
 
 [172/260] r1 <R1> display rip 1 route
   RIP process 1
@@ -963,18 +860,93 @@ Total steps: 260
       10.0.0.0/255.0.0.0
   
     Routes: 0
+  #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
 
 [173/260] r1 <R1> display bgp peer
-  Info: BGP is not running.
+  BGP local router ID : 1.1.1.1
+  Local AS number : 65000
+  Total number of peers : 7              Peers in established state : 0
+    Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
+    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
+    IBGP             4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
 
 [174/260] r1 <R1> display bgp routing-table
-  Info: BGP is not running.
+  BGP Local router ID : 1.1.1.1
+   Total Number of Routes: 2
+   Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
+   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
+   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
 
 [175/260] r1 <R1> display nat session all
   Info: No NAT session is found.
 
 [176/260] r1 <R1> display nat address-group
-  Info: No NAT address-group is configured.
+  No NAT address pools configured.
 
 [177/260] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -1018,30 +990,20 @@ Total steps: 260
   Info: No IKE peers configured.
 
 [188/260] r1 <R1> display snmp-agent sys-info
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
-  SNMP version running in the system: SNMPv2c SNMPv3
+  Contact: <not set>
+  Location: <not set>
+  Chassis-id: <not set>
 
 [189/260] r1 <R1> display ntp status
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  Clock status: unsynchronized
+  Clock stratum: 16
+  Reference clock ID: .INIT.
 
 [190/260] r1 <R1> display ntp session
-   clock status: unsynchronized
-   clock stratum: 16
-   reference clock ID: none
-   nominal frequency: 100.0000 Hz
-   actual frequency: 100.0000 Hz
-   clock precision: 2^18
-   clock offset: 0.0000 ms
+  No NTP associations
 
 [191/260] r1 <R1> display clock
-  2026-06-04 08:19:58
+  2026-06-04 13:28:18
   Thursday
   Time Zone(UTC) : UTC
 
@@ -1054,13 +1016,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-04 08:19:58
+  CPU Usage Stat. Time : 2026-06-04 13:28:18
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-04 08:19:58
+  Memory utilization statistics at 2026-06-04 13:28:18
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1083,7 +1045,16 @@ Total steps: 260
   Wait     : Wait for the user to press ENTER.
 
 [198/260] r1 <R1> display history-command
-  Info: No history command.
+  display ntp status
+  display ntp session
+  display clock
+  display lldp neighbor
+  display lldp neighbor brief
+  display cpu-usage
+  display memory-usage
+  display device
+  display users
+  display history-command
 
 [199/260] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
@@ -1215,12 +1186,7 @@ Total steps: 260
   Info: No online-fail record.
 
 [213/260] r1 <R1> display ssh server status
-  SSH version                     : 2.0
-  SSH connection timeout          : 60 seconds
-  SSH server key generating interval : 0 hours
-  SSH authentication retries      : 3 times
-  SFTP server                     : Disable
-  STELNET server                  : Enable
+  SSH server: Disabled
 
 [214/260] r1 <R1> display ssh user-information
   SSH version                     : 2.0
@@ -1436,13 +1402,18 @@ Total steps: 260
     ipv6           Disable IPv6
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
+    bgp            Remove BGP
+    bfd            Disable BFD globally
+    isis           Remove IS-IS
+    debugging      debugging
     ike            ike
     ipsec          ipsec
-    debugging      debugging
     acl            Delete Access Control List
+    nat            nat
     route-policy   Remove a route-policy
     traffic        traffic
     nqa            nqa
+    firewall       firewall
     <cr>           
 
 [258/260] r1 [Huawei] acl ?
