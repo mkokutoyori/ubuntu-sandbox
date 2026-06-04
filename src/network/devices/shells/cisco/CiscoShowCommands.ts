@@ -327,6 +327,49 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
+  const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+  if (mgmt) {
+    const clock = mgmt.getClock();
+    if (clock.timezone !== 'UTC') {
+      const sign = clock.offsetMin >= 0 ? '' : '-';
+      const abs = Math.abs(clock.offsetMin);
+      lines.push(`clock timezone ${clock.timezone} ${sign}${Math.floor(abs / 60)} ${abs % 60}`);
+    }
+    if (clock.summerTimezone) {
+      lines.push(`clock summer-time ${clock.summerTimezone} recurring ${clock.daylightStart} ${clock.daylightEnd}`);
+    }
+  }
+
+  const loggingCfg = (router as unknown as { _loggingConfig?: { asRunningConfigLines: () => string[] } })._loggingConfig;
+  if (loggingCfg) {
+    const ll = loggingCfg.asRunningConfigLines();
+    if (ll.length > 0) { lines.push('!'); lines.push(...ll); }
+  }
+
+  const ntpAgent = (router as unknown as { getNtpAgent?: () => { asRunningConfigLines?: () => string[] } }).getNtpAgent?.();
+  if (ntpAgent?.asRunningConfigLines) {
+    const nl = ntpAgent.asRunningConfigLines();
+    if (nl.length > 0) { lines.push('!'); lines.push(...nl); }
+  }
+
+  const cdp = (router as unknown as { getCdpAgent?: () => { asRunningConfigLines?: () => string[] } }).getCdpAgent?.();
+  if (cdp?.asRunningConfigLines) {
+    const cl = cdp.asRunningConfigLines();
+    if (cl.length > 0) { lines.push('!'); lines.push(...cl); }
+  }
+
+  const lldp = (router as unknown as { getLldpAgent?: () => { asRunningConfigLines?: () => string[] } }).getLldpAgent?.();
+  if (lldp?.asRunningConfigLines) {
+    const lll = lldp.asRunningConfigLines();
+    if (lll.length > 0) { lines.push('!'); lines.push(...lll); }
+  }
+
+  const snmp = (router as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();
+  if (snmp) {
+    const sl = snmp.asRunningConfigLines();
+    if (sl.length > 0) { lines.push('!'); lines.push(...sl); }
+  }
+
   const securityLines = (router as unknown as {
     [s: symbol]: { asRunningConfigLines?: () => string[] } | undefined;
   })[Symbol.for('CiscoSecurityConfig')]?.asRunningConfigLines?.() ?? [];

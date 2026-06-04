@@ -778,6 +778,25 @@ export class LoggingConfig {
     return lines.join('\n');
   }
 
+  asRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    if (!this.enabled) lines.push('no logging on');
+    if (this.buffered) {
+      lines.push(`logging buffered ${this.bufferedSize} ${this.bufferedSeverity}`);
+    } else if (this.bufferedSeverity !== 'debugging') {
+      lines.push(`logging buffered ${this.bufferedSeverity}`);
+    }
+    if (this.consoleSeverity !== 'debugging') lines.push(`logging console ${this.consoleSeverity}`);
+    if (this.monitorSeverity !== 'debugging') lines.push(`logging monitor ${this.monitorSeverity}`);
+    if (this.trapSeverity !== 'informational') lines.push(`logging trap ${this.trapSeverity}`);
+    if (this.facility !== 'local7') lines.push(`logging facility ${this.facility}`);
+    if (this.timestamps) lines.push('service timestamps log datetime msec');
+    if (this.sequenceNumbers) lines.push('service sequence-numbers');
+    if (this.sourceInterface) lines.push(`logging source-interface ${this.sourceInterface}`);
+    for (const h of this.hosts) lines.push(`logging host ${h}`);
+    return lines;
+  }
+
   renderHuawei(): string {
     const pad2 = (n: number) => String(n).padStart(2, '0');
     const lines = [

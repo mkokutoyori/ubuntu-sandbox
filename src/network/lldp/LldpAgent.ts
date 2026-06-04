@@ -54,6 +54,25 @@ export class LldpAgent {
 
   getConfig(): Readonly<LldpConfig> { return this.config; }
 
+  asRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    if (this.config.enabled) lines.push('lldp run');
+    if (this.config.timerSec !== 30) lines.push(`lldp timer ${this.config.timerSec}`);
+    if (this.config.holdtimeMultiplier !== 4) {
+      lines.push(`lldp holdtime ${this.config.timerSec * this.config.holdtimeMultiplier}`);
+    }
+    if (this.config.reinitDelaySec !== 2) lines.push(`lldp reinit ${this.config.reinitDelaySec}`);
+    return lines;
+  }
+
+  asRunningConfigForInterface(ifName: string): string[] {
+    const lines: string[] = [];
+    const port = this.config.ports.get(ifName);
+    if (port && port.transmit === false) lines.push(' no lldp transmit');
+    if (port && port.receive === false) lines.push(' no lldp receive');
+    return lines;
+  }
+
   setEnabled(on: boolean): void {
     if (this.config.enabled === on) return;
     this.config.enabled = on;

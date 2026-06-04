@@ -90,6 +90,7 @@ import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
 import { RouterManagementService } from './router/management/RouterManagementService';
+import { SnmpService } from './router/management/SnmpService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -1601,6 +1602,14 @@ export abstract class Router extends Equipment {
   getManagementService(): RouterManagementService {
     if (!this._managementService) this._managementService = new RouterManagementService();
     return this._managementService;
+  }
+
+  private _snmpService: import('./router/management/SnmpService').SnmpService | null = null;
+  getSnmpService(): import('./router/management/SnmpService').SnmpService {
+    if (!this._snmpService) {
+      this._snmpService = new SnmpService();
+    }
+    return this._snmpService;
   }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;

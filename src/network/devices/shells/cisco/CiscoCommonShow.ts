@@ -188,6 +188,10 @@ export function showPrivilege(level: number): string {
  * `show cdp [neighbors [detail] | interface]` — built from the device's
  * REAL cabled topology (Equipment registry + Port/Cable graph).
  */
+function isVirtualInterface(name: string): boolean {
+  return /^(Tunnel|Loopback|Null|Vlan|BVI|Bundle-Ether|Port-channel|Virtual-)/i.test(name);
+}
+
 export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
   const a = arg.toLowerCase();
   if (!enabled) {
@@ -209,8 +213,10 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     const disabled = agentCfg?.disabledPorts ?? new Set<string>();
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
-      if (disabled.has(p.getName())) continue;
-      lines.push(`${p.getName()} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
+      const name = p.getName();
+      if (disabled.has(name)) continue;
+      if (isVirtualInterface(name)) continue;
+      lines.push(`${name} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
         `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
       lines.push('  Encapsulation ARPA');
       lines.push(`  Sending CDP packets every ${timer} seconds`);
@@ -287,26 +293,22 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
     const detail = arg.toLowerCase().includes('detail');
     if (detail) {
       if (ns.length === 0) return 'Total entries displayed: 0';
-      const agent = dev.getLldpAgent?.();
-      const allRows = agent ? agent.getNeighbors() : [];
-      const blocks = allRows.map(n => [
+      const blocks = ns.map(n => [
         '------------------------------------------------',
         `Local Intf: ${n.localPort}`,
-        `Chassis id: ${n.chassisId}`,
-        `Port id: ${n.portId}`,
-        `Port Description: ${n.portDescription}`,
-        `System Name: ${n.systemName}`,
+        `Chassis id: ${n.remoteHost}`,
+        `Port id: ${n.remotePort}`,
+        `Port Description: ${n.remotePort}`,
+        `System Name: ${n.remoteHost}`,
         `System Description:`,
-        n.systemDescription,
-        `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
-        `System Capabilities: ${n.remoteCapabilities.join(', ')}`,
-        `Enabled Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `${n.remotePlatform ?? ''}`,
+        `Time remaining: ${ttl} seconds`,
+        `System Capabilities: ${n.remoteCapability}`,
+        `Enabled Capabilities: ${n.remoteCapability}`,
         `Management Addresses:`,
-        ...(n.managementAddresses.length > 0
-          ? n.managementAddresses.map(a => `    IP: ${a}`)
-          : ['    not advertised']),
+        '    not advertised',
       ].join('\n'));
-      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${allRows.length}`;
+      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${ns.length}`;
     }
     const hdr = [
       'Capability codes:',
@@ -349,12 +351,112 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
  * the truthful output is the unconfigured/zero-activity state — not a
  * fabricated population.
  */
-export function showSnmp(): string {
-  return [
-    'SNMP agent not enabled',
-    '0 SNMP packets input',
-    '0 SNMP packets output',
-  ].join('\n');
+export function showSnmp(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc || !svc.isEnabled()) {
+    return [
+      'SNMP agent not enabled',
+      '0 SNMP packets input',
+      '0 SNMP packets output',
+    ].join('\n');
+  }
+  const s = svc.getStats();
+  const lines: string[] = [
+    `Chassis: ${svc.getChassisId() || 'n/a'}`,
+    `${s.pktsIn} SNMP packets input`,
+    `    ${s.badVersions} Bad SNMP version errors`,
+    `    ${s.badCommunityNames} Unknown community name`,
+    `    ${s.badCommunityUses} Illegal operation for community name supplied`,
+    `    ${s.asn1ParseErrors} Encoding errors`,
+    `    ${s.getRequests} Number of requested variables`,
+    `    ${s.setRequests} Number of altered variables`,
+    `    ${s.getRequests} Get-request PDUs`,
+    `    ${s.getNextRequests} Get-next PDUs`,
+    `    ${s.setRequests} Set-request PDUs`,
+    `${s.pktsOut} SNMP packets output`,
+    `    ${s.silentDrops} Too big errors (Maximum packet size 1500)`,
+    `    ${s.silentDrops} No such name errors`,
+    `    ${s.silentDrops} Bad values errors`,
+    `    ${s.silentDrops} General errors`,
+    `    ${s.getResponses} Response PDUs`,
+    `    ${s.trapsSent} Trap PDUs`,
+  ];
+  if (svc.getContact()) lines.push(`SNMP server contact: ${svc.getContact()}`);
+  if (svc.getLocation()) lines.push(`SNMP server location: ${svc.getLocation()}`);
+  return lines.join('\n');
+}
+
+export function showSnmpCommunity(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const list = svc.getCommunities();
+  if (list.length === 0) return 'No SNMP communities configured';
+  return list.map(c =>
+    `Community name: ${c.name}\nCommunity Index: ${c.name}\nCommunity SecurityName: ${c.name}\nAccess: ${c.access === 'rw' ? 'read-write' : 'read-only'}${c.aclName ? '\nAccess-list: ' + c.aclName : ''}${c.view ? '\nView: ' + c.view : ''}`
+  ).join('\n\n');
+}
+
+export function showSnmpHost(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const hosts = svc.getHosts();
+  if (hosts.length === 0) return 'No SNMP hosts configured';
+  return hosts.map(h => [
+    `Notification host: ${h.host}`,
+    `Notification type: ${h.notificationType ?? 'traps'}`,
+    `Version: ${h.version}${h.v3Level ? '/' + h.v3Level : ''}`,
+    `UDP port: ${h.udpPort ?? 162}`,
+    `Community name: ${h.community || '(not set)'}`,
+    h.notifications.length > 0 ? `Filter: ${h.notifications.join(' ')}` : '',
+  ].filter(Boolean).join('\n')).join('\n\n');
+}
+
+export function showSnmpGroup(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const groups = svc.getGroups();
+  if (groups.length === 0) return 'No SNMP groups configured';
+  return groups.map(g => [
+    `groupname: ${g.name}`,
+    `security model: v${g.version}${g.v3Level ? ' ' + g.v3Level : ''}`,
+    `readview: ${g.readView ?? '<no readview specified>'}`,
+    `writeview: ${g.writeView ?? '<no writeview specified>'}`,
+    `notifyview: ${g.notifyView ?? '<no notifyview specified>'}`,
+    `row status: active${g.acl ? '   access-list: ' + g.acl : ''}`,
+  ].join('\n')).join('\n\n');
+}
+
+export function showSnmpUser(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const users = svc.getUsers();
+  if (users.length === 0) return 'No SNMP users configured';
+  return users.map(u => [
+    `User name: ${u.name}`,
+    `Engine ID: ${svc.getEngineId()}`,
+    `storage-type: nonvolatile        active`,
+    `Authentication Protocol: ${u.authAlgo ? u.authAlgo.toUpperCase() : 'None'}`,
+    `Privacy Protocol: ${u.privAlgo ? u.privAlgo.toUpperCase() : 'None'}`,
+    `Group-name: ${u.group}`,
+  ].join('\n')).join('\n\n');
+}
+
+export function showSnmpView(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const views = svc.getViews();
+  if (views.size === 0) return 'No SNMP views configured';
+  const lines: string[] = [];
+  for (const [name, list] of views) {
+    for (const v of list) lines.push(`${name} ${v.oid} - ${v.type}`);
+  }
+  return lines.join('\n');
+}
+
+export function showSnmpEngineId(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  return `Local SNMP engineID: ${svc.getEngineId()}`;
 }
 
 export function showNtpStatus(dev?: ShowStateDevice): string {

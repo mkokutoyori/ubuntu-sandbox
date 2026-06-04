@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-04T07:09:20.769Z
+Generated: 2026-06-04T08:03:02.278Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -304,24 +304,66 @@ Total steps: 322
 <empty>
 
 [82/322] r1 R1# show snmp
-  SNMP agent not enabled
+  Chassis: R1-CHASSIS
   0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Illegal operation for community name supplied
+      0 Encoding errors
+      0 Number of requested variables
+      0 Number of altered variables
+      0 Get-request PDUs
+      0 Get-next PDUs
+      0 Set-request PDUs
   0 SNMP packets output
+      0 Too big errors (Maximum packet size 1500)
+      0 No such name errors
+      0 Bad values errors
+      0 General errors
+      0 Response PDUs
+      0 Trap PDUs
+  SNMP server contact: noc@lab.local
+  SNMP server location: DC1-Rack5
 
 [83/322] r1 R1# show snmp community
-  SNMP agent not enabled
-  0 SNMP packets input
-  0 SNMP packets output
+  Community name: public
+  Community Index: public
+  Community SecurityName: public
+  Access: read-only
+  
+  Community name: private
+  Community Index: private
+  Community SecurityName: private
+  Access: read-write
+  
+  Community name: ro-acl
+  Community Index: ro-acl
+  Community SecurityName: ro-acl
+  Access: read-only
+  Access-list: 10
 
 [84/322] r1 R1# show snmp host
-  SNMP agent not enabled
-  0 SNMP packets input
-  0 SNMP packets output
+  Notification host: 10.0.0.5
+  Notification type: traps
+  Version: 2c
+  UDP port: 162
+  Community name: public
+  
+  Notification host: 10.0.0.6
+  Notification type: traps
+  Version: 2c
+  UDP port: 162
+  Community name: private
+  Filter: udp-port 162 ospf bgp
+  
+  Notification host: 10.0.0.7
+  Notification type: informs
+  Version: 2c
+  UDP port: 162
+  Community name: public
 
 [85/322] r1 R1# show snmp group
-  SNMP agent not enabled
-  0 SNMP packets input
-  0 SNMP packets output
+  No SNMP groups configured
 
 
 --- [86] § SNMPv3 ---
@@ -365,19 +407,33 @@ Total steps: 322
 <empty>
 
 [99/322] r1 R1# show snmp user
-  SNMP agent not enabled
-  0 SNMP packets input
-  0 SNMP packets output
+  User name: adminv3
+  Engine ID: 800000090300DEADBEEF0001
+  storage-type: nonvolatile        active
+  Authentication Protocol: SHA
+  Privacy Protocol: AES
+  Group-name: GRP-RW
+  
+  User name: rouser
+  Engine ID: 800000090300DEADBEEF0001
+  storage-type: nonvolatile        active
+  Authentication Protocol: SHA
+  Privacy Protocol: None
+  Group-name: GRP-RO
+  
+  User name: noauth
+  Engine ID: 800000090300DEADBEEF0001
+  storage-type: nonvolatile        active
+  Authentication Protocol: None
+  Privacy Protocol: None
+  Group-name: GRP-AUTH
 
 [100/322] r1 R1# show snmp view
-  SNMP agent not enabled
-  0 SNMP packets input
-  0 SNMP packets output
+  ALL iso - included
+  LIMITED system - included
 
 [101/322] r1 R1# show snmp engineID
-  SNMP agent not enabled
-  0 SNMP packets input
-  0 SNMP packets output
+  Local SNMP engineID: 800000090300DEADBEEF0001
 
 
 --- [102] § NTP / clock ---
@@ -385,14 +441,10 @@ Total steps: 322
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [103/322] r1 R1(config)# clock timezone CET 1 0
-  % Invalid input detected at '^' marker.
-  clock timezone CET 1 0
-  ^
+<empty>
 
 [104/322] r1 R1(config)# clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
-  % Invalid input detected at '^' marker.
-  clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
-  ^
+<empty>
 
 [105/322] r1 R1(config)# ntp authenticate
 <empty>
@@ -419,7 +471,8 @@ Total steps: 322
 <empty>
 
 [113/322] r1 R1(config)# ntp server time.lab.local
-<JS EXCEPTION> Invalid IP address: time.lab.local
+  Translating "time.lab.local"...domain server (255.255.255.255)
+  % Bad IP address or host name
 
 [114/322] r1 R1(config)# ntp peer 10.0.0.30
 <empty>
@@ -456,7 +509,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA320.C9BA5E35 (07:09:20.788 UTC Thu Jun 4 2026)
+  reference time is EDCBAFB6.4C083126 (08:03:02.297 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -465,7 +518,7 @@ Total steps: 322
    ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [126/322] r1 R1# show ntp associations detail
     address         ref clock     st  when poll reach delay offset disp
@@ -473,10 +526,10 @@ Total steps: 322
    ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  *07:09:20.000 UTC Thu Jun 4 2026
+  *08:03:02.000 UTC Thu Jun 4 2026
 
 [128/322] r1 R1# show clock detail
   % Invalid input detected at '^' marker.
@@ -484,7 +537,7 @@ Total steps: 322
              ^
 
 [129/322] r1 R1# show calendar
-  07:09:20 UTC Thu Jun 4 2026
+  08:03:02 UTC Thu Jun 4 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -762,7 +815,7 @@ Total steps: 322
 <empty>
 
 [191/322] r1 R1(config)# lldp holdtime 120
-  % Invalid multiplier (2-10)
+<empty>
 
 [192/322] r1 R1(config)# lldp reinit 2
 <empty>
@@ -835,10 +888,6 @@ Total steps: 322
     Encapsulation ARPA
     Sending CDP packets every 30 seconds
     Holdtime is 120 seconds
-  Loopback0 is up, line protocol is down
-    Encapsulation ARPA
-    Sending CDP packets every 30 seconds
-    Holdtime is 120 seconds
 
 [203/322] r1 R1# show cdp traffic
   Global CDP information:
@@ -865,9 +914,35 @@ Total steps: 322
   Total entries displayed: 2
 
 [206/322] r1 R1# show lldp neighbors detail
+  ------------------------------------------------
+  Local Intf: GigabitEthernet0/0
+  Chassis id: L1
+  Port id: eth0
+  Port Description: eth0
+  System Name: L1
+  System Description:
+  Linux Host
+  Time remaining: 120 seconds
+  System Capabilities: Host
+  Enabled Capabilities: Host
+  Management Addresses:
+      not advertised
   
+  ------------------------------------------------
+  Local Intf: GigabitEthernet0/1
+  Chassis id: R2
+  Port id: GigabitEthernet0/1
+  Port Description: GigabitEthernet0/1
+  System Name: R2
+  System Description:
+  Cisco 2911
+  Time remaining: 120 seconds
+  System Capabilities: Router
+  Enabled Capabilities: Router
+  Management Addresses:
+      not advertised
   
-  Total entries displayed: 0
+  Total entries displayed: 2
 
 [207/322] r1 R1# show lldp traffic
   Global LLDP Information:
@@ -877,13 +952,63 @@ Total steps: 322
       LLDP interface reinitialisation delay is 2 seconds
 
 [208/322] r1 R1# show running-config | section logging
-<empty>
+  logging buffered 64000 informational
+  logging console warnings
+  logging trap notifications
+  logging facility local6
+  logging source-interface Loopback0
+  logging host 10.0.0.2
+  logging host 10.0.0.3
+  logging host 10.0.0.4
+  logging host 10.0.0.5
+  logging host 10.0.0.10
+  logging host 10.0.0.11
 
 [209/322] r1 R1# show running-config | section snmp
-<empty>
+  snmp-server community public RO
+  snmp-server community private RW
+  snmp-server community ro-acl RO 10
+  snmp-server contact noc@lab.local
+  snmp-server location DC1-Rack5
+  snmp-server chassis-id R1-CHASSIS
+  snmp-server view ALL iso included
+  snmp-server view LIMITED system included
+  snmp-server group GRP-RO v3 priv read ALL
+  snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  snmp-server group GRP-AUTH v3 auth read LIMITED
+  snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256
+  snmp-server user rouser GRP-RO v3 auth sha AuthPass123
+  snmp-server user noauth GRP-AUTH v3
+  snmp-server host 10.0.0.5 version 2c public
+  snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  snmp-server host 10.0.0.7 informs version 2c public
+  snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps linkdown linkup coldstart warmstart
+  snmp-server enable traps linkup coldstart warmstart
+  snmp-server enable traps coldstart warmstart
+  snmp-server enable traps warmstart
+  snmp-server enable traps ospf
+  snmp-server enable traps bgp
+  snmp-server enable traps config
+  snmp-server enable traps cpu threshold
+  snmp-server enable traps threshold
+  snmp-server enable traps envmon
 
 [210/322] r1 R1# show running-config | section ntp
-<empty>
+  ntp master 3
+  ntp server 10.0.0.21
+  ntp server 10.0.0.22
+  ntp server 10.0.0.23
+  ntp server 10.0.0.30
+  ntp source loopback0
+  ntp authenticate
+  ntp authentication-key 1 md5 ntpkey123
+  ntp trusted-key 1
+  ntp trusted-key 2
+  ntp access-group peer 10
+  ntp access-group serve-only 10
 
 [211/322] r1 R1# show processes cpu sorted
   % Invalid input detected at '^' marker.
@@ -945,6 +1070,69 @@ Total steps: 322
   !
   access-list 10 permit 10.0.0.0 0.0.0.255
   !
+  clock timezone CET 1 0
+  clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  !
+  logging buffered 64000 informational
+  logging console warnings
+  logging trap notifications
+  logging facility local6
+  logging source-interface Loopback0
+  logging host 10.0.0.2
+  logging host 10.0.0.3
+  logging host 10.0.0.4
+  logging host 10.0.0.5
+  logging host 10.0.0.10
+  logging host 10.0.0.11
+  !
+  ntp master 3
+  ntp server 10.0.0.21
+  ntp server 10.0.0.22
+  ntp server 10.0.0.23
+  ntp server 10.0.0.30
+  ntp source loopback0
+  ntp authenticate
+  ntp authentication-key 1 md5 ntpkey123
+  ntp trusted-key 1
+  ntp trusted-key 2
+  ntp access-group peer 10
+  ntp access-group serve-only 10
+  !
+  cdp timer 30
+  cdp holdtime 120
+  !
+  lldp run
+  !
+  snmp-server community public RO
+  snmp-server community private RW
+  snmp-server community ro-acl RO 10
+  snmp-server contact noc@lab.local
+  snmp-server location DC1-Rack5
+  snmp-server chassis-id R1-CHASSIS
+  snmp-server view ALL iso included
+  snmp-server view LIMITED system included
+  snmp-server group GRP-RO v3 priv read ALL
+  snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  snmp-server group GRP-AUTH v3 auth read LIMITED
+  snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256
+  snmp-server user rouser GRP-RO v3 auth sha AuthPass123
+  snmp-server user noauth GRP-AUTH v3
+  snmp-server host 10.0.0.5 version 2c public
+  snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  snmp-server host 10.0.0.7 informs version 2c public
+  snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps linkdown linkup coldstart warmstart
+  snmp-server enable traps linkup coldstart warmstart
+  snmp-server enable traps coldstart warmstart
+  snmp-server enable traps warmstart
+  snmp-server enable traps ospf
+  snmp-server enable traps bgp
+  snmp-server enable traps config
+  snmp-server enable traps cpu threshold
+  snmp-server enable traps threshold
+  snmp-server enable traps envmon
   end
 
 [216/322] r1 R1(config)# show startup-config
@@ -1127,14 +1315,31 @@ Total steps: 322
       Logging to 10.0.0.11
 
 [249/322] r1 R1(config)# show snmp
-  SNMP agent not enabled
+  Chassis: R1-CHASSIS
   0 SNMP packets input
+      0 Bad SNMP version errors
+      0 Unknown community name
+      0 Illegal operation for community name supplied
+      0 Encoding errors
+      0 Number of requested variables
+      0 Number of altered variables
+      0 Get-request PDUs
+      0 Get-next PDUs
+      0 Set-request PDUs
   0 SNMP packets output
+      0 Too big errors (Maximum packet size 1500)
+      0 No such name errors
+      0 Bad values errors
+      0 General errors
+      0 Response PDUs
+      0 Trap PDUs
+  SNMP server contact: noc@lab.local
+  SNMP server location: DC1-Rack5
 
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBA320.CCCCCCCC (07:09:20.800 UTC Thu Jun 4 2026)
+  reference time is EDCBAFB6.4FDF3B64 (08:03:02.312 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1143,10 +1348,10 @@ Total steps: 322
    ~10.0.0.21       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.22       .INIT.        16  999   64   000   0.0    0.0 16000.0
    ~10.0.0.23       .INIT.        16  999   64   000   0.0    0.0 16000.0
-   ~time.lab.local  .INIT.        16  999   64   000   0.0    0.0 16000.0
+   ~10.0.0.30       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  *07:09:20.000 UTC Thu Jun 4 2026
+  *08:03:02.000 UTC Thu Jun 4 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1319,6 +1524,69 @@ Total steps: 322
   !
   access-list 10 permit 10.0.0.0 0.0.0.255
   !
+  clock timezone CET 1 0
+  clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  !
+  logging buffered 64000 informational
+  logging console warnings
+  logging trap notifications
+  logging facility local6
+  logging source-interface Loopback0
+  logging host 10.0.0.2
+  logging host 10.0.0.3
+  logging host 10.0.0.4
+  logging host 10.0.0.5
+  logging host 10.0.0.10
+  logging host 10.0.0.11
+  !
+  ntp master 3
+  ntp server 10.0.0.21
+  ntp server 10.0.0.22
+  ntp server 10.0.0.23
+  ntp server 10.0.0.30
+  ntp source loopback0
+  ntp authenticate
+  ntp authentication-key 1 md5 ntpkey123
+  ntp trusted-key 1
+  ntp trusted-key 2
+  ntp access-group peer 10
+  ntp access-group serve-only 10
+  !
+  cdp timer 30
+  cdp holdtime 120
+  !
+  lldp run
+  !
+  snmp-server community public RO
+  snmp-server community private RW
+  snmp-server community ro-acl RO 10
+  snmp-server contact noc@lab.local
+  snmp-server location DC1-Rack5
+  snmp-server chassis-id R1-CHASSIS
+  snmp-server view ALL iso included
+  snmp-server view LIMITED system included
+  snmp-server group GRP-RO v3 priv read ALL
+  snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  snmp-server group GRP-AUTH v3 auth read LIMITED
+  snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256
+  snmp-server user rouser GRP-RO v3 auth sha AuthPass123
+  snmp-server user noauth GRP-AUTH v3
+  snmp-server host 10.0.0.5 version 2c public
+  snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  snmp-server host 10.0.0.7 informs version 2c public
+  snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps linkdown linkup coldstart warmstart
+  snmp-server enable traps linkup coldstart warmstart
+  snmp-server enable traps coldstart warmstart
+  snmp-server enable traps warmstart
+  snmp-server enable traps ospf
+  snmp-server enable traps bgp
+  snmp-server enable traps config
+  snmp-server enable traps cpu threshold
+  snmp-server enable traps threshold
+  snmp-server enable traps envmon
   end
   
   ------------------ show ip interface brief ------------------
@@ -1467,6 +1735,7 @@ Total steps: 322
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
+  logging source-interface Loopback0
 
 [278/322] r1 R1(config)# show running-config | begin line
 <empty>
@@ -1490,6 +1759,64 @@ Total steps: 322
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   access-list 10 permit 10.0.0.0 0.0.0.255
+  clock timezone CET 1 0
+  clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  logging buffered 64000 informational
+  logging console warnings
+  logging trap notifications
+  logging facility local6
+  logging source-interface Loopback0
+  logging host 10.0.0.2
+  logging host 10.0.0.3
+  logging host 10.0.0.4
+  logging host 10.0.0.5
+  logging host 10.0.0.10
+  logging host 10.0.0.11
+  ntp master 3
+  ntp server 10.0.0.21
+  ntp server 10.0.0.22
+  ntp server 10.0.0.23
+  ntp server 10.0.0.30
+  ntp source loopback0
+  ntp authenticate
+  ntp authentication-key 1 md5 ntpkey123
+  ntp trusted-key 1
+  ntp trusted-key 2
+  ntp access-group peer 10
+  ntp access-group serve-only 10
+  cdp timer 30
+  cdp holdtime 120
+  lldp run
+  snmp-server community public RO
+  snmp-server community private RW
+  snmp-server community ro-acl RO 10
+  snmp-server contact noc@lab.local
+  snmp-server location DC1-Rack5
+  snmp-server chassis-id R1-CHASSIS
+  snmp-server view ALL iso included
+  snmp-server view LIMITED system included
+  snmp-server group GRP-RO v3 priv read ALL
+  snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  snmp-server group GRP-AUTH v3 auth read LIMITED
+  snmp-server user adminv3 GRP-RW v3 auth sha AuthPass123 priv aes 256
+  snmp-server user rouser GRP-RO v3 auth sha AuthPass123
+  snmp-server user noauth GRP-AUTH v3
+  snmp-server host 10.0.0.5 version 2c public
+  snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  snmp-server host 10.0.0.7 informs version 2c public
+  snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps authentication linkdown linkup coldstart warmstart
+  snmp-server enable traps linkdown linkup coldstart warmstart
+  snmp-server enable traps linkup coldstart warmstart
+  snmp-server enable traps coldstart warmstart
+  snmp-server enable traps warmstart
+  snmp-server enable traps ospf
+  snmp-server enable traps bgp
+  snmp-server enable traps config
+  snmp-server enable traps cpu threshold
+  snmp-server enable traps threshold
+  snmp-server enable traps envmon
   end
 
 [280/322] r1 R1(config)# show ip route | include via
@@ -1668,7 +1995,7 @@ Total steps: 322
 <empty>
 
 [321/322] r1 R1# show running-config | count !
-  12
+  17
 
 [322/322] r1 R1# write memory
   Building configuration...
