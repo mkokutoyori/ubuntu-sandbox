@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-03T19:59:32.254Z
+Generated: 2026-06-04T08:19:56.159Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -254,9 +254,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
 
 [60/355] r1 R1# show ip route rip
@@ -478,9 +483,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 100"
     Router-ID: 1.1.1.1
@@ -1046,9 +1056,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 0"
     Router-ID: 1.1.1.1
@@ -1158,10 +1173,10 @@ Total steps: 355
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -1205,7 +1220,7 @@ Total steps: 355
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1213,7 +1228,7 @@ Total steps: 355
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1265,9 +1280,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 0"
     Router-ID: 1.1.1.1
@@ -1454,7 +1474,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0624.4B439581 (19:59:32.294 UTC Wed Jun 3 2026)
+  reference time is EDCBB3AC.36041893 (08:19:56.211 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1463,7 +1483,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *19:59:32.000 UTC Wed Jun 3 2026
+  *08:19:56.000 UTC Thu Jun 4 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1492,8 +1512,8 @@ Total steps: 355
 
 [289/355] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [290/355] r1 R1# show flash
   Directory of flash:/
@@ -1621,10 +1641,10 @@ Total steps: 355
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -1671,7 +1691,7 @@ Total steps: 355
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1679,7 +1699,7 @@ Total steps: 355
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1789,9 +1809,9 @@ Total steps: 355
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
 
 [311/355] r1 R1# show running-config | begin line
 <empty>
@@ -1809,9 +1829,9 @@ Total steps: 355
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   router rip
    version 2
    network 10.1.0.0
@@ -1920,6 +1940,17 @@ Total steps: 355
 <empty>
 
 [342/355] r1 R1(config-router)# do show ip protocols
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 192.168.1.1
+    Number of areas in this router is 0
+    Reference bandwidth unit is 100 mbps
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
+  
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -1942,9 +1973,14 @@ Total steps: 355
     Automatic network summarization is not in effect
     Passive Interface(s):
       GigabitEthernet0/0
+    offset-list 1 in 5 GigabitEthernet0/1
+    offset-list 1 out 5 GigabitEthernet0/1
     redistribute connected
     redistribute static metric 3
     redistribute ospf 1 metric 5
+    output-delay 50
+    flash-update-threshold 10
+    validate-update-source
     Distance: 120
   Routing Protocol is "eigrp 0"
     Router-ID: 1.1.1.1
@@ -2028,6 +2064,7 @@ Total steps: 355
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [352/355] r1 R1(config)# no ?
@@ -2053,7 +2090,7 @@ Total steps: 355
 <empty>
 
 [354/355] r1 R1# show running-config | count !
-  11
+  12
 
 [355/355] r1 R1# write memory
   Building configuration...

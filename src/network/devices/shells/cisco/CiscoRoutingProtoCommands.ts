@@ -245,7 +245,19 @@ export function buildRoutingProtoConfig(
     'validate-update-source', 'synchronization', 'no synchronization',
     'compatible', 'log-adjacency-changes',
     'no neighbor', 'traffic-share']) {
-    routerTrie.registerGreedy(kw, `Routing option (${kw})`, () => '');
+    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args, raw) => {
+      const sp = ctx.getSelectedRoutingProto();
+      const proto = sp?.proto;
+      const line = raw ?? `${kw} ${args.join(' ')}`.trim();
+      if (proto === 'rip') {
+        if (kw === 'metric') {
+          const n = parseInt(args[args.length - 1] ?? '', 10);
+          if (!isNaN(n)) repo.rip.defaultMetric = n;
+        }
+        if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
+      }
+      return '';
+    });
   }
 }
 

@@ -57,6 +57,17 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   });
 
   // ── crypto isakmp keepalive N R [periodic|on-demand] ─────────────
+  trie.register('crypto isakmp invalid-spi-recovery', 'Enable invalid SPI recovery', () => {
+    const e = eng(ctx) as unknown as Record<string, unknown>;
+    e.invalidSpiRecovery = true;
+    return '';
+  });
+  trie.registerGreedy('crypto isakmp identity', 'Set IKE identity', (args) => {
+    const e = eng(ctx) as unknown as Record<string, unknown>;
+    e.isakmpIdentity = args.join(' ').toLowerCase();
+    return '';
+  });
+
   trie.registerGreedy('crypto isakmp keepalive', 'Configure IKE keepalive (DPD)', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const interval = parseInt(args[0], 10);
@@ -381,6 +392,22 @@ export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellCont
 // ─── config-crypto-map sub-mode ──────────────────────────────────────
 
 export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  trie.registerGreedy('description', 'Crypto map entry description', (args) => {
+    const mapName = ctx.getSelectedCryptoMap();
+    const seq = ctx.getSelectedCryptoMapSeq();
+    if (!mapName || seq === null) return '% No crypto map selected';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq) as unknown as Record<string, unknown>;
+    entry.description = args.join(' ');
+    return '';
+  });
+  trie.register('reverse-route', 'Add static routes for protected networks', () => {
+    const mapName = ctx.getSelectedCryptoMap();
+    const seq = ctx.getSelectedCryptoMapSeq();
+    if (!mapName || seq === null) return '% No crypto map selected';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq) as unknown as Record<string, unknown>;
+    entry.reverseRoute = true;
+    return '';
+  });
 
   trie.registerGreedy('set peer', 'Set crypto map peer', (args) => {
     const mapName = ctx.getSelectedCryptoMap();

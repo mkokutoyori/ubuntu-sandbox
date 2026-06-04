@@ -113,6 +113,14 @@ export function buildIKEv2ProposalCommands(trie: CommandTrie, ctx: CiscoShellCon
     prop.dhGroup = args.map((a: string) => parseInt(a, 10)).filter((n: number) => !isNaN(n));
     return '';
   });
+
+  trie.registerGreedy('prf', 'Set pseudo-random function', (args) => {
+    const name = ctx.getSelectedIKEv2Proposal();
+    if (!name) return '';
+    const prop = eng(ctx).getOrCreateIKEv2Proposal(name) as unknown as Record<string, unknown>;
+    prop.prf = args.map((a: string) => a.toLowerCase());
+    return '';
+  });
 }
 
 // ─── config-ikev2-policy sub-mode ─────────────────────────────────────
@@ -236,6 +244,39 @@ export function buildIKEv2ProfileCommands(trie: CommandTrie, ctx: CiscoShellCont
     if (!name) return '% No IKEv2 profile selected';
     const prof = eng(ctx).getOrCreateIKEv2Profile(name);
     prof.keyringLocalName = args[0] || '';
+    return '';
+  });
+
+  trie.registerGreedy('identity local', 'Set local identity', (args) => {
+    const name = ctx.getSelectedIKEv2Profile();
+    if (!name) return '';
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    prof.identityLocal = args.join(' ');
+    return '';
+  });
+  trie.registerGreedy('self-identity', 'Self-identity', (args) => {
+    const name = ctx.getSelectedIKEv2Profile();
+    if (!name) return '';
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    prof.selfIdentity = args.join(' ');
+    return '';
+  });
+  trie.registerGreedy('dpd', 'Dead Peer Detection', (args) => {
+    const name = ctx.getSelectedIKEv2Profile();
+    if (!name) return '';
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    prof.dpd = {
+      interval: parseInt(args[0] ?? '10', 10),
+      retry: parseInt(args[1] ?? '2', 10),
+      mode: args[2] ?? 'periodic',
+    };
+    return '';
+  });
+  trie.registerGreedy('lifetime', 'Set lifetime', (args) => {
+    const name = ctx.getSelectedIKEv2Profile();
+    if (!name) return '';
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    prof.lifetime = parseInt(args[0] ?? '86400', 10);
     return '';
   });
 }

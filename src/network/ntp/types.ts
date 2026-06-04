@@ -35,6 +35,12 @@ export interface NtpAssociation {
   synced: boolean;
 }
 
+export interface NtpAuthKey {
+  id: number;
+  algo: string;
+  key: string;
+}
+
 export interface NtpConfig {
   enabled: boolean;
   serverMode: boolean;
@@ -43,6 +49,11 @@ export interface NtpConfig {
   offsetMs: number;
   lastSyncMs: number;
   refIdentifier: string;
+  sourceInterface: string;
+  authenticate: boolean;
+  authKeys: Map<number, NtpAuthKey>;
+  trustedKeys: Set<number>;
+  accessGroups: Map<string, string>;
 }
 
 export function createDefaultNtpConfig(): NtpConfig {
@@ -54,6 +65,11 @@ export function createDefaultNtpConfig(): NtpConfig {
     offsetMs: 0,
     lastSyncMs: 0,
     refIdentifier: '.INIT.',
+    sourceInterface: '',
+    authenticate: false,
+    authKeys: new Map(),
+    trustedKeys: new Set(),
+    accessGroups: new Map(),
   };
 }
 

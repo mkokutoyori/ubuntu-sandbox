@@ -18,6 +18,8 @@ export function getSecurityConfig(router: Router): CiscoSecurityConfig {
 }
 
 export interface CiscoSecurityShellContext extends CiscoShellContext {
+  setPkiTrustpoint?(name: string | null): void;
+  getPkiTrustpoint?(): string | null;
   setClassMap?(name: string | null): void;
   getClassMap?(): string | null;
   setPolicyMap?(name: string | null): void;
@@ -300,6 +302,50 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
+  trie.registerGreedy('crypto pki trustpoint', 'Declare a PKI trustpoint', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    sec().ensurePkiTrustpoint(args[0]);
+    ctx.setPkiTrustpoint?.(args[0]);
+    ctx.setMode('config-ca-trustpoint' as CiscoShellMode);
+    return '';
+  });
+
+  trie.registerGreedy('no crypto pki trustpoint', 'Remove a PKI trustpoint', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    sec().pkiTrustpoints.delete(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('crypto pki enroll', 'Enroll trustpoint', (args) => {
+    const name = args[0];
+    if (!name) return '% Incomplete command.';
+    const tp = sec().pkiTrustpoints.get(name);
+    if (!tp) return `% Trustpoint ${name} not configured`;
+    return `% Start certificate enrollment for trustpoint ${name}\n% Certificate request sent to Certificate Authority`;
+  });
+  trie.registerGreedy('crypto pki authenticate', 'Authenticate trustpoint CA', (args) => {
+    const name = args[0];
+    if (!name) return '% Incomplete command.';
+    const tp = sec().pkiTrustpoints.get(name);
+    if (!tp) return `% Trustpoint ${name} not configured`;
+    return `% Trustpoint ${name} CA certificate accepted`;
+  });
+  trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
+    const name = args[0];
+    if (!name) return '% Incomplete command.';
+    const tp = sec().pkiTrustpoints.get(name);
+    if (!tp) return `% Trustpoint ${name} not configured`;
+    const what = args[1]?.toLowerCase();
+    if (what === 'certificate' || what === 'pem') {
+      (tp as unknown as { importedCertificate?: { format: string; importedAtMs: number } }).importedCertificate = {
+        format: what,
+        importedAtMs: Date.now(),
+      };
+      return `% Certificate imported into trustpoint ${name}`;
+    }
+    return `% Unknown import type "${what}"`;
+  });
+
   trie.registerGreedy('parameter-map type inspect', 'Define parameter-map', (args) => {
     if (!args[0]) return '% Incomplete command.';
     sec().ensureParameterMapInspect(args[0]);
@@ -360,6 +406,7 @@ export function buildSecuritySubmodeCommands(
   radiusTrie: CommandTrie,
   tacacsTrie: CommandTrie,
   aaaGroupTrie: CommandTrie,
+  trustpointTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
   const sec = () => getSecurityConfig(ctx.r());
@@ -417,7 +464,13 @@ export function buildSecuritySubmodeCommands(
     return '';
   });
 
-  zoneTrie.registerGreedy('description', 'Zone description', () => '');
+  zoneTrie.registerGreedy('description', 'Zone description', (args) => {
+    const name = ctx.getZone?.();
+    if (!name) return '';
+    const z = sec().zones.get(name);
+    if (z) (z as unknown as { description?: string }).description = args.join(' ');
+    return '';
+  });
 
   zonePairTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
     const name = ctx.getZonePair?.();
@@ -496,6 +549,68 @@ export function buildSecuritySubmodeCommands(
     const g = sec().aaaGroups.get(name);
     if (!g) return '';
     if (args[0] === 'name' && args[1]) g.members.push(args[1]);
+    return '';
+  });
+
+  const tp = () => {
+    const name = ctx.getPkiTrustpoint?.();
+    return name ? sec().pkiTrustpoints.get(name) ?? null : null;
+  };
+  trustpointTrie.registerGreedy('enrollment', 'Enrollment configuration', (args) => {
+    const t = tp(); if (!t) return '';
+    if (args[0] === 'url' && args[1]) t.enrollmentUrl = args[1];
+    else if (args[0] === 'selfsigned' || args[0] === 'self-signed') t.source = 'self-signed';
+    else if (args[0] === 'terminal') t.source = 'terminal';
+    else if (args[0] === 'profile' && args[1]) t.source = 'scep';
+    return '';
+  });
+  trustpointTrie.registerGreedy('subject-name', 'Set subject name', (args) => {
+    const t = tp(); if (!t) return '';
+    t.subjectName = args.join(' ');
+    return '';
+  });
+  trustpointTrie.registerGreedy('revocation-check', 'Set revocation check method', (args) => {
+    const t = tp(); if (!t) return '';
+    const mode = args.join(' ').toLowerCase();
+    if (mode === 'crl' || mode === 'none' || mode === 'ocsp' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') {
+      t.revocationCheck = mode as 'crl' | 'none' | 'ocsp' | 'crl-or-ocsp' | 'crl-then-ocsp';
+    }
+    return '';
+  });
+  trustpointTrie.registerGreedy('rsakeypair', 'Bind RSA keypair', (args) => {
+    const t = tp(); if (!t) return '';
+    t.rsaKeypair = args[0];
+    return '';
+  });
+  trustpointTrie.registerGreedy('fqdn', 'Set FQDN', (args) => {
+    const t = tp(); if (!t) return '';
+    t.fqdn = args[0];
+    return '';
+  });
+  trustpointTrie.registerGreedy('ip-address', 'Set IP', (args) => {
+    const t = tp(); if (!t) return '';
+    t.ipAddress = args[0];
+    return '';
+  });
+  trustpointTrie.registerGreedy('serial-number', 'Set serial number', (args) => {
+    const t = tp(); if (!t) return '';
+    t.serialNumber = args[0];
+    return '';
+  });
+  trustpointTrie.registerGreedy('auto-enroll', 'Auto-enrollment', (args) => {
+    const t = tp(); if (!t) return '';
+    const cfg: { percent?: number; regenerate?: boolean } = {};
+    for (let i = 0; i < args.length; i++) {
+      const n = parseInt(args[i], 10);
+      if (!isNaN(n)) cfg.percent = n;
+      if (args[i] === 'regenerate') cfg.regenerate = true;
+    }
+    t.autoEnroll = cfg;
+    return '';
+  });
+  trustpointTrie.registerGreedy('fingerprint', 'Set fingerprint', (args) => {
+    const t = tp(); if (!t) return '';
+    t.fingerprint = args.join(' ');
     return '';
   });
 }
@@ -649,6 +764,25 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return lines.length ? lines.join('\n') : 'No TACACS+ servers configured';
   });
 
+  trie.register('show crypto pki trustpoints', 'PKI trustpoints', () => {
+    const tps = [...sec().pkiTrustpoints.values()];
+    if (tps.length === 0) return 'No trustpoints configured';
+    return tps.map(tp => [
+      `Trustpoint ${tp.name}:`,
+      `    Subject Name: ${tp.subjectName ?? '<not configured>'}`,
+      `    Enrollment URL: ${tp.enrollmentUrl ?? 'terminal'}`,
+      `    Revocation Check: ${tp.revocationCheck ?? 'crl'}`,
+      `    RSA Keypair: ${tp.rsaKeypair ?? '<auto>'}`,
+      tp.fqdn ? `    FQDN: ${tp.fqdn}` : '',
+      tp.serialNumber ? `    Serial Number: ${tp.serialNumber}` : '',
+    ].filter(Boolean).join('\n')).join('\n');
+  });
+  trie.register('show crypto pki certificates', 'PKI certificates', () => {
+    const tps = [...sec().pkiTrustpoints.values()];
+    if (tps.length === 0) return 'No PKI certificates installed';
+    return tps.map(tp => `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`).join('\n\n');
+  });
+
   trie.register('show login', 'Display login config', () => {
     const s = sec();
     const r = getRouter() as unknown as { getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null };
@@ -746,7 +880,19 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   trie.register('show zone security', 'Display zones', () => {
     const s = sec();
     if (s.zones.size === 0) return 'No zones configured';
-    return [...s.zones.values()].map(z => `Zone: ${z.name}\n  Description: ${z.name} security zone\n  Member Interfaces:`).join('\n');
+    return [...s.zones.values()].map(z => {
+      const description = (z as unknown as { description?: string }).description ?? `${z.name} security zone`;
+      const members: string[] = [];
+      for (const [iface, f] of s.interfaceFlags) {
+        if (f.zoneMember === z.name) members.push(`    ${iface}`);
+      }
+      return [
+        `Zone: ${z.name}`,
+        `  Description: ${description}`,
+        '  Member Interfaces:',
+        ...(members.length === 0 ? ['    None'] : members),
+      ].join('\n');
+    }).join('\n');
   });
 
   trie.register('show zone-pair security', 'Display zone-pairs', () => {

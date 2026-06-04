@@ -136,6 +136,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-radius-server':      { parent: 'config', clearOnExit: ['selectedRadiusServer'] },
   'config-tacacs-server':      { parent: 'config', clearOnExit: ['selectedTacacsServer'] },
   'config-aaa-group':          { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
+  'config-ca-trustpoint':      { parent: 'config', clearOnExit: ['selectedPkiTrustpoint'] },
 };
 
 // ─── Cisco Switch Mode Hierarchy ──────────────────────────────────

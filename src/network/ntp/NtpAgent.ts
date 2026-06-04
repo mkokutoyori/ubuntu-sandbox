@@ -77,11 +77,39 @@ export class NtpAgent {
     } else if (prefer) {
       this.config.associations.get(serverIp)!.prefer = true;
     }
-    if (this.config.enabled) this.poll(serverIp);
+    if (this.config.enabled) {
+      try { this.poll(serverIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
+    }
   }
 
   removeServer(serverIp: string): void {
     this.config.associations.delete(serverIp);
+  }
+
+  setSourceInterface(name: string): void { this.config.sourceInterface = name; }
+  setAuthenticate(on: boolean): void { this.config.authenticate = on; }
+  addAuthKey(id: number, algo: string, key: string): void { this.config.authKeys.set(id, { id, algo, key }); }
+  addTrustedKey(id: number): void { this.config.trustedKeys.add(id); }
+  setAccessGroup(kind: string, acl: string): void { this.config.accessGroups.set(kind, acl); }
+
+  asRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    if (this.config.serverMode) {
+      lines.push(`ntp master${this.config.localStratum !== 8 ? ' ' + this.config.localStratum : ''}`);
+    }
+    for (const [ip, a] of this.config.associations) {
+      lines.push(`ntp server ${ip}${a.prefer ? ' prefer' : ''}`);
+    }
+    if (this.config.sourceInterface) lines.push(`ntp source ${this.config.sourceInterface}`);
+    if (this.config.authenticate) lines.push('ntp authenticate');
+    for (const k of this.config.authKeys.values()) {
+      lines.push(`ntp authentication-key ${k.id} ${k.algo} ${k.key}`);
+    }
+    for (const id of this.config.trustedKeys) lines.push(`ntp trusted-key ${id}`);
+    for (const [kind, acl] of this.config.accessGroups) {
+      lines.push(`ntp access-group ${kind} ${acl}`);
+    }
+    return lines;
   }
 
   setLocalStratum(stratum: number): void {

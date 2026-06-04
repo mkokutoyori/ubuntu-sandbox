@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-03T19:59:29.001Z
+Generated: 2026-06-04T08:20:02.141Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1311,10 +1311,10 @@ Total steps: 369
    ip nat outside
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
@@ -1372,7 +1372,7 @@ Total steps: 369
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1380,7 +1380,7 @@ Total steps: 369
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1664,7 +1664,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0621.07AE147A (19:59:29.030 UTC Wed Jun 3 2026)
+  reference time is EDCBB3B2.29374BC6 (08:20:02.161 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1673,7 +1673,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *19:59:29.000 UTC Wed Jun 3 2026
+  *08:20:02.000 UTC Thu Jun 4 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1702,8 +1702,8 @@ Total steps: 369
 
 [303/369] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [304/369] r1 R1(config)# show flash
   Directory of flash:/
@@ -1897,10 +1897,10 @@ Total steps: 369
    ip nat outside
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
@@ -1961,7 +1961,7 @@ Total steps: 369
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1969,7 +1969,7 @@ Total steps: 369
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2072,9 +2072,9 @@ Total steps: 369
    no shutdown
    ip nat outside
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
 
 [325/369] r1 R1(config)# show running-config | begin line
@@ -2149,9 +2149,9 @@ Total steps: 369
    no shutdown
    ip nat outside
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
   ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
@@ -2326,6 +2326,7 @@ Total steps: 369
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [366/369] r1 R1(config)# no ?
@@ -2351,7 +2352,7 @@ Total steps: 369
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  22
+  23
 
 [369/369] r1 R1# write memory
   Building configuration...

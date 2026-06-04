@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-03T19:59:37.720Z
+Generated: 2026-06-04T08:20:05.040Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -409,11 +409,11 @@ Total steps: 279
 
 [109/279] r1 <R1> display ipsec proposal
   Transform set TP1: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
   Transform set TP2: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
   Transform set TP3: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
 
 [110/279] r1 <R1> display ipsec policy
   Crypto Map "MAP1" 10 ipsec-isakmp
@@ -1077,11 +1077,11 @@ Total steps: 279
 
 [204/279] r1 [R1] display ipsec proposal
   Transform set TP1: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
   Transform set TP2: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
   Transform set TP3: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
 
 [205/279] r1 [R1] display ike proposal
   Global IKE policy
@@ -1151,8 +1151,8 @@ Total steps: 279
    clock offset: 0.0000 ms
 
 [210/279] r1 [R1] display clock
-  2026-06-03 19:59:37
-  Wednesday
+  2026-06-04 08:20:05
+  Thursday
   Time Zone(UTC) : UTC
 
 [211/279] r1 [R1] display lldp neighbor
@@ -1164,13 +1164,13 @@ Total steps: 279
 [213/279] r1 [R1] display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-03 19:59:37
+  CPU Usage Stat. Time : 2026-06-04 08:20:05
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 [R1] display memory-usage
-  Memory utilization statistics at 2026-06-03 19:59:37
+  Memory utilization statistics at 2026-06-04 08:20:05
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%

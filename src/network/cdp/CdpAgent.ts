@@ -94,6 +94,19 @@ export class CdpAgent {
 
   getConfig(): Readonly<CdpConfig> { return this.config; }
 
+  asRunningConfigLines(): string[] {
+    const lines: string[] = [];
+    if (!this.config.enabled) lines.push('no cdp run');
+    if (this.config.timerSec !== 60) lines.push(`cdp timer ${this.config.timerSec}`);
+    if (this.config.holdtimeSec !== 180) lines.push(`cdp holdtime ${this.config.holdtimeSec}`);
+    return lines;
+  }
+
+  asRunningConfigForInterface(ifName: string): string[] {
+    if (this.config.disabledPorts.has(ifName)) return [' no cdp enable'];
+    return [];
+  }
+
   setEnabled(on: boolean): void {
     if (this.config.enabled === on) return;
     this.config.enabled = on;

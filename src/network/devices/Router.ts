@@ -86,6 +86,11 @@ import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
+import { RouterDebugService } from './router/diag/RouterDebugService';
+import { NhrpService } from './router/nhrp/NhrpService';
+import { DmvpnService } from './router/nhrp/DmvpnService';
+import { RouterManagementService } from './router/management/RouterManagementService';
+import { SnmpService } from './router/management/SnmpService';
 export type { NatStaticEntry, NatPool, NatDynamicRule, NatSession, NatTranslationEntry } from './router/NATEngine';
 
 // ─── Routing Table (RIB) ───────────────────────────────────────────
@@ -225,6 +230,7 @@ export abstract class Router extends Equipment {
       setRoutingTable: (table) => { this.routingTable = table; },
       pushRoute: (route) => { this.routingTable.push(route); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      getRipVersion: () => this._ripVersion,
     });
     this.ipv6Engine = new IPv6DataPlane({
       id: this.id,
@@ -505,6 +511,11 @@ export abstract class Router extends Equipment {
     network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 0,
     opts?: Partial<Pick<RouteEntry, 'preference' | 'tag' | 'description' | 'track' | 'vpnInstance' | 'permanent' | 'iface'>>,
   ): boolean {
+    if (this._routingTableLimit && this.routingTable.length >= this._routingTableLimit.max) {
+      Logger.warn(this.id, 'router:routing-table-limit',
+        `${this.name}: routing-table limit ${this._routingTableLimit.max} reached, refusing static route to ${network}`);
+      return false;
+    }
     const iface = this.findInterfaceForIP(nextHop);
     const ifaceName = opts?.iface ?? (iface ? iface.getName() : '');
 
@@ -1030,7 +1041,12 @@ export abstract class Router extends Equipment {
    * Implements the full RFC 1812 forwarding pipeline.
    */
   private forwardPacket(inPort: string, ipPkt: IPv4Packet): void {
-    // Phase D.1: TTL Decrement
+    if (!this._ipRoutingEnabled) {
+      Logger.info(this.id, 'router:ip-routing-disabled',
+        `${this.name}: IP routing is disabled, dropping packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
+      this.counters.ipForwDatagrams++;
+      return;
+    }
     const newTTL = ipPkt.ttl - 1;
     if (newTTL <= 0) {
       Logger.info(this.id, 'router:ttl-expired',
@@ -1485,6 +1501,7 @@ export abstract class Router extends Equipment {
   _getPortsInternal(): Map<string, Port> { return this.ports; }
   /** @internal Used by CLI shells */
   _getHostnameInternal(): string { return this.hostname; }
+  _getUptimeMs(): number { return this.getUptimeMs(); }
   /** @internal Used by CLI shells and OSPF */
   _getIPv6RoutingTableInternal() { return this.ipv6Engine.getRoutingTableInternal(); }
   /** @internal Used by CLI shells */
@@ -1548,6 +1565,52 @@ export abstract class Router extends Equipment {
    * …` (Huawei) is executed.
    */
   private _credentialStore: NetworkOsCredentialStore | null = null;
+  private _debugService: RouterDebugService | null = null;
+  private _ipRoutingEnabled: boolean = true;
+  private _ripVersion: 1 | 2 = 2;
+
+  isIpRoutingEnabled(): boolean { return this._ipRoutingEnabled; }
+  _setIpRoutingEnabled(enabled: boolean): void { this._ipRoutingEnabled = enabled; }
+  getRipVersion(): 1 | 2 { return this._ripVersion; }
+  _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
+
+  private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
+  getRoutingTableLimit(): { max: number; thresholdPct?: number } | null { return this._routingTableLimit; }
+  _setRoutingTableLimit(max: number | null, thresholdPct?: number): void {
+    this._routingTableLimit = max === null ? null : { max, thresholdPct };
+  }
+
+  getDebugService(): RouterDebugService {
+    if (!this._debugService) this._debugService = new RouterDebugService();
+    return this._debugService;
+  }
+
+  private _nhrpService: NhrpService | null = null;
+  private _dmvpnService: DmvpnService | null = null;
+
+  getNhrpService(): NhrpService {
+    if (!this._nhrpService) this._nhrpService = new NhrpService();
+    return this._nhrpService;
+  }
+
+  getDmvpnService(): DmvpnService {
+    if (!this._dmvpnService) this._dmvpnService = new DmvpnService(this.getNhrpService());
+    return this._dmvpnService;
+  }
+
+  private _managementService: RouterManagementService | null = null;
+  getManagementService(): RouterManagementService {
+    if (!this._managementService) this._managementService = new RouterManagementService();
+    return this._managementService;
+  }
+
+  private _snmpService: import('./router/management/SnmpService').SnmpService | null = null;
+  getSnmpService(): import('./router/management/SnmpService').SnmpService {
+    if (!this._snmpService) {
+      this._snmpService = new SnmpService();
+    }
+    return this._snmpService;
+  }
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;
   private _loginBlockConfig: { attempts: number; withinSeconds: number; blockSeconds: number } | null = null;

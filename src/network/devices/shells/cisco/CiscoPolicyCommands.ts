@@ -90,9 +90,22 @@ export function buildPolicyConfig(
     if (c) c.set.push(raw ?? `set ${args.join(' ')}`);
     return '';
   });
-  routeMapTrie.registerGreedy('no match', 'Remove match clause', () => '');
-  routeMapTrie.registerGreedy('no set', 'Remove set clause', () => '');
-  routeMapTrie.registerGreedy('description', 'Route-map description', () => '');
+  routeMapTrie.registerGreedy('no match', 'Remove match clause', (args) => {
+    const c = clause(); if (!c) return '';
+    const pattern = 'match ' + args.join(' ').toLowerCase();
+    c.match = c.match.filter(l => !l.toLowerCase().startsWith(pattern));
+    return '';
+  });
+  routeMapTrie.registerGreedy('no set', 'Remove set clause', (args) => {
+    const c = clause(); if (!c) return '';
+    const pattern = 'set ' + args.join(' ').toLowerCase();
+    c.set = c.set.filter(l => !l.toLowerCase().startsWith(pattern));
+    return '';
+  });
+  routeMapTrie.registerGreedy('description', 'Route-map description', (args) => {
+    const c = clause(); if (c) c.description = args.join(' ');
+    return '';
+  });
 }
 
 export function registerPolicyShow(

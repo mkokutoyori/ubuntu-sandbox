@@ -505,7 +505,13 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return cmdDhcpSelectGlobal(ctx);
   });
 
-  trie.register('dhcp select relay', 'Set DHCP relay mode on interface', () => '');
+  trie.register('dhcp select relay', 'Set DHCP relay mode on interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return 'Error: No interface selected';
+    const dhcp = getRouter()._getDHCPServerInternal() as unknown as { setInterfaceMode?: (i: string, m: string) => void };
+    dhcp.setInterfaceMode?.(ifName, 'relay');
+    return '';
+  });
 
   trie.registerGreedy('dhcp relay server-ip', 'Set DHCP relay server address', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -521,11 +527,24 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
-  trie.registerGreedy('ip forward-protocol udp', 'Forward UDP port on interface', (_args) => {
+  trie.registerGreedy('ip forward-protocol udp', 'Forward UDP port on interface', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const port = parseInt(args[0] ?? '', 10);
+    if (!isNaN(port)) {
+      const dhcp = getRouter()._getDHCPServerInternal() as unknown as { addForwardProtocolPort?: (iface: string, port: number) => void };
+      dhcp.addForwardProtocolPort?.(ifName, port);
+    }
     return '';
   });
 
-  trie.register('dhcp snooping enable', 'Enable DHCP snooping on interface', () => '');
+  trie.register('dhcp snooping enable', 'Enable DHCP snooping on interface', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return 'Error: No interface selected';
+    const dhcp = getRouter()._getDHCPServerInternal() as unknown as { setSnoopingEnabled?: (i: string, e: boolean) => void };
+    dhcp.setSnoopingEnabled?.(ifName, true);
+    return '';
+  });
 
   // Tunnel interface commands
   trie.registerGreedy('source', 'Set tunnel source address', (args) => {

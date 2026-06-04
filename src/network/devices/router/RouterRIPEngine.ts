@@ -48,6 +48,7 @@ export interface RIPRouterContext {
   setRoutingTable(table: RouteEntry[]): void;
   pushRoute(route: RouteEntry): void;
   sendFrame(iface: string, frame: EthernetFrame): void;
+  getRipVersion?(): 1 | 2;
 }
 
 // ─── RIP Engine ─────────────────────────────────────────────────
@@ -163,7 +164,7 @@ export class RouterRIPEngine {
     const request: RIPPacket = {
       type: 'rip',
       command: 1,
-      version: 2,
+      version: this.ctx.getRipVersion?.() ?? 2,
       entries: [{
         afi: 0, routeTag: 0,
         ipAddress: new IPAddress('0.0.0.0'),
@@ -210,7 +211,7 @@ export class RouterRIPEngine {
       const response: RIPPacket = {
         type: 'rip',
         command: 2,
-        version: 2,
+        version: this.ctx.getRipVersion?.() ?? 2,
         entries: chunk,
       };
       this.sendPacket(outIface, response);
@@ -227,7 +228,7 @@ export class RouterRIPEngine {
         if (this.config.poisonedReverse && changedRoute.type === 'rip') {
           const entry = this.routeToRIPEntry(changedRoute, RIP_METRIC_INFINITY);
           this.sendPacket(portName, {
-            type: 'rip', command: 2, version: 2, entries: [entry],
+            type: 'rip', command: 2, version: this.ctx.getRipVersion?.() ?? 2, entries: [entry],
           });
         }
         continue;
@@ -237,7 +238,7 @@ export class RouterRIPEngine {
         : Math.min(changedRoute.metric + 1, RIP_METRIC_INFINITY);
       const entry = this.routeToRIPEntry(changedRoute, metric);
       this.sendPacket(portName, {
-        type: 'rip', command: 2, version: 2, entries: [entry],
+        type: 'rip', command: 2, version: this.ctx.getRipVersion?.() ?? 2, entries: [entry],
       });
     }
   }

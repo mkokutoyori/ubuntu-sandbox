@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-06-03T19:59:24.676Z
+Generated: 2026-06-04T08:20:00.382Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [4/482] r1 R1> show calendar
-  19:59:24 UTC Wed Jun 3 2026
+  08:20:00 UTC Thu Jun 4 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -83,13 +83,13 @@ Total steps: 482
 
 [11/482] r1 R1> show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [12/482] r1 R1> show memory summary
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [13/482] r1 R1> show running-config
   Building configuration...
@@ -101,16 +101,16 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   end
 
@@ -146,7 +146,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -154,7 +154,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -372,7 +372,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB061C.B2F1A9FB (19:59:24.699 UTC Wed Jun 3 2026)
+  reference time is EDCBB3B0.651EB851 (08:20:00.395 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -531,16 +531,16 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   end
   
@@ -571,7 +571,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -579,7 +579,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -619,6 +619,7 @@ Total steps: 482
     clear       clear
     debug       debug
     no          no
+    undebug     undebug
     ping        Send echo messages
     traceroute  Trace route to destination
 
@@ -672,6 +673,8 @@ Total steps: 482
     debug           Display debugging flags
     access-lists    Display all access lists
     crypto          crypto
+    debugging       Display active debug flags
+    dmvpn           Display DMVPN status
     version         Display system hardware and software status
     interface       Display interface status
     interfaces      Display interface status
@@ -727,10 +730,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [81/482] r1 R1# show calendar
-  19:59:24 UTC Wed Jun 3 2026
+  08:20:00 UTC Thu Jun 4 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -781,13 +784,13 @@ Total steps: 482
 
 [88/482] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [89/482] r1 R1# show memory summary
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [90/482] r1 R1# show running-config
   Building configuration...
@@ -799,16 +802,16 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   end
 
@@ -844,7 +847,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -852,7 +855,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1070,7 +1073,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB061C.B47AE147 (19:59:24.705 UTC Wed Jun 3 2026)
+  reference time is EDCBB3B0.65E353F7 (08:20:00.398 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1229,16 +1232,16 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   end
   
@@ -1269,7 +1272,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1277,7 +1280,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1345,9 +1348,7 @@ Total steps: 482
   All possible debugging has been turned off
 
 [154/482] r1 R1# show debugging
-  % Invalid input detected at '^' marker.
-  show debugging
-       ^
+  No debug flags are enabled
 
 
 --- [155] § config sub-mode navigation ---
@@ -1358,7 +1359,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1367,7 +1368,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1376,7 +1377,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1385,7 +1386,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1394,7 +1395,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1403,7 +1404,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1412,7 +1413,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1421,7 +1422,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1430,7 +1431,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1439,7 +1440,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1448,7 +1449,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1457,7 +1458,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1466,7 +1467,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1475,7 +1476,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1484,7 +1485,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1493,7 +1494,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1502,7 +1503,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1511,7 +1512,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1520,7 +1521,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1531,7 +1532,7 @@ Total steps: 482
   ^
 
 [214/482] r1 R1(config)# do show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [215/482] r1 R1(config)# exit
 <empty>
@@ -1602,14 +1603,10 @@ Total steps: 482
 <empty>
 
 [233/482] r1 R1-CORE(config)# clock timezone UTC 0
-  % Invalid input detected at '^' marker.
-  clock timezone UTC 0
-  ^
+<empty>
 
 [234/482] r1 R1-CORE(config)# clock summer-time CEST recurring
-  % Invalid input detected at '^' marker.
-  clock summer-time CEST recurring
-  ^
+<empty>
 
 [235/482] r1 R1-CORE(config)# no banner motd
   % Invalid input detected at '^' marker.
@@ -1760,6 +1757,7 @@ Total steps: 482
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [260/482] r1 R1-EDGE(config)# access-list ?
@@ -1779,7 +1777,10 @@ Total steps: 482
     <cr>  
 
 [264/482] r1 R1-EDGE(config)# clock ?
-  % Unrecognized command
+    timezone     Set timezone
+    summer-time  Configure daylight saving time
+    set          Set system clock
+    <cr>         
 
 [265/482] r1 R1-EDGE(config)# banner ?
     WORD  Set a banner
@@ -1815,6 +1816,7 @@ Total steps: 482
     access-group      Set access group on interface
     nat               nat
     ospf              OSPF interface configuration
+    nhrp              NHRP configuration
     verify            verify
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
@@ -1982,23 +1984,33 @@ Total steps: 482
    ip address 192.168.1.1 255.255.255.0
    no shutdown
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback0
-   shutdown
+   no shutdown
   interface Tunnel0
-   shutdown
+   no shutdown
   router rip
    version 2
   line vty 0 4
+  no ip routing
+  clock summer-time CEST recurring  
+  no cdp run
   service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
   policy-map PM1
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   end
 
 [314/482] r1 R1-EDGE# show running-config | begin interface
@@ -2007,31 +2019,44 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
    version 2
   line vty 0 4
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2040,15 +2065,15 @@ Total steps: 482
    ip address 192.168.1.1 255.255.255.0
    no shutdown
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback0
-   shutdown
+   no shutdown
   interface Tunnel0
-   shutdown
+   no shutdown
 
 [316/482] r1 R1-EDGE# show running-config | section router
   router rip
@@ -2074,8 +2099,8 @@ Total steps: 482
 [321/482] r1 R1-EDGE# show interfaces | include line protocol
   GigabitEthernet0/0 is up, line protocol is up
   GigabitEthernet0/1 is up, line protocol is up
-  GigabitEthernet0/2 is up, line protocol is down
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
   Loopback0 is up, line protocol is up
   Tunnel0 is up, line protocol is up
 
@@ -2099,31 +2124,44 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
    version 2
   line vty 0 4
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2143,31 +2181,44 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
    version 2
   line vty 0 4
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2187,31 +2238,44 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
    version 2
   line vty 0 4
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   service password-encryption
   ip domain-name lab.local
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2336,19 +2400,19 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -2361,6 +2425,11 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
@@ -2370,6 +2439,14 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2446,19 +2523,19 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -2471,6 +2548,11 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
@@ -2480,6 +2562,14 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2536,19 +2626,19 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -2561,6 +2651,11 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
@@ -2570,6 +2665,14 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2589,19 +2692,19 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -2614,6 +2717,11 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
@@ -2623,6 +2731,14 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -2653,7 +2769,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2661,7 +2777,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2695,6 +2811,17 @@ Total steps: 482
   Total           1           1           0           152         360
 
 [381/482] r1 R1-EDGE# show ip protocols
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 0.0.0.0
+    Number of areas in this router is 0
+    Reference bandwidth unit is 100 mbps
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
+  
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -2844,7 +2971,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB061C.BBA5E353 (19:59:24.733 UTC Wed Jun 3 2026)
+  reference time is EDCBB3B0.6C49BA5E (08:20:00.423 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -2853,7 +2980,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *19:59:24.000 UTC Wed Jun 3 2026
+  *08:20:00.000 UTC Thu Jun 4 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2880,8 +3007,8 @@ Total steps: 482
 
 [416/482] r1 R1-EDGE# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [417/482] r1 R1-EDGE# show flash
   Directory of flash:/
@@ -3014,19 +3141,19 @@ Total steps: 482
    no shutdown
   !
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
-   shutdown
+   no shutdown
   !
   interface Tunnel0
-   shutdown
+   no shutdown
   !
   !
   router rip
@@ -3039,6 +3166,11 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
@@ -3048,6 +3180,14 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
   
@@ -3083,7 +3223,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3091,7 +3231,7 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3106,6 +3246,17 @@ Total steps: 482
     Tunnel protocol/transport GRE/IP
   
   ------------------ show ip protocols ------------------
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 0.0.0.0
+    Number of areas in this router is 0
+    Reference bandwidth unit is 100 mbps
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
+  
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -3197,15 +3348,15 @@ Total steps: 482
    ip address 192.168.1.1 255.255.255.0
    no shutdown
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback0
-   shutdown
+   no shutdown
   interface Tunnel0
-   shutdown
+   no shutdown
 
 [438/482] r1 R1-EDGE# show running-config | begin line
   line vty 0 4
@@ -3213,6 +3364,11 @@ Total steps: 482
    access-class 10 in
    transport input telnet
   !
+  no ip routing
+  !
+  clock summer-time CEST recurring  
+  !
+  no cdp run
   !
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
@@ -3222,6 +3378,14 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  !
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   !
   end
 
@@ -3236,15 +3400,15 @@ Total steps: 482
    ip address 192.168.1.1 255.255.255.0
    no shutdown
   interface GigabitEthernet0/1
-   shutdown
+   no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback0
-   shutdown
+   no shutdown
   interface Tunnel0
-   shutdown
+   no shutdown
   router rip
    version 2
   username admin privilege 15 secret 5 admin123
@@ -3253,6 +3417,9 @@ Total steps: 482
    exec-timeout 5 0
    access-class 10 in
    transport input telnet
+  no ip routing
+  clock summer-time CEST recurring  
+  no cdp run
   username admin privilege 15 secret admin123
   username operator privilege 5 secret oper
   enable secret weakpass
@@ -3261,6 +3428,13 @@ Total steps: 482
   ip cef
   class-map match-all CM1
   policy-map PM1
+  crypto isakmp policy 10
+   encryption des
+   hash sha
+   authentication pre-share
+   group 1
+  crypto ipsec transform-set TS1 esp-aes esp-sha-hmac
+  crypto map CM 10 ipsec-isakmp
   end
 
 [440/482] r1 R1-EDGE# show ip route | include via
@@ -3360,6 +3534,17 @@ Total steps: 482
 <empty>
 
 [469/482] r1 R1-EDGE(config-router)# do show ip protocols
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 0.0.0.0
+    Number of areas in this router is 0
+    Reference bandwidth unit is 100 mbps
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
+  
   Routing Protocol is "rip"
     Version: 2
     Update interval: 30s
@@ -3428,6 +3613,7 @@ Total steps: 482
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [479/482] r1 R1-EDGE(config)# no ?
@@ -3453,7 +3639,7 @@ Total steps: 482
 <empty>
 
 [481/482] r1 R1-EDGE# show running-config | count !
-  15
+  17
 
 [482/482] r1 R1-EDGE# write memory
   Building configuration...

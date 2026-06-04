@@ -91,16 +91,54 @@ export function showUsers(): string {
 
 export type CiscoChassisProfile = 'router-isr2911' | 'switch-c2960';
 
-const CHASSIS_INVENTORY: Record<CiscoChassisProfile, { descr: string; pid: string; sn: string }> = {
-  'router-isr2911': { descr: 'Cisco ISR 2911 Integrated Services Router', pid: 'CISCO2911/K9', sn: 'FTX1234567A' },
-  'switch-c2960':   { descr: 'Cisco Catalyst Switch', pid: 'WS-C2960-24TT-L', sn: 'FOC1234X56Y' },
+export interface CiscoHardwareProfile {
+  pid: string;
+  description: string;
+  serialNumber: string;
+  dramKB: number;
+  ioMemoryKB: number;
+  nvramKB: number;
+  flashImage: string;
+  flashImageSize: number;
+  flashTotalBytes: number;
+  flashFreeBytes: number;
+  extraFlashFiles: Array<{ index: number; name: string; size: number }>;
+}
+
+export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareProfile> = {
+  'router-isr2911': {
+    pid: 'CISCO2911/K9',
+    description: 'Cisco ISR 2911 Integrated Services Router',
+    serialNumber: 'FTX1234567A',
+    dramKB: 524288,
+    ioMemoryKB: 65536,
+    nvramKB: 256,
+    flashImage: 'c2900-universalk9-mz.SPA.157-3.M5.bin',
+    flashImageSize: 86234112,
+    flashTotalBytes: 256016384,
+    flashFreeBytes: 169782272,
+    extraFlashFiles: [{ index: 2, name: 'cpconfig-29xx.cfg', size: 2048 }],
+  },
+  'switch-c2960': {
+    pid: 'WS-C2960-24TT-L',
+    description: 'Cisco Catalyst Switch',
+    serialNumber: 'FOC1234X56Y',
+    dramKB: 131072,
+    ioMemoryKB: 32768,
+    nvramKB: 64,
+    flashImage: 'c2960-lanbasek9-mz.150-2.SE.bin',
+    flashImageSize: 17825792,
+    flashTotalBytes: 64016384,
+    flashFreeBytes: 46188544,
+    extraFlashFiles: [{ index: 2, name: 'vlan.dat', size: 3096 }],
+  },
 };
 
 export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c2960'): string {
-  const c = CHASSIS_INVENTORY[profile];
+  const c = CISCO_HARDWARE_PROFILES[profile];
   return [
-    `NAME: "${hostname}", DESCR: "${c.descr}"`,
-    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.sn}`,
+    `NAME: "${hostname}", DESCR: "${c.description}"`,
+    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.serialNumber}`,
   ].join('\n');
 }
 
@@ -115,35 +153,30 @@ export function showProcessesCpu(): string {
 }
 
 /** `show memory statistics` — head/total/used/free. */
-export function showMemoryStatistics(): string {
+export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c2960'): string {
+  const hw = CISCO_HARDWARE_PROFILES[profile];
+  const dramBytes = hw.dramKB * 1024;
+  const ioBytes = hw.ioMemoryKB * 1024;
+  const procUsed = Math.floor(dramBytes * 0.3);
+  const procFree = dramBytes - procUsed;
+  const ioUsed = Math.floor(ioBytes * 0.25);
+  const ioFree = ioBytes - ioUsed;
   return [
     '                Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)',
-    'Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000',
-    'I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000',
+    `Processor    1A2B3C4    ${dramBytes}    ${procUsed}    ${procFree}    ${Math.floor(procFree * 0.95)}    ${Math.floor(procFree * 0.97)}`,
+    `I/O          5D6E7F8     ${ioBytes}     ${ioUsed}    ${ioFree}    ${Math.floor(ioFree * 0.95)}    ${Math.floor(ioFree * 0.97)}`,
   ].join('\n');
 }
 
-const CHASSIS_FLASH: Record<CiscoChassisProfile, string[]> = {
-  'router-isr2911': [
-    'Directory of flash:/',
-    '',
-    '    1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin',
-    '    2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg',
-    '',
-    '256016384 bytes total (169782272 bytes free)',
-  ],
-  'switch-c2960': [
-    'Directory of flash:/',
-    '',
-    '    1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin',
-    '    2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat',
-    '',
-    '64016384 bytes total (46188544 bytes free)',
-  ],
-};
-
 export function showFlash(profile: CiscoChassisProfile = 'switch-c2960'): string {
-  return CHASSIS_FLASH[profile].join('\n');
+  const hw = CISCO_HARDWARE_PROFILES[profile];
+  const lines = ['Directory of flash:/', ''];
+  lines.push(`    1  -rwx     ${String(hw.flashImageSize).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${hw.flashImage}`);
+  for (const f of hw.extraFlashFiles) {
+    lines.push(`    ${f.index}  -rwx     ${String(f.size).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${f.name}`);
+  }
+  lines.push('', `${hw.flashTotalBytes} bytes total (${hw.flashFreeBytes} bytes free)`);
+  return lines.join('\n');
 }
 
 /** `show privilege` — current EXEC level. */
@@ -155,6 +188,10 @@ export function showPrivilege(level: number): string {
  * `show cdp [neighbors [detail] | interface]` — built from the device's
  * REAL cabled topology (Equipment registry + Port/Cable graph).
  */
+function isVirtualInterface(name: string): boolean {
+  return /^(Tunnel|Loopback|Null|Vlan|BVI|Bundle-Ether|Port-channel|Virtual-)/i.test(name);
+}
+
 export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
   const a = arg.toLowerCase();
   if (!enabled) {
@@ -176,8 +213,10 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     const disabled = agentCfg?.disabledPorts ?? new Set<string>();
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
-      if (disabled.has(p.getName())) continue;
-      lines.push(`${p.getName()} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
+      const name = p.getName();
+      if (disabled.has(name)) continue;
+      if (isVirtualInterface(name)) continue;
+      lines.push(`${name} is ${p.getIsUp() ? 'up' : 'administratively down'}, ` +
         `line protocol is ${p.isConnected() && p.getIsUp() ? 'up' : 'down'}`);
       lines.push('  Encapsulation ARPA');
       lines.push(`  Sending CDP packets every ${timer} seconds`);
@@ -254,26 +293,22 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
     const detail = arg.toLowerCase().includes('detail');
     if (detail) {
       if (ns.length === 0) return 'Total entries displayed: 0';
-      const agent = dev.getLldpAgent?.();
-      const allRows = agent ? agent.getNeighbors() : [];
-      const blocks = allRows.map(n => [
+      const blocks = ns.map(n => [
         '------------------------------------------------',
         `Local Intf: ${n.localPort}`,
-        `Chassis id: ${n.chassisId}`,
-        `Port id: ${n.portId}`,
-        `Port Description: ${n.portDescription}`,
-        `System Name: ${n.systemName}`,
+        `Chassis id: ${n.remoteHost}`,
+        `Port id: ${n.remotePort}`,
+        `Port Description: ${n.remotePort}`,
+        `System Name: ${n.remoteHost}`,
         `System Description:`,
-        n.systemDescription,
-        `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
-        `System Capabilities: ${n.remoteCapabilities.join(', ')}`,
-        `Enabled Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `${n.remotePlatform ?? ''}`,
+        `Time remaining: ${ttl} seconds`,
+        `System Capabilities: ${n.remoteCapability}`,
+        `Enabled Capabilities: ${n.remoteCapability}`,
         `Management Addresses:`,
-        ...(n.managementAddresses.length > 0
-          ? n.managementAddresses.map(a => `    IP: ${a}`)
-          : ['    not advertised']),
+        '    not advertised',
       ].join('\n'));
-      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${allRows.length}`;
+      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${ns.length}`;
     }
     const hdr = [
       'Capability codes:',
@@ -316,12 +351,112 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
  * the truthful output is the unconfigured/zero-activity state — not a
  * fabricated population.
  */
-export function showSnmp(): string {
-  return [
-    'SNMP agent not enabled',
-    '0 SNMP packets input',
-    '0 SNMP packets output',
-  ].join('\n');
+export function showSnmp(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc || !svc.isEnabled()) {
+    return [
+      'SNMP agent not enabled',
+      '0 SNMP packets input',
+      '0 SNMP packets output',
+    ].join('\n');
+  }
+  const s = svc.getStats();
+  const lines: string[] = [
+    `Chassis: ${svc.getChassisId() || 'n/a'}`,
+    `${s.pktsIn} SNMP packets input`,
+    `    ${s.badVersions} Bad SNMP version errors`,
+    `    ${s.badCommunityNames} Unknown community name`,
+    `    ${s.badCommunityUses} Illegal operation for community name supplied`,
+    `    ${s.asn1ParseErrors} Encoding errors`,
+    `    ${s.getRequests} Number of requested variables`,
+    `    ${s.setRequests} Number of altered variables`,
+    `    ${s.getRequests} Get-request PDUs`,
+    `    ${s.getNextRequests} Get-next PDUs`,
+    `    ${s.setRequests} Set-request PDUs`,
+    `${s.pktsOut} SNMP packets output`,
+    `    ${s.silentDrops} Too big errors (Maximum packet size 1500)`,
+    `    ${s.silentDrops} No such name errors`,
+    `    ${s.silentDrops} Bad values errors`,
+    `    ${s.silentDrops} General errors`,
+    `    ${s.getResponses} Response PDUs`,
+    `    ${s.trapsSent} Trap PDUs`,
+  ];
+  if (svc.getContact()) lines.push(`SNMP server contact: ${svc.getContact()}`);
+  if (svc.getLocation()) lines.push(`SNMP server location: ${svc.getLocation()}`);
+  return lines.join('\n');
+}
+
+export function showSnmpCommunity(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const list = svc.getCommunities();
+  if (list.length === 0) return 'No SNMP communities configured';
+  return list.map(c =>
+    `Community name: ${c.name}\nCommunity Index: ${c.name}\nCommunity SecurityName: ${c.name}\nAccess: ${c.access === 'rw' ? 'read-write' : 'read-only'}${c.aclName ? '\nAccess-list: ' + c.aclName : ''}${c.view ? '\nView: ' + c.view : ''}`
+  ).join('\n\n');
+}
+
+export function showSnmpHost(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const hosts = svc.getHosts();
+  if (hosts.length === 0) return 'No SNMP hosts configured';
+  return hosts.map(h => [
+    `Notification host: ${h.host}`,
+    `Notification type: ${h.notificationType ?? 'traps'}`,
+    `Version: ${h.version}${h.v3Level ? '/' + h.v3Level : ''}`,
+    `UDP port: ${h.udpPort ?? 162}`,
+    `Community name: ${h.community || '(not set)'}`,
+    h.notifications.length > 0 ? `Filter: ${h.notifications.join(' ')}` : '',
+  ].filter(Boolean).join('\n')).join('\n\n');
+}
+
+export function showSnmpGroup(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const groups = svc.getGroups();
+  if (groups.length === 0) return 'No SNMP groups configured';
+  return groups.map(g => [
+    `groupname: ${g.name}`,
+    `security model: v${g.version}${g.v3Level ? ' ' + g.v3Level : ''}`,
+    `readview: ${g.readView ?? '<no readview specified>'}`,
+    `writeview: ${g.writeView ?? '<no writeview specified>'}`,
+    `notifyview: ${g.notifyView ?? '<no notifyview specified>'}`,
+    `row status: active${g.acl ? '   access-list: ' + g.acl : ''}`,
+  ].join('\n')).join('\n\n');
+}
+
+export function showSnmpUser(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const users = svc.getUsers();
+  if (users.length === 0) return 'No SNMP users configured';
+  return users.map(u => [
+    `User name: ${u.name}`,
+    `Engine ID: ${svc.getEngineId()}`,
+    `storage-type: nonvolatile        active`,
+    `Authentication Protocol: ${u.authAlgo ? u.authAlgo.toUpperCase() : 'None'}`,
+    `Privacy Protocol: ${u.privAlgo ? u.privAlgo.toUpperCase() : 'None'}`,
+    `Group-name: ${u.group}`,
+  ].join('\n')).join('\n\n');
+}
+
+export function showSnmpView(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  const views = svc.getViews();
+  if (views.size === 0) return 'No SNMP views configured';
+  const lines: string[] = [];
+  for (const [name, list] of views) {
+    for (const v of list) lines.push(`${name} ${v.oid} - ${v.type}`);
+  }
+  return lines.join('\n');
+}
+
+export function showSnmpEngineId(dev?: ShowStateDevice): string {
+  const svc = (dev as unknown as { getSnmpService?: () => import('@/network/devices/router/management/SnmpService').SnmpService } | undefined)?.getSnmpService?.();
+  if (!svc) return 'SNMP agent not enabled';
+  return `Local SNMP engineID: ${svc.getEngineId()}`;
 }
 
 export function showNtpStatus(dev?: ShowStateDevice): string {

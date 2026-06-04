@@ -9,26 +9,43 @@ import type { Router } from '../../Router';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 
-export function showVersion(router: Router): string {
+import { CISCO_HARDWARE_PROFILES, type CiscoChassisProfile } from './CiscoCommonShow';
+
+export function showVersion(router: Router, profile: CiscoChassisProfile = 'router-isr2911'): string {
   const ports = router._getPortsInternal();
   const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig'));
+  const hw = CISCO_HARDWARE_PROFILES[profile];
+  const uptimeMs = router._getUptimeMs?.() ?? 0;
   return [
     `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5`,
     `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
     '',
     `ROM: System Bootstrap, Version 15.0(1r)M15`,
     '',
-    `${router._getHostnameInternal()} uptime is 0 minutes`,
-    `System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"`,
+    `${router._getHostnameInternal()} uptime is ${formatUptime(uptimeMs)}`,
+    `System image file is "flash:${hw.flashImage}"`,
     '',
-    `Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.`,
-    `Processor board ID FTX1234567A`,
+    `Cisco C2911 (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
+    `Processor board ID ${hw.serialNumber}`,
     `${giPorts.length} Gigabit Ethernet interfaces`,
     `DRAM configuration is 64 bits wide with parity enabled.`,
-    `256K bytes of non-volatile configuration memory.`,
+    `${hw.nvramKB}K bytes of non-volatile configuration memory.`,
     '',
     `Configuration register is 0x2102`,
   ].join('\n');
+}
+
+function formatUptime(ms: number): string {
+  if (ms < 60_000) return '0 minutes';
+  const totalMin = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  const parts: string[] = [];
+  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  parts.push(`${mins} minute${mins === 1 ? '' : 's'}`);
+  return parts.join(', ');
 }
 
 export function showIpRoute(router: Router): string {
@@ -94,15 +111,18 @@ export function showInterface(router: Router, ifName: string): string {
 
   const isUp = port.getIsUp();
   const connected = port.isConnected();
-  const isVirtual = /^(Tunnel|Loopback)/i.test(ifName);
+  const isVirtual = /^(Tunnel|Loopback|Vlan|BVI|Bundle-Ether|Port-channel)/i.test(ifName);
   const ip = port.getIPAddress()?.toString() || 'unassigned';
   const maskObj = port.getSubnetMask();
   const cidr = maskObj ? maskObj.toCIDR() : '';
   const mac = port.getMAC().toString();
 
-  // Virtual interfaces (Tunnel, Loopback) are up/up when administratively up
-  const status = isUp ? 'up' : 'administratively down';
-  const lineProto = isUp && (connected || isVirtual) ? 'up' : 'down';
+  let status: string;
+  let lineProto: string;
+  if (!isUp) { status = 'administratively down'; lineProto = 'down'; }
+  else if (isVirtual) { status = 'up'; lineProto = 'up'; }
+  else if (connected) { status = 'up'; lineProto = 'up'; }
+  else { status = 'down'; lineProto = 'down'; }
 
   const isTunnel = ifName.startsWith('Tunnel');
   const isLoopback = ifName.startsWith('Loopback');
@@ -202,12 +222,8 @@ export function showRunningConfig(router: Router): string {
     if (desc) lines.push(` description ${desc}`);
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    if (ip && mask) {
-      lines.push(` ip address ${ip} ${mask}`);
-      lines.push(` no shutdown`);
-    } else {
-      lines.push(` shutdown`);
-    }
+    if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
+    lines.push(port.getIsUp() ? ` no shutdown` : ` shutdown`);
     const helpers = dhcp.getHelperAddresses(name);
     for (const h of helpers) {
       lines.push(` ip helper-address ${h}`);
@@ -218,6 +234,38 @@ export function showRunningConfig(router: Router): string {
       [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
     })[Symbol.for('CiscoSecurityConfig')];
     if (sec?.asInterfaceRunningConfigLines) lines.push(...sec.asInterfaceRunningConfigLines(name));
+    const nhrp = (router as unknown as { getNhrpService?: () => { asRunningConfigInterface: (n: string) => string[] } }).getNhrpService?.();
+    if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
+    const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
+    const pending = ospfExtra?.pendingIfConfig.get(name);
+    if (pending) {
+      if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
+      if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
+      if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);
+      if (pending.tunnelKey) lines.push(` tunnel key ${pending.tunnelKey}`);
+      if (pending.tunnelVrf) lines.push(` tunnel vrf ${pending.tunnelVrf}`);
+      const pmtud = pending.tunnelPathMtuDiscovery as { enabled: boolean; ageTimer?: number; minMtu?: number } | undefined;
+      if (pmtud?.enabled) {
+        let s = ' tunnel path-mtu-discovery';
+        if (pmtud.ageTimer !== undefined) s += ` age-timer ${pmtud.ageTimer}`;
+        if (pmtud.minMtu !== undefined) s += ` min-mtu ${pmtud.minMtu}`;
+        lines.push(s);
+      }
+      if (pending.bfdInterval !== undefined) {
+        lines.push(` bfd interval ${pending.bfdInterval}${pending.bfdMinRx !== undefined ? ' min_rx ' + pending.bfdMinRx : ''}${pending.bfdMultiplier !== undefined ? ' multiplier ' + pending.bfdMultiplier : ''}`);
+      }
+      if (pending.bfdTemplate) lines.push(` bfd template ${pending.bfdTemplate}`);
+      if (pending.bfdEcho) lines.push(' bfd echo');
+      const fr = pending.frameRelay as Record<string, unknown> | undefined;
+      if (fr) {
+        if (fr.dlci !== undefined) lines.push(` frame-relay interface-dlci ${fr.dlci}`);
+        if (fr.lmiType) lines.push(` frame-relay lmi-type ${fr.lmiType}`);
+        if (fr.inverseArp) lines.push(' frame-relay inverse-arp');
+        for (const m of (fr.maps as Array<{ ip: string; dlci: number }>) ?? []) {
+          lines.push(` frame-relay map ip ${m.ip} ${m.dlci}`);
+        }
+      }
+    }
     lines.push('!');
   }
 
@@ -244,7 +292,7 @@ export function showRunningConfig(router: Router): string {
   if (router.isRIPEnabled()) {
     lines.push('!');
     lines.push('router rip');
-    lines.push(' version 2');
+    lines.push(` version ${router.getRipVersion()}`);
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
@@ -274,6 +322,54 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  if (!router.isIpRoutingEnabled()) {
+    lines.push('no ip routing');
+    lines.push('!');
+  }
+
+  const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+  if (mgmt) {
+    const clock = mgmt.getClock();
+    if (clock.timezone !== 'UTC') {
+      const sign = clock.offsetMin >= 0 ? '' : '-';
+      const abs = Math.abs(clock.offsetMin);
+      lines.push(`clock timezone ${clock.timezone} ${sign}${Math.floor(abs / 60)} ${abs % 60}`);
+    }
+    if (clock.summerTimezone) {
+      lines.push(`clock summer-time ${clock.summerTimezone} recurring ${clock.daylightStart} ${clock.daylightEnd}`);
+    }
+  }
+
+  const loggingCfg = (router as unknown as { _loggingConfig?: { asRunningConfigLines: () => string[] } })._loggingConfig;
+  if (loggingCfg) {
+    const ll = loggingCfg.asRunningConfigLines();
+    if (ll.length > 0) { lines.push('!'); lines.push(...ll); }
+  }
+
+  const ntpAgent = (router as unknown as { getNtpAgent?: () => { asRunningConfigLines?: () => string[] } }).getNtpAgent?.();
+  if (ntpAgent?.asRunningConfigLines) {
+    const nl = ntpAgent.asRunningConfigLines();
+    if (nl.length > 0) { lines.push('!'); lines.push(...nl); }
+  }
+
+  const cdp = (router as unknown as { getCdpAgent?: () => { asRunningConfigLines?: () => string[] } }).getCdpAgent?.();
+  if (cdp?.asRunningConfigLines) {
+    const cl = cdp.asRunningConfigLines();
+    if (cl.length > 0) { lines.push('!'); lines.push(...cl); }
+  }
+
+  const lldp = (router as unknown as { getLldpAgent?: () => { asRunningConfigLines?: () => string[] } }).getLldpAgent?.();
+  if (lldp?.asRunningConfigLines) {
+    const lll = lldp.asRunningConfigLines();
+    if (lll.length > 0) { lines.push('!'); lines.push(...lll); }
+  }
+
+  const snmp = (router as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();
+  if (snmp) {
+    const sl = snmp.asRunningConfigLines();
+    if (sl.length > 0) { lines.push('!'); lines.push(...sl); }
+  }
+
   const securityLines = (router as unknown as {
     [s: symbol]: { asRunningConfigLines?: () => string[] } | undefined;
   })[Symbol.for('CiscoSecurityConfig')]?.asRunningConfigLines?.() ?? [];
@@ -281,6 +377,15 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
     lines.push(...securityLines);
     lines.push('!');
+  }
+
+  const ipsec = router._getIPSecEngineInternal?.();
+  if (ipsec) {
+    const cryptoLines = ipsec.asRunningConfigLines();
+    if (cryptoLines.length > 0) {
+      lines.push(...cryptoLines);
+      lines.push('!');
+    }
   }
 
   lines.push('end');
@@ -333,29 +438,63 @@ export function showCounters(router: Router): string {
 }
 
 export function showIpProtocols(router: Router): string {
-  if (!router.isRIPEnabled()) return 'No routing protocol is configured.';
-  const cfg = router.getRIPConfig();
-  const ripRoutes = router.getRIPRoutes();
-  const lines = [
-    'Routing Protocol is "rip"',
-    '  Version: 2',
-    `  Update interval: ${cfg.updateInterval / 1000}s`,
-    `  Route timeout: ${cfg.routeTimeout / 1000}s`,
-    `  Garbage collection: ${cfg.gcTimeout / 1000}s`,
-    `  Split horizon: ${cfg.splitHorizon ? 'enabled' : 'disabled'}`,
-    `  Poisoned reverse: ${cfg.poisonedReverse ? 'enabled' : 'disabled'}`,
-    '',
-    '  Advertised networks:',
-  ];
-  for (const net of cfg.networks) {
-    lines.push(`    ${net.network}/${net.mask.toCIDR()}`);
+  const sections: string[] = [];
+
+  const ospf = router._getOSPFEngineInternal?.();
+  if (ospf) {
+    const cfg = ospf.getConfig();
+    const block: string[] = [
+      `Routing Protocol is "ospf ${cfg.processId}"`,
+      `  Outgoing update filter list for all interfaces is not set`,
+      `  Incoming update filter list for all interfaces is not set`,
+      `  Router ID ${cfg.routerId}`,
+      `  Number of areas in this router is ${cfg.areas.size}`,
+      `  Reference bandwidth unit is ${cfg.autoCostReferenceBandwidth} mbps`,
+      `  Routing for Networks:`,
+    ];
+    for (const n of cfg.networks) block.push(`    ${n.network} ${n.wildcard} area ${n.areaId}`);
+    block.push('  Routing Information Sources:', '    Gateway         Distance      Last Update');
+    for (const iface of ospf.getInterfaces().values()) {
+      for (const nbr of iface.neighbors.values()) {
+        block.push(`    ${nbr.routerId.padEnd(16)}110           00:00:00`);
+      }
+    }
+    block.push('  Distance: (default is 110)');
+    sections.push(block.join('\n'));
   }
-  lines.push('');
-  lines.push(`  RIP learned routes: ${ripRoutes.size}`);
-  for (const [key, info] of ripRoutes) {
-    lines.push(`    ${key} metric ${info.metric} via ${info.learnedFrom} (age ${info.age}s)${info.garbageCollect ? ' [gc]' : ''}`);
+
+  if (router.isRIPEnabled()) {
+    const cfg = router.getRIPConfig();
+    const ripRoutes = router.getRIPRoutes();
+    const block = [
+      'Routing Protocol is "rip"',
+      '  Version: 2',
+      `  Update interval: ${cfg.updateInterval / 1000}s`,
+      `  Route timeout: ${cfg.routeTimeout / 1000}s`,
+      `  Garbage collection: ${cfg.gcTimeout / 1000}s`,
+      `  Split horizon: ${cfg.splitHorizon ? 'enabled' : 'disabled'}`,
+      `  Poisoned reverse: ${cfg.poisonedReverse ? 'enabled' : 'disabled'}`,
+      '',
+      '  Advertised networks:',
+    ];
+    for (const net of cfg.networks) {
+      block.push(`    ${net.network}/${net.mask.toCIDR()}`);
+    }
+    block.push('');
+    block.push(`  RIP learned routes: ${ripRoutes.size}`);
+    for (const [key, info] of ripRoutes) {
+      block.push(`    ${key} metric ${info.metric} via ${info.learnedFrom} (age ${info.age}s)${info.garbageCollect ? ' [gc]' : ''}`);
+    }
+    sections.push(block.join('\n'));
   }
-  return lines.join('\n');
+
+  const ipv6Engine = (router as unknown as { isBGPEnabled?: () => boolean }).isBGPEnabled?.();
+  if (ipv6Engine) {
+    sections.push('Routing Protocol is "bgp"');
+  }
+
+  if (sections.length === 0) return 'No routing protocol is configured.';
+  return sections.join('\n\n');
 }
 
 /** `show interfaces` (all) — real per-port detail for every interface. */

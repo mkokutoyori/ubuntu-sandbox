@@ -171,6 +171,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configRadiusServerTrie = new CommandTrie();
   private configTacacsServerTrie = new CommandTrie();
   private configAaaGroupTrie = new CommandTrie();
+  private configCaTrustpointTrie = new CommandTrie();
 
   private selectedTimeRange: string | null = null;
   private selectedClassMap: string | null = null;
@@ -182,6 +183,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedRadiusServer: string | null = null;
   private selectedTacacsServer: string | null = null;
   private selectedAaaGroup: string | null = null;
+  private selectedPkiTrustpoint: string | null = null;
 
   getTimeRange(): string | null { return this.selectedTimeRange; }
   setTimeRange(n: string | null): void { this.selectedTimeRange = n; }
@@ -203,6 +205,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setTacacsServer(n: string | null): void { this.selectedTacacsServer = n; }
   getAaaGroup(): string | null { return this.selectedAaaGroup; }
   setAaaGroup(n: string | null): void { this.selectedAaaGroup = n; }
+  getPkiTrustpoint(): string | null { return this.selectedPkiTrustpoint; }
+  setPkiTrustpoint(n: string | null): void { this.selectedPkiTrustpoint = n; }
 
   constructor() {
     super();
@@ -403,6 +407,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-radius-server': return this.configRadiusServerTrie;
       case 'config-tacacs-server': return this.configTacacsServerTrie;
       case 'config-aaa-group': return this.configAaaGroupTrie;
+      case 'config-ca-trustpoint': return this.configCaTrustpointTrie;
       default: return this.userTrie;
     }
   }
@@ -436,6 +441,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedRadiusServer') this.selectedRadiusServer = null;
       if (f === 'selectedTacacsServer') this.selectedTacacsServer = null;
       if (f === 'selectedAaaGroup') this.selectedAaaGroup = null;
+      if (f === 'selectedPkiTrustpoint') this.selectedPkiTrustpoint = null;
     }
   }
 
@@ -518,6 +524,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       this.configRadiusServerTrie,
       this.configTacacsServerTrie,
       this.configAaaGroupTrie,
+      this.configCaTrustpointTrie,
       this,
     );
     buildSecurityShowCommands(this.userTrie, () => this.d());
@@ -545,7 +552,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const section = (title: string, body: string) =>
         `------------------ ${title} ------------------\n${body}`;
       return [
-        section('show version', Show.showVersion(r)),
+        section('show version', Show.showVersion(r, this.getChassisProfile())),
         section('show running-config', Show.showRunningConfig(r)),
         section('show ip interface brief', Show.showIpIntBrief(r)),
         section('show ip route', Show.showIpRoute(r)),
@@ -594,7 +601,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return Show.showRunningConfigInterface(getRouter(), ifName);
     });
 
-    trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter()));
+    trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter(), this.getChassisProfile()));
 
     // `show interface[s] [<name>|description|status|summary]`.
     // Registered under both the singular and plural IOS spellings;

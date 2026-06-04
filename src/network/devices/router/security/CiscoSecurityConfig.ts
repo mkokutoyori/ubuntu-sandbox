@@ -206,6 +206,20 @@ export interface TimeRange {
   periodic: TimeRangePeriodic[];
 }
 
+export interface PkiTrustpoint {
+  name: string;
+  enrollmentUrl?: string;
+  subjectName?: string;
+  revocationCheck?: 'crl' | 'none' | 'ocsp' | 'crl-or-ocsp' | 'crl-then-ocsp';
+  rsaKeypair?: string;
+  fingerprint?: string;
+  fqdn?: string;
+  ipAddress?: 'none' | string;
+  serialNumber?: 'none' | string;
+  autoEnroll?: { percent?: number; regenerate?: boolean };
+  source?: 'self-signed' | 'scep' | 'terminal';
+}
+
 export interface ParameterMapInspect {
   name: string;
   auditTrail?: boolean;
@@ -250,6 +264,16 @@ export class CiscoSecurityConfig {
 
   timeRanges: Map<string, TimeRange> = new Map();
   parameterMapsInspect: Map<string, ParameterMapInspect> = new Map();
+  pkiTrustpoints: Map<string, PkiTrustpoint> = new Map();
+
+  ensurePkiTrustpoint(name: string): PkiTrustpoint {
+    let tp = this.pkiTrustpoints.get(name);
+    if (!tp) {
+      tp = { name };
+      this.pkiTrustpoints.set(name, tp);
+    }
+    return tp;
+  }
 
   ensureParameterMapInspect(name: string): ParameterMapInspect {
     let pm = this.parameterMapsInspect.get(name);
@@ -386,6 +410,19 @@ export class CiscoSecurityConfig {
           else if (a.kind === 'set-precedence') lines.push(`  set precedence ${a.args[0]}`);
         }
       }
+    }
+    for (const tp of this.pkiTrustpoints.values()) {
+      lines.push(`crypto pki trustpoint ${tp.name}`);
+      if (tp.enrollmentUrl) lines.push(` enrollment url ${tp.enrollmentUrl}`);
+      if (tp.subjectName) lines.push(` subject-name ${tp.subjectName}`);
+      if (tp.revocationCheck) lines.push(` revocation-check ${tp.revocationCheck}`);
+      if (tp.rsaKeypair) lines.push(` rsakeypair ${tp.rsaKeypair}`);
+      if (tp.fqdn) lines.push(` fqdn ${tp.fqdn}`);
+      if (tp.ipAddress) lines.push(` ip-address ${tp.ipAddress}`);
+      if (tp.serialNumber) lines.push(` serial-number ${tp.serialNumber}`);
+      if (tp.autoEnroll) lines.push(` auto-enroll${tp.autoEnroll.percent ? ` ${tp.autoEnroll.percent}` : ''}${tp.autoEnroll.regenerate ? ' regenerate' : ''}`);
+      if (tp.fingerprint) lines.push(` fingerprint ${tp.fingerprint}`);
+      if (tp.source) lines.push(` enrollment ${tp.source}`);
     }
     if (this.controlPlane.servicePolicyInput || this.controlPlane.servicePolicyOutput) {
       lines.push('control-plane');

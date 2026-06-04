@@ -28,7 +28,8 @@ export type CiscoShellMode =
   | 'config-ikev2-keyring' | 'config-ikev2-keyring-peer' | 'config-ikev2-profile'
   | 'config-time-range' | 'config-cmap' | 'config-pmap' | 'config-pmap-c'
   | 'config-cp' | 'config-zone' | 'config-zone-pair'
-  | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group';
+  | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group'
+  | 'config-ca-trustpoint';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */

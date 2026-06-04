@@ -85,15 +85,30 @@ export function displayPortSecurity(): string {
  * both the switch and the router. Wired into the system-view trie of
  * each shell — single source so the list isn't duplicated (DRY).
  */
-export function registerHuaweiCommonSecurity(trie: CommandTrie): void {
-  // Only keywords with NO richer per-shell handling — registering
-  // dhcp/ip/arp/undo here would shadow the router's own commands.
-  for (const kw of [
-    'stelnet', 'telnet', 'ssh', 'snmp-agent', 'ntp-service',
-    'clock', 'info-center', 'sflow',
-  ]) {
-    trie.registerGreedy(kw, `${kw} configuration`, () => '');
-  }
+export function registerHuaweiCommonSecurity(trie: CommandTrie, getRouter?: () => { getManagementService: () => import('../../router/management/RouterManagementService').RouterManagementService }): void {
+  const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'snmp-agent' | 'ntp-service' | 'clock' | 'info-center' | 'sflow', args: string[]) => {
+    if (!getRouter) return '';
+    const mgmt = getRouter().getManagementService();
+    switch (feature) {
+      case 'stelnet': mgmt.configureStelnet(args); break;
+      case 'telnet': mgmt.configureTelnet(args); break;
+      case 'ssh': mgmt.configureSsh(args); break;
+      case 'snmp-agent': mgmt.configureSnmp(args); break;
+      case 'ntp-service': mgmt.configureNtp(args); break;
+      case 'clock': mgmt.configureClock(args); break;
+      case 'info-center': mgmt.configureInfoCenter(args); break;
+      case 'sflow': mgmt.configureSflow(args); break;
+    }
+    return '';
+  };
+  trie.registerGreedy('stelnet', 'STelnet configuration', (args) => dispatch('stelnet', args));
+  trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
+  trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
+  trie.registerGreedy('snmp-agent', 'SNMP agent configuration', (args) => dispatch('snmp-agent', args));
+  trie.registerGreedy('ntp-service', 'NTP service configuration', (args) => dispatch('ntp-service', args));
+  trie.registerGreedy('clock', 'Clock configuration', (args) => dispatch('clock', args));
+  trie.registerGreedy('info-center', 'Information center configuration', (args) => dispatch('info-center', args));
+  trie.registerGreedy('sflow', 'sFlow configuration', (args) => dispatch('sflow', args));
 }
 
 /** Register the shared management `display` commands. */

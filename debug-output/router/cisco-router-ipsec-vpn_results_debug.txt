@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-03T19:59:32.555Z
+Generated: 2026-06-04T08:19:57.647Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -179,19 +179,13 @@ Total steps: 370
 <empty>
 
 [57/370] r1 R1(config)# crypto isakmp invalid-spi-recovery
-  % Invalid input detected at '^' marker.
-  crypto isakmp invalid-spi-recovery
-                ^
+<empty>
 
 [58/370] r1 R1(config)# crypto isakmp identity address
-  % Invalid input detected at '^' marker.
-  crypto isakmp identity address
-                ^
+<empty>
 
 [59/370] r1 R1(config)# crypto isakmp identity hostname
-  % Invalid input detected at '^' marker.
-  crypto isakmp identity hostname
-                ^
+<empty>
 
 [60/370] r1 R1(config)# crypto isakmp aggressive-mode disable
 <empty>
@@ -279,9 +273,7 @@ Total steps: 370
   There are no IKEv1 SAs (no SA established)
 
 [71/370] r1 R1# show crypto isakmp profile
-  % Invalid input detected at '^' marker.
-  show crypto isakmp profile
-                     ^
+  No active ISAKMP profile sessions
 
 
 --- [72] § IPsec transform-sets / profiles ---
@@ -404,25 +396,23 @@ Total steps: 370
 
 [103/370] r1 R1# show crypto ipsec transform-set
   Transform set TS1: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
   Transform set TS2: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Transport, },
+     will negotiate = { Transport },
   Transform set TS3: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Transport, },
+     will negotiate = { Transport },
   Transform set TS4: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Transport, },
+     will negotiate = { Transport },
   Transform set TS5: { esp-aes 256 esp-sha256-hmac }
-     will negotiate = { Transport, },
+     will negotiate = { Transport },
   Transform set TS-GCM: { esp-gcm 256 }
-     will negotiate = { Tunnel, },
+     will negotiate = { Tunnel },
 
 [104/370] r1 R1# show crypto ipsec profile
   No IPSec profiles configured.
 
 [105/370] r1 R1# show crypto ipsec security-association lifetime
-  % Invalid input detected at '^' marker.
-  show crypto ipsec security-association lifetime
-                    ^
+  Security association lifetime: 4608000 kilobytes / 3600 seconds
 
 
 --- [106] § crypto map (static/dynamic) ---
@@ -454,9 +444,7 @@ Total steps: 370
 <empty>
 
 [115/370] r1 R1(config-crypto-map)# description TUNNEL-1
-  % Invalid input detected at '^' marker.
-  description TUNNEL-1
-  ^
+<empty>
 
 [116/370] r1 R1(config-crypto-map)# exit
 <empty>
@@ -480,9 +468,7 @@ Total steps: 370
 <empty>
 
 [123/370] r1 R1(config-crypto-map)# description TUNNEL-2
-  % Invalid input detected at '^' marker.
-  description TUNNEL-2
-  ^
+<empty>
 
 [124/370] r1 R1(config-crypto-map)# exit
 <empty>
@@ -506,9 +492,7 @@ Total steps: 370
 <empty>
 
 [131/370] r1 R1(config-crypto-map)# description TUNNEL-3
-  % Invalid input detected at '^' marker.
-  description TUNNEL-3
-  ^
+<empty>
 
 [132/370] r1 R1(config-crypto-map)# exit
 <empty>
@@ -520,9 +504,7 @@ Total steps: 370
 <empty>
 
 [135/370] r1 R1(config-crypto-map)# reverse-route
-  % Invalid input detected at '^' marker.
-  reverse-route
-  ^
+<empty>
 
 [136/370] r1 R1(config-crypto-map)# exit
 <empty>
@@ -580,11 +562,58 @@ Total steps: 370
   	Interfaces using crypto map CMAP:
   		GigabitEthernet0/1
   Crypto Map "CMAP" 100 ipsec-isakmp dynamic DMAP
+  Crypto Map "DMAP" 10 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DMAP:
 
 [144/370] r1 R1# show crypto map interface GigabitEthernet0/1
-  % Invalid input detected at '^' marker.
-  show crypto map interface GigabitEthernet0/1
-                  ^
+  Crypto Map "CMAP" 10 ipsec-isakmp
+  	Peer = 10.0.0.2
+  	Extended IP access list 110
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS1: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 20 ipsec-isakmp
+  	Peer = 10.0.0.3
+  	Extended IP access list 111
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS2: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 30 ipsec-isakmp
+  	Peer = 10.0.0.4
+  	Extended IP access list 112
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): Y
+  	DH group: group14
+  	Transform sets={
+  		TS3: { esp-aes 256 esp-sha256-hmac },
+  	}
+  	Interfaces using crypto map CMAP:
+  		GigabitEthernet0/1
+  Crypto Map "CMAP" 100 ipsec-isakmp dynamic DMAP
+  Crypto Map "DMAP" 10 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DMAP:
 
 [145/370] r1 R1# show crypto ipsec sa
   No IPSec SAs established.
@@ -593,9 +622,7 @@ Total steps: 370
   No IPSec SAs established.
 
 [147/370] r1 R1# show crypto engine connections active
-  % Invalid input detected at '^' marker.
-  show crypto engine connections active
-                     ^
+  No active crypto sessions.
 
 
 --- [148] § IKEv2 ---
@@ -615,9 +642,7 @@ Total steps: 370
 <empty>
 
 [153/370] r1 R1(config-ikev2-proposal)# prf sha256
-  % Invalid input detected at '^' marker.
-  prf sha256
-  ^
+<empty>
 
 [154/370] r1 R1(config-ikev2-proposal)# exit
 <empty>
@@ -662,9 +687,7 @@ Total steps: 370
 <empty>
 
 [168/370] r1 R1(config-ikev2-profile)# identity local address 10.0.0.1
-  % Invalid input detected at '^' marker.
-  identity local address 10.0.0.1
-  ^
+<empty>
 
 [169/370] r1 R1(config-ikev2-profile)# authentication local pre-share
 <empty>
@@ -676,14 +699,10 @@ Total steps: 370
 <empty>
 
 [172/370] r1 R1(config-ikev2-profile)# lifetime 86400
-  % Invalid input detected at '^' marker.
-  lifetime 86400
-  ^
+<empty>
 
 [173/370] r1 R1(config-ikev2-profile)# dpd 10 3 periodic
-  % Invalid input detected at '^' marker.
-  dpd 10 3 periodic
-  ^
+<empty>
 
 [174/370] r1 R1(config-ikev2-profile)# exit
 <empty>
@@ -743,14 +762,11 @@ Total steps: 370
   There are no IKEv2 SAs.
 
 [185/370] r1 R1# show crypto ikev2 sa detailed
-  % Invalid input detected at '^' marker.
-  show crypto ikev2 sa detailed
-                       ^
+  There are no IKEv2 SAs.
+  
 
 [186/370] r1 R1# show crypto ikev2 stats
-  % Invalid input detected at '^' marker.
-  show crypto ikev2 stats
-                    ^
+  Crypto IKEv2 stats not available
 
 
 --- [187] § sVTI / dVTI / GRE-over-IPsec ---
@@ -770,9 +786,7 @@ Total steps: 370
 <empty>
 
 [192/370] r1 R1(config-if)# tunnel mode ipsec ipv4
-  % Invalid input detected at '^' marker.
-  tunnel mode ipsec ipv4
-         ^
+<empty>
 
 [193/370] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF
 <empty>
@@ -793,9 +807,7 @@ Total steps: 370
 <empty>
 
 [199/370] r1 R1(config-if)# tunnel mode gre ip
-  % Invalid input detected at '^' marker.
-  tunnel mode gre ip
-         ^
+<empty>
 
 [200/370] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF shared
 <empty>
@@ -848,17 +860,13 @@ Total steps: 370
     Tunnel protocol/transport GRE/IP
 
 [212/370] r1 R1# show crypto ipsec sa interface Tunnel0
-  % Invalid input detected at '^' marker.
-  show crypto ipsec sa interface Tunnel0
-                       ^
+  No IPSec SAs established.
 
 [213/370] r1 R1# show crypto session
   No active crypto sessions.
 
 [214/370] r1 R1# show crypto session detail
-  % Invalid input detected at '^' marker.
-  show crypto session detail
-                      ^
+  No active crypto sessions.
 
 
 --- [215] § DMVPN / NHRP ---
@@ -875,54 +883,34 @@ Total steps: 370
 <empty>
 
 [219/370] r1 R1(config-if)# tunnel mode gre multipoint
-  % Invalid input detected at '^' marker.
-  tunnel mode gre multipoint
-         ^
+<empty>
 
 [220/370] r1 R1(config-if)# tunnel key 100
-  % Invalid input detected at '^' marker.
-  tunnel key 100
-         ^
+<empty>
 
 [221/370] r1 R1(config-if)# ip nhrp authentication NHRPKEY
-  % Invalid input detected at '^' marker.
-  ip nhrp authentication NHRPKEY
-     ^
+<empty>
 
 [222/370] r1 R1(config-if)# ip nhrp network-id 100
-  % Invalid input detected at '^' marker.
-  ip nhrp network-id 100
-     ^
+<empty>
 
 [223/370] r1 R1(config-if)# ip nhrp map 172.20.0.2 10.0.0.2
-  % Invalid input detected at '^' marker.
-  ip nhrp map 172.20.0.2 10.0.0.2
-     ^
+<empty>
 
 [224/370] r1 R1(config-if)# ip nhrp map multicast 10.0.0.2
-  % Invalid input detected at '^' marker.
-  ip nhrp map multicast 10.0.0.2
-     ^
+<empty>
 
 [225/370] r1 R1(config-if)# ip nhrp nhs 172.20.0.2
-  % Invalid input detected at '^' marker.
-  ip nhrp nhs 172.20.0.2
-     ^
+<empty>
 
 [226/370] r1 R1(config-if)# ip nhrp holdtime 600
-  % Invalid input detected at '^' marker.
-  ip nhrp holdtime 600
-     ^
+<empty>
 
 [227/370] r1 R1(config-if)# ip nhrp shortcut
-  % Invalid input detected at '^' marker.
-  ip nhrp shortcut
-     ^
+<empty>
 
 [228/370] r1 R1(config-if)# ip nhrp redirect
-  % Invalid input detected at '^' marker.
-  ip nhrp redirect
-     ^
+<empty>
 
 [229/370] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF
 <empty>
@@ -934,24 +922,38 @@ Total steps: 370
 <empty>
 
 [232/370] r1 R1# show ip nhrp
-  % Invalid input detected at '^' marker.
-  show ip nhrp
-          ^
+  IP NHRP cache:
+  172.20.0.2/32 via 10.0.0.2, Tunnel100 created 0s ago
+    Type: static, Flags: S
+    NBMA address: 10.0.0.2
+  224.0.0.0/32 via 10.0.0.2, Tunnel100 created 0s ago
+    Type: static, Flags: M
+    NBMA address: 10.0.0.2
 
 [233/370] r1 R1# show ip nhrp brief
-  % Invalid input detected at '^' marker.
-  show ip nhrp brief
-          ^
+  Target            Via                NBMA Address        Interface
+  172.20.0.2/32     172.20.0.2         10.0.0.2            Tunnel100
+  224.0.0.0/32      224.0.0.0          10.0.0.2            Tunnel100
 
 [234/370] r1 R1# show dmvpn
-  % Invalid input detected at '^' marker.
-  show dmvpn
-       ^
+  Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
+          N - NATed, L - Local, X - No Socket
+  
+  Interface: Tunnel100, IPv4 NHRP Details
+  Type: Hub, NHRP Peers: 0, Phase: 3
+  
+   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
+   ----- --------------- --------------- ----- -------- -----
 
 [235/370] r1 R1# show dmvpn detail
-  % Invalid input detected at '^' marker.
-  show dmvpn detail
-       ^
+  Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
+          N - NATed, L - Local, X - No Socket
+  
+  Interface: Tunnel100, IPv4 NHRP Details
+  Type: Hub, NHRP Peers: 0, Phase: 3
+  
+   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
+   ----- --------------- --------------- ----- -------- -----
 
 
 --- [236] § PKI / trustpoint ---
@@ -961,56 +963,44 @@ Total steps: 370
 [237/370] r1 R1(config)# crypto pki trustpoint CA1
 <empty>
 
-[238/370] r1 R1(config)# enrollment url http://10.0.0.5:80
-  % Invalid input detected at '^' marker.
-  enrollment url http://10.0.0.5:80
-  ^
-
-[239/370] r1 R1(config)# subject-name CN=R1.lab.local
-  % Invalid input detected at '^' marker.
-  subject-name CN=R1.lab.local
-  ^
-
-[240/370] r1 R1(config)# revocation-check crl
-  % Invalid input detected at '^' marker.
-  revocation-check crl
-  ^
-
-[241/370] r1 R1(config)# rsakeypair SSH-KEY
-  % Invalid input detected at '^' marker.
-  rsakeypair SSH-KEY
-  ^
-
-[242/370] r1 R1(config)# exit
+[238/370] r1 R1(ca-trustpoint)# enrollment url http://10.0.0.5:80
 <empty>
 
-[243/370] r1 R1# crypto pki authenticate CA1
-  % Invalid input detected at '^' marker.
-  crypto pki authenticate CA1
-  ^
+[239/370] r1 R1(ca-trustpoint)# subject-name CN=R1.lab.local
+<empty>
 
-[244/370] r1 R1# crypto pki enroll CA1
-  % Invalid input detected at '^' marker.
-  crypto pki enroll CA1
-  ^
+[240/370] r1 R1(ca-trustpoint)# revocation-check crl
+<empty>
 
-[245/370] r1 R1# end
+[241/370] r1 R1(ca-trustpoint)# rsakeypair SSH-KEY
+<empty>
+
+[242/370] r1 R1(ca-trustpoint)# exit
+<empty>
+
+[243/370] r1 R1(config)# crypto pki authenticate CA1
+  % Trustpoint CA1 CA certificate accepted
+
+[244/370] r1 R1(config)# crypto pki enroll CA1
+  % Start certificate enrollment for trustpoint CA1
+  % Certificate request sent to Certificate Authority
+
+[245/370] r1 R1(config)# end
 <empty>
 
 [246/370] r1 R1# show crypto pki trustpoints
-  % Invalid input detected at '^' marker.
-  show crypto pki trustpoints
-              ^
+  Trustpoint CA1:
+      Subject Name: CN=R1.lab.local
+      Enrollment URL: http://10.0.0.5:80
+      Revocation Check: crl
+      RSA Keypair: SSH-KEY
 
 [247/370] r1 R1# show crypto pki certificates
-  % Invalid input detected at '^' marker.
-  show crypto pki certificates
-              ^
+  Certificate (Trustpoint CA1):
+    Status: Pending enrollment
 
 [248/370] r1 R1# show crypto pki certificates verbose
-  % Invalid input detected at '^' marker.
-  show crypto pki certificates verbose
-              ^
+  No PKI certificates installed
 
 
 --- [249] § crypto clear / debug ---
@@ -1073,9 +1063,8 @@ Total steps: 370
   Number of IKEv2 SAs: 0
 
 [260/370] r1 R1(config)# show crypto eli
-  % Invalid input detected at '^' marker.
-  show crypto eli
-              ^
+  Hardware Encryption Layer: not available
+  Cryptographic API library: software
 
 
 --- [261] § regression: show family ---
@@ -1117,10 +1106,10 @@ Total steps: 370
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
@@ -1129,17 +1118,123 @@ Total steps: 370
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  crypto pki trustpoint CA1
+   enrollment url http://10.0.0.5:80
+   subject-name CN=R1.lab.local
+   revocation-check crl
+   rsakeypair SSH-KEY
+  !
+  crypto isakmp policy 10
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 2
+   lifetime 3600
+  crypto isakmp policy 20
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 5
+   lifetime 7200
+  crypto isakmp policy 30
+   encryption aes 128
+   hash sha256
+   authentication pre-share
+   group 14
+   lifetime 10800
+  crypto isakmp policy 40
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 19
+   lifetime 14400
+  crypto isakmp policy 50
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 24
+   lifetime 18000
+  crypto isakmp key MyPreShared0 address 10.0.0.2
+  crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp keepalive 20 3
+  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
+  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS-GCM esp-gcm 256
+  crypto map CMAP 10 ipsec-isakmp
+   set peer 10.0.0.2
+   set transform-set TS1
+   match address 110
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 20 ipsec-isakmp
+   set peer 10.0.0.3
+   set transform-set TS2
+   match address 111
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 30 ipsec-isakmp
+   set peer 10.0.0.4
+   set transform-set TS3
+   match address 112
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
+  crypto map DMAP 10 ipsec-isakmp
+  crypto dynamic-map DMAP 10
+   set transform-set TS1
+  crypto ikev2 proposal IKEV2-PROP
+   encryption aes-cbc-256 aes-gcm-256
+   integrity sha256 sha512
+   group 14 19 21
+  crypto ikev2 policy IKEV2-POL
+   proposal IKEV2-PROP
+   match address local 10.0.0.1
+  crypto ikev2 keyring IKEV2-KR
+   peer PEER1
+    address 10.0.0.2
+    pre-shared-key remote
+  crypto ikev2 profile IKEV2-PROF
+   match identity remote address 10.0.0.2
+   authentication local pre-share
+   authentication remote pre-share
+   keyring local IKEV2-KR
   !
   end
 
@@ -1176,7 +1271,7 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1184,7 +1279,7 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1350,6 +1445,14 @@ Total steps: 370
   	Interfaces using crypto map CMAP:
   		GigabitEthernet0/1
   Crypto Map "CMAP" 100 ipsec-isakmp dynamic DMAP
+  Crypto Map "DMAP" 10 ipsec-isakmp
+  	Peer = 
+  	Extended IP access list 
+  	Security association lifetime: 4608000 kilobytes/3600 seconds
+  	PFS (Y/N): N
+  	Transform sets={
+  	}
+  	Interfaces using crypto map DMAP:
 
 [291/370] r1 R1(config)# show standby brief
                        P indicates configured to preempt.
@@ -1387,7 +1490,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCB0624.9645A1CA (19:59:32.587 UTC Wed Jun 3 2026)
+  reference time is EDCBB3AD.AF9DB22D (08:19:57.686 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1396,7 +1499,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *19:59:32.000 UTC Wed Jun 3 2026
+  *08:19:57.000 UTC Thu Jun 4 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1425,8 +1528,8 @@ Total steps: 370
 
 [304/370] r1 R1(config)# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    134217728    41943040    92274688    90000000    91000000
-  I/O          5D6E7F8     16777216     4194304    12582912    12000000    12500000
+  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
+  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
 
 [305/370] r1 R1(config)# show flash
   Directory of flash:/
@@ -1570,10 +1673,10 @@ Total steps: 370
    no shutdown
   !
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   !
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
@@ -1582,17 +1685,123 @@ Total steps: 370
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
   !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  !
+  !
+  crypto pki trustpoint CA1
+   enrollment url http://10.0.0.5:80
+   subject-name CN=R1.lab.local
+   revocation-check crl
+   rsakeypair SSH-KEY
+  !
+  crypto isakmp policy 10
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 2
+   lifetime 3600
+  crypto isakmp policy 20
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 5
+   lifetime 7200
+  crypto isakmp policy 30
+   encryption aes 128
+   hash sha256
+   authentication pre-share
+   group 14
+   lifetime 10800
+  crypto isakmp policy 40
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 19
+   lifetime 14400
+  crypto isakmp policy 50
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 24
+   lifetime 18000
+  crypto isakmp key MyPreShared0 address 10.0.0.2
+  crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp keepalive 20 3
+  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
+  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS-GCM esp-gcm 256
+  crypto map CMAP 10 ipsec-isakmp
+   set peer 10.0.0.2
+   set transform-set TS1
+   match address 110
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 20 ipsec-isakmp
+   set peer 10.0.0.3
+   set transform-set TS2
+   match address 111
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 30 ipsec-isakmp
+   set peer 10.0.0.4
+   set transform-set TS3
+   match address 112
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
+  crypto map DMAP 10 ipsec-isakmp
+  crypto dynamic-map DMAP 10
+   set transform-set TS1
+  crypto ikev2 proposal IKEV2-PROP
+   encryption aes-cbc-256 aes-gcm-256
+   integrity sha256 sha512
+   group 14 19 21
+  crypto ikev2 policy IKEV2-POL
+   proposal IKEV2-PROP
+   match address local 10.0.0.1
+  crypto ikev2 keyring IKEV2-KR
+   peer PEER1
+    address 10.0.0.2
+    pre-shared-key remote
+  crypto ikev2 profile IKEV2-PROF
+   match identity remote address 10.0.0.2
+   authentication local pre-share
+   authentication remote pre-share
+   keyring local IKEV2-KR
   !
   end
   
@@ -1636,7 +1845,7 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/2 is up, line protocol is down
+  GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1644,7 +1853,7 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
-  GigabitEthernet0/3 is up, line protocol is down
+  GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1754,21 +1963,38 @@ Total steps: 370
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
 
 [326/370] r1 R1(config)# show running-config | begin line
 <empty>
@@ -1786,23 +2012,126 @@ Total steps: 370
    ip address 10.0.0.1 255.255.255.252
    no shutdown
   interface GigabitEthernet0/2
-   shutdown
+   no shutdown
   interface GigabitEthernet0/3
-   shutdown
+   no shutdown
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
    no shutdown
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    no shutdown
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    no shutdown
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    no shutdown
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  crypto pki trustpoint CA1
+   enrollment url http://10.0.0.5:80
+   subject-name CN=R1.lab.local
+   revocation-check crl
+   rsakeypair SSH-KEY
+  crypto isakmp policy 10
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 2
+   lifetime 3600
+  crypto isakmp policy 20
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 5
+   lifetime 7200
+  crypto isakmp policy 30
+   encryption aes 128
+   hash sha256
+   authentication pre-share
+   group 14
+   lifetime 10800
+  crypto isakmp policy 40
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 19
+   lifetime 14400
+  crypto isakmp policy 50
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 24
+   lifetime 18000
+  crypto isakmp key MyPreShared0 address 10.0.0.2
+  crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp keepalive 20 3
+  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
+  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
+   mode transport
+  crypto ipsec transform-set TS-GCM esp-gcm 256
+  crypto map CMAP 10 ipsec-isakmp
+   set peer 10.0.0.2
+   set transform-set TS1
+   match address 110
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 20 ipsec-isakmp
+   set peer 10.0.0.3
+   set transform-set TS2
+   match address 111
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 30 ipsec-isakmp
+   set peer 10.0.0.4
+   set transform-set TS3
+   match address 112
+   set pfs group14
+   set security-association lifetime seconds 3600
+  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
+  crypto map DMAP 10 ipsec-isakmp
+  crypto dynamic-map DMAP 10
+   set transform-set TS1
+  crypto ikev2 proposal IKEV2-PROP
+   encryption aes-cbc-256 aes-gcm-256
+   integrity sha256 sha512
+   group 14 19 21
+  crypto ikev2 policy IKEV2-POL
+   proposal IKEV2-PROP
+   match address local 10.0.0.1
+  crypto ikev2 keyring IKEV2-KR
+   peer PEER1
+    address 10.0.0.2
+    pre-shared-key remote
+  crypto ikev2 profile IKEV2-PROF
+   match identity remote address 10.0.0.2
+   authentication local pre-share
+   authentication remote pre-share
+   keyring local IKEV2-KR
   end
 
 [328/370] r1 R1(config)# show ip route | include via
@@ -1962,6 +2291,7 @@ Total steps: 370
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
     key          key
+    pki          pki
     <cr>         
 
 [367/370] r1 R1(config)# no ?
@@ -1987,7 +2317,7 @@ Total steps: 370
 <empty>
 
 [369/370] r1 R1# show running-config | count !
-  15
+  17
 
 [370/370] r1 R1# write memory
   Building configuration...

@@ -54,7 +54,16 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
   });
 
   // ip routing
-  configTrie.register('ip routing', 'Enable IP routing', () => '');
+  configTrie.register('ip routing', 'Enable IP routing', () => {
+    const r = ctx.r() as unknown as { _setIpRoutingEnabled?: (e: boolean) => void };
+    r._setIpRoutingEnabled?.(true);
+    return '';
+  });
+  configTrie.register('no ip routing', 'Disable IP routing', () => {
+    const r = ctx.r() as unknown as { _setIpRoutingEnabled?: (e: boolean) => void };
+    r._setIpRoutingEnabled?.(false);
+    return '';
+  });
 }
 
 // ─── Config-Router Mode: OSPF sub-commands ───────────────────────────
@@ -401,7 +410,16 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-  trie.register('version 2', 'Use RIPv2', () => '');
+  trie.register('version 2', 'Use RIPv2', () => {
+    const r = ctx.r() as unknown as { _setRipVersion?: (v: 1 | 2) => void };
+    r._setRipVersion?.(2);
+    return '';
+  });
+  trie.register('version 1', 'Use RIPv1', () => {
+    const r = ctx.r() as unknown as { _setRipVersion?: (v: 1 | 2) => void };
+    r._setRipVersion?.(1);
+    return '';
+  });
 }
 
 // ─── Config-Router Mode: OSPFv3 sub-commands ──────────────────────────
@@ -763,7 +781,21 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   // BFD on interface
-  configIfTrie.registerGreedy('bfd', 'BFD configuration', (_args) => '');
+  configIfTrie.registerGreedy('bfd', 'BFD configuration', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'interval' && args[1]) (pending as any).bfdInterval = parseInt(args[1], 10);
+    else if (sub === 'min_rx' && args[1]) (pending as any).bfdMinRx = parseInt(args[1], 10);
+    else if (sub === 'multiplier' && args[1]) (pending as any).bfdMultiplier = parseInt(args[1], 10);
+    else if (sub === 'template' && args[1]) (pending as any).bfdTemplate = args[1];
+    else if (sub === 'echo') (pending as any).bfdEcho = true;
+    else (pending as any).bfd = args.join(' ');
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
 
   // IPv6 OSPF interface commands - store pending config + apply if exists
   const setPendingV3If = (ifName: string, updates: Record<string, any>) => {
@@ -851,7 +883,24 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   // Frame relay (no-op for simulation)
-  configIfTrie.registerGreedy('frame-relay', 'Frame relay configuration', (_args) => '');
+  configIfTrie.registerGreedy('frame-relay', 'Frame-relay configuration', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    const fr = ((pending as any).frameRelay ??= {}) as Record<string, unknown>;
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'interface-dlci' && args[1]) fr.dlci = parseInt(args[1], 10);
+    else if (sub === 'map' && args[1] === 'ip' && args[2] && args[3]) {
+      const maps = ((fr.maps ??= []) as Array<{ ip: string; dlci: number }>);
+      maps.push({ ip: args[2], dlci: parseInt(args[3], 10) });
+    }
+    else if (sub === 'lmi-type' && args[1]) fr.lmiType = args[1];
+    else if (sub === 'inverse-arp') fr.inverseArp = true;
+    else if (args[0]) fr[args[0]] = args.slice(1).join(' ') || true;
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
 
   // Tunnel commands
   configIfTrie.registerGreedy('tunnel source', 'Set tunnel source', (args) => {
@@ -872,6 +921,72 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     const pending = extra.pendingIfConfig.get(ifName) || {};
     (pending as any).tunnelDest = args[0];
     extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel mode', 'Set tunnel encapsulation mode', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    const joined = args.join(' ').toLowerCase();
+    (pending as any).tunnelMode = joined;
+    extra.pendingIfConfig.set(ifName, pending);
+    if (joined === 'gre multipoint') {
+      ctx.r().getDmvpnService().registerTunnel({ ifName, role: 'hub', phase: 3 });
+    }
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel key', 'Set tunnel key', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelKey = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel vrf', 'Set tunnel VRF', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    (pending as any).tunnelVrf = args[0];
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+  configIfTrie.registerGreedy('tunnel path-mtu-discovery', 'Tunnel PMTUD', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const extra = ctx.r()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(ifName) || {};
+    const cfg: { enabled: boolean; ageTimer?: number; minMtu?: number } = { enabled: true };
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === 'age-timer' && args[i + 1]) cfg.ageTimer = parseInt(args[i + 1], 10);
+      if (args[i] === 'min-mtu' && args[i + 1]) cfg.minMtu = parseInt(args[i + 1], 10);
+    }
+    (pending as any).tunnelPathMtuDiscovery = cfg;
+    extra.pendingIfConfig.set(ifName, pending);
+    return '';
+  });
+
+  configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const svc = ctx.r().getNhrpService();
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'authentication' && args[1]) svc.configure(ifName, { authentication: args[1] });
+    else if (sub === 'network-id' && args[1]) svc.configure(ifName, { networkId: parseInt(args[1], 10) });
+    else if (sub === 'holdtime' && args[1]) svc.configure(ifName, { holdtimeSec: parseInt(args[1], 10) });
+    else if (sub === 'map' && args[1]?.toLowerCase() === 'multicast' && args[2]) {
+      svc.addMapping(ifName, '224.0.0.0', args[2], { multicast: true });
+    }
+    else if (sub === 'map' && args[1] && args[2]) {
+      svc.addMapping(ifName, args[1], args[2], { static: true });
+    }
+    else if (sub === 'nhs' && args[1]) svc.addNhsServer(ifName, args[1]);
+    else if (sub === 'shortcut') svc.configure(ifName, { shortcut: true });
+    else if (sub === 'redirect') svc.configure(ifName, { redirect: true });
     return '';
   });
 }
@@ -911,14 +1026,28 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     if (!ospf) return '% OSPF is not enabled.';
     ospf.logAdjacencyChanges = true;
     const flag = args.join(' ').toLowerCase() || 'adj';
-    return `OSPF ${flag} debugging is on`;
+    const debugSvc = getRouter().getDebugService();
+    if (flag.startsWith('adj')) return debugSvc.enable('ip.ospf.adj');
+    if (flag.startsWith('events')) return debugSvc.enable('ip.ospf.events');
+    if (flag.startsWith('spf')) return debugSvc.enable('ip.ospf.spf');
+    if (flag.startsWith('hello')) return debugSvc.enable('ip.ospf.hello');
+    if (flag.startsWith('packet')) return debugSvc.enable('ip.ospf.packet');
+    if (flag.startsWith('lsa')) return debugSvc.enable('ip.ospf.lsa-generation');
+    return debugSvc.enable('ip.ospf.adj', flag);
   });
   trie.registerGreedy('no debug ip ospf', 'Disable OSPF debugging', (args) => {
     const ospf = getRouter()._getOSPFEngineInternal();
     if (!ospf) return '% OSPF is not enabled.';
     ospf.logAdjacencyChanges = false;
+    const debugSvc = getRouter().getDebugService();
     const flag = args.join(' ').toLowerCase() || 'adj';
-    return `OSPF ${flag} debugging is off`;
+    if (flag.startsWith('adj')) return debugSvc.disable('ip.ospf.adj');
+    if (flag.startsWith('events')) return debugSvc.disable('ip.ospf.events');
+    if (flag.startsWith('spf')) return debugSvc.disable('ip.ospf.spf');
+    if (flag.startsWith('hello')) return debugSvc.disable('ip.ospf.hello');
+    if (flag.startsWith('packet')) return debugSvc.disable('ip.ospf.packet');
+    if (flag.startsWith('lsa')) return debugSvc.disable('ip.ospf.lsa-generation');
+    return debugSvc.disable('ip.ospf.adj');
   });
 
   trie.registerGreedy('show ip ospf', 'Display OSPF information', (args) => {

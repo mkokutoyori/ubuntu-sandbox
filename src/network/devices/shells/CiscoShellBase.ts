@@ -26,7 +26,9 @@ import {
 import {
   showClock, showUsers, showInventory, showProcessesCpu,
   showMemoryStatistics, showFlash, showPrivilege,
-  showCdp, showLldp, showSnmp, showNtpStatus, showNtpAssociations,
+  showCdp, showLldp, showSnmp, showSnmpCommunity, showSnmpHost,
+  showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
+  showNtpStatus, showNtpAssociations,
   showLine, showIpSsh, showSshSessions, showHosts, showVrf, showBoot,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showProcessesMemory, showBuffers, showTcpBrief, showSockets,
@@ -55,6 +57,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Config-driven syslog/logging state, projected by `show logging`. */
   protected readonly logging = new LoggingConfig();
+
+  protected attachLoggingToDevice(device: TDevice): void {
+    (device as unknown as { _loggingConfig?: LoggingConfig })._loggingConfig = this.logging;
+  }
 
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
@@ -227,7 +233,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const lower = cmdPart.toLowerCase();
     if (lower === 'exit') return this.cmdExit();
     if (lower === 'end' || cmdPart === '\x03') return this.cmdEnd();
-    if (lower === 'logout' && this.mode === 'user') return 'Connection closed.';
+    if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
       return '';
@@ -325,6 +331,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       || this.mode === 'config-ipv6-nacl';
   }
 
+  private static readonly IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
+
+  protected resolveNtpTarget(target: string): string | null {
+    if (CiscoShellBase.IPV4_RE.test(target)) return target;
+    const dev = this.d() as unknown as { _getHostsTable?: () => { resolve?: (n: string) => string | null } };
+    const fromHosts = dev._getHostsTable?.().resolve?.(target);
+    if (fromHosts && CiscoShellBase.IPV4_RE.test(fromHosts)) return fromHosts;
+    return null;
+  }
+
   // ─── Help / Tab-Complete ────────────────────────────────────────
 
   getHelp(input: string): string {
@@ -361,7 +377,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
       showProcessesCpu());
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
-      showMemoryStatistics());
+      showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash', 'Display flash filesystem', () => showFlash(this.getChassisProfile()));
     trie.register('show privilege', 'Display current privilege level', () =>
       showPrivilege(this.mode === 'user' ? 1 : 15));
@@ -379,7 +395,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
       showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')));
-    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp());
+    trie.register('show snmp', 'Display SNMP status', () => showSnmp(this.cs()));
+    trie.register('show snmp community', 'Display SNMP communities', () => showSnmpCommunity(this.cs()));
+    trie.register('show snmp host', 'Display SNMP hosts', () => showSnmpHost(this.cs()));
+    trie.register('show snmp group', 'Display SNMP groups', () => showSnmpGroup(this.cs()));
+    trie.register('show snmp user', 'Display SNMP users', () => showSnmpUser(this.cs()));
+    trie.register('show snmp view', 'Display SNMP views', () => showSnmpView(this.cs()));
+    trie.register('show snmp engineID', 'Display SNMP engine ID', () => showSnmpEngineId(this.cs()));
+    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs()));
     trie.registerGreedy('show controllers', 'Display controller status', (a) =>
       showControllers(this.cs(), a.join(' ')));
     trie.registerGreedy('show environment', 'Display environment', () =>
@@ -702,6 +725,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.applyToLldpAgent(a => a.setHoldtimeMultiplier(n));
       return '';
     });
+    this.configTrie.registerGreedy('lldp holdtime', 'Holdtime in seconds', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 10 || n > 3600) return '% Invalid holdtime value (10-3600)';
+      this.applyToLldpAgent(a => {
+        const cfg = a.getConfig();
+        const mult = Math.max(2, Math.min(10, Math.round(n / cfg.timerSec)));
+        a.setHoldtimeMultiplier(mult);
+      });
+      return '';
+    });
     this.configTrie.registerGreedy('lldp reinit', 'Re-init delay (sec)', (args) => {
       const n = parseInt(args[0] ?? '', 10);
       if (isNaN(n) || n < 1 || n > 10) return '% Invalid reinit delay (1-10)';
@@ -785,6 +818,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('logging', 'Logging configuration', (args) => {
+      this.attachLoggingToDevice(this.d());
       this.logging.apply(args, false);
       this.syncSyslogAgent();
       return '';
@@ -799,10 +833,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const agent = (this.d() as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
       if (!agent) return '';
       if (a[0] === 'server' && a[1]) {
-        agent.addServer(a[1], a[2] === 'prefer' || a[3] === 'prefer');
+        const target = a[1];
+        const resolved = this.resolveNtpTarget(target);
+        if (!resolved) {
+          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+        }
+        agent.addServer(resolved, a[2] === 'prefer' || a[3] === 'prefer');
+      } else if (a[0] === 'peer' && a[1]) {
+        const resolved = this.resolveNtpTarget(a[1]);
+        if (!resolved) {
+          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+        }
+        agent.addServer(resolved, false);
       } else if (a[0] === 'master') {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
+      } else if (a[0] === 'source' && a[1]) {
+        (agent as unknown as { setSourceInterface?: (n: string) => void }).setSourceInterface?.(a[1]);
+      } else if (a[0] === 'authenticate') {
+        (agent as unknown as { setAuthenticate?: (e: boolean) => void }).setAuthenticate?.(true);
+      } else if (a[0] === 'authentication-key' && a[1] && a[2] === 'md5' && a[3]) {
+        (agent as unknown as { addAuthKey?: (id: number, algo: string, key: string) => void }).addAuthKey?.(parseInt(a[1], 10), 'md5', a[3]);
+      } else if (a[0] === 'trusted-key' && a[1]) {
+        (agent as unknown as { addTrustedKey?: (id: number) => void }).addTrustedKey?.(parseInt(a[1], 10));
+      } else if (a[0] === 'access-group' && a[1] && a[2]) {
+        (agent as unknown as { setAccessGroup?: (kind: string, acl: string) => void }).setAccessGroup?.(a[1], a[2]);
       }
       return '';
     });
@@ -814,7 +869,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (a[0] === 'master') { agent.setServerMode(false); agent.setLocalStratum(16); }
       return '';
     });
-    this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', () => '');
+    this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
+      const dev = this.d() as unknown as { getSnmpService?: () => import('./router/management/SnmpService').SnmpService };
+      const svc = dev.getSnmpService?.();
+      if (!svc) return '';
+      svc.configure(args);
+      return '';
+    });
+
+    this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt && args[0] && args[1]) {
+        const offsetHrs = parseInt(args[1], 10);
+        const offsetMin = parseInt(args[2] ?? '0', 10);
+        const cfg = mgmt.getClock();
+        cfg.timezone = args[0];
+        cfg.offsetMin = (isNaN(offsetHrs) ? 0 : offsetHrs) * 60 + (isNaN(offsetMin) ? 0 : offsetMin) * (offsetHrs < 0 ? -1 : 1);
+      }
+      return '';
+    });
+    this.configTrie.registerGreedy('clock summer-time', 'Configure daylight saving time', (args) => {
+      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const mgmt = dev.getManagementService?.();
+      if (mgmt && args[0]) {
+        const cfg = mgmt.getClock();
+        cfg.summerTimezone = args[0];
+        if (args[1]?.toLowerCase() === 'recurring') {
+          cfg.daylightStart = args.slice(2, 6).join(' ');
+          cfg.daylightEnd = args.slice(6, 10).join(' ');
+        }
+      }
+      return '';
+    });
+    this.configTrie.register('clock set', 'Set system clock', () => '');
+    this.configTrie.registerGreedy('clock', 'Clock configuration', () => '');
 
     // Management commands missing on BOTH switch & router → shared here
     // (DRY). Recognised; the sim has no AAA/crypto datapath.
