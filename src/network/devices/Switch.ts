@@ -48,6 +48,7 @@ import {
 } from '../arp/types';
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import type { ISwitchShell } from './shells/ISwitchShell';
+import { SwitchSecurityService } from './switch/SwitchSecurityService';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -106,7 +107,12 @@ export type STPPortState = 'blocking' | 'listening' | 'learning' | 'forwarding' 
 // ─── Switch Class (Abstract Base) ───────────────────────────────────
 
 export abstract class Switch extends Equipment {
-  // ─── MAC Table ──────────────────────────────────────────────────
+  private _securityService: SwitchSecurityService | null = null;
+  getSecurityService(): SwitchSecurityService {
+    if (!this._securityService) this._securityService = new SwitchSecurityService();
+    return this._securityService;
+  }
+
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macAgingTime: number = 300; // seconds
   private macAgingTimer: TimerHandle | null = null;

@@ -407,11 +407,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
     registerHuaweiCommonSecurity(this.systemTrie);
 
-    // Switch-only L2 security (no router equivalent → no shadow risk)
-    this.systemTrie.register('dhcp enable', 'Enable DHCP', () => '');
-    this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', () => '');
-    this.systemTrie.registerGreedy('arp anti-attack', 'ARP anti-attack configuration', () => '');
-    this.systemTrie.registerGreedy('ip source', 'IP source guard configuration', () => '');
+    this.systemTrie.register('dhcp enable', 'Enable DHCP', () => {
+      this.swRef.getSecurityService().setDhcpEnabled(true);
+      return '';
+    });
+    this.systemTrie.register('undo dhcp enable', 'Disable DHCP', () => {
+      this.swRef.getSecurityService().setDhcpEnabled(false);
+      return '';
+    });
+    this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', (args) => {
+      this.swRef.getSecurityService().configureDhcpSnooping(args);
+      return '';
+    });
+    this.systemTrie.registerGreedy('arp anti-attack', 'ARP anti-attack configuration', (args) => {
+      this.swRef.getSecurityService().configureArpAntiAttack(args);
+      return '';
+    });
+    this.systemTrie.registerGreedy('ip source', 'IP source guard configuration', (args) => {
+      this.swRef.getSecurityService().configureIpSource(args);
+      return '';
+    });
 
     // interface <name>  (incl. virtual Eth-Trunk; L3 types stay rejected)
     this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
