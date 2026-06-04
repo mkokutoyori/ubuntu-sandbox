@@ -1624,6 +1624,22 @@ export abstract class Router extends Equipment {
     return this._systemClockOverrideMs + (Date.now() - this._systemClockSetAtMs);
   }
 
+  private _startupConfigSnapshot: string | null = null;
+  _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
+  _eraseStartupConfig(): void { this._startupConfigSnapshot = null; }
+  _restoreStartupConfig(): boolean {
+    return this._startupConfigSnapshot !== null;
+  }
+  getStartupConfigSnapshot(): string | null { return this._startupConfigSnapshot; }
+
+  private _scheduledReloadAtMs: number | null = null;
+  _scheduleReload(when: 'immediate' | { atMs: number } | 'cancel'): void {
+    if (when === 'cancel') { this._scheduledReloadAtMs = null; return; }
+    if (when === 'immediate') { this._scheduledReloadAtMs = Date.now(); return; }
+    this._scheduledReloadAtMs = when.atMs;
+  }
+  _getScheduledReloadMs(): number | null { return this._scheduledReloadAtMs; }
+
   private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
   getRoutingTableLimit(): { max: number; thresholdPct?: number } | null { return this._routingTableLimit; }
   _setRoutingTableLimit(max: number | null, thresholdPct?: number): void {

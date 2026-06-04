@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-04T12:22:48.030Z
+Generated: 2026-06-04T12:27:25.906Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBEC98.0E147AE1 (12:22:48.055 UTC Thu Jun 4 2026)
+  reference time is EDCBEDAD.ED4FDF3B (12:27:25.927 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +509,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  13:22:48.000 CET Thu Jun 4 2026
+  13:27:25.000 CET Thu Jun 4 2026
 
 [128/322] r1 R1# show clock detail
-  13:22:48.000 CET Thu Jun 4 2026
+  13:27:25.000 CET Thu Jun 4 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  12:22:48 UTC Thu Jun 4 2026
+  12:27:25 UTC Thu Jun 4 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1305,7 +1305,7 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBEC98.122D0E56 (12:22:48.071 UTC Thu Jun 4 2026)
+  reference time is EDCBEDAD.F126E978 (12:27:25.942 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1318,7 +1318,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  13:22:48.000 CET Thu Jun 4 2026
+  13:27:25.000 CET Thu Jun 4 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2003,24 +2003,28 @@ Total steps: 322
     <cr>  
 
 [316/322] r1 R1(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
-    flow-export    Legacy NetFlow export
-    flow-cache     NetFlow cache timeout
-    route-cache    route-cache
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [317/322] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2045,6 +2049,7 @@ Total steps: 322
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-04T12:22:49.529Z
+Generated: 2026-06-04T12:27:27.318Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1191,14 +1191,10 @@ Total steps: 369
                            ^
 
 [257/369] r1 R1# debug ip nat
-  % Invalid input detected at '^' marker.
-  debug ip nat
-           ^
+  IP NAT debugging is on
 
 [258/369] r1 R1# debug ip nat detailed
-  % Invalid input detected at '^' marker.
-  debug ip nat detailed
-           ^
+  IP packet debugging is on for nat detailed
 
 [259/369] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1662,7 +1658,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBEC99.8E560418 (12:22:49.556 UTC Thu Jun 4 2026)
+  reference time is EDCBEDAF.589374BC (12:27:27.346 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1671,7 +1667,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *12:22:49.000 UTC Thu Jun 4 2026
+  *12:27:27.000 UTC Thu Jun 4 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2295,24 +2291,28 @@ Total steps: 369
     <cr>  
 
 [363/369] r1 R1(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
-    flow-export    Legacy NetFlow export
-    flow-cache     NetFlow cache timeout
-    route-cache    route-cache
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [364/369] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2337,6 +2337,7 @@ Total steps: 369
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-06-04T12:22:51.086Z
+Generated: 2026-06-04T12:27:28.826Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -134,14 +134,12 @@ Total steps: 355
 <empty>
 
 [42/355] r1 R1(config)# key chain RIP-KEY
-  % Invalid input detected at '^' marker.
-  key chain RIP-KEY
-  ^
+<empty>
 
 [43/355] r1 R1(config)# key 1
   % Invalid input detected at '^' marker.
   key 1
-  ^
+      ^
 
 [44/355] r1 R1(config)# key-string secretrip
   % Invalid input detected at '^' marker.
@@ -268,14 +266,10 @@ Total steps: 355
   % Network not in table
 
 [61/355] r1 R1# debug ip rip
-  % Invalid input detected at '^' marker.
-  debug ip rip
-           ^
+  RIP debugging is on
 
 [62/355] r1 R1# debug ip rip events
-  % Invalid input detected at '^' marker.
-  debug ip rip events
-           ^
+  IP packet debugging is on for rip events
 
 [63/355] r1 R1# undebug all
   All possible debugging has been turned off
@@ -516,9 +510,7 @@ Total steps: 355
         ^
 
 [113/355] r1 R1# debug ip eigrp
-  % Invalid input detected at '^' marker.
-  debug ip eigrp
-           ^
+  EIGRP debugging is on
 
 [114/355] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1119,14 +1111,10 @@ Total steps: 355
            ^
 
 [243/355] r1 R1# debug ip bgp
-  % Invalid input detected at '^' marker.
-  debug ip bgp
-           ^
+  BGP debugging is on
 
 [244/355] r1 R1# debug ip bgp updates
-  % Invalid input detected at '^' marker.
-  debug ip bgp updates
-           ^
+  IP packet debugging is on for bgp updates
 
 [245/355] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1187,6 +1175,8 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  !
+  key chain RIP-KEY
   end
 
 [249/355] r1 R1# show startup-config
@@ -1472,7 +1462,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBEC9B.1FBE76C8 (12:22:51.124 UTC Thu Jun 4 2026)
+  reference time is EDCBEDB0.DB645A1C (12:27:28.857 UTC Thu Jun 4 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1481,7 +1471,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *12:22:51.000 UTC Thu Jun 4 2026
+  *12:27:28.000 UTC Thu Jun 4 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1655,6 +1645,8 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  !
+  key chain RIP-KEY
   end
   
   ------------------ show ip interface brief ------------------
@@ -1840,6 +1832,7 @@ Total steps: 355
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  key chain RIP-KEY
   end
 
 [313/355] r1 R1# show ip route | include via
@@ -2033,24 +2026,28 @@ Total steps: 355
     <cr>  
 
 [349/355] r1 R1(config)# ip ?
-    cef            Enable CEF
-    http           http
-    source-route   IP source-route
-    domain-lookup  DNS lookup
-    domain-name    Set domain name
-    domain         IP domain configuration
-    host           Configure a static host entry
-    ssh            SSH config
-    dhcp           dhcp
-    route          Establish static routes
-    prefix-list    Build a prefix list
-    sla            Configure an IP SLA operation
-    access-list    access-list
-    nat            nat
-    routing        Enable IP routing
-    flow-export    Legacy NetFlow export
-    flow-cache     NetFlow cache timeout
-    route-cache    route-cache
+    cef              Enable CEF
+    http             http
+    source-route     IP source-route
+    domain-lookup    Enable DNS lookups
+    name-server      Configure DNS name servers
+    bootp            bootp
+    finger           Enable finger service
+    gratuitous-arps  Enable gratuitous ARP
+    domain-name      Set domain name
+    domain           IP domain configuration
+    host             Configure a static host entry
+    ssh              SSH config
+    dhcp             dhcp
+    route            Establish static routes
+    prefix-list      Build a prefix list
+    sla              Configure an IP SLA operation
+    access-list      access-list
+    nat              nat
+    routing          Enable IP routing
+    flow-export      Legacy NetFlow export
+    flow-cache       NetFlow cache timeout
+    route-cache      route-cache
 
 [350/355] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2075,6 +2072,7 @@ Total steps: 355
     lldp         lldp
     ip           ip
     ipv6         ipv6
+    banner       banner
     logging      Disable logging
     ntp          Remove NTP config
     service      Disable a service
@@ -2092,7 +2090,7 @@ Total steps: 355
 <empty>
 
 [354/355] r1 R1# show running-config | count !
-  12
+  13
 
 [355/355] r1 R1# write memory
   Building configuration...
