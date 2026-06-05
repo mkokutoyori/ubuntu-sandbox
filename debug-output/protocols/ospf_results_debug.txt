@@ -1,0 +1,2522 @@
+============================================================
+Network protocol debug transcript — ospf
+Generated: 2026-06-05T15:04:52.397Z
+Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
+protocol=OSPF (RFC 2328) — migration statique→OSPF, backbone area 0 hub-and-spoke (R-HQ hub), adjacences cross-vendor, LSDB, coût/métriques, DR/BDR, types de réseau, timers, authentification MD5, redistribution, convergence — Cisco (R-HQ/R-DC) + Huawei (R-BR)
+Total steps: 400
+============================================================
+
+
+--- [1] § OSPF — retrait du routage statique inter-sites (migration) ---
+[1/400] rhq R-HQ# enable
+<empty>
+
+[2/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[3/400] rhq R-HQ(config)# no ip route 10.2.2.0 255.255.255.0 172.16.12.2
+<empty>
+
+[4/400] rhq R-HQ(config)# no ip route 10.3.3.0 255.255.255.0 172.16.13.2
+<empty>
+
+[5/400] rhq R-HQ(config)# no ip route 172.16.23.0 255.255.255.252 172.16.12.2
+<empty>
+
+[6/400] rhq R-HQ(config)# end
+<empty>
+
+[7/400] rhq R-HQ# show ip route static
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
+
+[8/400] rdc R-DC# enable
+<empty>
+
+[9/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[10/400] rdc R-DC(config)# no ip route 10.1.1.0 255.255.255.0 172.16.13.1
+<empty>
+
+[11/400] rdc R-DC(config)# no ip route 10.2.2.0 255.255.255.0 172.16.23.2
+<empty>
+
+[12/400] rdc R-DC(config)# no ip route 172.16.12.0 255.255.255.252 172.16.13.1
+<empty>
+
+[13/400] rdc R-DC(config)# end
+<empty>
+
+[14/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[15/400] rbr [R-BR] undo ip route-static 10.1.1.0 255.255.255.0 172.16.12.1
+<empty>
+
+[16/400] rbr [R-BR] undo ip route-static 10.3.3.0 255.255.255.0 172.16.23.1
+<empty>
+
+[17/400] rbr [R-BR] undo ip route-static 172.16.13.0 255.255.255.252 172.16.12.1
+<empty>
+
+[18/400] rbr [R-BR] quit
+<empty>
+
+
+--- [19] § OSPF — activation logs & debug (Cisco) ---
+[19/400] rhq R-HQ# terminal monitor
+<empty>
+
+[20/400] rhq R-HQ# terminal monitor
+<empty>
+
+[21/400] rhq R-HQ# debug ip ospf adj
+  % OSPF is not enabled.
+
+[22/400] rhq R-HQ# debug ip ospf events
+  % OSPF is not enabled.
+
+[23/400] rhq R-HQ# debug ip ospf spf
+  % OSPF is not enabled.
+
+[24/400] rhq R-HQ# show debugging
+  No debug flags are enabled
+
+[25/400] rdc R-DC# terminal monitor
+<empty>
+
+[26/400] rdc R-DC# debug ip ospf adj
+  % OSPF is not enabled.
+
+[27/400] rdc R-DC# debug ip ospf events
+  % OSPF is not enabled.
+
+[28/400] rdc R-DC# debug ip ospf spf
+  % OSPF is not enabled.
+
+[29/400] rdc R-DC# show debugging
+  No debug flags are enabled
+
+
+--- [30] § OSPF — activation logs & debug (Huawei) ---
+[30/400] rbr <R-BR> terminal monitor
+  % Invalid input detected at '^' marker.
+  terminal monitor
+  ^
+
+[31/400] rbr <R-BR> terminal debugging
+  % Invalid input detected at '^' marker.
+  terminal debugging
+  ^
+
+[32/400] rbr <R-BR> debugging ospf event
+<empty>
+
+[33/400] rbr <R-BR> debugging ospf packet
+<empty>
+
+[34/400] rbr <R-BR> display debugging
+  No debugging is enabled.
+
+
+--- [35] § OSPF — configuration du backbone area 0 (R-HQ hub, Cisco) ---
+[35/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[36/400] rhq R-HQ(config)# router ospf 1
+<empty>
+
+[37/400] rhq R-HQ(config-router)# router-id 1.1.1.1
+<empty>
+
+[38/400] rhq R-HQ(config-router)# network 10.1.1.0 0.0.0.255 area 0
+<empty>
+
+[39/400] rhq R-HQ(config-router)# network 172.16.12.0 0.0.0.3 area 0
+<empty>
+
+[40/400] rhq R-HQ(config-router)# network 172.16.13.0 0.0.0.3 area 0
+<empty>
+
+[41/400] rhq R-HQ(config-router)# passive-interface GigabitEthernet0/0
+<empty>
+
+[42/400] rhq R-HQ(config-router)# log-adjacency-changes detail
+<empty>
+
+[43/400] rhq R-HQ(config-router)# exit
+<empty>
+
+[44/400] rhq R-HQ(config)# end
+<empty>
+
+[45/400] rhq R-HQ# show running-config | section router ospf
+<empty>
+
+
+--- [46] § OSPF — configuration R-DC (Cisco, spoke) ---
+[46/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[47/400] rdc R-DC(config)# router ospf 1
+<empty>
+
+[48/400] rdc R-DC(config-router)# router-id 3.3.3.3
+<empty>
+
+[49/400] rdc R-DC(config-router)# network 10.3.3.0 0.0.0.255 area 0
+<empty>
+
+[50/400] rdc R-DC(config-router)# network 172.16.13.0 0.0.0.3 area 0
+<empty>
+
+[51/400] rdc R-DC(config-router)# passive-interface GigabitEthernet0/0
+<empty>
+
+[52/400] rdc R-DC(config-router)# exit
+<empty>
+
+[53/400] rdc R-DC(config)# end
+<empty>
+
+[54/400] rdc R-DC# show running-config | section router ospf
+<empty>
+
+
+--- [55] § OSPF — configuration R-BR (Huawei, spoke) ---
+[55/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[56/400] rbr [R-BR] ospf 1 router-id 2.2.2.2
+<empty>
+
+[57/400] rbr [R-BR-ospf-1] area 0
+<empty>
+
+[58/400] rbr [R-BR-ospf-1-area-0] network 10.2.2.0 0.0.0.255
+<empty>
+
+[59/400] rbr [R-BR-ospf-1-area-0] network 172.16.12.0 0.0.0.3
+<empty>
+
+[60/400] rbr [R-BR-ospf-1-area-0] quit
+<empty>
+
+[61/400] rbr [R-BR-ospf-1] silent-interface GigabitEthernet0/0/0
+<empty>
+
+[62/400] rbr [R-BR-ospf-1] quit
+<empty>
+
+[63/400] rbr [R-BR] quit
+<empty>
+
+[64/400] rbr <R-BR> display current-configuration configuration ospf
+  % Invalid input detected at '^' marker.
+  display current-configuration configuration ospf
+                  ^
+
+
+--- [65] § OSPF — voisins & adjacences (Cisco) ---
+[65/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        40s         172.16.13.2     GigabitEthernet0/2
+
+[66/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        40s         172.16.13.2     GigabitEthernet0/2
+
+[67/400] rhq R-HQ# show ip ospf neighbor detail
+   Neighbor 172.16.23.2, interface address 172.16.12.2
+      In the area 0 via interface GigabitEthernet0/1
+      Neighbor priority is 1, State is FULL, 10 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x00
+      Dead timer due in 00:00:40
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 0, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+   Neighbor 3.3.3.3, interface address 172.16.13.2
+      In the area 0 via interface GigabitEthernet0/2
+      Neighbor priority is 1, State is FULL, 10 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x02
+      Dead timer due in 00:00:40
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 0, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+
+[68/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[69/400] rdc R-DC# show ip ospf neighbor detail
+   Neighbor 1.1.1.1, interface address 172.16.13.1
+      In the area 0 via interface GigabitEthernet0/1
+      Neighbor priority is 1, State is FULL, 5 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x00
+      Dead timer due in 00:00:40
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 1, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+
+
+--- [70] § OSPF — voisins & adjacences (Huawei) ---
+[70/400] rbr <R-BR> display ospf peer
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[71/400] rbr <R-BR> display ospf peer brief
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[72/400] rbr <R-BR> display ospf peer last-nbr-down
+  % Invalid input detected at '^' marker.
+  display ospf peer last-nbr-down
+                    ^
+
+
+--- [73] § OSPF — interfaces (Cisco) ---
+[73/400] rhq R-HQ# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.1.1.1/24        1     DR    0/0
+  GigabitEthernet0/1   1     0               172.16.12.1/30     1     BDR   1/1
+  GigabitEthernet0/2   1     0               172.16.13.1/30     1     BDR   1/1
+
+[74/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[75/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/2
+  GigabitEthernet0/2 is up, line protocol is up
+    Internet address is 172.16.13.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[76/400] rdc R-DC# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.3.3.1/24        1     DR    0/0
+  GigabitEthernet0/1   1     0               172.16.13.2/30     1     DR    1/1
+
+[77/400] rdc R-DC# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.13.2/30, Area 0
+    Process ID 1, Router ID 3.3.3.3, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+
+--- [78] § OSPF — interfaces (Huawei) ---
+[78/400] rbr <R-BR> display ospf interface
+   GE0/0/0 (10.2.2.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.2.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (172.16.12.2)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 172.16.12.2  BDR: 172.16.12.1
+     Hello: 10s  Dead: 40s
+     Neighbors: 1
+  
+
+[79/400] rbr <R-BR> display ospf interface GigabitEthernet0/0/1
+   GE0/0/0 (10.2.2.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.2.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (172.16.12.2)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 172.16.12.2  BDR: 172.16.12.1
+     Hello: 10s  Dead: 40s
+     Neighbors: 1
+  
+
+[80/400] rbr <R-BR> display ospf interface all
+   GE0/0/0 (10.2.2.1)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.2.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (172.16.12.2)
+     Area: 0  Cost: 1  State: DR
+     Type: broadcast  Priority: 1
+     DR: 172.16.12.2  BDR: 172.16.12.1
+     Hello: 10s  Dead: 40s
+     Neighbors: 1
+  
+
+
+--- [81] § OSPF — base de données LSDB (Cisco) ---
+[81/400] rhq R-HQ# show ip ospf database
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x8000001c        0x28b7      3
+  3.3.3.3         3.3.3.3         0           0x80000030        0xac93      2
+  172.16.23.2     172.16.23.2     0           0x8000002d        0x39c4      2
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x80000031        0xbacc
+  172.16.12.2     172.16.23.2     0           0x8000002e        0x4a54
+  
+
+[82/400] rhq R-HQ# show ip ospf database router
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x8000001d        0x29e4      3
+  3.3.3.3         3.3.3.3         0           0x80000033        0xaff6      2
+  172.16.23.2     172.16.23.2     0           0x80000030        0x3c28      2
+  
+
+[83/400] rhq R-HQ# show ip ospf database network
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x80000037        0xc033
+  172.16.12.2     172.16.23.2     0           0x80000034        0x50ba
+  
+
+[84/400] rhq R-HQ# show ip ospf database summary
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+    (No Summary LSAs in database)
+
+[85/400] rhq R-HQ# show ip ospf database router self-originate
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x80000020        0x2c6c      3
+  3.3.3.3         3.3.3.3         0           0x8000003c        0xb821      2
+  172.16.23.2     172.16.23.2     0           0x80000039        0x4552      2
+  
+
+[86/400] rdc R-DC# show ip ospf database
+              OSPF Router with ID (3.3.3.3) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  3.3.3.3         3.3.3.3         0           0x8000003f        0xbb84      2
+  1.1.1.1         1.1.1.1         0           0x80000021        0x2d99      3
+  172.16.23.2     172.16.23.2     0           0x8000003c        0x48b5      2
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x80000040        0xc9cc
+  172.16.12.2     172.16.23.2     0           0x8000003d        0x5954
+  
+
+[87/400] rdc R-DC# show ip ospf database router
+              OSPF Router with ID (3.3.3.3) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  3.3.3.3         3.3.3.3         0           0x80000042        0xbee7      2
+  1.1.1.1         1.1.1.1         0           0x80000022        0x2ec6      3
+  172.16.23.2     172.16.23.2     0           0x8000003f        0x4b19      2
+  
+
+
+--- [88] § OSPF — base de données LSDB (Huawei) ---
+[88/400] rbr <R-BR> display ospf lsdb
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Area: 0
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    172.16.23.2     172.16.23.2     0     48    0x8000003f
+   Router    1.1.1.1         1.1.1.1         0     60    0x80000022
+   Router    3.3.3.3         3.3.3.3         0     48    0x80000042
+   Network   172.16.13.2     3.3.3.3         0     32    0x80000043
+   Network   172.16.12.2     172.16.23.2     0     32    0x80000040
+  
+
+[89/400] rbr <R-BR> display ospf lsdb router
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Router
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    172.16.23.2     172.16.23.2     0     48    0x80000042
+   Router    1.1.1.1         1.1.1.1         0     60    0x80000023
+   Router    3.3.3.3         3.3.3.3         0     48    0x80000045
+
+[90/400] rbr <R-BR> display ospf lsdb network
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Network
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Network   172.16.13.2     3.3.3.3         0     32    0x80000049
+   Network   172.16.12.2     172.16.23.2     0     32    0x80000046
+
+[91/400] rbr <R-BR> display ospf lsdb summary
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Sum-Net
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+
+
+--- [92] § OSPF — table de routage & RIB ---
+[92/400] rhq R-HQ# show ip route ospf
+  O 10.2.2.0/24 [110/2] via 172.16.12.2, GigabitEthernet0/1
+  O 10.3.3.0/24 [110/2] via 172.16.13.2, GigabitEthernet0/2
+
+[93/400] rhq R-HQ# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  
+  C    10.1.1.0/24 is directly connected, GigabitEthernet0/0
+  C    172.16.12.0/30 is directly connected, GigabitEthernet0/1
+  C    172.16.13.0/30 is directly connected, GigabitEthernet0/2
+  O 10.2.2.0/24 [110/2] via 172.16.12.2, GigabitEthernet0/1
+  O 10.3.3.0/24 [110/2] via 172.16.13.2, GigabitEthernet0/2
+
+[94/400] rdc R-DC# show ip route ospf
+  O 10.1.1.0/24 [110/2] via 172.16.13.1, GigabitEthernet0/1
+  O 172.16.12.0/30 [110/2] via 172.16.13.1, GigabitEthernet0/1
+  O 10.2.2.0/24 [110/3] via 172.16.13.1, GigabitEthernet0/1
+
+[95/400] rdc R-DC# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  
+  C    10.3.3.0/24 is directly connected, GigabitEthernet0/0
+  C    172.16.13.0/30 is directly connected, GigabitEthernet0/1
+  C    172.16.23.0/30 is directly connected, GigabitEthernet0/2
+  O 10.1.1.0/24 [110/2] via 172.16.13.1, GigabitEthernet0/1
+  O 172.16.12.0/30 [110/2] via 172.16.13.1, GigabitEthernet0/1
+  O 10.2.2.0/24 [110/3] via 172.16.13.1, GigabitEthernet0/1
+
+[96/400] rbr <R-BR> display ospf routing
+  OSPF Process 1 with Router ID 0.0.0.0
+    Routing Tables
+  
+    Routing for Network
+
+[97/400] rbr <R-BR> display ip routing-table protocol ospf
+  OSPF Routing Table:
+  O    10.1.1.0/24 [110/2] via 172.16.12.1, GE0/0/1
+  O    172.16.13.0/30 [110/2] via 172.16.12.1, GE0/0/1
+  O    10.3.3.0/24 [110/3] via 172.16.12.1, GE0/0/1
+
+[98/400] rbr <R-BR> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 6        Routes : 6
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  10.2.2.0/24         Direct  0    0     D     10.2.2.1        GE0/0/0
+  172.16.12.0/30      Direct  0    0     D     172.16.12.2     GE0/0/1
+  172.16.23.0/30      Direct  0    0     D     172.16.23.2     GE0/0/2
+  10.1.1.0/24         OSPF    10   2     RD    172.16.12.1     GE0/0/1
+  172.16.13.0/30      OSPF    10   2     RD    172.16.12.1     GE0/0/1
+  10.3.3.0/24         OSPF    10   3     RD    172.16.12.1     GE0/0/1
+
+
+--- [99] § OSPF — matrice de joignabilité (routage dynamique) ---
+[99/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.842 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.558 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.558/0.700/0.842/0.142 ms
+
+[100/400] lhq lhq$ ping -c 2 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.676 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.524 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.524/0.600/0.676/0.076 ms
+
+[101/400] lhq lhq$ ping -c 2 10.2.2.11
+  PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.902 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=62 time=0.611 ms
+  
+  --- 10.2.2.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.611/0.757/0.902/0.146 ms
+
+[102/400] ldc ldc$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.666 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.666 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.666/0.666/0.666/0.000 ms
+
+[103/400] ldc ldc$ ping -c 2 10.2.2.11
+  PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.594 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=61 time=0.503 ms
+  
+  --- 10.2.2.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.503/0.548/0.594/0.045 ms
+
+[104/400] lbr lbr$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.355 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.533 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.355/0.444/0.533/0.089 ms
+
+[105/400] lbr lbr$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.398 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=61 time=0.737 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.398/0.568/0.737/0.169 ms
+
+[106/400] srvdc srvdc$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.667 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.564 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.564/0.616/0.667/0.052 ms
+
+[107/400] whq whq$ ping -n 2 10.3.3.10
+  
+  Pinging 10.3.3.10 with 32 bytes of data:
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 10.3.3.10:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[108/400] wbr wbr$ ping -n 2 10.1.1.10
+  
+  Pinging 10.1.1.10 with 32 bytes of data:
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 10.1.1.10:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[109/400] rhq R-HQ# traceroute 10.2.2.11
+  Type escape sequence to abort.
+  Tracing the route to 10.2.2.11
+  VRF info: (vrf in name/id, vrf out name/id)
+  
+    1 172.16.12.2  1 msec 0 msec 0 msec
+    2 10.2.2.11  0 msec 0 msec 0 msec
+
+[110/400] ldc ldc$ traceroute -n -m 6 10.2.2.11
+  traceroute to 10.2.2.11 (10.2.2.11), 6 hops max, 60 byte packets
+   1  10.3.3.1 (10.3.3.1)  0.506 ms  0.290 ms  0.198 ms
+   2  172.16.13.1 (172.16.13.1)  0.292 ms  0.310 ms  0.318 ms
+   3  172.16.12.2 (172.16.12.2)  0.438 ms  0.312 ms  0.368 ms
+   4  10.2.2.11 (10.2.2.11)  0.514 ms  0.377 ms  0.416 ms
+
+
+--- [111] § OSPF — coût & métriques ---
+[111/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[112/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[113/400] rhq R-HQ(config)# router ospf 1
+<empty>
+
+[114/400] rhq R-HQ(config-router)# auto-cost reference-bandwidth 10000
+  % OSPF: Reference bandwidth is changed.
+          Please ensure reference bandwidth is consistent across all routers.
+
+[115/400] rhq R-HQ(config-router)# exit
+<empty>
+
+[116/400] rhq R-HQ(config)# interface GigabitEthernet0/1
+<empty>
+
+[117/400] rhq R-HQ(config-if)# ip ospf cost 50
+<empty>
+
+[118/400] rhq R-HQ(config-if)# do show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 50
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[119/400] rhq R-HQ(config-if)# bandwidth 100000
+<empty>
+
+[120/400] rhq R-HQ(config-if)# no ip ospf cost
+  % Invalid input detected at '^' marker.
+  no ip ospf cost
+        ^
+
+[121/400] rhq R-HQ(config-if)# end
+<empty>
+
+[122/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 50
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[123/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[124/400] rbr [R-BR] interface GigabitEthernet0/0/1
+<empty>
+
+[125/400] rbr [R-BR-GE0/0/1] ospf cost 50
+<empty>
+
+[126/400] rbr [R-BR-GE0/0/1] display this
+  #
+  interface GigabitEthernet0/0/1
+   description WAN-to-R-HQ
+   ip address 172.16.12.2 255.255.255.252
+  #
+
+[127/400] rbr [R-BR-GE0/0/1] undo ospf cost
+  % Invalid input detected at '^' marker.
+  undo ospf cost
+            ^
+
+[128/400] rbr [R-BR-GE0/0/1] quit
+<empty>
+
+[129/400] rbr [R-BR] ospf 1
+<empty>
+
+[130/400] rbr [R-BR-ospf-1] bandwidth-reference 10000
+<empty>
+
+[131/400] rbr [R-BR-ospf-1] quit
+<empty>
+
+[132/400] rbr [R-BR] quit
+<empty>
+
+
+--- [133] § OSPF — priorité DR/BDR ---
+[133/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 50
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[134/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[135/400] rhq R-HQ(config)# interface GigabitEthernet0/1
+<empty>
+
+[136/400] rhq R-HQ(config-if)# ip ospf priority 200
+<empty>
+
+[137/400] rhq R-HQ(config-if)# do show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        40s         172.16.13.2     GigabitEthernet0/2
+
+[138/400] rhq R-HQ(config-if)# ip ospf priority 1
+<empty>
+
+[139/400] rhq R-HQ(config-if)# end
+<empty>
+
+[140/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[141/400] rbr [R-BR] interface GigabitEthernet0/0/1
+<empty>
+
+[142/400] rbr [R-BR-GE0/0/1] ospf dr-priority 200
+<empty>
+
+[143/400] rbr [R-BR-GE0/0/1] display this
+  #
+  interface GigabitEthernet0/0/1
+   description WAN-to-R-HQ
+   ip address 172.16.12.2 255.255.255.252
+  #
+
+[144/400] rbr [R-BR-GE0/0/1] undo ospf dr-priority
+  % Invalid input detected at '^' marker.
+  undo ospf dr-priority
+            ^
+
+[145/400] rbr [R-BR-GE0/0/1] quit
+<empty>
+
+[146/400] rbr [R-BR] quit
+<empty>
+
+
+--- [147] § OSPF — types de réseau ---
+[147/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[148/400] rhq R-HQ(config)# interface GigabitEthernet0/2
+<empty>
+
+[149/400] rhq R-HQ(config-if)# ip ospf network point-to-point
+<empty>
+
+[150/400] rhq R-HQ(config-if)# do show ip ospf interface GigabitEthernet0/2
+  GigabitEthernet0/2 is up, line protocol is up
+    Internet address is 172.16.13.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type POINT-TO-POINT, Cost: 10
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[151/400] rhq R-HQ(config-if)# ip ospf network broadcast
+<empty>
+
+[152/400] rhq R-HQ(config-if)# no ip ospf network
+  % Invalid input detected at '^' marker.
+  no ip ospf network
+        ^
+
+[153/400] rhq R-HQ(config-if)# end
+<empty>
+
+[154/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[155/400] rbr [R-BR] interface GigabitEthernet0/0/1
+<empty>
+
+[156/400] rbr [R-BR-GE0/0/1] ospf network-type p2p
+<empty>
+
+[157/400] rbr [R-BR-GE0/0/1] display this
+  #
+  interface GigabitEthernet0/0/1
+   description WAN-to-R-HQ
+   ip address 172.16.12.2 255.255.255.252
+  #
+
+[158/400] rbr [R-BR-GE0/0/1] undo ospf network-type
+  % Invalid input detected at '^' marker.
+  undo ospf network-type
+            ^
+
+[159/400] rbr [R-BR-GE0/0/1] quit
+<empty>
+
+[160/400] rbr [R-BR] quit
+<empty>
+
+
+--- [161] § OSPF — timers hello/dead (mismatch puis correction) ---
+[161/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/2
+  GigabitEthernet0/2 is up, line protocol is up
+    Internet address is 172.16.13.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[162/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[163/400] rhq R-HQ(config)# interface GigabitEthernet0/2
+<empty>
+
+[164/400] rhq R-HQ(config-if)# ip ospf hello-interval 5
+<empty>
+
+[165/400] rhq R-HQ(config-if)# ip ospf dead-interval 20
+<empty>
+
+[166/400] rhq R-HQ(config-if)# end
+<empty>
+
+[167/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[168/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[169/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[170/400] rhq R-HQ(config)# interface GigabitEthernet0/2
+<empty>
+
+[171/400] rhq R-HQ(config-if)# no ip ospf hello-interval
+  % Invalid input detected at '^' marker.
+  no ip ospf hello-interval
+        ^
+
+[172/400] rhq R-HQ(config-if)# no ip ospf dead-interval
+  % Invalid input detected at '^' marker.
+  no ip ospf dead-interval
+        ^
+
+[173/400] rhq R-HQ(config-if)# end
+<empty>
+
+[174/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[175/400] ldc ldc$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.457 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.462 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.457/0.459/0.462/0.003 ms
+
+
+--- [176] § OSPF — authentification MD5 (Cisco HQ-DC) ---
+[176/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[177/400] rhq R-HQ(config)# interface GigabitEthernet0/2
+<empty>
+
+[178/400] rhq R-HQ(config-if)# ip ospf authentication message-digest
+<empty>
+
+[179/400] rhq R-HQ(config-if)# ip ospf message-digest-key 1 md5 ACME-OSPF
+<empty>
+
+[180/400] rhq R-HQ(config-if)# exit
+<empty>
+
+[181/400] rhq R-HQ(config)# end
+<empty>
+
+[182/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[183/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[184/400] rdc R-DC(config)# interface GigabitEthernet0/1
+<empty>
+
+[185/400] rdc R-DC(config-if)# ip ospf authentication message-digest
+<empty>
+
+[186/400] rdc R-DC(config-if)# ip ospf message-digest-key 1 md5 ACME-OSPF
+<empty>
+
+[187/400] rdc R-DC(config-if)# end
+<empty>
+
+[188/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[189/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[190/400] ldc ldc$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.413 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.436 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.413/0.425/0.436/0.011 ms
+
+
+--- [191] § OSPF — authentification (Huawei HQ-BR) ---
+[191/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[192/400] rbr [R-BR] interface GigabitEthernet0/0/1
+<empty>
+
+[193/400] rbr [R-BR-GE0/0/1] ospf authentication-mode md5 1 cipher ACME-OSPF
+<empty>
+
+[194/400] rbr [R-BR-GE0/0/1] display this
+  #
+  interface GigabitEthernet0/0/1
+   description WAN-to-R-HQ
+   ip address 172.16.12.2 255.255.255.252
+  #
+
+[195/400] rbr [R-BR-GE0/0/1] undo ospf authentication-mode
+  % Invalid input detected at '^' marker.
+  undo ospf authentication-mode
+            ^
+
+[196/400] rbr [R-BR-GE0/0/1] quit
+<empty>
+
+[197/400] rbr [R-BR] quit
+<empty>
+
+[198/400] rbr <R-BR> display ospf peer brief
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+
+--- [199] § OSPF — passive-interface & default-information ---
+[199/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[200/400] rhq R-HQ(config)# router ospf 1
+<empty>
+
+[201/400] rhq R-HQ(config-router)# default-information originate always
+<empty>
+
+[202/400] rhq R-HQ(config-router)# passive-interface default
+<empty>
+
+[203/400] rhq R-HQ(config-router)# no passive-interface GigabitEthernet0/1
+<empty>
+
+[204/400] rhq R-HQ(config-router)# no passive-interface GigabitEthernet0/2
+<empty>
+
+[205/400] rhq R-HQ(config-router)# do show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.1.1.1/24        10    DR    0/0
+  GigabitEthernet0/1   1     0               172.16.12.1/30     50    BDR   1/1
+  GigabitEthernet0/2   1     0               172.16.13.1/30     10    BDR   1/1
+
+[206/400] rhq R-HQ(config-router)# no default-information originate
+  % Invalid input detected at '^' marker.
+  no default-information originate
+     ^
+
+[207/400] rhq R-HQ(config-router)# end
+<empty>
+
+[208/400] rdc R-DC# show ip route ospf
+  O 10.1.1.0/24 [110/11] via 172.16.13.1, GigabitEthernet0/1
+  O 172.16.12.0/30 [110/51] via 172.16.13.1, GigabitEthernet0/1
+  O 10.2.2.0/24 [110/61] via 172.16.13.1, GigabitEthernet0/1
+
+
+--- [209] § OSPF — redistribution (préfixe de test dédié, R-HQ) ---
+[209/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[210/400] rhq R-HQ(config)# ip route 192.0.2.0 255.255.255.0 Null0
+  % Invalid input: Invalid IP address: Null0
+
+[211/400] rhq R-HQ(config)# router ospf 1
+<empty>
+
+[212/400] rhq R-HQ(config-router)# redistribute static subnets
+<empty>
+
+[213/400] rhq R-HQ(config-router)# do show ip ospf database external
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Type-5 AS External Link States
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address
+
+[214/400] rhq R-HQ(config-router)# do show ip route ospf
+  O E2 10.3.3.0/24 [110/11] via 172.16.13.2, GigabitEthernet0/2
+  O E2 10.2.2.0/24 [110/60] via 172.16.12.2, GigabitEthernet0/1
+
+[215/400] rhq R-HQ(config-router)# no redistribute static
+  % Invalid input detected at '^' marker.
+  no redistribute static
+     ^
+
+[216/400] rhq R-HQ(config-router)# exit
+<empty>
+
+[217/400] rhq R-HQ(config)# no ip route 192.0.2.0 255.255.255.0 Null0
+  % Invalid input: Invalid IP address: Null0
+
+[218/400] rhq R-HQ(config)# end
+<empty>
+
+[219/400] rdc R-DC# show ip ospf database external
+              OSPF Router with ID (3.3.3.3) (Process ID 1)
+  
+                  Type-5 AS External Link States
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address
+
+[220/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[221/400] rbr [R-BR] ospf 1
+<empty>
+
+[222/400] rbr [R-BR-ospf-1] import-route direct
+<empty>
+
+[223/400] rbr [R-BR-ospf-1] display ospf lsdb ase
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: External
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+
+[224/400] rbr [R-BR-ospf-1] undo import-route direct
+  % Invalid input detected at '^' marker.
+  undo import-route direct
+       ^
+
+[225/400] rbr [R-BR-ospf-1] quit
+<empty>
+
+[226/400] rbr [R-BR] quit
+<empty>
+
+
+--- [227] § OSPF — area stub / NSSA (config) ---
+[227/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[228/400] rdc R-DC(config)# router ospf 1
+<empty>
+
+[229/400] rdc R-DC(config-router)# area 0 range 10.3.3.0 255.255.255.0
+<empty>
+
+[230/400] rdc R-DC(config-router)# do show ip ospf
+  Routing Process "ospf 1" with ID 3.3.3.3
+   Number of areas in this router is 1
+   Reference bandwidth unit is 100 mbps
+  
+      Area 0
+          Number of interfaces in this area is 2
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 6
+  
+
+[231/400] rdc R-DC(config-router)# no area 0 range 10.3.3.0 255.255.255.0
+  % Invalid input detected at '^' marker.
+  no area 0 range 10.3.3.0 255.255.255.0
+     ^
+
+[232/400] rdc R-DC(config-router)# end
+<empty>
+
+[233/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[234/400] rbr [R-BR] ospf 1
+<empty>
+
+[235/400] rbr [R-BR-ospf-1] area 0
+<empty>
+
+[236/400] rbr [R-BR-ospf-1-area-0] abr-summary 10.2.2.0 255.255.255.0
+<empty>
+
+[237/400] rbr [R-BR-ospf-1-area-0] display this
+  #
+  ospf 1
+   router-id 172.16.23.2
+   area 0
+    network 10.2.2.0 0.0.0.255
+    network 172.16.12.0 0.0.0.3
+  #
+
+[238/400] rbr [R-BR-ospf-1-area-0] undo abr-summary 10.2.2.0 255.255.255.0
+  % Invalid input detected at '^' marker.
+  undo abr-summary 10.2.2.0 255.255.255.0
+       ^
+
+[239/400] rbr [R-BR-ospf-1-area-0] quit
+<empty>
+
+[240/400] rbr [R-BR-ospf-1] quit
+<empty>
+
+[241/400] rbr [R-BR] quit
+<empty>
+
+
+--- [242] § OSPF — convergence sur panne de lien (HQ-DC) ---
+[242/400] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.439 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.439/0.439/0.439/0.000 ms
+
+[243/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[244/400] rhq R-HQ(config)# interface GigabitEthernet0/2
+<empty>
+
+[245/400] rhq R-HQ(config-if)# shutdown
+<empty>
+
+[246/400] rhq R-HQ(config-if)# end
+<empty>
+
+[247/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[248/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[249/400] rdc R-DC# show ip route ospf
+  O 10.1.1.0/24 [110/11] via 172.16.13.1, GigabitEthernet0/1
+  O 172.16.12.0/30 [110/51] via 172.16.13.1, GigabitEthernet0/1
+  O 10.2.2.0/24 [110/61] via 172.16.13.1, GigabitEthernet0/1
+
+[250/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[251/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[252/400] rhq R-HQ(config)# interface GigabitEthernet0/2
+<empty>
+
+[253/400] rhq R-HQ(config-if)# no shutdown
+<empty>
+
+[254/400] rhq R-HQ(config-if)# end
+<empty>
+
+[255/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[256/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.597 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.342 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.342/0.469/0.597/0.128 ms
+
+
+--- [257] § OSPF — reset des compteurs & vérification ---
+[257/400] rhq R-HQ# clear ip ospf counters
+<empty>
+
+[258/400] rdc R-DC# clear ip ospf counters
+<empty>
+
+[259/400] rbr <R-BR> reset ospf 1 counters
+  OSPF counters reset.
+
+[260/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[261/400] rbr <R-BR> display ospf peer brief
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[262/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.444 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.353 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.353/0.398/0.444/0.045 ms
+
+[263/400] lhq lhq$ ping -c 2 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.449 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.333 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.333/0.391/0.449/0.058 ms
+
+
+--- [264] § OSPF — statistiques, SPF & process ---
+[264/400] rhq R-HQ# show ip ospf statistics
+  OSPF statistics:
+    Rcvd: 0 total, 0 errors
+    LSA: 6 total
+    SPF: 60 runs, last run recently
+    Neighbors: 2, Adjacent: 2
+    Neighbor state changes: 10
+  
+    Area statistics:
+      Area 0: 3 router LSA(s), 3 network LSA(s), 0 summary LSA(s)
+
+[265/400] rhq R-HQ# show ip ospf
+  Routing Process "ospf 1" with ID 1.1.1.1
+   Number of areas in this router is 1
+   Reference bandwidth unit is 10000 mbps
+   Log-Adjacency-Changes: enabled
+  
+      Area 0
+          Number of interfaces in this area is 3
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 6
+  
+
+[266/400] rhq R-HQ# show ip protocols
+  No routing protocol is configured.
+
+[267/400] rdc R-DC# show ip ospf statistics
+  OSPF statistics:
+    Rcvd: 0 total, 0 errors
+    LSA: 6 total
+    SPF: 58 runs, last run recently
+    Neighbors: 1, Adjacent: 1
+    Neighbor state changes: 5
+  
+    Area statistics:
+      Area 0: 3 router LSA(s), 3 network LSA(s), 0 summary LSA(s)
+
+[268/400] rbr <R-BR> display ospf cumulative
+  OSPF statistics:
+    LSA: 6 total
+    SPF: 57 runs
+    Neighbors: 1, Adjacent: 1
+  
+    Area statistics:
+      Area 0: 3 router LSA(s), 3 network LSA(s), 0 summary LSA(s)
+
+[269/400] rbr <R-BR> display ospf error
+  OSPF errors: 0
+
+[270/400] rbr <R-BR> display ospf brief
+  OSPF Process 1 with Router ID 172.16.23.2
+  
+   Area    Type   Intf    Adj   LSA
+   0       normal 2       1     6
+
+[271/400] rbr <R-BR> display ospf statistics
+  OSPF statistics:
+    LSA: 6 total
+    SPF: 58 runs
+    Neighbors: 1, Adjacent: 1
+  
+    Area statistics:
+      Area 0: 3 router LSA(s), 3 network LSA(s), 0 summary LSA(s)
+
+
+--- [272] § OSPF — détail voisins/LSDB consolidé (Cisco) ---
+[272/400] rhq R-HQ# show ip ospf neighbor detail
+   Neighbor 172.16.23.2, interface address 172.16.12.2
+      In the area 0 via interface GigabitEthernet0/1
+      Neighbor priority is 1, State is FULL, 10 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x00
+      Dead timer due in 00:00:40
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 0, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+   Neighbor 3.3.3.3, interface address 172.16.13.2
+      In the area 0 via interface GigabitEthernet0/2
+      Neighbor priority is 1, State is FULL, 10 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x02
+      Dead timer due in 00:00:20
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 0, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+
+[273/400] rhq R-HQ# show ip ospf
+  Routing Process "ospf 1" with ID 1.1.1.1
+   Number of areas in this router is 1
+   Reference bandwidth unit is 10000 mbps
+   Log-Adjacency-Changes: enabled
+  
+      Area 0
+          Number of interfaces in this area is 3
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 6
+  
+
+[274/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[275/400] rhq R-HQ# show ip ospf neighbor detail
+   Neighbor 172.16.23.2, interface address 172.16.12.2
+      In the area 0 via interface GigabitEthernet0/1
+      Neighbor priority is 1, State is FULL, 10 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x00
+      Dead timer due in 00:00:40
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 0, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+   Neighbor 3.3.3.3, interface address 172.16.13.2
+      In the area 0 via interface GigabitEthernet0/2
+      Neighbor priority is 1, State is FULL, 10 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x02
+      Dead timer due in 00:00:20
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 0, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+
+[276/400] rhq R-HQ# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.1.1.1/24        10    DR    0/0
+  GigabitEthernet0/1   1     0               172.16.12.1/30     50    BDR   1/1
+  GigabitEthernet0/2   1     0               172.16.13.1/30     10    BDR   1/1
+
+[277/400] rhq R-HQ# show ip ospf database
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x8000004e        0x9df4      3
+  3.3.3.3         3.3.3.3         0           0x800000c0        0x3d36      2
+  172.16.23.2     172.16.23.2     0           0x800000a1        0xbf46      2
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x800000c1        0x4b66
+  172.16.12.2     172.16.23.2     0           0x800000a2        0xbe10
+  172.16.12.1     1.1.1.1         0           0x80000031        0x7ab9
+  
+
+[278/400] rhq R-HQ# show ip route ospf
+  O E2 10.3.3.0/24 [110/11] via 172.16.13.2, GigabitEthernet0/2
+  O E2 10.2.2.0/24 [110/60] via 172.16.12.2, GigabitEthernet0/1
+  O E2 172.16.23.0/30 [110/20] via 172.16.12.2, GigabitEthernet0/1
+
+[279/400] rdc R-DC# show ip ospf
+  Routing Process "ospf 1" with ID 3.3.3.3
+   Number of areas in this router is 1
+   Reference bandwidth unit is 100 mbps
+  
+      Area 0
+          Number of interfaces in this area is 2
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 6
+  
+
+[280/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[281/400] rdc R-DC# show ip ospf neighbor detail
+   Neighbor 1.1.1.1, interface address 172.16.13.1
+      In the area 0 via interface GigabitEthernet0/1
+      Neighbor priority is 1, State is FULL, 5 state changes
+      DR is 0.0.0.0 BDR is 0.0.0.0
+      Options is 0x00
+      Dead timer due in 00:00:40
+      Neighbor is up for 00:00:00
+      Index 1/1, retransmission queue length 1, number of retransmission 0
+      First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
+      Last retransmission scan length is 0, maximum is 0
+      Last retransmission scan time is 0 msec, maximum is 0 msec
+      Retransmit interval 5
+  
+
+[282/400] rdc R-DC# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.3.3.1/24        1     DR    0/0
+  GigabitEthernet0/1   1     0               172.16.13.2/30     1     DR    1/1
+
+[283/400] rdc R-DC# show ip ospf database
+              OSPF Router with ID (3.3.3.3) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  3.3.3.3         3.3.3.3         0           0x800000cf        0x4c27      2
+  1.1.1.1         1.1.1.1         0           0x80000053        0xa2d6      3
+  172.16.23.2     172.16.23.2     0           0x800000ab        0xc991      2
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x800000d0        0x5a66
+  172.16.12.2     172.16.23.2     0           0x800000ac        0xc8ba
+  172.16.12.1     1.1.1.1         0           0x80000031        0x7ab9
+  
+
+[284/400] rdc R-DC# show ip route ospf
+  O 10.1.1.0/24 [110/11] via 172.16.13.1, GigabitEthernet0/1
+  O 172.16.12.0/30 [110/51] via 172.16.13.1, GigabitEthernet0/1
+  O 10.2.2.0/24 [110/61] via 172.16.13.1, GigabitEthernet0/1
+
+
+--- [285] § OSPF — détail consolidé (Huawei) ---
+[285/400] rbr <R-BR> display ospf peer
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[286/400] rbr <R-BR> display ospf brief
+  OSPF Process 1 with Router ID 172.16.23.2
+  
+   Area    Type   Intf    Adj   LSA
+   0       normal 2       1     6
+
+[287/400] rbr <R-BR> display ospf peer
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[288/400] rbr <R-BR> display ospf peer brief
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[289/400] rbr <R-BR> display ospf interface
+   GE0/0/0 (10.2.2.1)
+     Area: 0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.2.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (172.16.12.2)
+     Area: 0  Cost: 10  State: DR
+     Type: p2p  Priority: 200
+     DR: 172.16.12.2  BDR: 172.16.12.1
+     Hello: 10s  Dead: 40s
+     Neighbors: 1
+  
+
+[290/400] rbr <R-BR> display ospf lsdb
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Area: 0
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    172.16.23.2     172.16.23.2     0     48    0x800000af
+   Router    1.1.1.1         1.1.1.1         0     60    0x80000055
+   Router    3.3.3.3         3.3.3.3         0     48    0x800000d5
+   Network   172.16.13.2     3.3.3.3         0     32    0x800000d6
+   Network   172.16.12.2     172.16.23.2     0     32    0x800000b0
+   Network   172.16.12.1     1.1.1.1         0     32    0x80000031
+  
+
+[291/400] rbr <R-BR> display ospf routing
+  OSPF Process 1 with Router ID 0.0.0.0
+    Routing Tables
+  
+    Routing for Network
+
+
+--- [292] § OSPF — vérification depuis les hôtes ---
+[292/400] lhq lhq$ ip route show
+  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
+  default via 10.1.1.1 dev eth0 proto static
+
+[293/400] lhq lhq$ ip route show default
+  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
+  default via 10.1.1.1 dev eth0 proto static
+
+[294/400] lhq lhq$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.541 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.541/0.541/0.541/0.000 ms
+
+[295/400] lbr lbr$ ip route show default
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.11 metric 0
+  default via 10.2.2.1 dev eth0 proto static
+
+[296/400] lbr lbr$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=252 time=0.464 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.464/0.464/0.464/0.000 ms
+
+[297/400] ldc ldc$ ip route show default
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
+  default via 10.3.3.1 dev eth0 proto static
+
+[298/400] ldc ldc$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.194 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.194/0.194/0.194/0.000 ms
+
+[299/400] srvdc srvdc$ ip route show default
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.10 metric 0
+  default via 10.3.3.1 dev eth0 proto static
+
+[300/400] srvdc srvdc$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.162 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.162/0.162/0.162/0.000 ms
+
+[301/400] whq whq$ route print
+  ===========================================================================
+  Interface List
+     1...02 00 00 00 00 4b ......Intel(R) Ethernet Connection #1
+     2...02 00 00 00 00 4c ......Intel(R) Ethernet Connection #2
+     3...02 00 00 00 00 4d ......Intel(R) Ethernet Connection #3
+     4...02 00 00 00 00 4e ......Intel(R) Ethernet Connection #4
+     1...........................Software Loopback Interface 1
+  ===========================================================================
+  
+  IPv4 Route Table
+  ===========================================================================
+  Active Routes:
+  Network Destination        Netmask          Gateway         Interface  Metric
+    10.1.1.0                 255.255.255.0    On-link         10.1.1.11      0
+    0.0.0.0                  0.0.0.0          10.1.1.1        10.1.1.11      0
+  ===========================================================================
+  Persistent Routes:
+    None
+
+[302/400] wbr wbr$ tracert -d -h 6 10.1.1.10
+  
+  Tracing route to 10.1.1.10 over a maximum of 6 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    10.2.2.1
+     2    <1 ms    <1 ms    <1 ms    172.16.12.1
+     3    <1 ms    <1 ms    <1 ms    10.1.1.10
+  
+  Trace complete.
+
+
+--- [303] § OSPF — LSDB détaillée par type de LSA (Cisco) ---
+[303/400] rhq R-HQ# show ip ospf database router 1.1.1.1
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x80000056        0xa55e      3
+  3.3.3.3         3.3.3.3         0           0x800000d8        0x5551      2
+  172.16.23.2     172.16.23.2     0           0x800000b1        0xcf58      2
+  
+
+[304/400] rhq R-HQ# show ip ospf database router 2.2.2.2
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x80000057        0xa68b      3
+  3.3.3.3         3.3.3.3         0           0x800000db        0x58b4      2
+  172.16.23.2     172.16.23.2     0           0x800000b3        0xd19a      2
+  
+
+[305/400] rhq R-HQ# show ip ospf database router 3.3.3.3
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  1.1.1.1         1.1.1.1         0           0x80000058        0xa7b8      3
+  3.3.3.3         3.3.3.3         0           0x800000de        0x5b18      2
+  172.16.23.2     172.16.23.2     0           0x800000b5        0xd3dc      2
+  
+
+[306/400] rhq R-HQ# show ip ospf database network
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x800000e2        0x6c99
+  172.16.12.2     172.16.23.2     0           0x800000b8        0xd487
+  172.16.12.1     1.1.1.1         0           0x80000031        0x7ab9
+  
+
+[307/400] rhq R-HQ# show ip ospf database summary
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+    (No Summary LSAs in database)
+
+[308/400] rhq R-HQ# show ip ospf database external
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Type-5 AS External Link States
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address
+
+[309/400] rhq R-HQ# show ip ospf database database-summary
+  % Invalid input detected at '^' marker.
+  show ip ospf database database-summary
+                        ^
+
+[310/400] rhq R-HQ# show ip ospf border-routers
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+                  Base Topology (MTRIC 0)
+  
+   (No border routers known)
+
+[311/400] rdc R-DC# show ip ospf database router 1.1.1.1
+              OSPF Router with ID (3.3.3.3) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  3.3.3.3         3.3.3.3         0           0x800000ed        0x6a09      2
+  1.1.1.1         1.1.1.1         0           0x8000005d        0xac9a      3
+  172.16.23.2     172.16.23.2     0           0x800000bf        0xdd28      2
+  
+
+[312/400] rdc R-DC# show ip ospf database network
+              OSPF Router with ID (3.3.3.3) (Process ID 1)
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  172.16.13.2     3.3.3.3         0           0x800000f1        0x7b99
+  172.16.12.2     172.16.23.2     0           0x800000c2        0xde32
+  172.16.12.1     1.1.1.1         0           0x80000031        0x7ab9
+  
+
+[313/400] rdc R-DC# show ip ospf database database-summary
+  % Invalid input detected at '^' marker.
+  show ip ospf database database-summary
+                        ^
+
+
+--- [314] § OSPF — LSDB détaillée (Huawei) ---
+[314/400] rbr <R-BR> display ospf lsdb router
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Router
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    172.16.23.2     172.16.23.2     0     48    0x800000c3
+   Router    1.1.1.1         1.1.1.1         0     60    0x8000005f
+   Router    3.3.3.3         3.3.3.3         0     48    0x800000f3
+
+[315/400] rbr <R-BR> display ospf lsdb router 2.2.2.2
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Router
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    172.16.23.2     172.16.23.2     0     48    0x800000c5
+   Router    1.1.1.1         1.1.1.1         0     60    0x80000060
+   Router    3.3.3.3         3.3.3.3         0     48    0x800000f6
+
+[316/400] rbr <R-BR> display ospf lsdb router 1.1.1.1
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Router
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    172.16.23.2     172.16.23.2     0     48    0x800000c7
+   Router    1.1.1.1         1.1.1.1         0     60    0x80000061
+   Router    3.3.3.3         3.3.3.3         0     48    0x800000f9
+
+[317/400] rbr <R-BR> display ospf lsdb network
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Network
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Network   172.16.13.2     3.3.3.3         0     32    0x800000fd
+   Network   172.16.12.2     172.16.23.2     0     32    0x800000ca
+   Network   172.16.12.1     1.1.1.1         0     32    0x80000031
+
+[318/400] rbr <R-BR> display ospf lsdb summary
+           OSPF Process 1 with Router ID 172.16.23.2
+                    Link State Database
+  
+                       Type: Sum-Net
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+
+[319/400] rbr <R-BR> display ospf abr-asbr
+  OSPF Process 1 with Router ID 172.16.23.2
+  
+   (No border routers known)
+
+[320/400] rbr <R-BR> display ospf nexthop
+   OSPF nexthop information: (computed from RIB)
+
+[321/400] rbr <R-BR> display ospf request-queue
+  OSPF request queue is empty.
+
+[322/400] rbr <R-BR> display ospf retrans-queue
+  OSPF retransmission queue is empty.
+
+
+--- [323] § OSPF — toutes interfaces OSPF (Cisco) ---
+[323/400] rhq R-HQ# show ip ospf interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Internet address is 10.1.1.1/24, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 10.1.1.1
+    BDR: 0.0.0.0
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 0, Adjacent neighbor count is 0
+    No Hellos (Passive interface)
+  
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 50
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+  GigabitEthernet0/2 is up, line protocol is up
+    Internet address is 172.16.13.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 5, Dead 20, Wait 20, Retransmit 5
+    Hello due in 00:00:05
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[324/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Internet address is 10.1.1.1/24, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 10.1.1.1
+    BDR: 0.0.0.0
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 0, Adjacent neighbor count is 0
+    No Hellos (Passive interface)
+  
+
+[325/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.12.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 50
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.12.2
+    BDR: 172.16.12.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[326/400] rhq R-HQ# show ip ospf interface GigabitEthernet0/2
+  GigabitEthernet0/2 is up, line protocol is up
+    Internet address is 172.16.13.1/30, Area 0
+    Process ID 1, Router ID 1.1.1.1, Network Type BROADCAST, Cost: 10
+    Transmit Delay is 1 sec, State Backup, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 5, Dead 20, Wait 20, Retransmit 5
+    Hello due in 00:00:05
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[327/400] rdc R-DC# show ip ospf interface
+  GigabitEthernet0/0 is up, line protocol is up
+    Internet address is 10.3.3.1/24, Area 0
+    Process ID 1, Router ID 3.3.3.3, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 10.3.3.1
+    BDR: 0.0.0.0
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 0, Adjacent neighbor count is 0
+    No Hellos (Passive interface)
+  
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.13.2/30, Area 0
+    Process ID 1, Router ID 3.3.3.3, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[328/400] rdc R-DC# show ip ospf interface GigabitEthernet0/0
+  GigabitEthernet0/0 is up, line protocol is up
+    Internet address is 10.3.3.1/24, Area 0
+    Process ID 1, Router ID 3.3.3.3, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 10.3.3.1
+    BDR: 0.0.0.0
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 0, Adjacent neighbor count is 0
+    No Hellos (Passive interface)
+  
+
+[329/400] rdc R-DC# show ip ospf interface GigabitEthernet0/1
+  GigabitEthernet0/1 is up, line protocol is up
+    Internet address is 172.16.13.2/30, Area 0
+    Process ID 1, Router ID 3.3.3.3, Network Type BROADCAST, Cost: 1
+    Transmit Delay is 1 sec, State DR, Priority 1
+    DR: 172.16.13.2
+    BDR: 172.16.13.1
+    Timer intervals configured, Hello 10, Dead 40, Wait 40, Retransmit 5
+    Hello due in 00:00:10
+    Neighbor Count is 1, Adjacent neighbor count is 1
+  
+
+[330/400] rhq R-HQ# show ip ospf virtual-links
+              OSPF Router with ID (1.1.1.1) (Process ID 1)
+  
+   No virtual links configured
+
+[331/400] rhq R-HQ# show ip ospf neighbor GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  show ip ospf neighbor GigabitEthernet0/1
+                        ^
+
+[332/400] rhq R-HQ# show ip ospf neighbor GigabitEthernet0/2
+  % Invalid input detected at '^' marker.
+  show ip ospf neighbor GigabitEthernet0/2
+                        ^
+
+
+--- [333] § OSPF — matrice de joignabilité complète post-features ---
+[333/400] lhq lhq$ ping -c 1 10.3.3.11
+  PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=0.401 ms
+  
+  --- 10.3.3.11 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.401/0.401/0.401/0.000 ms
+
+[334/400] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.155 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.155/0.155/0.155/0.000 ms
+
+[335/400] lhq lhq$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.323 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.323/0.323/0.323/0.000 ms
+
+[336/400] lhq lhq$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.243 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.243/0.243/0.243/0.000 ms
+
+[337/400] lhq lhq$ ping -c 1 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=6.374 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 6.374/6.374/6.374/0.000 ms
+
+[338/400] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.382 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.382/0.382/0.382/0.000 ms
+
+[339/400] lbr lbr$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.226 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.226/0.226/0.226/0.000 ms
+
+[340/400] lbr lbr$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.136 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.136/0.136/0.136/0.000 ms
+
+[341/400] lbr lbr$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=252 time=0.348 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.348/0.348/0.348/0.000 ms
+
+[342/400] lbr lbr$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.320 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.320/0.320/0.320/0.000 ms
+
+[343/400] lbr lbr$ ping -c 1 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.118 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
+
+[344/400] lbr lbr$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.427 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
+
+[345/400] ldc ldc$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.207 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.207/0.207/0.207/0.000 ms
+
+[346/400] ldc ldc$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=252 time=0.273 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.273/0.273/0.273/0.000 ms
+
+[347/400] ldc ldc$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.118 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
+
+[348/400] ldc ldc$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.345 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.345/0.345/0.345/0.000 ms
+
+[349/400] ldc ldc$ ping -c 1 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=5.403 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 5.403/5.403/5.403/0.000 ms
+
+[350/400] ldc ldc$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.204 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.204/0.204/0.204/0.000 ms
+
+[351/400] srvdc srvdc$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.241 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.241/0.241/0.241/0.000 ms
+
+[352/400] srvdc srvdc$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=252 time=0.248 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.248/0.248/0.248/0.000 ms
+
+[353/400] srvdc srvdc$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.152 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.152/0.152/0.152/0.000 ms
+
+[354/400] srvdc srvdc$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.481 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.481/0.481/0.481/0.000 ms
+
+[355/400] srvdc srvdc$ ping -c 1 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.350 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.350/0.350/0.350/0.000 ms
+
+
+--- [356] § OSPF — protocoles & résumé routage ---
+[356/400] rhq R-HQ# show ip protocols
+  No routing protocol is configured.
+
+[357/400] rdc R-DC# show ip protocols
+  No routing protocol is configured.
+
+[358/400] rbr <R-BR> display ospf brief
+  OSPF Process 1 with Router ID 172.16.23.2
+  
+   Area    Type   Intf    Adj   LSA
+   0       normal 2       1     6
+
+[359/400] rhq R-HQ# show ip route summary
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       3           3           0           456         1080
+  static          0           0           0           0           0
+  ospf            3           3           0           456         1080
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           6           6           0           912         2160
+
+[360/400] rdc R-DC# show ip route summary
+  IP routing table name is Default-IP-Routing-Table(0)
+  IP routing table maximum-paths is 32
+  Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
+  connected       3           3           0           456         1080
+  static          0           0           0           0           0
+  ospf            3           3           0           456         1080
+  eigrp           0           0           0           0           0
+  bgp             0           0           0           0           0
+  rip             0           0           0           0           0
+  default         0           0           0           0           0
+  Total           6           6           0           912         2160
+
+[361/400] rbr <R-BR> display ip routing-table statistics
+  Proto     route
+  --------------------
+  Direct    3
+  OSPF      3
+  --------------------
+  Total     6
+
+
+--- [362] § OSPF — cas négatifs / mal formés ---
+[362/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[363/400] rhq R-HQ(config)# router ospf 1
+<empty>
+
+[364/400] rhq R-HQ(config-router)# network 10.1.1.0 255.255.255.0 area 0
+<empty>
+
+[365/400] rhq R-HQ(config-router)# router-id 999.999.999.999
+<empty>
+
+[366/400] rhq R-HQ(config-router)# area abc
+  % Incomplete command.
+
+[367/400] rhq R-HQ(config-router)# end
+<empty>
+
+[368/400] rhq R-HQ# show ip ospf neighbor 9.9.9.9
+  % Invalid input detected at '^' marker.
+  show ip ospf neighbor 9.9.9.9
+                        ^
+
+[369/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[370/400] rbr [R-BR] ospf 1
+<empty>
+
+[371/400] rbr [R-BR-ospf-1] area
+  Error: Incomplete command.
+
+[372/400] rbr [R-BR-ospf-1] network 10.2.2.0
+  % Invalid input detected at '^' marker.
+  network 10.2.2.0
+  ^
+
+[373/400] rbr [R-BR-ospf-1] quit
+<empty>
+
+[374/400] rbr [R-BR] quit
+<empty>
+
+[375/400] rbr <R-BR> display ospf interface GigabitEthernet9/9/9
+   GE0/0/0 (10.2.2.1)
+     Area: 0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.2.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (172.16.12.2)
+     Area: 0  Cost: 10  State: DR
+     Type: p2p  Priority: 200
+     DR: 172.16.12.2  BDR: 172.16.12.1
+     Hello: 10s  Dead: 40s
+     Neighbors: 1
+  
+
+
+--- [376] § OSPF — désactivation debug & état final ---
+[376/400] rhq R-HQ# undebug all
+  All possible debugging has been turned off
+
+[377/400] rdc R-DC# undebug all
+  All possible debugging has been turned off
+
+[378/400] rbr <R-BR> undo debugging all
+  Info: All debugging turned off.
+
+[379/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[380/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[381/400] rbr <R-BR> display ospf peer brief
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[382/400] rhq R-HQ# show ip route ospf
+  O E2 10.3.3.0/24 [110/11] via 172.16.13.2, GigabitEthernet0/2
+  O E2 10.2.2.0/24 [110/60] via 172.16.12.2, GigabitEthernet0/1
+  O E2 172.16.23.0/30 [110/20] via 172.16.12.2, GigabitEthernet0/1
+
+[383/400] rbr <R-BR> display ospf routing
+  OSPF Process 1 with Router ID 0.0.0.0
+    Routing Tables
+  
+    Routing for Network
+
+[384/400] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.374 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.374/0.374/0.374/0.000 ms
+
+[385/400] ldc ldc$ ping -c 1 10.2.2.11
+  PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.509 ms
+  
+  --- 10.2.2.11 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.509/0.509/0.509/0.000 ms
+
+[386/400] lbr lbr$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.327 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.327/0.327/0.327/0.000 ms
+
+[387/400] srvdc srvdc$ ping -c 1 10.2.2.10
+  PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.519 ms
+  
+  --- 10.2.2.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.519/0.519/0.519/0.000 ms
+
+[388/400] whq whq$ ping -n 1 10.2.2.11
+  
+  Pinging 10.2.2.11 with 32 bytes of data:
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 10.2.2.11:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[389/400] wbr wbr$ ping -n 1 10.3.3.10
+  
+  Pinging 10.3.3.10 with 32 bytes of data:
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=61
+  
+  Ping statistics for 10.3.3.10:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[390/400] rhq R-HQ# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.1.1.1/24        10    DR    0/0
+  GigabitEthernet0/1   1     0               172.16.12.1/30     50    DR    1/1
+  GigabitEthernet0/2   1     0               172.16.13.1/30     10    DR    1/1
+
+[391/400] rdc R-DC# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  GigabitEthernet0/0   1     0               10.3.3.1/24        1     DR    0/0
+  GigabitEthernet0/1   1     0               172.16.13.2/30     1     DR    1/1
+
+[392/400] rbr <R-BR> display ospf interface
+   GE0/0/0 (10.2.2.1)
+     Area: 0  Cost: 10  State: DR
+     Type: broadcast  Priority: 1
+     DR: 10.2.2.1  BDR: 0.0.0.0
+     Hello: 10s  Dead: 40s
+     Neighbors: 0
+  
+   GE0/0/1 (172.16.12.2)
+     Area: 0  Cost: 10  State: DR
+     Type: p2p  Priority: 200
+     DR: 172.16.12.2  BDR: 172.16.12.1
+     Hello: 10s  Dead: 40s
+     Neighbors: 1
+  
+
+[393/400] rhq R-HQ# show ip ospf database database-summary
+  % Invalid input detected at '^' marker.
+  show ip ospf database database-summary
+                        ^
+
+[394/400] rdc R-DC# show ip route
+  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  
+  C    10.3.3.0/24 is directly connected, GigabitEthernet0/0
+  C    172.16.13.0/30 is directly connected, GigabitEthernet0/1
+  C    172.16.23.0/30 is directly connected, GigabitEthernet0/2
+  O 10.1.1.0/24 [110/11] via 172.16.13.1, GigabitEthernet0/1
+  O 172.16.12.0/30 [110/51] via 172.16.13.1, GigabitEthernet0/1
+  O 10.2.2.0/24 [110/61] via 172.16.13.1, GigabitEthernet0/1
+
+[395/400] rbr <R-BR> display ip routing-table
+  Route Flags: R - relay, D - download to fib
+  ------------------------------------------------------------------------------
+  Routing Tables: Public
+           Destinations : 6        Routes : 6
+  
+  Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
+  10.2.2.0/24         Direct  0    0     D     10.2.2.1        GE0/0/0
+  172.16.12.0/30      Direct  0    0     D     172.16.12.2     GE0/0/1
+  172.16.23.0/30      Direct  0    0     D     172.16.23.2     GE0/0/2
+  10.1.1.0/24         OSPF    10   20    RD    172.16.12.1     GE0/0/1
+  172.16.13.0/30      OSPF    10   20    RD    172.16.12.1     GE0/0/1
+  10.3.3.0/24         OSPF    10   21    RD    172.16.12.1     GE0/0/1
+
+[396/400] rhq R-HQ# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  172.16.23.2     1     FULL/  -        40s         172.16.12.2     GigabitEthernet0/1
+  3.3.3.3         1     FULL/  -        20s         172.16.13.2     GigabitEthernet0/2
+
+[397/400] rdc R-DC# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  1.1.1.1         1     FULL/  -        40s         172.16.13.1     GigabitEthernet0/1
+
+[398/400] rbr <R-BR> display ospf peer brief
+  OSPF Process with Router ID 172.16.23.2
+                   Neighbor Brief Information
+  
+   Area ID    Interface       Neighbor ID     State
+   0          GE0/0/1         1.1.1.1         Full
+
+[399/400] rhq R-HQ# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level informational
+      Monitor logging: level debugging
+      Buffer logging: level debugging, 32768 bytes
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[400/400] rbr <R-BR> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 0

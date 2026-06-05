@@ -5,8 +5,22 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
-import type { IPAddress, SubnetMask, IPv4Packet, UDPPacket } from '../../core/types';
+import type { IPAddress, SubnetMask, IPv4Packet, UDPPacket, ICMPPacket } from '../../core/types';
 import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
+
+const ACL_ICMP_KEYWORD_TO_TYPE: Record<string, string> = {
+  'echo': 'echo-request',
+  'echo-request': 'echo-request',
+  'echo-reply': 'echo-reply',
+  'unreachable': 'destination-unreachable',
+  'host-unreachable': 'destination-unreachable',
+  'net-unreachable': 'destination-unreachable',
+  'port-unreachable': 'destination-unreachable',
+  'protocol-unreachable': 'destination-unreachable',
+  'time-exceeded': 'time-exceeded',
+  'ttl-exceeded': 'time-exceeded',
+  'redirect': 'redirect',
+};
 
 // ─── ACL Types ──────────────────────────────────────────────────
 
@@ -270,6 +284,13 @@ export class ACLEngine {
         const udp = ipPkt.payload as UDPPacket;
         if (!this.portMatches(udp.sourcePort, entry.srcPort, entry.srcPortSpec)) return false;
         if (!this.portMatches(udp.destinationPort, entry.dstPort, entry.dstPortSpec)) return false;
+      }
+
+      if (entry.protocol === 'icmp' && entry.icmpType) {
+        const icmp = ipPkt.payload as ICMPPacket | undefined;
+        const pktType = icmp && icmp.type === 'icmp' ? icmp.icmpType : undefined;
+        const expected = ACL_ICMP_KEYWORD_TO_TYPE[entry.icmpType];
+        if (expected !== undefined && expected !== pktType) return false;
       }
     }
 

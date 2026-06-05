@@ -1,0 +1,2552 @@
+============================================================
+Network protocol debug transcript — dhcp
+Generated: 2026-06-05T15:04:52.416Z
+Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
+protocol=DHCP (RFC 2131) — focus: DORA, baux/renouvellement/libération, réservations, relais (ip helper-address), snooping L2, exclusions/conflits, statistiques — serveurs Cisco/Huawei, clients Linux(dhclient)/Windows(ipconfig)
+Total steps: 300
+============================================================
+
+
+--- [1] § DHCP — activation logs & debug (Cisco) ---
+[1/300] rhq R-HQ# enable
+<empty>
+
+[2/300] rhq R-HQ# terminal monitor
+<empty>
+
+[3/300] rhq R-HQ# debug ip dhcp server events
+  DHCP server event debugging is on
+
+[4/300] rhq R-HQ# debug ip dhcp server packet
+  DHCP server packet debugging is on
+
+[5/300] rhq R-HQ# show debugging
+  No debug flags are enabled
+
+[6/300] rdc R-DC# terminal monitor
+<empty>
+
+[7/300] rdc R-DC# debug ip dhcp server events
+  DHCP server event debugging is on
+
+[8/300] rdc R-DC# debug ip dhcp server packet
+  DHCP server packet debugging is on
+
+[9/300] rdc R-DC# show debugging
+  No debug flags are enabled
+
+
+--- [10] § DHCP — activation logs & debug (Huawei) ---
+[10/300] rbr <R-BR> terminal monitor
+  % Invalid input detected at '^' marker.
+  terminal monitor
+  ^
+
+[11/300] rbr <R-BR> terminal debugging
+  % Invalid input detected at '^' marker.
+  terminal debugging
+  ^
+
+[12/300] rbr <R-BR> debugging dhcp server all
+  % Invalid input detected at '^' marker.
+  debugging dhcp server all
+                        ^
+
+[13/300] rbr <R-BR> display debugging
+  No debugging is enabled.
+
+
+--- [14] § DHCP serveur HQ (Cisco) — pool LAN-HQ ---
+[14/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[15/300] rhq R-HQ(config)# ip dhcp excluded-address 10.1.1.1 10.1.1.9
+<empty>
+
+[16/300] rhq R-HQ(config)# ip dhcp pool LAN-HQ
+<empty>
+
+[17/300] rhq R-HQ(dhcp-config)# network 10.1.1.0 255.255.255.0
+<empty>
+
+[18/300] rhq R-HQ(dhcp-config)# default-router 10.1.1.1
+<empty>
+
+[19/300] rhq R-HQ(dhcp-config)# dns-server 10.3.3.10 8.8.8.8
+<empty>
+
+[20/300] rhq R-HQ(dhcp-config)# domain-name acme.example
+<empty>
+
+[21/300] rhq R-HQ(dhcp-config)# lease 0 8 0
+<empty>
+
+[22/300] rhq R-HQ(dhcp-config)# exit
+<empty>
+
+[23/300] rhq R-HQ(config)# service dhcp
+<empty>
+
+[24/300] rhq R-HQ(config)# end
+<empty>
+
+[25/300] rhq R-HQ# show ip dhcp pool
+  Pool LAN-HQ :
+    Network          : 10.1.1.0/24
+    Default Router   : 10.1.1.1
+    DNS Server(s)    : 10.3.3.10, 8.8.8.8
+    Domain Name      : acme.example
+    Lease Time       : 8 hours
+    Current Bindings : 0
+
+[26/300] rhq R-HQ# show running-config | section dhcp
+  service dhcp
+  ip dhcp pool LAN-HQ
+   network 10.1.1.0 255.255.255.0
+   default-router 10.1.1.1
+   dns-server 10.3.3.10 8.8.8.8
+   domain-name acme.example
+   lease 0
+  ip dhcp excluded-address 10.1.1.1 10.1.1.9
+
+
+--- [27] § DHCP serveur DC (Cisco) — pool LAN-DC (réserve SRV-DC) ---
+[27/300] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[28/300] rdc R-DC(config)# ip dhcp excluded-address 10.3.3.1 10.3.3.10
+<empty>
+
+[29/300] rdc R-DC(config)# ip dhcp pool LAN-DC
+<empty>
+
+[30/300] rdc R-DC(dhcp-config)# network 10.3.3.0 255.255.255.0
+<empty>
+
+[31/300] rdc R-DC(dhcp-config)# default-router 10.3.3.1
+<empty>
+
+[32/300] rdc R-DC(dhcp-config)# dns-server 10.3.3.10
+<empty>
+
+[33/300] rdc R-DC(dhcp-config)# lease 2 0 0
+<empty>
+
+[34/300] rdc R-DC(dhcp-config)# exit
+<empty>
+
+[35/300] rdc R-DC(config)# end
+<empty>
+
+[36/300] rdc R-DC# show ip dhcp pool
+  Pool LAN-DC :
+    Network          : 10.3.3.0/24
+    Default Router   : 10.3.3.1
+    DNS Server(s)    : 10.3.3.10
+    Domain Name      : not configured
+    Lease Time       : 2 days
+    Current Bindings : 0
+
+
+--- [37] § DHCP serveur BR (Huawei) — ip pool LAN-BR ---
+[37/300] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[38/300] rbr [R-BR] dhcp enable
+<empty>
+
+[39/300] rbr [R-BR] ip pool LAN-BR
+<empty>
+
+[40/300] rbr [R-BR-ip-pool-LAN-BR] network 10.2.2.0 mask 255.255.255.0
+<empty>
+
+[41/300] rbr [R-BR-ip-pool-LAN-BR] gateway-list 10.2.2.1
+<empty>
+
+[42/300] rbr [R-BR-ip-pool-LAN-BR] dns-list 10.3.3.10 8.8.8.8
+<empty>
+
+[43/300] rbr [R-BR-ip-pool-LAN-BR] excluded-ip-address 10.2.2.1 10.2.2.9
+<empty>
+
+[44/300] rbr [R-BR-ip-pool-LAN-BR] lease day 1
+<empty>
+
+[45/300] rbr [R-BR-ip-pool-LAN-BR] quit
+<empty>
+
+[46/300] rbr [R-BR] interface GigabitEthernet0/0/0
+<empty>
+
+[47/300] rbr [R-BR-GE0/0/0] dhcp select global
+<empty>
+
+[48/300] rbr [R-BR-GE0/0/0] quit
+<empty>
+
+[49/300] rbr [R-BR] quit
+<empty>
+
+[50/300] rbr <R-BR> display ip pool
+  Pool-name      : LAN-BR
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 10.2.2.1
+  Network        : 10.2.2.0
+  Mask           : 255.255.255.0
+  DNS-list       : 10.3.3.10 8.8.8.8
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[51/300] rbr <R-BR> display ip pool name LAN-BR
+  Pool-name      : LAN-BR
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 10.2.2.1
+  Network        : 10.2.2.0
+  Mask           : 255.255.255.0
+  DNS-list       : 10.3.3.10 8.8.8.8
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+
+--- [52] § DHCP — bascule des clients (DORA) ---
+[52/300] lhq lhq$ ip addr flush dev eth0
+<empty>
+
+[53/300] lhq lhq$ ip addr flush dev eth0
+<empty>
+
+[54/300] lhq lhq$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:47
+  Sending on   LPF/eth0/02:00:00:00:00:47
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.1.1.10 from 0.0.0.0
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 0.0.0.0
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
+
+[55/300] lhq lhq$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[56/300] lhq lhq$ ip route show
+  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
+  default via 10.1.1.1 dev eth0 proto dhcp
+
+[57/300] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.349 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.349/0.349/0.349/0.000 ms
+
+[58/300] whq whq$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.1.1.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[59/300] whq whq$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.1.1.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[60/300] whq whq$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : PC-HQ-W
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4B
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
+     Default Gateway . . . . . . . . . : 10.1.1.1
+     DHCP Server . . . . . . . . . . . : 0.0.0.0
+     DNS Servers . . . . . . . . . . . : 10.3.3.10
+                                           8.8.8.8
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4C
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4D
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4E
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+[61/300] whq whq$ ping -n 1 10.1.1.1
+  
+  Pinging 10.1.1.1 with 32 bytes of data:
+  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=255
+  
+  Ping statistics for 10.1.1.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[62/300] lbr lbr$ ip addr flush dev eth0
+<empty>
+
+[63/300] lbr lbr$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:53
+  Sending on   LPF/eth0/02:00:00:00:00:53
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.2.2.10 from 0.0.0.0
+  DHCPREQUEST of 10.2.2.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.10 from 0.0.0.0
+  bound to 10.2.2.10 -- renewal in 43200 seconds.
+
+[64/300] lbr lbr$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
+      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
+
+[65/300] lbr lbr$ ip route show
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.10 metric 0
+  default via 10.2.2.1 dev eth0 proto dhcp
+
+[66/300] lbr lbr$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.393 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.393/0.393/0.393/0.000 ms
+
+[67/300] wbr wbr$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.2.2.10
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.2.2.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[68/300] wbr wbr$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.2.2.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[69/300] wbr wbr$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : PC-BR-W
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4F
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 3:04:52 PM
+     Default Gateway . . . . . . . . . : 10.2.2.1
+     DHCP Server . . . . . . . . . . . : 0.0.0.0
+     DNS Servers . . . . . . . . . . . : 10.3.3.10
+                                           8.8.8.8
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-50
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-51
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-52
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+[70/300] wbr wbr$ ping -n 1 10.2.2.1
+  
+  Pinging 10.2.2.1 with 32 bytes of data:
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=255
+  
+  Ping statistics for 10.2.2.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[71/300] ldc ldc$ ip addr flush dev eth0
+<empty>
+
+[72/300] ldc ldc$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:5b
+  Sending on   LPF/eth0/02:00:00:00:00:5b
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.3.3.11 from 0.0.0.0
+  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 0.0.0.0
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
+
+[73/300] ldc ldc$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[74/300] ldc ldc$ ip route show
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
+  default via 10.3.3.1 dev eth0 proto dhcp
+
+[75/300] ldc ldc$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.276 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.276/0.276/0.276/0.000 ms
+
+
+--- [76] § DHCP — joignabilité avec adresses obtenues ---
+[76/300] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.324 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.324/0.324/0.324/0.000 ms
+
+[77/300] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.625 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.625/0.625/0.625/0.000 ms
+
+[78/300] wbr wbr$ ping -n 1 10.1.1.1
+  
+  Pinging 10.1.1.1 with 32 bytes of data:
+  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=253
+  
+  Ping statistics for 10.1.1.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[79/300] ldc ldc$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.388 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.388/0.388/0.388/0.000 ms
+
+[80/300] lbr lbr$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.500 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.500/0.500/0.500/0.000 ms
+
+[81/300] whq whq$ ping -n 1 10.2.2.1
+  
+  Pinging 10.2.2.1 with 32 bytes of data:
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
+  
+  Ping statistics for 10.2.2.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+
+--- [82] § DHCP — baux côté serveur ---
+[82/300] rhq R-HQ# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
+
+[83/300] rhq R-HQ# show ip dhcp pool
+  Pool LAN-HQ :
+    Network          : 10.1.1.0/24
+    Default Router   : 10.1.1.1
+    DNS Server(s)    : 10.3.3.10, 8.8.8.8
+    Domain Name      : acme.example
+    Lease Time       : 8 hours
+    Current Bindings : 2
+
+[84/300] rhq R-HQ# show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        1
+  Automatic bindings   2
+  
+  Message              Received
+  DHCPDISCOVER         2
+  DHCPREQUEST          2
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            2
+  DHCPACK              2
+  DHCPNAK              0
+
+[85/300] rdc R-DC# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  10.3.3.11        02:00:00:00:00:5b       6/7/2026, 3:04:52 PM    automatic
+
+[86/300] rdc R-DC# show ip dhcp pool
+  Pool LAN-DC :
+    Network          : 10.3.3.0/24
+    Default Router   : 10.3.3.1
+    DNS Server(s)    : 10.3.3.10
+    Domain Name      : not configured
+    Lease Time       : 2 days
+    Current Bindings : 1
+
+[87/300] rbr <R-BR> display ip pool name LAN-BR
+  Pool-name      : LAN-BR
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 10.2.2.1
+  Network        : 10.2.2.0
+  Mask           : 255.255.255.0
+  DNS-list       : 10.3.3.10 8.8.8.8
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[88/300] rbr <R-BR> display dhcp server statistics
+  DHCP server packets statistics:
+    Receive total: 4
+    Send total: 4
+    Discover: 2      Offer: 2
+    Request: 2       Ack: 2
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 1
+
+[89/300] rbr <R-BR> display dhcp server ip-in-use
+  % Invalid input detected at '^' marker.
+  display dhcp server ip-in-use
+                      ^
+
+
+--- [90] § DHCP — baux côté client ---
+[90/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.1.1.10;
+    option subnet-mask 255.255.255.0;
+    option routers 10.1.1.1;
+    option domain-name-servers 10.3.3.10, 8.8.8.8;
+    option domain-name "acme.example";
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780686292 Friday 2026-06-05 19:04:52.424;
+    rebind 1780697092 Friday 2026-06-05 22:04:52.424;
+    expire 1780700692 Friday 2026-06-05 23:04:52.424;
+  }
+
+[91/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.1.1.10;
+    option subnet-mask 255.255.255.0;
+    option routers 10.1.1.1;
+    option domain-name-servers 10.3.3.10, 8.8.8.8;
+    option domain-name "acme.example";
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780686292 Friday 2026-06-05 19:04:52.424;
+    rebind 1780697092 Friday 2026-06-05 22:04:52.424;
+    expire 1780700692 Friday 2026-06-05 23:04:52.424;
+  }
+
+[92/300] lhq lhq$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[93/300] lhq lhq$ cat /etc/resolv.conf
+  cat: /etc/resolv.conf: No such file or directory
+
+[94/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.2.2.10;
+    option subnet-mask 255.255.255.0;
+    option routers 10.2.2.1;
+    option domain-name-servers 10.3.3.10, 8.8.8.8;
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780715092 Saturday 2026-06-06 03:04:52.430;
+    rebind 1780747492 Saturday 2026-06-06 12:04:52.430;
+    expire 1780758292 Saturday 2026-06-06 15:04:52.430;
+  }
+
+[95/300] lbr lbr$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
+      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
+
+[96/300] lbr lbr$ cat /etc/resolv.conf
+  cat: /etc/resolv.conf: No such file or directory
+
+[97/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.3.3.11;
+    option subnet-mask 255.255.255.0;
+    option routers 10.3.3.1;
+    option domain-name-servers 10.3.3.10;
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780758292 Saturday 2026-06-06 15:04:52.442;
+    rebind 1780823092 Sunday 2026-06-07 09:04:52.442;
+    expire 1780844692 Sunday 2026-06-07 15:04:52.442;
+  }
+
+[98/300] ldc ldc$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[99/300] ldc ldc$ cat /etc/resolv.conf
+  cat: /etc/resolv.conf: No such file or directory
+
+[100/300] whq whq$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.1.1.1
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[101/300] whq whq$ ipconfig /displaydns
+  Windows IP Configuration
+  
+    Record Name . . . . . : (no entries)
+
+[102/300] wbr wbr$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.2.2.1
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[103/300] wbr wbr$ ipconfig /displaydns
+  Windows IP Configuration
+  
+    Record Name . . . . . : (no entries)
+
+
+--- [104] § DHCP — renouvellement (T1) & libération ---
+[104/300] lhq lhq$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:47
+  Sending on   LPF/eth0/02:00:00:00:00:47
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.1.1.10 from 0.0.0.0
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 0.0.0.0
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
+
+[105/300] lhq lhq$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:47
+  Sending on   LPF/eth0/02:00:00:00:00:47
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.1.1.10 from 0.0.0.0
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 0.0.0.0
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
+
+[106/300] lhq lhq$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[107/300] whq whq$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.1.1.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[108/300] whq whq$ ipconfig | findstr IPv4
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+
+[109/300] lbr lbr$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:53
+  Sending on   LPF/eth0/02:00:00:00:00:53
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.2.2.10 from 0.0.0.0
+  DHCPREQUEST of 10.2.2.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.10 from 0.0.0.0
+  bound to 10.2.2.10 -- renewal in 43200 seconds.
+
+[110/300] lbr lbr$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
+      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
+
+[111/300] wbr wbr$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.2.2.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[112/300] wbr wbr$ ipconfig | findstr IPv4
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+
+[113/300] ldc ldc$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:5b
+  Sending on   LPF/eth0/02:00:00:00:00:5b
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.3.3.11 from 0.0.0.0
+  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 0.0.0.0
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
+
+[114/300] ldc ldc$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[115/300] rhq R-HQ# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
+
+[116/300] lhq lhq$ dhclient -r eth0
+  released 10.1.1.10
+
+[117/300] lhq lhq$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[118/300] whq whq$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[119/300] whq whq$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[120/300] lbr lbr$ dhclient -r eth0
+  released 10.2.2.10
+
+[121/300] lbr lbr$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
+
+[122/300] wbr wbr$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[123/300] wbr wbr$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[124/300] ldc ldc$ dhclient -r eth0
+  released 10.3.3.11
+
+[125/300] ldc ldc$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[126/300] rhq R-HQ# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
+
+[127/300] rbr <R-BR> display dhcp server ip-in-use
+  % Invalid input detected at '^' marker.
+  display dhcp server ip-in-use
+                      ^
+
+[128/300] lhq lhq$ ip addr flush dev eth0
+<empty>
+
+[129/300] lhq lhq$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:47
+  Sending on   LPF/eth0/02:00:00:00:00:47
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.1.1.10 from 0.0.0.0
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 0.0.0.0
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
+
+[130/300] whq whq$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[131/300] whq whq$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[132/300] lbr lbr$ ip addr flush dev eth0
+<empty>
+
+[133/300] lbr lbr$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:53
+  Sending on   LPF/eth0/02:00:00:00:00:53
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.2.2.10 from 0.0.0.0
+  DHCPREQUEST of 10.2.2.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.10 from 0.0.0.0
+  bound to 10.2.2.10 -- renewal in 43200 seconds.
+
+[134/300] wbr wbr$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[135/300] wbr wbr$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[136/300] ldc ldc$ ip addr flush dev eth0
+<empty>
+
+[137/300] ldc ldc$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:5b
+  Sending on   LPF/eth0/02:00:00:00:00:5b
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.3.3.11 from 0.0.0.0
+  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 0.0.0.0
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
+
+
+--- [138] § DHCP — réservation / static binding ---
+[138/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[139/300] rhq R-HQ(config)# ip dhcp pool RES-HQ
+<empty>
+
+[140/300] rhq R-HQ(dhcp-config)# host 10.1.1.50 255.255.255.0
+<empty>
+
+[141/300] rhq R-HQ(dhcp-config)# client-identifier 0100.0000.0000.4b
+<empty>
+
+[142/300] rhq R-HQ(dhcp-config)# default-router 10.1.1.1
+<empty>
+
+[143/300] rhq R-HQ(dhcp-config)# exit
+<empty>
+
+[144/300] rhq R-HQ(config)# end
+<empty>
+
+[145/300] rhq R-HQ# show ip dhcp pool RES-HQ
+  Pool RES-HQ :
+    Network          : not configured/?
+    Default Router   : 10.1.1.1
+    DNS Server(s)    : not configured
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 0
+    Manual Binding   : 10.1.1.50/24
+    Client Identifier: 0100.0000.0000.4b
+
+[146/300] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[147/300] rbr [R-BR] ip pool LAN-BR
+<empty>
+
+[148/300] rbr [R-BR-ip-pool-LAN-BR] static-bind ip-address 10.2.2.60 mac-address 0200-0000-0050
+<empty>
+
+[149/300] rbr [R-BR-ip-pool-LAN-BR] display this
+  #
+  ip pool LAN-BR
+   network 10.2.2.0 mask 255.255.255.0
+   gateway-list 10.2.2.1
+   dns-list 10.3.3.10 8.8.8.8
+  #
+
+[150/300] rbr [R-BR-ip-pool-LAN-BR] undo static-bind ip-address 10.2.2.60
+  % Invalid input detected at '^' marker.
+  undo static-bind ip-address 10.2.2.60
+  ^
+
+[151/300] rbr [R-BR-ip-pool-LAN-BR] quit
+<empty>
+
+[152/300] rbr [R-BR] quit
+<empty>
+
+
+--- [153] § DHCP — exclusions & conflits ---
+[153/300] rhq R-HQ# show ip dhcp conflict
+  IP address        Detection method   Detection time
+  
+  No conflicts detected.
+
+[154/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[155/300] rhq R-HQ(config)# ip dhcp excluded-address 10.1.1.100 10.1.1.120
+<empty>
+
+[156/300] rhq R-HQ(config)# end
+<empty>
+
+[157/300] rhq R-HQ# show running-config | include excluded
+  ip dhcp excluded-address 10.1.1.1 10.1.1.9
+  ip dhcp excluded-address 10.1.1.100 10.1.1.120
+
+[158/300] lhq lhq$ arp -s 10.1.1.45 02:00:00:00:00:99
+<empty>
+
+[159/300] rhq R-HQ# clear ip dhcp conflict *
+  % Invalid input detected at '^' marker.
+  clear ip dhcp conflict *
+                ^
+
+[160/300] rhq R-HQ# show ip dhcp conflict
+  IP address        Detection method   Detection time
+  
+  No conflicts detected.
+
+[161/300] rdc R-DC# show ip dhcp conflict
+  IP address        Detection method   Detection time
+  
+  No conflicts detected.
+
+
+--- [162] § DHCP snooping — Cisco SW-HQ ---
+[162/300] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[163/300] swhq SW-HQ(config)# ip dhcp snooping
+<empty>
+
+[164/300] swhq SW-HQ(config)# ip dhcp snooping vlan 1
+<empty>
+
+[165/300] swhq SW-HQ(config)# interface FastEthernet0/1
+<empty>
+
+[166/300] swhq SW-HQ(config-if)# ip dhcp snooping trust
+<empty>
+
+[167/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[168/300] swhq SW-HQ(config)# interface FastEthernet0/2
+<empty>
+
+[169/300] swhq SW-HQ(config-if)# ip dhcp snooping limit rate 10
+<empty>
+
+[170/300] swhq SW-HQ(config-if)# exit
+<empty>
+
+[171/300] swhq SW-HQ(config)# end
+<empty>
+
+[172/300] swhq SW-HQ# show ip dhcp snooping
+  Switch DHCP snooping is enabled
+  DHCP snooping is configured on following VLANs:
+  1
+  Trusted ports: Fa0/1
+    Fa0/2: rate limit 10 pps
+
+[173/300] swhq SW-HQ# show ip dhcp snooping binding
+  MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
+  ------------------  ----------------  ----------  -------------  ----  --------------------
+  Total number of bindings: 0
+
+
+--- [174] § DHCP snooping — Huawei SW-BR ---
+[174/300] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[175/300] swbr [SW-BR] dhcp enable
+<empty>
+
+[176/300] swbr [SW-BR] dhcp snooping enable
+<empty>
+
+[177/300] swbr [SW-BR] interface GigabitEthernet0/0/1
+<empty>
+
+[178/300] swbr [SW-BR-GigabitEthernet0/0/1] dhcp snooping trusted
+<empty>
+
+[179/300] swbr [SW-BR-GigabitEthernet0/0/1] quit
+<empty>
+
+[180/300] swbr [SW-BR] quit
+<empty>
+
+[181/300] swbr <SW-BR> display dhcp snooping
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+[182/300] swbr <SW-BR> display dhcp snooping user-bind all
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+
+--- [183] § DHCP relay — R-DC relaie vers serveur central HQ ---
+[183/300] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[184/300] rdc R-DC(config)# no ip dhcp pool LAN-DC
+  % Invalid input detected at '^' marker.
+  no ip dhcp pool LAN-DC
+        ^
+
+[185/300] rdc R-DC(config)# interface GigabitEthernet0/0
+<empty>
+
+[186/300] rdc R-DC(config-if)# ip helper-address 172.16.13.1
+<empty>
+
+[187/300] rdc R-DC(config-if)# exit
+<empty>
+
+[188/300] rdc R-DC(config)# end
+<empty>
+
+[189/300] rdc R-DC# show ip interface GigabitEthernet0/0 | include Helper
+<empty>
+
+[190/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[191/300] rhq R-HQ(config)# ip dhcp pool RELAY-DC
+<empty>
+
+[192/300] rhq R-HQ(dhcp-config)# network 10.3.3.0 255.255.255.0
+<empty>
+
+[193/300] rhq R-HQ(dhcp-config)# default-router 10.3.3.1
+<empty>
+
+[194/300] rhq R-HQ(dhcp-config)# exit
+<empty>
+
+[195/300] rhq R-HQ(config)# end
+<empty>
+
+[196/300] ldc ldc$ ip addr flush dev eth0
+<empty>
+
+[197/300] ldc ldc$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:5b
+  Sending on   LPF/eth0/02:00:00:00:00:5b
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.3.3.11 from 0.0.0.0
+  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 0.0.0.0
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
+
+[198/300] ldc ldc$ ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[199/300] rdc R-DC# show ip dhcp relay statistics
+  DHCP relay: forwarded 0 packets, dropped 0.
+
+[200/300] rhq R-HQ# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
+
+
+--- [201] § DHCP — statistiques & compteurs ---
+[201/300] rhq R-HQ# show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        3
+  Automatic bindings   2
+  
+  Message              Received
+  DHCPDISCOVER         7
+  DHCPREQUEST          7
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            7
+  DHCPACK              7
+  DHCPNAK              0
+
+[202/300] rdc R-DC# show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        1
+  Automatic bindings   1
+  
+  Message              Received
+  DHCPDISCOVER         4
+  DHCPREQUEST          4
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            4
+  DHCPACK              4
+  DHCPNAK              0
+
+[203/300] rbr <R-BR> display dhcp server statistics
+  DHCP server packets statistics:
+    Receive total: 12
+    Send total: 12
+    Discover: 6      Offer: 6
+    Request: 6       Ack: 6
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 1
+
+[204/300] rbr <R-BR> display dhcp statistics
+  Memory usage         36028
+  Address pools        1
+  Automatic bindings   2
+  
+  Message              Received
+  DHCPDISCOVER         6
+  DHCPREQUEST          6
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            6
+  DHCPACK              6
+  DHCPNAK              0
+
+[205/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.1.1.10;
+    option subnet-mask 255.255.255.0;
+    option routers 10.1.1.1;
+    option domain-name-servers 10.3.3.10, 8.8.8.8;
+    option domain-name "acme.example";
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780686292 Friday 2026-06-05 19:04:52.470;
+    rebind 1780697092 Friday 2026-06-05 22:04:52.470;
+    expire 1780700692 Friday 2026-06-05 23:04:52.470;
+  }
+
+[206/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.2.2.10;
+    option subnet-mask 255.255.255.0;
+    option routers 10.2.2.1;
+    option domain-name-servers 10.3.3.10, 8.8.8.8;
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780715092 Saturday 2026-06-06 03:04:52.471;
+    rebind 1780747492 Saturday 2026-06-06 12:04:52.471;
+    expire 1780758292 Saturday 2026-06-06 15:04:52.471;
+  }
+
+[207/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
+  lease {
+    interface "eth0";
+    fixed-address 10.3.3.11;
+    option subnet-mask 255.255.255.0;
+    option routers 10.3.3.1;
+    option domain-name-servers 10.3.3.10;
+    option dhcp-server-identifier 0.0.0.0;
+    renew 1780758292 Saturday 2026-06-06 15:04:52.477;
+    rebind 1780823092 Sunday 2026-06-07 09:04:52.477;
+    expire 1780844692 Sunday 2026-06-07 15:04:52.477;
+  }
+
+[208/300] whq whq$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : PC-HQ-W
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4B
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
+     Default Gateway . . . . . . . . . : 10.1.1.1
+     DHCP Server . . . . . . . . . . . : 0.0.0.0
+     DNS Servers . . . . . . . . . . . : 10.3.3.10
+                                           8.8.8.8
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4C
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4D
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4E
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+
+--- [209] § DHCP — matrice de connectivité post-bail ---
+[209/300] lhq lhq$ ping -c 1 10.1.1.11
+  PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.231 ms
+  
+  --- 10.1.1.11 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.231/0.231/0.231/0.000 ms
+
+[210/300] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.238 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.238/0.238/0.238/0.000 ms
+
+[211/300] lhq lhq$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.253 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.253/0.253/0.253/0.000 ms
+
+[212/300] lhq lhq$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.234 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.234/0.234/0.234/0.000 ms
+
+[213/300] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.426 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.426/0.426/0.426/0.000 ms
+
+[214/300] whq whq$ ping -n 1 10.1.1.1
+  
+  Pinging 10.1.1.1 with 32 bytes of data:
+  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=255
+  
+  Ping statistics for 10.1.1.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[215/300] whq whq$ ping -n 1 10.2.2.1
+  
+  Pinging 10.2.2.1 with 32 bytes of data:
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
+  
+  Ping statistics for 10.2.2.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[216/300] whq whq$ ping -n 1 10.3.3.1
+  
+  Pinging 10.3.3.1 with 32 bytes of data:
+  Reply from 10.3.3.1: bytes=32 time=<1ms TTL=253
+  
+  Ping statistics for 10.3.3.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[217/300] whq whq$ ping -n 1 10.3.3.10
+  
+  Pinging 10.3.3.10 with 32 bytes of data:
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 10.3.3.10:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[218/300] lbr lbr$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.252 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
+
+[219/300] lbr lbr$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.144 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.144/0.144/0.144/0.000 ms
+
+[220/300] lbr lbr$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.200 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.200/0.200/0.200/0.000 ms
+
+[221/300] lbr lbr$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.424 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.424/0.424/0.424/0.000 ms
+
+[222/300] wbr wbr$ ping -n 1 10.1.1.1
+  
+  Pinging 10.1.1.1 with 32 bytes of data:
+  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=253
+  
+  Ping statistics for 10.1.1.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[223/300] wbr wbr$ ping -n 1 10.2.2.1
+  
+  Pinging 10.2.2.1 with 32 bytes of data:
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=255
+  
+  Ping statistics for 10.2.2.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[224/300] wbr wbr$ ping -n 1 10.3.3.1
+  
+  Pinging 10.3.3.1 with 32 bytes of data:
+  Reply from 10.3.3.1: bytes=32 time=<1ms TTL=253
+  
+  Ping statistics for 10.3.3.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[225/300] wbr wbr$ ping -n 1 10.3.3.10
+  
+  Pinging 10.3.3.10 with 32 bytes of data:
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 10.3.3.10:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[226/300] ldc ldc$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.271 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.271/0.271/0.271/0.000 ms
+
+[227/300] ldc ldc$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.213 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.213/0.213/0.213/0.000 ms
+
+[228/300] ldc ldc$ ping -c 1 10.3.3.1
+  PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.118 ms
+  
+  --- 10.3.3.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
+
+[229/300] ldc ldc$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.155 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.155/0.155/0.155/0.000 ms
+
+
+--- [230] § DHCP — inspection détaillée des pools/baux ---
+[230/300] rhq R-HQ# show ip dhcp pool LAN-HQ
+  Pool LAN-HQ :
+    Network          : 10.1.1.0/24
+    Default Router   : 10.1.1.1
+    DNS Server(s)    : 10.3.3.10, 8.8.8.8
+    Domain Name      : acme.example
+    Lease Time       : 8 hours
+    Current Bindings : 2
+
+[231/300] rhq R-HQ# show ip dhcp binding 10.1.1.10
+  % Invalid input detected at '^' marker.
+  show ip dhcp binding 10.1.1.10
+                       ^
+
+[232/300] rhq R-HQ# show running-config | section ip dhcp
+  ip dhcp pool LAN-HQ
+   network 10.1.1.0 255.255.255.0
+   default-router 10.1.1.1
+   dns-server 10.3.3.10 8.8.8.8
+   domain-name acme.example
+   lease 0
+  ip dhcp pool RES-HQ
+   default-router 10.1.1.1
+  ip dhcp pool RELAY-DC
+   network 10.3.3.0 255.255.255.0
+   default-router 10.3.3.1
+  ip dhcp excluded-address 10.1.1.1 10.1.1.9
+  ip dhcp excluded-address 10.1.1.100 10.1.1.120
+
+[233/300] rdc R-DC# show running-config | section ip dhcp
+  ip dhcp pool LAN-DC
+   network 10.3.3.0 255.255.255.0
+   default-router 10.3.3.1
+   dns-server 10.3.3.10
+   lease 2
+  ip dhcp excluded-address 10.3.3.1 10.3.3.10
+
+[234/300] rbr <R-BR> display ip pool name LAN-BR all
+  Error: Pool "LAN-BR all" does not exist.
+
+[235/300] rbr <R-BR> display dhcp server ip-in-use pool LAN-BR
+  % Invalid input detected at '^' marker.
+  display dhcp server ip-in-use pool LAN-BR
+                      ^
+
+[236/300] rbr <R-BR> display current-configuration configuration dhcp
+  % Invalid input detected at '^' marker.
+  display current-configuration configuration dhcp
+                  ^
+
+[237/300] lhq lhq$ cat /etc/resolv.conf
+  cat: /etc/resolv.conf: No such file or directory
+
+[238/300] lbr lbr$ ip route show default
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.10 metric 0
+  default via 10.2.2.1 dev eth0 proto dhcp
+
+[239/300] ldc ldc$ ip route show default
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
+  default via 10.3.3.1 dev eth0 proto dhcp
+
+
+--- [240] § DHCP — DECLINE / INFORM / changement d'options ---
+[240/300] lhq lhq$ dhclient -r eth0
+  released 10.1.1.10
+
+[241/300] lhq lhq$ arp -s 10.1.1.30 02:00:00:00:00:30
+<empty>
+
+[242/300] lhq lhq$ dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:47
+  Sending on   LPF/eth0/02:00:00:00:00:47
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.1.1.10 from 0.0.0.0
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 0.0.0.0
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
+
+[243/300] lhq lhq$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[244/300] rhq R-HQ# show ip dhcp conflict
+  IP address        Detection method   Detection time
+  
+  No conflicts detected.
+
+[245/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[246/300] rhq R-HQ(config)# ip dhcp pool LAN-HQ
+<empty>
+
+[247/300] rhq R-HQ(dhcp-config)# dns-server 1.1.1.1 8.8.4.4
+<empty>
+
+[248/300] rhq R-HQ(dhcp-config)# option 42 ip 10.3.3.10
+<empty>
+
+[249/300] rhq R-HQ(dhcp-config)# netbios-name-server 10.3.3.10
+<empty>
+
+[250/300] rhq R-HQ(dhcp-config)# exit
+<empty>
+
+[251/300] rhq R-HQ(config)# end
+<empty>
+
+[252/300] whq whq$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[253/300] whq whq$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[254/300] whq whq$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : PC-HQ-W
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4B
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
+     Default Gateway . . . . . . . . . : 10.1.1.1
+     DHCP Server . . . . . . . . . . . : 0.0.0.0
+     DNS Servers . . . . . . . . . . . : 1.1.1.1
+                                           8.8.4.4
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4C
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4D
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4E
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+
+--- [255] § DHCPv6 — serveur & client (best-effort) ---
+[255/300] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[256/300] rbr [R-BR] dhcp enable
+<empty>
+
+[257/300] rbr [R-BR] ipv6 dhcp server V6POOL
+  % Invalid input detected at '^' marker.
+  ipv6 dhcp server V6POOL
+       ^
+
+[258/300] rbr [R-BR] quit
+<empty>
+
+[259/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[260/300] rhq R-HQ(config)# ipv6 dhcp pool V6-HQ
+<empty>
+
+[261/300] rhq R-HQ(config-dhcpv6)# address prefix 2001:db8:1::/64
+<empty>
+
+[262/300] rhq R-HQ(config-dhcpv6)# dns-server 2001:4860:4860::8888
+<empty>
+
+[263/300] rhq R-HQ(config-dhcpv6)# exit
+<empty>
+
+[264/300] rhq R-HQ(config)# interface GigabitEthernet0/0
+<empty>
+
+[265/300] rhq R-HQ(config-if)# ipv6 dhcp server V6-HQ
+<empty>
+
+[266/300] rhq R-HQ(config-if)# exit
+<empty>
+
+[267/300] rhq R-HQ(config)# end
+<empty>
+
+[268/300] rhq R-HQ# show ipv6 dhcp pool
+  DHCPv6 pool: V6-HQ
+    Prefix: 2001:db8:1::/64
+    DNS servers: 2001:4860:4860::8888
+
+[269/300] lhq lhq$ dhclient -6 -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:47
+  Sending on   LPF/eth0/02:00:00:00:00:47
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  DHCPOFFER of 10.1.1.10 from 0.0.0.0
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 0.0.0.0
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
+
+[270/300] lhq lhq$ ip -6 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[271/300] whq whq$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : PC-HQ-W
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4B
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
+     Default Gateway . . . . . . . . . : 10.1.1.1
+     DHCP Server . . . . . . . . . . . : 0.0.0.0
+     DNS Servers . . . . . . . . . . . : 1.1.1.1
+                                           8.8.4.4
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4C
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4D
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-4E
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+
+--- [272] § DHCP — cas négatifs / mal formés ---
+[272/300] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[273/300] rhq R-HQ(config)# ip dhcp pool
+  % Incomplete command.
+
+[274/300] rhq R-HQ(config)# network 999.0.0.0 255.255.255.0
+  % Invalid input detected at '^' marker.
+  network 999.0.0.0 255.255.255.0
+  ^
+
+[275/300] rhq R-HQ(config)# end
+<empty>
+
+[276/300] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[277/300] rbr [R-BR] ip pool
+  Error: Incomplete command.
+
+[278/300] rbr [R-BR] gateway-list
+  % Invalid input detected at '^' marker.
+  gateway-list
+  ^
+
+[279/300] rbr [R-BR] quit
+<empty>
+
+[280/300] lhq lhq$ dhclient
+  Usage: dhclient [-v] [-d] [-r] [-x] [-s server] [-w] [-t timeout] <interface>
+
+[281/300] lhq lhq$ dhclient eth99
+  RTNETLINK answers: No such device eth99
+
+[282/300] whq whq$ ipconfig /renew eth99
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+     DHCP Discover - Broadcast on eth0
+     DHCP Offer received from 0.0.0.0
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.1.1.1
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+
+--- [283] § DHCP — désactivation debug & état final ---
+[283/300] rhq R-HQ# undebug all
+  All possible debugging has been turned off
+
+[284/300] rdc R-DC# undebug all
+  All possible debugging has been turned off
+
+[285/300] rbr <R-BR> undo debugging all
+  Info: All debugging turned off.
+
+[286/300] rhq R-HQ# show ip dhcp binding
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
+
+[287/300] rbr <R-BR> display ip pool
+  Pool-name      : LAN-BR
+  Pool-No        : 0
+  Position       : Local
+  Status         : Unlocked
+  Gateway-list   : 10.2.2.1
+  Network        : 10.2.2.0
+  Mask           : 255.255.255.0
+  DNS-list       : 10.3.3.10 8.8.8.8
+  Domain-name    : not configured
+  Lease          : 1 day(s)
+
+[288/300] rhq R-HQ# show ip dhcp pool
+  Pool LAN-HQ :
+    Network          : 10.1.1.0/24
+    Default Router   : 10.1.1.1
+    DNS Server(s)    : 1.1.1.1, 8.8.4.4
+    Domain Name      : acme.example
+    Lease Time       : 8 hours
+    Current Bindings : 2
+    NetBIOS Server(s): 10.3.3.10
+    Option 42 (ip) : 10.3.3.10
+  
+  Pool RES-HQ :
+    Network          : not configured/?
+    Default Router   : 10.1.1.1
+    DNS Server(s)    : not configured
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 0
+    Manual Binding   : 10.1.1.50/24
+    Client Identifier: 0100.0000.0000.4b
+  
+  Pool RELAY-DC :
+    Network          : 10.3.3.0/24
+    Default Router   : 10.3.3.1
+    DNS Server(s)    : not configured
+    Domain Name      : not configured
+    Lease Time       : 1 days
+    Current Bindings : 0
+
+[289/300] swhq SW-HQ# show ip dhcp snooping binding
+  MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
+  ------------------  ----------------  ----------  -------------  ----  --------------------
+  Total number of bindings: 0
+
+[290/300] swbr <SW-BR> display dhcp snooping user-bind all
+  DHCP snooping running information :
+   DHCP snooping                : Enable
+   Static user max number       : 0
+   Check dhcp-giaddr            : Disable
+   Check dhcp-chaddr            : Disable
+
+[291/300] lhq lhq$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
+
+[292/300] whq whq$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 10.1.1.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.1.1.1
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[293/300] lbr lbr$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
+      inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:54 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:55 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:56 brd ff:ff:ff:ff:ff:ff
+
+[294/300] wbr wbr$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 10.2.2.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 10.2.2.1
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[295/300] ldc ldc$ ip -4 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+
+[296/300] rhq R-HQ# show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        3
+  Automatic bindings   2
+  
+  Message              Received
+  DHCPDISCOVER         11
+  DHCPREQUEST          11
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            11
+  DHCPACK              11
+  DHCPNAK              0
+
+[297/300] rdc R-DC# show ip dhcp relay statistics
+  DHCP relay: forwarded 0 packets, dropped 0.
+
+[298/300] rbr <R-BR> display dhcp server statistics
+  DHCP server packets statistics:
+    Receive total: 12
+    Send total: 12
+    Discover: 6      Offer: 6
+    Request: 6       Ack: 6
+    Nak: 0           Release: 0
+    Inform: 0        Decline: 0
+  Pool number: 1
+
+[299/300] rhq R-HQ# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level informational
+      Monitor logging: level debugging
+      Buffer logging: level debugging, 32768 bytes
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[300/300] rbr <R-BR> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 0

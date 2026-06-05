@@ -1,0 +1,1380 @@
+============================================================
+Shell debug transcript — linux-server-filesystem-files
+Generated: 2026-06-05T09:41:04.989Z
+Engine: linux
+host=L-SRV-FS-DBG (linux-server) — focus: système de fichiers & opérations fichiers
+Total commands: 327
+============================================================
+
+
+--- [1] § navigation & contexte ---
+$ [1/327]> pwd
+  /root
+
+$ [2/327]> cd /
+<empty>
+
+$ [3/327]> pwd
+  /
+
+$ [4/327]> cd /etc
+<empty>
+
+$ [5/327]> pwd
+  /etc
+
+$ [6/327]> cd ..
+<empty>
+
+$ [7/327]> pwd
+  /
+
+$ [8/327]> cd /var/log
+<empty>
+
+$ [9/327]> pwd
+  /var/log
+
+$ [10/327]> cd -
+  bash: cd: OLDPWD not set
+
+$ [11/327]> pwd
+  /var/log
+
+$ [12/327]> cd ~
+<empty>
+
+$ [13/327]> pwd
+  /root
+
+$ [14/327]> cd
+<empty>
+
+$ [15/327]> pwd
+  /root
+
+$ [16/327]> cd /root && pwd
+  /root
+
+$ [17/327]> cd /tmp; pwd
+  /tmp
+
+$ [18/327]> cd /chemin/inexistant_xyz
+  bash: cd: /chemin/inexistant_xyz: No such file or directory
+
+$ [19/327]> pwd
+  /tmp
+
+$ [20/327]> cd /etc/hostname
+  bash: cd: /etc/hostname: Not a directory
+
+
+--- [21] § listing — ls ---
+$ [21/327]> ls
+<empty>
+
+$ [22/327]> ls /
+  bin    dev    home   lib64  mnt    proc   run    srv    tmp    var
+  boot   etc    lib    media  opt    root   sbin   sys    usr
+
+$ [23/327]> ls -l
+  total 0
+
+$ [24/327]> ls -la
+  total 16
+  drwxrwxrwt  2 root root 0 Jun  5 09:41 .
+  drwxr-xr-x 17 root root 0 Jun  5 09:41 ..
+
+$ [25/327]> ls -al /etc
+  total 336
+  drwxr-xr-x 15 root root    0 Jun  5 09:41 .
+  drwxr-xr-x 17 root root    0 Jun  5 09:41 ..
+  -rw-r--r--  1 root root  377 Jun  5 09:41 adduser.conf
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 cron.daily
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 cron.hourly
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 cron.monthly
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 cron.weekly
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 default
+  -rw-r--r--  1 root root  169 Jun  5 09:41 group
+  -rw-r--r--  1 root root  164 Jun  5 09:41 group-
+  -rw-r-----  1 root root  136 Jun  5 09:41 gshadow
+  -rw-------  1 root root  131 Jun  5 09:41 gshadow-
+  -rw-r--r--  1 root root   13 Jun  5 09:41 hostname
+  -rw-r--r--  1 root root  144 Jun  5 09:41 hosts
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 iptables
+  -rw-r--r--  1 root root   19 Jun  5 09:41 issue.net
+  -rw-r--r--  1 root root  421 Jun  5 09:41 login.defs
+  -rw-r--r--  1 root root  104 Jun  5 09:41 lsb-release
+  -rw-r--r--  1 root root   33 Jun  5 09:41 machine-id
+  -rw-r--r--  1 root root   67 Jun  5 09:41 motd
+  -rw-r--r--  1 root root   96 Jun  5 09:41 networks
+  -rw-r--r--  1 root root  510 Jun  5 09:41 nsswitch.conf
+  -rw-r--r--  1 root root  302 Jun  5 09:41 os-release
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 pam.d
+  -rw-r--r--  1 root root  295 Jun  5 09:41 passwd
+  -rw-r--r--  1 root root  295 Jun  5 09:41 passwd-
+  -rw-r--r--  1 root root 3042 Jun  5 09:41 protocols
+  -rw-r--r--  1 root root  583 Jun  5 09:41 rpc
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 security
+  -rw-r--r--  1 root root 3290 Jun  5 09:41 services
+  -rw-r-----  1 root root  252 Jun  5 09:41 shadow
+  -rw-------  1 root root  252 Jun  5 09:41 shadow-
+  -rw-r--r--  1 root root   18 Jun  5 09:41 shells
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 skel
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 ssh
+  -rw-r--r--  1 root root   72 Jun  5 09:41 subgid
+  -rw-r--r--  1 root root   72 Jun  5 09:41 subuid
+  -r--r-----  1 root root   47 Jun  5 09:41 sudoers
+  drwxr-xr-x  2 root root    0 Jun  5 09:41 sudoers.d
+  drwxr-xr-x  3 root root    0 Jun  5 09:41 systemd
+  -rw-r--r--  1 root root    8 Jun  5 09:41 timezone
+  drwxr-xr-x  3 root root    0 Jun  5 09:41 ufw
+
+$ [26/327]> ls -lh /var/log
+  total 48
+  drwxr-x--- 2 root root    0 Jun  5 09:41 audit
+  -rw-r----- 1 root adm   156 Jun  5 09:41 auth.log
+  -rw-r----- 1 root adm  1498 Jun  5 09:41 boot.log
+  -rw-r----- 1 root adm   908 Jun  5 09:41 kern.log
+  -rw-r--r-- 1 root root    2 Jun  5 09:41 lastlog
+  -rw-r----- 1 root adm  1797 Jun  5 09:41 syslog
+
+$ [27/327]> ls -lha /
+  total 168
+  drwxr-xr-x 17 root root 0 Jun  5 09:41 .
+  drwxr-xr-x 17 root root 0 Jun  5 09:41 ..
+  lrwxrwxrwx  1 root root 7 Jun  5 09:41 bin -> usr/bin
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 boot
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 dev
+  drwxr-xr-x 15 root root 0 Jun  5 09:41 etc
+  drwxr-xr-x  7 root root 0 Jun  5 09:41 home
+  lrwxrwxrwx  1 root root 7 Jun  5 09:41 lib -> usr/lib
+  lrwxrwxrwx  1 root root 9 Jun  5 09:41 lib64 -> usr/lib64
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 media
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 mnt
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 opt
+  drwxr-xr-x 19 root root 0 Jun  5 09:41 proc
+  drwx------  2 root root 0 Jun  5 09:41 root
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 run
+  lrwxrwxrwx  1 root root 8 Jun  5 09:41 sbin -> usr/sbin
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 srv
+  drwxr-xr-x  2 root root 0 Jun  5 09:41 sys
+  drwxrwxrwt  2 root root 0 Jun  5 09:41 tmp
+  drwxr-xr-x  7 root root 0 Jun  5 09:41 usr
+  drwxr-xr-x 12 root root 0 Jun  5 09:41 var
+
+$ [28/327]> ls -a
+  .   ..
+
+$ [29/327]> ls -A
+<empty>
+
+$ [30/327]> ls -d */
+  ls: cannot access '*/': No such file or directory
+
+$ [31/327]> ls -ld /etc
+  drwxr-xr-x 15 root root 0 Jun  5 09:41 /etc
+
+$ [32/327]> ls -R /etc
+  /etc:
+  adduser.conf   gshadow        machine-id     protocols      ssh
+  cron.daily     gshadow-       motd           rpc            subgid
+  cron.hourly    hostname       networks       security       subuid
+  cron.monthly   hosts          nsswitch.conf  services       sudoers
+  cron.weekly    iptables       os-release     shadow         sudoers.d
+  default        issue.net      pam.d          shadow-        systemd
+  group          login.defs     passwd         shells         timezone
+  group-         lsb-release    passwd-        skel           ufw
+  
+  /etc/cron.daily:
+  
+  /etc/cron.hourly:
+  
+  /etc/cron.monthly:
+  
+  /etc/cron.weekly:
+  
+  /etc/default:
+  locale   useradd
+  
+  /etc/iptables:
+  
+  /etc/pam.d:
+  common-password
+  
+  /etc/security:
+  faillock.conf   pwquality.conf
+  
+  /etc/skel:
+  
+  /etc/ssh:
+  ssh_host_ed25519_key      ssh_host_ed25519_key.pub  sshd_config
+  
+  /etc/sudoers.d:
+  
+  /etc/systemd:
+  system
+  
+  /etc/systemd/system:
+  multi-user.target.wants
+  
+  /etc/systemd/system/multi-user.target.wants:
+  apparmor.service          networking.service        systemd-logind.service
+  atd.service               oracle-ohasd.service      systemd-resolved.service
+  auditd.service            rsyslog.service           ufw.service
+  cron.service              ssh.service
+  dbus.service              systemd-journald.service
+  
+  /etc/ufw:
+  after.rules     applications.d  before6.rules   ufw.conf        user6.rules
+  after6.rules    before.rules    sysctl.conf     user.rules
+  
+  /etc/ufw/applications.d:
+  apache2         nginx           openssh-server
+
+$ [33/327]> ls -lt /var/log
+  total 48
+  -rw-r----- 1 root adm  1797 Jun  5 09:41 syslog
+  -rw-r--r-- 1 root root    2 Jun  5 09:41 lastlog
+  -rw-r----- 1 root adm   156 Jun  5 09:41 auth.log
+  -rw-r----- 1 root adm   908 Jun  5 09:41 kern.log
+  -rw-r----- 1 root adm  1498 Jun  5 09:41 boot.log
+  drwxr-x--- 2 root root    0 Jun  5 09:41 audit
+
+$ [34/327]> ls -ltr /var/log
+  total 48
+  -rw-r----- 1 root adm  1797 Jun  5 09:41 syslog
+  -rw-r--r-- 1 root root    2 Jun  5 09:41 lastlog
+  -rw-r----- 1 root adm   156 Jun  5 09:41 auth.log
+  -rw-r----- 1 root adm   908 Jun  5 09:41 kern.log
+  -rw-r----- 1 root adm  1498 Jun  5 09:41 boot.log
+  drwxr-x--- 2 root root    0 Jun  5 09:41 audit
+
+$ [35/327]> ls -lS /var/log
+  total 48
+  -rw-r----- 1 root adm  1797 Jun  5 09:41 syslog
+  -rw-r----- 1 root adm  1498 Jun  5 09:41 boot.log
+  -rw-r----- 1 root adm   908 Jun  5 09:41 kern.log
+  -rw-r----- 1 root adm   156 Jun  5 09:41 auth.log
+  -rw-r--r-- 1 root root    2 Jun  5 09:41 lastlog
+  drwxr-x--- 2 root root    0 Jun  5 09:41 audit
+
+$ [36/327]> ls -lr
+  total 0
+
+$ [37/327]> ls -i /etc
+  143 adduser.conf   51 hostname        54 os-release      53 shells
+  11 cron.daily      52 hosts           148 pam.d          139 skel
+  10 cron.hourly     17 iptables        153 passwd         228 ssh
+  13 cron.monthly    233 issue.net      206 passwd-        158 subgid
+  12 cron.weekly     141 login.defs     201 protocols      157 subuid
+  138 default        55 lsb-release     203 rpc            56 sudoers
+  155 group          216 machine-id     147 security       14 sudoers.d
+  208 group-         232 motd           200 services       167 systemd
+  156 gshadow        202 networks       154 shadow         217 timezone
+  209 gshadow-       204 nsswitch.conf  207 shadow-        15 ufw
+
+$ [38/327]> ls -n /etc
+  adduser.conf   gshadow        machine-id     protocols      ssh
+  cron.daily     gshadow-       motd           rpc            subgid
+  cron.hourly    hostname       networks       security       subuid
+  cron.monthly   hosts          nsswitch.conf  services       sudoers
+  cron.weekly    iptables       os-release     shadow         sudoers.d
+  default        issue.net      pam.d          shadow-        systemd
+  group          login.defs     passwd         shells         timezone
+  group-         lsb-release    passwd-        skel           ufw
+
+$ [39/327]> ls -F /
+  bin@    dev/    home/   lib64@  mnt/    proc/   run/    srv/    tmp/    var/
+  boot/   etc/    lib@    media/  opt/    root/   sbin@   sys/    usr/
+
+$ [40/327]> ls -1 /etc
+  adduser.conf
+  cron.daily
+  cron.hourly
+  cron.monthly
+  cron.weekly
+  default
+  group
+  group-
+  gshadow
+  gshadow-
+  hostname
+  hosts
+  iptables
+  issue.net
+  login.defs
+  lsb-release
+  machine-id
+  motd
+  networks
+  nsswitch.conf
+  os-release
+  pam.d
+  passwd
+  passwd-
+  protocols
+  rpc
+  security
+  services
+  shadow
+  shadow-
+  shells
+  skel
+  ssh
+  subgid
+  subuid
+  sudoers
+  sudoers.d
+  systemd
+  timezone
+  ufw
+
+$ [41/327]> ls --color=auto /
+  bin    dev    home   lib64  mnt    proc   run    srv    tmp    var
+  boot   etc    lib    media  opt    root   sbin   sys    usr
+
+$ [42/327]> ls /etc /var /usr
+  adduser.conf   gshadow        machine-id     protocols      ssh
+  cron.daily     gshadow-       motd           rpc            subgid
+  cron.hourly    hostname       networks       security       subuid
+  cron.monthly   hosts          nsswitch.conf  services       sudoers
+  cron.weekly    iptables       os-release     shadow         sudoers.d
+  default        issue.net      pam.d          shadow-        systemd
+  group          login.defs     passwd         shells         timezone
+  group-         lsb-release    passwd-        skel           ufw
+  backups  lib      log      opt      spool
+  cache    local    mail     run      tmp
+  bin    lib    lib64  local  sbin
+
+$ [43/327]> ls /bin/ls
+  ls: cannot access '/bin/ls': No such file or directory
+
+$ [44/327]> ls -l /bin/ls
+  ls: cannot access '/bin/ls': No such file or directory
+
+$ [45/327]> ls /etc/*.conf
+  /etc/adduser.conf
+  /etc/nsswitch.conf
+
+$ [46/327]> ls /etc/passwd /etc/shadow /etc/group
+  /etc/passwd
+  /etc/shadow
+  /etc/group
+
+$ [47/327]> ls /repertoire_inexistant_xyz
+  ls: cannot access '/repertoire_inexistant_xyz': No such file or directory
+
+$ [48/327]> ls -Z /etc
+  adduser.conf   gshadow        machine-id     protocols      ssh
+  cron.daily     gshadow-       motd           rpc            subgid
+  cron.hourly    hostname       networks       security       subuid
+  cron.monthly   hosts          nsswitch.conf  services       sudoers
+  cron.weekly    iptables       os-release     shadow         sudoers.d
+  default        issue.net      pam.d          shadow-        systemd
+  group          login.defs     passwd         shells         timezone
+  group-         lsb-release    passwd-        skel           ufw
+
+$ [49/327]> ls --zorglub
+<empty>
+
+
+--- [50] § arborescence & disque — tree/du/df ---
+$ [50/327]> tree /etc
+  tree: command not found
+
+$ [51/327]> tree -L 1 /
+  tree: command not found
+
+$ [52/327]> tree -d /var
+  tree: command not found
+
+$ [53/327]> tree -a /root
+  tree: command not found
+
+$ [54/327]> du /var/log
+  4	/var/log
+
+$ [55/327]> du -h /var/log
+  4.0K	/var/log
+
+$ [56/327]> du -sh /var
+  4	/var
+
+$ [57/327]> du -sh /etc
+  4	/etc
+
+$ [58/327]> du -a /etc | head
+  4	/etc
+
+$ [59/327]> du -h --max-depth=1 /
+  4.0K	/
+
+$ [60/327]> du -c /var/log
+  4	/var/log
+
+$ [61/327]> df
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [62/327]> df -h
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [63/327]> df -h /
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [64/327]> df -i
+  Filesystem      Inodes  IUsed   IFree IUse% Mounted on
+  /dev/sda1       655360  52483  602877    8% /
+  tmpfs           127960      1  127959    1% /dev/shm
+  /dev/sda2       131072   2145  128927    2% /boot
+
+$ [65/327]> df -T
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [66/327]> df -k
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [67/327]> du -sh /chemin/inexistant_xyz
+  du: cannot access '/chemin/inexistant_xyz': No such file or directory
+
+$ [68/327]> df /chemin/inexistant_xyz
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+
+--- [69] § création de fichiers — touch/echo/redir ---
+$ [69/327]> cd /tmp
+<empty>
+
+$ [70/327]> touch fichier1.txt
+<empty>
+
+$ [71/327]> ls -l fichier1.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 fichier1.txt
+
+$ [72/327]> touch fichier2.txt fichier3.txt fichier4.txt
+<empty>
+
+$ [73/327]> ls -l fichier*.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 fichier1.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 fichier2.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 fichier3.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 fichier4.txt
+
+$ [74/327]> echo "ligne unique" > simple.txt
+<empty>
+
+$ [75/327]> cat simple.txt
+  ligne unique
+
+$ [76/327]> echo "ligne ajoutee" >> simple.txt
+<empty>
+
+$ [77/327]> cat simple.txt
+  ligne unique
+  ligne ajoutee
+
+$ [78/327]> printf "a\nb\nc\n" > lettres.txt
+<empty>
+
+$ [79/327]> cat lettres.txt
+  a
+  b
+  c
+
+$ [80/327]> echo "via tee" | tee tee.txt
+  via tee
+
+$ [81/327]> cat tee.txt
+  via tee
+
+$ [82/327]> echo "append tee" | tee -a tee.txt
+  append tee
+
+$ [83/327]> cat tee.txt
+  via tee
+  
+  append tee
+
+$ [84/327]> touch -t 202001010000 daté.txt
+<empty>
+
+$ [85/327]> ls -l daté.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 daté.txt
+
+$ [86/327]> touch fichier1.txt
+<empty>
+
+$ [87/327]> stat fichier1.txt
+    File: fichier1.txt
+    Size: 0	Blocks: 0	IO Block: 4096	regular file
+  Device: 0h/0d	Inode: 310	Links: 1
+  Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
+  Access: 2026-06-05T09:41:04.998Z
+  Modify: 2026-06-05T09:41:04.998Z
+  Change: 2026-06-05T09:41:04.996Z
+
+$ [88/327]> touch /repertoire/inexistant_xyz/fichier.txt
+<empty>
+
+
+--- [89] § répertoires — mkdir/rmdir ---
+$ [89/327]> mkdir projet
+<empty>
+
+$ [90/327]> ls -ld projet
+  drwxr-xr-x 2 root root 0 Jun  5 09:41 projet
+
+$ [91/327]> mkdir -p projet/src/lib/utils
+<empty>
+
+$ [92/327]> ls -R projet
+  projet:
+  src
+  
+  projet/src:
+  lib
+  
+  projet/src/lib:
+  utils
+  
+  projet/src/lib/utils:
+
+$ [93/327]> mkdir -p a/b/c d/e/f
+<empty>
+
+$ [94/327]> ls -R a d
+  a:
+  b
+  
+  a/b:
+  c
+  
+  a/b/c:
+  d:
+  e
+  
+  d/e:
+  f
+  
+  d/e/f:
+
+$ [95/327]> mkdir -m 700 securisé
+<empty>
+
+$ [96/327]> ls -ld securisé
+  drwxr-xr-x 2 root root 0 Jun  5 09:41 securisé
+
+$ [97/327]> mkdir projet
+  mkdir: cannot create directory 'projet'
+
+$ [98/327]> rmdir securisé
+<empty>
+
+$ [99/327]> ls -ld securisé
+  ls: cannot access 'securisé': No such file or directory
+
+$ [100/327]> rmdir projet/src/lib/utils
+<empty>
+
+$ [101/327]> ls -R projet
+  projet:
+  src
+  
+  projet/src:
+  lib
+  
+  projet/src/lib:
+
+$ [102/327]> rmdir -p a/b/c
+<empty>
+
+$ [103/327]> ls -R a
+  a:
+  b
+  
+  a/b:
+
+$ [104/327]> rmdir projet
+  rmdir: failed to remove 'projet'
+
+$ [105/327]> mkdir
+<empty>
+
+$ [106/327]> rmdir /etc
+  rmdir: failed to remove '/etc'
+
+
+--- [107] § copie — cp ---
+$ [107/327]> cd /tmp
+<empty>
+
+$ [108/327]> cp simple.txt copie.txt
+<empty>
+
+$ [109/327]> cat copie.txt
+  ligne unique
+  ligne ajoutee
+
+$ [110/327]> cp simple.txt lettres.txt copie_vers/
+<empty>
+
+$ [111/327]> mkdir copie_vers
+<empty>
+
+$ [112/327]> cp simple.txt lettres.txt copie_vers/
+<empty>
+
+$ [113/327]> ls copie_vers
+<empty>
+
+$ [114/327]> cp -r projet projet_backup
+  cp: cannot copy 'projet' to 'projet_backup'
+
+$ [115/327]> ls -R projet_backup
+  ls: cannot access 'projet_backup': No such file or directory
+
+$ [116/327]> cp -p simple.txt preserve.txt
+<empty>
+
+$ [117/327]> ls -l preserve.txt simple.txt
+  -rw-r--r-- 1 root root 27 Jun  5 09:41 preserve.txt
+  -rw-r--r-- 1 root root 27 Jun  5 09:41 simple.txt
+
+$ [118/327]> cp -v lettres.txt verbose.txt
+<empty>
+
+$ [119/327]> cp -i simple.txt copie.txt
+<empty>
+
+$ [120/327]> cp -n simple.txt copie.txt
+<empty>
+
+$ [121/327]> cp -a projet projet_archive
+  cp: cannot copy 'projet' to 'projet_archive'
+
+$ [122/327]> cp fichier_inexistant_xyz cible.txt
+  cp: cannot copy 'fichier_inexistant_xyz' to 'cible.txt'
+
+$ [123/327]> cp simple.txt
+  cp: missing operand
+
+
+--- [124] § déplacement & renommage — mv ---
+$ [124/327]> mv copie.txt renomme.txt
+<empty>
+
+$ [125/327]> ls -l renomme.txt copie.txt
+  -rw-r--r-- 1 root root 27 Jun  5 09:41 renomme.txt
+  ls: cannot access 'copie.txt': No such file or directory
+
+$ [126/327]> mkdir destination
+<empty>
+
+$ [127/327]> mv renomme.txt destination/
+<empty>
+
+$ [128/327]> ls destination
+  renomme.txt
+
+$ [129/327]> mv fichier2.txt fichier3.txt destination/
+<empty>
+
+$ [130/327]> ls destination
+  renomme.txt
+
+$ [131/327]> mv -v fichier4.txt deplace4.txt
+<empty>
+
+$ [132/327]> mv -i simple.txt tee.txt
+<empty>
+
+$ [133/327]> mv -n simple.txt tee.txt
+  mv: cannot move 'simple.txt' to 'tee.txt'
+
+$ [134/327]> mv projet_backup projet_renomme
+  mv: cannot move 'projet_backup' to 'projet_renomme'
+
+$ [135/327]> ls -ld projet_renomme
+  ls: cannot access 'projet_renomme': No such file or directory
+
+$ [136/327]> mv fichier_inexistant_xyz cible.txt
+  mv: cannot move 'fichier_inexistant_xyz' to 'cible.txt'
+
+$ [137/327]> mv destination
+  mv: missing operand
+
+
+--- [138] § suppression — rm ---
+$ [138/327]> rm verbose.txt
+<empty>
+
+$ [139/327]> ls verbose.txt
+  ls: cannot access 'verbose.txt': No such file or directory
+
+$ [140/327]> rm -v preserve.txt
+<empty>
+
+$ [141/327]> rm -f fichier_inexistant_xyz
+<empty>
+
+$ [142/327]> rm -i lettres.txt
+<empty>
+
+$ [143/327]> rm -r destination
+<empty>
+
+$ [144/327]> ls -ld destination
+  ls: cannot access 'destination': No such file or directory
+
+$ [145/327]> rm -rf projet_renomme projet_archive
+<empty>
+
+$ [146/327]> ls -ld projet_renomme
+  ls: cannot access 'projet_renomme': No such file or directory
+
+$ [147/327]> rm *.txt
+<empty>
+
+$ [148/327]> ls *.txt
+  ls: cannot access '*.txt': No such file or directory
+
+$ [149/327]> rm -r projet
+<empty>
+
+$ [150/327]> rm
+<empty>
+
+$ [151/327]> rm -rf /
+<empty>
+
+$ [152/327]> rm /etc/passwd
+  rm: cannot remove '/etc/passwd': No such file or directory
+
+
+--- [153] § liens — ln ---
+$ [153/327]> cd /tmp
+  bash: cd: /tmp: No such file or directory
+
+$ [154/327]> echo "cible du lien" > cible_lien.txt
+<empty>
+
+$ [155/327]> ln cible_lien.txt lien_dur.txt
+<empty>
+
+$ [156/327]> ls -li cible_lien.txt lien_dur.txt
+  337 -rw-r--r-- 2 root root 14 Jun  5 09:41 cible_lien.txt
+  337 -rw-r--r-- 2 root root 14 Jun  5 09:41 lien_dur.txt
+
+$ [157/327]> cat lien_dur.txt
+  cible du lien
+
+$ [158/327]> ln -s cible_lien.txt lien_symbolique.txt
+<empty>
+
+$ [159/327]> ls -l lien_symbolique.txt
+  lrwxrwxrwx 1 root root 14 Jun  5 09:41 lien_symbolique.txt -> cible_lien.txt
+
+$ [160/327]> cat lien_symbolique.txt
+  cible du lien
+
+$ [161/327]> ln -s /etc/passwd lien_passwd
+<empty>
+
+$ [162/327]> ls -l lien_passwd
+  lrwxrwxrwx 1 root root 11 Jun  5 09:41 lien_passwd -> /etc/passwd
+
+$ [163/327]> readlink lien_symbolique.txt
+  lien_symbolique.txt
+
+$ [164/327]> readlink -f lien_symbolique.txt
+  lien_symbolique.txt
+
+$ [165/327]> realpath lien_symbolique.txt
+  realpath: command not found
+
+$ [166/327]> ln -s cible_inexistante_xyz lien_casse
+<empty>
+
+$ [167/327]> ls -l lien_casse
+  lrwxrwxrwx 1 root root 21 Jun  5 09:41 lien_casse -> cible_inexistante_xyz
+
+$ [168/327]> readlink lien_casse
+  lien_casse
+
+$ [169/327]> ln -sf /etc/hostname lien_passwd
+  ln: failed to create hard link 'lien_passwd'
+
+$ [170/327]> ls -l lien_passwd
+  lrwxrwxrwx 1 root root 11 Jun  5 09:41 lien_passwd -> /etc/passwd
+
+$ [171/327]> ln
+  ln: missing operand
+
+$ [172/327]> ln -s
+  ln: missing operand
+
+
+--- [173] § lecture — cat/head/tail/more ---
+$ [173/327]> cat /etc/passwd
+  cat: /etc/passwd: No such file or directory
+
+$ [174/327]> cat /etc/os-release
+  cat: /etc/os-release: No such file or directory
+
+$ [175/327]> cat -n /etc/passwd
+  cat: /etc/passwd: No such file or directory
+
+$ [176/327]> cat -A /etc/hostname
+  cat: /etc/hostname: No such file or directory
+
+$ [177/327]> cat -b /etc/passwd
+  cat: /etc/passwd: No such file or directory
+
+$ [178/327]> cat -s /etc/passwd
+  cat: /etc/passwd: No such file or directory
+
+$ [179/327]> cat /etc/passwd /etc/group
+  cat: /etc/passwd: No such file or directory
+
+$ [180/327]> head /etc/passwd
+<empty>
+
+$ [181/327]> head -n 3 /etc/passwd
+<empty>
+
+$ [182/327]> head -c 20 /etc/passwd
+<empty>
+
+$ [183/327]> tail /etc/passwd
+  tail: cannot open '/etc/passwd' for reading: No such file or directory
+
+$ [184/327]> tail -n 5 /etc/passwd
+  tail: cannot open '/etc/passwd' for reading: No such file or directory
+
+$ [185/327]> tail -c 30 /etc/passwd
+  tail: cannot open '/etc/passwd' for reading: No such file or directory
+
+$ [186/327]> head -n 1 /etc/os-release
+<empty>
+
+$ [187/327]> tail -n 1 /etc/os-release
+  tail: cannot open '/etc/os-release' for reading: No such file or directory
+
+$ [188/327]> cat /fichier/inexistant_xyz
+  cat: /fichier/inexistant_xyz: No such file or directory
+
+$ [189/327]> head /repertoire_inexistant_xyz
+<empty>
+
+
+--- [190] § métadonnées — stat/file/wc ---
+$ [190/327]> stat /etc/passwd
+  stat: cannot stat '/etc/passwd': No such file or directory
+
+$ [191/327]> stat /etc
+  stat: cannot stat '/etc': No such file or directory
+
+$ [192/327]> stat -c "%n %s %a %U:%G" /etc/passwd
+  stat: cannot stat '/etc/passwd': No such file or directory
+
+$ [193/327]> stat -c "%F" /etc
+  stat: cannot stat '/etc': No such file or directory
+
+$ [194/327]> stat -c "%F" /etc/passwd
+  stat: cannot stat '/etc/passwd': No such file or directory
+
+$ [195/327]> stat --format="%a %n" /etc/hostname
+  stat: cannot stat '/etc/hostname': No such file or directory
+
+$ [196/327]> stat -t /etc/passwd
+  stat: cannot stat '/etc/passwd': No such file or directory
+
+$ [197/327]> file /etc/passwd
+  /etc/passwd: ASCII text
+
+$ [198/327]> file /etc
+  /etc: ASCII text
+
+$ [199/327]> file /bin/ls
+  /bin/ls: ASCII text
+
+$ [200/327]> file /etc/hostname
+  /etc/hostname: ASCII text
+
+$ [201/327]> wc /etc/passwd
+<empty>
+
+$ [202/327]> wc -l /etc/passwd
+<empty>
+
+$ [203/327]> wc -w /etc/passwd
+<empty>
+
+$ [204/327]> wc -c /etc/passwd
+<empty>
+
+$ [205/327]> wc -L /etc/passwd
+<empty>
+
+$ [206/327]> stat /fichier/inexistant_xyz
+  stat: cannot stat '/fichier/inexistant_xyz': No such file or directory
+
+$ [207/327]> file /fichier/inexistant_xyz
+  /fichier/inexistant_xyz: ASCII text
+
+
+--- [208] § recherche — find ---
+$ [208/327]> find /etc -maxdepth 1
+<empty>
+
+$ [209/327]> find /etc -maxdepth 1 -type f
+<empty>
+
+$ [210/327]> find /etc -maxdepth 1 -type d
+<empty>
+
+$ [211/327]> find /etc -name "*.conf"
+<empty>
+
+$ [212/327]> find /etc -maxdepth 2 -name "host*"
+<empty>
+
+$ [213/327]> find / -maxdepth 2 -name passwd
+<empty>
+
+$ [214/327]> find /var -type d -maxdepth 2
+<empty>
+
+$ [215/327]> find /etc -maxdepth 1 -type f -name "p*"
+<empty>
+
+$ [216/327]> find /tmp -maxdepth 1
+  /tmp
+  /tmp/cible_lien.txt
+  /tmp/lien_dur.txt
+  /tmp/lien_symbolique.txt
+
+$ [217/327]> find /etc -maxdepth 1 -size +1k
+<empty>
+
+$ [218/327]> find /etc -maxdepth 1 -newer /etc/hostname
+<empty>
+
+$ [219/327]> find /etc -maxdepth 1 -perm 644
+<empty>
+
+$ [220/327]> find /etc -maxdepth 1 -user root
+<empty>
+
+$ [221/327]> find /etc -name "*.conf" -type f
+<empty>
+
+$ [222/327]> find /etc -maxdepth 1 -empty
+<empty>
+
+$ [223/327]> find /chemin_inexistant_xyz
+<empty>
+
+$ [224/327]> find /etc -truc
+<empty>
+
+
+--- [225] § localisation — which/whereis/locate/type ---
+$ [225/327]> which ls
+  /usr/bin/ls
+
+$ [226/327]> which cat grep ls
+  /usr/bin/cat
+  /usr/bin/grep
+  /usr/bin/ls
+
+$ [227/327]> which commande_inexistante_xyz
+<empty>
+
+$ [228/327]> whereis ls
+  ls: /usr/bin/ls
+
+$ [229/327]> whereis bash
+  bash: /usr/bin/bash
+
+$ [230/327]> whereis grep
+  grep: /usr/bin/grep
+
+$ [231/327]> type ls
+  ls is /usr/bin/ls
+
+$ [232/327]> type cd
+  cd is a shell builtin
+
+$ [233/327]> type -a echo
+  echo is a shell builtin
+  echo is /usr/bin/echo
+
+$ [234/327]> command -v ls
+  /usr/bin/ls
+
+$ [235/327]> command -v cd
+  cd
+
+$ [236/327]> locate passwd
+<empty>
+
+$ [237/327]> updatedb
+<empty>
+
+$ [238/327]> locate hostname
+<empty>
+
+$ [239/327]> which
+<empty>
+
+$ [240/327]> whereis
+<empty>
+
+
+--- [241] § permissions — chmod/chown/umask ---
+$ [241/327]> cd /tmp
+<empty>
+
+$ [242/327]> touch perm.txt
+<empty>
+
+$ [243/327]> ls -l perm.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [244/327]> chmod 644 perm.txt
+<empty>
+
+$ [245/327]> ls -l perm.txt
+  -rw-r--r-- 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [246/327]> chmod 755 perm.txt
+<empty>
+
+$ [247/327]> ls -l perm.txt
+  -rwxr-xr-x 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [248/327]> chmod u+x perm.txt
+<empty>
+
+$ [249/327]> ls -l perm.txt
+  -rwxr-xr-x 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [250/327]> chmod g-w perm.txt
+<empty>
+
+$ [251/327]> ls -l perm.txt
+  -rwxr-xr-x 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [252/327]> chmod o=r perm.txt
+<empty>
+
+$ [253/327]> ls -l perm.txt
+  -rwxr-xr-- 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [254/327]> chmod a+x perm.txt
+<empty>
+
+$ [255/327]> ls -l perm.txt
+  -rwxr-xr-x 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [256/327]> chmod 600 perm.txt
+<empty>
+
+$ [257/327]> stat -c "%a" perm.txt
+  600
+
+$ [258/327]> mkdir permdir
+<empty>
+
+$ [259/327]> chmod -R 700 permdir
+<empty>
+
+$ [260/327]> ls -ld permdir
+  drwx------ 2 root root 0 Jun  5 09:41 permdir
+
+$ [261/327]> umask
+  0022
+
+$ [262/327]> umask -S
+  umask: -S: invalid octal number
+
+$ [263/327]> umask 022
+<empty>
+
+$ [264/327]> umask
+  0022
+
+$ [265/327]> umask 077
+<empty>
+
+$ [266/327]> touch apres_umask.txt
+<empty>
+
+$ [267/327]> ls -l apres_umask.txt
+  -rw------- 1 root root 0 Jun  5 09:41 apres_umask.txt
+
+$ [268/327]> chmod 999 perm.txt
+<empty>
+
+$ [269/327]> chmod abc perm.txt
+  chmod: invalid mode: 'abc'
+
+$ [270/327]> chmod 644 fichier_inexistant_xyz
+  chmod: cannot access 'fichier_inexistant_xyz': No such file or directory
+
+
+--- [271] § propriété — chown/chgrp ---
+$ [271/327]> chown root perm.txt
+<empty>
+
+$ [272/327]> ls -l perm.txt
+  ---------- 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [273/327]> chown root:root perm.txt
+<empty>
+
+$ [274/327]> ls -l perm.txt
+  ---------- 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [275/327]> chgrp root perm.txt
+<empty>
+
+$ [276/327]> ls -l perm.txt
+  ---------- 1 root root 0 Jun  5 09:41 perm.txt
+
+$ [277/327]> chown -R root:root permdir
+<empty>
+
+$ [278/327]> ls -ld permdir
+  drwx------ 2 root root 0 Jun  5 09:41 permdir
+
+$ [279/327]> chown utilisateur_inexistant_xyz perm.txt
+<empty>
+
+$ [280/327]> chgrp groupe_inexistant_xyz perm.txt
+  chgrp: invalid group: 'groupe_inexistant_xyz'
+
+$ [281/327]> chown root fichier_inexistant_xyz
+  chown: cannot access 'fichier_inexistant_xyz': No such file or directory
+
+
+--- [282] § chemins — basename/dirname/realpath/mktemp ---
+$ [282/327]> basename /usr/local/bin/ls
+  ls
+
+$ [283/327]> basename /usr/local/bin/ls .sh
+  ls
+
+$ [284/327]> basename /etc/
+<empty>
+
+$ [285/327]> dirname /usr/local/bin/ls
+  /usr/local/bin
+
+$ [286/327]> dirname /etc/passwd
+  /etc
+
+$ [287/327]> dirname fichier_relatif.txt
+  .
+
+$ [288/327]> realpath /etc/../etc/passwd
+  realpath: command not found
+
+$ [289/327]> realpath .
+  realpath: command not found
+
+$ [290/327]> realpath ..
+  realpath: command not found
+
+$ [291/327]> readlink -f /etc/passwd
+  /etc/passwd
+
+$ [292/327]> mktemp
+  /tmp/tmp.yjjz8ietyq
+
+$ [293/327]> mktemp -d
+  /tmp/tmp.cqrltc3744
+
+$ [294/327]> mktemp /tmp/debug.XXXXXX
+  /tmp/tmp.nxavzskob6
+
+$ [295/327]> basename
+<empty>
+
+$ [296/327]> dirname
+  .
+
+
+--- [297] § montage & blocs — mount/lsblk ---
+$ [297/327]> mount
+  /dev/sda1 on / type ext4 (rw,relatime,errors=remount-ro)
+  tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)
+  tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)
+  /dev/sda2 on /boot type ext4 (rw,relatime)
+  /dev/sdb1 on /u01 type ext4 (rw,relatime)
+  proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+  sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+
+$ [298/327]> mount | head
+  /dev/sda1 on / type ext4 (rw,relatime,errors=remount-ro)
+  tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)
+  tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)
+  /dev/sda2 on /boot type ext4 (rw,relatime)
+  /dev/sdb1 on /u01 type ext4 (rw,relatime)
+  proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+  sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+
+$ [299/327]> lsblk
+  NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+  sda      8:0    0    52G  0 disk 
+  ├─sda1   8:1    0    50G  0 part /
+  └─sda2   8:2    0     1G  0 part /boot
+  sdb      8:16   0   100G  0 disk 
+  └─sdb1   8:17   0   100G  0 part /u01
+
+$ [300/327]> lsblk -f
+  NAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+  sda                                                                           
+  ├─sda1 ext4   1.0         a1b2c3d4-e5f6-7890-abcd-ef1234567890   36G    25% /
+  └─sda2 ext4   1.0         11223344-5566-7788-99aa-bbccddeeff00  764M    16% /boot
+  sdb                                                                           
+  └─sdb1 ext4   1.0         aabbccdd-eeff-0011-2233-445566778899   68G    29% /u01
+
+$ [301/327]> lsblk -a
+  NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+  sda      8:0    0    52G  0 disk 
+  ├─sda1   8:1    0    50G  0 part /
+  └─sda2   8:2    0     1G  0 part /boot
+  sdb      8:16   0   100G  0 disk 
+  └─sdb1   8:17   0   100G  0 part /u01
+  sr0     11:0    1  1024M  0 rom  
+
+$ [302/327]> df -h
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [303/327]> cat /proc/mounts | head
+  cat: /proc/mounts: No such file or directory
+
+$ [304/327]> cat /etc/fstab
+  cat: /etc/fstab: No such file or directory
+
+$ [305/327]> umount /chemin/inexistant_xyz
+<empty>
+
+$ [306/327]> mount /dev/inexistant_xyz /mnt
+  mount: only root can do that
+
+
+--- [307] § redirections & pipes composés ---
+$ [307/327]> ls /etc > /tmp/liste_etc.txt
+  ls: cannot access '/etc': No such file or directory
+
+$ [308/327]> wc -l /tmp/liste_etc.txt
+  0 /tmp/liste_etc.txt
+
+$ [309/327]> ls /var >> /tmp/liste_etc.txt
+  ls: cannot access '/var': No such file or directory
+
+$ [310/327]> cat /tmp/liste_etc.txt | head -5
+<empty>
+
+$ [311/327]> cat /etc/passwd | wc -l
+  1
+
+$ [312/327]> cat /etc/passwd | grep root
+<empty>
+
+$ [313/327]> find /etc -maxdepth 1 -type f | wc -l
+<empty>
+
+$ [314/327]> ls /etc | sort | head
+  ls: cannot access '/etc': No such file or directory
+
+$ [315/327]> ls /etc 2> /tmp/err.txt; cat /tmp/err.txt
+  ls: cannot access '/etc': No such file or directory
+
+$ [316/327]> cat < /etc/hostname
+<empty>
+
+$ [317/327]> echo "test $(hostname)"
+  test localhost
+
+$ [318/327]> echo "il y a $(ls /etc | wc -l) entrées dans /etc"
+  il y a 1 entrées dans /etc
+
+$ [319/327]> cat /tmp/liste_etc.txt | tail -3 > /tmp/fin.txt
+<empty>
+
+$ [320/327]> cat /tmp/fin.txt
+<empty>
+
+
+--- [321] § mal formées — fin de transcript ---
+$ [321/327]> lss -la
+  lss: command not found
+
+$ [322/327]> cpp a b
+  cpp: command not found
+
+$ [323/327]> cat
+<empty>
+
+$ [324/327]> ls -
+  apres_umask.txt      lien_casse           liste_etc.txt
+  cible_lien.txt       lien_dur.txt         perm.txt
+  err.txt              lien_passwd          permdir
+  fin.txt              lien_symbolique.txt
+
+$ [325/327]> find
+  /tmp
+  cible_lien.txt
+  lien_dur.txt
+  lien_symbolique.txt
+  perm.txt
+  permdir
+  apres_umask.txt
+  liste_etc.txt
+  err.txt
+  fin.txt
+
+$ [326/327]> stat
+  stat: missing operand
+
+$ [327/327]> cd /tmp && echo "fin du transcript filesystem"
+  fin du transcript filesystem

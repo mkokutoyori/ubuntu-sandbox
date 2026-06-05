@@ -1,0 +1,1511 @@
+============================================================
+Shell debug transcript — linux-pc-text-pipes
+Generated: 2026-06-05T09:41:04.780Z
+Engine: linux
+host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
+Total commands: 303
+============================================================
+
+
+--- [1] § préparation jeux de données ---
+$ [1/303]> cd /tmp
+<empty>
+
+$ [2/303]> printf "banane\npomme\ncerise\npomme\nfraise\nbanane\n" > fruits.txt
+<empty>
+
+$ [3/303]> cat fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [4/303]> printf "3\n1\n10\n2\n20\n1\n" > nombres.txt
+<empty>
+
+$ [5/303]> cat nombres.txt
+  3
+  1
+  10
+  2
+  20
+  1
+
+$ [6/303]> printf "alice:30:paris\nbob:25:lyon\ncarol:35:paris\ndan:28:nice\n" > gens.csv
+<empty>
+
+$ [7/303]> cat gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [8/303]> printf "  espaces  avant et apres  \nMAJUSCULE minuscule\nUNE LIGNE\n" > divers.txt
+<empty>
+
+$ [9/303]> cat divers.txt
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
+
+$ [10/303]> seq 1 20 > seq.txt
+<empty>
+
+$ [11/303]> cat seq.txt
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  20
+
+
+--- [12] § echo & printf ---
+$ [12/303]> echo hello world
+  hello world
+
+$ [13/303]> echo "guillemets doubles"
+  guillemets doubles
+
+$ [14/303]> echo 'guillemets simples'
+  guillemets simples
+
+$ [15/303]> echo -n "sans newline"
+  sans newline
+
+$ [16/303]> echo -e "tab\tici\nnouvelle ligne"
+  tab	ici
+  nouvelle ligne
+
+$ [17/303]> echo $HOME
+  /home/user
+
+$ [18/303]> echo $PATH
+  /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+
+$ [19/303]> echo $USER
+  user
+
+$ [20/303]> echo "user=$USER home=$HOME"
+  user=user home=/home/user
+
+$ [21/303]> echo ${HOSTNAME}
+  linux-pc
+
+$ [22/303]> printf "%s\n" un deux trois
+  un
+  deux
+  trois
+
+$ [23/303]> printf "%d + %d = %d\n" 2 3 5
+  2 + 3 = 5
+
+$ [24/303]> printf "%-10s|%10s|\n" gauche droite
+  gauche    |    droite|
+
+$ [25/303]> printf "%05.2f\n" 3.14159
+  03.14
+
+$ [26/303]> echo {a,b,c}
+  a b c
+
+$ [27/303]> echo {1..5}
+  1 2 3 4 5
+
+$ [28/303]> echo *.txt
+  fruits.txt nombres.txt divers.txt seq.txt
+
+
+--- [29] § cat — options ---
+$ [29/303]> cat fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [30/303]> cat -n fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [31/303]> cat -b fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [32/303]> cat -A divers.txt
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
+
+$ [33/303]> cat -E fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [34/303]> cat -T divers.txt
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
+
+$ [35/303]> cat -s fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [36/303]> cat fruits.txt nombres.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+  3
+  1
+  10
+  2
+  20
+  1
+
+$ [37/303]> cat fruits.txt - < /dev/null
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [38/303]> tac fruits.txt
+  tac: command not found
+
+$ [39/303]> cat fichier_inexistant_xyz
+  cat: fichier_inexistant_xyz: No such file or directory
+
+
+--- [40] § grep — base ---
+$ [40/303]> grep pomme fruits.txt
+  pomme
+  pomme
+
+$ [41/303]> grep -n pomme fruits.txt
+  2:pomme
+  4:pomme
+
+$ [42/303]> grep -c pomme fruits.txt
+  2
+
+$ [43/303]> grep -i POMME fruits.txt
+  pomme
+  pomme
+
+$ [44/303]> grep -v pomme fruits.txt
+  banane
+  cerise
+  fraise
+  banane
+
+$ [45/303]> grep -w pomme fruits.txt
+  pomme
+  pomme
+
+$ [46/303]> grep -o pomme fruits.txt
+  pomme
+  pomme
+
+$ [47/303]> grep -l pomme fruits.txt nombres.txt
+  fruits.txt
+
+$ [48/303]> grep -L pomme fruits.txt nombres.txt
+  nombres.txt
+
+$ [49/303]> grep -r root /etc/hostname
+<empty>
+
+$ [50/303]> grep --color=auto root /etc/passwd
+  root:x:0:0:root:/root:/bin/bash
+
+$ [51/303]> grep -A1 bob gens.csv
+  bob:25:lyon
+
+$ [52/303]> grep -B1 carol gens.csv
+  carol:35:paris
+
+$ [53/303]> grep -C1 bob gens.csv
+  bob:25:lyon
+
+$ [54/303]> grep "" fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [55/303]> grep motif_absent_xyz fruits.txt
+<empty>
+
+
+--- [56] § grep — expressions régulières ---
+$ [56/303]> grep "^p" fruits.txt
+  pomme
+  pomme
+
+$ [57/303]> grep "e$" fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [58/303]> grep "^banane$" fruits.txt
+  banane
+  banane
+
+$ [59/303]> grep "an" fruits.txt
+  banane
+  banane
+
+$ [60/303]> grep "[bc]" fruits.txt
+  banane
+  cerise
+  banane
+
+$ [61/303]> grep "[0-9]" nombres.txt
+  3
+  1
+  10
+  2
+  20
+  1
+
+$ [62/303]> grep -E "pomme|cerise" fruits.txt
+  pomme
+  cerise
+  pomme
+
+$ [63/303]> grep -E "^[a-z]+:[0-9]+" gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [64/303]> grep -E "paris$" gens.csv
+  alice:30:paris
+  carol:35:paris
+
+$ [65/303]> egrep "(pomme|fraise)" fruits.txt
+  pomme
+  pomme
+  fraise
+
+$ [66/303]> fgrep "pomme" fruits.txt
+  pomme
+  pomme
+
+$ [67/303]> grep -P "\d+" nombres.txt
+  3
+  1
+  10
+  2
+  20
+  1
+
+$ [68/303]> grep -e pomme -e cerise fruits.txt
+  pomme
+  cerise
+  pomme
+
+$ [69/303]> grep root /etc/passwd /etc/group
+  /etc/passwd:root:x:0:0:root:/root:/bin/bash
+  /etc/group:root:x:0:
+
+$ [70/303]> grep -rn paris gens.csv
+  gens.csv:1:alice:30:paris
+  gens.csv:3:carol:35:paris
+
+
+--- [71] § head & tail ---
+$ [71/303]> head fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [72/303]> head -n 2 fruits.txt
+  banane
+  pomme
+
+$ [73/303]> head -n -2 seq.txt
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+
+$ [74/303]> head -c 10 fruits.txt
+  banane
+  pom
+
+$ [75/303]> tail fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [76/303]> tail -n 2 fruits.txt
+  fraise
+  banane
+
+$ [77/303]> tail -n +3 seq.txt
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  20
+
+$ [78/303]> tail -c 12 fruits.txt
+  aise
+  banane
+
+$ [79/303]> head -n 1 gens.csv
+  alice:30:paris
+
+$ [80/303]> tail -n 1 gens.csv
+  dan:28:nice
+
+$ [81/303]> head seq.txt nombres.txt
+  1
+  2
+  3
+  4
+  5
+  6
+  7
+  8
+  9
+  10
+  3
+  1
+  10
+  2
+  20
+  1
+
+$ [82/303]> tail -q seq.txt nombres.txt
+  11
+  12
+  13
+  14
+  15
+  16
+  17
+  18
+  19
+  20
+  3
+  1
+  10
+  2
+  20
+  1
+
+
+--- [83] § wc — comptage ---
+$ [83/303]> wc fruits.txt
+  6 6 40 fruits.txt
+
+$ [84/303]> wc -l fruits.txt
+  6 fruits.txt
+
+$ [85/303]> wc -w gens.csv
+  4 gens.csv
+
+$ [86/303]> wc -c fruits.txt
+  40 fruits.txt
+
+$ [87/303]> wc -m divers.txt
+  3 8 58 divers.txt
+
+$ [88/303]> wc -L divers.txt
+  3 8 58 divers.txt
+
+$ [89/303]> wc -l fruits.txt nombres.txt seq.txt
+  6 fruits.txt
+  6 nombres.txt
+  20 seq.txt
+
+$ [90/303]> cat fruits.txt | wc -l
+  6
+
+$ [91/303]> ls /etc | wc -l
+  8
+
+
+--- [92] § sort — tri ---
+$ [92/303]> sort fruits.txt
+  banane
+  banane
+  cerise
+  fraise
+  pomme
+  pomme
+
+$ [93/303]> sort -r fruits.txt
+  pomme
+  pomme
+  fraise
+  cerise
+  banane
+  banane
+
+$ [94/303]> sort -u fruits.txt
+  banane
+  banane
+  cerise
+  fraise
+  pomme
+  pomme
+
+$ [95/303]> sort -n nombres.txt
+  1
+  1
+  2
+  3
+  10
+  20
+
+$ [96/303]> sort -rn nombres.txt
+  1
+  1
+  10
+  2
+  20
+  3
+
+$ [97/303]> sort -nu nombres.txt
+  1
+  1
+  10
+  2
+  20
+  3
+
+$ [98/303]> sort -k1 gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [99/303]> sort -t: -k2 -n gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [100/303]> sort -t: -k3 gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [101/303]> sort -f divers.txt
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
+
+$ [102/303]> sort -c nombres.txt
+  1
+  1
+  10
+  2
+  20
+  3
+
+$ [103/303]> sort -b divers.txt
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
+
+$ [104/303]> sort fruits.txt | uniq
+  banane
+  cerise
+  fraise
+  pomme
+
+$ [105/303]> sort nombres.txt | head -3
+  1
+  1
+  10
+
+
+--- [106] § uniq — dédoublonnage ---
+$ [106/303]> sort fruits.txt | uniq
+  banane
+  cerise
+  fraise
+  pomme
+
+$ [107/303]> sort fruits.txt | uniq -c
+  banane
+  cerise
+  fraise
+  pomme
+
+$ [108/303]> sort fruits.txt | uniq -d
+  banane
+  cerise
+  fraise
+  pomme
+
+$ [109/303]> sort fruits.txt | uniq -u
+  banane
+  cerise
+  fraise
+  pomme
+
+$ [110/303]> sort -n nombres.txt | uniq
+  1
+  2
+  3
+  10
+  20
+
+$ [111/303]> sort -n nombres.txt | uniq -c
+  1
+  2
+  3
+  10
+  20
+
+$ [112/303]> uniq fruits.txt
+  banane
+  pomme
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [113/303]> sort fruits.txt | uniq -c | sort -rn
+  banane
+  cerise
+  fraise
+  pomme
+
+
+--- [114] § cut — extraction de colonnes ---
+$ [114/303]> cut -d: -f1 gens.csv
+  alice
+  bob
+  carol
+  dan
+
+$ [115/303]> cut -d: -f2 gens.csv
+  30
+  25
+  35
+  28
+
+$ [116/303]> cut -d: -f1,3 gens.csv
+  alice:paris
+  bob:lyon
+  carol:paris
+  dan:nice
+
+$ [117/303]> cut -d: -f2- gens.csv
+  30
+  25
+  35
+  28
+
+$ [118/303]> cut -c1-3 fruits.txt
+  
+  
+  
+  
+  
+
+$ [119/303]> cut -c1 fruits.txt
+  
+  
+  
+  
+  
+
+$ [120/303]> cut -d: -f1 /etc/passwd
+  root
+  daemon
+  nobody
+  user
+  alice
+  bob
+  carl
+  dave
+
+$ [121/303]> cut -d: -f1,7 /etc/passwd | head
+  root:/bin/bash
+  daemon:/usr/sbin/nologin
+  nobody:/usr/sbin/nologin
+  user:/bin/bash
+  alice:/bin/bash
+  bob:/bin/bash
+  carl:/bin/bash
+  dave:/bin/bash
+
+$ [122/303]> cut -f1 gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [123/303]> cut -d, -f1 gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+
+--- [124] § tr — translittération ---
+$ [124/303]> echo 'hello' | tr a-z A-Z
+  HELLO
+
+$ [125/303]> echo 'HELLO' | tr A-Z a-z
+  hello
+
+$ [126/303]> echo 'a-b-c' | tr '-' '_'
+  a_b_c
+
+$ [127/303]> echo 'aaa bbb' | tr -s 'a'
+  aaa bbb
+
+$ [128/303]> echo 'hello123world' | tr -d '0-9'
+  hello123worl1
+
+$ [129/303]> echo 'hello' | tr -c 'a-z' '*'
+  hello
+
+$ [130/303]> echo 'abcdef' | tr 'abc' 'xyz'
+  xyzdef
+
+$ [131/303]> cat fruits.txt | tr a-z A-Z
+  BANANE
+  POMME
+  CERISE
+  POMME
+  FRAISE
+  BANANE
+
+$ [132/303]> echo 'tab\tici' | tr '\t' ' '
+  tab tici
+
+$ [133/303]> echo 'compte' | tr -cd 'a-z'
+  bompte
+
+
+--- [134] § sed — édition de flux ---
+$ [134/303]> sed 's/pomme/POMME/' fruits.txt
+  banane
+  POMME
+  cerise
+  POMME
+  fraise
+  banane
+
+$ [135/303]> sed 's/pomme/POMME/g' fruits.txt
+  banane
+  POMME
+  cerise
+  POMME
+  fraise
+  banane
+
+$ [136/303]> sed -n '2p' fruits.txt
+  pomme
+
+$ [137/303]> sed -n '1,3p' fruits.txt
+  banane
+  pomme
+  cerise
+
+$ [138/303]> sed '2d' fruits.txt
+  banane
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [139/303]> sed '1,2d' fruits.txt
+  cerise
+  pomme
+  fraise
+  banane
+
+$ [140/303]> sed 's/^/>> /' fruits.txt
+  >> banane
+  >> pomme
+  >> cerise
+  >> pomme
+  >> fraise
+  >> banane
+
+$ [141/303]> sed 's/$/ <</' fruits.txt
+  banane <<
+  pomme <<
+  cerise <<
+  pomme <<
+  fraise <<
+  banane <<
+
+$ [142/303]> sed -e 's/pomme/P/' -e 's/banane/B/' fruits.txt
+  B
+  P
+  cerise
+  P
+  fraise
+  B
+
+$ [143/303]> sed 's/[aeiou]//g' fruits.txt
+  bnn
+  pmm
+  crs
+  pmm
+  frs
+  bnn
+
+$ [144/303]> sed -n '$p' fruits.txt
+  banane
+
+$ [145/303]> sed '/pomme/d' fruits.txt
+  banane
+  cerise
+  fraise
+  banane
+
+$ [146/303]> sed 's/:/ - /g' gens.csv
+  alice - 30 - paris
+  bob - 25 - lyon
+  carol - 35 - paris
+  dan - 28 - nice
+
+$ [147/303]> echo 'hello world' | sed 's/o/0/g'
+  hell0 w0rld
+
+$ [148/303]> sed -i 's/cerise/CERISE/' fruits.txt
+<empty>
+
+$ [149/303]> cat fruits.txt
+  banane
+  pomme
+  CERISE
+  pomme
+  fraise
+  banane
+
+
+--- [150] § awk — traitement par champs ---
+$ [150/303]> awk '{print $1}' gens.csv
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
+
+$ [151/303]> awk -F: '{print $1}' gens.csv
+  alice
+  bob
+  carol
+  dan
+
+$ [152/303]> awk -F: '{print $1, $3}' gens.csv
+  alice paris
+  bob lyon
+  carol paris
+  dan nice
+
+$ [153/303]> awk -F: '{print $2}' gens.csv
+  30
+  25
+  35
+  28
+
+$ [154/303]> awk -F: '$2 > 28 {print $1}' gens.csv
+  alice
+  carol
+
+$ [155/303]> awk -F: '{print NR, $0}' gens.csv
+  1 alice:30:paris
+  2 bob:25:lyon
+  3 carol:35:paris
+  4 dan:28:nice
+
+$ [156/303]> awk -F: '{print NF}' gens.csv
+  3
+  3
+  3
+  3
+
+$ [157/303]> awk 'END {print NR}' fruits.txt
+  6
+
+$ [158/303]> awk '{sum += $1} END {print sum}' nombres.txt
+  37
+
+$ [159/303]> awk -F: '{print toupper($1)}' gens.csv
+  ALICE
+  BOB
+  CAROL
+  DAN
+
+$ [160/303]> awk -F: '/paris/ {print $1}' gens.csv
+  alice
+  carol
+
+$ [161/303]> awk 'NR==2' fruits.txt
+  pomme
+
+$ [162/303]> awk 'length > 5' fruits.txt
+  banane
+  CERISE
+  fraise
+  banane
+
+$ [163/303]> awk -F: 'BEGIN{print "nom age"} {print $1, $2}' gens.csv
+  nom age
+  alice 30
+  bob 25
+  carol 35
+  dan 28
+
+$ [164/303]> awk -F: '{ages+=$2} END{print ages/NR}' gens.csv
+  29.5
+
+$ [165/303]> cat /etc/passwd | awk -F: '{print $1}' | head
+  root
+  daemon
+  nobody
+  user
+  alice
+  bob
+  carl
+  dave
+
+
+--- [166] § paste / join / rev / nl ---
+$ [166/303]> paste fruits.txt nombres.txt
+  paste: command not found
+
+$ [167/303]> paste -d, fruits.txt nombres.txt
+  paste: command not found
+
+$ [168/303]> paste -s fruits.txt
+  paste: command not found
+
+$ [169/303]> rev fruits.txt
+<empty>
+
+$ [170/303]> echo 'abcdef' | rev
+  fedcba
+
+$ [171/303]> nl fruits.txt
+  nl: command not found
+
+$ [172/303]> nl -ba fruits.txt
+  nl: command not found
+
+$ [173/303]> fold -w 5 fruits.txt
+  fold: command not found
+
+$ [174/303]> column -t gens.csv
+  column: command not found
+
+$ [175/303]> column -s: -t gens.csv
+  column: command not found
+
+
+--- [176] § pipelines composés ---
+$ [176/303]> cat /etc/passwd | cut -d: -f1 | sort | head
+  alice
+  bob
+  carl
+  daemon
+  dave
+  nobody
+  root
+  user
+
+$ [177/303]> cat /etc/passwd | wc -l
+  8
+
+$ [178/303]> ls /etc | grep conf | sort | head
+  adduser.conf   gshadow        machine-id     protocols      ssh
+  cron.monthly   hosts          nsswitch.conf  services       sudoers
+
+$ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
+  CERISE
+  banane
+  fraise
+
+$ [180/303]> cat gens.csv | awk -F: '{print $3}' | sort | uniq -c
+  lyon
+  nice
+  paris
+
+$ [181/303]> cat nombres.txt | sort -n | tail -1
+  20
+
+$ [182/303]> cat nombres.txt | sort -n | head -1
+  1
+
+$ [183/303]> grep paris gens.csv | cut -d: -f1 | tr a-z A-Z
+  ALICE
+  CAROL
+
+$ [184/303]> cat /etc/passwd | grep -c bash
+  6
+
+$ [185/303]> seq 1 100 | awk '{s+=$1} END{print s}'
+  5050
+
+$ [186/303]> seq 1 10 | paste -sd+ | bc
+  bc: command not found
+
+$ [187/303]> echo "1 2 3 4 5" | tr " " "\n" | sort -rn
+  1
+  2
+  3
+  4
+  5
+
+$ [188/303]> cat fruits.txt | sort | uniq | wc -l
+  4
+
+
+--- [189] § redirections & substitution ---
+$ [189/303]> echo "sortie" > /tmp/out.txt
+<empty>
+
+$ [190/303]> cat /tmp/out.txt
+  sortie
+
+$ [191/303]> echo "ajout" >> /tmp/out.txt
+<empty>
+
+$ [192/303]> cat /tmp/out.txt
+  sortie
+  ajout
+
+$ [193/303]> wc -l < /tmp/out.txt
+  2
+
+$ [194/303]> grep root /etc/passwd > /tmp/root.txt 2>&1
+<empty>
+
+$ [195/303]> cat /tmp/root.txt
+  root:x:0:0:root:/root:/bin/bash
+
+$ [196/303]> ls /inexistant_xyz 2> /tmp/erreur.txt; cat /tmp/erreur.txt
+  ls: cannot access '/inexistant_xyz': No such file or directory
+
+$ [197/303]> echo "il y a $(wc -l < /etc/passwd) utilisateurs"
+  il y a 8 utilisateurs
+
+$ [198/303]> echo "date: $(date +%Y)"
+  date: 2026
+
+$ [199/303]> cat <<< "here string en entrée"
+  here string en entrée
+
+$ [200/303]> sort <<< "c\nb\na"
+  a
+  b
+  c
+
+$ [201/303]> NOM=debug; echo "valeur=$NOM"
+  valeur=debug
+
+$ [202/303]> export VERBE=tester; echo $VERBE
+  tester
+
+
+--- [203] § comparaison — diff/comm/cmp ---
+$ [203/303]> cp fruits.txt fruits2.txt
+<empty>
+
+$ [204/303]> sed -i 's/fraise/mangue/' fruits2.txt
+<empty>
+
+$ [205/303]> diff fruits.txt fruits2.txt
+  diff: command not found
+
+$ [206/303]> diff -u fruits.txt fruits2.txt
+  diff: command not found
+
+$ [207/303]> diff -y fruits.txt fruits2.txt
+  diff: command not found
+
+$ [208/303]> diff -q fruits.txt fruits2.txt
+  diff: command not found
+
+$ [209/303]> diff fruits.txt fruits.txt
+  diff: command not found
+
+$ [210/303]> sort fruits.txt > a.sorted
+<empty>
+
+$ [211/303]> sort fruits2.txt > b.sorted
+<empty>
+
+$ [212/303]> comm a.sorted b.sorted
+  comm: command not found
+
+$ [213/303]> comm -12 a.sorted b.sorted
+  comm: command not found
+
+$ [214/303]> comm -3 a.sorted b.sorted
+  comm: command not found
+
+$ [215/303]> cmp fruits.txt fruits2.txt
+  cmp: command not found
+
+$ [216/303]> cmp fruits.txt fruits.txt
+  cmp: command not found
+
+$ [217/303]> diff fichier_inexistant_xyz fruits.txt
+  diff: command not found
+
+
+--- [218] § découpe & assemblage — split/csplit ---
+$ [218/303]> split -l 2 seq.txt morceau_
+  split: command not found
+
+$ [219/303]> ls morceau_*
+  ls: cannot access 'morceau_*': No such file or directory
+
+$ [220/303]> cat morceau_aa
+  cat: morceau_aa: No such file or directory
+
+$ [221/303]> split -n 3 seq.txt part_
+  split: command not found
+
+$ [222/303]> ls part_*
+  ls: cannot access 'part_*': No such file or directory
+
+$ [223/303]> cat part_* | wc -l
+  1
+
+$ [224/303]> split -b 10 fruits.txt octets_
+  split: command not found
+
+$ [225/303]> ls octets_*
+  ls: cannot access 'octets_*': No such file or directory
+
+
+--- [226] § expansion & espaces — expand/fmt/pr ---
+$ [226/303]> expand -t 4 divers.txt
+  expand: command not found
+
+$ [227/303]> unexpand divers.txt
+  unexpand: command not found
+
+$ [228/303]> fmt -w 20 fruits.txt
+  fmt: command not found
+
+$ [229/303]> fmt -s fruits.txt
+  fmt: command not found
+
+$ [230/303]> pr -t fruits.txt
+  pr: command not found
+
+$ [231/303]> pr -n fruits.txt
+  pr: command not found
+
+$ [232/303]> fold -w 3 fruits.txt
+  fold: command not found
+
+$ [233/303]> fold -s -w 10 divers.txt
+  fold: command not found
+
+
+--- [234] § xargs & boucles ---
+$ [234/303]> echo "a b c" | xargs
+  echo a b c
+
+$ [235/303]> echo "fichier1 fichier2 fichier3" | xargs -n1
+  -n1 fichier1 fichier2 fichier3
+
+$ [236/303]> ls /etc/*.conf | xargs -n1 basename
+  -n1 /etc/adduser.conf
+  -n1 /etc/nsswitch.conf
+
+$ [237/303]> echo "1 2 3" | xargs -I{} echo "valeur={}"
+  -I{} 1 2 3
+
+$ [238/303]> seq 1 5 | xargs echo
+  echo 1
+  echo 2
+  echo 3
+  echo 4
+  echo 5
+
+$ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
+  wc /etc/ufw/ufw.conf
+  wc /etc/ufw/sysctl.conf
+  wc /etc/adduser.conf
+  wc /etc/security/pwquality.conf
+  wc /etc/security/faillock.conf
+  wc /etc/nsswitch.conf
+
+$ [240/303]> echo "pomme banane" | xargs -d" " -n1 echo
+  -d  pomme banane
+
+$ [241/303]> for f in fruits nombres seq; do echo "=> $f"; done
+  => fruits
+  => nombres
+  => seq
+
+$ [242/303]> for i in 1 2 3; do echo "iter $i"; done
+  iter 1
+  iter 2
+  iter 3
+
+$ [243/303]> i=0; while [ $i -lt 3 ]; do echo "while $i"; i=$((i+1)); done
+  while 0
+  while 1
+  while 2
+
+
+--- [244] § calcul — bc/expr/let/$(()) ---
+$ [244/303]> echo "2 + 3" | bc
+  bc: command not found
+
+$ [245/303]> echo "10 / 3" | bc
+  bc: command not found
+
+$ [246/303]> echo "scale=2; 10/3" | bc
+  bc: command not found
+
+$ [247/303]> echo "2^10" | bc
+  bc: command not found
+
+$ [248/303]> expr 5 + 3
+  8
+
+$ [249/303]> expr 10 \* 4
+  40
+
+$ [250/303]> expr 17 % 5
+  2
+
+$ [251/303]> expr length "bonjour"
+  7
+
+$ [252/303]> echo $((7 * 6))
+  42
+
+$ [253/303]> echo $((100 % 7))
+  2
+
+$ [254/303]> echo $((2 ** 8))
+  0
+
+$ [255/303]> let x=5+5; echo $x
+  10
+
+$ [256/303]> seq 1 10 | paste -sd+ - | bc
+  bc: command not found
+
+
+--- [257] § hachage & encodage — sums/base64/md5 ---
+$ [257/303]> md5sum fruits.txt
+  830d8900573aad7898a3440ce0ed9717  fruits.txt
+
+$ [258/303]> sha1sum fruits.txt
+  c2b602d09d2b771c18b35b7444206397  fruits.txt
+
+$ [259/303]> sha256sum fruits.txt
+  240e24ade64995478dcf4bde22871843cd4fa3f5f2203847f06b4427c7df7358  fruits.txt
+
+$ [260/303]> md5sum fruits.txt nombres.txt
+  c23452d1ef12c9b7f43d66eec4795465  fruits.txt
+
+$ [261/303]> echo -n 'hello' | md5sum
+  5f2df1d90e3e4d71dcfeacac522fece0  hello
+
+$ [262/303]> echo 'données' | base64
+  base64: command not found
+
+$ [263/303]> echo 'ZG9ubsOpZXMK' | base64 -d
+  base64: command not found
+
+$ [264/303]> cksum fruits.txt
+  cksum: command not found
+
+
+--- [265] § tee multi-cibles & /dev ---
+$ [265/303]> echo "diffusion" | tee /tmp/t1.txt /tmp/t2.txt
+  diffusion
+
+$ [266/303]> cat /tmp/t1.txt /tmp/t2.txt
+  diffusion
+  
+  diffusion
+
+$ [267/303]> cat fruits.txt | tee /tmp/copie_pipe.txt | wc -l
+  6
+
+$ [268/303]> echo "vers null" > /dev/null
+<empty>
+
+$ [269/303]> cat /dev/null
+<empty>
+
+$ [270/303]> head -c 5 /dev/zero | wc -c
+  6
+
+$ [271/303]> echo "stdout"; echo "stderr" >&2
+  stdout
+  stderr
+
+
+--- [272] § analyse fichiers système ---
+$ [272/303]> cut -d: -f1 /etc/passwd | sort | head
+  alice
+  bob
+  carl
+  daemon
+  dave
+  nobody
+  root
+  user
+
+$ [273/303]> cut -d: -f3 /etc/passwd | sort -n | tail -5
+  1001
+  1002
+  1003
+  1004
+  65534
+
+$ [274/303]> grep -c bash /etc/passwd
+  6
+
+$ [275/303]> grep "/bin/bash" /etc/passwd | cut -d: -f1
+  root
+  user
+  alice
+  bob
+  carl
+  dave
+
+$ [276/303]> awk -F: '$3 >= 1000 {print $1}' /etc/passwd
+  nobody
+  user
+  alice
+  bob
+  carl
+  dave
+
+$ [277/303]> awk -F: '$3 == 0 {print $1}' /etc/passwd
+  root
+
+$ [278/303]> cut -d: -f1 /etc/group | sort | head
+  adm
+  alice
+  bob
+  carl
+  daemon
+  dave
+  nogroup
+  plugdev
+  root
+  sudo
+
+$ [279/303]> wc -l /etc/passwd /etc/group
+  8 /etc/passwd
+  13 /etc/group
+
+$ [280/303]> grep -v "^#" /etc/hostname
+  linux-pc
+
+$ [281/303]> sort -t: -k3 -n /etc/passwd | head
+  root:x:0:0:root:/root:/bin/bash
+  daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+  user:x:1000:1000::/home/user:/bin/bash
+  alice:x:1001:1001::/home/alice:/bin/bash
+  bob:x:1002:1002::/home/bob:/bin/bash
+  carl:x:1003:1003::/home/carl:/bin/bash
+  dave:x:1004:1004::/home/dave:/bin/bash
+
+$ [282/303]> awk -F: '{print $7}' /etc/passwd | sort | uniq -c
+  /bin/bash
+  /usr/sbin/nologin
+
+$ [283/303]> cat /etc/os-release | grep -E "^NAME|^VERSION"
+  NAME="Ubuntu"
+  VERSION_ID="22.04"
+  VERSION="22.04.4 LTS (Jammy Jellyfish)"
+  VERSION_CODENAME=jammy
+
+$ [284/303]> cat /etc/os-release | cut -d= -f1
+  PRETTY_NAME
+  NAME
+  VERSION_ID
+  VERSION
+  VERSION_CODENAME
+  ID
+  ID_LIKE
+  HOME_URL
+  SUPPORT_URL
+  BUG_REPORT_URL
+  UBUNTU_CODENAME
+
+$ [285/303]> grep -i ubuntu /etc/os-release
+  PRETTY_NAME="Ubuntu 22.04.4 LTS"
+  NAME="Ubuntu"
+  ID=ubuntu
+  HOME_URL="https://www.ubuntu.com/"
+  SUPPORT_URL="https://help.ubuntu.com/"
+  BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+  UBUNTU_CODENAME=jammy
+
+$ [286/303]> cat /proc/cpuinfo | grep -c processor
+  2
+
+$ [287/303]> cat /proc/meminfo | head -3
+  MemTotal:        3981312 kB
+  MemFree:         1468416 kB
+  MemAvailable:    2519040 kB
+
+$ [288/303]> cat /proc/meminfo | awk '/MemTotal/ {print $2, $3}'
+  3981312 kB
+
+$ [289/303]> free | awk '/Mem/ {print $2}'
+  3981312
+
+$ [290/303]> cat /etc/passwd | sort | uniq | wc -l
+  8
+
+$ [291/303]> cut -d: -f6 /etc/passwd | sort | head
+  /home/alice
+  /home/bob
+  /home/carl
+  /home/dave
+  /home/user
+  /nonexistent
+  /root
+  /usr/sbin
+
+$ [292/303]> cut -d: -f1,3,6 /etc/passwd | head
+  root:0:/root
+  daemon:1:/usr/sbin
+  nobody:65534:/nonexistent
+  user:1000:/home/user
+  alice:1001:/home/alice
+  bob:1002:/home/bob
+  carl:1003:/home/carl
+  dave:1004:/home/dave
+
+$ [293/303]> getent passwd | head
+  root:x:0:0:root:/root:/bin/bash
+  daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+  nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+  user:x:1000:1000::/home/user:/bin/bash
+  alice:x:1001:1001::/home/alice:/bin/bash
+  bob:x:1002:1002::/home/bob:/bin/bash
+  carl:x:1003:1003::/home/carl:/bin/bash
+  dave:x:1004:1004::/home/dave:/bin/bash
+
+$ [294/303]> grep root /etc/passwd | awk -F: '{print "uid="$3" home="$6}'
+  uid=0 home=/root
+
+
+--- [295] § mal formées — fin de transcript ---
+$ [295/303]> grepp pomme fruits.txt
+  grepp: command not found
+
+$ [296/303]> grep
+  Usage: grep [OPTION]... PATTERN [FILE]...
+
+$ [297/303]> sed 's/incomplet
+  bash: bash: syntax error at line 1:5: Unterminated single-quoted string
+
+$ [298/303]> awk '{print
+  bash: bash: syntax error at line 1:5: Unterminated single-quoted string
+
+$ [299/303]> cut fruits.txt
+  
+  
+  
+  
+  
+
+$ [300/303]> sort -z -k
+<empty>
+
+$ [301/303]> tr a
+<empty>
+
+$ [302/303]> cat | | wc
+<empty>
+
+$ [303/303]> echo "fin du transcript text & pipes"
+  fin du transcript text & pipes
