@@ -1911,7 +1911,10 @@ export class OSPFEngine implements IProtocolEngine {
 
     for (const lsa of lsu.lsas) {
       // RFC 2328 §13 step 1: Validate checksum — discard if invalid.
-      if (!verifyOSPFLSAChecksum(lsa)) continue;
+      if (!verifyOSPFLSAChecksum(lsa)) {
+        this.packetStats.rxChecksumErrors++;
+        continue;
+      }
 
       // Reactive: announce reception so observers (capture, replay,
       // telemetry) can audit incoming LSAs without instrumenting the

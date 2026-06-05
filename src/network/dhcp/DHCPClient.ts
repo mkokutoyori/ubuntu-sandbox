@@ -449,9 +449,14 @@ export class DHCPClient implements IProtocolEngine {
     const leaseDuration = pool.leaseDuration;
 
     // T1: Option 58 from server, or 50% of lease (RFC 2131 §4.4.5)
-    const renewalTime = ackResult.renewalTime ?? pool.renewalTime ?? Math.floor(leaseDuration * 0.5);
+    let renewalTime = ackResult.renewalTime ?? pool.renewalTime ?? Math.floor(leaseDuration * 0.5);
     // T2: Option 59 from server, or 87.5% of lease (RFC 2131 §4.4.5)
-    const rebindingTime = ackResult.rebindingTime ?? pool.rebindingTime ?? Math.floor(leaseDuration * 0.875);
+    let rebindingTime = ackResult.rebindingTime ?? pool.rebindingTime ?? Math.floor(leaseDuration * 0.875);
+
+    if (renewalTime >= rebindingTime || rebindingTime >= leaseDuration || renewalTime <= 0) {
+      renewalTime = Math.floor(leaseDuration * 0.5);
+      rebindingTime = Math.floor(leaseDuration * 0.875);
+    }
 
     const lease: DHCPClientLease = {
       iface,
