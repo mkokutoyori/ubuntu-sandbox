@@ -1298,14 +1298,6 @@ export abstract class LinuxMachine extends EndHost {
     return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022);
   }
 
-  /**
-   * Install a file as root, bypassing the interactive user's permissions.
-   * Used by adapters that materialise system-managed state (e.g. Oracle
-   * filesystem seed, IAM mailboxes, package-manager payloads): in real
-   * life these come from an installer running with root privileges, so
-   * /etc and /var paths are populated regardless of who the interactive
-   * shell is.
-   */
   installSystemFile(path: string, content: string): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     return this.executor.vfs.writeFile(absPath, content, 0, 0, 0o022);

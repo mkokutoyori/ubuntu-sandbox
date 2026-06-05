@@ -1128,9 +1128,6 @@ export class RouterOSPFIntegration {
       }
     }
 
-    // Distribute-list filtering for OSPFv3 (access-list OR prefix-list semantics).
-    // ACL entries store source as srcPrefix/srcPrefixLength (since "deny ipv6 PFX any"
-    // describes the source prefix), so route-filtering matches on that field.
     if (this.extraConfig.v3DistributeList) {
       const aclName = this.extraConfig.v3DistributeList.aclId;
       const v3Acl = this.ctx.getIPv6AccessLists()?.find((a: any) => a.name === aclName);

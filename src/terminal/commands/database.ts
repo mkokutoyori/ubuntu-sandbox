@@ -429,12 +429,6 @@ Completed: ALTER DATABASE OPEN
     [`${oracleBase}/fast_recovery_area/.keep`]: '',
   };
 
-  // initOracleFilesystem mirrors a vendor installer: real Oracle ships
-  // these files under /opt, /etc, and $ORACLE_BASE owned by root, so the
-  // simulator installs them with root privileges regardless of whichever
-  // interactive shell triggered the init. installSystemFile preserves the
-  // realistic ownership when present; older equipment that lacks the
-  // capability falls back to the editor write.
   const install = (device as unknown as {
     installSystemFile?(path: string, content: string): boolean;
   }).installSystemFile?.bind(device);

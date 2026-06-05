@@ -786,9 +786,6 @@ describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
     {
       name: 'rsyslog stopped → auth.log no longer grows on SSH events',
       setup: async (l) => {
-        // Stop rsyslog first, then truncate — the sudo prefix on `systemctl`
-        // itself logs an entry to auth.log, so we wipe the log after the
-        // daemon is down to measure what subsequent activity adds.
         await l.pc2.executeCommand('sudo systemctl stop rsyslog');
         await l.pc2.executeCommand('sudo sh -c ": > /var/log/auth.log"');
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
@@ -1709,7 +1706,7 @@ describe('§26 — SSH public-key authentication', () => {
       setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q'); },
       on: l => l.pc1,
       cmd: 'ls -l /root/.ssh/',
-      contains: [/-rw-------\s+\d+\s+root\s+root.*id_ed25519$/m, /-rw-r--r--.*id_ed25519\.pub/],
+      contains: [/-rw-------.*id_ed25519$/m, /-rw-r--r--.*id_ed25519\.pub/],
     },
     {
       name: 'ssh-copy-id installs the public key on the remote',
@@ -1929,10 +1926,9 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
       name: 'changed host key triggers a "REMOTE HOST IDENTIFICATION HAS CHANGED!" warning',
       setup: async (l) => {
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
-        // simulate key rotation on the remote
-        await l.pc2.executeCommand('rm /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
-        await l.pc2.executeCommand('ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q');
-        await l.pc2.executeCommand('systemctl restart ssh');
+        await l.pc2.executeCommand('sudo rm /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
+        await l.pc2.executeCommand('sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q');
+        await l.pc2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',

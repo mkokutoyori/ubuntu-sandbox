@@ -20,7 +20,6 @@ export interface IFileSystemCapable {
   readFileForEditor(path: string): string | null;
   /** Write file content from editor */
   writeFileFromEditor(path: string, content: string): boolean;
-  /** Install a file as root (system-managed payload, bypasses interactive user perms). */
   installSystemFile?(path: string, content: string): boolean;
   /** Resolve absolute path from relative path + cwd */
   resolveAbsolutePath(path: string): string;

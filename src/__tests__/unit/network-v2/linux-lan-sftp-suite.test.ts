@@ -1278,9 +1278,6 @@ describe('§22 — rsyslog stopped: no new auth.log lines for sftp', () => {
     {
       name: 'rsyslog stopped → auth.log does not grow on sftp',
       setup: async (l) => {
-        // Stop rsyslog first, then truncate — the sudo prefix on `systemctl`
-        // itself logs an entry to auth.log, so we wipe the log after the
-        // daemon is down to measure what subsequent activity adds.
         await l.pc2.executeCommand('sudo systemctl stop rsyslog');
         await l.pc2.executeCommand('sudo sh -c ": > /var/log/auth.log"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
