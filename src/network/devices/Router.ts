@@ -438,6 +438,30 @@ export abstract class Router extends Equipment {
    * Returns true if created successfully.
    * @internal Used by CLI shells
    */
+  private findSubinterfaceForVlan(parentName: string, vid: number): string | null {
+    const prefix = `${parentName}.`;
+    for (const [name, port] of this.ports) {
+      if (!name.startsWith(prefix)) continue;
+      const vlan = (port as unknown as { encapsulation?: { vlan?: number } }).encapsulation?.vlan;
+      if (vlan === vid) return name;
+    }
+    return null;
+  }
+
+  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+    const dotIdx = portName.indexOf('.');
+    if (dotIdx > 0) {
+      const parent = portName.slice(0, dotIdx);
+      const subif = this.ports.get(portName);
+      const vlan = (subif as unknown as { encapsulation?: { vlan?: number } } | undefined)?.encapsulation?.vlan;
+      if (vlan !== undefined && this.ports.has(parent)) {
+        const tagged = { ...frame, dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlan } };
+        return super.sendFrame(parent, tagged);
+      }
+    }
+    return super.sendFrame(portName, frame);
+  }
+
   _createVirtualInterface(name: string): boolean {
     if (this.ports.has(name)) return true; // already exists
     const port = new Port(name, 'ethernet');
@@ -614,7 +638,9 @@ export abstract class Router extends Equipment {
       // Virtual interfaces (Tunnel, Loopback) don't require cable connectivity
       const isVirtual = /^(Tunnel|Loopback)/i.test(route.iface);
       if (!isVirtual) {
-        const port = this.ports.get(route.iface);
+        const dotIdx = route.iface.indexOf('.');
+        const physIface = dotIdx > 0 ? route.iface.slice(0, dotIdx) : route.iface;
+        const port = this.ports.get(physIface);
         if (port && !port.isConnected()) {
           // Interface went down — clear any IPSec SAs using this interface
           // (mirrors IOS: "line protocol down" triggers SA teardown)
@@ -738,6 +764,18 @@ export abstract class Router extends Equipment {
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    const tag = (frame as { dot1q?: { vid: number } }).dot1q;
+    if (tag) {
+      const subif = this.findSubinterfaceForVlan(portName, tag.vid);
+      if (subif) {
+        portName = subif;
+        frame = {
+          srcMAC: frame.srcMAC, dstMAC: frame.dstMAC,
+          etherType: frame.etherType, payload: frame.payload,
+        };
+      }
+    }
+
     const port = this.ports.get(portName);
     if (!port) return;
 
