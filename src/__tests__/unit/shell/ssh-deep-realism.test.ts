@@ -434,7 +434,7 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
 
   test('§D36 — Windows→Linux: SSH on non-default port reflects in sshd policy.ports', async () => {
     const { linuxSrv } = await buildLan();
-    await linuxSrv.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+    await linuxSrv.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
     await linuxSrv.executeCommand('systemctl reload ssh');
     const policy = (linuxSrv as unknown as { getSshPolicy(): { ports: readonly number[] } }).getSshPolicy();
     expect(policy.ports).toContain(2222);
@@ -442,7 +442,7 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
 
   test('§D37 — Windows→Linux: ss -tln after Port reload reports 2222 listening', async () => {
     const { winA, linuxSrv } = await buildLan();
-    await linuxSrv.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
+    await linuxSrv.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
     await linuxSrv.executeCommand('systemctl reload ssh');
     const t = new WindowsTerminalSession('w', winA);
     await t.init();
@@ -496,10 +496,12 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
 
   test('§D44 — Linux→Linux: cd /var/log; tail -n 3 syslog', async () => {
     const { linuxA, linuxSrv } = await buildLan();
-    await linuxSrv.executeCommand('logger -t test "syslog-line-1"');
     const t = new LinuxTerminalSession('w', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
+    // Generate the marker AFTER the SSH session is established so the
+    // sshd Accepted/Session lines don't push it out of `tail -n 3`.
+    await linuxSrv.executeCommand('logger -t test "syslog-line-1"');
     await typeRoot(t, 'cd /var/log');
     await typeRoot(t, 'tail -n 3 syslog');
     expectAnyLine(t, /syslog-line-1|cron|test/);

@@ -79,6 +79,32 @@ import {
   buildRoutePolicyView, buildTrafficClassifierView, buildTrafficBehaviorView,
   buildTrafficPolicyView, buildNqaTestView,
 } from './huawei/HuaweiPolicyCommands';
+import {
+  AR2220_HARDWARE_PROFILE,
+  renderHealth, renderTemperature, renderFans, renderPower, renderEnvironment,
+} from './huawei/HuaweiHardwareProfile';
+import { collectListeningSockets } from '../router/management/SocketInventory';
+
+function renderHuaweiTcpStatus(router: Router): string {
+  const tcp = collectListeningSockets(router).filter((s) => s.protocol === 'tcp');
+  const lines = ['TCPCB       Local Address                Foreign Address           State'];
+  if (tcp.length === 0) return [...lines, '(no TCP listeners)'].join('\n');
+  for (const s of tcp) {
+    const local = `0.0.0.0:${s.port}`.padEnd(28);
+    lines.push(`0x00000000  ${local}0.0.0.0:0                 LISTEN  (${s.service})`);
+  }
+  return lines.join('\n');
+}
+
+function renderHuaweiSockets(router: Router): string {
+  const all = collectListeningSockets(router);
+  if (all.length === 0) return ' Active sockets: 0';
+  const lines = [` Active sockets: ${all.length}`, ' Proto  Port   Service'];
+  for (const s of all) {
+    lines.push(` ${s.protocol.padEnd(6)} ${String(s.port).padEnd(6)} ${s.service}`);
+  }
+  return lines.join('\n');
+}
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext, HuaweiPolicyShellCtx {
   readonly logging = new LoggingConfig();
@@ -1058,30 +1084,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'Info: This operation will reboot the system. Continue? [Y/N]:';
     });
 
-    t.register('display health', 'Display device health', () => {
-      const host = this.r().getHostname();
-      return [
-        `${host} system health:`,
-        '  Status: normal',
-        '  CPU usage: 5%',
-        '  Memory usage: 20%',
-      ].join('\n');
-    });
+    t.register('display health', 'Display device health', () =>
+      renderHealth(this.r().getHostname(), AR2220_HARDWARE_PROFILE));
     t.register('display temperature all', 'Display temperature sensors', () =>
-      ' Slot CPU 1 : 45 C (Normal)\n Slot CPU 2 : 46 C (Normal)');
+      renderTemperature(AR2220_HARDWARE_PROFILE));
     t.register('display fan', 'Display fan status', () =>
-      ' Slot No  FAN No  Status\n 0        1       Normal\n 0        2       Normal');
+      renderFans(AR2220_HARDWARE_PROFILE));
     t.register('display power', 'Display power supply status', () =>
-      ' Slot No  PWR No  Status\n 0        1       Normal');
+      renderPower(AR2220_HARDWARE_PROFILE));
     t.register('display environment', 'Display environment status', () =>
-      ' All sensors normal.');
-    t.register('display tcp status', 'Display TCP sockets', () =>
-      'TCPCB       Local Address                Foreign Address           State\n(none)');
-    t.register('display sockets', 'Display socket list', () =>
-      ' Active sockets: 0');
+      renderEnvironment(AR2220_HARDWARE_PROFILE));
+    t.register('display tcp status', 'Display TCP listening sockets', () =>
+      renderHuaweiTcpStatus(this.r()));
+    t.register('display sockets', 'Display open sockets', () =>
+      renderHuaweiSockets(this.r()));
     t.register('display dns server', 'Display DNS servers', () => {
-      const mgmt = this.r().getManagementService?.();
-      const servers = (mgmt as any)?.nameServers ?? [];
+      const servers = this.r().getManagementService().nameServers;
       if (servers.length === 0) return 'No DNS server configured.';
       return ` DNS Server(s): ${servers.join(', ')}`;
     });
@@ -1415,10 +1433,24 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.register('rsa local-key-pair create', 'Generate RSA key pair', () =>
-      'Info: The name of the key pair will be: ' + this.r().getHostname() + '_Host\nThe range of public key size is (512 ~ 2048).\nInput the bits in the modulus[default = 2048]: 2048\nGenerating keys...\n...........+...+\n.............+++++\nInfo: The keys are generated.');
-    t.register('dsa local-key-pair create', 'Generate DSA key pair', () =>
-      'Info: The DSA key pair will be: ' + this.r().getHostname() + '_Host\nGenerating keys...\nInfo: The keys are generated.');
+    t.register('rsa local-key-pair create', 'Generate RSA key pair', () => {
+      const name = `${this.r().getHostname()}_Host`;
+      const pair = this.r().getKeypairService().generate(name, 'rsa', 2048);
+      return [
+        `Info: The name of the key pair will be: ${pair.name}`,
+        `The range of public key size is (512 ~ 2048).`,
+        `Input the bits in the modulus[default = 2048]: ${pair.modulusBits}`,
+        `Info: Keys are generated. Fingerprint: ${pair.fingerprint}`,
+      ].join('\n');
+    });
+    t.register('dsa local-key-pair create', 'Generate DSA key pair', () => {
+      const name = `${this.r().getHostname()}_Host`;
+      const pair = this.r().getKeypairService().generate(name, 'dsa', 1024);
+      return [
+        `Info: The name of the key pair will be: ${pair.name}`,
+        `Info: Keys are generated. Fingerprint: ${pair.fingerprint}`,
+      ].join('\n');
+    });
 
     t.registerGreedy('cpu-defend policy', 'Enter CPU-defend policy', (args, raw) => {
       const r = this.r() as any;
@@ -1473,17 +1505,39 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (s.hwtacacsTemplates.size === 0) return ' No HWTACACS template configured.';
       return [...s.hwtacacsTemplates.keys()].map(n => ` HWTACACS template: ${n}`).join('\n');
     });
-    t.register('display ssh server session', 'Display SSH server sessions', () => 'No SSH user logged in.');
-    t.register('display rsa local-key-pair public', 'Display RSA public key', () =>
-      `Time of Key pair created: ${new Date().toUTCString()}\nKey size : 2048\nKey code : (omitted)`);
+    t.register('display ssh server session', 'Display SSH server sessions', () => {
+      const ssh = this.r().getManagementService().getSsh();
+      if (!ssh.enabled) return 'SSH server is not enabled.';
+      return `Conn   Ver  Idle    User       IP\n(none) ${ssh.version}    --      --         --`;
+    });
+    t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
+      const ks = this.r().getKeypairService();
+      const pair = ks.list().find((k) => k.algo === 'rsa');
+      if (!pair) return 'Info: No RSA key pair has been generated.';
+      return [
+        `Time of Key pair created: ${new Date(pair.createdAtMs).toUTCString()}`,
+        `Key size : ${pair.modulusBits}`,
+        `Fingerprint: ${pair.fingerprint}`,
+        `Public key:`,
+        pair.publicKeyBlob,
+      ].join('\n');
+    });
     t.register('display time-range all', 'Display time-ranges', () => {
       const r = this.r() as any;
       const trs = r._huaweiTimeRanges as Map<string, any> | undefined;
       if (!trs || trs.size === 0) return 'No time-range configured.';
       return [...trs.values()].map(t => ` Name: ${t.name}, spec: ${t.spec}`).join('\n');
     });
-    t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () =>
-      'No traffic-filter applications.');
+    t.register('display traffic-filter applied-record', 'Display traffic-filter applications', () => {
+      const bindings = this.r()._getInterfaceACLBindingsInternal() as Map<string, { in?: number | string; out?: number | string }>;
+      const rows: string[] = [];
+      for (const [iface, dirs] of bindings) {
+        if (dirs.in !== undefined) rows.push(` ${iface.padEnd(18)} inbound    ${dirs.in}`);
+        if (dirs.out !== undefined) rows.push(` ${iface.padEnd(18)} outbound   ${dirs.out}`);
+      }
+      if (rows.length === 0) return ' No traffic-filter applied on any interface.';
+      return [' Interface          Direction  ACL', ...rows].join('\n');
+    });
     t.registerGreedy('display cpu-defend policy', 'Display CPU-defend policies', (_args) => {
       const r = this.r() as any;
       const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;

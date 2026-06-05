@@ -575,7 +575,7 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
 
   test('LinuxMachine host config follows /etc/ssh/sshd_config edits', async () => {
     const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
-    await pc.executeCommand('echo "PermitRootLogin no\\nMaxAuthTries 2\\n" > /etc/ssh/sshd_config');
+    await pc.executeCommand('echo "PermitRootLogin no\\nMaxAuthTries 2\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
     const host = pc.getSshHost();
     expect(host.config.permitRootLogin).toBe('no');
     expect(host.config.maxAuthTries).toBe(2);
@@ -591,8 +591,8 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
 
   test('LinuxMachine host picks up /etc/motd and /etc/issue.net edits', async () => {
     const pc = new LinuxPC('linux-pc', 'pc1', 0, 0);
-    await pc.executeCommand('echo "AUTH NOTICE" > /etc/issue.net');
-    await pc.executeCommand('echo "welcome" > /etc/motd');
+    await pc.executeCommand('echo "AUTH NOTICE"| sudo tee /etc/issue.net > /dev/null');
+    await pc.executeCommand('echo "welcome"| sudo tee /etc/motd > /dev/null');
     const host = pc.getSshHost();
     expect(host.banner).toMatch(/AUTH NOTICE/);
     expect(host.motd).toMatch(/welcome/);

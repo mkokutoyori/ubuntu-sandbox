@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-04T13:28:21.282Z
+Generated: 2026-06-05T09:52:19.273Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -856,165 +856,176 @@ Total steps: 370
 [209/370] r1 R1# exit
 <empty>
 
-[210/370] r1 R1# end
+[210/370] r1 R1> end
 <empty>
 
-[211/370] r1 R1# show interfaces Tunnel0
+[211/370] r1 R1> show interfaces Tunnel0
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
     tunnel protection ipsec profile IPSEC-PROF
     Tunnel protocol/transport GRE/IP
 
-[212/370] r1 R1# show crypto ipsec sa interface Tunnel0
+[212/370] r1 R1> show crypto ipsec sa interface Tunnel0
   No IPSec SAs established.
 
-[213/370] r1 R1# show crypto session
+[213/370] r1 R1> show crypto session
   No active crypto sessions.
 
-[214/370] r1 R1# show crypto session detail
+[214/370] r1 R1> show crypto session detail
   No active crypto sessions.
 
 
 --- [215] § DMVPN / NHRP ---
-[215/370] r1 R1# configure terminal
-  Enter configuration commands, one per line.  End with CNTL/Z.
+[215/370] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
 
-[216/370] r1 R1(config)# interface Tunnel100
+[216/370] r1 R1> interface Tunnel100
+  % Invalid input detected at '^' marker.
+  interface Tunnel100
+  ^
+
+[217/370] r1 R1> ip address 172.20.0.1 255.255.255.0
+  % Invalid input detected at '^' marker.
+  ip address 172.20.0.1 255.255.255.0
+  ^
+
+[218/370] r1 R1> tunnel source GigabitEthernet0/1
+  % Invalid input detected at '^' marker.
+  tunnel source GigabitEthernet0/1
+  ^
+
+[219/370] r1 R1> tunnel mode gre multipoint
+  % Invalid input detected at '^' marker.
+  tunnel mode gre multipoint
+  ^
+
+[220/370] r1 R1> tunnel key 100
+  % Invalid input detected at '^' marker.
+  tunnel key 100
+  ^
+
+[221/370] r1 R1> ip nhrp authentication NHRPKEY
+  % Invalid input detected at '^' marker.
+  ip nhrp authentication NHRPKEY
+  ^
+
+[222/370] r1 R1> ip nhrp network-id 100
+  % Invalid input detected at '^' marker.
+  ip nhrp network-id 100
+  ^
+
+[223/370] r1 R1> ip nhrp map 172.20.0.2 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ip nhrp map 172.20.0.2 10.0.0.2
+  ^
+
+[224/370] r1 R1> ip nhrp map multicast 10.0.0.2
+  % Invalid input detected at '^' marker.
+  ip nhrp map multicast 10.0.0.2
+  ^
+
+[225/370] r1 R1> ip nhrp nhs 172.20.0.2
+  % Invalid input detected at '^' marker.
+  ip nhrp nhs 172.20.0.2
+  ^
+
+[226/370] r1 R1> ip nhrp holdtime 600
+  % Invalid input detected at '^' marker.
+  ip nhrp holdtime 600
+  ^
+
+[227/370] r1 R1> ip nhrp shortcut
+  % Invalid input detected at '^' marker.
+  ip nhrp shortcut
+  ^
+
+[228/370] r1 R1> ip nhrp redirect
+  % Invalid input detected at '^' marker.
+  ip nhrp redirect
+  ^
+
+[229/370] r1 R1> tunnel protection ipsec profile IPSEC-PROF
+  % Invalid input detected at '^' marker.
+  tunnel protection ipsec profile IPSEC-PROF
+  ^
+
+[230/370] r1 R1> exit
 <empty>
 
-[217/370] r1 R1(config-if)# ip address 172.20.0.1 255.255.255.0
+[231/370] r1 R1> end
 <empty>
 
-[218/370] r1 R1(config-if)# tunnel source GigabitEthernet0/1
-<empty>
+[232/370] r1 R1> show ip nhrp
+  IP-NHRP table contains no entries
 
-[219/370] r1 R1(config-if)# tunnel mode gre multipoint
-<empty>
+[233/370] r1 R1> show ip nhrp brief
+  IP-NHRP table contains no entries
 
-[220/370] r1 R1(config-if)# tunnel key 100
-<empty>
+[234/370] r1 R1> show dmvpn
+  No DMVPN sessions
 
-[221/370] r1 R1(config-if)# ip nhrp authentication NHRPKEY
-<empty>
-
-[222/370] r1 R1(config-if)# ip nhrp network-id 100
-<empty>
-
-[223/370] r1 R1(config-if)# ip nhrp map 172.20.0.2 10.0.0.2
-<empty>
-
-[224/370] r1 R1(config-if)# ip nhrp map multicast 10.0.0.2
-<empty>
-
-[225/370] r1 R1(config-if)# ip nhrp nhs 172.20.0.2
-<empty>
-
-[226/370] r1 R1(config-if)# ip nhrp holdtime 600
-<empty>
-
-[227/370] r1 R1(config-if)# ip nhrp shortcut
-<empty>
-
-[228/370] r1 R1(config-if)# ip nhrp redirect
-<empty>
-
-[229/370] r1 R1(config-if)# tunnel protection ipsec profile IPSEC-PROF
-<empty>
-
-[230/370] r1 R1(config-if)# exit
-<empty>
-
-[231/370] r1 R1(config)# end
-<empty>
-
-[232/370] r1 R1# show ip nhrp
-  IP NHRP cache:
-  172.20.0.2/32 via 10.0.0.2, Tunnel100 created 0s ago
-    Type: static, Flags: S
-    NBMA address: 10.0.0.2
-  224.0.0.0/32 via 10.0.0.2, Tunnel100 created 0s ago
-    Type: static, Flags: M
-    NBMA address: 10.0.0.2
-
-[233/370] r1 R1# show ip nhrp brief
-  Target            Via                NBMA Address        Interface
-  172.20.0.2/32     172.20.0.2         10.0.0.2            Tunnel100
-  224.0.0.0/32      224.0.0.0          10.0.0.2            Tunnel100
-
-[234/370] r1 R1# show dmvpn
-  Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
-          N - NATed, L - Local, X - No Socket
-  
-  Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 0, Phase: 3
-  
-   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
-   ----- --------------- --------------- ----- -------- -----
-
-[235/370] r1 R1# show dmvpn detail
-  Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
-          N - NATed, L - Local, X - No Socket
-  
-  Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 0, Phase: 3
-  
-   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
-   ----- --------------- --------------- ----- -------- -----
+[235/370] r1 R1> show dmvpn detail
+  No DMVPN sessions
 
 
 --- [236] § PKI / trustpoint ---
-[236/370] r1 R1# configure terminal
-  Enter configuration commands, one per line.  End with CNTL/Z.
+[236/370] r1 R1> configure terminal
+  % Invalid input detected at '^' marker.
+  configure terminal
+  ^
 
-[237/370] r1 R1(config)# crypto pki trustpoint CA1
+[237/370] r1 R1> crypto pki trustpoint CA1
+  % Invalid input detected at '^' marker.
+  crypto pki trustpoint CA1
+  ^
+
+[238/370] r1 R1> enrollment url http://10.0.0.5:80
+  % Invalid input detected at '^' marker.
+  enrollment url http://10.0.0.5:80
+  ^
+
+[239/370] r1 R1> subject-name CN=R1.lab.local
+  % Invalid input detected at '^' marker.
+  subject-name CN=R1.lab.local
+  ^
+
+[240/370] r1 R1> revocation-check crl
+  % Invalid input detected at '^' marker.
+  revocation-check crl
+  ^
+
+[241/370] r1 R1> rsakeypair SSH-KEY
+  % Invalid input detected at '^' marker.
+  rsakeypair SSH-KEY
+  ^
+
+[242/370] r1 R1> exit
 <empty>
 
-[238/370] r1 R1(ca-trustpoint)# enrollment url http://10.0.0.5:80
+[243/370] r1 R1> crypto pki authenticate CA1
+  % Invalid input detected at '^' marker.
+  crypto pki authenticate CA1
+  ^
+
+[244/370] r1 R1> crypto pki enroll CA1
+  % Invalid input detected at '^' marker.
+  crypto pki enroll CA1
+  ^
+
+[245/370] r1 R1> end
 <empty>
 
-[239/370] r1 R1(ca-trustpoint)# subject-name CN=R1.lab.local
-<empty>
+[246/370] r1 R1> show crypto pki trustpoints
+  No trustpoints configured
 
-[240/370] r1 R1(ca-trustpoint)# revocation-check crl
-<empty>
+[247/370] r1 R1> show crypto pki certificates
+  No PKI certificates installed
 
-[241/370] r1 R1(ca-trustpoint)# rsakeypair SSH-KEY
-<empty>
-
-[242/370] r1 R1(ca-trustpoint)# exit
-<empty>
-
-[243/370] r1 R1(config)# crypto pki authenticate CA1
-  % Trustpoint CA1 CA certificate accepted
-
-[244/370] r1 R1(config)# crypto pki enroll CA1
-  % Start certificate enrollment for trustpoint CA1
-  % Certificate request sent to Certificate Authority
-
-[245/370] r1 R1(config)# end
-<empty>
-
-[246/370] r1 R1# show crypto pki trustpoints
-  Trustpoint CA1:
-      Subject Name: CN=R1.lab.local
-      Enrollment URL: http://10.0.0.5:80
-      Revocation Check: crl
-      RSA Keypair: SSH-KEY
-
-[247/370] r1 R1# show crypto pki certificates
-  Certificate (Trustpoint CA1):
-    Status: Pending enrollment
-
-[248/370] r1 R1# show crypto pki certificates verbose
-  Trustpoint CA1 (verbose):
-    Subject Name: CN=R1.lab.local
-    Enrollment URL: http://10.0.0.5:80
-    Revocation Check: crl
-    RSA Keypair: SSH-KEY
-    Certificate: pending enrollment
-    Validity: 365 days
-    Certificate fingerprint (SHA1): AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB
+[248/370] r1 R1> show crypto pki certificates verbose
+  No PKI certificates installed
 
 
 --- [249] § crypto clear / debug ---
@@ -1145,30 +1156,8 @@ Total steps: 370
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
-  interface Tunnel100
-   ip address 172.20.0.1 255.255.255.0
-   no shutdown
-   ip nhrp network-id 100
-   ip nhrp authentication NHRPKEY
-   ip nhrp holdtime 600
-   ip nhrp shortcut
-   ip nhrp redirect
-   ip nhrp map 172.20.0.2 10.0.0.2
-   ip nhrp map multicast 224.0.0.0 10.0.0.2
-   ip nhrp nhs 172.20.0.2
-   tunnel mode gre multipoint
-   tunnel source GigabitEthernet0/1
-   tunnel key 100
-  !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
-  !
-  !
-  crypto pki trustpoint CA1
-   enrollment url http://10.0.0.5:80
-   subject-name CN=R1.lab.local
-   revocation-check crl
-   rsakeypair SSH-KEY
   !
   crypto isakmp policy 10
    encryption aes 192
@@ -1266,7 +1255,6 @@ Total steps: 370
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel100                  172.20.0.1      YES manual up                    up
 
 [266/370] r1 R1(config)# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
@@ -1316,11 +1304,6 @@ Total steps: 370
     Internet address is 172.16.0.5/30
     tunnel protection ipsec profile IPSEC-PROF shared
     Tunnel protocol/transport GRE/IP
-  Tunnel100 is up, line protocol is up
-    Hardware is Tunnel
-    Internet address is 172.20.0.1/24
-    tunnel protection ipsec profile IPSEC-PROF
-    Tunnel protocol/transport GRE/IP
 
 [267/370] r1 R1(config)# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1331,20 +1314,19 @@ Total steps: 370
   C    1.1.1.1/32 is directly connected, Loopback0
   C    172.16.0.0/30 is directly connected, Tunnel0
   C    172.16.0.4/30 is directly connected, Tunnel1
-  C    172.20.0.0/24 is directly connected, Tunnel100
 
 [268/370] r1 R1(config)# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
   IP routing table maximum-paths is 32
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
-  connected       6           6           0           912         2160
+  connected       5           5           0           760         1800
   static          0           0           0           0           0
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         0           0           0           0           0
-  Total           6           6           0           912         2160
+  Total           5           5           0           760         1800
 
 [269/370] r1 R1(config)# show ip protocols
   No routing protocol is configured.
@@ -1506,7 +1488,7 @@ Total steps: 370
 [298/370] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBFBF5.50E56041 (13:28:21.316 UTC Thu Jun 4 2026)
+  reference time is EDCD1AD3.4E560418 (09:52:19.306 UTC Fri Jun 5 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1(config)# show ntp associations
@@ -1515,7 +1497,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1(config)# show clock
-  *13:28:21.000 UTC Thu Jun 4 2026
+  *09:52:19.000 UTC Fri Jun 5 2026
 
 [301/370] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1584,7 +1566,13 @@ Total steps: 370
   show history
 
 [308/370] r1 R1(config)# show ip cef
-  IP CEF is not enabled
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  1.1.1.1/32           attached             Loopback0
+  172.16.0.0/30        attached             Tunnel0
+  172.16.0.4/30        attached             Tunnel1
 
 [309/370] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1648,10 +1636,6 @@ Total steps: 370
     Hardware is present, link is down
     Administrative state: up
     0 carrier transitions
-  Tunnel100 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
 
 [313/370] r1 R1(config)# show tech-support
   ------------------ show version ------------------
@@ -1712,30 +1696,8 @@ Total steps: 370
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
-  interface Tunnel100
-   ip address 172.20.0.1 255.255.255.0
-   no shutdown
-   ip nhrp network-id 100
-   ip nhrp authentication NHRPKEY
-   ip nhrp holdtime 600
-   ip nhrp shortcut
-   ip nhrp redirect
-   ip nhrp map 172.20.0.2 10.0.0.2
-   ip nhrp map multicast 224.0.0.0 10.0.0.2
-   ip nhrp nhs 172.20.0.2
-   tunnel mode gre multipoint
-   tunnel source GigabitEthernet0/1
-   tunnel key 100
-  !
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
-  !
-  !
-  crypto pki trustpoint CA1
-   enrollment url http://10.0.0.5:80
-   subject-name CN=R1.lab.local
-   revocation-check crl
-   rsakeypair SSH-KEY
   !
   crypto isakmp policy 10
    encryption aes 192
@@ -1830,7 +1792,6 @@ Total steps: 370
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel100                  172.20.0.1      YES manual up                    up
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
@@ -1840,7 +1801,6 @@ Total steps: 370
   C    1.1.1.1/32 is directly connected, Loopback0
   C    172.16.0.0/30 is directly connected, Tunnel0
   C    172.16.0.4/30 is directly connected, Tunnel1
-  C    172.20.0.0/24 is directly connected, Tunnel100
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -1889,11 +1849,6 @@ Total steps: 370
     Hardware is Tunnel
     Internet address is 172.16.0.5/30
     tunnel protection ipsec profile IPSEC-PROF shared
-    Tunnel protocol/transport GRE/IP
-  Tunnel100 is up, line protocol is up
-    Hardware is Tunnel
-    Internet address is 172.20.0.1/24
-    tunnel protection ipsec profile IPSEC-PROF
     Tunnel protocol/transport GRE/IP
   
   ------------------ show ip protocols ------------------
@@ -1997,20 +1952,6 @@ Total steps: 370
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
-  interface Tunnel100
-   ip address 172.20.0.1 255.255.255.0
-   no shutdown
-   ip nhrp network-id 100
-   ip nhrp authentication NHRPKEY
-   ip nhrp holdtime 600
-   ip nhrp shortcut
-   ip nhrp redirect
-   ip nhrp map 172.20.0.2 10.0.0.2
-   ip nhrp map multicast 224.0.0.0 10.0.0.2
-   ip nhrp nhs 172.20.0.2
-   tunnel mode gre multipoint
-   tunnel source GigabitEthernet0/1
-   tunnel key 100
 
 [326/370] r1 R1(config)# show running-config | begin line
 <empty>
@@ -2046,27 +1987,8 @@ Total steps: 370
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
-  interface Tunnel100
-   ip address 172.20.0.1 255.255.255.0
-   no shutdown
-   ip nhrp network-id 100
-   ip nhrp authentication NHRPKEY
-   ip nhrp holdtime 600
-   ip nhrp shortcut
-   ip nhrp redirect
-   ip nhrp map 172.20.0.2 10.0.0.2
-   ip nhrp map multicast 224.0.0.0 10.0.0.2
-   ip nhrp nhs 172.20.0.2
-   tunnel mode gre multipoint
-   tunnel source GigabitEthernet0/1
-   tunnel key 100
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
-  crypto pki trustpoint CA1
-   enrollment url http://10.0.0.5:80
-   subject-name CN=R1.lab.local
-   revocation-check crl
-   rsakeypair SSH-KEY
   crypto isakmp policy 10
    encryption aes 192
    hash sha256
@@ -2160,7 +2082,6 @@ Total steps: 370
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel100                  172.20.0.1      YES manual up                    up
 
 
 --- [330] § regression: mode nav + negation ---
@@ -2239,7 +2160,6 @@ Total steps: 370
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Tunnel100                  172.20.0.1      YES manual up                    up
 
 [353/370] r1 R1(config-if)# shutdown
 <empty>
@@ -2286,6 +2206,8 @@ Total steps: 370
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
+    community-list   Define BGP community list
+    as-path          as-path
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
@@ -2342,7 +2264,7 @@ Total steps: 370
 <empty>
 
 [369/370] r1 R1# show running-config | count !
-  17
+  14
 
 [370/370] r1 R1# write memory
   Building configuration...

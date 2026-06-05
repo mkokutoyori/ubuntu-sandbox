@@ -314,23 +314,27 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
     const ns = lldpNeighbours(dev);
     const detail = arg.toLowerCase().includes('detail');
     if (detail) {
-      if (ns.length === 0) return 'Total entries displayed: 0';
-      const blocks = ns.map(n => [
+      const agent = dev.getLldpAgent?.();
+      const learned = agent?.getNeighbors() ?? [];
+      if (learned.length === 0 && ns.length === 0) return 'Total entries displayed: 0';
+      const blocks = learned.map((n) => [
         '------------------------------------------------',
         `Local Intf: ${n.localPort}`,
-        `Chassis id: ${n.remoteHost}`,
-        `Port id: ${n.remotePort}`,
-        `Port Description: ${n.remotePort}`,
-        `System Name: ${n.remoteHost}`,
+        `Chassis id: ${n.chassisId}`,
+        `Port id: ${n.portId}`,
+        `Port Description: ${n.portDescription}`,
+        `System Name: ${n.systemName}`,
         `System Description:`,
-        `${n.remotePlatform ?? ''}`,
-        `Time remaining: ${ttl} seconds`,
-        `System Capabilities: ${n.remoteCapability}`,
-        `Enabled Capabilities: ${n.remoteCapability}`,
+        n.systemDescription,
+        `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
+        `System Capabilities: ${n.remoteCapabilities.join(', ')}`,
+        `Enabled Capabilities: ${n.remoteCapabilities.join(', ')}`,
         `Management Addresses:`,
-        '    not advertised',
+        ...(n.managementAddresses.length > 0
+          ? n.managementAddresses.map((a) => `    IP: ${a}`)
+          : ['    not advertised']),
       ].join('\n'));
-      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${ns.length}`;
+      return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${learned.length}`;
     }
     const hdr = [
       'Capability codes:',

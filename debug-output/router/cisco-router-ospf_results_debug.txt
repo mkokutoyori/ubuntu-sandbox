@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-06-04T13:28:12.099Z
+Generated: 2026-06-05T09:51:40.387Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1304,7 +1304,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCBFBEC.30A3D70A (13:28:12.190 UTC Thu Jun 4 2026)
+  reference time is EDCD1AAC.774BC6A7 (09:51:40.466 UTC Fri Jun 5 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1313,7 +1313,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *13:28:12.000 UTC Thu Jun 4 2026
+  *09:51:40.000 UTC Fri Jun 5 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1382,7 +1382,14 @@ Total steps: 311
   show history
 
 [249/311] r1 R1# show ip cef
-  IP CEF is not enabled
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  10.10.1.0/24         attached             Loopback1
+  10.10.2.0/24         attached             Loopback2
+  10.10.3.0/24         attached             Loopback3
+  10.10.4.0/24         attached             Loopback4
 
 [250/311] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1869,6 +1876,8 @@ Total steps: 311
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
+    community-list   Define BGP community list
+    as-path          as-path
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
@@ -1925,7 +1934,7 @@ Total steps: 311
 <empty>
 
 [310/311] r1 R1# show running-config | count !
-  16
+  14
 
 [311/311] r1 R1# write memory
   Building configuration...

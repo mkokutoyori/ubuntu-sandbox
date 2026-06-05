@@ -120,7 +120,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
   it('resolves custom /etc/hosts entry', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
-    await pc.executeCommand('echo "10.0.1.100 myserver" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.100 myserver" >> /etc/hosts'`);
     const out = await pc.executeCommand('ping -c 1 myserver');
     expect(out).toContain('10.0.1.100');
     expect(out).not.toContain('Name or service not known');
@@ -142,10 +142,10 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
     srv.dnsService.start();
 
     // Configure resolver on PC
-    await pc.executeCommand('echo "nameserver 10.0.1.10" > /etc/resolv.conf');
+    await pc.executeCommand(`sudo sh -c 'echo "nameserver 10.0.1.10" > /etc/resolv.conf'`);
 
     // Add /etc/hosts entry with different IP
-    await pc.executeCommand('echo "10.0.1.50 myserver" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.50 myserver" >> /etc/hosts'`);
 
     // hosts file should win
     const out = await pc.executeCommand('ping -c 1 myserver');
@@ -165,7 +165,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
     srv.dnsService.addRecord({ name: 'webserver', type: 'A', value: '10.0.1.88', ttl: 3600 });
     srv.dnsService.start();
 
-    await pc.executeCommand('echo "nameserver 10.0.1.10" > /etc/resolv.conf');
+    await pc.executeCommand(`sudo sh -c 'echo "nameserver 10.0.1.10" > /etc/resolv.conf'`);
 
     const out = await pc.executeCommand('ping -c 1 webserver');
     expect(out).toContain('10.0.1.88');
@@ -174,7 +174,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
   it('handles multiple hostnames per line in /etc/hosts', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
-    await pc.executeCommand('echo "10.0.1.100 myserver myalias" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.100 myserver myalias" >> /etc/hosts'`);
 
     const out1 = await pc.executeCommand('ping -c 1 myserver');
     expect(out1).toContain('10.0.1.100');
@@ -185,7 +185,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
 
   it('ignores comment lines in /etc/hosts', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    await pc.executeCommand('echo "# 10.0.1.100 commentedout" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "# 10.0.1.100 commentedout" >> /etc/hosts'`);
     const out = await pc.executeCommand('ping -c 1 commentedout');
     expect(out).toContain('Name or service not known');
   });
@@ -268,7 +268,7 @@ describe('H-05 — traceroute with hostname resolution', () => {
     srv.configureInterface('eth0', new IPAddress('10.0.1.3'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
 
-    await pc.executeCommand('echo "10.0.1.3 myserver" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.3 myserver" >> /etc/hosts'`);
     const out = await pc.executeCommand('traceroute myserver');
     expect(out).toMatch(/traceroute to myserver \(10\.0\.1\.3\)/);
   });
@@ -358,7 +358,7 @@ describe('H-07 — getent hosts command', () => {
 
   it('getent hosts shows custom entries', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    await pc.executeCommand('echo "10.0.1.100 dbserver db" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.100 dbserver db" >> /etc/hosts'`);
     const out = await pc.executeCommand('getent hosts dbserver');
     expect(out).toContain('10.0.1.100');
     expect(out).toContain('dbserver');
@@ -381,7 +381,7 @@ describe('H-08 — Dynamic /etc/hosts editing and re-resolution', () => {
     expect(before).toContain('Name or service not known');
 
     // Add entry
-    await pc.executeCommand('echo "10.0.1.50 newhost" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.50 newhost" >> /etc/hosts'`);
 
     // After: resolved
     const after = await pc.executeCommand('ping -c 1 newhost');
@@ -392,7 +392,7 @@ describe('H-08 — Dynamic /etc/hosts editing and re-resolution', () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
 
     // Overwrite with only a custom entry (no localhost!)
-    await pc.executeCommand('echo "10.0.1.99 onlyhost" > /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.99 onlyhost" > /etc/hosts'`);
 
     const out1 = await pc.executeCommand('ping -c 1 onlyhost');
     expect(out1).toContain('10.0.1.99');
@@ -406,7 +406,7 @@ describe('H-08 — Dynamic /etc/hosts editing and re-resolution', () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     // Write tab-separated entry
-    await pc.executeCommand('echo "10.0.1.77\ttabhost" >> /etc/hosts');
+    await pc.executeCommand(`sudo sh -c 'echo "10.0.1.77\ttabhost" >> /etc/hosts'`);
     const out = await pc.executeCommand('ping -c 1 tabhost');
     expect(out).toContain('10.0.1.77');
   });

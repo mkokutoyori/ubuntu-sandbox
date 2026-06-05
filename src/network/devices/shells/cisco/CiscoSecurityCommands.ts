@@ -277,6 +277,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   });
 
   trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
+  trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
 
   trie.registerGreedy('time-range', 'Define time-range', (args) => {
     if (!args[0]) return '% Incomplete command.';
@@ -476,6 +477,15 @@ export function buildSecuritySubmodeCommands(
   pmapClassTrie.register('pass', 'Pass', () => { addAction(ctx, 'pass', []); return ''; });
   pmapClassTrie.registerGreedy('set dscp', 'Set DSCP', (args) => { addAction(ctx, 'set-dscp', args); return ''; });
   pmapClassTrie.registerGreedy('set precedence', 'Set precedence', (args) => { addAction(ctx, 'set-precedence', args); return ''; });
+  pmapClassTrie.registerGreedy('priority', 'Reserve bandwidth for priority', (args) => { addAction(ctx, 'priority', args); return ''; });
+  pmapClassTrie.registerGreedy('bandwidth', 'Reserve bandwidth', (args) => { addAction(ctx, 'bandwidth', args); return ''; });
+  pmapClassTrie.register('fair-queue', 'Enable WFQ', () => { addAction(ctx, 'fair-queue', []); return ''; });
+  pmapClassTrie.register('random-detect', 'Enable WRED', () => { addAction(ctx, 'random-detect', []); return ''; });
+  pmapClassTrie.registerGreedy('random-detect', 'WRED configuration', (args) => { addAction(ctx, 'random-detect', args); return ''; });
+  pmapClassTrie.registerGreedy('shape', 'Traffic shape', (args) => { addAction(ctx, 'shape', args); return ''; });
+  pmapClassTrie.registerGreedy('service-policy', 'Nested service-policy', (args) => { addAction(ctx, 'service-policy', args); return ''; });
+  pmapClassTrie.registerGreedy('queue-limit', 'Queue depth', (args) => { addAction(ctx, 'queue-limit', args); return ''; });
+  pmapClassTrie.registerGreedy('compression', 'Compression', (args) => { addAction(ctx, 'compression', args); return ''; });
 
   cpTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
     if (args[0] === 'input' && args[1]) sec().controlPlane.servicePolicyInput = args[1];
@@ -950,17 +960,17 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     ].join('\n');
   });
 
-  trie.registerGreedy('show ip cef', 'Display CEF table', () => {
+  trie.registerGreedy('show ip cef', 'Display CEF FIB', () => {
     if (!sec().ipCef) return 'IP CEF is not enabled';
     const router = getRouter();
     const table = router._getRoutingTableInternal();
-    const lines = ['Prefix              Next Hop             Interface'];
+    const lines = ['Prefix               Next Hop             Interface'];
+    lines.push('0.0.0.0/0            no route');
     for (const r of table) {
-      const cidr = r.mask.toString().split('.').reduce((acc, oct) => acc + ((parseInt(oct, 10) >>> 0).toString(2).match(/1/g)?.length ?? 0), 0);
-      const dst = `${r.network}/${cidr}`;
+      const dst = `${r.network}/${r.mask.toCIDR()}`;
       const next = r.nextHop ? r.nextHop.toString() : 'attached';
       const iface = r.iface ?? '';
-      lines.push(`${dst.padEnd(20)}${next.padEnd(21)}${iface}`);
+      lines.push(`${dst.padEnd(21)}${next.padEnd(21)}${iface}`);
     }
     return lines.join('\n');
   });

@@ -1200,13 +1200,13 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
   const rows: Row[] = [
     {
       name: 'Linux: /etc/issue.net is displayed pre-auth',
-      setup: (l) => { void l.linux2.executeCommand("echo 'AUTHORIZED USE ONLY' > /etc/issue.net"); },
+      setup: (l) => { void l.linux2.executeCommand(`sudo sh -c "echo 'AUTHORIZED USE ONLY' > /etc/issue.net"`); },
       on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
       contains: ['AUTHORIZED USE ONLY'],
     },
     {
       name: 'Linux: /etc/motd is shown after auth',
-      setup: (l) => { void l.linux2.executeCommand("echo 'Property of ACME' > /etc/motd"); },
+      setup: (l) => { void l.linux2.executeCommand(`sudo sh -c "echo 'Property of ACME' > /etc/motd"`); },
       on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
       contains: ['Property of ACME'],
     },
@@ -1706,7 +1706,7 @@ describe('§25 — Root/Administrator login policy', () => {
     {
       name: 'Linux PermitRootLogin yes accepts root',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
+        await l.linux2.executeCommand(`sudo sh -c 'echo "PermitRootLogin yes" > /etc/ssh/sshd_config'`);
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
@@ -1715,7 +1715,7 @@ describe('§25 — Root/Administrator login policy', () => {
     {
       name: 'Linux PermitRootLogin prohibit-password still blocks password root',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config');
+        await l.linux2.executeCommand(`sudo sh -c 'echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config'`);
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1, cmd: 'ssh root@10.0.0.2',
@@ -1939,7 +1939,7 @@ describe('§29 — Hostname resolution under SSH', () => {
     {
       name: 'Linux /etc/hosts: name "linux2" resolves to 10.0.0.2',
       setup: async (l) => {
-        await l.linux1.executeCommand('echo "10.0.0.2 linux2" >> /etc/hosts');
+        await l.linux1.executeCommand(`sudo sh -c 'echo "10.0.0.2 linux2" >> /etc/hosts'`);
       },
       on: l => l.linux1, cmd: 'ssh alice@linux2 hostname',
       contains: [/^linux2$/m],
@@ -2011,8 +2011,8 @@ describe('§30 — Command flow respects aliases through SSH', () => {
     {
       name: 'shell function defined remotely is invoked through SSH',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo "myfn() { echo CUSTOM:$1; }" >> /home/alice/.bashrc');
-        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+        await l.linux2.executeCommand(`sudo sh -c 'echo "myfn() { echo CUSTOM:\\$1; }" >> /home/alice/.bashrc'`);
+        await l.linux2.executeCommand('sudo chown alice:alice /home/alice/.bashrc');
       },
       on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "myfn ping"',
       contains: [/^CUSTOM:ping$/m],

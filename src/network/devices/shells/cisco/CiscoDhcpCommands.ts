@@ -226,10 +226,6 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
       `Insertion of option-82 information: ${r._ciscoDhcpSnoopingInfoOption ? 'yes' : 'no'}`,
     ].join('\n');
   });
-  trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
-    'MacAddress          IpAddress        Lease(sec)  Type           VLAN  Interface\n(no bindings)');
-  trie.register('show ip dhcp relay statistics', 'Display DHCP relay statistics', () =>
-    'DHCP relay: forwarded 0 packets, dropped 0.');
 
   trie.register('show ipv6 dhcp pool', 'Display IPv6 DHCP pools', () => {
     const r = getRouter() as any;
@@ -244,10 +240,25 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     return out.join('\n');
   });
-  trie.register('show ipv6 dhcp binding', 'Display IPv6 DHCP bindings', () => 'No IPv6 DHCP bindings.');
-  trie.register('show ipv6 dhcp interface', 'Display IPv6 DHCP interface state', () => 'No IPv6 DHCP interface state.');
-  trie.register('show dhcp lease', 'Display DHCP client lease', () => 'No DHCP client lease.');
-  trie.register('show dhcp server', 'Display DHCP client server learn', () => 'No DHCP server known.');
+
+  trie.register('show ipv6 dhcp interface', 'Display IPv6 DHCP interface state', () => {
+    const router = getRouter();
+    const lines: string[] = [];
+    for (const [name, port] of router._getPortsInternal()) {
+      const poolRef = (port as any).ipv6DhcpPool as string | undefined;
+      const relays = (port as any).ipv6DhcpRelayDestinations as string[] | undefined;
+      if (poolRef) lines.push(`${name} is in DHCPv6 server mode, pool ${poolRef}`);
+      if (relays?.length) lines.push(`${name} is in DHCPv6 relay mode, destinations: ${relays.join(', ')}`);
+    }
+    if (lines.length === 0) return 'No IPv6 DHCP interface configuration.';
+    return lines.join('\n');
+  });
+
+  trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
+    getRouter()._getDHCPServerInternal().formatBindingsShow());
+
+  trie.register('show ip dhcp relay statistics', 'Display DHCP relay statistics', () =>
+    getRouter()._getDHCPServerInternal().formatStatsShow());
 }
 
 // ─── DHCP Privileged Commands (debug, clear) ─────────────────────────

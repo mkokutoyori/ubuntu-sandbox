@@ -103,7 +103,7 @@ export class CLIStateMachine<TMode extends string = string> {
 
 export const CISCO_IOS_MODES: ModeHierarchy = {
   'user':                      { parent: null },
-  'privileged':                { parent: null },
+  'privileged':                { parent: 'user' },
   'config':                    { parent: 'privileged' },
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },

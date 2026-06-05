@@ -294,7 +294,7 @@ export function registerDhcpDisplayCommands(trie: CommandTrie, getRouter: () => 
     getRouter()._getDHCPServerInternal().formatExcludedShow());
 
   trie.register('display dhcp server conflict all', 'Display DHCP server address conflicts', () =>
-    'No conflict addresses.');
+    getRouter()._getDHCPServerInternal().formatConflictShow());
 
   trie.registerGreedy('display dhcp server interface', 'Display interface DHCP server config', (args) => {
     if (!args[0]) return '';

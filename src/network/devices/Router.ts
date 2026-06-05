@@ -94,6 +94,7 @@ import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
 import { NetflowService } from './router/netflow/NetflowService';
 import { ArchiveService } from './router/archive/ArchiveService';
+import { KeypairService } from './router/security/KeypairService';
 import { HuaweiRoutingExtras } from './router/routing/HuaweiRoutingExtras';
 import { HuaweiVrrpService } from './router/redundancy/HuaweiVrrpService';
 import { HuaweiBfdService } from './router/bfd/HuaweiBfdService';
@@ -1684,6 +1685,12 @@ export abstract class Router extends Equipment {
   private _eemService: EemService | null = null;
   private _netflowService: NetflowService | null = null;
   private _archiveService: ArchiveService | null = null;
+  private _keypairService: KeypairService | null = null;
+
+  getKeypairService(): KeypairService {
+    if (!this._keypairService) this._keypairService = new KeypairService();
+    return this._keypairService;
+  }
 
   getEemService(): EemService {
     if (!this._eemService) this._eemService = new EemService();

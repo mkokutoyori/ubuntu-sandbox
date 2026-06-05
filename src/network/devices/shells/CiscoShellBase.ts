@@ -704,8 +704,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sec = Math.max(0, Math.floor((t - Date.now()) / 1000));
       return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
     });
-    this.privilegedTrie.register('write-memory', 'Save configuration (alias)', () => this.onSave());
-    this.privilegedTrie.register('write', 'Save configuration', () => this.onSave());
+
+    const debugSvc = () => {
+      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
+      return dev.getDebugService?.();
+    };
+    this.privilegedTrie.registerGreedy('debug standby', 'Debug HSRP', (_args) =>
+      debugSvc()?.enable('standby') ?? '');
+    this.privilegedTrie.registerGreedy('debug eigrp', 'Debug EIGRP', (_args) =>
+      debugSvc()?.enable('ip.eigrp') ?? '');
+    this.privilegedTrie.registerGreedy('no debug standby', 'Disable HSRP debug', (_args) =>
+      debugSvc()?.disable('standby') ?? '');
+    this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>
+      debugSvc()?.disable('ip.eigrp') ?? '');
+    this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
       this.attachLoggingToDevice(this.d());
       (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
@@ -1081,6 +1093,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('key chain', 'Define a key chain', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `key chain ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('key', 'Key chain key (sub-key)', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `key ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('key-string', 'Set key string', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `key-string ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('accept-lifetime', 'Key accept lifetime', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `accept-lifetime ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('send-lifetime', 'Key send lifetime', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `send-lifetime ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `ip community-list ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `ip as-path access-list ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `priority-list ${args.join(' ')}`);
+      return '';
+    });
+    this.configTrie.registerGreedy('queue-list', 'Legacy CQ list', (args, raw) => {
+      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+      r._recordUnhandledConfigLine?.(raw ?? `queue-list ${args.join(' ')}`);
       return '';
     });
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
