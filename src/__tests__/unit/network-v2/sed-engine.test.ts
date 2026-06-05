@@ -155,8 +155,6 @@ describe('sed — options, branching, integration (§D)', () => {
   });
   it('D8 -i edits a file in place through the executor', () => {
     const exec = new LinuxCommandExecutor(false);
-    // Seed file with the executor's effective uid/gid so the running user
-    // (uid 1000 on a PC, not root) can rewrite it in place.
     exec.vfs.writeFile('/tmp/f.txt', 'Port 22\n', 1000, 1000, 0o022);
     exec.execute("sed -i s/22/2222/ /tmp/f.txt");
     expect(exec.vfs.readFile('/tmp/f.txt')).toBe('Port 2222\n');

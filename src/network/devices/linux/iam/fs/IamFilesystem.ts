@@ -203,13 +203,9 @@ export class IamFilesystem {
 
   // ─── Mail spool ────────────────────────────────────────────────────────
 
-  /** Create an empty mailbox `/var/mail/<user>` (does nothing if it exists). */
   createMailSpool(username: string, uid: number, gid: number): void {
     const path = `${IAM_PATHS.mailSpoolDir}/${username}`;
     if (this.vfs.readFile(path) === null) {
-      // `useradd` runs as root: create the spool as root (so the write through
-      // /var/mail's root-owned 0755 directory passes the POSIX check), then
-      // chown to the new account so the user can actually read/write it.
       this.vfs.createFileAt(path, '', 0o660, 0, 0);
       this.vfs.chown(path, uid, gid);
     }

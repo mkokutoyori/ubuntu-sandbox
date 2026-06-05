@@ -108,11 +108,6 @@ export class LinuxLogManager {
   ] as const;
 
   constructor(private vfs: VirtualFileSystem) {
-    // Boot happened a moment ago: backdating by ~30 s ensures the staggered
-    // boot offsets (kernel: 0–1.2 s, systemd: 2.1–2.6 s, sshd: ~3 s) all
-    // land in the past relative to wall-clock when the test queries
-    // immediately after construction. Real `uptime` after a login shell
-    // starts is always at least a few seconds, never zero.
     this.bootTime = new Date(Date.now() - 30_000);
     this.bootId = this.generateBootId();
     this.populateBootMessages();

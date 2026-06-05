@@ -499,8 +499,6 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
     const t = new LinuxTerminalSession('w', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    // Generate the marker AFTER the SSH session is established so the
-    // sshd Accepted/Session lines don't push it out of `tail -n 3`.
     await linuxSrv.executeCommand('logger -t test "syslog-line-1"');
     await typeRoot(t, 'cd /var/log');
     await typeRoot(t, 'tail -n 3 syslog');

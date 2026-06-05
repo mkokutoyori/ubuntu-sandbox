@@ -907,11 +907,6 @@ export class LinuxCommandExecutor {
       // Read the private key, output its public form (stub).
       return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
     }
-    // Generate: write two files (private + .pub). Real `ssh-keygen` runs
-    // as the invoking user and stamps the key pair with the caller's
-    // uid/gid; only the dir mode is locked down (0700). Using the
-    // executor's current uid/gid keeps `~/.ssh` consistent with how a
-    // POSIX login shell would have created it.
     const sshDir = file.replace(/\/[^/]+$/, '');
     const uid = this.userMgr.currentUid;
     const gid = this.userMgr.currentGid;
