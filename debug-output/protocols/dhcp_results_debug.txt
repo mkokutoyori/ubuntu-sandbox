@@ -1,6 +1,6 @@
 ============================================================
 Network protocol debug transcript — dhcp
-Generated: 2026-06-05T10:24:36.044Z
+Generated: 2026-06-05T15:04:52.416Z
 Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
 protocol=DHCP (RFC 2131) — focus: DORA, baux/renouvellement/libération, réservations, relais (ip helper-address), snooping L2, exclusions/conflits, statistiques — serveurs Cisco/Huawei, clients Linux(dhclient)/Windows(ipconfig)
 Total steps: 300
@@ -251,11 +251,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.370 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.349 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.370/0.370/0.370/0.000 ms
+  rtt min/avg/max/mdev = 0.349/0.349/0.349/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -327,8 +327,8 @@ Total steps: 300
      Autoconfiguration Enabled . . . . : Yes
      IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 10:24:36 AM
-     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 6:24:36 PM
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
      Default Gateway . . . . . . . . . : 10.1.1.1
      DHCP Server . . . . . . . . . . . : 0.0.0.0
      DNS Servers . . . . . . . . . . . : 10.3.3.10
@@ -407,11 +407,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.550 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.393 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.550/0.550/0.550/0.000 ms
+  rtt min/avg/max/mdev = 0.393/0.393/0.393/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -483,8 +483,8 @@ Total steps: 300
      Autoconfiguration Enabled . . . . : Yes
      IPv4 Address. . . . . . . . . . . : 10.2.2.11(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 10:24:36 AM
-     Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 10:24:36 AM
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 3:04:52 PM
      Default Gateway . . . . . . . . . : 10.2.2.1
      DHCP Server . . . . . . . . . . . : 0.0.0.0
      DNS Servers . . . . . . . . . . . : 10.3.3.10
@@ -563,29 +563,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.645 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.276 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.645/0.645/0.645/0.000 ms
+  rtt min/avg/max/mdev = 0.276/0.276/0.276/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.435 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.324 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.435/0.435/0.435/0.000 ms
+  rtt min/avg/max/mdev = 0.324/0.324/0.324/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.699 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.625 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.699/0.699/0.699/0.000 ms
+  rtt min/avg/max/mdev = 0.625/0.625/0.625/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -599,19 +599,19 @@ Total steps: 300
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.532 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.388 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.532/0.532/0.532/0.000 ms
+  rtt min/avg/max/mdev = 0.388/0.388/0.388/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.543 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.500 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.543/0.543/0.543/0.000 ms
+  rtt min/avg/max/mdev = 0.500/0.500/0.500/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -628,8 +628,8 @@ Total steps: 300
 [82/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/5/2026, 6:24:36 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 6:24:36 PM    automatic
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
 
 [83/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
@@ -660,7 +660,7 @@ Total steps: 300
 [85/300] rdc R-DC# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.3.3.11        02:00:00:00:00:5b       6/7/2026, 10:24:36 AM   automatic
+  10.3.3.11        02:00:00:00:00:5b       6/7/2026, 3:04:52 PM    automatic
 
 [86/300] rdc R-DC# show ip dhcp pool
   Pool LAN-DC :
@@ -709,9 +709,9 @@ Total steps: 300
     option domain-name-servers 10.3.3.10, 8.8.8.8;
     option domain-name "acme.example";
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780669476 Friday 2026-06-05 14:24:36.074;
-    rebind 1780680276 Friday 2026-06-05 17:24:36.074;
-    expire 1780683876 Friday 2026-06-05 18:24:36.074;
+    renew 1780686292 Friday 2026-06-05 19:04:52.424;
+    rebind 1780697092 Friday 2026-06-05 22:04:52.424;
+    expire 1780700692 Friday 2026-06-05 23:04:52.424;
   }
 
 [91/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
@@ -723,9 +723,9 @@ Total steps: 300
     option domain-name-servers 10.3.3.10, 8.8.8.8;
     option domain-name "acme.example";
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780669476 Friday 2026-06-05 14:24:36.074;
-    rebind 1780680276 Friday 2026-06-05 17:24:36.074;
-    expire 1780683876 Friday 2026-06-05 18:24:36.074;
+    renew 1780686292 Friday 2026-06-05 19:04:52.424;
+    rebind 1780697092 Friday 2026-06-05 22:04:52.424;
+    expire 1780700692 Friday 2026-06-05 23:04:52.424;
   }
 
 [92/300] lhq lhq$ ip -4 addr show eth0
@@ -753,9 +753,9 @@ Total steps: 300
     option routers 10.2.2.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780698276 Friday 2026-06-05 22:24:36.081;
-    rebind 1780730676 Saturday 2026-06-06 07:24:36.081;
-    expire 1780741476 Saturday 2026-06-06 10:24:36.081;
+    renew 1780715092 Saturday 2026-06-06 03:04:52.430;
+    rebind 1780747492 Saturday 2026-06-06 12:04:52.430;
+    expire 1780758292 Saturday 2026-06-06 15:04:52.430;
   }
 
 [95/300] lbr lbr$ ip -4 addr show eth0
@@ -783,9 +783,9 @@ Total steps: 300
     option routers 10.3.3.1;
     option domain-name-servers 10.3.3.10;
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780741476 Saturday 2026-06-06 10:24:36.087;
-    rebind 1780806276 Sunday 2026-06-07 04:24:36.087;
-    expire 1780827876 Sunday 2026-06-07 10:24:36.087;
+    renew 1780758292 Saturday 2026-06-06 15:04:52.442;
+    rebind 1780823092 Sunday 2026-06-07 09:04:52.442;
+    expire 1780844692 Sunday 2026-06-07 15:04:52.442;
   }
 
 [98/300] ldc ldc$ ip -4 addr show eth0
@@ -1020,8 +1020,8 @@ Total steps: 300
 [115/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/5/2026, 6:24:36 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 6:24:36 PM    automatic
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
 
 [116/300] lhq lhq$ dhclient -r eth0
   released 10.1.1.10
@@ -1166,8 +1166,8 @@ Total steps: 300
 [126/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/5/2026, 6:24:36 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 6:24:36 PM    automatic
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
 
 [127/300] rbr <R-BR> display dhcp server ip-in-use
   % Invalid input detected at '^' marker.
@@ -1574,8 +1574,8 @@ Total steps: 300
 [200/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/5/2026, 6:24:36 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 6:24:36 PM    automatic
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
 
 
 --- [201] § DHCP — statistiques & compteurs ---
@@ -1649,9 +1649,9 @@ Total steps: 300
     option domain-name-servers 10.3.3.10, 8.8.8.8;
     option domain-name "acme.example";
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780669476 Friday 2026-06-05 14:24:36.129;
-    rebind 1780680276 Friday 2026-06-05 17:24:36.129;
-    expire 1780683876 Friday 2026-06-05 18:24:36.129;
+    renew 1780686292 Friday 2026-06-05 19:04:52.470;
+    rebind 1780697092 Friday 2026-06-05 22:04:52.470;
+    expire 1780700692 Friday 2026-06-05 23:04:52.470;
   }
 
 [206/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
@@ -1662,9 +1662,9 @@ Total steps: 300
     option routers 10.2.2.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780698276 Friday 2026-06-05 22:24:36.135;
-    rebind 1780730676 Saturday 2026-06-06 07:24:36.135;
-    expire 1780741476 Saturday 2026-06-06 10:24:36.135;
+    renew 1780715092 Saturday 2026-06-06 03:04:52.471;
+    rebind 1780747492 Saturday 2026-06-06 12:04:52.471;
+    expire 1780758292 Saturday 2026-06-06 15:04:52.471;
   }
 
 [207/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
@@ -1675,9 +1675,9 @@ Total steps: 300
     option routers 10.3.3.1;
     option domain-name-servers 10.3.3.10;
     option dhcp-server-identifier 0.0.0.0;
-    renew 1780741476 Saturday 2026-06-06 10:24:36.152;
-    rebind 1780806276 Sunday 2026-06-07 04:24:36.152;
-    expire 1780827876 Sunday 2026-06-07 10:24:36.152;
+    renew 1780758292 Saturday 2026-06-06 15:04:52.477;
+    rebind 1780823092 Sunday 2026-06-07 09:04:52.477;
+    expire 1780844692 Sunday 2026-06-07 15:04:52.477;
   }
 
 [208/300] whq whq$ ipconfig /all
@@ -1698,8 +1698,8 @@ Total steps: 300
      Autoconfiguration Enabled . . . . : Yes
      IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 10:24:36 AM
-     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 6:24:36 PM
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
      Default Gateway . . . . . . . . . : 10.1.1.1
      DHCP Server . . . . . . . . . . . : 0.0.0.0
      DNS Servers . . . . . . . . . . . : 10.3.3.10
@@ -1738,43 +1738,43 @@ Total steps: 300
 --- [209] § DHCP — matrice de connectivité post-bail ---
 [209/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.313 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.231 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.313/0.313/0.313/0.000 ms
+  rtt min/avg/max/mdev = 0.231/0.231/0.231/0.000 ms
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.647 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.238 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.647/0.647/0.647/0.000 ms
+  rtt min/avg/max/mdev = 0.238/0.238/0.238/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.627 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.253 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.627/0.627/0.627/0.000 ms
+  rtt min/avg/max/mdev = 0.253/0.253/0.253/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.611 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.234 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.611/0.611/0.611/0.000 ms
+  rtt min/avg/max/mdev = 0.234/0.234/0.234/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.784 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.426 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.784/0.784/0.784/0.000 ms
+  rtt min/avg/max/mdev = 0.426/0.426/0.426/0.000 ms
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1789,12 +1789,12 @@ Total steps: 300
 [215/300] whq whq$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=2ms TTL=253
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [216/300] whq whq$ ping -n 1 10.3.3.1
   
@@ -1809,44 +1809,44 @@ Total steps: 300
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=1ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.317 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.252 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.317/0.317/0.317/0.000 ms
+  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.539 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.144 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.539/0.539/0.539/0.000 ms
+  rtt min/avg/max/mdev = 0.144/0.144/0.144/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.431 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.200 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.431/0.431/0.431/0.000 ms
+  rtt min/avg/max/mdev = 0.200/0.200/0.200/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.715 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.424 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.715/0.715/0.715/0.000 ms
+  rtt min/avg/max/mdev = 0.424/0.424/0.424/0.000 ms
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1856,7 +1856,7 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [223/300] wbr wbr$ ping -n 1 10.2.2.1
   
@@ -1876,7 +1876,7 @@ Total steps: 300
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
@@ -1890,35 +1890,35 @@ Total steps: 300
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.677 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.271 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.677/0.677/0.677/0.000 ms
+  rtt min/avg/max/mdev = 0.271/0.271/0.271/0.000 ms
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.445 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.213 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.445/0.445/0.445/0.000 ms
+  rtt min/avg/max/mdev = 0.213/0.213/0.213/0.000 ms
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.139 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.118 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.139/0.139/0.139/0.000 ms
+  rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.471 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.155 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.471/0.471/0.471/0.000 ms
+  rtt min/avg/max/mdev = 0.155/0.155/0.155/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -2110,8 +2110,8 @@ Total steps: 300
      Autoconfiguration Enabled . . . . : Yes
      IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 10:24:36 AM
-     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 6:24:36 PM
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
      Default Gateway . . . . . . . . . : 10.1.1.1
      DHCP Server . . . . . . . . . . . : 0.0.0.0
      DNS Servers . . . . . . . . . . . : 1.1.1.1
@@ -2237,8 +2237,8 @@ Total steps: 300
      Autoconfiguration Enabled . . . . : Yes
      IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 10:24:36 AM
-     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 6:24:36 PM
+     Lease Obtained. . . . . . . . . . : Friday, June 5, 2026 3:04:52 PM
+     Lease Expires . . . . . . . . . . : Friday, June 5, 2026 11:04:52 PM
      Default Gateway . . . . . . . . . : 10.1.1.1
      DHCP Server . . . . . . . . . . . : 0.0.0.0
      DNS Servers . . . . . . . . . . . : 1.1.1.1
@@ -2351,8 +2351,8 @@ Total steps: 300
 [286/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.1.1.10        02:00:00:00:00:47       6/5/2026, 6:24:36 PM    automatic
-  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 6:24:36 PM    automatic
+  10.1.1.10        02:00:00:00:00:47       6/5/2026, 11:04:52 PM   automatic
+  10.1.1.11        02:00:00:00:00:4b       6/5/2026, 11:04:52 PM   automatic
 
 [287/300] rbr <R-BR> display ip pool
   Pool-name      : LAN-BR

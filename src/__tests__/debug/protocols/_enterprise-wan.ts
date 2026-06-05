@@ -282,6 +282,58 @@ export function addStpFabric(wan: EnterpriseWAN): StpFabric {
   return { dsw1, dsw2, dswbr };
 }
 
+export const INTERNET = {
+  hq: { net: '203.0.113.0/24', edge: '203.0.113.1', isp: '203.0.113.10' },
+  br: { net: '198.51.100.0/24', edge: '198.51.100.1', isp: '198.51.100.10' },
+} as const;
+
+export interface InternetEdge {
+  ispHq: LinuxServer; ispBr: LinuxServer;
+}
+
+/**
+ * Add a simulated Internet edge: an ISP host on each border router's spare
+ * interface (R-HQ Gi0/3 = Cisco edge, R-BR GE0/0/3 = Huawei edge). Used by
+ * NAT/PAT and edge-security suites. Configures the public link addressing
+ * and a return route on each ISP host so inside->outside paths are testable.
+ * Only edge-aware suites call this; base suites stay private-only.
+ */
+export async function addInternetEdge(wan: EnterpriseWAN): Promise<InternetEdge> {
+  const ispHq = new LinuxServer('linux-server', 'ISP-HQ', 120, 60);
+  const ispBr = new LinuxServer('linux-server', 'ISP-BR', 900, 60);
+
+  new Cable('inet-hq').connect(wan.rhq.getPort('GigabitEthernet0/3')!, ispHq.getPort('eth0')!);
+  new Cable('inet-br').connect(wan.rbr.getPort('GE0/0/3')!, ispBr.getPort('eth0')!);
+
+  wan.topology.devices['isphq'] = ispHq;
+  wan.topology.devices['ispbr'] = ispBr;
+
+  await run(wan.rhq, [
+    'enable', 'configure terminal',
+    'interface GigabitEthernet0/3', 'description INTERNET',
+    `ip address ${INTERNET.hq.edge} 255.255.255.0`, 'no shutdown', 'exit',
+    'end',
+  ]);
+  await run(wan.rbr, [
+    'system-view',
+    'interface GE0/0/3', 'description INTERNET',
+    `ip address ${INTERNET.br.edge} 255.255.255.0`, 'undo shutdown', 'quit',
+    'quit',
+  ]);
+  await run(ispHq, [
+    'ip link set eth0 up',
+    `ip addr add ${INTERNET.hq.isp}/24 dev eth0`,
+    `ip route add default via ${INTERNET.hq.edge}`,
+  ]);
+  await run(ispBr, [
+    'ip link set eth0 up',
+    `ip addr add ${INTERNET.br.isp}/24 dev eth0`,
+    `ip route add default via ${INTERNET.br.edge}`,
+  ]);
+
+  return { ispHq, ispBr };
+}
+
 export async function dumpProtocol(
   label: string,
   topology: EnterpriseTopology,

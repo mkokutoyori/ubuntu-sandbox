@@ -1,0 +1,2148 @@
+============================================================
+Network protocol debug transcript — acl-security
+Generated: 2026-06-05T15:04:42.688Z
+Topology: ACME Corp — 3 sites, WAN triangle. HQ(Cisco): R-HQ Gi0/0->SW-HQ(Cisco Catalyst) LAN 10.1.1.0/24 [PC-HQ-L 10.1.1.10, PC-HQ-W 10.1.1.11]; BR(Huawei): R-BR GE0/0/0->SW-BR(Huawei S5720) LAN 10.2.2.0/24 [PC-BR-W 10.2.2.10, PC-BR-L 10.2.2.11]; DC(mixte): R-DC Gi0/0->SW-DC(generic) LAN 10.3.3.0/24 [SRV-DC 10.3.3.10, PC-DC-L 10.3.3.11]. WAN /30: HQ-BR 172.16.12.0, HQ-DC 172.16.13.0, BR-DC 172.16.23.0. Routage statique inter-sites.
+security=ACL/pare-feu/port-security — ACL Cisco (standard/étendue/nommée, edge firewall, access-class VTY), ACL Huawei (basic 2000/advanced 3000 + traffic-filter), pare-feu Linux (iptables/ufw/nft/conntrack), port-security L2 Cisco/Huawei — bordure Internet simulée
+Total steps: 400
+============================================================
+
+
+--- [1] § SEC — activation logs (routeurs/switchs) ---
+[1/400] rhq R-HQ# enable
+<empty>
+
+[2/400] rhq R-HQ# terminal monitor
+<empty>
+
+[3/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[4/400] rhq R-HQ(config)# logging buffered 32768
+<empty>
+
+[5/400] rhq R-HQ(config)# logging on
+<empty>
+
+[6/400] rhq R-HQ(config)# end
+<empty>
+
+[7/400] rhq R-HQ# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level informational
+      Monitor logging: level debugging
+      Buffer logging: level debugging, 32768 bytes
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[8/400] rdc R-DC# terminal monitor
+<empty>
+
+[9/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[10/400] rdc R-DC(config)# logging buffered 32768
+<empty>
+
+[11/400] rdc R-DC(config)# logging on
+<empty>
+
+[12/400] rdc R-DC(config)# end
+<empty>
+
+[13/400] rdc R-DC# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level informational
+      Monitor logging: level debugging
+      Buffer logging: level debugging, 32768 bytes
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[14/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[15/400] rbr [R-BR] info-center enable
+<empty>
+
+[16/400] rbr [R-BR] quit
+<empty>
+
+
+--- [17] § SEC — joignabilité de référence (avant filtrage) ---
+[17/400] lhq lhq$ ping -c 2 203.0.113.10
+  PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.727 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.844 ms
+  
+  --- 203.0.113.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.727/0.786/0.844/0.059 ms
+
+[18/400] lbr lbr$ ping -c 2 198.51.100.10
+  PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.740 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.336 ms
+  
+  --- 198.51.100.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.336/0.538/0.740/0.202 ms
+
+[19/400] isphq isphq$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.487 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.322 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.322/0.405/0.487/0.082 ms
+
+[20/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.592 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.500 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.500/0.546/0.592/0.046 ms
+
+[21/400] ldc ldc$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.598 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.379 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.379/0.488/0.598/0.109 ms
+
+
+--- [22] § ACL Cisco — standard (bloque un hôte source) ---
+[22/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[23/400] rhq R-HQ(config)# access-list 10 deny host 10.1.1.11
+<empty>
+
+[24/400] rhq R-HQ(config)# access-list 10 permit any
+<empty>
+
+[25/400] rhq R-HQ(config)# interface GigabitEthernet0/3
+<empty>
+
+[26/400] rhq R-HQ(config-if)# ip access-group 10 out
+<empty>
+
+[27/400] rhq R-HQ(config-if)# end
+<empty>
+
+[28/400] rhq R-HQ# show access-lists 10
+  Standard IP access list 10
+      10 deny host 10.1.1.11 (0 matches)
+      20 permit any (0 matches)
+
+[29/400] rhq R-HQ# show ip interface GigabitEthernet0/3 | include access list
+<empty>
+
+[30/400] whq whq$ ping -n 2 203.0.113.10
+  
+  Pinging 203.0.113.10 with 32 bytes of data:
+  Request timed out.
+  Request timed out.
+  
+  Ping statistics for 203.0.113.10:
+      Packets: Sent = 2, Received = 0, Lost = 2 (100% loss),
+
+[31/400] lhq lhq$ ping -c 2 203.0.113.10
+  PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.604 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.349 ms
+  
+  --- 203.0.113.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.349/0.476/0.604/0.127 ms
+
+[32/400] rhq R-HQ# show access-lists 10
+  Standard IP access list 10
+      10 deny host 10.1.1.11 (2 matches)
+      20 permit any (2 matches)
+
+[33/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[34/400] rhq R-HQ(config)# interface GigabitEthernet0/3
+<empty>
+
+[35/400] rhq R-HQ(config-if)# no ip access-group 10 out
+<empty>
+
+[36/400] rhq R-HQ(config-if)# exit
+<empty>
+
+[37/400] rhq R-HQ(config)# no access-list 10
+<empty>
+
+[38/400] rhq R-HQ(config)# end
+<empty>
+
+[39/400] whq whq$ ping -n 2 203.0.113.10
+  
+  Pinging 203.0.113.10 with 32 bytes of data:
+  Reply from 203.0.113.10: bytes=32 time=<1ms TTL=63
+  Reply from 203.0.113.10: bytes=32 time=<1ms TTL=63
+  
+  Ping statistics for 203.0.113.10:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+
+--- [40] § ACL Cisco — étendue (pare-feu de bordure entrant) ---
+[40/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[41/400] rhq R-HQ(config)# ip access-list extended INTERNET-IN
+<empty>
+
+[42/400] rhq R-HQ(config-ext-nacl)# permit tcp any any established
+<empty>
+
+[43/400] rhq R-HQ(config-ext-nacl)# permit icmp any any echo-reply
+<empty>
+
+[44/400] rhq R-HQ(config-ext-nacl)# permit udp any eq 53 any
+<empty>
+
+[45/400] rhq R-HQ(config-ext-nacl)# deny icmp any any echo log
+<empty>
+
+[46/400] rhq R-HQ(config-ext-nacl)# deny ip any 10.1.1.0 0.0.0.255 log
+<empty>
+
+[47/400] rhq R-HQ(config-ext-nacl)# permit ip any any
+<empty>
+
+[48/400] rhq R-HQ(config-ext-nacl)# exit
+<empty>
+
+[49/400] rhq R-HQ(config)# interface GigabitEthernet0/3
+<empty>
+
+[50/400] rhq R-HQ(config-if)# ip access-group INTERNET-IN in
+<empty>
+
+[51/400] rhq R-HQ(config-if)# end
+<empty>
+
+[52/400] rhq R-HQ# show ip access-lists INTERNET-IN
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (0 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[53/400] isphq isphq$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.386 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.223 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.223/0.305/0.386/0.081 ms
+
+[54/400] lhq lhq$ ping -c 2 203.0.113.10
+  PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.311 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.235 ms
+  
+  --- 203.0.113.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.235/0.273/0.311/0.038 ms
+
+[55/400] rhq R-HQ# show ip access-lists INTERNET-IN
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[56/400] rhq R-HQ# show access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[57/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[58/400] rhq R-HQ(config)# interface GigabitEthernet0/3
+<empty>
+
+[59/400] rhq R-HQ(config-if)# no ip access-group INTERNET-IN in
+<empty>
+
+[60/400] rhq R-HQ(config-if)# end
+<empty>
+
+[61/400] isphq isphq$ ping -c 2 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.344 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.207 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.207/0.276/0.344/0.068 ms
+
+
+--- [62] § ACL Cisco — nommée par port/service (DMZ-style) ---
+[62/400] rdc R-DC# enable
+<empty>
+
+[63/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[64/400] rdc R-DC(config)# ip access-list extended DC-FILTER
+<empty>
+
+[65/400] rdc R-DC(config-ext-nacl)# remark Autoriser SSH/HTTP vers le serveur DC
+<empty>
+
+[66/400] rdc R-DC(config-ext-nacl)# permit tcp any host 10.3.3.10 eq 22
+<empty>
+
+[67/400] rdc R-DC(config-ext-nacl)# permit tcp any host 10.3.3.10 eq 80
+<empty>
+
+[68/400] rdc R-DC(config-ext-nacl)# permit tcp any host 10.3.3.10 eq 443
+<empty>
+
+[69/400] rdc R-DC(config-ext-nacl)# deny ip any host 10.3.3.10 log
+<empty>
+
+[70/400] rdc R-DC(config-ext-nacl)# permit ip any any
+<empty>
+
+[71/400] rdc R-DC(config-ext-nacl)# exit
+<empty>
+
+[72/400] rdc R-DC(config)# interface GigabitEthernet0/1
+<empty>
+
+[73/400] rdc R-DC(config-if)# ip access-group DC-FILTER in
+<empty>
+
+[74/400] rdc R-DC(config-if)# end
+<empty>
+
+[75/400] rdc R-DC# show ip access-lists DC-FILTER
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (0 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[76/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.423 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.335 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.335/0.379/0.423/0.044 ms
+
+[77/400] rdc R-DC# show ip access-lists DC-FILTER
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (2 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[78/400] rdc R-DC# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[79/400] rdc R-DC(config)# interface GigabitEthernet0/1
+<empty>
+
+[80/400] rdc R-DC(config-if)# no ip access-group DC-FILTER in
+<empty>
+
+[81/400] rdc R-DC(config-if)# end
+<empty>
+
+[82/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.370 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.282 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.282/0.326/0.370/0.044 ms
+
+
+--- [83] § ACL Cisco — séquençage / édition / resequence ---
+[83/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[84/400] rhq R-HQ(config)# ip access-list extended INTERNET-IN
+<empty>
+
+[85/400] rhq R-HQ(config-ext-nacl)# 15 permit tcp any host 10.1.1.10 eq 443
+<empty>
+
+[86/400] rhq R-HQ(config-ext-nacl)# no 15
+<empty>
+
+[87/400] rhq R-HQ(config-ext-nacl)# exit
+<empty>
+
+[88/400] rhq R-HQ(config)# ip access-list resequence INTERNET-IN 10 10
+<empty>
+
+[89/400] rhq R-HQ(config)# end
+<empty>
+
+[90/400] rhq R-HQ# show ip access-lists INTERNET-IN
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[91/400] rhq R-HQ# show access-lists summary
+  % Access list summary not found
+
+
+--- [92] § ACL Huawei — basic 2000 + traffic-filter ---
+[92/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[93/400] rbr [R-BR] acl number 2000
+  Error: Invalid ACL number.
+
+[94/400] rbr [R-BR] rule 5 deny source 10.2.2.11 0
+  % Invalid input detected at '^' marker.
+  rule 5 deny source 10.2.2.11 0
+  ^
+
+[95/400] rbr [R-BR] rule 10 permit source any
+  % Invalid input detected at '^' marker.
+  rule 10 permit source any
+  ^
+
+[96/400] rbr [R-BR] quit
+<empty>
+
+[97/400] rbr <R-BR> interface GE0/0/3
+  % Invalid input detected at '^' marker.
+  interface GE0/0/3
+  ^
+
+[98/400] rbr <R-BR> traffic-filter outbound acl 2000
+  % Invalid input detected at '^' marker.
+  traffic-filter outbound acl 2000
+  ^
+
+[99/400] rbr <R-BR> quit
+<empty>
+
+[100/400] rbr <R-BR> quit
+<empty>
+
+[101/400] rbr <R-BR> display acl 2000
+  Error: ACL 2000 does not exist or has no rules.
+
+[102/400] lbr lbr$ ping -c 2 198.51.100.10
+  PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.353 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.292 ms
+  
+  --- 198.51.100.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.292/0.323/0.353/0.031 ms
+
+[103/400] rbr <R-BR> display acl 2000
+  Error: ACL 2000 does not exist or has no rules.
+
+[104/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[105/400] rbr [R-BR] interface GE0/0/3
+<empty>
+
+[106/400] rbr [R-BR-GE0/0/3] undo traffic-filter outbound acl 2000
+<empty>
+
+[107/400] rbr [R-BR-GE0/0/3] quit
+<empty>
+
+[108/400] rbr [R-BR] quit
+<empty>
+
+[109/400] lbr lbr$ ping -c 2 198.51.100.10
+  PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.255 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.187 ms
+  
+  --- 198.51.100.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.187/0.221/0.255/0.034 ms
+
+
+--- [110] § ACL Huawei — advanced 3000 (proto/port) ---
+[110/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[111/400] rbr [R-BR] acl number 3000
+  Error: Invalid ACL number.
+
+[112/400] rbr [R-BR] rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+  % Invalid input detected at '^' marker.
+  rule 5 permit tcp source 10.2.2.0 0.0.0.255 destination-port eq 22
+  ^
+
+[113/400] rbr [R-BR] rule 10 permit tcp destination-port eq www
+  % Invalid input detected at '^' marker.
+  rule 10 permit tcp destination-port eq www
+  ^
+
+[114/400] rbr [R-BR] rule 15 deny icmp
+  % Invalid input detected at '^' marker.
+  rule 15 deny icmp
+  ^
+
+[115/400] rbr [R-BR] rule 20 permit ip
+  % Invalid input detected at '^' marker.
+  rule 20 permit ip
+  ^
+
+[116/400] rbr [R-BR] quit
+<empty>
+
+[117/400] rbr <R-BR> interface GE0/0/3
+  % Invalid input detected at '^' marker.
+  interface GE0/0/3
+  ^
+
+[118/400] rbr <R-BR> traffic-filter inbound acl 3000
+  % Invalid input detected at '^' marker.
+  traffic-filter inbound acl 3000
+  ^
+
+[119/400] rbr <R-BR> quit
+<empty>
+
+[120/400] rbr <R-BR> quit
+<empty>
+
+[121/400] rbr <R-BR> display acl 3000
+  Error: ACL 3000 does not exist or has no rules.
+
+[122/400] rbr <R-BR> display traffic-filter applied-record
+  % Invalid input detected at '^' marker.
+  display traffic-filter applied-record
+          ^
+
+[123/400] ispbr ispbr$ ping -c 2 10.2.2.11
+  PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.265 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=63 time=0.280 ms
+  
+  --- 10.2.2.11 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.265/0.272/0.280/0.008 ms
+
+[124/400] rbr <R-BR> display acl 3000
+  Error: ACL 3000 does not exist or has no rules.
+
+[125/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[126/400] rbr [R-BR] interface GE0/0/3
+<empty>
+
+[127/400] rbr [R-BR-GE0/0/3] undo traffic-filter inbound acl 3000
+<empty>
+
+[128/400] rbr [R-BR-GE0/0/3] quit
+<empty>
+
+[129/400] rbr [R-BR] quit
+<empty>
+
+
+--- [130] § pare-feu Linux — iptables filter (serveur DC) ---
+[130/400] srvdc srvdc$ iptables -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[131/400] srvdc srvdc$ iptables -P INPUT ACCEPT
+<empty>
+
+[132/400] srvdc srvdc$ iptables -A INPUT -p icmp --icmp-type echo-request -s 10.1.1.0/24 -j DROP
+<empty>
+
+[133/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport 22 -s 10.1.1.0/24 -j REJECT
+<empty>
+
+[134/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+<empty>
+
+[135/400] srvdc srvdc$ iptables -L INPUT -n -v --line-numbers
+  Chain INPUT (policy ACCEPT)
+  num    pkts bytes target     prot opt in     out     source               destination
+  1         0     0 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0
+  2         0     0 REJECT     tcp  --  *      *      10.1.1.0/24          0.0.0.0/0 tcp dpt:22
+  3         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:80
+
+[136/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+[137/400] ldc ldc$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.331 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.267 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.267/0.299/0.331/0.032 ms
+
+[138/400] srvdc srvdc$ iptables -L INPUT -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+      2   128 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0
+      0     0 REJECT     tcp  --  *      *      10.1.1.0/24          0.0.0.0/0 tcp dpt:22
+      0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:80
+
+[139/400] srvdc srvdc$ iptables -S
+  -P INPUT ACCEPT
+  -A INPUT -s 10.1.1.0/24 -p icmp -j DROP
+  -A INPUT -s 10.1.1.0/24 -p tcp --dport 22 -j REJECT
+  -A INPUT -p tcp --dport 80 -j ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
+
+[140/400] srvdc srvdc$ iptables -F INPUT
+<empty>
+
+[141/400] srvdc srvdc$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[142/400] lhq lhq$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.489 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.381 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.381/0.435/0.489/0.054 ms
+
+
+--- [143] § pare-feu Linux — politique restrictive complète ---
+[143/400] srvdc srvdc$ iptables -P INPUT DROP
+<empty>
+
+[144/400] srvdc srvdc$ iptables -A INPUT -i lo -j ACCEPT
+<empty>
+
+[145/400] srvdc srvdc$ iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+<empty>
+
+[146/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+<empty>
+
+[147/400] srvdc srvdc$ iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+<empty>
+
+[148/400] srvdc srvdc$ iptables -L -n -v
+  Chain INPUT (policy DROP)
+   pkts bytes target     prot opt in     out     source               destination
+      0     0 ACCEPT     all  --  lo     *      0.0.0.0/0            0.0.0.0/0
+      0     0 ACCEPT     all  --  *      *      0.0.0.0/0            0.0.0.0/0 state:ESTABLISHED,RELATED
+      0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22
+      0     0 ACCEPT     icmp --  *      *      0.0.0.0/0            0.0.0.0/0
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[149/400] ldc ldc$ ping -c 2 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.273 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.185 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  2 packets transmitted, 2 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.185/0.229/0.273/0.044 ms
+
+[150/400] srvdc srvdc$ iptables-save
+  # Generated by iptables-save
+  *filter
+  :INPUT DROP [4:256]
+  :FORWARD ACCEPT [0:0]
+  :OUTPUT ACCEPT [0:0]
+  -A INPUT -i lo -j ACCEPT
+  -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  -A INPUT -p tcp --dport 22 -j ACCEPT
+  -A INPUT -p icmp -j ACCEPT
+  COMMIT
+
+[151/400] srvdc srvdc$ iptables -P INPUT ACCEPT
+<empty>
+
+[152/400] srvdc srvdc$ iptables -F
+<empty>
+
+[153/400] srvdc srvdc$ iptables -X
+<empty>
+
+[154/400] srvdc srvdc$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+
+--- [155] § pare-feu Linux — NAT/mangle/conntrack & ufw/nft ---
+[155/400] srvdc srvdc$ iptables -t nat -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[156/400] srvdc srvdc$ iptables -t mangle -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[157/400] srvdc srvdc$ conntrack -L
+  conntrack: command not found
+
+[158/400] srvdc srvdc$ cat /proc/net/nf_conntrack
+  cat: /proc/net/nf_conntrack: No such file or directory
+
+[159/400] lhq lhq$ ufw status verbose
+  ERROR: You need to be root to run this script
+
+[160/400] lhq lhq$ ufw default deny incoming
+  ERROR: You need to be root to run this script
+
+[161/400] lhq lhq$ ufw allow 22/tcp
+  ERROR: You need to be root to run this script
+
+[162/400] lhq lhq$ ufw allow from 10.1.1.0/24
+  ERROR: You need to be root to run this script
+
+[163/400] lhq lhq$ ufw status numbered
+  ERROR: You need to be root to run this script
+
+[164/400] lhq lhq$ ufw disable
+  ERROR: You need to be root to run this script
+
+[165/400] srvdc srvdc$ nft list ruleset
+  nft: command not found
+
+[166/400] srvdc srvdc$ sysctl net.ipv4.conf.all.rp_filter
+<empty>
+
+
+--- [167] § port-security — Cisco SW-HQ ---
+[167/400] swhq SW-HQ# enable
+<empty>
+
+[168/400] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[169/400] swhq SW-HQ(config)# interface FastEthernet0/2
+<empty>
+
+[170/400] swhq SW-HQ(config-if)# switchport mode access
+<empty>
+
+[171/400] swhq SW-HQ(config-if)# switchport port-security
+<empty>
+
+[172/400] swhq SW-HQ(config-if)# switchport port-security maximum 2
+<empty>
+
+[173/400] swhq SW-HQ(config-if)# switchport port-security violation restrict
+<empty>
+
+[174/400] swhq SW-HQ(config-if)# switchport port-security mac-address sticky
+<empty>
+
+[175/400] swhq SW-HQ(config-if)# exit
+<empty>
+
+[176/400] swhq SW-HQ(config)# end
+<empty>
+
+[177/400] swhq SW-HQ# show port-security
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+               (Count)        (Count)      (Count)
+  ------------------------------------------------------------------------------
+  Fa0/2        2              0            0                  restrict
+
+[178/400] swhq SW-HQ# show port-security interface FastEthernet0/2
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 0 mins
+  Aging Type                 : Absolute
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 0
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 0
+  Last Source Address:Vlan   : 0000.0000.0000:0
+  Security Violation Count   : 0
+
+[179/400] swhq SW-HQ# show port-security address
+            Secure Mac Address Table
+  ------------------------------------------------------------------------
+  Vlan    Mac Address       Type                          Ports   Remaining Age
+  ----    -----------       ----                          -----   -------------
+  
+  Total Addresses: 0
+
+[180/400] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.579 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.579/0.579/0.579/0.000 ms
+
+[181/400] swhq SW-HQ# show port-security interface FastEthernet0/2
+  Port Security              : Enabled
+  Port Status                : Secure-up
+  Violation Mode             : Restrict
+  Aging Time                 : 0 mins
+  Aging Type                 : Absolute
+  SecureStatic Address Aging : Disabled
+  Maximum MAC Addresses      : 2
+  Total MAC Addresses        : 1
+  Configured MAC Addresses   : 0
+  Sticky MAC Addresses       : 1
+  Last Source Address:Vlan   : 0200.0000.0047:1
+  Security Violation Count   : 0
+
+[182/400] swhq SW-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[183/400] swhq SW-HQ(config)# interface FastEthernet0/2
+<empty>
+
+[184/400] swhq SW-HQ(config-if)# no switchport port-security
+<empty>
+
+[185/400] swhq SW-HQ(config-if)# end
+<empty>
+
+
+--- [186] § port-security — Huawei SW-BR ---
+[186/400] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[187/400] swbr [SW-BR] interface GigabitEthernet0/0/2
+<empty>
+
+[188/400] swbr [SW-BR-GigabitEthernet0/0/2] port-security enable
+<empty>
+
+[189/400] swbr [SW-BR-GigabitEthernet0/0/2] port-security max-mac-num 2
+<empty>
+
+[190/400] swbr [SW-BR-GigabitEthernet0/0/2] port-security protect-action restrict
+<empty>
+
+[191/400] swbr [SW-BR-GigabitEthernet0/0/2] port-security mac-address sticky
+<empty>
+
+[192/400] swbr [SW-BR-GigabitEthernet0/0/2] quit
+<empty>
+
+[193/400] swbr [SW-BR] quit
+<empty>
+
+[194/400] swbr <SW-BR> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+[195/400] swbr <SW-BR> display mac-address security
+  MAC address table of slot 0:
+  -------------------------------------------------------------------------------
+  MAC Address    VLAN/VSI   Learned-From   Type
+  -------------------------------------------------------------------------------
+  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
+  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
+  -------------------------------------------------------------------------------
+  Total items displayed = 3
+
+[196/400] wbr wbr$ ping -n 1 10.2.2.1
+  
+  Pinging 10.2.2.1 with 32 bytes of data:
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=255
+  
+  Ping statistics for 10.2.2.1:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[197/400] swbr <SW-BR> system-view
+  Enter system view, return user view with return command.
+
+[198/400] swbr [SW-BR] interface GigabitEthernet0/0/2
+<empty>
+
+[199/400] swbr [SW-BR-GigabitEthernet0/0/2] undo port-security enable
+<empty>
+
+[200/400] swbr [SW-BR-GigabitEthernet0/0/2] quit
+<empty>
+
+[201/400] swbr [SW-BR] quit
+<empty>
+
+
+--- [202] § SEC — durcissement plan de gestion (SSH/VTY/AAA) ---
+[202/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[203/400] rhq R-HQ(config)# ip access-list standard MGMT
+<empty>
+
+[204/400] rhq R-HQ(config-std-nacl)# permit 10.3.3.0 0.0.0.255
+<empty>
+
+[205/400] rhq R-HQ(config-std-nacl)# deny any log
+<empty>
+
+[206/400] rhq R-HQ(config-std-nacl)# exit
+<empty>
+
+[207/400] rhq R-HQ(config)# line vty 0 4
+<empty>
+
+[208/400] rhq R-HQ(config-line)# access-class MGMT in
+<empty>
+
+[209/400] rhq R-HQ(config-line)# transport input ssh
+<empty>
+
+[210/400] rhq R-HQ(config-line)# exit
+<empty>
+
+[211/400] rhq R-HQ(config)# end
+<empty>
+
+[212/400] rhq R-HQ# show ip access-lists MGMT
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[213/400] rhq R-HQ# show line vty 0
+     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
+  *    0    0 CTY               -    -    -    -      0     0   0/0       -
+       1    1 VTY               -    -    -    -      0     0   0/0       -
+       2    2 VTY               -    -    -    -      0     0   0/0       -
+       3    3 VTY               -    -    -    -      0     0   0/0       -
+       4    4 VTY               -    -    -    -      0     0   0/0       -
+       5    5 VTY               -    -    -    -      0     0   0/0       -
+
+
+--- [214] § SEC — consolidation des politiques (show/display) ---
+[214/400] rhq R-HQ# show access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[215/400] rhq R-HQ# show running-config | include access
+  ip access-list extended INTERNET-IN
+  ip access-list standard MGMT
+   access-class MGMT in
+
+[216/400] rdc R-DC# show access-lists
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (2 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[217/400] rbr <R-BR> display acl all
+  Total 0 ACL(s)
+
+[218/400] rbr <R-BR> display traffic-filter applied-record
+  % Invalid input detected at '^' marker.
+  display traffic-filter applied-record
+          ^
+
+[219/400] lhq lhq$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[220/400] lhq lhq$ iptables -S
+  -P INPUT ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
+
+[221/400] lbr lbr$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[222/400] lbr lbr$ iptables -S
+  -P INPUT ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
+
+[223/400] ldc ldc$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[224/400] ldc ldc$ iptables -S
+  -P INPUT ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
+
+[225/400] srvdc srvdc$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[226/400] srvdc srvdc$ iptables -S
+  -P INPUT ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
+
+[227/400] swhq SW-HQ# show port-security
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+               (Count)        (Count)      (Count)
+  ------------------------------------------------------------------------------
+
+[228/400] swbr <SW-BR> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+
+--- [229] § SEC — inventaire ACL consolidé (Cisco) ---
+[229/400] rhq R-HQ# show access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[230/400] rhq R-HQ# show access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[231/400] rhq R-HQ# show ip access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[232/400] rhq R-HQ# show running-config | include access-list
+  ip access-list extended INTERNET-IN
+  ip access-list standard MGMT
+
+[233/400] rhq R-HQ# show running-config | include access-group
+<empty>
+
+[234/400] rhq R-HQ# show ip interface GigabitEthernet0/1 | include access
+<empty>
+
+[235/400] rdc R-DC# show access-lists
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (2 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[236/400] rdc R-DC# show ip access-lists
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (2 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[237/400] rdc R-DC# show running-config | include access-list
+  ip access-list extended DC-FILTER
+
+[238/400] rdc R-DC# show running-config | include access-group
+<empty>
+
+[239/400] rdc R-DC# show ip interface GigabitEthernet0/1 | include access
+<empty>
+
+
+--- [240] § SEC — inventaire ACL consolidé (Huawei) ---
+[240/400] rbr <R-BR> display acl all
+  Total 0 ACL(s)
+
+[241/400] rbr <R-BR> display acl 2000
+  Error: ACL 2000 does not exist or has no rules.
+
+[242/400] rbr <R-BR> display acl 3000
+  Error: ACL 3000 does not exist or has no rules.
+
+[243/400] rbr <R-BR> display traffic-filter applied-record
+  % Invalid input detected at '^' marker.
+  display traffic-filter applied-record
+          ^
+
+[244/400] rbr <R-BR> display current-configuration | include acl
+<empty>
+
+[245/400] rbr <R-BR> display current-configuration configuration acl
+  % Invalid input detected at '^' marker.
+  display current-configuration configuration acl
+                  ^
+
+
+--- [246] § SEC — pare-feu Linux par hôte (matrice) ---
+[246/400] lhq lhq$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[247/400] lhq lhq$ iptables -P INPUT ACCEPT
+<empty>
+
+[248/400] lhq lhq$ iptables -A INPUT -p tcp --dport 23 -j DROP
+<empty>
+
+[249/400] lhq lhq$ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+<empty>
+
+[250/400] lhq lhq$ iptables -L INPUT -n -v --line-numbers
+  Chain INPUT (policy ACCEPT)
+  num    pkts bytes target     prot opt in     out     source               destination
+  1         0     0 DROP       tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:23
+  2         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22 state:NEW
+
+[251/400] lhq lhq$ iptables -S INPUT
+  -P INPUT ACCEPT
+  -A INPUT -p tcp --dport 23 -j DROP
+  -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+
+[252/400] lhq lhq$ iptables -F INPUT
+<empty>
+
+[253/400] lhq lhq$ iptables -L INPUT -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[254/400] lbr lbr$ iptables -P INPUT ACCEPT
+<empty>
+
+[255/400] lbr lbr$ iptables -A INPUT -p tcp --dport 23 -j DROP
+<empty>
+
+[256/400] lbr lbr$ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+<empty>
+
+[257/400] lbr lbr$ iptables -L INPUT -n -v --line-numbers
+  Chain INPUT (policy ACCEPT)
+  num    pkts bytes target     prot opt in     out     source               destination
+  1         0     0 DROP       tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:23
+  2         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22 state:NEW
+
+[258/400] lbr lbr$ iptables -S INPUT
+  -P INPUT ACCEPT
+  -A INPUT -p tcp --dport 23 -j DROP
+  -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+
+[259/400] lbr lbr$ iptables -F INPUT
+<empty>
+
+[260/400] lbr lbr$ iptables -L INPUT -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[261/400] ldc ldc$ iptables -P INPUT ACCEPT
+<empty>
+
+[262/400] ldc ldc$ iptables -A INPUT -p tcp --dport 23 -j DROP
+<empty>
+
+[263/400] ldc ldc$ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+<empty>
+
+[264/400] ldc ldc$ iptables -L INPUT -n -v --line-numbers
+  Chain INPUT (policy ACCEPT)
+  num    pkts bytes target     prot opt in     out     source               destination
+  1         0     0 DROP       tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:23
+  2         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22 state:NEW
+
+[265/400] ldc ldc$ iptables -S INPUT
+  -P INPUT ACCEPT
+  -A INPUT -p tcp --dport 23 -j DROP
+  -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+
+[266/400] ldc ldc$ iptables -F INPUT
+<empty>
+
+[267/400] ldc ldc$ iptables -L INPUT -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[268/400] srvdc srvdc$ iptables -P INPUT ACCEPT
+<empty>
+
+[269/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport 23 -j DROP
+<empty>
+
+[270/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+<empty>
+
+[271/400] srvdc srvdc$ iptables -L INPUT -n -v --line-numbers
+  Chain INPUT (policy ACCEPT)
+  num    pkts bytes target     prot opt in     out     source               destination
+  1         0     0 DROP       tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:23
+  2         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22 state:NEW
+
+[272/400] srvdc srvdc$ iptables -S INPUT
+  -P INPUT ACCEPT
+  -A INPUT -p tcp --dport 23 -j DROP
+  -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+
+[273/400] srvdc srvdc$ iptables -F INPUT
+<empty>
+
+[274/400] srvdc srvdc$ iptables -L INPUT -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+
+--- [275] § SEC — anti-spoofing & durcissement noyau (Linux) ---
+[275/400] srvdc srvdc$ sysctl net.ipv4.conf.all.rp_filter
+<empty>
+
+[276/400] lhq lhq$ sysctl -w net.ipv4.conf.all.rp_filter=1
+<empty>
+
+[277/400] lhq lhq$ sysctl net.ipv4.conf.all.accept_redirects
+<empty>
+
+[278/400] lhq lhq$ sysctl -w net.ipv4.conf.all.accept_redirects=0
+<empty>
+
+[279/400] lhq lhq$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
+<empty>
+
+[280/400] lbr lbr$ sysctl -w net.ipv4.conf.all.rp_filter=1
+<empty>
+
+[281/400] lbr lbr$ sysctl net.ipv4.conf.all.accept_redirects
+<empty>
+
+[282/400] lbr lbr$ sysctl -w net.ipv4.conf.all.accept_redirects=0
+<empty>
+
+[283/400] lbr lbr$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
+<empty>
+
+[284/400] ldc ldc$ sysctl -w net.ipv4.conf.all.rp_filter=1
+<empty>
+
+[285/400] ldc ldc$ sysctl net.ipv4.conf.all.accept_redirects
+<empty>
+
+[286/400] ldc ldc$ sysctl -w net.ipv4.conf.all.accept_redirects=0
+<empty>
+
+[287/400] ldc ldc$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
+<empty>
+
+[288/400] srvdc srvdc$ sysctl -w net.ipv4.conf.all.rp_filter=1
+<empty>
+
+[289/400] srvdc srvdc$ sysctl net.ipv4.conf.all.accept_redirects
+<empty>
+
+[290/400] srvdc srvdc$ sysctl -w net.ipv4.conf.all.accept_redirects=0
+<empty>
+
+[291/400] srvdc srvdc$ sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1
+<empty>
+
+
+--- [292] § SEC — matrice de joignabilité (sans filtre actif) ---
+[292/400] lhq lhq$ ping -c 1 203.0.113.10
+  PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.692 ms
+  
+  --- 203.0.113.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.692/0.692/0.692/0.000 ms
+
+[293/400] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.510 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.510/0.510/0.510/0.000 ms
+
+[294/400] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.191 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.191/0.191/0.191/0.000 ms
+
+[295/400] lhq lhq$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.737 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.737/0.737/0.737/0.000 ms
+
+[296/400] lbr lbr$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.112 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 1.112/1.112/1.112/0.000 ms
+
+[297/400] lbr lbr$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.290 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.290/0.290/0.290/0.000 ms
+
+[298/400] lbr lbr$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.193 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.193/0.193/0.193/0.000 ms
+
+[299/400] ldc ldc$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.518 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.518/0.518/0.518/0.000 ms
+
+[300/400] ldc ldc$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.568 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.568/0.568/0.568/0.000 ms
+
+[301/400] ldc ldc$ ping -c 1 10.2.2.1
+  PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.268 ms
+  
+  --- 10.2.2.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.268/0.268/0.268/0.000 ms
+
+[302/400] isphq isphq$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.765 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.765/0.765/0.765/0.000 ms
+
+[303/400] ispbr ispbr$ ping -c 1 10.2.2.11
+  PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.312 ms
+  
+  --- 10.2.2.11 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.312/0.312/0.312/0.000 ms
+
+
+--- [304] § SEC — inspection des tables iptables par hôte ---
+[304/400] lhq lhq$ iptables -t filter -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[305/400] lhq lhq$ iptables -t filter -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[306/400] lhq lhq$ iptables -t nat -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[307/400] lhq lhq$ iptables -t mangle -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[308/400] lhq lhq$ iptables -t raw -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[309/400] lhq lhq$ conntrack -L
+  conntrack: command not found
+
+[310/400] lhq lhq$ conntrack -S
+  conntrack: command not found
+
+[311/400] lbr lbr$ iptables -t filter -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[312/400] lbr lbr$ iptables -t nat -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[313/400] lbr lbr$ iptables -t mangle -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[314/400] lbr lbr$ iptables -t raw -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[315/400] lbr lbr$ conntrack -L
+  conntrack: command not found
+
+[316/400] lbr lbr$ conntrack -S
+  conntrack: command not found
+
+[317/400] ldc ldc$ iptables -t filter -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[318/400] ldc ldc$ iptables -t nat -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[319/400] ldc ldc$ iptables -t mangle -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[320/400] ldc ldc$ iptables -t raw -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[321/400] ldc ldc$ conntrack -L
+  conntrack: command not found
+
+[322/400] ldc ldc$ conntrack -S
+  conntrack: command not found
+
+[323/400] srvdc srvdc$ iptables -t filter -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[324/400] srvdc srvdc$ iptables -t nat -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[325/400] srvdc srvdc$ iptables -t mangle -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+[326/400] srvdc srvdc$ iptables -t raw -L -n
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[327/400] srvdc srvdc$ conntrack -L
+  conntrack: command not found
+
+[328/400] srvdc srvdc$ conntrack -S
+  conntrack: command not found
+
+
+--- [329] § SEC — politiques de chaîne & compteurs ---
+[329/400] srvdc srvdc$ iptables -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[330/400] lhq lhq$ iptables -Z
+<empty>
+
+[331/400] lhq lhq$ iptables -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[332/400] lhq lhq$ iptables -P FORWARD DROP
+<empty>
+
+[333/400] lhq lhq$ iptables -P FORWARD ACCEPT
+<empty>
+
+[334/400] lbr lbr$ iptables -Z
+<empty>
+
+[335/400] lbr lbr$ iptables -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[336/400] lbr lbr$ iptables -P FORWARD DROP
+<empty>
+
+[337/400] lbr lbr$ iptables -P FORWARD ACCEPT
+<empty>
+
+[338/400] ldc ldc$ iptables -Z
+<empty>
+
+[339/400] ldc ldc$ iptables -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[340/400] ldc ldc$ iptables -P FORWARD DROP
+<empty>
+
+[341/400] ldc ldc$ iptables -P FORWARD ACCEPT
+<empty>
+
+[342/400] srvdc srvdc$ iptables -Z
+<empty>
+
+[343/400] srvdc srvdc$ iptables -L -n -v
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+[344/400] srvdc srvdc$ iptables -P FORWARD DROP
+<empty>
+
+[345/400] srvdc srvdc$ iptables -P FORWARD ACCEPT
+<empty>
+
+
+--- [346] § SEC — état port-security & MAC consolidé (switchs) ---
+[346/400] swhq SW-HQ# show port-security
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+               (Count)        (Count)      (Count)
+  ------------------------------------------------------------------------------
+
+[347/400] swhq SW-HQ# show port-security address
+            Secure Mac Address Table
+  ------------------------------------------------------------------------
+  Vlan    Mac Address       Type                          Ports   Remaining Age
+  ----    -----------       ----                          -----   -------------
+  
+  Total Addresses: 0
+
+[348/400] swhq SW-HQ# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
+  
+  Total Mac Addresses for this criterion: 3
+
+[349/400] swhq SW-HQ# show errdisable recovery
+  % Invalid input detected at '^' marker.
+  show errdisable recovery
+       ^
+
+[350/400] swbr <SW-BR> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+[351/400] swbr <SW-BR> display mac-address security
+  MAC address table of slot 0:
+  -------------------------------------------------------------------------------
+  MAC Address    VLAN/VSI   Learned-From   Type
+  -------------------------------------------------------------------------------
+  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
+  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
+  -------------------------------------------------------------------------------
+  Total items displayed = 3
+
+[352/400] swbr <SW-BR> display mac-address
+  MAC address table of slot 0:
+  -------------------------------------------------------------------------------
+  MAC Address    VLAN/VSI   Learned-From   Type
+  -------------------------------------------------------------------------------
+  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
+  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
+  02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
+  -------------------------------------------------------------------------------
+  Total items displayed = 3
+
+[353/400] (dswbr)> display port-security
+<UNKNOWN DEVICE 'dswbr'>
+
+
+--- [354] § SEC — durcissement plan de gestion consolidé ---
+[354/400] rhq R-HQ# show ip access-lists MGMT
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[355/400] rhq R-HQ# show running-config | section line vty
+  line vty 0 4
+   access-class MGMT in
+   transport input ssh
+
+[356/400] rhq R-HQ# show users
+      Line       User       Host(s)              Idle       Location
+  *  0 con 0                idle                 00:00:00
+  
+    Interface    User               Mode         Idle     Peer Address
+
+[357/400] rhq R-HQ# show ip ssh
+  SSH Enabled - version 2.0
+  Authentication timeout: 120 secs; Authentication retries: 3
+
+[358/400] rdc R-DC# show running-config | section line vty
+<empty>
+
+[359/400] rbr <R-BR> display current-configuration | include user-interface
+<empty>
+
+[360/400] rbr <R-BR> display ssh server status
+  SSH server: Disabled
+
+[361/400] rbr <R-BR> display users
+    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
+  + 0    CON 0   00:00:00                              pass            no
+  
+  Wait     : Wait for the user to press ENTER.
+
+
+--- [362] § SEC — cas négatifs / mal formés ---
+[362/400] rhq R-HQ# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[363/400] rhq R-HQ(config)# access-list 10 permit
+  % Incomplete command.
+
+[364/400] rhq R-HQ(config)# access-list 999 permit any
+  % Invalid access-list number. Valid range: 1-199.
+
+[365/400] rhq R-HQ(config)# ip access-list extended
+  % Incomplete command.
+
+[366/400] rhq R-HQ(config)# end
+<empty>
+
+[367/400] rhq R-HQ# show ip access-lists INEXISTANTE
+  % Access list INEXISTANTE not found
+
+[368/400] rbr <R-BR> system-view
+  Enter system view, return user view with return command.
+
+[369/400] rbr [R-BR] acl number 9999
+  Error: Invalid ACL number.
+
+[370/400] rbr [R-BR] rule deny
+  % Invalid input detected at '^' marker.
+  rule deny
+  ^
+
+[371/400] rbr [R-BR] quit
+<empty>
+
+[372/400] rbr <R-BR> quit
+<empty>
+
+[373/400] srvdc srvdc$ iptables -A INPUT -p tcp --dport
+  iptables: option "--dport" requires an argument
+
+[374/400] srvdc srvdc$ iptables -Z bidon
+  iptables: No chain/target/match by that name.
+
+
+--- [375] § SEC — état final & joignabilité restaurée ---
+[375/400] rhq R-HQ# show access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[376/400] rdc R-DC# show access-lists
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (2 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[377/400] rbr <R-BR> display acl all
+  Total 0 ACL(s)
+
+[378/400] lhq lhq$ ping -c 1 203.0.113.10
+  PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.298 ms
+  
+  --- 203.0.113.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.298/0.298/0.298/0.000 ms
+
+[379/400] whq whq$ ping -n 1 203.0.113.10
+  
+  Pinging 203.0.113.10 with 32 bytes of data:
+  Reply from 203.0.113.10: bytes=32 time=<1ms TTL=63
+  
+  Ping statistics for 203.0.113.10:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[380/400] lbr lbr$ ping -c 1 198.51.100.10
+  PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.233 ms
+  
+  --- 198.51.100.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
+
+[381/400] lhq lhq$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.918 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.918/0.918/0.918/0.000 ms
+
+[382/400] ldc ldc$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.189 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.189/0.189/0.189/0.000 ms
+
+[383/400] isphq isphq$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.395 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.395/0.395/0.395/0.000 ms
+
+[384/400] rdc R-DC# ping 10.1.1.10
+  Type escape sequence to abort.
+  Sending 5, 100-byte ICMP Echos to 10.1.1.10, timeout is 2 seconds:
+  !!!!!
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/1/1 ms
+
+[385/400] ldc ldc$ ping -c 1 10.1.1.10
+  PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=12.928 ms
+  
+  --- 10.1.1.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 12.928/12.928/12.928/0.000 ms
+
+[386/400] lbr lbr$ ping -c 1 10.3.3.10
+  PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.355 ms
+  
+  --- 10.3.3.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.355/0.355/0.355/0.000 ms
+
+[387/400] whq whq$ ping -n 1 10.3.3.10
+  
+  Pinging 10.3.3.10 with 32 bytes of data:
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  
+  Ping statistics for 10.3.3.10:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+
+[388/400] lhq lhq$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[389/400] lbr lbr$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[390/400] ldc ldc$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[391/400] srvdc srvdc$ iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+[392/400] rhq R-HQ# show access-lists
+  Extended IP access list INTERNET-IN
+      10 permit tcp any any established (0 matches)
+      20 permit icmp any any echo-reply (4 matches)
+      30 permit udp any eq 53 any (0 matches)
+      40 deny icmp any any echo log (0 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log (0 matches)
+      60 permit ip any any (0 matches)
+  Standard IP access list MGMT
+      10 permit 10.3.3.0 0.0.0.255 (0 matches)
+      20 deny any log (0 matches)
+
+[393/400] rdc R-DC# show access-lists
+  Extended IP access list DC-FILTER
+      10 remark Autoriser SSH/HTTP vers le serveur DC (2 matches)
+      20 permit tcp any host 10.3.3.10 eq 22 (0 matches)
+      30 permit tcp any host 10.3.3.10 eq 80 (0 matches)
+      40 permit tcp any host 10.3.3.10 eq 443 (0 matches)
+      50 deny ip any host 10.3.3.10 log (0 matches)
+      60 permit ip any any (0 matches)
+
+[394/400] rbr <R-BR> display acl all
+  Total 0 ACL(s)
+
+[395/400] swhq SW-HQ# show port-security
+  Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action
+               (Count)        (Count)      (Count)
+  ------------------------------------------------------------------------------
+
+[396/400] swbr <SW-BR> display port-security
+  Port-security is enabled on the following interfaces:
+   (configuration is recorded per interface; see display this)
+
+[397/400] rhq R-HQ# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level informational
+      Monitor logging: level debugging
+      Buffer logging: level debugging, 32768 bytes
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[398/400] rdc R-DC# show logging
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level informational
+      Monitor logging: level debugging
+      Buffer logging: level debugging, 32768 bytes
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
+
+[399/400] rbr <R-BR> display logbuffer
+  Logging buffer configuration and contents: enabled
+  Allowed max buffer size : 4096
+  Actual buffer size : 4096
+  Channel number : 4 , Channel name : logbuffer
+  Dropped messages : 0
+  Overwritten messages : 0
+  Current messages : 0
+
+[400/400] srvdc srvdc$ iptables -S
+  -P INPUT ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
