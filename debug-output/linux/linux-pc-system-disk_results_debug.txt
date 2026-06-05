@@ -1,0 +1,1570 @@
+============================================================
+Shell debug transcript — linux-pc-system-disk
+Generated: 2026-06-05T09:41:06.377Z
+Engine: linux
+host=L-PC-SYS-DBG (linux-pc) — focus: système, disque, noyau & paquets
+Total commands: 300
+============================================================
+
+
+--- [1] § identité système — uname/os ---
+$ [1/300]> uname
+  Linux
+
+$ [2/300]> uname -a
+  Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+
+$ [3/300]> uname -s
+  Linux
+
+$ [4/300]> uname -n
+  linux-pc
+
+$ [5/300]> uname -r
+  5.15.0-130-generic
+
+$ [6/300]> uname -v
+  #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+
+$ [7/300]> uname -m
+  x86_64
+
+$ [8/300]> uname -p
+  x86_64
+
+$ [9/300]> uname -i
+  x86_64
+
+$ [10/300]> uname -o
+  GNU/Linux
+
+$ [11/300]> uname -s -r -m
+  Linux 5.15.0-130-generic x86_64
+
+$ [12/300]> cat /etc/os-release
+  PRETTY_NAME="Ubuntu 22.04.4 LTS"
+  NAME="Ubuntu"
+  VERSION_ID="22.04"
+  VERSION="22.04.4 LTS (Jammy Jellyfish)"
+  VERSION_CODENAME=jammy
+  ID=ubuntu
+  ID_LIKE=debian
+  HOME_URL="https://www.ubuntu.com/"
+  SUPPORT_URL="https://help.ubuntu.com/"
+  BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+  UBUNTU_CODENAME=jammy
+
+$ [13/300]> cat /etc/issue
+  cat: /etc/issue: No such file or directory
+
+$ [14/300]> cat /proc/version
+  Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+
+$ [15/300]> lsb_release -a
+  lsb_release: command not found
+
+$ [16/300]> arch
+  arch: command not found
+
+$ [17/300]> uname --truc
+  5.15.0-130-generic
+
+
+--- [18] § hôte & temps — hostnamectl/timedatectl ---
+$ [18/300]> hostname
+  linux-pc
+
+$ [19/300]> hostname -f
+  -f
+
+$ [20/300]> hostname -s
+  -s
+
+$ [21/300]> hostnamectl
+     Static hostname: linux-pc
+           Icon name: computer-vm
+             Chassis: vm
+          Machine ID: 0a1b2c3d4e5f60718293a4b5c6d7e8f9
+             Boot ID: f9e8d7c6b5a4039281706f5e4d3c2b1a
+      Virtualization: kvm
+    Operating System: Ubuntu 22.04.4 LTS
+              Kernel: Linux 5.15.0-130-generic
+        Architecture: x86_64
+
+$ [22/300]> hostnamectl status
+     Static hostname: linux-pc
+           Icon name: computer-vm
+             Chassis: vm
+          Machine ID: 0a1b2c3d4e5f60718293a4b5c6d7e8f9
+             Boot ID: f9e8d7c6b5a4039281706f5e4d3c2b1a
+      Virtualization: kvm
+    Operating System: Ubuntu 22.04.4 LTS
+              Kernel: Linux 5.15.0-130-generic
+        Architecture: x86_64
+
+$ [23/300]> cat /etc/hostname
+  linux-pc
+
+$ [24/300]> date
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [25/300]> date -u
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [26/300]> date +%Y-%m-%d
+  2026-06-05
+
+$ [27/300]> date "+%H:%M:%S"
+  09:41:06
+
+$ [28/300]> date +%s
+  1780652466
+
+$ [29/300]> date -d "2026-01-01"
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [30/300]> date --iso-8601=seconds
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [31/300]> timedatectl
+                 Local time: Fri 2026-06-05 09:41:06 UTC
+             Universal time: Fri 2026-06-05 09:41:06 UTC
+                   RTC time: Fri 2026-06-05 09:41:06
+                  Time zone: Etc/UTC (UTC, +0000)
+  System clock synchronized: yes
+                NTP service: active
+            RTC in local TZ: no
+
+$ [32/300]> timedatectl status
+                 Local time: Fri 2026-06-05 09:41:06 UTC
+             Universal time: Fri 2026-06-05 09:41:06 UTC
+                   RTC time: Fri 2026-06-05 09:41:06
+                  Time zone: Etc/UTC (UTC, +0000)
+  System clock synchronized: yes
+                NTP service: active
+            RTC in local TZ: no
+
+$ [33/300]> cal
+  cal: command not found
+
+$ [34/300]> uptime
+   09:41:06 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+
+$ [35/300]> uptime -p
+  up 0 minutes
+
+$ [36/300]> uptime -s
+  2026-06-05 09:41:06
+
+$ [37/300]> date --truc
+  Fri Jun 05 09:41:06 UTC 2026
+
+
+--- [38] § CPU — lscpu/nproc/proc ---
+$ [38/300]> lscpu
+  Architecture:                    x86_64
+  CPU op-mode(s):                  32-bit, 64-bit
+  Byte Order:                      Little Endian
+  Address sizes:                   46 bits physical, 48 bits virtual
+  CPU(s):                          2
+  On-line CPU(s) list:             0,1
+  Thread(s) per core:              1
+  Core(s) per socket:              2
+  Socket(s):                       1
+  Model name:                      Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+  CPU MHz:                         2300.000
+  BogoMIPS:                        4600.00
+  L1d cache:                       64 KiB
+  L1i cache:                       64 KiB
+  L2 cache:                        512 KiB
+  L3 cache:                        46080 KiB
+
+$ [39/300]> nproc
+  2
+
+$ [40/300]> nproc --all
+  2
+
+$ [41/300]> cat /proc/cpuinfo
+  processor       : 0
+  vendor_id       : GenuineIntel
+  cpu family      : 6
+  model           : 79
+  model name      : Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+  stepping        : 1
+  microcode       : 0xb000040
+  cpu MHz         : 2300.000
+  cache size      : 46080 KB
+  physical id     : 0
+  siblings        : 2
+  core id         : 0
+  cpu cores       : 2
+  fpu             : yes
+  fpu_exception   : yes
+  cpuid level     : 13
+  wp              : yes
+  flags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch invpcid_single pti fsgsbase bmi1 avx2 smep bmi2 erms invpcid xsaveopt
+  bogomips        : 4600.00
+  clflush size    : 64
+  cache_alignment : 64
+  address sizes   : 46 bits physical, 48 bits virtual
+  power management:
+  
+  processor       : 1
+  vendor_id       : GenuineIntel
+  cpu family      : 6
+  model           : 79
+  model name      : Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+  stepping        : 1
+  microcode       : 0xb000040
+  cpu MHz         : 2300.000
+  cache size      : 46080 KB
+  physical id     : 0
+  siblings        : 2
+  core id         : 1
+  cpu cores       : 2
+  fpu             : yes
+  fpu_exception   : yes
+  cpuid level     : 13
+  wp              : yes
+  flags           : fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch invpcid_single pti fsgsbase bmi1 avx2 smep bmi2 erms invpcid xsaveopt
+  bogomips        : 4600.00
+  clflush size    : 64
+  cache_alignment : 64
+  address sizes   : 46 bits physical, 48 bits virtual
+  power management:
+
+$ [42/300]> cat /proc/cpuinfo | grep -c processor
+  2
+
+$ [43/300]> cat /proc/cpuinfo | grep "model name" | head -1
+  model name      : Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+
+$ [44/300]> cat /proc/loadavg
+  cat: /proc/loadavg: No such file or directory
+
+$ [45/300]> cat /proc/stat | head -1
+  cat: /proc/stat: No such file or directory
+
+$ [46/300]> lscpu | grep -E "^CPU|Model|MHz"
+  CPU op-mode(s):                  32-bit, 64-bit
+  CPU(s):                          2
+  Model name:                      Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+  CPU MHz:                         2300.000
+
+$ [47/300]> getconf _NPROCESSORS_ONLN
+  getconf: command not found
+
+
+--- [48] § mémoire — free/vmstat/proc ---
+$ [48/300]> free
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [49/300]> free -h
+                 total        used        free      shared  buff/cache   available
+  Mem:           3.8Gi       1.2Gi       1.4Gi        24Mi       1.2Gi       2.4Gi
+  Swap:          2.0Gi          0B       2.0Gi
+
+$ [50/300]> free -m
+                 total        used        free      shared  buff/cache   available
+  Mem:            3888        1229        1434          24        1225        2460
+  Swap:           2048           0        2048
+
+$ [51/300]> free -g
+                 total        used        free      shared  buff/cache   available
+  Mem:               4           1           1           0           1           2
+  Swap:              2           0           2
+
+$ [52/300]> free -k
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [53/300]> free -b
+                 total        used        free      shared  buff/cache   available
+  Mem:      4076863488  1288699904  1503657984    25165824  1284505600  2579496960
+  Swap:     2147483648           0  2147483648
+
+$ [54/300]> free -t
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+  Total:       6078464     1258496     3565568
+
+$ [55/300]> free -w
+                 total        used        free      shared     buffers       cache   available
+  Mem:         3981312     1258496     1468416       24576      204800     1049600     2519040
+  Swap:        2097152           0     2097152
+
+$ [56/300]> free -s 1 -c 1
+                 total        used        free      shared  buff/cache   available
+  Mem:         3981312     1258496     1468416       24576     1254400     2519040
+  Swap:        2097152           0     2097152
+
+$ [57/300]> cat /proc/meminfo
+  MemTotal:        3981312 kB
+  MemFree:         1468416 kB
+  MemAvailable:    2519040 kB
+  Buffers:          204800 kB
+  Cached:          1049600 kB
+  SwapCached:            0 kB
+  Active:           755098 kB
+  Inactive:         503398 kB
+  SwapTotal:       2097152 kB
+  SwapFree:        2097152 kB
+  Shmem:             24576 kB
+
+$ [58/300]> cat /proc/meminfo | head -5
+  MemTotal:        3981312 kB
+  MemFree:         1468416 kB
+  MemAvailable:    2519040 kB
+  Buffers:          204800 kB
+  Cached:          1049600 kB
+
+$ [59/300]> grep -E "MemTotal|MemFree|MemAvailable" /proc/meminfo
+  MemTotal:        3981312 kB
+  MemFree:         1468416 kB
+  MemAvailable:    2519040 kB
+
+$ [60/300]> grep -E "SwapTotal|SwapFree" /proc/meminfo
+  SwapTotal:       2097152 kB
+  SwapFree:        2097152 kB
+
+$ [61/300]> vmstat
+  vmstat: command not found
+
+$ [62/300]> vmstat 1 2
+  vmstat: command not found
+
+$ [63/300]> vmstat -s
+  vmstat: command not found
+
+$ [64/300]> swapon --show
+  swapon: command not found
+
+$ [65/300]> swapon -s
+  swapon: command not found
+
+
+--- [66] § disques — df/du ---
+$ [66/300]> df
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [67/300]> df -h
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [68/300]> df -h /
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [69/300]> df -i
+  Filesystem      Inodes  IUsed   IFree IUse% Mounted on
+  /dev/sda1       655360  52483  602877    8% /
+  tmpfs           127960      1  127959    1% /dev/shm
+  /dev/sda2       131072   2145  128927    2% /boot
+
+$ [70/300]> df -T
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [71/300]> df -k
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [72/300]> df -m
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [73/300]> df -h --total
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [74/300]> df --output=source,size,used,avail,target
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+$ [75/300]> du -sh /etc
+  4	/etc
+
+$ [76/300]> du -sh /var
+  4	/var
+
+$ [77/300]> du -sh /tmp
+  4	/tmp
+
+$ [78/300]> du -h --max-depth=1 /var
+  4.0K	/var
+
+$ [79/300]> du -ch /etc/*.conf
+  4	/etc/nsswitch.conf
+
+$ [80/300]> du -a /etc | sort -rn | head -5
+  4	/etc
+
+$ [81/300]> df /chemin/inexistant_xyz
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       52428800 12582912  37748736  25% /
+  tmpfs             512000        0    512000   0% /dev/shm
+  tmpfs               5120        4      5116   1% /run/lock
+  /dev/sda2         999424   148480    782080  16% /boot
+  /dev/sdb1      104857600 29360128  71303168  29% /u01
+
+
+--- [82] § blocs & montages — lsblk/mount ---
+$ [82/300]> lsblk
+  NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+  sda      8:0    0    52G  0 disk 
+  ├─sda1   8:1    0    50G  0 part /
+  └─sda2   8:2    0     1G  0 part /boot
+  sdb      8:16   0   100G  0 disk 
+  └─sdb1   8:17   0   100G  0 part /u01
+
+$ [83/300]> lsblk -f
+  NAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+  sda                                                                           
+  ├─sda1 ext4   1.0         a1b2c3d4-e5f6-7890-abcd-ef1234567890   36G    25% /
+  └─sda2 ext4   1.0         11223344-5566-7788-99aa-bbccddeeff00  764M    16% /boot
+  sdb                                                                           
+  └─sdb1 ext4   1.0         aabbccdd-eeff-0011-2233-445566778899   68G    29% /u01
+
+$ [84/300]> lsblk -a
+  NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+  sda      8:0    0    52G  0 disk 
+  ├─sda1   8:1    0    50G  0 part /
+  └─sda2   8:2    0     1G  0 part /boot
+  sdb      8:16   0   100G  0 disk 
+  └─sdb1   8:17   0   100G  0 part /u01
+  sr0     11:0    1  1024M  0 rom  
+
+$ [85/300]> lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+  NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+  sda      8:0    0    52G  0 disk 
+  ├─sda1   8:1    0    50G  0 part /
+  └─sda2   8:2    0     1G  0 part /boot
+  sdb      8:16   0   100G  0 disk 
+  └─sdb1   8:17   0   100G  0 part /u01
+
+$ [86/300]> lsblk -p
+  NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+  sda      8:0    0    52G  0 disk 
+  ├─sda1   8:1    0    50G  0 part /
+  └─sda2   8:2    0     1G  0 part /boot
+  sdb      8:16   0   100G  0 disk 
+  └─sdb1   8:17   0   100G  0 part /u01
+
+$ [87/300]> blkid
+  blkid: command not found
+
+$ [88/300]> mount
+  /dev/sda1 on / type ext4 (rw,relatime,errors=remount-ro)
+  tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)
+  tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)
+  /dev/sda2 on /boot type ext4 (rw,relatime)
+  /dev/sdb1 on /u01 type ext4 (rw,relatime)
+  proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)
+  sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+
+$ [89/300]> mount | column -t | head
+  column: command not found
+
+$ [90/300]> cat /proc/mounts | head
+  cat: /proc/mounts: No such file or directory
+
+$ [91/300]> cat /etc/fstab
+  cat: /etc/fstab: No such file or directory
+
+$ [92/300]> findmnt
+  findmnt: command not found
+
+$ [93/300]> findmnt /
+  findmnt: command not found
+
+$ [94/300]> umount /chemin/inexistant_xyz
+<empty>
+
+$ [95/300]> mount /dev/inexistant_xyz /mnt
+  mount: only root can do that
+
+
+--- [96] § noyau — sysctl/dmesg/modules ---
+$ [96/300]> sysctl -a | head -20
+<empty>
+
+$ [97/300]> sysctl kernel.hostname
+<empty>
+
+$ [98/300]> sysctl kernel.osrelease
+<empty>
+
+$ [99/300]> sysctl kernel.ostype
+<empty>
+
+$ [100/300]> sysctl kernel.version
+<empty>
+
+$ [101/300]> sysctl kernel.pid_max
+<empty>
+
+$ [102/300]> sysctl vm.swappiness
+<empty>
+
+$ [103/300]> sysctl -w vm.swappiness=40
+<empty>
+
+$ [104/300]> sysctl vm.swappiness
+<empty>
+
+$ [105/300]> sysctl -w vm.swappiness=60
+<empty>
+
+$ [106/300]> cat /proc/sys/kernel/hostname
+  cat: /proc/sys/kernel/hostname: No such file or directory
+
+$ [107/300]> cat /proc/sys/kernel/pid_max
+  cat: /proc/sys/kernel/pid_max: No such file or directory
+
+$ [108/300]> dmesg | head
+  [    0.000000] Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  [    0.000001] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  [    0.010000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  [    0.050000] Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  [    0.100000] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  [    0.500000] NET: Registered PF_INET protocol family
+  [    0.600000] NET: Registered PF_INET6 protocol family
+  [    1.000000] EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  [    1.200000] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+
+$ [109/300]> dmesg -T | head
+  [Fri Jun  5 09:41:06 2026] Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  [Fri Jun  5 09:41:06 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  [Fri Jun  5 09:41:06 2026] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  [Fri Jun  5 09:41:06 2026] Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  [Fri Jun  5 09:41:06 2026] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  [Fri Jun  5 09:41:06 2026] NET: Registered PF_INET protocol family
+  [Fri Jun  5 09:41:06 2026] NET: Registered PF_INET6 protocol family
+  [Fri Jun  5 09:41:07 2026] EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  [Fri Jun  5 09:41:07 2026] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+
+$ [110/300]> dmesg --level=err
+<empty>
+
+$ [111/300]> lsmod
+  lsmod: command not found
+
+$ [112/300]> lsmod | head
+  lsmod: command not found
+
+$ [113/300]> modinfo overlay
+  modinfo: command not found
+
+$ [114/300]> sysctl kernel.cle_inexistante
+<empty>
+
+
+--- [115] § environnement & shell ---
+$ [115/300]> env
+  0=bash
+  HOME=/home/user
+  PWD=/home/user
+  USER=user
+  LOGNAME=user
+  UID=1000
+  SHELL=/bin/bash
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+  HOSTNAME=linux-pc
+  TERM=xterm-256color
+  MAIL=/var/mail/user
+  SHLVL=1
+  @=
+  #=0
+  *=
+
+$ [116/300]> env | head
+  0=bash
+  HOME=/home/user
+  PWD=/home/user
+  USER=user
+  LOGNAME=user
+  UID=1000
+  SHELL=/bin/bash
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+  HOSTNAME=linux-pc
+  TERM=xterm-256color
+
+$ [117/300]> printenv
+  0=bash
+  HOME=/home/user
+  PWD=/home/user
+  USER=user
+  LOGNAME=user
+  UID=1000
+  SHELL=/bin/bash
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+  HOSTNAME=linux-pc
+  TERM=xterm-256color
+  MAIL=/var/mail/user
+  SHLVL=1
+  @=
+  #=0
+  *=
+
+$ [118/300]> printenv PATH
+  /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+
+$ [119/300]> printenv HOME
+  /home/user
+
+$ [120/300]> echo $PATH
+  /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
+
+$ [121/300]> echo $SHELL
+  /bin/bash
+
+$ [122/300]> echo $PWD
+  /home/user
+
+$ [123/300]> echo $?
+  0
+
+$ [124/300]> export DEMO_VAR=hello
+<empty>
+
+$ [125/300]> echo $DEMO_VAR
+  hello
+
+$ [126/300]> env | grep DEMO_VAR
+  DEMO_VAR=hello
+
+$ [127/300]> unset DEMO_VAR
+<empty>
+
+$ [128/300]> echo "[$DEMO_VAR]"
+  [hello]
+
+$ [129/300]> set | head
+  #='0'
+  *=''
+  0='bash'
+  @=''
+  DEMO_VAR='hello'
+  HOME='/home/user'
+  HOSTNAME='linux-pc'
+  LOGNAME='user'
+  MAIL='/var/mail/user'
+  PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games'
+
+$ [130/300]> declare -p PATH
+  declare -- PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games"
+
+$ [131/300]> alias
+<empty>
+
+$ [132/300]> alias ll='ls -la'
+<empty>
+
+$ [133/300]> alias
+  alias ll='ls -la'
+
+$ [134/300]> unalias ll
+<empty>
+
+$ [135/300]> type ll
+  bash: type: ll: not found
+
+$ [136/300]> history
+      1  uname
+      2  uname -a
+      3  uname -s
+      4  uname -n
+      5  uname -r
+      6  uname -v
+      7  uname -m
+      8  uname -p
+      9  uname -i
+     10  uname -o
+     11  uname -s -r -m
+     12  cat /etc/os-release
+     13  cat /etc/issue
+     14  cat /proc/version
+     15  lsb_release -a
+     16  arch
+     17  uname --truc
+     18  hostname
+     19  hostname -f
+     20  hostname -s
+     21  hostnamectl
+     22  hostnamectl status
+     23  cat /etc/hostname
+     24  date
+     25  date -u
+     26  date +%Y-%m-%d
+     27  date "+%H:%M:%S"
+     28  date +%s
+     29  date -d "2026-01-01"
+     30  date --iso-8601=seconds
+     31  timedatectl
+     32  timedatectl status
+     33  cal
+     34  uptime
+     35  uptime -p
+     36  uptime -s
+     37  date --truc
+     38  lscpu
+     39  nproc
+     40  nproc --all
+     41  cat /proc/cpuinfo
+     42  cat /proc/cpuinfo | grep -c processor
+     43  cat /proc/cpuinfo | grep "model name" | head -1
+     44  cat /proc/loadavg
+     45  cat /proc/stat | head -1
+     46  lscpu | grep -E "^CPU|Model|MHz"
+     47  getconf _NPROCESSORS_ONLN
+     48  free
+     49  free -h
+     50  free -m
+     51  free -g
+     52  free -k
+     53  free -b
+     54  free -t
+     55  free -w
+     56  free -s 1 -c 1
+     57  cat /proc/meminfo
+     58  cat /proc/meminfo | head -5
+     59  grep -E "MemTotal|MemFree|MemAvailable" /proc/meminfo
+     60  grep -E "SwapTotal|SwapFree" /proc/meminfo
+     61  vmstat
+     62  vmstat 1 2
+     63  vmstat -s
+     64  swapon --show
+     65  swapon -s
+     66  df
+     67  df -h
+     68  df -h /
+     69  df -i
+     70  df -T
+     71  df -k
+     72  df -m
+     73  df -h --total
+     74  df --output=source,size,used,avail,target
+     75  du -sh /etc
+     76  du -sh /var
+     77  du -sh /tmp
+     78  du -h --max-depth=1 /var
+     79  du -ch /etc/*.conf
+     80  du -a /etc | sort -rn | head -5
+     81  df /chemin/inexistant_xyz
+     82  lsblk
+     83  lsblk -f
+     84  lsblk -a
+     85  lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+     86  lsblk -p
+     87  blkid
+     88  mount
+     89  mount | column -t | head
+     90  cat /proc/mounts | head
+     91  cat /etc/fstab
+     92  findmnt
+     93  findmnt /
+     94  umount /chemin/inexistant_xyz
+     95  mount /dev/inexistant_xyz /mnt
+     96  printf '%s' '' | head -20
+     97  cat /proc/sys/kernel/hostname
+     98  cat /proc/sys/kernel/pid_max
+     99  dmesg | head
+    100  dmesg -T | head
+    101  dmesg --level=err
+    102  lsmod
+    103  lsmod | head
+    104  modinfo overlay
+    105  env
+    106  env | head
+    107  printenv
+    108  printenv PATH
+    109  printenv HOME
+    110  echo $PATH
+    111  echo $SHELL
+    112  echo $PWD
+    113  echo $?
+    114  export DEMO_VAR=hello
+    115  echo $DEMO_VAR
+    116  env | grep DEMO_VAR
+    117  unset DEMO_VAR
+    118  echo "[$DEMO_VAR]"
+    119  set | head
+    120  declare -p PATH
+    121  alias
+    122  alias ll='ls -la'
+    123  alias
+    124  unalias ll
+    125  type ll
+    126  history
+
+$ [137/300]> history | tail -5
+    123  alias
+    124  unalias ll
+    125  type ll
+    126  history
+    127  history | tail -5
+
+$ [138/300]> shopt
+<empty>
+
+$ [139/300]> locale
+  LANG=
+  LANGUAGE=
+  LC_CTYPE="C"
+  LC_NUMERIC="C"
+  LC_TIME="C"
+  LC_COLLATE="C"
+  LC_MONETARY="C"
+  LC_MESSAGES="C"
+  LC_PAPER="C"
+  LC_NAME="C"
+  LC_ADDRESS="C"
+  LC_TELEPHONE="C"
+  LC_MEASUREMENT="C"
+  LC_IDENTIFICATION="C"
+  LC_ALL=
+
+$ [140/300]> echo $LANG
+<empty>
+
+
+--- [141] § paquets — apt/dpkg ---
+$ [141/300]> apt --version
+  Usage: apt [update|install|upgrade|remove|list]
+
+$ [142/300]> apt list --installed
+  Listing... Done
+  bash/jammy,now 5.1-6ubuntu1 amd64 [installed]
+  coreutils/jammy,now 8.32-4.1ubuntu1 amd64 [installed]
+  openssl/jammy,now 3.0.2-0ubuntu1 amd64 [installed]
+
+$ [143/300]> apt list --installed 2>/dev/null | head
+  Listing... Done
+  bash/jammy,now 5.1-6ubuntu1 amd64 [installed]
+  coreutils/jammy,now 8.32-4.1ubuntu1 amd64 [installed]
+  openssl/jammy,now 3.0.2-0ubuntu1 amd64 [installed]
+
+$ [144/300]> apt-cache search bash
+  apt-cache: command not found
+
+$ [145/300]> apt-get --version
+  Usage: apt-get [update|install|upgrade|remove|list]
+
+$ [146/300]> dpkg --version
+  dpkg: need an action option
+  Use dpkg --help for help.
+
+$ [147/300]> dpkg -l
+  Desired=Unknown/Install/Remove/Purge/Hold
+  | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+  ||/ Name                Version          Architecture Description
+  +++-===================-================-============-================================
+  ii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell
+  ii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities
+  ii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit
+
+$ [148/300]> dpkg -l | head
+  Desired=Unknown/Install/Remove/Purge/Hold
+  | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+  ||/ Name                Version          Architecture Description
+  +++-===================-================-============-================================
+  ii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell
+  ii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities
+  ii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit
+
+$ [149/300]> dpkg -l bash
+  Desired=Unknown/Install/Remove/Purge/Hold
+  | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+  ||/ Name                Version          Architecture Description
+  +++-===================-================-============-================================
+  ii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell
+  ii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities
+  ii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit
+
+$ [150/300]> dpkg -L bash
+  dpkg: need an action option
+  Use dpkg --help for help.
+
+$ [151/300]> dpkg -s bash
+  dpkg: need an action option
+  Use dpkg --help for help.
+
+$ [152/300]> dpkg --get-selections | head
+  dpkg: need an action option
+  Use dpkg --help for help.
+
+$ [153/300]> apt show bash
+  Usage: apt [update|install|upgrade|remove|list]
+
+$ [154/300]> apt policy bash
+  Usage: apt [update|install|upgrade|remove|list]
+
+$ [155/300]> apt update
+  Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease
+  Reading package lists... Done
+
+$ [156/300]> apt install paquet_inexistant_xyz
+  Reading package lists... Done
+  Building dependency tree... Done
+  paquet_inexistant_xyz is already the newest version.
+  0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+
+$ [157/300]> dpkg -l paquet_inexistant_xyz
+  Desired=Unknown/Install/Remove/Purge/Hold
+  | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+  ||/ Name                Version          Architecture Description
+  +++-===================-================-============-================================
+  ii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell
+  ii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities
+  ii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit
+
+
+--- [158] § archives & compression — tar/gzip/zip ---
+$ [158/300]> cd /tmp
+<empty>
+
+$ [159/300]> mkdir -p arch_src && echo data1 > arch_src/a.txt && echo data2 > arch_src/b.txt
+<empty>
+
+$ [160/300]> ls -R arch_src
+  arch_src:
+  a.txt  b.txt
+
+$ [161/300]> tar -cf arch.tar arch_src
+<empty>
+
+$ [162/300]> ls -l arch.tar
+  ls: cannot access 'arch.tar': No such file or directory
+
+$ [163/300]> tar -tf arch.tar
+<empty>
+
+$ [164/300]> tar -czf arch.tar.gz arch_src
+<empty>
+
+$ [165/300]> ls -l arch.tar.gz
+  ls: cannot access 'arch.tar.gz': No such file or directory
+
+$ [166/300]> tar -tzf arch.tar.gz
+<empty>
+
+$ [167/300]> mkdir extract && tar -xf arch.tar -C extract
+<empty>
+
+$ [168/300]> ls -R extract
+  extract:
+
+$ [169/300]> gzip arch_src/a.txt
+<empty>
+
+$ [170/300]> ls -l arch_src
+  total 16
+  -rw-r--r-- 1 user user 6 Jun  5 09:41 a.txt
+  -rw-r--r-- 1 user user 6 Jun  5 09:41 b.txt
+
+$ [171/300]> gunzip arch_src/a.txt.gz
+<empty>
+
+$ [172/300]> ls -l arch_src
+  total 16
+  -rw-r--r-- 1 user user 6 Jun  5 09:41 a.txt
+  -rw-r--r-- 1 user user 6 Jun  5 09:41 b.txt
+
+$ [173/300]> gzip -k arch_src/b.txt
+<empty>
+
+$ [174/300]> ls -l arch_src
+  total 16
+  -rw-r--r-- 1 user user 6 Jun  5 09:41 a.txt
+  -rw-r--r-- 1 user user 6 Jun  5 09:41 b.txt
+
+$ [175/300]> zip -r arch.zip arch_src
+<empty>
+
+$ [176/300]> ls -l arch.zip
+  ls: cannot access 'arch.zip': No such file or directory
+
+$ [177/300]> unzip -l arch.zip
+<empty>
+
+$ [178/300]> tar -xf archive_inexistante_xyz.tar
+<empty>
+
+
+--- [179] § hachage & intégrité ---
+$ [179/300]> md5sum /etc/hostname
+  dc538634739cd9bb3d48f4b1234835e7  /etc/hostname
+
+$ [180/300]> sha1sum /etc/hostname
+  1da79459b90b7dd09b95d792df4e9b0c  /etc/hostname
+
+$ [181/300]> sha256sum /etc/hostname
+  5a420f1d555c46c9cab357f3a9297964ef3f5f3ea5725e0a4ff2d4b4914e8212  /etc/hostname
+
+$ [182/300]> sha256sum /etc/hostname /etc/os-release
+  b864ca065135ed198d22d98e8a1c35345ad91e41cd53a83e1dd80f307394e102  /etc/hostname
+
+$ [183/300]> cksum /etc/hostname
+  cksum: command not found
+
+$ [184/300]> sha256sum /etc/hostname > /tmp/sums.txt && sha256sum -c /tmp/sums.txt
+  d78a43e5e5c2bca067196b387dc3879ae0148dc31b060fde8e72ba28f124c228  /tmp/sums.txt
+
+$ [185/300]> echo -n 'abc' | sha256sum
+  f36a26fccc4eabe20b6f9d29c18a2d3c533e9be654da802ff4c3c7cf1cddca3a  abc
+
+
+--- [186] § journalisation — logger/journalctl/dmesg ---
+$ [186/300]> logger "message de test debug"
+<empty>
+
+$ [187/300]> logger -p user.info "info debug"
+<empty>
+
+$ [188/300]> logger -t debugtag "tag debug"
+<empty>
+
+$ [189/300]> journalctl -n 10 --no-pager
+  -- Logs begin at Fri Jun  5 09:41:06 2026, end at Fri Jun  5 09:41:06 2026. --
+  Jun  5 09:41:06 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jun  5 09:41:06 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jun  5 09:41:06 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jun  5 09:41:06 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jun  5 09:41:06 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  5 09:41:06 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  5 09:41:06 localhost user: message de test debug
+  Jun  5 09:41:06 localhost user: info debug
+  Jun  5 09:41:06 localhost debugtag: tag debug
+
+$ [190/300]> journalctl -p err -n 5
+  -- No entries --
+
+$ [191/300]> journalctl -b
+  -- Logs begin at Fri Jun  5 09:41:06 2026, end at Fri Jun  5 09:41:06 2026. --
+  Jun  5 09:41:06 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jun  5 09:41:06 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jun  5 09:41:06 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jun  5 09:41:06 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jun  5 09:41:06 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  5 09:41:06 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  5 09:41:06 localhost user: message de test debug
+  Jun  5 09:41:06 localhost user: info debug
+  Jun  5 09:41:06 localhost debugtag: tag debug
+
+$ [192/300]> journalctl --disk-usage
+  Archived and active journals take up 3.0K in the file system.
+
+$ [193/300]> dmesg | tail
+  [    0.000000] Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  [    0.000001] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  [    0.010000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  [    0.050000] Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  [    0.100000] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  [    0.500000] NET: Registered PF_INET protocol family
+  [    0.600000] NET: Registered PF_INET6 protocol family
+  [    1.000000] EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  [    1.200000] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+
+$ [194/300]> tail -n 5 /var/log/syslog
+  Jun  5 09:41:06 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jun  5 09:41:06 localhost sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jun  5 09:41:06 localhost user: message de test debug
+  Jun  5 09:41:06 localhost user: info debug
+  Jun  5 09:41:06 localhost debugtag: tag debug
+
+$ [195/300]> ls -l /var/log
+  total 48
+  drwxr-x--- 2 root root    0 Jun  5 09:41 audit
+  -rw-r----- 1 root adm   156 Jun  5 09:41 auth.log
+  -rw-r----- 1 root adm  1498 Jun  5 09:41 boot.log
+  -rw-r----- 1 root adm   908 Jun  5 09:41 kern.log
+  -rw-r--r-- 1 root root    2 Jun  5 09:41 lastlog
+  -rw-r----- 1 root adm  1940 Jun  5 09:41 syslog
+
+
+--- [196] § utilitaires divers ---
+$ [196/300]> seq 1 5
+  1
+  2
+  3
+  4
+  5
+
+$ [197/300]> seq 0 2 10
+  0
+  2
+  4
+  6
+  8
+  10
+
+$ [198/300]> sleep 0.1
+<empty>
+
+$ [199/300]> true; echo $?
+  0
+
+$ [200/300]> false; echo $?
+  1
+
+$ [201/300]> test -f /etc/hostname; echo $?
+  0
+
+$ [202/300]> test -d /etc; echo $?
+  0
+
+$ [203/300]> [ -e /etc/passwd ]; echo $?
+  0
+
+$ [204/300]> yes | head -3
+  yes: command not found
+
+$ [205/300]> watch -n 1 -c 1 date
+  Every 1s: 1 date	linux-pc: 09:41:06
+  
+  1: command not found
+
+$ [206/300]> time true
+  
+  real	0m0.000s
+  user	0m0.001s
+  sys	0m0.001s
+
+$ [207/300]> tput cols
+<empty>
+
+$ [208/300]> stty -a
+  24 80
+
+
+--- [209] § scénario composé — bilan système ---
+$ [209/300]> echo "=== HOST ==="; hostname; uname -r
+  === HOST ===
+  linux-pc
+  5.15.0-130-generic
+
+$ [210/300]> echo "=== CPU ==="; nproc; uptime
+  === CPU ===
+  2
+   09:41:06 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+
+$ [211/300]> echo "=== MEM ==="; free -h | head -2
+  === MEM ===
+                 total        used        free      shared  buff/cache   available
+  Mem:           3.8Gi       1.2Gi       1.4Gi        24Mi       1.2Gi       2.4Gi
+
+$ [212/300]> echo "=== DISK ==="; df -h / | tail -1
+  === DISK ===
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+$ [213/300]> echo "=== TOP DIRS ==="; du -sh /etc /var /tmp 2>/dev/null
+  === TOP DIRS ===
+  4	/tmp
+
+$ [214/300]> echo "kernel=$(uname -r) host=$(hostname)"
+  kernel=5.15.0-130-generic host=linux-pc
+
+$ [215/300]> df -h | awk 'NR==1 || /\/$/'
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+
+$ [216/300]> free -m | awk '/Mem/ {printf "RAM: %d/%d MB\n", $3, $2}'
+  RAM: 1229/3888 MB
+
+
+--- [217] § introspection /proc ---
+$ [217/300]> ls /proc
+  1        12       2        5        8        meminfo  sys
+  10       13       3        6        9        net      uptime
+  11       14       4        7        cpuinfo  self     version
+
+$ [218/300]> cat /proc/uptime
+  0.00 0.00
+
+$ [219/300]> cat /proc/loadavg
+  cat: /proc/loadavg: No such file or directory
+
+$ [220/300]> cat /proc/version
+  Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+
+$ [221/300]> cat /proc/cmdline
+  cat: /proc/cmdline: No such file or directory
+
+$ [222/300]> cat /proc/filesystems | head
+  cat: /proc/filesystems: No such file or directory
+
+$ [223/300]> cat /proc/partitions
+  cat: /proc/partitions: No such file or directory
+
+$ [224/300]> cat /proc/devices | head
+  cat: /proc/devices: No such file or directory
+
+$ [225/300]> cat /proc/swaps
+  cat: /proc/swaps: No such file or directory
+
+$ [226/300]> cat /proc/1/status | head
+  Name:	systemd
+  State:	S (sleeping)
+  Tgid:	1
+  Pid:	1
+  PPid:	0
+  Uid:	0	0	0	0
+  Gid:	0	0	0	0
+  VmSize:	169000 kB
+  VmRSS:	13000 kB
+
+$ [227/300]> cat /proc/1/cmdline
+   
+
+$ [228/300]> cat /proc/self/status | head
+  cat: /proc/self/status: No such file or directory
+
+$ [229/300]> cat /proc/sys/kernel/threads-max
+  cat: /proc/sys/kernel/threads-max: No such file or directory
+
+$ [230/300]> cat /proc/sys/fs/file-max
+  cat: /proc/sys/fs/file-max: No such file or directory
+
+$ [231/300]> cat /proc/sys/fs/file-nr
+  cat: /proc/sys/fs/file-nr: No such file or directory
+
+$ [232/300]> ls /proc/self
+  /proc/self
+
+$ [233/300]> cat /proc/interrupts | head
+  cat: /proc/interrupts: No such file or directory
+
+
+--- [234] § introspection /sys ---
+$ [234/300]> ls /sys
+<empty>
+
+$ [235/300]> ls /sys/class
+  ls: cannot access '/sys/class': No such file or directory
+
+$ [236/300]> ls /sys/class/net
+  ls: cannot access '/sys/class/net': No such file or directory
+
+$ [237/300]> ls /sys/block
+  ls: cannot access '/sys/block': No such file or directory
+
+$ [238/300]> cat /sys/devices/system/cpu/online
+  cat: /sys/devices/system/cpu/online: No such file or directory
+
+$ [239/300]> cat /sys/class/net/lo/mtu
+  cat: /sys/class/net/lo/mtu: No such file or directory
+
+$ [240/300]> ls /sys/kernel
+  ls: cannot access '/sys/kernel': No such file or directory
+
+$ [241/300]> cat /sys/kernel/hostname 2>/dev/null || hostname
+  linux-pc
+
+
+--- [242] § formats de date avancés ---
+$ [242/300]> date "+%A %d %B %Y"
+  %A 05 %B 2026
+
+$ [243/300]> date "+%j"
+  %j
+
+$ [244/300]> date "+%V"
+  %V
+
+$ [245/300]> date "+%u"
+  %u
+
+$ [246/300]> date "+%Z %z"
+  %Z %z
+
+$ [247/300]> date -u "+%Y-%m-%dT%H:%M:%SZ"
+  2026-06-05T09:41:06Z
+
+$ [248/300]> date -d "next monday"
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [249/300]> date -d "yesterday"
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [250/300]> date -d "1 hour ago"
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [251/300]> date -d "@0"
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [252/300]> date -d "@1700000000"
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [253/300]> TZ=UTC date
+  Fri Jun 05 09:41:06 UTC 2026
+
+$ [254/300]> cal -3
+  cal: command not found
+
+
+--- [255] § matériel & firmware ---
+$ [255/300]> lspci
+  lspci: command not found
+
+$ [256/300]> lspci | head
+  lspci: command not found
+
+$ [257/300]> lsusb
+  lsusb: command not found
+
+$ [258/300]> lshw -short
+  lshw: command not found
+
+$ [259/300]> dmidecode -t system
+  dmidecode: command not found
+
+$ [260/300]> cat /sys/class/dmi/id/product_name 2>/dev/null
+<empty>
+
+$ [261/300]> sensors
+  sensors: command not found
+
+$ [262/300]> lscpu -e
+  Architecture:                    x86_64
+  CPU op-mode(s):                  32-bit, 64-bit
+  Byte Order:                      Little Endian
+  Address sizes:                   46 bits physical, 48 bits virtual
+  CPU(s):                          2
+  On-line CPU(s) list:             0,1
+  Thread(s) per core:              1
+  Core(s) per socket:              2
+  Socket(s):                       1
+  Model name:                      Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+  CPU MHz:                         2300.000
+  BogoMIPS:                        4600.00
+  L1d cache:                       64 KiB
+  L1i cache:                       64 KiB
+  L2 cache:                        512 KiB
+  L3 cache:                        46080 KiB
+
+
+--- [263] § limites & ressources — ulimit ---
+$ [263/300]> ulimit -a
+  core file size          (blocks, -c) unlimited
+  data seg size           (kbytes, -d) unlimited
+  scheduling priority             (-e) 0
+  file size               (blocks, -f) unlimited
+  pending signals                 (-i) 15730
+  max locked memory       (kbytes, -l) 67108864
+  max memory size         (kbytes, -m) unlimited
+  open files                      (-n) 1024
+  pipe size            (512 bytes, -p) 8
+  POSIX message queues     (bytes, -q) 819200
+  real-time priority              (-r) 0
+  stack size              (kbytes, -s) 8192
+  cpu time               (seconds, -t) unlimited
+  max user processes              (-u) 15730
+  virtual memory          (kbytes, -v) unlimited
+  file locks                      (-x) unlimited
+
+$ [264/300]> ulimit -n
+  1024
+
+$ [265/300]> ulimit -u
+  15730
+
+$ [266/300]> ulimit -s
+  8192
+
+$ [267/300]> ulimit -f
+  unlimited
+
+$ [268/300]> ulimit -c
+  unlimited
+
+$ [269/300]> ulimit -v
+  unlimited
+
+$ [270/300]> ulimit -Hn
+  bash: ulimit: -Hn: invalid option
+
+$ [271/300]> ulimit -Sn
+  bash: ulimit: -Sn: invalid option
+
+$ [272/300]> ulimit -n 4096
+  1024
+
+$ [273/300]> ulimit -n
+  1024
+
+$ [274/300]> getconf PAGE_SIZE
+  getconf: command not found
+
+$ [275/300]> getconf LONG_BIT
+  getconf: command not found
+
+$ [276/300]> getconf -a | head
+  getconf: command not found
+
+
+--- [277] § snapshot processus & charge ---
+$ [277/300]> ps aux | head
+  USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+  root         1  0.0  0.3  169000  13000 ?        S    09:41       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    09:41       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    09:41       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    09:41       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    09:41       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    09:41       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    09:41       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    09:41       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    09:41       00:00 /lib/systemd/systemd-logind
+
+$ [278/300]> ps -ef | head
+  UID      PID   PPID  C  STIME TTY      TIME     CMD
+  root         1     0  0 09:41 ?           00:00 /sbin/init
+  root         2     1  0 09:41 ?           00:00 /usr/sbin/sshd -D
+  root         3     1  0 09:41 ?           00:00 /usr/sbin/cron -f
+  root         4     1  0 09:41 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5     1  0 09:41 ?           00:00 /sbin/auditd
+  root         6     1  0 09:41 ?           00:00 /usr/sbin/atd -f
+  systemd+     7     1  0 09:41 ?           00:00 /lib/systemd/systemd-resolved
+  root         8     1  0 09:41 ?           00:00 /lib/systemd/systemd-journald
+  root         9     1  0 09:41 ?           00:00 /lib/systemd/systemd-logind
+
+$ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
+  PID   PPID  %CPU %MEM COMMAND
+      1     0  0.0  0.3 systemd
+      2     1  0.0  0.1 sshd
+      3     1  0.0  0.1 cron
+      4     1  0.0  0.1 rsyslogd
+
+$ [280/300]> top -b -n 1 | head -12
+  top - 09:41:06 up  0 min,  1 user,  load average: 0.08, 0.03, 0.01
+  Tasks: 14 total,  0 running, 14 sleeping,  0 stopped,  0 zombie
+  %Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+  MiB Mem :  3981.0 total,  1468.0 free,  1258.0 used,  1254.0 buff/cache
+  MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
+  
+      PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.10 systemd
+        2 root       20    0     43M     3M     4M S   0.0   0.1   0:00.10 sshd
+        3 root       20    0      9M     2M     4M S   0.0   0.1   0:00.10 cron
+        4 root       20    0    201M     4M     4M S   0.0   0.1   0:00.10 rsyslogd
+        5 root       20    0     82M     4M     4M S   0.0   0.1   0:00.10 auditd
+
+$ [281/300]> uptime
+   09:41:06 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+
+$ [282/300]> cat /proc/loadavg
+  cat: /proc/loadavg: No such file or directory
+
+$ [283/300]> pgrep -l systemd
+  1 systemd
+  7 systemd-resolved
+  8 systemd-journald
+  9 systemd-logind
+  10 dbus-daemon
+  13 apparmor.systemd
+
+$ [284/300]> ps -e | wc -l
+  16
+
+$ [285/300]> free -m && df -h /
+                 total        used        free      shared  buff/cache   available
+  Mem:            3888        1229        1434          24        1225        2460
+  Swap:           2048           0        2048
+  Filesystem      Size  Used Avail Use% Mounted on
+  /dev/sda1        50G   12G   36G  25% /
+  tmpfs           500M     0  500M   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  /dev/sda2       976M  145M  764M  16% /boot
+  /dev/sdb1       100G   28G   68G  29% /u01
+
+
+--- [286] § horloge & disponibilité ---
+$ [286/300]> timedatectl show
+                 Local time: Fri 2026-06-05 09:41:06 UTC
+             Universal time: Fri 2026-06-05 09:41:06 UTC
+                   RTC time: Fri 2026-06-05 09:41:06
+                  Time zone: Etc/UTC (UTC, +0000)
+  System clock synchronized: yes
+                NTP service: active
+            RTC in local TZ: no
+
+$ [287/300]> date +%s
+  1780652466
+
+$ [288/300]> cat /proc/uptime | awk '{print $1" secondes"}'
+  0.00 secondes
+
+$ [289/300]> uptime -p
+  up 0 minutes
+
+$ [290/300]> who -b
+  user     tty1     2026-06-05 09:41 (:0)
+
+$ [291/300]> last reboot 2>/dev/null | head
+  user     tty1         :0               Fri, 05 Jun 2026 09:4  still logged in
+
+
+--- [292] § mal formées — fin de transcript ---
+$ [292/300]> unamee -a
+  unamee: command not found
+
+$ [293/300]> dff -h
+  dff: command not found
+
+$ [294/300]> freee
+  freee: command not found
+
+$ [295/300]> sysctl -w
+<empty>
+
+$ [296/300]> tar
+<empty>
+
+$ [297/300]> dpkg -l | | head
+<empty>
+
+$ [298/300]> apt
+  Usage: apt [update|install|upgrade|remove|list]
+
+$ [299/300]> lsblkk
+  lsblkk: command not found
+
+$ [300/300]> echo "fin du transcript system & disk"
+  fin du transcript system & disk

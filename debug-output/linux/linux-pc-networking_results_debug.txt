@@ -1,0 +1,1625 @@
+============================================================
+Shell debug transcript — linux-pc-networking
+Generated: 2026-06-05T09:41:06.378Z
+Engine: linux
+host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
+Total commands: 302
+============================================================
+
+
+--- [1] § interfaces — ip link ---
+$ [1/302]> ip link
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [2/302]> ip link show
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [3/302]> ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [4/302]> ip -s link
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [5/302]> ip link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [6/302]> ip link show lo
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [7/302]> ip link set eth0 up
+<empty>
+
+$ [8/302]> ip link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [9/302]> ip link set eth0 down
+<empty>
+
+$ [10/302]> ip link show eth0
+  1: eth0: <BROADCAST,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [11/302]> ip link set eth0 up
+<empty>
+
+$ [12/302]> ip link set eth0 mtu 1400
+<empty>
+
+$ [13/302]> ip link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [14/302]> ip link set eth0 mtu 1500
+<empty>
+
+$ [15/302]> ip link set dev eth0 address 02:00:00:aa:bb:cc
+<empty>
+
+$ [16/302]> ip link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [17/302]> ip link set lo up
+  Cannot find device "lo"
+
+$ [18/302]> ip link show interface_inexistante_xyz
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [19/302]> ip link set eth0 truc
+<empty>
+
+
+--- [20] § adresses — ip address (set/show) ---
+$ [20/302]> ip address
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [21/302]> ip address show
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [22/302]> ip -br address
+  eth0            DOWN          
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+$ [23/302]> ip -4 address show
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [24/302]> ip -6 address show
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [25/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [26/302]> ip addr add 192.168.10.2/24 dev eth0
+<empty>
+
+$ [27/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [28/302]> ip -br addr show eth0
+  eth0            DOWN          192.168.10.2/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+$ [29/302]> ip addr add 192.168.10.3/24 dev eth0
+<empty>
+
+$ [30/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.10.3/24 brd 192.168.10.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [31/302]> ip addr del 192.168.10.3/24 dev eth0
+<empty>
+
+$ [32/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [33/302]> ip addr add 10.0.0.1/8 dev eth0
+<empty>
+
+$ [34/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 10.0.0.1/8 brd 10.255.255.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [35/302]> ip addr flush dev eth0
+<empty>
+
+$ [36/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [37/302]> ip addr add 192.168.10.2/24 dev eth0
+<empty>
+
+$ [38/302]> ip addr add 256.1.1.1/24 dev eth0
+  Error: Invalid IP octet: 256
+
+$ [39/302]> ip addr add 192.168.10.5 dev interface_inexistante_xyz
+  Error: either "local" or "peer" address is required.
+
+
+--- [40] § config legacy — ifconfig ---
+$ [40/302]> ifconfig
+  eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.10.2  netmask 255.255.255.0
+          ether 02:00:00:00:00:01
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+  
+  eth1: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet (not configured)
+          ether 02:00:00:00:00:02
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+  
+  eth2: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet (not configured)
+          ether 02:00:00:00:00:03
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+  
+  eth3: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet (not configured)
+          ether 02:00:00:00:00:04
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+  
+
+$ [41/302]> ifconfig -a
+  ifconfig: interface -a not found
+
+$ [42/302]> ifconfig eth0
+  eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.10.2  netmask 255.255.255.0
+          ether 02:00:00:00:00:01
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+
+$ [43/302]> ifconfig lo
+  ifconfig: interface lo not found
+
+$ [44/302]> ifconfig -s
+  ifconfig: interface -s not found
+
+$ [45/302]> ifconfig eth0 down
+<empty>
+
+$ [46/302]> ifconfig eth0
+  eth0: flags=4099<BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.10.2  netmask 255.255.255.0
+          ether 02:00:00:00:00:01
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+
+$ [47/302]> ifconfig eth0 up
+<empty>
+
+$ [48/302]> ifconfig eth0 192.168.20.2 netmask 255.255.255.0
+<empty>
+
+$ [49/302]> ifconfig eth0
+  eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.20.2  netmask 255.255.255.0
+          ether 02:00:00:00:00:01
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+
+$ [50/302]> ifconfig eth0 mtu 1450
+  ifconfig: Invalid IP address: mtu
+
+$ [51/302]> ifconfig eth0
+  eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+          inet 192.168.20.2  netmask 255.255.255.0
+          ether 02:00:00:00:00:01
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+
+$ [52/302]> ifconfig interface_inexistante_xyz
+  ifconfig: interface interface_inexistante_xyz not found
+
+
+--- [53] § routage — ip route (set/show) ---
+$ [53/302]> ip route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+
+$ [54/302]> ip route show
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+
+$ [55/302]> ip -4 route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+
+$ [56/302]> ip route list
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+
+$ [57/302]> ip route show table main
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+
+$ [58/302]> ip route add default via 192.168.10.1
+<empty>
+
+$ [59/302]> ip route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+  default via 192.168.10.1 dev  proto static
+
+$ [60/302]> ip route add 172.16.0.0/16 via 192.168.10.254
+  RTNETLINK answers: Network is unreachable
+
+$ [61/302]> ip route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+  default via 192.168.10.1 dev  proto static
+
+$ [62/302]> ip route add 10.10.10.0/24 dev eth0
+  Error: "via" is required.
+
+$ [63/302]> ip route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+  default via 192.168.10.1 dev  proto static
+
+$ [64/302]> ip route get 8.8.8.8
+  8.8.8.8 via 192.168.10.1 dev 
+
+$ [65/302]> ip route get 192.168.10.50
+  192.168.10.50 via 192.168.10.1 dev 
+
+$ [66/302]> ip route del 10.10.10.0/24
+  RTNETLINK answers: No such process
+
+$ [67/302]> ip route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+  default via 192.168.10.1 dev  proto static
+
+$ [68/302]> ip route del default
+<empty>
+
+$ [69/302]> ip route
+  192.168.20.0/24 dev eth0 proto kernel scope link src 192.168.20.2 metric 0
+
+$ [70/302]> ip route add default via 192.168.10.1
+<empty>
+
+$ [71/302]> ip route add 1.2.3.0/24 via 99.99.99.99
+  RTNETLINK answers: Network is unreachable
+
+$ [72/302]> ip route add reseau_invalide via x
+  Error: invalid prefix (expected <network>/<cidr>).
+
+
+--- [73] § routage legacy — route ---
+$ [73/302]> route
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+
+$ [74/302]> route -n
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+
+$ [75/302]> route -e
+  Usage: route [-n] | route add/del ...
+
+$ [76/302]> route add default gw 192.168.10.1
+<empty>
+
+$ [77/302]> route -n
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+
+$ [78/302]> route add -net 172.20.0.0 netmask 255.255.0.0 gw 192.168.10.254
+<empty>
+
+$ [79/302]> route -n
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+
+$ [80/302]> route del -net 172.20.0.0 netmask 255.255.0.0
+  Usage: route del [-net|-host] target [netmask Nm] [gw Gw]
+
+$ [81/302]> route -n
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+  192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
+  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+
+$ [82/302]> netstat -rn
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface
+  0.0.0.0         10.0.0.1        0.0.0.0         UG        0 0          0 eth0
+  10.0.0.0        0.0.0.0         255.255.255.0   U         0 0          0 eth0
+  127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
+
+
+--- [83] § voisinage — ip neigh / arp ---
+$ [83/302]> ip neigh
+<empty>
+
+$ [84/302]> ip neigh show
+<empty>
+
+$ [85/302]> ip -s neigh
+<empty>
+
+$ [86/302]> ip neigh show dev eth0
+<empty>
+
+$ [87/302]> ip neigh add 192.168.10.10 lladdr 02:00:00:11:22:33 dev eth0
+<empty>
+
+$ [88/302]> ip neigh
+  192.168.10.10 dev eth0 lladdr 02:00:00:11:22:33 PERMANENT
+
+$ [89/302]> ip neigh del 192.168.10.10 dev eth0
+<empty>
+
+$ [90/302]> ip neigh flush dev eth0
+<empty>
+
+$ [91/302]> ip neigh
+<empty>
+
+$ [92/302]> arp
+<empty>
+
+$ [93/302]> arp -n
+<empty>
+
+$ [94/302]> arp -a
+<empty>
+
+$ [95/302]> arp -e
+<empty>
+
+$ [96/302]> arp -s 192.168.10.20 02:00:00:44:55:66
+<empty>
+
+$ [97/302]> arp -a
+  ? (192.168.10.20) at 02:00:00:44:55:66 [ether] on eth0
+
+$ [98/302]> arp -d 192.168.10.20
+<empty>
+
+$ [99/302]> arp -a
+<empty>
+
+$ [100/302]> arp -i eth0
+<empty>
+
+
+--- [101] § connectivité — ping ---
+$ [101/302]> ping -c 1 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [102/302]> ping -c 2 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  2 packets transmitted, 0 received, 100% packet loss
+
+$ [103/302]> ping -c 1 192.168.10.2
+  PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 192.168.10.2 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [104/302]> ping -c 3 -i 1 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  3 packets transmitted, 0 received, 100% packet loss
+
+$ [105/302]> ping -c 1 -W 1 192.168.10.99
+  PING 192.168.10.99 (192.168.10.99) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 192.168.10.99 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [106/302]> ping -c 1 -s 100 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 100(128) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [107/302]> ping -c 1 -t 64 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [108/302]> ping -c 1 -n 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [109/302]> ping -c 1 -q 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [110/302]> ping -c 1 10.255.255.254
+  PING 10.255.255.254 (10.255.255.254) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 10.255.255.254 ping statistics ---
+  1 packets transmitted, 0 received, 100% packet loss
+
+$ [111/302]> ping -c 1 hote_inexistant_xyz
+  ping: hote_inexistant_xyz: Name or service not known
+
+$ [112/302]> ping6 -c 1 ::1
+  ping6: command not found
+
+$ [113/302]> ping -c abc 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  NaN packets transmitted, 0 received, NaN% packet loss
+
+$ [114/302]> ping
+  Usage: ping [-c count] [-t ttl] [-s size] <destination>
+
+
+--- [115] § traçage de chemin — traceroute/mtr ---
+$ [115/302]> traceroute 127.0.0.1
+  traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets
+   * * * Network is unreachable
+
+$ [116/302]> traceroute -n 127.0.0.1
+  traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets
+   * * * Network is unreachable
+
+$ [117/302]> traceroute -m 5 192.168.10.1
+  traceroute to 192.168.10.1 (192.168.10.1), 5 hops max, 60 byte packets
+   * * * Network is unreachable
+
+$ [118/302]> traceroute -w 1 192.168.10.99
+  traceroute to 192.168.10.99 (192.168.10.99), 30 hops max, 60 byte packets
+   * * * Network is unreachable
+
+$ [119/302]> traceroute hote_inexistant_xyz
+  traceroute: unknown host hote_inexistant_xyz
+
+$ [120/302]> tracepath 127.0.0.1
+  tracepath: command not found
+
+$ [121/302]> mtr -r -c 1 127.0.0.1
+  mtr: command not found
+
+$ [122/302]> mtr --report 192.168.10.1
+  mtr: command not found
+
+
+--- [123] § DNS — dig / nslookup / host ---
+$ [123/302]> dig example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [124/302]> dig +short example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [125/302]> dig A example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [126/302]> dig AAAA example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [127/302]> dig MX example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [128/302]> dig NS example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [129/302]> dig TXT example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [130/302]> dig @8.8.8.8 example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [131/302]> dig -x 8.8.8.8
+  ; <<>> DiG <<>> 8.8.8.8
+  ;; connection timed out; no servers could be reached
+
+$ [132/302]> dig +trace example.com
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
+
+$ [133/302]> nslookup example.com
+  ** server can't find example.com: REFUSED
+
+$ [134/302]> nslookup example.com 8.8.8.8
+  ** server can't find example.com: REFUSED
+
+$ [135/302]> nslookup 8.8.8.8
+  ** server can't find 8.8.8.8: REFUSED
+
+$ [136/302]> host example.com
+  Host example.com not found: 5(REFUSED)
+
+$ [137/302]> host -t MX example.com
+  ;; connection timed out; no servers could be reached
+
+$ [138/302]> host 8.8.8.8
+  Host 8.8.8.8 not found: 5(REFUSED)
+
+$ [139/302]> getent hosts localhost
+  127.0.0.1       localhost
+  ::1             localhost ip6-localhost ip6-loopback
+
+$ [140/302]> cat /etc/resolv.conf
+  cat: /etc/resolv.conf: No such file or directory
+
+$ [141/302]> cat /etc/hosts
+  127.0.0.1	localhost
+  127.0.1.1	linux-pc
+  
+  # The following lines are desirable for IPv6 capable hosts
+  ::1	localhost ip6-localhost ip6-loopback
+
+$ [142/302]> dig domaine_inexistant_xyz.invalid
+  ; <<>> DiG <<>> domaine_inexistant_xyz.invalid
+  ;; connection timed out; no servers could be reached
+
+
+--- [143] § sockets — ss / netstat ---
+$ [143/302]> ss
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [144/302]> ss -t
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [145/302]> ss -u
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [146/302]> ss -l
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [147/302]> ss -tln
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [148/302]> ss -uln
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [149/302]> ss -tlnp
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=7,fd=3))
+
+$ [150/302]> ss -a
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [151/302]> ss -s
+  Total: 120
+  TCP:   8 (estab 2, closed 0, orphaned 0, timewait 0)
+  
+  Transport Total     IP        IPv6
+  RAW       1         0         1
+  UDP       4         3         1
+  TCP       8         6         2
+  INET      13        9         4
+  FRAG      0         0         0
+
+$ [152/302]> ss -tn state established
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+
+$ [153/302]> netstat
+  Active Internet connections (only servers)
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
+  udp             0      0 127.0.0.53:53           0.0.0.0:*
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+
+$ [154/302]> netstat -tln
+  Active Internet connections (only servers)
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+
+$ [155/302]> netstat -uln
+  Active Internet connections (only servers)
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  udp             0      0 127.0.0.53:53           0.0.0.0:*
+
+$ [156/302]> netstat -tlnp
+  Active Internet connections (only servers)
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      985/sshd
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      7/systemd-resolved
+
+$ [157/302]> netstat -an | head
+  Active Internet connections (only servers)
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
+  udp             0      0 127.0.0.53:53           0.0.0.0:*
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+
+$ [158/302]> netstat -s | head
+  Active Internet connections (only servers)
+  Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
+  udp             0      0 127.0.0.53:53           0.0.0.0:*
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+
+$ [159/302]> netstat -i
+  Kernel Interface table
+  Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg
+  eth0      1500     1024      0      0 0           512      0      0      0 BMRU
+  lo       65536      128      0      0 0           128      0      0      0 LRU
+
+$ [160/302]> netstat -rn
+  Kernel IP routing table
+  Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface
+  0.0.0.0         10.0.0.1        0.0.0.0         UG        0 0          0 eth0
+  10.0.0.0        0.0.0.0         255.255.255.0   U         0 0          0 eth0
+  127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
+
+$ [161/302]> lsof -i :22
+  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
+  sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+
+$ [162/302]> ss -tln sport = :22
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+
+--- [163] § HTTP — curl / wget ---
+$ [163/302]> curl http://192.168.10.1
+  curl: (6) Could not resolve host: 192.168.10.1
+
+$ [164/302]> curl -I http://192.168.10.1
+  curl: (6) Could not resolve host: 192.168.10.1
+
+$ [165/302]> curl -s http://192.168.10.1
+  curl: (6) Could not resolve host: 192.168.10.1
+
+$ [166/302]> curl -v http://192.168.10.1
+  *   Trying http://192.168.10.1...
+  * connect to host failed
+  * Failed to connect to http://192.168.10.1 port 80: Connection refused
+  curl: (7) Failed to connect to http://192.168.10.1 port 80 after 0 ms: Connection refused
+
+$ [167/302]> curl -o /tmp/page.html http://192.168.10.1
+  curl: (6) Could not resolve host: 192.168.10.1
+
+$ [168/302]> curl -L http://192.168.10.1
+  curl: (6) Could not resolve host: 192.168.10.1
+
+$ [169/302]> curl --max-time 2 http://192.168.10.99
+  curl: (6) Could not resolve host: 192.168.10.99
+
+$ [170/302]> curl http://hote_inexistant_xyz
+  curl: (6) Could not resolve host: hote_inexistant_xyz
+
+$ [171/302]> wget http://192.168.10.1
+  --2026-06-05 09:41:06--  http://192.168.10.1
+  Resolving 192.168.10.1... failed: Temporary failure in name resolution.
+  wget: unable to resolve host address '192.168.10.1'
+
+$ [172/302]> wget -q http://192.168.10.1
+  --2026-06-05 09:41:06--  http://192.168.10.1
+  Resolving 192.168.10.1... failed: Temporary failure in name resolution.
+  wget: unable to resolve host address '192.168.10.1'
+
+$ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
+  --2026-06-05 09:41:06--  http://192.168.10.1
+  Resolving 192.168.10.1... failed: Temporary failure in name resolution.
+  wget: unable to resolve host address '192.168.10.1'
+
+$ [174/302]> wget --timeout=2 http://192.168.10.99
+  --2026-06-05 09:41:06--  http://192.168.10.99
+  Resolving 192.168.10.99... failed: Temporary failure in name resolution.
+  wget: unable to resolve host address '192.168.10.99'
+
+$ [175/302]> curl
+  curl: try 'curl --help' for more information
+
+
+--- [176] § paramètres réseau — sysctl ---
+$ [176/302]> sysctl net.ipv4.ip_forward
+  net.ipv4.ip_forward = 0
+
+$ [177/302]> sysctl net.ipv4.conf.all.forwarding
+<empty>
+
+$ [178/302]> sysctl -w net.ipv4.ip_forward=1
+  net.ipv4.ip_forward = 1
+
+$ [179/302]> sysctl net.ipv4.ip_forward
+  net.ipv4.ip_forward = 1
+
+$ [180/302]> cat /proc/sys/net/ipv4/ip_forward
+  cat: /proc/sys/net/ipv4/ip_forward: No such file or directory
+
+$ [181/302]> sysctl -w net.ipv4.ip_forward=0
+  net.ipv4.ip_forward = 0
+
+$ [182/302]> sysctl net.ipv4.ip_forward
+  net.ipv4.ip_forward = 0
+
+$ [183/302]> sysctl net.ipv4.tcp_syncookies
+<empty>
+
+$ [184/302]> sysctl net.ipv6.conf.all.disable_ipv6
+<empty>
+
+$ [185/302]> sysctl -a 2>/dev/null | grep ip_forward
+<empty>
+
+$ [186/302]> sysctl net.ipv4.cle_inexistante
+<empty>
+
+
+--- [187] § pare-feu — iptables / ufw ---
+$ [187/302]> iptables -L
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+$ [188/302]> iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+$ [189/302]> iptables -L -v -n
+  Chain INPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+   pkts bytes target     prot opt in     out     source               destination
+
+$ [190/302]> iptables -t nat -L
+  Chain PREROUTING (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain POSTROUTING (policy ACCEPT)
+  target     prot opt source               destination
+
+$ [191/302]> iptables -S
+  -P INPUT ACCEPT
+  -P FORWARD ACCEPT
+  -P OUTPUT ACCEPT
+
+$ [192/302]> iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+<empty>
+
+$ [193/302]> iptables -L INPUT -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0 tcp dpt:22
+
+$ [194/302]> iptables -A INPUT -p icmp -j ACCEPT
+<empty>
+
+$ [195/302]> iptables -L INPUT -n --line-numbers
+  Chain INPUT (policy ACCEPT)
+  num   target     prot opt source               destination
+  1     ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0 tcp dpt:22
+  2     ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0
+
+$ [196/302]> iptables -D INPUT -p icmp -j ACCEPT
+<empty>
+
+$ [197/302]> iptables -L INPUT -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0 tcp dpt:22
+
+$ [198/302]> iptables -F
+<empty>
+
+$ [199/302]> iptables -L -n
+  Chain INPUT (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+$ [200/302]> iptables -P INPUT DROP
+<empty>
+
+$ [201/302]> iptables -L -n
+  Chain INPUT (policy DROP)
+  target     prot opt source               destination
+  
+  Chain FORWARD (policy ACCEPT)
+  target     prot opt source               destination
+  
+  Chain OUTPUT (policy ACCEPT)
+  target     prot opt source               destination
+
+$ [202/302]> iptables -P INPUT ACCEPT
+<empty>
+
+$ [203/302]> ufw status
+  ERROR: You need to be root to run this script
+
+$ [204/302]> ufw status verbose
+  ERROR: You need to be root to run this script
+
+$ [205/302]> ufw allow 22/tcp
+  ERROR: You need to be root to run this script
+
+$ [206/302]> ufw status
+  ERROR: You need to be root to run this script
+
+$ [207/302]> ufw deny 23
+  ERROR: You need to be root to run this script
+
+$ [208/302]> ufw status numbered
+  ERROR: You need to be root to run this script
+
+$ [209/302]> iptables -Z
+<empty>
+
+$ [210/302]> iptables -A INPUT -j TRUC
+  iptables: No chain/target/match by that name.
+
+
+--- [211] § capture & ARP — tcpdump / arping ---
+$ [211/302]> tcpdump -c 1
+  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+  0 packets captured
+  0 packets received by filter
+  0 packets dropped by kernel
+
+$ [212/302]> tcpdump -i eth0 -c 1
+  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+  0 packets captured
+  0 packets received by filter
+  0 packets dropped by kernel
+
+$ [213/302]> tcpdump -i eth0 -n -c 1
+  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+  0 packets captured
+  0 packets received by filter
+  0 packets dropped by kernel
+
+$ [214/302]> tcpdump -D
+  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+  0 packets captured
+  0 packets received by filter
+  0 packets dropped by kernel
+
+$ [215/302]> arping -c 1 192.168.10.1
+  ARPING 192.168.10.1
+  Sent 1 probes (1 broadcast(s))
+  Received 0 response(s)
+
+$ [216/302]> arping -c 2 -I eth0 192.168.10.1
+  ARPING 192.168.10.1
+  Sent 2 probes (2 broadcast(s))
+  Received 0 response(s)
+
+$ [217/302]> arping -c 1 192.168.10.99
+  ARPING 192.168.10.99
+  Sent 1 probes (1 broadcast(s))
+  Received 0 response(s)
+
+
+--- [218] § clés & SSH ---
+$ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
+<empty>
+
+$ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Jun  5 09:41 /tmp/id_rsa
+  -rw-r--r-- 1 root root 37 Jun  5 09:41 /tmp/id_rsa.pub
+
+$ [220/302]> cat /tmp/id_rsa.pub
+  ssh-rsa AAAAk1vtvhfdfj user@linux-pc
+
+$ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
+<empty>
+
+$ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
+<empty>
+
+$ [223/302]> ssh-keygen -y -f /tmp/id_rsa
+  ssh-ed25519 AAAAf2iehdz557v user@localhost
+
+$ [224/302]> ssh -V
+  usage: ssh [-options] destination [command]
+
+$ [225/302]> ssh root@192.168.10.99
+  ssh: connect to host 192.168.10.99 port 22: No route to host
+
+$ [226/302]> ssh-keyscan 192.168.10.1
+  # 192.168.10.1 unknown host
+
+
+--- [227] § DHCP client ---
+$ [227/302]> dhclient eth0
+<empty>
+
+$ [228/302]> dhclient -v eth0
+  Internet Systems Consortium DHCP Client 4.4.1
+  Listening on LPF/eth0/02:00:00:00:00:01
+  Sending on   LPF/eth0/02:00:00:00:00:01
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
+  INIT state
+  No DHCPOFFERS received.
+  No working leases in persistent database - sleeping. expired.
+
+$ [229/302]> dhclient -r eth0
+  released 169.254.1.1
+
+$ [230/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [231/302]> dhclient interface_inexistante_xyz
+  RTNETLINK answers: No such device interface_inexistante_xyz
+
+
+--- [232] § scénario composé — config IP complète ---
+$ [232/302]> ip addr flush dev eth0
+<empty>
+
+$ [233/302]> ip link set eth0 up
+<empty>
+
+$ [234/302]> ip addr add 192.168.50.10/24 dev eth0
+<empty>
+
+$ [235/302]> ip route add default via 192.168.50.1
+<empty>
+
+$ [236/302]> ip addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [237/302]> ip route
+  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0
+  default via 192.168.50.1 dev eth0 proto static
+
+$ [238/302]> ping -c 1 192.168.50.10
+  PING 192.168.50.10 (192.168.50.10) 56(84) bytes of data.
+  64 bytes from 192.168.50.10: icmp_seq=1 ttl=64 time=0.010 ms
+  
+  --- 192.168.50.10 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
+
+$ [239/302]> ip neigh
+<empty>
+
+$ [240/302]> ip -br addr
+  eth0            DOWN          192.168.50.10/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+$ [241/302]> ip route get 192.168.50.1
+  192.168.50.1 dev eth0 src 192.168.50.10
+
+$ [242/302]> ip route flush table main
+  Command "flush" is unknown, try "ip route help".
+
+$ [243/302]> ip route
+  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0
+  default via 192.168.50.1 dev eth0 proto static
+
+
+--- [244] § inventaire réseau consolidé ---
+$ [244/302]> ip -br link
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [245/302]> ip -br addr
+  eth0            DOWN          192.168.50.10/24
+  eth1            DOWN          
+  eth2            DOWN          
+  eth3            DOWN          
+
+$ [246/302]> ip route show | wc -l
+  2
+
+$ [247/302]> ss -tln | wc -l
+  3
+
+$ [248/302]> cat /proc/net/dev | head
+  cat: /proc/net/dev: No such file or directory
+
+$ [249/302]> cat /proc/net/route | head
+  cat: /proc/net/route: No such file or directory
+
+$ [250/302]> hostname -I
+  -I
+
+$ [251/302]> hostname
+  linux-pc
+
+$ [252/302]> ip addr show | grep inet
+      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
+
+
+--- [253] § IPv6 — adresses & routes ---
+$ [253/302]> ip -6 addr show
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [254/302]> ip -6 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [255/302]> ip -6 route show
+  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0
+  default via 192.168.50.1 dev eth0 proto static
+
+$ [256/302]> ip -6 neigh show
+<empty>
+
+$ [257/302]> ip addr add 2001:db8::10/64 dev eth0
+  Error: invalid prefix length.
+
+$ [258/302]> ip -6 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [259/302]> ip -6 route add default via 2001:db8::1
+  Error: Invalid IP address: 2001:db8::1
+
+$ [260/302]> ip -6 route show
+  192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0
+  default via 192.168.50.1 dev eth0 proto static
+
+$ [261/302]> ping6 -c 1 ::1
+  ping6: command not found
+
+$ [262/302]> ping -6 -c 1 2001:db8::10
+  ping: 2001:db8::10: Name or service not known
+
+$ [263/302]> ip addr del 2001:db8::10/64 dev eth0
+<empty>
+
+$ [264/302]> ip -6 addr show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [265/302]> ip -6 route flush
+  Command "flush" is unknown, try "ip route help".
+
+$ [266/302]> cat /proc/sys/net/ipv6/conf/all/disable_ipv6
+  cat: /proc/sys/net/ipv6/conf/all/disable_ipv6: No such file or directory
+
+$ [267/302]> ip link show eth0 | grep -i link
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+
+--- [268] § statistiques & compteurs ---
+$ [268/302]> ip -s link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+$ [269/302]> cat /proc/net/dev
+  cat: /proc/net/dev: No such file or directory
+
+$ [270/302]> ifconfig eth0 | grep -E "RX|TX"
+          RX packets 0  bytes 0 (0.0 B)
+          TX packets 0  bytes 0 (0.0 B)
+
+$ [271/302]> netstat -i
+  Kernel Interface table
+  Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg
+  eth0      1500     1024      0      0 0           512      0      0      0 BMRU
+  lo       65536      128      0      0 0           128      0      0      0 LRU
+
+$ [272/302]> ss -s
+  Total: 120
+  TCP:   8 (estab 2, closed 0, orphaned 0, timewait 0)
+  
+  Transport Total     IP        IPv6
+  RAW       1         0         1
+  UDP       4         3         1
+  TCP       8         6         2
+  INET      13        9         4
+  FRAG      0         0         0
+
+$ [273/302]> cat /proc/net/snmp | head
+  cat: /proc/net/snmp: No such file or directory
+
+$ [274/302]> cat /proc/net/sockstat
+  cat: /proc/net/sockstat: No such file or directory
+
+$ [275/302]> ip -s -s link show eth0
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+  
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
+  
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
+  
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+
+
+--- [276] § résolution & hostname ---
+$ [276/302]> hostname
+  linux-pc
+
+$ [277/302]> hostname -f
+  -f
+
+$ [278/302]> hostname -i
+  -i
+
+$ [279/302]> hostname -I
+  -I
+
+$ [280/302]> hostname -s
+  -s
+
+$ [281/302]> hostname -d
+  -d
+
+$ [282/302]> cat /etc/nsswitch.conf
+  # /etc/nsswitch.conf
+  #
+  # Example configuration of GNU Name Service Switch functionality.
+  # If you have the `glibc-doc-reference' and `info' packages installed, try:
+  # `info libc "Name Service Switch"' for information about this file.
+  
+  passwd:         files systemd
+  group:          files systemd
+  shadow:         files
+  gshadow:        files
+  
+  hosts:          files dns
+  networks:       files
+  
+  protocols:      db files
+  services:       db files
+  ethers:         db files
+  rpc:            db files
+  
+  netgroup:       nis
+
+$ [283/302]> getent hosts localhost
+  127.0.0.1       localhost
+  ::1             localhost ip6-localhost ip6-loopback
+
+$ [284/302]> getent ahosts localhost
+  127.0.0.1                               STREAM localhost
+  127.0.0.1                               DGRAM 
+  127.0.0.1                               RAW   
+  ::1                                     STREAM localhost
+  ::1                                     DGRAM 
+  ::1                                     RAW   
+
+$ [285/302]> nslookup -type=any example.com
+  ** server can't find example.com: REFUSED
+
+
+--- [286] § ethtool & MTU ---
+$ [286/302]> ethtool eth0
+  ethtool: command not found
+
+$ [287/302]> ethtool -i eth0
+  ethtool: command not found
+
+$ [288/302]> ethtool -S eth0
+  ethtool: command not found
+
+$ [289/302]> ip link show eth0 | grep mtu
+  1: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+
+$ [290/302]> cat /sys/class/net/eth0/mtu
+  cat: /sys/class/net/eth0/mtu: No such file or directory
+
+$ [291/302]> cat /sys/class/net/eth0/address
+  cat: /sys/class/net/eth0/address: No such file or directory
+
+$ [292/302]> cat /sys/class/net/eth0/operstate
+  cat: /sys/class/net/eth0/operstate: No such file or directory
+
+$ [293/302]> ls /sys/class/net
+  ls: cannot access '/sys/class/net': No such file or directory
+
+
+--- [294] § mal formées — fin de transcript ---
+$ [294/302]> ipp link
+  ipp: command not found
+
+$ [295/302]> ip
+  Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }
+         ip [ -force ] -batch filename
+  where  OBJECT := { address | addrlabel | l2tp | link | maddress |
+                     monitor | mroute | mrule | neigh | netns |
+                     ntable | route | rule | sr | tap | tcpmetrics |
+                     token | tunnel | tuntap | vrf | xfrm }
+         OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] |
+                      -h[uman-readable] | -iec | -j[son] | -p[retty] |
+                      -f[amily] { inet | inet6 | mpls | bridge | link } |
+                      -4 | -6 | -M | -B | -0 |
+                      -l[oops] { maximum-addr-flush-attempts } | -br[ief] |
+                      -o[neline] | -t[imestamp] | -ts[hort] | -b[atch] [filename] |
+                      -rc[vbuf] [size] | -n[etns] name | -N[umeric] | -a[ll] |
+                      -c[olor][={always|auto|never}] }
+
+$ [296/302]> ip addr add
+  Error: either "local" or "peer" address is required.
+
+$ [297/302]> ip route add
+  Error: need a valid prefix or "default".
+
+$ [298/302]> ping --truc 127.0.0.1
+  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+  connect: Network is unreachable
+  
+  --- 127.0.0.1 ping statistics ---
+  4 packets transmitted, 0 received, 100% packet loss
+
+$ [299/302]> iptabless -L
+  iptabless: command not found
+
+$ [300/302]> netstatt
+  netstatt: command not found
+
+$ [301/302]> ss --zorglub
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+
+$ [302/302]> echo "fin du transcript networking"
+  fin du transcript networking
