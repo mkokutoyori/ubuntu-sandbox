@@ -1163,7 +1163,10 @@ export class RouterOSPFIntegration {
           const prefStr = rt.prefix?.toString() || '';
           const prefLen = rt.prefixLength ?? 64;
           for (const entry of v3Acl.entries) {
-            if (entry.prefix && this.ipv6PrefixMatch(prefStr, prefLen, entry.prefix, entry.prefixLength)) {
+            const ep = entry.srcPrefix ?? entry.prefix;
+            const epl = entry.srcPrefixLength ?? entry.prefixLength ?? 128;
+            if (ep === undefined) continue;
+            if (ep === 'any' || this.ipv6PrefixMatch(prefStr, prefLen, ep, epl)) {
               return entry.action === 'permit';
             }
           }
