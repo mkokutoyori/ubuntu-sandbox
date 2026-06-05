@@ -2108,6 +2108,17 @@ export class OSPFEngine implements IProtocolEngine {
     });
   }
 
+  mergeLSA(areaId: string, lsa: LSA): boolean {
+    const existing = this.lookupLSA(areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+    if (existing && !this.isNewerLSA(lsa, existing)) return false;
+    this.installLSA(areaId, structuredClone(lsa));
+    return true;
+  }
+
+  lsaIsNewer(a: LSA, b: LSA): boolean {
+    return this.isNewerLSA(a, b);
+  }
+
   lookupLSA(areaId: string, lsType: LSAType, linkStateId: string, advertisingRouter: string): LSA | undefined {
     const key = makeLSDBKey(lsType, linkStateId, advertisingRouter);
 

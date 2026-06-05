@@ -671,6 +671,8 @@ export class RouterOSPFIntegration {
     // Re-wire sendCallbacks with delay enabled for live simulation
     this.setupSendCallbacks(allPeers, true);
 
+    this.synchronizeLSDBs(allPeers);
+
     // Run SPF and install routes for each router
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
@@ -686,6 +688,29 @@ export class RouterOSPFIntegration {
       }
 
       peer.installRoutes(allOSPFRoutes);
+    }
+  }
+
+  private synchronizeLSDBs(peers: RouterOSPFIntegration[]): void {
+    const maxPasses = peers.length + 2;
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let changed = false;
+      for (const src of peers) {
+        const se = src.ospfEngine;
+        if (!se) continue;
+        for (const [areaId, areaDB] of se.getLSDB().areas) {
+          for (const [, lsa] of areaDB) {
+            for (const dst of peers) {
+              if (dst === src) continue;
+              const de = dst.ospfEngine;
+              if (!de) continue;
+              if (!de.getConfig().areas.has(areaId)) continue;
+              if (de.mergeLSA(areaId, lsa)) changed = true;
+            }
+          }
+        }
+      }
+      if (!changed) break;
     }
   }
 
