@@ -269,7 +269,7 @@ describe('§3 — ls lists remote directory contents', () => {
     },
     {
       name: 'ls without an arg lists the remote cwd',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /home/alice && echo x > /home/alice/note'); },
+      setup: async (l) => { await l.pc2.executeCommand(`sudo sh -c 'mkdir -p /home/alice && chown alice:alice /home/alice && echo x > /home/alice/note && chown alice:alice /home/alice/note'`); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['cd /home/alice', 'ls']),
       contains: [/note/],
@@ -1124,14 +1124,14 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     },
     {
       name: 'DenyUsers bob: sftp bob@pc2 is rejected',
-      setup: async (l) => { await l.pc2.executeCommand('printf "DenyUsers bob\\n" > /etc/ssh/sshd_config'); },
+      setup: async (l) => { await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
       contains: [/Permission denied/],
     },
     {
       name: 'AllowUsers alice: bob refused, alice accepted',
-      setup: async (l) => { await l.pc2.executeCommand('printf "AllowUsers alice\\n" > /etc/ssh/sshd_config'); },
+      setup: async (l) => { await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
       contains: [/Permission denied/],
@@ -1139,8 +1139,8 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     {
       name: 'PermitRootLogin yes lets root through sftp',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('root@10.0.0.2', ['pwd']),
@@ -1170,8 +1170,8 @@ describe('§20 — sftp -P uses an alternate port', () => {
     {
       name: 'After Port 2222 + reload, default sftp (port 22) is refused',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
@@ -1180,8 +1180,8 @@ describe('§20 — sftp -P uses an alternate port', () => {
     {
       name: 'sftp -P 2222 reaches the new port',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
@@ -1196,8 +1196,8 @@ describe('§20 — sftp -P uses an alternate port', () => {
     {
       name: 'Two listening Port directives accept both',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
@@ -1278,8 +1278,11 @@ describe('§22 — rsyslog stopped: no new auth.log lines for sftp', () => {
     {
       name: 'rsyslog stopped → auth.log does not grow on sftp',
       setup: async (l) => {
-        await l.pc2.executeCommand(': > /var/log/auth.log');
-        await l.pc2.executeCommand('systemctl stop rsyslog');
+        // Stop rsyslog first, then truncate — the sudo prefix on `systemctl`
+        // itself logs an entry to auth.log, so we wipe the log after the
+        // daemon is down to measure what subsequent activity adds.
+        await l.pc2.executeCommand('sudo systemctl stop rsyslog');
+        await l.pc2.executeCommand('sudo sh -c ": > /var/log/auth.log"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd']));
       },
       on: l => l.pc2,
@@ -1477,8 +1480,8 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
     {
       name: 'sftp -P 2222 on Windows targets an alternate port',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.win1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
@@ -1780,9 +1783,9 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
       name: 'ForceCommand internal-sftp restricts the channel to sftp only',
       setup: async (l) => {
         await l.pc2.executeCommand(
-          'printf "Match User bob\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+          `sudo sh -c 'printf "Match User bob\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config'`,
         );
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2 "ls /"',
@@ -1796,9 +1799,9 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
         await l.pc2.executeCommand('chown root:root /var/sftp && chmod 755 /var/sftp');
         await l.pc2.executeCommand('chown bob:bob /var/sftp/upload');
         await l.pc2.executeCommand(
-          'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+          `sudo sh -c 'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config'`,
         );
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
@@ -1810,9 +1813,9 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
       setup: async (l) => {
         await l.pc2.executeCommand('mkdir -p /var/sftp/upload');
         await l.pc2.executeCommand(
-          'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config',
+          `sudo sh -c 'printf "Match User bob\\n  ChrootDirectory /var/sftp\\n  ForceCommand internal-sftp\\n" >> /etc/ssh/sshd_config'`,
         );
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['cd /etc', 'pwd']),
@@ -1822,9 +1825,9 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
       name: 'Match Address restricts sftp to a specific source subnet',
       setup: async (l) => {
         await l.pc2.executeCommand(
-          'printf "Match Address 10.0.0.1\\n  DenyUsers alice\\n" >> /etc/ssh/sshd_config',
+          `sudo sh -c 'printf "Match Address 10.0.0.1\\n  DenyUsers alice\\n" >> /etc/ssh/sshd_config'`,
         );
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
@@ -1834,9 +1837,9 @@ describe('§32 — Match / ChrootDirectory restrict sftp scope', () => {
       name: 'Match Address rule does NOT affect a different source',
       setup: async (l) => {
         await l.pc2.executeCommand(
-          'printf "Match Address 10.0.0.1\\n  DenyUsers alice\\n" >> /etc/ssh/sshd_config',
+          `sudo sh -c 'printf "Match Address 10.0.0.1\\n  DenyUsers alice\\n" >> /etc/ssh/sshd_config'`,
         );
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc3,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
@@ -2042,8 +2045,8 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
     {
       name: 'MaxAuthTries 1: a second failed attempt drops the connection',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "MaxAuthTries 1\\n" >> /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "MaxAuthTries 1\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-o PasswordAuthentication=no' }),
@@ -2073,8 +2076,8 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
     {
       name: 'LoginGraceTime expiry closes the channel without authentication',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "LoginGraceTime 1\\n" >> /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "LoginGraceTime 1\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-o PasswordAuthentication=no -o PreferredAuthentications=publickey' }),
@@ -2083,8 +2086,8 @@ describe('§35 — auth throttling under repeated sftp failures', () => {
     {
       name: 'auth.log records "Disconnecting" lines for throttled sessions',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "MaxAuthTries 1\\n" >> /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "MaxAuthTries 1\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['pwd'], { flags: '-o PasswordAuthentication=no' }));
       },
       on: l => l.pc2,

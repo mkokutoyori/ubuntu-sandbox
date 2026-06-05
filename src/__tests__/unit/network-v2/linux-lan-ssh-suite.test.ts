@@ -195,14 +195,14 @@ describe('§2 — SSH banner, MOTD and issue.net', () => {
   const rows: Row[] = [
     {
       name: 'remote /etc/motd is displayed in the welcome',
-      setup: (l) => { void l.pc2.executeCommand("echo 'Property of ACME Corp' > /etc/motd"); },
+      setup: (l) => { void l.pc2.executeCommand("echo 'Property of ACME Corp'| sudo tee /etc/motd > /dev/null"); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Property of ACME Corp'],
     },
     {
       name: '/etc/issue.net is shown pre-auth',
-      setup: (l) => { void l.pc2.executeCommand("echo 'AUTHORIZED USE ONLY' > /etc/issue.net"); },
+      setup: (l) => { void l.pc2.executeCommand("echo 'AUTHORIZED USE ONLY'| sudo tee /etc/issue.net > /dev/null"); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['AUTHORIZED USE ONLY'],
@@ -266,7 +266,7 @@ describe('§3 — SSH by hostname rather than IP', () => {
     },
     {
       name: '/etc/hosts entry on the client makes nickname resolvable',
-      setup: (l) => { void l.pc1.executeCommand('echo "10.0.0.10 oracledb oracledb.local" >> /etc/hosts'); },
+      setup: (l) => { void l.pc1.executeCommand('echo "10.0.0.10 oracledb oracledb.local"| sudo tee -a /etc/hosts > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh alice@oracledb',
       contains: ['Welcome to Ubuntu'],
@@ -550,7 +550,7 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     },
     {
       name: 'PermitRootLogin yes → root accepted',
-      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config'); },
+      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
@@ -558,7 +558,7 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     },
     {
       name: 'PermitRootLogin prohibit-password also blocks password root',
-      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config'); },
+      setup: (l) => { void l.pc2.executeCommand('echo "PermitRootLogin prohibit-password"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
       contains: [/Permission denied/],
@@ -579,8 +579,8 @@ describe('§8 — PermitRootLogin policy enforcement', () => {
     {
       name: 'flipping the policy via systemctl reload picks it up',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo "PermitRootLogin yes" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('echo "PermitRootLogin yes"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh root@10.0.0.2',
@@ -602,14 +602,14 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
   const rows: Row[] = [
     {
       name: 'AllowUsers alice → alice succeeds',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n" > /etc/ssh/sshd_config'); },
+      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'AllowUsers alice → bob is rejected',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n" > /etc/ssh/sshd_config'); },
+      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
       contains: [/Permission denied/],
@@ -617,14 +617,14 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
     },
     {
       name: 'AllowUsers with glob "a*" lets alice and admin in',
-      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers a*\\n" > /etc/ssh/sshd_config'); },
+      setup: (l) => { void l.pc2.executeCommand('printf "AllowUsers a*\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh admin@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
     },
     {
       name: 'DenyUsers bob → bob refused even when AllowUsers absent',
-      setup: (l) => { void l.pc2.executeCommand('printf "DenyUsers bob\\n" > /etc/ssh/sshd_config'); },
+      setup: (l) => { void l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
       contains: [/Permission denied/],
@@ -632,7 +632,7 @@ describe('§9 — AllowUsers / DenyUsers gating', () => {
     {
       name: 'DenyUsers takes precedence over AllowUsers',
       setup: (l) => {
-        void l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n" > /etc/ssh/sshd_config');
+        void l.pc2.executeCommand('printf "AllowUsers alice bob\\nDenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
       },
       on: l => l.pc1,
       cmd: 'ssh bob@10.0.0.2',
@@ -661,8 +661,8 @@ describe('§10 — sshd Port directive (non-default)', () => {
     {
       name: 'after Port 2222 + reload, port 22 refuses',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',  // defaults to 22
@@ -671,8 +671,8 @@ describe('§10 — sshd Port directive (non-default)', () => {
     {
       name: 'ssh -p 2222 reaches the new port',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh -p 2222 alice@10.0.0.2',
@@ -681,8 +681,8 @@ describe('§10 — sshd Port directive (non-default)', () => {
     {
       name: 'ss -tln after reload shows port 2222 listening, not 22',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc2,
       cmd: 'ss -tln',
@@ -692,14 +692,14 @@ describe('§10 — sshd Port directive (non-default)', () => {
     {
       name: 'invalid Port value (-1) is rejected on reload',
       on: l => l.pc2,
-      cmd: 'sh -c \'echo "Port -1" > /etc/ssh/sshd_config && systemctl reload ssh\'',
+      cmd: 'sudo sh -c \'echo "Port -1" > /etc/ssh/sshd_config && systemctl reload ssh\'',
       contains: [/Bad configuration option|invalid|out of range/],
     },
     {
       name: 'two Port directives → both ports accept',
       setup: async (l) => {
-        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 22\\nPort 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh -p 2222 alice@10.0.0.2',
@@ -786,8 +786,11 @@ describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
     {
       name: 'rsyslog stopped → auth.log no longer grows on SSH events',
       setup: async (l) => {
-        await l.pc2.executeCommand(': > /var/log/auth.log');
-        await l.pc2.executeCommand('systemctl stop rsyslog');
+        // Stop rsyslog first, then truncate — the sudo prefix on `systemctl`
+        // itself logs an entry to auth.log, so we wipe the log after the
+        // daemon is down to measure what subsequent activity adds.
+        await l.pc2.executeCommand('sudo systemctl stop rsyslog');
+        await l.pc2.executeCommand('sudo sh -c ": > /var/log/auth.log"');
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
       },
       on: l => l.pc2,
@@ -1209,8 +1212,8 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
       name: 'scp with -P 2222 uses the alternate port',
       setup: async (l) => {
         await l.pc1.executeCommand('printf hello > /tmp/x');
-        await l.pc2.executeCommand('printf "Port 2222\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "Port 2222\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'scp -P 2222 /tmp/x alice@10.0.0.2:/tmp/',
@@ -1655,8 +1658,8 @@ describe('§25 — full end-to-end audit story', () => {
     {
       name: 'after a deny rule on srv1 firewall, audit.log keeps NO new Accepted lines',
       setup: async (l) => {
-        await l.srv1.executeCommand('iptables -A INPUT -s 10.0.0.1 -p tcp --dport 22 -j DROP');
-        await l.srv1.executeCommand(': > /var/log/auth.log');
+        await l.srv1.executeCommand('sudo iptables -A INPUT -s 10.0.0.1 -p tcp --dport 22 -j DROP');
+        await l.srv1.executeCommand('sudo sh -c ": > /var/log/auth.log"');
         await l.pc1.executeCommand('ssh alice@10.0.0.10');
       },
       on: l => l.srv1,
@@ -1734,8 +1737,8 @@ describe('§26 — SSH public-key authentication', () => {
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.pc2.executeCommand('printf "PubkeyAuthentication no\\n" > /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "PubkeyAuthentication no\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2',
@@ -2118,8 +2121,8 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
       name: 'SendEnv MYVAR + AcceptEnv MYVAR forwards the variable',
       setup: async (l) => {
         await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config');
-        await l.pc2.executeCommand('printf "AcceptEnv MYVAR\\n" >> /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "AcceptEnv MYVAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'MYVAR=hello ssh alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
@@ -2142,8 +2145,8 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
       name: 'forwarded env appears in env output on remote',
       setup: async (l) => {
         await l.pc1.executeCommand('printf "SendEnv FOO BAR\\n" > /root/.ssh/config');
-        await l.pc2.executeCommand('printf "AcceptEnv FOO BAR\\n" >> /etc/ssh/sshd_config');
-        await l.pc2.executeCommand('systemctl reload ssh');
+        await l.pc2.executeCommand('printf "AcceptEnv FOO BAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
       cmd: 'FOO=1 BAR=2 ssh alice@10.0.0.2 env',
@@ -2192,7 +2195,7 @@ describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
     {
       name: 'AllowTcpForwarding no rejects -L with error',
       setup: async (l) => {
-        await l.srv1.executeCommand('printf "AllowTcpForwarding no\\n" > /etc/ssh/sshd_config');
+        await l.srv1.executeCommand('printf "AllowTcpForwarding no\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.srv1.executeCommand('systemctl reload ssh');
       },
       on: l => l.pc1,

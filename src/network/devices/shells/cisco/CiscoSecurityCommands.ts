@@ -277,6 +277,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   });
 
   trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
+  trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
 
   trie.registerGreedy('time-range', 'Define time-range', (args) => {
     if (!args[0]) return '% Incomplete command.';
@@ -959,17 +960,17 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     ].join('\n');
   });
 
-  trie.registerGreedy('show ip cef', 'Display CEF table', () => {
+  trie.registerGreedy('show ip cef', 'Display CEF FIB', () => {
     if (!sec().ipCef) return 'IP CEF is not enabled';
     const router = getRouter();
     const table = router._getRoutingTableInternal();
-    const lines = ['Prefix              Next Hop             Interface'];
+    const lines = ['Prefix               Next Hop             Interface'];
+    lines.push('0.0.0.0/0            no route');
     for (const r of table) {
-      const cidr = r.mask.toString().split('.').reduce((acc, oct) => acc + ((parseInt(oct, 10) >>> 0).toString(2).match(/1/g)?.length ?? 0), 0);
-      const dst = `${r.network}/${cidr}`;
+      const dst = `${r.network}/${r.mask.toCIDR()}`;
       const next = r.nextHop ? r.nextHop.toString() : 'attached';
       const iface = r.iface ?? '';
-      lines.push(`${dst.padEnd(20)}${next.padEnd(21)}${iface}`);
+      lines.push(`${dst.padEnd(21)}${next.padEnd(21)}${iface}`);
     }
     return lines.join('\n');
   });

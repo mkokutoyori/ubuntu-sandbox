@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-04T18:35:13.748Z
+Generated: 2026-06-05T09:51:59.111Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -1625,7 +1625,7 @@ Total steps: 369
 [297/369] r1 R1(config)# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCC43E1.C872B020 (18:35:13.783 UTC Thu Jun 4 2026)
+  reference time is EDCD1ABF.25E353F7 (09:51:59.148 UTC Fri Jun 5 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1(config)# show ntp associations
@@ -1634,7 +1634,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1(config)# show clock
-  *18:35:13.000 UTC Thu Jun 4 2026
+  *09:51:59.000 UTC Fri Jun 5 2026
 
 [300/369] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1703,7 +1703,10 @@ Total steps: 369
   show history
 
 [307/369] r1 R1(config)# show ip cef
-  IP CEF is not enabled
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
+  10.0.0.0/30          attached             GigabitEthernet0/1
 
 [308/369] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up

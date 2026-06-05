@@ -207,7 +207,11 @@ export class IamFilesystem {
   createMailSpool(username: string, uid: number, gid: number): void {
     const path = `${IAM_PATHS.mailSpoolDir}/${username}`;
     if (this.vfs.readFile(path) === null) {
-      this.vfs.createFileAt(path, '', 0o660, uid, gid);
+      // `useradd` runs as root: create the spool as root (so the write through
+      // /var/mail's root-owned 0755 directory passes the POSIX check), then
+      // chown to the new account so the user can actually read/write it.
+      this.vfs.createFileAt(path, '', 0o660, 0, 0);
+      this.vfs.chown(path, uid, gid);
     }
   }
 

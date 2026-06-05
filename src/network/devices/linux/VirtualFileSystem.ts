@@ -128,6 +128,10 @@ export class VirtualFileSystem {
       'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',
       0o644, 0, 0);
     this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
+    // resolv.conf is present on every modern Ubuntu host; it just starts empty
+    // when no DNS resolver has been configured yet. Tests configure it via
+    // `sudo …` (root-owned, 0644 — matches the real distro layout).
+    this.createFileAt('/etc/resolv.conf', '', 0o644, 0, 0);
 
     // UFW default config files
     this.createFileAt('/etc/ufw/ufw.conf',

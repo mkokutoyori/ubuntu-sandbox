@@ -907,14 +907,20 @@ export class LinuxCommandExecutor {
       // Read the private key, output its public form (stub).
       return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
     }
-    // Generate: write two files (private + .pub).
+    // Generate: write two files (private + .pub). Real `ssh-keygen` runs
+    // as the invoking user and stamps the key pair with the caller's
+    // uid/gid; only the dir mode is locked down (0700). Using the
+    // executor's current uid/gid keeps `~/.ssh` consistent with how a
+    // POSIX login shell would have created it.
     const sshDir = file.replace(/\/[^/]+$/, '');
+    const uid = this.userMgr.currentUid;
+    const gid = this.userMgr.currentGid;
     if (!this.vfs.resolveInode(sshDir)) {
-      this.vfs.mkdirp(sshDir, 0o700, 0, 0);
+      this.vfs.mkdirp(sshDir, 0o700, uid, gid);
     }
     const pubKey = `${algoPrefix} AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
-    this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', 0, 0, 0o077);
-    this.vfs.writeFile(`${file}.pub`, pubKey + '\n', 0, 0, 0o022);
+    this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', uid, gid, 0o077);
+    this.vfs.writeFile(`${file}.pub`, pubKey + '\n', uid, gid, 0o022);
     return { output: '', exitCode: 0 };
   }
 

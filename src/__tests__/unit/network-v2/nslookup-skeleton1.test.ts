@@ -37,7 +37,7 @@ beforeEach(() => {
 async function setupLinuxClient(client: LinuxPC, sw: InstanceType<typeof Switch>, portIndex: number) {
   await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
   await client.executeCommand('sudo ip link set eth0 up');
-  await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+  await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
   const cable = new Cable(`client-cable-${portIndex}`);
   cable.connect(client.getPort('eth0')!, sw.getPort(`eth${portIndex}`)!);
 }
@@ -175,7 +175,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await setupDnsServer(dnsServer, zone);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -202,7 +202,7 @@ describe('nslookup/dig – Reverse Lookups (PTR)', () => {
     await setupDnsServer(dnsServer); // default includes PTR for 192.168.1.100
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -246,7 +246,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -292,7 +292,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -311,7 +311,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -330,7 +330,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -357,7 +357,7 @@ describe('nslookup/dig – Query Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -378,7 +378,7 @@ describe('nslookup/dig – Query Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -403,7 +403,7 @@ describe('nslookup/dig – Query Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -445,7 +445,7 @@ describe('nslookup/dig – Error Handling', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -464,7 +464,7 @@ describe('nslookup/dig – Error Handling', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -550,7 +550,7 @@ describe('nslookup/dig – Advanced Features', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -599,7 +599,7 @@ describe('nslookup/dig – IPv6 AAAA Records', () => {
     await setupDnsServer(dnsServer, zone);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -681,7 +681,7 @@ describe('nslookup/dig – Security Options', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -739,7 +739,7 @@ describe('Linux – dig vs host', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');
@@ -764,7 +764,7 @@ describe('Integration – dig with ping and traceroute', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
-    await client.executeCommand('echo "nameserver 192.168.1.10" > /etc/resolv.conf');
+    await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
     const sw = new Switch('switch', 'SW');
     const cable1 = new Cable('c1');

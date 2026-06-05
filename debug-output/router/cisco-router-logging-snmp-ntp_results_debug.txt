@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-06-04T18:35:16.531Z
+Generated: 2026-06-05T09:52:16.768Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCC43E4.8C49BA5E (18:35:16.548 UTC Thu Jun 4 2026)
+  reference time is EDCD1AD0.CB020C49 (09:52:16.793 UTC Fri Jun 5 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +509,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  19:35:16.000 CET Thu Jun 4 2026
+  10:52:16.000 CET Fri Jun 5 2026
 
 [128/322] r1 R1# show clock detail
-  19:35:16.000 CET Thu Jun 4 2026
+  10:52:16.000 CET Fri Jun 5 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  18:35:16 UTC Thu Jun 4 2026
+  09:52:16 UTC Fri Jun 5 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1279,7 +1279,7 @@ Total steps: 322
 [250/322] r1 R1(config)# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCC43E4.9126E978 (18:35:16.567 UTC Thu Jun 4 2026)
+  reference time is EDCD1AD0.CF5C28F5 (09:52:16.810 UTC Fri Jun 5 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1(config)# show ntp associations
@@ -1292,7 +1292,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1(config)# show clock
-  19:35:16.000 CET Thu Jun 4 2026
+  10:52:16.000 CET Fri Jun 5 2026
 
 [253/322] r1 R1(config)# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1363,7 +1363,10 @@ Total steps: 322
   show history
 
 [260/322] r1 R1(config)# show ip cef
-  IP CEF is not enabled
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  1.1.1.1/32           attached             Loopback0
 
 [261/322] r1 R1(config)# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -2043,7 +2046,7 @@ Total steps: 322
 <empty>
 
 [321/322] r1 R1# show running-config | count !
-  20
+  18
 
 [322/322] r1 R1# write memory
   Building configuration...

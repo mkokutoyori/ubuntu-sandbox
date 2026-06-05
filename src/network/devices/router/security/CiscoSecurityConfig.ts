@@ -251,7 +251,7 @@ export class CiscoSecurityConfig {
   passwords: PasswordPolicy = { encrypted: false };
   usernames: Map<string, UsernameEntry> = new Map();
   login: LoginControl = {};
-  ipCef = false;
+  ipCef = true;
   ipCefDistributed = false;
 
   classMaps: Map<string, ClassMap> = new Map();
@@ -342,7 +342,7 @@ export class CiscoSecurityConfig {
     if (this.login.onFailureLog) lines.push('login on-failure log');
     if (this.login.onSuccessLog) lines.push('login on-success log');
     if (this.domainName) lines.push(`ip domain-name ${this.domainName}`);
-    if (this.ipCef) lines.push('ip cef');
+    if (!this.ipCef) lines.push('no ip cef');
     if (this.ssh.version !== 1) lines.push(`ip ssh version ${this.ssh.version}`);
     if (this.ssh.timeoutSec !== 120) lines.push(`ip ssh time-out ${this.ssh.timeoutSec}`);
     if (this.ssh.authRetries !== 3) lines.push(`ip ssh authentication-retries ${this.ssh.authRetries}`);

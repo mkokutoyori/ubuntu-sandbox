@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-04T18:35:20.919Z
+Generated: 2026-06-05T09:52:08.801Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1855,7 +1855,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDCC43E8.F3333333 (18:35:20.950 UTC Thu Jun 4 2026)
+  reference time is EDCD1AC8.D645A1CA (09:52:08.837 UTC Fri Jun 5 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1864,7 +1864,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *18:35:20.000 UTC Thu Jun 4 2026
+  *09:52:08.000 UTC Fri Jun 5 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1933,7 +1933,32 @@ Total steps: 343
   show history
 
 [281/343] r1 R1# show ip cef
-  IP CEF is not enabled
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.100.0/24     attached             GigabitEthernet0/0
+  10.255.255.1/32      attached             Loopback1
+  10.255.255.2/32      attached             Loopback2
+  10.255.255.3/32      attached             Loopback3
+  10.255.255.4/32      attached             Loopback4
+  10.255.255.5/32      attached             Loopback5
+  10.255.255.6/32      attached             Loopback6
+  10.255.255.7/32      attached             Loopback7
+  10.255.255.8/32      attached             Loopback8
+  172.31.0.1/32        attached             Loopback100
+  10.0.0.0/30          attached             GigabitEthernet0/1
+  192.168.1.0/24       attached             GigabitEthernet0/0.10
+  192.168.2.0/24       attached             GigabitEthernet0/0.20
+  192.168.3.0/24       attached             GigabitEthernet0/0.30
+  192.168.4.0/24       attached             GigabitEthernet0/0.40
+  192.168.5.0/24       attached             GigabitEthernet0/0.50
+  192.168.6.0/24       attached             GigabitEthernet0/0.60
+  192.168.7.0/24       attached             GigabitEthernet0/0.70
+  192.168.8.0/24       attached             GigabitEthernet0/0.80
+  192.168.9.0/24       attached             GigabitEthernet0/0.90
+  192.168.10.0/24      attached             GigabitEthernet0/0.100
+  192.168.99.0/24      attached             GigabitEthernet0/0.999
+  172.16.0.0/30        attached             Tunnel0
+  172.16.0.4/30        attached             Tunnel1
 
 [282/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -3015,7 +3040,7 @@ Total steps: 343
 <empty>
 
 [342/343] r1 R1# show running-config | count !
-  34
+  32
 
 [343/343] r1 R1# write memory
   Building configuration...
